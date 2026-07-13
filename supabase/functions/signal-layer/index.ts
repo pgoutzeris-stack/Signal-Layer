@@ -427,7 +427,14 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date): Promise<
       }),
     }
   );
-  if (!runRes.ok) return [];
+  if (!runRes.ok) {
+    // Surface this instead of silently returning [] — a misconfigured/
+    // unapproved Apify actor otherwise looks identical to "this source has
+    // no new articles", which hid a real problem for all 73 apify-fallback
+    // sources (actor needed one-time permission approval in the console).
+    console.error(`Apify run-sync failed for ${sourceUrl}: ${runRes.status} ${await runRes.text()}`);
+    return [];
+  }
   const items = await runRes.json().catch(() => []) as Array<{ url: string; title?: string; publishedAt?: string | null; isArticle?: boolean }>;
   return items
     .filter((it) => it.isArticle)
