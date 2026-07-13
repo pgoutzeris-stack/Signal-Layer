@@ -85,17 +85,27 @@ function cacheEls() {
 
   els.findingsListMarketing = document.getElementById("findings-list-marketing");
   els.findingsListSales = document.getElementById("findings-list-sales");
+  els.taggingStatsText = document.getElementById("tagging-stats-text");
 }
 
-const DIMENSION_LABELS = {
-  customer_marketing_insights: "Customer- & Marketing-Insights",
-  fmcg_retail_signale: "FMCG- & Retail-Signale",
-  sub_branchen_tier1: "Sub-Branchen Insights",
-  ai_trends_impact: "AI-Trends & Impact",
-  tier1_insights_quellen: "TIER 1 Insights",
-  buying_center: "Buying Center",
-  top_themen_trigger: "TOP-Themen & Trigger",
-  chancen_risiken: "Chancen & Risiken",
+// Thema (topic) — the 5 canonical dimensions, multi-select per article.
+const TOPIC_LABELS = {
+  customer_insights: "Customer Insights",
+  marketing_insights: "Marketing Insights",
+  fmcg_retail_signale: "FMCG-/Retail-Signale",
+  sub_branchen_insight: "Sub-Branchen-Insight",
+  ki_performance: "KI & Performance",
+  kunde: "Kunde erkannt",
+  buying_center: "Buying-Center-Kandidat",
+};
+
+// Territory — the 5 ROOTS content territories, single pick per article.
+const TERRITORY_LABELS = {
+  wachstumstreiber: "Wachstumstreiber",
+  markenaktivierung: "Markenaktivierung",
+  marke_im_wandel: "Marke im Wandel",
+  operational_excellence: "Operational Excellence",
+  empowered_marketers: "Empowered Marketers",
 };
 
 function formatFindingDate(iso) {
@@ -114,7 +124,10 @@ async function loadFindings(track) {
     }
     listEl.innerHTML = findings.map((f) => {
       const article = f.article || {};
-      const dimLabel = DIMENSION_LABELS[f.dimension] || f.dimension || "";
+      const dimLabel = TOPIC_LABELS[f.dimension] || f.dimension || "";
+      const territoryLabel = article.territory ? TERRITORY_LABELS[article.territory] || article.territory : null;
+      const companies = article.matched_companies || [];
+      const personCandidate = article.buying_center_candidate;
       return `
         <div class="finding-item">
           <div class="finding-item-top">
@@ -123,6 +136,9 @@ async function loadFindings(track) {
           </div>
           <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeHtml(article.title || article.url || "Ohne Titel")}</a>
           <div class="finding-meta">
+            ${territoryLabel ? `<span class="tag">${escapeHtml(territoryLabel)}</span>` : ""}
+            ${companies.map((c) => `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(c)}</span>`).join("")}
+            ${personCandidate ? `<span class="tag tag--person"><i class="ri-user-line"></i> Buying-Center-Kandidat</span>` : ""}
             ${(f.matched_keywords || []).map((k) => `<span class="meta-chip">${escapeHtml(k)}</span>`).join("")}
           </div>
         </div>
@@ -131,6 +147,20 @@ async function loadFindings(track) {
   } catch (err) {
     listEl.innerHTML = `<div class="track-card-empty">Fehler beim Laden: ${escapeHtml(err.message)}</div>`;
   }
+}
+
+async function loadTaggingStats() {
+  try {
+    const stats = await callApi("get_tagging_stats");
+    if (!els.taggingStatsText) return;
+    if (!stats.total) {
+      els.taggingStatsText.textContent = "Noch keine Artikel gecrawlt.";
+      return;
+    }
+    els.taggingStatsText.innerHTML = stats.untagged > 0
+      ? `${stats.tagged} von ${stats.total} Artikeln zuverlässig getaggt · <span class="tagging-stats-warning">${stats.untagged} nicht zuverlässig taggbar</span>`
+      : `${stats.tagged} von ${stats.total} Artikeln zuverlässig getaggt`;
+  } catch { /* non-critical stat, fail quietly */ }
 }
 
 function formatUrlDisplay(urlStr) {
@@ -552,4 +582,5 @@ export function initApp(client) {
   void loadLastRun();
   void loadFindings("marketing");
   void loadFindings("sales");
+  void loadTaggingStats();
 }
