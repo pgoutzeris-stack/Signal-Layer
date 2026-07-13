@@ -1714,7 +1714,30 @@ Deno.serve(async (req: Request) => {
         if (track) query = query.eq("track", track);
         const { data, error } = await query;
         if (error) return errorResponse(origin, error.message, 500);
-        return corsResponse(origin, { findings: data || [] });
+
+        // Uncertain articles no longer live in a separate dashboard section.
+        // Surface them in the same card structure when validated topic/company
+        // evidence already provides a meaningful Marketing or Sales route.
+        const { data: uncertain, error: uncertainError } = await admin.schema("signal_layer").from("articles")
+          .select("id, title, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
+          .eq("classification_status", "uncertain")
+          .order("classified_at", { ascending: false, nullsFirst: false })
+          .limit(limit || 50);
+        if (uncertainError) return errorResponse(origin, uncertainError.message, 500);
+        const reviewFindings = (uncertain || []).flatMap((article: Record<string, unknown>) => {
+          const topics = Array.isArray(article.topics) ? article.topics as string[] : [];
+          const companies = Array.isArray(article.matched_companies) ? article.matched_companies as string[] : [];
+          if (track === "marketing" && topics.length > 0) return [{
+            id: `review-${article.id}-marketing`, track: "marketing", dimension: topics[0],
+            confidence: article.relevance_confidence, created_at: article.classified_at, article,
+          }];
+          if (track === "sales" && companies.length > 0) return [{
+            id: `review-${article.id}-sales`, track: "sales", dimension: "kunde",
+            confidence: article.relevance_confidence, created_at: article.classified_at, article,
+          }];
+          return [];
+        });
+        return corsResponse(origin, { findings: [...(data || []), ...reviewFindings] });
       }
 
       case "list_review_articles": {

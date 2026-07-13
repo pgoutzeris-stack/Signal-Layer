@@ -11,6 +11,9 @@ const state = {
   sort: "company_asc",
 };
 
+const signalViewState = { status: "all", company: "all", sort: "recommended" };
+const findingsByTrack = { marketing: [], sales: [] };
+
 const els = {};
 
 function toast(msg, kind = "ok") {
@@ -185,6 +188,9 @@ function cacheEls() {
 
   els.findingsListMarketing = document.getElementById("findings-list-marketing");
   els.findingsListSales = document.getElementById("findings-list-sales");
+  els.signalStatusFilter = document.getElementById("signal-status-filter");
+  els.signalCompanyFilter = document.getElementById("signal-company-filter");
+  els.signalSort = document.getElementById("signal-sort");
   els.taggingStatsText = document.getElementById("tagging-stats-text");
   els.articleDetailModal = document.getElementById("article-detail-modal");
   els.articleDetailContent = document.getElementById("article-detail-content");
@@ -238,18 +244,51 @@ function formatFindingDate(iso) {
   return `<span class="finding-date-tag">${dateStr}</span>`;
 }
 
-async function loadFindings(track) {
+function articleCompanies(article) {
+  const candidates = [...(article.matched_companies || []), article.primary_company].filter(Boolean);
+  return candidates.filter((company, index) =>
+    candidates.findIndex((candidate) => candidate.toLowerCase() === company.toLowerCase()) === index
+  );
+}
+
+function findingConfidence(finding) {
+  const value = Number(finding.confidence ?? finding.article?.relevance_confidence ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function findingDate(finding) {
+  const timestamp = new Date(finding.article?.published_at || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function visibleFindings(track) {
+  const filtered = findingsByTrack[track].filter((finding) => {
+    const article = finding.article || {};
+    const statusMatches = signalViewState.status === "all" || article.classification_status === signalViewState.status;
+    const companyMatches = signalViewState.company === "all" || articleCompanies(article).length > 0;
+    return statusMatches && companyMatches;
+  });
+  return [...filtered].sort((a, b) => {
+    if (signalViewState.sort === "newest") return findingDate(b) - findingDate(a) || findingConfidence(b) - findingConfidence(a);
+    if (signalViewState.sort === "confidence") return findingConfidence(b) - findingConfidence(a) || findingDate(b) - findingDate(a);
+    const statusRank = { reliable: 2, uncertain: 1, legacy: 0 };
+    const rankA = statusRank[a.article?.classification_status] ?? 0;
+    const rankB = statusRank[b.article?.classification_status] ?? 0;
+    return rankB - rankA || findingConfidence(b) - findingConfidence(a) || findingDate(b) - findingDate(a);
+  });
+}
+
+function renderFindings(track) {
   const listEl = track === "marketing" ? els.findingsListMarketing : els.findingsListSales;
-  try {
-    const { findings } = await callApi("list_findings", { track, limit: 30 });
+  const findings = visibleFindings(track);
     if (!findings || findings.length === 0) {
-      listEl.innerHTML = `<div class="track-card-empty">Noch keine Ergebnisse für diesen Track.</div>`;
+      listEl.innerHTML = `<div class="track-card-empty">Keine Signale entsprechen den gewählten Filtern.</div>`;
       return;
     }
     listEl.innerHTML = findings.map((f) => {
       const article = f.article || {};
       const dimLabel = TOPIC_LABELS[f.dimension] || f.dimension || "";
-      const companies = article.matched_companies || [];
+      const companies = articleCompanies(article);
       const source = article.source || null;
       const confidence = formatConfidence(f.confidence ?? article.relevance_confidence);
       const status = article.classification_status || "legacy";
@@ -272,6 +311,14 @@ async function loadFindings(track) {
         </article>
       `;
     }).join("");
+}
+
+async function loadFindings(track) {
+  const listEl = track === "marketing" ? els.findingsListMarketing : els.findingsListSales;
+  try {
+    const { findings } = await callApi("list_findings", { track, limit: 50 });
+    findingsByTrack[track] = findings || [];
+    renderFindings(track);
   } catch (err) {
     listEl.innerHTML = `<div class="track-card-empty">Fehler beim Laden: ${escapeHtml(err.message)}</div>`;
   }
@@ -744,6 +791,16 @@ async function loadLastRun() {
 }
 
 function bindUi() {
+  const updateSignalView = () => {
+    signalViewState.status = els.signalStatusFilter.value;
+    signalViewState.company = els.signalCompanyFilter.value;
+    signalViewState.sort = els.signalSort.value;
+    renderFindings("marketing");
+    renderFindings("sales");
+  };
+  [els.signalStatusFilter, els.signalCompanyFilter, els.signalSort].forEach((control) =>
+    control.addEventListener("change", updateSignalView)
+  );
   const openCardDetail = (event) => {
     const card = event.target.closest("[data-article-id]");
     if (card) void openArticleDetail(card.dataset.articleId);
