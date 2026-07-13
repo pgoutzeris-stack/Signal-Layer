@@ -128,18 +128,57 @@
   .sidebar-icon-btn:hover { background: var(--surface); color: var(--ink); }
 
   main#main-content {
-    flex: 1; display: flex; align-items: center; justify-content: center; padding: 2rem 1rem;
+    flex: 1; overflow-y: auto; padding: 2rem 1.5rem;
   }
-  .placeholder-card {
-    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
-    box-shadow: var(--shadow); padding: 3rem 2.5rem; max-width: 480px; width: 100%; text-align: center;
+
+  /* ---------- Dashboard ---------- */
+  .dashboard-wrap { max-width: 1100px; width: 100%; margin: 0 auto; }
+  .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .dashboard-title { font-size: 1.4rem; font-weight: 700; margin-bottom: .3rem; }
+  .dashboard-subtitle { font-size: .9rem; color: var(--muted); }
+
+  .crawl-trigger-wrap { position: relative; }
+  .crawl-dropdown {
+    display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 300px;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg);
+    padding: 1rem; z-index: 50;
   }
-  .placeholder-icon {
-    width: 56px; height: 56px; border-radius: 14px; background: var(--brand-light); color: var(--brand);
-    display: flex; align-items: center; justify-content: center; font-size: 1.6rem; margin: 0 auto 1.25rem;
+  .crawl-dropdown.show { display: block; }
+  .crawl-dropdown-title { font-size: .75rem; font-weight: 700; text-transform: uppercase; color: var(--muted); margin-bottom: .6rem; }
+  .crawl-dropdown-option { display: flex; align-items: center; gap: 8px; font-size: .88rem; padding: .4rem 0; cursor: pointer; }
+  .crawl-category-list {
+    display: none; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto;
+    margin: .4rem 0 .8rem; padding: .5rem; background: var(--surface); border-radius: 8px;
   }
-  .placeholder-title { font-size: 1.2rem; font-weight: 700; margin-bottom: .5rem; }
-  .placeholder-text { font-size: .92rem; color: var(--muted); line-height: 1.5; }
+  .crawl-category-list.show { display: flex; }
+  .crawl-category-option { display: flex; align-items: center; gap: 8px; font-size: .82rem; }
+  .crawl-dropdown-confirm { width: 100%; justify-content: center; }
+
+  .last-run-card {
+    display: flex; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: .8rem 1.1rem; font-size: .85rem; color: var(--muted); margin-bottom: 1.5rem;
+  }
+
+  .track-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  .track-card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 1.5rem;
+  }
+  .track-card-header { font-size: 1rem; font-weight: 700; display: flex; align-items: center; gap: 8px; margin-bottom: 1rem; }
+  .track-card-empty { font-size: .85rem; color: var(--muted); padding: 1.5rem 0; text-align: center; }
+  @media (max-width: 720px) { .track-grid { grid-template-columns: 1fr; } }
+
+  /* ---------- Keywords panel ---------- */
+  .keyword-toolbar { display: flex; gap: 10px; padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); }
+  .keyword-input { margin-bottom: 0 !important; flex: 1; }
+  .keyword-list { flex: 1; overflow-y: auto; padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: 8px; }
+  .keyword-row {
+    display: flex; align-items: center; gap: 12px; padding: .6rem .9rem; border: 1px solid var(--line);
+    border-radius: 10px; background: var(--bg);
+  }
+  .keyword-row.keyword-row--inactive { opacity: .45; }
+  .keyword-row-text { flex: 1; font-size: .9rem; }
+  .keyword-empty { text-align: center; color: var(--muted); padding: 2rem 0; font-size: .88rem; }
 
   /* ---------- Settings modal ---------- */
   .modal-overlay {
@@ -313,10 +352,49 @@
     </aside>
 
     <main id="main-content">
-      <div class="placeholder-card">
-        <div class="placeholder-icon"><i class="ri-tools-line"></i></div>
-        <div class="placeholder-title">Noch im Aufbau</div>
-        <div class="placeholder-text">Dieses Tool wird gerade eingerichtet. Der Inhalt folgt in Kürze.</div>
+      <div class="dashboard-wrap">
+        <div class="dashboard-header">
+          <div>
+            <div class="dashboard-title">Signal Layer</div>
+            <div class="dashboard-subtitle">Marketing &amp; Sales Insights — Inhalt folgt, sobald Auswertung &amp; Empfehlungen gebaut sind.</div>
+          </div>
+          <div class="crawl-trigger-wrap">
+            <button type="button" class="btn-primary" id="btn-crawl-trigger">
+              <i class="ri-refresh-line"></i> Jetzt aktualisieren
+            </button>
+            <div class="crawl-dropdown" id="crawl-dropdown">
+              <div class="crawl-dropdown-title">Was crawlen?</div>
+              <label class="crawl-dropdown-option">
+                <input type="radio" name="crawl-scope" value="all" checked>
+                Alle aktiven Quellen
+              </label>
+              <label class="crawl-dropdown-option">
+                <input type="radio" name="crawl-scope" value="selected">
+                Nur ausgewählte Kategorien
+              </label>
+              <div class="crawl-category-list" id="crawl-category-list"></div>
+              <button type="button" class="btn-primary crawl-dropdown-confirm" id="btn-crawl-confirm">
+                <i class="ri-play-line"></i> Crawl starten
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="last-run-card" id="last-run-card">
+          <i class="ri-history-line"></i>
+          <span id="last-run-text">Noch kein Crawl-Lauf.</span>
+        </div>
+
+        <div class="track-grid">
+          <div class="track-card">
+            <div class="track-card-header"><i class="ri-megaphone-line"></i> Marketing</div>
+            <div class="track-card-empty">Noch keine Ergebnisse — Auswertung folgt.</div>
+          </div>
+          <div class="track-card">
+            <div class="track-card-header"><i class="ri-line-chart-line"></i> Sales</div>
+            <div class="track-card-empty">Noch keine Ergebnisse — Auswertung folgt.</div>
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -328,6 +406,12 @@
         <div class="settings-nav-title">Einstellungen</div>
         <div class="settings-nav-item active" data-panel="apify">
           <i class="ri-global-line"></i> Apify
+        </div>
+        <div class="settings-nav-item" data-panel="keywords-marketing">
+          <i class="ri-megaphone-line"></i> Marketing Keywords
+        </div>
+        <div class="settings-nav-item" data-panel="keywords-sales">
+          <i class="ri-line-chart-line"></i> Sales Keywords
         </div>
       </nav>
 
@@ -380,6 +464,22 @@
               <tbody id="source-table-body"></tbody>
             </table>
           </div>
+        </div>
+
+        <div class="settings-panel" id="settings-panel-keywords-marketing">
+          <div class="keyword-toolbar">
+            <input type="text" class="modern-input keyword-input" id="keyword-input-marketing" placeholder="Neues Keyword…">
+            <button type="button" class="btn-primary" id="btn-add-keyword-marketing"><i class="ri-add-line"></i> Hinzufügen</button>
+          </div>
+          <div class="keyword-list" id="keyword-list-marketing"></div>
+        </div>
+
+        <div class="settings-panel" id="settings-panel-keywords-sales">
+          <div class="keyword-toolbar">
+            <input type="text" class="modern-input keyword-input" id="keyword-input-sales" placeholder="Neues Keyword…">
+            <button type="button" class="btn-primary" id="btn-add-keyword-sales"><i class="ri-add-line"></i> Hinzufügen</button>
+          </div>
+          <div class="keyword-list" id="keyword-list-sales"></div>
         </div>
       </div>
     </div>

@@ -69,6 +69,19 @@ function cacheEls() {
   els.fUrl = document.getElementById("f-url");
   els.fCategory = document.getElementById("f-category");
   els.fDescription = document.getElementById("f-description");
+
+  els.keywordListMarketing = document.getElementById("keyword-list-marketing");
+  els.keywordListSales = document.getElementById("keyword-list-sales");
+  els.keywordInputMarketing = document.getElementById("keyword-input-marketing");
+  els.keywordInputSales = document.getElementById("keyword-input-sales");
+  els.btnAddKeywordMarketing = document.getElementById("btn-add-keyword-marketing");
+  els.btnAddKeywordSales = document.getElementById("btn-add-keyword-sales");
+
+  els.btnCrawlTrigger = document.getElementById("btn-crawl-trigger");
+  els.crawlDropdown = document.getElementById("crawl-dropdown");
+  els.crawlCategoryList = document.getElementById("crawl-category-list");
+  els.btnCrawlConfirm = document.getElementById("btn-crawl-confirm");
+  els.lastRunText = document.getElementById("last-run-text");
 }
 
 function formatUrlDisplay(urlStr) {
@@ -227,6 +240,160 @@ async function submitAddSource(e) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Keywords (per track: marketing / sales)
+// ---------------------------------------------------------------------------
+const keywordsByTrack = { marketing: null, sales: null };
+
+function keywordListEl(track) {
+  return track === "marketing" ? els.keywordListMarketing : els.keywordListSales;
+}
+function keywordInputEl(track) {
+  return track === "marketing" ? els.keywordInputMarketing : els.keywordInputSales;
+}
+
+async function loadKeywords(track) {
+  const listEl = keywordListEl(track);
+  listEl.innerHTML = `<div class="keyword-empty"><i class="ri-loader-4-line ri-spin"></i> Lädt…</div>`;
+  try {
+    const { keywords } = await callApi("list_keywords", { track });
+    keywordsByTrack[track] = keywords || [];
+    renderKeywords(track);
+  } catch (err) {
+    listEl.innerHTML = `<div class="keyword-empty">Fehler: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderKeywords(track) {
+  const listEl = keywordListEl(track);
+  const list = keywordsByTrack[track] || [];
+  if (list.length === 0) {
+    listEl.innerHTML = `<div class="keyword-empty">Noch keine Keywords für diesen Track.</div>`;
+    return;
+  }
+  listEl.innerHTML = list.map((k) => `
+    <div class="keyword-row ${k.active ? "" : "keyword-row--inactive"}" data-id="${k.id}">
+      <span class="keyword-row-text">${escapeHtml(k.keyword)}</span>
+      <label class="source-toggle">
+        <input type="checkbox" class="keyword-active-toggle" data-track="${track}" data-id="${k.id}" ${k.active ? "checked" : ""}>
+        <span class="source-toggle-slider"></span>
+      </label>
+      <button type="button" class="icon-btn keyword-delete-btn" data-track="${track}" data-id="${k.id}" title="Löschen">
+        <i class="ri-delete-bin-line"></i>
+      </button>
+    </div>
+  `).join("");
+}
+
+async function addKeyword(track) {
+  const input = keywordInputEl(track);
+  const keyword = input.value.trim();
+  if (!keyword) return;
+  try {
+    const { keyword: created } = await callApi("add_keyword", { track, keyword });
+    keywordsByTrack[track] = [...(keywordsByTrack[track] || []), created];
+    renderKeywords(track);
+    input.value = "";
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
+async function toggleKeywordActive(track, id, active) {
+  const row = (keywordsByTrack[track] || []).find((k) => k.id === id);
+  if (row) row.active = active;
+  renderKeywords(track);
+  try {
+    await callApi("update_keyword", { id, active });
+  } catch (err) {
+    if (row) row.active = !active;
+    renderKeywords(track);
+    toast(err.message, "err");
+  }
+}
+
+async function deleteKeyword(track, id) {
+  try {
+    await callApi("delete_keyword", { id });
+    keywordsByTrack[track] = (keywordsByTrack[track] || []).filter((k) => k.id !== id);
+    renderKeywords(track);
+    toast("Keyword gelöscht");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Crawl trigger
+// ---------------------------------------------------------------------------
+function renderCrawlCategoryOptions() {
+  const categories = [...new Set(sources.map((s) => s.category).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "de")
+  );
+  els.crawlCategoryList.innerHTML = categories.map((c) => `
+    <label class="crawl-category-option">
+      <input type="checkbox" value="${escapeHtml(c)}"> ${escapeHtml(c)}
+    </label>
+  `).join("");
+}
+
+async function openCrawlDropdown() {
+  if (sources.length === 0) {
+    try { const { sources: data } = await callApi("list_sources"); sources = data || []; } catch { /* ignore */ }
+  }
+  renderCrawlCategoryOptions();
+  els.crawlDropdown.classList.add("show");
+}
+function closeCrawlDropdown() {
+  els.crawlDropdown.classList.remove("show");
+}
+
+async function confirmCrawl() {
+  const scopeType = document.querySelector('input[name="crawl-scope"]:checked').value;
+  let scope = {};
+  if (scopeType === "selected") {
+    const categories = [...els.crawlCategoryList.querySelectorAll("input:checked")].map((i) => i.value);
+    if (categories.length === 0) {
+      toast("Bitte mindestens eine Kategorie auswählen", "err");
+      return;
+    }
+    scope = { categories };
+  }
+  try {
+    await callApi("run_crawl", { scope });
+    toast("Crawl gestartet");
+    closeCrawlDropdown();
+    await loadLastRun();
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
+function formatRelativeTime(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "gerade eben";
+  if (mins < 60) return `vor ${mins} Min.`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `vor ${hours} Std.`;
+  return `vor ${Math.round(hours / 24)} Tag(en)`;
+}
+
+const STATUS_LABEL = { queued: "eingereiht", running: "läuft", done: "abgeschlossen", error: "fehlgeschlagen" };
+
+async function loadLastRun() {
+  try {
+    const { crawl_runs } = await callApi("list_crawl_runs");
+    const last = (crawl_runs || [])[0];
+    if (!last) { els.lastRunText.textContent = "Noch kein Crawl-Lauf."; return; }
+    const trigger = last.trigger_type === "scheduled" ? "automatisch (6 Uhr)" : "manuell";
+    els.lastRunText.textContent =
+      `Letzter Crawl: ${formatRelativeTime(last.started_at)} · ${trigger} · Status: ${STATUS_LABEL[last.status] || last.status}`;
+  } catch {
+    els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
+  }
+}
+
 function bindUi() {
   els.btnSettings.addEventListener("click", openSettings);
   els.btnSettingsClose.addEventListener("click", closeSettings);
@@ -241,8 +408,46 @@ function bindUi() {
       const panel = item.dataset.panel;
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
       document.getElementById(`settings-panel-${panel}`)?.classList.add("show");
+      if (panel === "keywords-marketing" && !keywordsByTrack.marketing) void loadKeywords("marketing");
+      if (panel === "keywords-sales" && !keywordsByTrack.sales) void loadKeywords("sales");
     });
   });
+
+  els.btnAddKeywordMarketing.addEventListener("click", () => void addKeyword("marketing"));
+  els.btnAddKeywordSales.addEventListener("click", () => void addKeyword("sales"));
+  els.keywordInputMarketing.addEventListener("keydown", (e) => { if (e.key === "Enter") void addKeyword("marketing"); });
+  els.keywordInputSales.addEventListener("keydown", (e) => { if (e.key === "Enter") void addKeyword("sales"); });
+
+  els.keywordListMarketing.addEventListener("change", (e) => {
+    const t = e.target.closest(".keyword-active-toggle");
+    if (t) void toggleKeywordActive("marketing", t.dataset.id, t.checked);
+  });
+  els.keywordListSales.addEventListener("change", (e) => {
+    const t = e.target.closest(".keyword-active-toggle");
+    if (t) void toggleKeywordActive("sales", t.dataset.id, t.checked);
+  });
+  els.keywordListMarketing.addEventListener("click", (e) => {
+    const b = e.target.closest(".keyword-delete-btn");
+    if (b) void deleteKeyword("marketing", b.dataset.id);
+  });
+  els.keywordListSales.addEventListener("click", (e) => {
+    const b = e.target.closest(".keyword-delete-btn");
+    if (b) void deleteKeyword("sales", b.dataset.id);
+  });
+
+  els.btnCrawlTrigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (els.crawlDropdown.classList.contains("show")) closeCrawlDropdown();
+    else void openCrawlDropdown();
+  });
+  els.crawlDropdown.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => closeCrawlDropdown());
+  document.querySelectorAll('input[name="crawl-scope"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      els.crawlCategoryList.classList.toggle("show", radio.value === "selected" && radio.checked);
+    });
+  });
+  els.btnCrawlConfirm.addEventListener("click", () => void confirmCrawl());
 
   let searchTimer = null;
   els.sourceSearch.addEventListener("input", () => {
@@ -295,4 +500,5 @@ export function initApp(client) {
     cacheEls();
     bindUi();
   }
+  void loadLastRun();
 }

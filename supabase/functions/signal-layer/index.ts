@@ -61,6 +61,18 @@ async function requireAuth(req: Request): Promise<{ userId: string } | null> {
 }
 
 // ---------------------------------------------------------------------------
+// Scheduled-trigger auth — pg_cron calls this function with a shared secret
+// header instead of a user JWT (there's no logged-in user for a 6am cron run).
+// ---------------------------------------------------------------------------
+async function isScheduledTrigger(req: Request): Promise<boolean> {
+  const provided = req.headers.get("x-cron-secret");
+  if (!provided) return false;
+  const { data } = await getAdminClient()
+    .schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_cron_secret" });
+  return !!data && data === provided;
+}
+
+// ---------------------------------------------------------------------------
 // API key resolver — reads from the shared, Vault-backed key store.
 // Keys never reach the frontend; only this Edge Function calls Apify.
 // ---------------------------------------------------------------------------
@@ -100,8 +112,20 @@ Deno.serve(async (req: Request) => {
   }
   const action = String(body.action || "");
 
-  const auth = await requireAuth(req);
-  if (!auth) return errorResponse(origin, "Unauthorized", 401);
+  // run_crawl can be triggered either by a logged-in user (manual button)
+  // or by the daily pg_cron job (shared-secret header, no user session).
+  let auth: { userId: string } | null = null;
+  let isScheduled = false;
+  if (action === "run_crawl") {
+    auth = await requireAuth(req);
+    if (!auth) {
+      isScheduled = await isScheduledTrigger(req);
+      if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
+    }
+  } else {
+    auth = await requireAuth(req);
+    if (!auth) return errorResponse(origin, "Unauthorized", 401);
+  }
 
   try {
     switch (action) {
@@ -181,6 +205,79 @@ Deno.serve(async (req: Request) => {
         const { error } = await admin.schema("signal_layer").from("sources").delete().eq("id", id);
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { deleted: id });
+      }
+
+      // ---------------------------------------------------------------
+      // Keyword management (Settings → Marketing/Sales Keywords)
+      // ---------------------------------------------------------------
+      case "list_keywords": {
+        const { track } = body as { track?: string };
+        const admin = getAdminClient();
+        let query = admin.schema("signal_layer").from("keywords").select("*").order("keyword", { ascending: true });
+        if (track) query = query.eq("track", track);
+        const { data, error } = await query;
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { keywords: data || [] });
+      }
+
+      case "add_keyword": {
+        const { track, keyword } = body as { track: string; keyword: string };
+        if (!track || !keyword) return errorResponse(origin, "track and keyword are required");
+        if (!["marketing", "sales"].includes(track)) return errorResponse(origin, "invalid track");
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("keywords").insert({
+          track, keyword: keyword.trim(), active: true,
+          created_by: auth!.userId, updated_by: auth!.userId,
+        }).select().single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { keyword: data });
+      }
+
+      case "update_keyword": {
+        const { id, keyword, active } = body as { id: string; keyword?: string; active?: boolean };
+        if (!id) return errorResponse(origin, "id is required");
+        const updates: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: auth!.userId };
+        if (keyword !== undefined) updates.keyword = keyword.trim();
+        if (active !== undefined) updates.active = active;
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("keywords")
+          .update(updates).eq("id", id).select().single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { keyword: data });
+      }
+
+      case "delete_keyword": {
+        const { id } = body as { id: string };
+        if (!id) return errorResponse(origin, "id is required");
+        const admin = getAdminClient();
+        const { error } = await admin.schema("signal_layer").from("keywords").delete().eq("id", id);
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { deleted: id });
+      }
+
+      // ---------------------------------------------------------------
+      // Crawl trigger — records the run; actual Apify actor invocation +
+      // keyword matching is a separate follow-up build once the actor is chosen.
+      // ---------------------------------------------------------------
+      case "run_crawl": {
+        const { scope } = body as { scope?: Record<string, unknown> };
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("crawl_runs").insert({
+          trigger_type: isScheduled ? "scheduled" : "manual",
+          scope: scope || {},
+          status: "queued",
+          triggered_by: auth?.userId ?? null,
+        }).select().single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { crawl_run: data });
+      }
+
+      case "list_crawl_runs": {
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("crawl_runs")
+          .select("*").order("started_at", { ascending: false }).limit(20);
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { crawl_runs: data || [] });
       }
 
       default:
