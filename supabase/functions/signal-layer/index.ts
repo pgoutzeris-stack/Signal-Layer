@@ -607,6 +607,9 @@ Deno.serve(async (req: Request) => {
   let isScheduled = false;
   if (action === "process_crawl") {
     if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
+  } else if (action === "resume_stalled_crawls") {
+    isScheduled = await isScheduledTrigger(req);
+    if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
   } else if (action === "run_crawl") {
     auth = await requireAuth(req);
     if (!auth) {
@@ -770,6 +773,10 @@ Deno.serve(async (req: Request) => {
           status: sourceIds.length > 0 ? "queued" : "done",
           triggered_by: auth?.userId ?? null,
           finished_at: sourceIds.length > 0 ? null : new Date().toISOString(),
+          source_ids: sourceIds,
+          current_index: 0,
+          current_offset: 0,
+          last_progress_at: new Date().toISOString(),
         }).select().single();
         if (error) return errorResponse(origin, error.message, 500);
 
@@ -805,10 +812,17 @@ Deno.serve(async (req: Request) => {
         };
 
         const admin = getAdminClient();
-        if (index === 0 && candidate_offset === 0) {
-          await admin.schema("signal_layer").from("crawl_runs")
-            .update({ status: "running" }).eq("id", crawl_run_id);
-        }
+
+        // Persist the resume point at the START of every hop (not just on
+        // success) so the watchdog below always has an accurate "last known
+        // point" to restart from, even if THIS invocation dies mid-way.
+        await admin.schema("signal_layer").from("crawl_runs")
+          .update({
+            status: "running",
+            current_index: index,
+            current_offset: candidate_offset,
+            last_progress_at: new Date().toISOString(),
+          }).eq("id", crawl_run_id);
 
         if (index >= source_ids.length) {
           await admin.schema("signal_layer").from("crawl_runs")
@@ -923,6 +937,46 @@ Deno.serve(async (req: Request) => {
         }).catch((e) => console.error("Failed to trigger next process_crawl step:", e));
 
         return corsResponse(origin, { ok: true });
+      }
+
+      // ---------------------------------------------------------------
+      // Watchdog — called every ~2 min by pg_cron (shared-secret auth, same
+      // as the daily trigger). Finds crawl_runs stuck in 'running' with no
+      // progress for over WATCHDOG_STALL_SECONDS and re-fires process_crawl
+      // from the exact persisted resume point (current_index/current_offset)
+      // instead of restarting the whole run — the fire-and-forget self-call
+      // has no built-in retry, so an occasional dropped hop would otherwise
+      // leave the run stuck forever (observed repeatedly on the 187-source
+      // full crawl).
+      // ---------------------------------------------------------------
+      case "resume_stalled_crawls": {
+        if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
+        const WATCHDOG_STALL_SECONDS = 90;
+        const admin = getAdminClient();
+        const cutoff = new Date(Date.now() - WATCHDOG_STALL_SECONDS * 1000).toISOString();
+
+        const { data: stalled, error: stalledErr } = await admin.schema("signal_layer").from("crawl_runs")
+          .select("id, source_ids, current_index, current_offset")
+          .eq("status", "running")
+          .lt("last_progress_at", cutoff);
+        if (stalledErr) return errorResponse(origin, stalledErr.message, 500);
+
+        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
+        for (const run of stalled || []) {
+          fetch(selfUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+            body: JSON.stringify({
+              action: "process_crawl",
+              crawl_run_id: run.id,
+              source_ids: run.source_ids,
+              index: run.current_index,
+              candidate_offset: run.current_offset,
+            }),
+          }).catch((e) => console.error(`Watchdog: failed to resume crawl_run ${run.id}:`, e));
+        }
+
+        return corsResponse(origin, { resumed: (stalled || []).map((r: { id: string }) => r.id) });
       }
 
       case "list_findings": {
