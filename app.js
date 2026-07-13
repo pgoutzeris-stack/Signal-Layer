@@ -191,7 +191,6 @@ function cacheEls() {
   els.signalStatusFilter = document.getElementById("signal-status-filter");
   els.signalCompanyFilter = document.getElementById("signal-company-filter");
   els.signalSort = document.getElementById("signal-sort");
-  els.taggingStatsText = document.getElementById("tagging-stats-text");
   els.articleDetailModal = document.getElementById("article-detail-modal");
   els.articleDetailContent = document.getElementById("article-detail-content");
 }
@@ -302,7 +301,7 @@ function renderFindings(track) {
               ${formatFindingDate(article.published_at)}
             </div>
           </div>
-          <span class="finding-title">${escapeText(article.title || article.url || "Ohne Titel")}</span>
+          <span class="finding-title">${escapeText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
           ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
           <div class="finding-meta">
             ${companies.map((c) => `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(c)}</span>`).join("")}
@@ -413,7 +412,8 @@ async function openArticleDetail(articleId) {
       <button type="button" class="article-detail-close" aria-label="Schließen"><i class="ri-close-line"></i></button>
       <main class="article-detail-main">
         <span class="article-detail-kicker">${escapeHtml(source?.company || "Signal Layer")}</span>
-        <h2 class="article-detail-title" id="article-detail-title">${renderEvidenceLinkedText(article.title || "Ohne Titel", evidence)}</h2>
+        <h2 class="article-detail-title" id="article-detail-title">${escapeText(article.title_de || article.title || "Ohne Titel")}</h2>
+        ${article.title_de && article.title_de !== article.title ? `<p class="article-original-title"><span>Originaltitel</span>${renderEvidenceLinkedText(article.title || "", evidence)}</p>` : ""}
         <div class="article-detail-meta">
           ${article.published_at ? `<span class="tag"><i class="ri-calendar-line"></i> ${escapeHtml(new Date(article.published_at).toLocaleDateString("de-DE"))}</span>` : ""}
           ${article.article_type ? `<span class="tag"><i class="ri-file-text-line"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
@@ -924,5 +924,4 @@ export function initApp(client) {
   void loadLastRun();
   void loadFindings("marketing");
   void loadFindings("sales");
-  void loadTaggingStats();
 }

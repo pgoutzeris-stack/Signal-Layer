@@ -737,7 +737,7 @@ function extractPersonCandidates(rawText: string): string[] {
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-3.5-flash";
 const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.0.0";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.1.0";
 const TOPIC_IDS = [
   "customer_insights", "marketing_insights", "fmcg_retail_signale",
   "sub_branchen_insight", "ki_performance",
@@ -768,6 +768,7 @@ type AiClassification = {
   overall_confidence: number;
   article_type: string;
   language: "de" | "en" | "other";
+  title_de: string;
   summary: string;
   rationale: string;
   topics: AiTag[];
@@ -781,7 +782,7 @@ type AiClassification = {
 const GEMINI_RESPONSE_SCHEMA = {
   type: "OBJECT",
   required: [
-    "relevance_status", "overall_confidence", "article_type", "language", "summary",
+    "relevance_status", "overall_confidence", "article_type", "language", "title_de", "summary",
     "rationale", "topics", "territory", "companies", "people", "rejection_reasons", "event_key",
   ],
   properties: {
@@ -789,6 +790,7 @@ const GEMINI_RESPONSE_SCHEMA = {
     overall_confidence: { type: "NUMBER", minimum: 0, maximum: 1 },
     article_type: { type: "STRING", enum: [...ARTICLE_TYPES] },
     language: { type: "STRING", enum: ["de", "en", "other"] },
+    title_de: { type: "STRING", description: "Faithful German translation of the article title; preserve names, brands, numbers and meaning." },
     summary: { type: "STRING", description: "German summary, maximum two concise sentences." },
     rationale: { type: "STRING", description: "German reason why this is or is not a ROOTS signal." },
     topics: {
@@ -996,7 +998,7 @@ Marketing requires at least one supported topic. Sales requires a Tier-1 company
 <source name="${source.company || "unknown"}" category="${source.category || "unknown"}" />
 <article_title>${title}</article_title>
 <article_text>${modelContent}</article_text>
-<task>Return a conservative final classification. Evidence must be copied verbatim from article_title or article_text. Use German for summary and rationale. event_key must describe the underlying event, not the publication.</task>`;
+<task>Return a conservative final classification. Evidence must be copied verbatim from article_title or article_text. title_de must be a faithful, fluent German translation of article_title without adding or omitting facts; preserve names, brands, numbers and claims exactly. Use German for title_de, summary and rationale. event_key must describe the underlying event, not the publication.</task>`;
 }
 
 function validateClassification(
@@ -1025,6 +1027,7 @@ function validateClassification(
     .filter((person) => person.name && person.role && person.confidence >= 0.86 && evidenceExists(person.evidence, articleText));
   const overallConfidence = clampConfidence(raw.overall_confidence);
   const articleType = ARTICLE_TYPES.includes(raw.article_type as typeof ARTICLE_TYPES[number]) ? raw.article_type : "other";
+  const titleDe = String(raw.title_de || "").trim().slice(0, 500);
   const rejectionReasons = Array.isArray(raw.rejection_reasons) ? raw.rejection_reasons.filter(Boolean).slice(0, 8) : [];
   const hasSignal = topics.length > 0 || companies.some((company) => company.role !== "incidental_mention");
   const evidenceComplete = topics.length === (raw.topics || []).length
@@ -1035,11 +1038,11 @@ function validateClassification(
   let status: AiClassification["relevance_status"] = "uncertain";
   if (raw.relevance_status === "rejected" && overallConfidence >= 0.9) status = "rejected";
   if (raw.relevance_status === "reliable" && overallConfidence >= 0.9 && hasSignal
-      && evidenceComplete && !NON_RELEVANT_ARTICLE_TYPES.has(articleType) && rejectionReasons.length === 0) {
+      && titleDe && evidenceComplete && !NON_RELEVANT_ARTICLE_TYPES.has(articleType) && rejectionReasons.length === 0) {
     status = "reliable";
   }
   if (raw.relevance_status !== "rejected" && stronglySupportedMarketingSignal
-      && !NON_RELEVANT_ARTICLE_TYPES.has(articleType) && rejectionReasons.length === 0) {
+      && titleDe && !NON_RELEVANT_ARTICLE_TYPES.has(articleType) && rejectionReasons.length === 0) {
     status = "reliable";
   }
   return {
@@ -1048,6 +1051,7 @@ function validateClassification(
     overall_confidence: overallConfidence,
     article_type: articleType,
     language: ["de", "en", "other"].includes(raw.language) ? raw.language : "other",
+    title_de: titleDe,
     summary: String(raw.summary || "").slice(0, 700),
     rationale: String(raw.rationale || "").slice(0, 1000),
     topics,
@@ -1170,6 +1174,7 @@ async function tagArticle(
     person_mentions: classification.people,
     rejection_reasons: classification.rejection_reasons,
     ai_summary: classification.summary,
+    title_de: classification.title_de,
     ai_rationale: classification.rationale,
     language: classification.language || language,
     ai_model: GEMINI_PRIMARY_MODEL,
@@ -1240,9 +1245,9 @@ Deno.serve(async (req: Request) => {
   // fire-and-forget self-call, authenticated with the service-role key.
   let auth: { userId: string } | null = null;
   let isScheduled = false;
-  if (action === "process_crawl") {
+  if (["process_crawl", "process_classification_backfill"].includes(action)) {
     if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
-  } else if (["resume_stalled_crawls", "preview_classification", "classify_test_article"].includes(action)) {
+  } else if (["resume_stalled_crawls", "resume_classification_backfill", "preview_classification", "classify_test_article", "start_classification_backfill"].includes(action)) {
     isScheduled = await isScheduledTrigger(req);
     if (!isScheduled) {
       auth = await requireAuth(req);
@@ -1344,6 +1349,100 @@ Deno.serve(async (req: Request) => {
           .eq("id", articleId).single();
         if (resultError) return errorResponse(origin, resultError.message, 500);
         return corsResponse(origin, { article: result });
+      }
+
+      case "start_classification_backfill": {
+        const admin = getAdminClient();
+        const { data: existing } = await admin.schema("signal_layer").from("classification_backfill_runs")
+          .select("*").eq("status", "running").order("started_at", { ascending: false }).limit(1).maybeSingle();
+        if (existing) {
+          fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+            body: JSON.stringify({ action: "process_classification_backfill", run_id: existing.id }),
+          }).catch((error) => console.error("Failed to resume classification backfill:", error));
+          return corsResponse(origin, { backfill_run: existing, resumed: true });
+        }
+
+        const cutoff = new Date();
+        cutoff.setUTCMonth(cutoff.getUTCMonth() - 6);
+        const now = new Date().toISOString();
+        const { count, error: countError } = await admin.schema("signal_layer").from("articles")
+          .select("id", { count: "exact", head: true })
+          .eq("classification_status", "legacy").not("published_at", "is", null)
+          .gte("published_at", cutoff.toISOString()).lte("published_at", now);
+        if (countError) return errorResponse(origin, countError.message, 500);
+        const { data: run, error } = await admin.schema("signal_layer").from("classification_backfill_runs")
+          .insert({ cutoff_at: cutoff.toISOString(), total_count: count || 0 }).select().single();
+        if (error || !run) return errorResponse(origin, error?.message || "Backfill run could not be created", 500);
+        fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+          body: JSON.stringify({ action: "process_classification_backfill", run_id: run.id }),
+        }).catch((triggerError) => console.error("Failed to trigger classification backfill:", triggerError));
+        return corsResponse(origin, { backfill_run: run });
+      }
+
+      case "resume_classification_backfill": {
+        const admin = getAdminClient();
+        const staleBefore = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        const { data: run, error } = await admin.schema("signal_layer").from("classification_backfill_runs")
+          .select("*").eq("status", "running").lt("last_progress_at", staleBefore)
+          .order("started_at", { ascending: false }).limit(1).maybeSingle();
+        if (error) return errorResponse(origin, error.message, 500);
+        if (!run) return corsResponse(origin, { resumed: false });
+        fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+          body: JSON.stringify({ action: "process_classification_backfill", run_id: run.id }),
+        }).catch((triggerError) => console.error("Failed to resume stalled classification backfill:", triggerError));
+        return corsResponse(origin, { resumed: true, run_id: run.id });
+      }
+
+      case "process_classification_backfill": {
+        const runId = String(body.run_id || "");
+        if (!runId) return errorResponse(origin, "run_id is required");
+        const admin = getAdminClient();
+        const { data: run, error: runError } = await admin.schema("signal_layer").from("classification_backfill_runs")
+          .select("*").eq("id", runId).single();
+        if (runError || !run) return errorResponse(origin, runError?.message || "Backfill run not found", 404);
+        if (run.status !== "running") return corsResponse(origin, { backfill_run: run, done: true });
+
+        const { data: article, error: articleError } = await admin.schema("signal_layer").from("articles")
+          .select("id, title, content, cleaned_content, published_at, source:sources(company, category)")
+          .eq("classification_status", "legacy").not("published_at", "is", null)
+          .gte("published_at", run.cutoff_at).lte("published_at", new Date().toISOString())
+          .order("published_at", { ascending: false }).limit(1).maybeSingle();
+        if (articleError) {
+          await admin.schema("signal_layer").from("classification_backfill_runs")
+            .update({ status: "error", error_message: articleError.message, finished_at: new Date().toISOString() }).eq("id", runId);
+          return errorResponse(origin, articleError.message, 500);
+        }
+        if (!article) {
+          const finishedAt = new Date().toISOString();
+          await admin.schema("signal_layer").from("classification_backfill_runs")
+            .update({ status: "done", finished_at: finishedAt, last_progress_at: finishedAt }).eq("id", runId);
+          return corsResponse(origin, { ok: true, done: true });
+        }
+
+        const [{ data: keywords }, { data: companies }] = await Promise.all([
+          admin.schema("signal_layer").from("keywords").select("track, dimension, keyword, kind, active").eq("active", true),
+          admin.schema("signal_layer").from("tier1_companies").select("name, aliases").eq("active", true),
+        ]);
+        const source = Array.isArray(article.source) ? article.source[0] : article.source;
+        await tagArticle(
+          admin, article.id, null, article.title || "", article.cleaned_content || article.content || "",
+          keywords || [], companies || [], source || {},
+        );
+        await admin.schema("signal_layer").from("classification_backfill_runs")
+          .update({ processed_count: Number(run.processed_count || 0) + 1, last_progress_at: new Date().toISOString() })
+          .eq("id", runId);
+        fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+          body: JSON.stringify({ action: "process_classification_backfill", run_id: runId }),
+        }).catch((triggerError) => console.error("Failed to continue classification backfill:", triggerError));
+        return corsResponse(origin, { ok: true, article_id: article.id });
       }
 
       // ---------------------------------------------------------------
@@ -1706,7 +1805,7 @@ Deno.serve(async (req: Request) => {
         const { track, limit } = body as { track?: string; limit?: number };
         const admin = getAdminClient();
         let query = admin.schema("signal_layer").from("findings")
-          .select("*, article:articles!inner(id, title, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category))")
+          .select("*, article:articles!inner(id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category))")
           // Keep the untouched historical inventory visible until the user
           // explicitly approves its backfill; new articles must be reliable.
           .in("article.classification_status", ["reliable", "legacy"])
@@ -1719,7 +1818,7 @@ Deno.serve(async (req: Request) => {
         // Surface them in the same card structure when validated topic/company
         // evidence already provides a meaningful Marketing or Sales route.
         const { data: uncertain, error: uncertainError } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
+          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "uncertain")
           .order("classified_at", { ascending: false, nullsFirst: false })
           .limit(limit || 50);
@@ -1769,7 +1868,7 @@ Deno.serve(async (req: Request) => {
         if (!articleId) return errorResponse(origin, "article_id is required");
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, url, content, cleaned_content, excerpt, published_at, crawled_at, article_type, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classified_at, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category)")
+          .select("id, title, title_de, url, content, cleaned_content, excerpt, published_at, crawled_at, article_type, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classified_at, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category)")
           .eq("id", articleId).single();
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
         return corsResponse(origin, { article: data });

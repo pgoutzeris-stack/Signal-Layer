@@ -138,6 +138,12 @@
   .dashboard-subtitle { font-size: .9rem; color: var(--muted); }
 
   .crawl-trigger-wrap { position: relative; }
+  .crawl-status-popover { position: absolute; right: 0; top: calc(100% + 9px); width: 260px; z-index: 45; padding: .85rem .95rem; border: 1px solid var(--line); border-radius: 13px; background: var(--bg); box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; transform: translateY(-5px); pointer-events: none; transition: opacity .16s, transform .16s, visibility .16s; }
+  .crawl-trigger-wrap:hover .crawl-status-popover, .crawl-trigger-wrap:focus-within .crawl-status-popover { opacity: 1; visibility: visible; transform: translateY(0); }
+  .crawl-trigger-wrap:has(.crawl-dropdown.show) .crawl-status-popover { opacity: 0; visibility: hidden; }
+  .crawl-status-kicker { display: block; margin-bottom: 4px; color: var(--brand); font-size: .64rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+  .crawl-status-popover strong { display: block; color: var(--ink); font-size: .78rem; line-height: 1.4; }
+  .crawl-status-hint { display: block; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--line); color: var(--muted); font-size: .68rem; }
   .crawl-dropdown {
     display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 300px;
     background: var(--bg); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg);
@@ -231,6 +237,8 @@
   .article-detail-close { position: absolute; top: 14px; right: 14px; z-index: 3; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%; background: var(--bg); color: var(--ink); cursor: pointer; }
   .article-detail-kicker { color: var(--brand); font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
   .article-detail-title { margin: .55rem 3rem .65rem 0; font-size: clamp(1.35rem, 2.5vw, 2.15rem); line-height: 1.12; color: var(--ink); }
+  .article-original-title { margin: -.15rem 3rem 1rem 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
+  .article-original-title span { margin-right: 6px; color: var(--brand); font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
   .article-detail-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 1.4rem; }
   .article-detail-summary { margin: 0 0 1.4rem; padding: 1rem 1.1rem; border-radius: 11px; background: var(--brand-light); color: var(--status-text); line-height: 1.55; }
   .article-fulltext { white-space: pre-wrap; font-size: .9rem; line-height: 1.7; color: var(--status-text); }
@@ -455,8 +463,13 @@
           </div>
           <div class="crawl-trigger-wrap">
             <button type="button" class="btn-primary" id="btn-crawl-trigger">
-              <i class="ri-refresh-line"></i> Jetzt aktualisieren
+              <i class="ri-refresh-line"></i> Aktualisieren
             </button>
+            <div class="crawl-status-popover" role="status">
+              <span class="crawl-status-kicker">Letzter Crawl</span>
+              <strong id="last-run-text">Wird geladen…</strong>
+              <span class="crawl-status-hint">Klicken, um Quellen auszuwählen</span>
+            </div>
             <div class="crawl-dropdown" id="crawl-dropdown">
               <div class="crawl-dropdown-title">Was crawlen?</div>
               <label class="crawl-dropdown-option">
@@ -473,16 +486,6 @@
               </button>
             </div>
           </div>
-        </div>
-
-        <div class="last-run-card" id="last-run-card">
-          <i class="ri-history-line"></i>
-          <span id="last-run-text">Noch kein Crawl-Lauf.</span>
-        </div>
-
-        <div class="last-run-card" id="tagging-stats-card">
-          <i class="ri-price-tag-3-line"></i>
-          <span id="tagging-stats-text">Lädt…</span>
         </div>
 
         <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
