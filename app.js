@@ -87,6 +87,10 @@ function cacheEls() {
   els.findingsListSales = document.getElementById("findings-list-sales");
   els.reviewList = document.getElementById("review-list");
   els.taggingStatsText = document.getElementById("tagging-stats-text");
+  els.testResults = document.getElementById("test-results");
+  els.testCount = document.getElementById("test-count");
+  els.articleDetailModal = document.getElementById("article-detail-modal");
+  els.articleDetailContent = document.getElementById("article-detail-content");
 }
 
 // Thema (topic) — the 5 canonical dimensions, multi-select per article.
@@ -156,7 +160,7 @@ async function loadFindings(track) {
       const evidence = (f.evidence || [])[0] || null;
       const isLegacy = article.classification_status === "legacy";
       return `
-        <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}">
+        <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}" data-article-id="${escapeHtml(article.id)}">
           <div class="finding-item-top">
             <span class="finding-dimension">${escapeHtml(dimLabel)}</span>
             <div class="finding-top-tags">
@@ -216,7 +220,7 @@ async function loadReviewArticles() {
       const status = article.classification_status;
       const reasons = article.rejection_reasons || [];
       return `
-        <article class="review-item">
+        <article class="review-item" data-article-id="${escapeHtml(article.id)}">
           <div class="review-item-main">
             <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "error" ? "alert-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i> ${status === "uncertain" ? "Manuelle Prüfung" : status === "pending" ? "Ausstehend" : "Klassifikationsfehler"}</span>
             <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeHtml(article.title || "Ohne Titel")}</a>
@@ -233,6 +237,110 @@ async function loadReviewArticles() {
     }).join("");
   } catch (err) {
     els.reviewList.innerHTML = `<div class="track-card-empty">Prüfliste konnte nicht geladen werden: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+const STATUS_LABELS = {
+  reliable: "Zuverlässig ausgewählt",
+  uncertain: "Manuelle Prüfung",
+  rejected: "Aussortiert",
+  error: "Klassifikationsfehler",
+  pending: "Ausstehend",
+  legacy: "Altbestand",
+};
+
+function renderDetailTags(article) {
+  const topics = article.topics || [];
+  const companies = article.matched_companies || [];
+  const people = article.matched_persons || [];
+  return [
+    ...topics.map((topic) => `<span class="tag">${escapeHtml(TOPIC_LABELS[topic] || topic)}</span>`),
+    article.territory ? `<span class="tag">${escapeHtml(TERRITORY_LABELS[article.territory] || article.territory)}</span>` : "",
+    ...companies.map((company) => `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(company)}</span>`),
+    ...people.map((person) => `<span class="tag tag--person"><i class="ri-user-line"></i> ${escapeHtml(person)}</span>`),
+  ].join("");
+}
+
+async function openArticleDetail(articleId) {
+  if (!articleId) return;
+  els.articleDetailModal.classList.add("show");
+  document.body.style.overflow = "hidden";
+  els.articleDetailContent.innerHTML = `<div class="detail-loading">Artikel wird geladen…</div>`;
+  try {
+    const { article } = await callApi("get_article_detail", { article_id: articleId });
+    const source = Array.isArray(article.source) ? article.source[0] : article.source;
+    const status = article.classification_status || "legacy";
+    const reasons = article.rejection_reasons || [];
+    const evidence = Object.entries(article.tag_evidence || {});
+    const confidence = formatConfidence(article.relevance_confidence);
+    const fulltext = article.cleaned_content || article.content || article.excerpt || "Kein Artikeltext gespeichert.";
+    els.articleDetailContent.innerHTML = `
+      <button type="button" class="article-detail-close" aria-label="Schließen"><i class="ri-close-line"></i></button>
+      <main class="article-detail-main">
+        <span class="article-detail-kicker">${escapeHtml(source?.company || "Signal Layer")}</span>
+        <h2 class="article-detail-title" id="article-detail-title">${escapeHtml(article.title || "Ohne Titel")}</h2>
+        <div class="article-detail-meta">
+          ${article.published_at ? `<span class="tag"><i class="ri-calendar-line"></i> ${escapeHtml(new Date(article.published_at).toLocaleDateString("de-DE"))}</span>` : ""}
+          ${article.article_type ? `<span class="tag"><i class="ri-file-text-line"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
+          ${article.language ? `<span class="tag tag--language">${escapeHtml(article.language.toUpperCase())}</span>` : ""}
+          ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> Originalquelle</a>` : ""}
+        </div>
+        ${article.ai_summary ? `<p class="article-detail-summary">${escapeHtml(article.ai_summary)}</p>` : ""}
+        <div class="article-fulltext">${escapeHtml(fulltext)}</div>
+      </main>
+      <aside class="article-detail-aside">
+        <h3>Warum diese Entscheidung?</h3>
+        <p class="decision-lead">Die rechte Prüfleiste zeigt Modellentscheidung, bestandene Regeln und die wörtlichen Belege.</p>
+        <div class="decision-block">
+          <span class="decision-label">Ergebnis</span>
+          <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "reliable" ? "shield-check-line" : status === "rejected" ? "filter-off-line" : "error-warning-line"}"></i> ${escapeHtml(STATUS_LABELS[status] || status)}${confidence ? ` · ${confidence}` : ""}</span>
+        </div>
+        <div class="decision-block">
+          <span class="decision-label">Begründung</span>
+          <p class="decision-rationale">${escapeHtml(article.ai_rationale || reasons[0] || "Für den Altbestand liegt noch keine neue Prüfbegründung vor.")}</p>
+        </div>
+        ${reasons.length ? `<div class="decision-block"><span class="decision-label">Ausschlussregeln</span><div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></div>` : ""}
+        <div class="decision-block">
+          <span class="decision-label">Tags & Routing</span>
+          <div class="decision-tags">${renderDetailTags(article) || `<span class="decision-lead">Keine Tags vergeben</span>`}</div>
+        </div>
+        ${evidence.length ? `<div class="decision-block"><span class="decision-label">Bestandene Evidenzregeln</span><div class="evidence-list">${evidence.map(([key, quote]) => `<blockquote class="evidence-item"><strong>${escapeHtml(key)}</strong>${escapeHtml(quote)}</blockquote>`).join("")}</div></div>` : ""}
+        <div class="decision-block">
+          <span class="decision-label">Technische Prüfung</span>
+          <p class="decision-rationale">${escapeHtml(article.ai_model || "Regelbasiert")} ${article.reviewer_model ? `+ Review durch ${escapeHtml(article.reviewer_model)}` : ""}<br>Prompt: ${escapeHtml(article.prompt_version || "Legacy")}</p>
+        </div>
+      </aside>`;
+  } catch (err) {
+    els.articleDetailContent.innerHTML = `<button type="button" class="article-detail-close" aria-label="Schließen"><i class="ri-close-line"></i></button><div class="detail-loading">Detail konnte nicht geladen werden: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function closeArticleDetail() {
+  els.articleDetailModal.classList.remove("show");
+  document.body.style.overflow = "";
+}
+
+async function loadClassificationTests() {
+  if (!els.testResults) return;
+  try {
+    const { articles } = await callApi("list_classification_tests", { limit: 10 });
+    els.testCount.textContent = `${articles.length} von 10 geprüft`;
+    if (!articles.length) {
+      els.testResults.innerHTML = `<div class="track-card-empty">Der Praxistest wurde noch nicht gestartet.</div>`;
+      return;
+    }
+    els.testResults.innerHTML = articles.map((article, index) => {
+      const status = article.classification_status;
+      const confidence = formatConfidence(article.relevance_confidence);
+      const reason = article.ai_rationale || (article.rejection_reasons || [])[0] || "Entscheidung gespeichert";
+      return `<article class="test-result" data-article-id="${escapeHtml(article.id)}" tabindex="0">
+        <div class="test-result-top"><span class="finding-dimension">Test ${index + 1}</span><span class="quality-tag quality-tag--${escapeHtml(status)}">${escapeHtml(STATUS_LABELS[status] || status)}${confidence ? ` · ${confidence}` : ""}</span></div>
+        <span class="test-result-title">${escapeHtml(article.title || "Ohne Titel")}</span>
+        <p class="test-result-reason">${escapeHtml(reason)}</p>
+      </article>`;
+    }).join("");
+  } catch (err) {
+    els.testResults.innerHTML = `<div class="track-card-empty">Testergebnisse konnten nicht geladen werden: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -547,6 +655,21 @@ async function loadLastRun() {
 }
 
 function bindUi() {
+  const openCardDetail = (event) => {
+    if (event.target.closest("a")) return;
+    const card = event.target.closest("[data-article-id]");
+    if (card) void openArticleDetail(card.dataset.articleId);
+  };
+  [els.findingsListMarketing, els.findingsListSales, els.reviewList, els.testResults].forEach((container) => {
+    container?.addEventListener("click", openCardDetail);
+    container?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") openCardDetail(event);
+    });
+  });
+  els.articleDetailModal.addEventListener("click", (event) => {
+    if (event.target === els.articleDetailModal || event.target.closest(".article-detail-close")) closeArticleDetail();
+  });
+
   els.btnSettings.addEventListener("click", openSettings);
   els.btnSettingsClose.addEventListener("click", closeSettings);
   els.settingsModal.addEventListener("click", (e) => {
@@ -640,7 +763,8 @@ function bindUi() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (els.addSourceModal.classList.contains("show")) closeAddSource();
+    if (els.articleDetailModal.classList.contains("show")) closeArticleDetail();
+    else if (els.addSourceModal.classList.contains("show")) closeAddSource();
     else if (els.settingsModal.classList.contains("show")) closeSettings();
   });
 }
@@ -657,4 +781,5 @@ export function initApp(client) {
   void loadFindings("sales");
   void loadTaggingStats();
   void loadReviewArticles();
+  void loadClassificationTests();
 }

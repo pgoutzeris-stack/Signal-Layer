@@ -896,7 +896,7 @@ async function tagArticle(
   // schema without generated Database types in the Edge Function bundle.
   admin: any,
   articleId: string,
-  crawlRunId: string,
+  crawlRunId: string | null,
   title: string,
   content: string,
   allKeywords: Array<{ track: string; dimension: string | null; keyword: string; kind: string; active: boolean }>,
@@ -1074,7 +1074,7 @@ Deno.serve(async (req: Request) => {
   let isScheduled = false;
   if (action === "process_crawl") {
     if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
-  } else if (action === "resume_stalled_crawls" || action === "preview_classification") {
+  } else if (["resume_stalled_crawls", "preview_classification", "classify_test_article"].includes(action)) {
     isScheduled = await isScheduledTrigger(req);
     if (!isScheduled) {
       auth = await requireAuth(req);
@@ -1149,6 +1149,33 @@ Deno.serve(async (req: Request) => {
           model: GEMINI_PRIMARY_MODEL, reviewer_model: reviewer,
           prompt_version: CLASSIFIER_PROMPT_VERSION, classification: result,
         });
+      }
+
+      case "classify_test_article": {
+        const articleId = String(body.article_id || "");
+        if (!articleId) return errorResponse(origin, "article_id is required");
+        const admin = getAdminClient();
+        const { data: article, error: articleError } = await admin.schema("signal_layer").from("articles")
+          .select("id, title, content, classification_status, source:sources(company, category)")
+          .eq("id", articleId).single();
+        if (articleError || !article) return errorResponse(origin, articleError?.message || "Article not found", 404);
+        if (article.classification_status !== "legacy") {
+          return errorResponse(origin, "Only legacy articles can be used for this test", 409);
+        }
+        const [{ data: keywords }, { data: companies }] = await Promise.all([
+          admin.schema("signal_layer").from("keywords").select("track, dimension, keyword, kind, active").eq("active", true),
+          admin.schema("signal_layer").from("tier1_companies").select("name, aliases").eq("active", true),
+        ]);
+        const source = Array.isArray(article.source) ? article.source[0] : article.source;
+        await tagArticle(
+          admin, article.id, null, article.title || "", article.content || "",
+          keywords || [], companies || [], source || {},
+        );
+        const { data: result, error: resultError } = await admin.schema("signal_layer").from("articles")
+          .select("id, title, classification_status, relevance_confidence, article_type, topics, territory, ai_summary, ai_rationale, rejection_reasons, classified_at")
+          .eq("id", articleId).single();
+        if (resultError) return errorResponse(origin, resultError.message, 500);
+        return corsResponse(origin, { article: result });
       }
 
       // ---------------------------------------------------------------
@@ -1503,7 +1530,7 @@ Deno.serve(async (req: Request) => {
         const { track, limit } = body as { track?: string; limit?: number };
         const admin = getAdminClient();
         let query = admin.schema("signal_layer").from("findings")
-          .select("*, article:articles!inner(title, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category))")
+          .select("*, article:articles!inner(id, title, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category))")
           // Keep the untouched historical inventory visible until the user
           // explicitly approves its backfill; new articles must be reliable.
           .in("article.classification_status", ["reliable", "legacy"])
@@ -1524,6 +1551,29 @@ Deno.serve(async (req: Request) => {
           .limit(limit || 20);
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { articles: data || [] });
+      }
+
+      case "list_classification_tests": {
+        const { limit } = body as { limit?: number };
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("articles")
+          .select("id, title, url, published_at, article_type, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, ai_summary, ai_rationale, rejection_reasons, classified_at, source:sources(company, url, category)")
+          .neq("classification_status", "legacy")
+          .order("classified_at", { ascending: false, nullsFirst: false })
+          .limit(Math.min(Math.max(limit || 10, 1), 50));
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { articles: data || [] });
+      }
+
+      case "get_article_detail": {
+        const articleId = String(body.article_id || "");
+        if (!articleId) return errorResponse(origin, "article_id is required");
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("articles")
+          .select("id, title, url, content, cleaned_content, excerpt, published_at, crawled_at, article_type, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classified_at, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category)")
+          .eq("id", articleId).single();
+        if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
+        return corsResponse(origin, { article: data });
       }
 
       // Backend-side visibility into how many crawled articles could NOT be
