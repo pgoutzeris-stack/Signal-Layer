@@ -668,6 +668,15 @@ Deno.serve(async (req: Request) => {
           for (const candidate of batch) {
             const fetched = await fetchArticleContent(candidate.url);
             if (!fetched) continue;
+
+            // Enforce the freshness window on the article's OWN resolved date,
+            // not just the pre-fetch candidate signal (sitemap `lastmod` is a
+            // last-MODIFIED date, not a publish date — evergreen pages can pass
+            // the candidate filter while being much older; Apify items with no
+            // detectable date must not be let through either).
+            const resolvedPublishedAt = fetched.publishedAt || candidate.publishedAt || null;
+            if (!resolvedPublishedAt || new Date(resolvedPublishedAt) < sinceDate) continue;
+
             const { data: inserted, error: insertErr } = await admin.schema("signal_layer").from("articles")
               .insert({
                 source_id: source.id,
@@ -675,7 +684,7 @@ Deno.serve(async (req: Request) => {
                 title: fetched.title || candidate.title || candidate.url,
                 content: fetched.content,
                 excerpt: fetched.excerpt,
-                published_at: fetched.publishedAt || candidate.publishedAt || null,
+                published_at: resolvedPublishedAt,
               })
               .select().single();
             // onConflict(url) race with a parallel run → just skip, not fatal.
