@@ -164,15 +164,73 @@ const EDITORIAL_PATH_PARTS = [
   "/pressemeldungen", "/newsticker",
 ];
 
-const EVENT_TOPIC_TERMS = [
-  "brand strategy", "brand positioning", "relaunch", "campaign", "marketing",
-  "customer experience", "consumer behavior", "consumer trend", "retail media",
-  "private label", "category management", "pricing", "promotion", "assortment",
-  "store concept", "artificial intelligence", "automation", "measurable impact",
-  "innovation", "growth strategy", "market expansion", "markenstrategie",
-  "markenpositionierung", "kampagne", "kundenerlebnis", "konsumtrend",
-  "eigenmarke", "sortiment", "preisstrategie", "filialkonzept", "künstliche intelligenz",
-  "automatisierung", "wachstumsstrategie", "marktexpansion",
+type EventSignalFamily = { id: string; patterns: RegExp[] };
+
+// Patterns run against normalizeMatchText(), so German umlauts and punctuation
+// are already reduced to their ASCII word forms. Each family deliberately has
+// equivalent German and English concepts instead of relying on loose buzzwords.
+const EVENT_SIGNAL_FAMILIES: EventSignalFamily[] = [
+  { id: "brand_strategy", patterns: [
+    /\bbrand (?:strateg\w*|position\w*|management|leadership)\b/,
+    /\bmarkenstrateg\w*\b/, /\bmarkenpositionier\w*\b/, /\bmarkenfuhr\w*\b/,
+  ] },
+  { id: "brand_change", patterns: [
+    /\brelaunch\w*\b/, /\brebrand\w*\b/,
+    /\bmarkenneuausricht\w*\b/, /\bneupositionier\w*\b/,
+  ] },
+  { id: "campaign_activation", patterns: [
+    /\bcampaign\w*\b/, /\bbrand activat\w*\b/,
+    /\bkampagn\w*\b/, /\bmarkenaktivier\w*\b/,
+  ] },
+  { id: "customer_consumer", patterns: [
+    /\bcustomer (?:experience|journey|insight)\w*\b/,
+    /\bconsumer (?:behavio\w*|trend\w*|insight\w*)\b/,
+    /\bshopper insight\w*\b/,
+    /\bkundenerlebnis\w*\b/, /\bkundenreis\w*\b/,
+    /\b(?:kauf|konsum)verhalten\w*\b/, /\bkonsumtrend\w*\b/,
+  ] },
+  { id: "retail_media", patterns: [
+    /\bretail media\b/, /\bretailmedien\w*\b/,
+  ] },
+  { id: "private_label", patterns: [
+    /\bprivate label\w*\b/, /\beigenmark\w*\b/, /\bhandelsmark\w*\b/,
+  ] },
+  { id: "category_management", patterns: [
+    /\bcategory management\b/, /\bkategoriemanagement\b/, /\bwarengruppenmanagement\b/,
+  ] },
+  { id: "pricing_promotion", patterns: [
+    /\bpricing strateg\w*\b/, /\bprice strateg\w*\b/, /\bpromotion strateg\w*\b/,
+    /\bpreisstrateg\w*\b/, /\bpreisgestalt\w*\b/,
+    /\bverkaufsforder\w*\b/, /\baktionsmechanik\w*\b/,
+  ] },
+  { id: "assortment", patterns: [
+    /\bassortment (?:strateg\w*|planning|optimization|optimisation|expansion)\b/,
+    /\bsortiment(?:sstrateg\w*|splan\w*|soptimier\w*|serweiter\w*)\b/,
+  ] },
+  { id: "store_concept", patterns: [
+    /\bstore concept\w*\b/, /\bfilialkonzept\w*\b/, /\bladenkonzept\w*\b/,
+  ] },
+  { id: "ai_automation", patterns: [
+    /\bartificial intelligence\b/, /\bgenerative ai\b/, /\bmachine learning\b/,
+    /\bai (?:driven|powered|based|enabled)\b/,
+    /\bki (?:gestutzt|basiert|getrieben)\b/, /\bkunstliche intelligenz\b/,
+    /\bautomati(?:s|z)\w*\b/,
+  ] },
+  { id: "measurable_impact", patterns: [
+    /\bmeasur\w* (?:impact|result\w*|uplift)\b/, /\breturn on investment\b/,
+    /\bconversion uplift\b/, /\broi\b/,
+    /\bmessbar\w* (?:wirkung|ergebnis\w*|steigerung)\b/,
+    /\bumsatzsteiger\w*\b/, /\beffizienzsteiger\w*\b/,
+  ] },
+  { id: "innovation", patterns: [
+    /\binnovati\w*\b/, /\bneuentwickl\w*\b/,
+  ] },
+  { id: "growth_expansion", patterns: [
+    /\bgrowth strateg\w*\b/, /\bmarket expansion\b/, /\bmarket entr\w*\b/,
+    /\bexpand\w* (?:into|its|the)\b/,
+    /\bwachstumsstrateg\w*\b/, /\bmarktexpansion\w*\b/,
+    /\bmarkteintritt\w*\b/, /\bexpandier\w*\b/,
+  ] },
 ];
 
 function getCrawlPolicy(source: { url?: string; source_type?: string; category?: string; crawl_config?: Record<string, unknown> }): CrawlPolicy {
@@ -643,6 +701,13 @@ function hasAnyMatchTerm(normalizedText: string, terms: string[]): boolean {
   return terms.some((term) => containsMatchTerm(normalizedText, term));
 }
 
+function findEventSignalFamilies(articleText: string): string[] {
+  const normalizedText = normalizeMatchText(articleText);
+  return EVENT_SIGNAL_FAMILIES
+    .filter((family) => family.patterns.some((pattern) => pattern.test(normalizedText)))
+    .map((family) => family.id);
+}
+
 // Best-effort person/role extraction — NOT reliable NER, just a regex net
 // around a role word and a nearby capitalized two-word name. Every hit is
 // meant to be manually verified against the Sales Navigator later (per spec),
@@ -899,7 +964,7 @@ function passesEventPreClassificationGate(
 ): boolean {
   if (policy.sourceType !== "event") return true;
   const hasTier1 = selectCompanyCandidates(articleText, tier1Companies).length > 0;
-  const hasTopicSignal = hasAnyMatchTerm(normalizeMatchText(articleText), EVENT_TOPIC_TERMS);
+  const hasTopicSignal = findEventSignalFamilies(articleText).length > 0;
   return (!policy.requireTier1 || hasTier1) && (!policy.requireTopicSignal || hasTopicSignal);
 }
 
