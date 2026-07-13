@@ -173,7 +173,11 @@
   .finding-item:hover { border-color: var(--brand); }
   .finding-item-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: .3rem; }
   .finding-dimension { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--brand); }
-  .finding-date { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+  .finding-date-tag {
+    font-size: .68rem; font-weight: 600; white-space: nowrap; padding: 2px 8px; border-radius: 999px;
+    background: var(--status-bg); color: var(--muted); border: 1px solid var(--line);
+  }
+  .finding-date-tag--missing { background: var(--warning-bg); color: var(--warning-text); border-color: #fbbf24; }
   .finding-title { font-size: .88rem; font-weight: 600; color: var(--ink); text-decoration: none; display: block; margin-bottom: .3rem; }
   .finding-title:hover { color: var(--brand); }
   .finding-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }

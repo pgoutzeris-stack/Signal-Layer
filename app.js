@@ -99,8 +99,9 @@ const DIMENSION_LABELS = {
 };
 
 function formatFindingDate(iso) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "short" });
+  if (!iso) return `<span class="finding-date-tag finding-date-tag--missing">Ohne Datum</span>`;
+  const dateStr = new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "short" });
+  return `<span class="finding-date-tag">${dateStr}</span>`;
 }
 
 async function loadFindings(track) {
@@ -118,7 +119,7 @@ async function loadFindings(track) {
         <div class="finding-item">
           <div class="finding-item-top">
             <span class="finding-dimension">${escapeHtml(dimLabel)}</span>
-            <span class="finding-date">${formatFindingDate(article.published_at)}</span>
+            ${formatFindingDate(article.published_at)}
           </div>
           <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeHtml(article.title || article.url || "Ohne Titel")}</a>
           <div class="finding-meta">
