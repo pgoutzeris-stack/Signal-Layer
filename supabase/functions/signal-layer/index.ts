@@ -121,6 +121,68 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { ok: true, username: json.data?.username ?? null });
       }
 
+      // ---------------------------------------------------------------
+      // Source management (Settings → Apify → URL list to crawl)
+      // ---------------------------------------------------------------
+      case "list_sources": {
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("sources")
+          .select("*").order("category", { ascending: true }).order("company", { ascending: true });
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { sources: data || [] });
+      }
+
+      case "add_source": {
+        const { company, url, category, description, tags } = body as {
+          company: string; url: string; category?: string; description?: string; tags?: string[];
+        };
+        if (!company || !url) return errorResponse(origin, "company and url are required");
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("sources").insert({
+          company: company.trim(),
+          url: url.trim(),
+          category: category?.trim() || null,
+          description: description?.trim() || null,
+          tags: Array.isArray(tags) ? tags.filter(Boolean) : [],
+          active: true,
+          created_by: auth.userId,
+          updated_by: auth.userId,
+        }).select().single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { source: data });
+      }
+
+      case "update_source": {
+        const { id, company, url, category, description, tags, active } = body as {
+          id: string; company?: string; url?: string; category?: string;
+          description?: string; tags?: string[]; active?: boolean;
+        };
+        if (!id) return errorResponse(origin, "id is required");
+        const updates: Record<string, unknown> = {
+          updated_at: new Date().toISOString(), updated_by: auth.userId,
+        };
+        if (company !== undefined) updates.company = company.trim();
+        if (url !== undefined) updates.url = url.trim();
+        if (category !== undefined) updates.category = category?.trim() || null;
+        if (description !== undefined) updates.description = description?.trim() || null;
+        if (tags !== undefined) updates.tags = Array.isArray(tags) ? tags.filter(Boolean) : [];
+        if (active !== undefined) updates.active = active;
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("sources")
+          .update(updates).eq("id", id).select().single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { source: data });
+      }
+
+      case "delete_source": {
+        const { id } = body as { id: string };
+        if (!id) return errorResponse(origin, "id is required");
+        const admin = getAdminClient();
+        const { error } = await admin.schema("signal_layer").from("sources").delete().eq("id", id);
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { deleted: id });
+      }
+
       default:
         return errorResponse(origin, `Unknown action: ${action}`, 400);
     }
