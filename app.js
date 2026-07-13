@@ -185,10 +185,7 @@ function cacheEls() {
 
   els.findingsListMarketing = document.getElementById("findings-list-marketing");
   els.findingsListSales = document.getElementById("findings-list-sales");
-  els.reviewList = document.getElementById("review-list");
   els.taggingStatsText = document.getElementById("tagging-stats-text");
-  els.testResults = document.getElementById("test-results");
-  els.testCount = document.getElementById("test-count");
   els.articleDetailModal = document.getElementById("article-detail-modal");
   els.articleDetailContent = document.getElementById("article-detail-content");
 }
@@ -255,21 +252,22 @@ async function loadFindings(track) {
       const companies = article.matched_companies || [];
       const source = article.source || null;
       const confidence = formatConfidence(f.confidence ?? article.relevance_confidence);
-      const isLegacy = article.classification_status === "legacy";
+      const status = article.classification_status || "legacy";
+      const isLegacy = status === "legacy";
       return `
-        <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}" data-article-id="${escapeHtml(article.id)}">
+        <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
           <div class="finding-item-top">
             <span class="finding-dimension">${escapeHtml(dimLabel)}</span>
             <div class="finding-top-tags">
-              ${isLegacy ? `<span class="quality-tag quality-tag--legacy"><i class="ri-history-line"></i> Altbestand ungeprüft</span>` : `<span class="quality-tag quality-tag--reliable"><i class="ri-shield-check-line"></i> Zuverlässig${confidence ? ` · ${confidence}` : ""}</span>`}
+              <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "reliable" ? "shield-check-line" : status === "legacy" ? "history-line" : "error-warning-line"}"></i> ${escapeHtml(STATUS_LABELS[status] || status)}${confidence && !isLegacy ? ` · ${confidence}` : ""}</span>
               ${formatFindingDate(article.published_at)}
             </div>
           </div>
-          <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeText(article.title || article.url || "Ohne Titel")}</a>
+          <span class="finding-title">${escapeText(article.title || article.url || "Ohne Titel")}</span>
           ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
           <div class="finding-meta">
             ${companies.map((c) => `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(c)}</span>`).join("")}
-            ${source?.company ? `<a class="tag tag--source" href="${escapeHtml(source.url || article.url || "#")}" target="_blank" rel="noopener" title="Quelle: ${escapeHtml(source.company)}"><i class="ri-newspaper-line"></i> ${escapeHtml(source.company)}</a>` : ""}
+            ${source?.company ? `<span class="tag tag--source" title="Quelle: ${escapeHtml(source.company)}"><i class="ri-newspaper-line"></i> ${escapeHtml(source.company)}</span>` : ""}
           </div>
         </article>
       `;
@@ -747,11 +745,10 @@ async function loadLastRun() {
 
 function bindUi() {
   const openCardDetail = (event) => {
-    if (event.target.closest("a")) return;
     const card = event.target.closest("[data-article-id]");
     if (card) void openArticleDetail(card.dataset.articleId);
   };
-  [els.findingsListMarketing, els.findingsListSales, els.reviewList, els.testResults].forEach((container) => {
+  [els.findingsListMarketing, els.findingsListSales].forEach((container) => {
     container?.addEventListener("click", openCardDetail);
     container?.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") openCardDetail(event);
@@ -871,6 +868,4 @@ export function initApp(client) {
   void loadFindings("marketing");
   void loadFindings("sales");
   void loadTaggingStats();
-  void loadReviewArticles();
-  void loadClassificationTests();
 }
