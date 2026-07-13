@@ -73,6 +73,16 @@ async function isScheduledTrigger(req: Request): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
+// Internal-call auth — run_crawl fires a fire-and-forget request to itself
+// (action: process_crawl) using the service-role key as bearer, the same
+// pattern ROOTS_WissensHub uses for its async embed trigger.
+// ---------------------------------------------------------------------------
+function isInternalCall(req: Request): boolean {
+  const authHeader = req.headers.get("authorization") || "";
+  return authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+}
+
+// ---------------------------------------------------------------------------
 // API key resolver — reads from the shared, Vault-backed key store.
 // Keys never reach the frontend; only this Edge Function calls Apify.
 // ---------------------------------------------------------------------------
@@ -89,6 +99,286 @@ async function getApifyKey(): Promise<string> {
   _keyCache.value = (data as string | null) || "";
   _keyCache.at = now;
   return _keyCache.value;
+}
+
+// ===========================================================================
+// Crawl pipeline — RSS/sitemap first (cheap, reliable), Apify as fallback.
+// ===========================================================================
+
+interface CrawlCandidate {
+  url: string;
+  title?: string;
+  publishedAt?: string | null;
+}
+
+const FETCH_TIMEOUT_MS = 15_000;
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal, headers: { "User-Agent": "ROOTS-SignalLayer/1.0", ...(init.headers || {}) } });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function resolveUrl(maybeRelative: string, baseUrl: string): string {
+  try {
+    return new URL(maybeRelative, baseUrl).toString();
+  } catch {
+    return maybeRelative;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Feed discovery — try RSS link tag / common paths, then sitemap, else Apify.
+// ---------------------------------------------------------------------------
+async function discoverFeed(sourceUrl: string): Promise<{ type: "rss" | "sitemap" | "apify"; url: string | null }> {
+  const origin = new URL(sourceUrl).origin;
+
+  try {
+    const homeRes = await fetchWithTimeout(sourceUrl);
+    if (homeRes.ok) {
+      const html = await homeRes.text();
+      const linkMatch = html.match(/<link[^>]+type=["']application\/(rss|atom)\+xml["'][^>]*>/i);
+      if (linkMatch) {
+        const hrefMatch = linkMatch[0].match(/href=["']([^"']+)["']/i);
+        if (hrefMatch) return { type: "rss", url: resolveUrl(hrefMatch[1], sourceUrl) };
+      }
+    }
+  } catch { /* homepage fetch failed, keep trying other strategies */ }
+
+  const commonFeedPaths = ["/feed", "/feed/", "/rss", "/rss.xml", "/feed.xml", "/atom.xml"];
+  for (const path of commonFeedPaths) {
+    try {
+      const res = await fetchWithTimeout(`${origin}${path}`);
+      if (!res.ok) continue;
+      const ct = res.headers.get("content-type") || "";
+      const text = await res.text();
+      if (ct.includes("xml") || text.trimStart().startsWith("<?xml") || /<rss|<feed/i.test(text.slice(0, 500))) {
+        return { type: "rss", url: `${origin}${path}` };
+      }
+    } catch { /* try next path */ }
+  }
+
+  try {
+    const res = await fetchWithTimeout(`${origin}/sitemap.xml`);
+    if (res.ok) {
+      const text = await res.text();
+      if (/<urlset|<sitemapindex/i.test(text.slice(0, 500))) {
+        return { type: "sitemap", url: `${origin}/sitemap.xml` };
+      }
+    }
+  } catch { /* no sitemap */ }
+
+  return { type: "apify", url: null };
+}
+
+// ---------------------------------------------------------------------------
+// RSS parsing (lightweight regex-based — RSS/Atom items are simple enough
+// that a full XML parser dependency isn't worth the weight here).
+// ---------------------------------------------------------------------------
+function extractTag(block: string, tag: string): string | null {
+  const m = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i"));
+  if (!m) return null;
+  return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
+}
+
+async function fetchRssArticles(feedUrl: string, sinceDate: Date): Promise<CrawlCandidate[]> {
+  const res = await fetchWithTimeout(feedUrl);
+  if (!res.ok) return [];
+  const xml = await res.text();
+  const isAtom = /<feed[\s>]/i.test(xml.slice(0, 300));
+  const items: CrawlCandidate[] = [];
+
+  if (isAtom) {
+    const entries = xml.match(/<entry[\s\S]*?<\/entry>/gi) || [];
+    for (const entry of entries) {
+      const linkMatch = entry.match(/<link[^>]+href=["']([^"']+)["']/i);
+      const url = linkMatch?.[1];
+      if (!url) continue;
+      const title = extractTag(entry, "title") || undefined;
+      const published = extractTag(entry, "published") || extractTag(entry, "updated");
+      if (published && new Date(published) < sinceDate) continue;
+      items.push({ url, title, publishedAt: published });
+    }
+  } else {
+    const entries = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
+    for (const entry of entries) {
+      const url = extractTag(entry, "link");
+      if (!url) continue;
+      const title = extractTag(entry, "title") || undefined;
+      const pubDate = extractTag(entry, "pubDate") || extractTag(entry, "dc:date");
+      if (pubDate && new Date(pubDate) < sinceDate) continue;
+      items.push({ url, title, publishedAt: pubDate });
+    }
+  }
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// Sitemap parsing (handles nested sitemap indexes, capped to avoid runaway).
+// ---------------------------------------------------------------------------
+async function fetchSitemapArticles(sitemapUrl: string, sinceDate: Date, depth = 0): Promise<CrawlCandidate[]> {
+  if (depth > 2) return [];
+  const res = await fetchWithTimeout(sitemapUrl);
+  if (!res.ok) return [];
+  const xml = await res.text();
+
+  if (/<sitemapindex/i.test(xml.slice(0, 300))) {
+    const subSitemaps = (xml.match(/<loc>([\s\S]*?)<\/loc>/gi) || [])
+      .map((m) => m.replace(/<\/?loc>/gi, "").trim())
+      .slice(0, 5); // cap sub-sitemap fan-out
+    const results: CrawlCandidate[] = [];
+    for (const sub of subSitemaps) {
+      results.push(...(await fetchSitemapArticles(sub, sinceDate, depth + 1)));
+    }
+    return results;
+  }
+
+  const urlBlocks = xml.match(/<url>[\s\S]*?<\/url>/gi) || [];
+  const items: CrawlCandidate[] = [];
+  for (const block of urlBlocks) {
+    const url = extractTag(block, "loc");
+    if (!url) continue;
+    const lastmod = extractTag(block, "lastmod");
+    if (lastmod && new Date(lastmod) < sinceDate) continue;
+    // Skip obvious non-article URLs (homepage/root, pure category listings).
+    const path = new URL(url).pathname;
+    if (path === "/" || path.split("/").filter(Boolean).length < 1) continue;
+    items.push({ url, publishedAt: lastmod });
+  }
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// Article content extraction — best-effort, no headless browser available.
+// ---------------------------------------------------------------------------
+async function fetchArticleContent(url: string): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
+  try {
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    const titleMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = (titleMatch?.[1] || "").trim();
+
+    const descMatch = html.match(/<meta[^>]+(?:property=["']og:description["']|name=["']description["'])[^>]+content=["']([^"']+)["']/i);
+    const excerpt = (descMatch?.[1] || "").trim();
+
+    const dateMatch = html.match(/<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/"datePublished"\s*:\s*"([^"]+)"/i);
+    const publishedAt = dateMatch?.[1] || null;
+
+    const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
+    let text = bodyMatch ? bodyMatch[0] : html;
+    text = text
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+      .replace(/<header[\s\S]*?<\/header>/gi, " ")
+      .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return { title, content: text.slice(0, 8000), excerpt, publishedAt };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Apify fallback — only used when a source has neither RSS nor sitemap.
+// Heuristic pageFunction: JSON-LD/og:type Article detection + light pagination.
+// ---------------------------------------------------------------------------
+async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date): Promise<CrawlCandidate[]> {
+  const apifyKey = await getApifyKey();
+  if (!apifyKey) return [];
+
+  const pageFunction = `
+    async function pageFunction(context) {
+      const { request, $, log } = context;
+      const isArticle = !!(
+        $('script[type="application/ld+json"]').filter((_, el) => /"@type"\\s*:\\s*"(NewsArticle|Article|BlogPosting)"/i.test($(el).html() || '')).length ||
+        $('meta[property="og:type"]').attr('content') === 'article'
+      );
+      if (request.userData.label === 'ARTICLE' || isArticle) {
+        const title = $('meta[property="og:title"]').attr('content') || $('title').text() || '';
+        const published = $('meta[property="article:published_time"]').attr('content') || null;
+        return { url: request.url, title, publishedAt: published, isArticle: true };
+      }
+      // Listing/homepage: enqueue same-domain links as candidate articles.
+      const links = new Set();
+      $('a[href]').each((_, el) => {
+        const href = $(el).attr('href');
+        if (!href) return;
+        try {
+          const abs = new URL(href, request.url).toString();
+          if (new URL(abs).hostname === new URL(request.url).hostname) links.add(abs);
+        } catch {}
+      });
+      await context.enqueueLinks({ urls: [...links].slice(0, 40), userData: { label: 'ARTICLE' } });
+      return { url: request.url, isArticle: false };
+    }
+  `.trim();
+
+  const runRes = await fetchWithTimeout(
+    `https://api.apify.com/v2/acts/apify~web-scraper/run-sync-get-dataset-items?token=${apifyKey}&timeout=180`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startUrls: [{ url: sourceUrl }],
+        pageFunction,
+        maxCrawlingDepth: 2,
+        maxPagesPerCrawl: 40,
+        proxyConfiguration: { useApifyProxy: true },
+      }),
+    }
+  );
+  if (!runRes.ok) return [];
+  const items = await runRes.json().catch(() => []) as Array<{ url: string; title?: string; publishedAt?: string | null; isArticle?: boolean }>;
+  return items
+    .filter((it) => it.isArticle)
+    .filter((it) => !it.publishedAt || new Date(it.publishedAt) >= sinceDate)
+    .map((it) => ({ url: it.url, title: it.title, publishedAt: it.publishedAt }));
+}
+
+// ---------------------------------------------------------------------------
+// Keyword matching — tags a newly stored article with every track/dimension
+// whose active keywords appear in its title+content.
+// ---------------------------------------------------------------------------
+async function matchAndStoreFindings(
+  admin: ReturnType<typeof createClient>,
+  articleId: string,
+  crawlRunId: string,
+  title: string,
+  content: string,
+  allKeywords: Array<{ track: string; dimension: string | null; keyword: string; active: boolean }>,
+): Promise<void> {
+  const haystack = `${title} ${content}`.toLowerCase();
+  const byTrackDim = new Map<string, string[]>();
+  for (const kw of allKeywords) {
+    if (!kw.active) continue;
+    if (!haystack.includes(kw.keyword.toLowerCase())) continue;
+    const key = `${kw.track}::${kw.dimension || ""}`;
+    if (!byTrackDim.has(key)) byTrackDim.set(key, []);
+    byTrackDim.get(key)!.push(kw.keyword);
+  }
+  for (const [key, matched] of byTrackDim) {
+    const [track, dimension] = key.split("::");
+    await admin.schema("signal_layer").from("findings").upsert({
+      article_id: articleId,
+      crawl_run_id: crawlRunId,
+      track,
+      dimension: dimension || null,
+      matched_keywords: matched,
+    }, { onConflict: "article_id,track,dimension" });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -114,9 +404,13 @@ Deno.serve(async (req: Request) => {
 
   // run_crawl can be triggered either by a logged-in user (manual button)
   // or by the daily pg_cron job (shared-secret header, no user session).
+  // process_crawl is never called externally — only by run_crawl's own
+  // fire-and-forget self-call, authenticated with the service-role key.
   let auth: { userId: string } | null = null;
   let isScheduled = false;
-  if (action === "run_crawl") {
+  if (action === "process_crawl") {
+    if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
+  } else if (action === "run_crawl") {
     auth = await requireAuth(req);
     if (!auth) {
       isScheduled = await isScheduledTrigger(req);
@@ -221,12 +515,12 @@ Deno.serve(async (req: Request) => {
       }
 
       case "add_keyword": {
-        const { track, keyword } = body as { track: string; keyword: string };
+        const { track, keyword, dimension } = body as { track: string; keyword: string; dimension?: string };
         if (!track || !keyword) return errorResponse(origin, "track and keyword are required");
         if (!["marketing", "sales"].includes(track)) return errorResponse(origin, "invalid track");
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("keywords").insert({
-          track, keyword: keyword.trim(), active: true,
+          track, keyword: keyword.trim(), dimension: dimension?.trim() || null, active: true,
           created_by: auth!.userId, updated_by: auth!.userId,
         }).select().single();
         if (error) return errorResponse(origin, error.message, 500);
@@ -234,11 +528,12 @@ Deno.serve(async (req: Request) => {
       }
 
       case "update_keyword": {
-        const { id, keyword, active } = body as { id: string; keyword?: string; active?: boolean };
+        const { id, keyword, active, dimension } = body as { id: string; keyword?: string; active?: boolean; dimension?: string };
         if (!id) return errorResponse(origin, "id is required");
         const updates: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: auth!.userId };
         if (keyword !== undefined) updates.keyword = keyword.trim();
         if (active !== undefined) updates.active = active;
+        if (dimension !== undefined) updates.dimension = dimension?.trim() || null;
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("keywords")
           .update(updates).eq("id", id).select().single();
@@ -256,8 +551,9 @@ Deno.serve(async (req: Request) => {
       }
 
       // ---------------------------------------------------------------
-      // Crawl trigger — records the run; actual Apify actor invocation +
-      // keyword matching is a separate follow-up build once the actor is chosen.
+      // Crawl trigger — records the run, then fires the actual work off
+      // asynchronously (fire-and-forget self-call) so the button/cron
+      // caller gets an immediate response instead of waiting minutes.
       // ---------------------------------------------------------------
       case "run_crawl": {
         const { scope } = body as { scope?: Record<string, unknown> };
@@ -269,7 +565,125 @@ Deno.serve(async (req: Request) => {
           triggered_by: auth?.userId ?? null,
         }).select().single();
         if (error) return errorResponse(origin, error.message, 500);
+
+        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
+        fetch(selfUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+          body: JSON.stringify({ action: "process_crawl", crawl_run_id: data.id, scope: scope || {} }),
+        }).catch((e) => console.error("Failed to trigger process_crawl:", e));
+
         return corsResponse(origin, { crawl_run: data });
+      }
+
+      // ---------------------------------------------------------------
+      // Actual crawl work — RSS/sitemap first per source (cheap, reliable),
+      // Apify web-scraper only as fallback when neither exists.
+      // Internal-only, triggered by run_crawl above.
+      // ---------------------------------------------------------------
+      case "process_crawl": {
+        const { crawl_run_id, scope } = body as { crawl_run_id: string; scope?: { categories?: string[] } };
+        const admin = getAdminClient();
+
+        await admin.schema("signal_layer").from("crawl_runs")
+          .update({ status: "running" }).eq("id", crawl_run_id);
+
+        try {
+          let sourceQuery = admin.schema("signal_layer").from("sources").select("*").eq("active", true);
+          if (scope?.categories && scope.categories.length > 0) {
+            sourceQuery = sourceQuery.in("category", scope.categories);
+          }
+          const { data: activeSources, error: sourcesErr } = await sourceQuery;
+          if (sourcesErr) throw new Error(sourcesErr.message);
+
+          const { data: allKeywords } = await admin.schema("signal_layer").from("keywords")
+            .select("track, dimension, keyword, active").eq("active", true);
+
+          for (const source of activeSources || []) {
+            try {
+              // Discover + cache the feed type once per source.
+              let feedType = source.feed_type as string | null;
+              let feedUrl = source.feed_url as string | null;
+              if (!feedType) {
+                const discovered = await discoverFeed(source.url);
+                feedType = discovered.type;
+                feedUrl = discovered.url;
+                await admin.schema("signal_layer").from("sources")
+                  .update({ feed_type: feedType, feed_url: feedUrl }).eq("id", source.id);
+              }
+
+              // First-ever crawl for this source → 6-month backfill.
+              // Every later crawl → only since the last successful crawl.
+              const { count: existingCount } = await admin.schema("signal_layer").from("articles")
+                .select("id", { count: "exact", head: true }).eq("source_id", source.id);
+              const sinceDate = existingCount && existingCount > 0
+                ? new Date(source.last_crawled_at || Date.now() - 24 * 60 * 60 * 1000)
+                : new Date(Date.now() - 183 * 24 * 60 * 60 * 1000); // ~6 months
+
+              let candidates: CrawlCandidate[] = [];
+              if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl, sinceDate);
+              else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl, sinceDate);
+              else candidates = await runApifySourceCrawl(source.url, sinceDate);
+
+              // Dedupe against URLs already stored for this source.
+              const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
+                .select("url").eq("source_id", source.id);
+              const knownUrls = new Set((existingArticles || []).map((a: { url: string }) => a.url));
+              const freshCandidates = candidates.filter((c) => !knownUrls.has(c.url));
+
+              for (const candidate of freshCandidates) {
+                const fetched = await fetchArticleContent(candidate.url);
+                if (!fetched) continue;
+                const { data: inserted, error: insertErr } = await admin.schema("signal_layer").from("articles")
+                  .insert({
+                    source_id: source.id,
+                    url: candidate.url,
+                    title: fetched.title || candidate.title || candidate.url,
+                    content: fetched.content,
+                    excerpt: fetched.excerpt,
+                    published_at: fetched.publishedAt || candidate.publishedAt || null,
+                  })
+                  .select().single();
+                // onConflict(url) race with a parallel run → just skip, not fatal.
+                if (insertErr || !inserted) continue;
+
+                await matchAndStoreFindings(
+                  admin, inserted.id, crawl_run_id, inserted.title || "", inserted.content || "", allKeywords || [],
+                );
+              }
+
+              await admin.schema("signal_layer").from("sources")
+                .update({ last_crawled_at: new Date().toISOString() }).eq("id", source.id);
+            } catch (sourceErr) {
+              console.error(`Crawl failed for source ${source.id}:`, sourceErr);
+              // One bad source shouldn't abort the whole run.
+            }
+          }
+
+          await admin.schema("signal_layer").from("crawl_runs")
+            .update({ status: "done", finished_at: new Date().toISOString() }).eq("id", crawl_run_id);
+        } catch (err) {
+          await admin.schema("signal_layer").from("crawl_runs")
+            .update({
+              status: "error",
+              finished_at: new Date().toISOString(),
+              error: err instanceof Error ? err.message : String(err),
+            }).eq("id", crawl_run_id);
+        }
+
+        return corsResponse(origin, { ok: true });
+      }
+
+      case "list_findings": {
+        const { track, limit } = body as { track?: string; limit?: number };
+        const admin = getAdminClient();
+        let query = admin.schema("signal_layer").from("findings")
+          .select("*, article:articles(title, url, excerpt, published_at, source_id)")
+          .order("created_at", { ascending: false }).limit(limit || 50);
+        if (track) query = query.eq("track", track);
+        const { data, error } = await query;
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { findings: data || [] });
       }
 
       case "list_crawl_runs": {
