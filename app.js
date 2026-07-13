@@ -85,6 +85,7 @@ function cacheEls() {
 
   els.findingsListMarketing = document.getElementById("findings-list-marketing");
   els.findingsListSales = document.getElementById("findings-list-sales");
+  els.reviewList = document.getElementById("review-list");
   els.taggingStatsText = document.getElementById("tagging-stats-text");
 }
 
@@ -108,6 +109,28 @@ const TERRITORY_LABELS = {
   empowered_marketers: "Empowered Marketers",
 };
 
+const ARTICLE_TYPE_LABELS = {
+  editorial_news: "Redaktionelle Nachricht",
+  press_release: "Pressemitteilung",
+  interview: "Interview",
+  analysis: "Analyse",
+  product_news: "Produktmeldung",
+  campaign_news: "Kampagnenmeldung",
+  financial_news: "Finanzmeldung",
+  event_report: "Event-Bericht",
+  event_program: "Event-Programm",
+  career: "Karriere",
+  faq: "FAQ",
+  overview: "Übersichtsseite",
+  advertisement: "Anzeige",
+  other: "Sonstiger Inhalt",
+};
+
+function formatConfidence(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${Math.round(number * 100)} %` : null;
+}
+
 function formatFindingDate(iso) {
   if (!iso) return `<span class="finding-date-tag finding-date-tag--missing">Ohne Datum</span>`;
   const dateStr = new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "short" });
@@ -129,21 +152,32 @@ async function loadFindings(track) {
       const companies = article.matched_companies || [];
       const personCandidate = article.buying_center_candidate;
       const source = article.source || null;
+      const confidence = formatConfidence(f.confidence ?? article.relevance_confidence);
+      const evidence = (f.evidence || [])[0] || null;
+      const isLegacy = article.classification_status === "legacy";
       return `
-        <div class="finding-item">
+        <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}">
           <div class="finding-item-top">
             <span class="finding-dimension">${escapeHtml(dimLabel)}</span>
-            ${formatFindingDate(article.published_at)}
+            <div class="finding-top-tags">
+              ${isLegacy ? `<span class="quality-tag quality-tag--legacy"><i class="ri-history-line"></i> Altbestand ungeprüft</span>` : `<span class="quality-tag quality-tag--reliable"><i class="ri-shield-check-line"></i> Zuverlässig${confidence ? ` · ${confidence}` : ""}</span>`}
+              ${formatFindingDate(article.published_at)}
+            </div>
           </div>
           <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeHtml(article.title || article.url || "Ohne Titel")}</a>
+          ${article.ai_summary ? `<p class="finding-summary">${escapeHtml(article.ai_summary)}</p>` : ""}
+          ${article.ai_rationale ? `<p class="finding-rationale"><i class="ri-focus-3-line"></i><span>${escapeHtml(article.ai_rationale)}</span></p>` : ""}
           <div class="finding-meta">
             ${territoryLabel ? `<span class="tag">${escapeHtml(territoryLabel)}</span>` : ""}
             ${companies.map((c) => `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(c)}</span>`).join("")}
             ${source?.company ? `<a class="tag tag--source" href="${escapeHtml(source.url || article.url || "#")}" target="_blank" rel="noopener" title="Quelle: ${escapeHtml(source.company)}"><i class="ri-newspaper-line"></i> ${escapeHtml(source.company)}</a>` : ""}
             ${personCandidate ? `<span class="tag tag--person"><i class="ri-user-line"></i> Buying-Center-Kandidat</span>` : ""}
+            ${article.article_type ? `<span class="tag"><i class="ri-file-text-line"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
+            ${article.language ? `<span class="tag tag--language">${escapeHtml(article.language.toUpperCase())}</span>` : ""}
             ${(f.matched_keywords || []).map((k) => `<span class="meta-chip">${escapeHtml(k)}</span>`).join("")}
           </div>
-        </div>
+          ${evidence ? `<blockquote class="finding-evidence"><i class="ri-double-quotes-l"></i><span>${escapeHtml(evidence)}</span></blockquote>` : ""}
+        </article>
       `;
     }).join("");
   } catch (err) {
@@ -159,10 +193,47 @@ async function loadTaggingStats() {
       els.taggingStatsText.textContent = "Noch keine Artikel gecrawlt.";
       return;
     }
-    els.taggingStatsText.innerHTML = stats.untagged > 0
-      ? `${stats.tagged} von ${stats.total} Artikeln zuverlässig getaggt · <span class="tagging-stats-warning">${stats.untagged} nicht zuverlässig taggbar</span>`
-      : `${stats.tagged} von ${stats.total} Artikeln zuverlässig getaggt`;
+    els.taggingStatsText.innerHTML = `
+      <span class="stats-part stats-part--reliable"><i class="ri-shield-check-line"></i> ${stats.reliable || 0} zuverlässig</span>
+      <span class="stats-part stats-part--uncertain"><i class="ri-error-warning-line"></i> ${stats.uncertain || 0} prüfen</span>
+      <span class="stats-part"><i class="ri-filter-off-line"></i> ${stats.rejected || 0} aussortiert</span>
+      ${stats.error ? `<span class="stats-part stats-part--error"><i class="ri-alert-line"></i> ${stats.error} Fehler</span>` : ""}
+      ${stats.legacy ? `<span class="stats-part"><i class="ri-history-line"></i> ${stats.legacy} Altbestand</span>` : ""}
+    `;
   } catch { /* non-critical stat, fail quietly */ }
+}
+
+async function loadReviewArticles() {
+  if (!els.reviewList) return;
+  try {
+    const { articles } = await callApi("list_review_articles", { limit: 20 });
+    if (!articles?.length) {
+      els.reviewList.innerHTML = `<div class="track-card-empty">Keine offenen oder fehlerhaften Klassifikationen.</div>`;
+      return;
+    }
+    els.reviewList.innerHTML = articles.map((article) => {
+      const source = article.source || null;
+      const status = article.classification_status;
+      const reasons = article.rejection_reasons || [];
+      return `
+        <article class="review-item">
+          <div class="review-item-main">
+            <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "error" ? "alert-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i> ${status === "uncertain" ? "Manuelle Prüfung" : status === "pending" ? "Ausstehend" : "Klassifikationsfehler"}</span>
+            <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeHtml(article.title || "Ohne Titel")}</a>
+            ${article.ai_summary ? `<p class="finding-summary">${escapeHtml(article.ai_summary)}</p>` : ""}
+            ${article.ai_rationale ? `<p class="finding-rationale"><i class="ri-focus-3-line"></i><span>${escapeHtml(article.ai_rationale)}</span></p>` : ""}
+            ${reasons.length ? `<div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div>` : ""}
+          </div>
+          <div class="finding-meta">
+            ${article.primary_company ? `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
+            ${source?.company ? `<span class="tag tag--source"><i class="ri-newspaper-line"></i> ${escapeHtml(source.company)}</span>` : ""}
+            ${formatConfidence(article.relevance_confidence) ? `<span class="tag"><i class="ri-percent-line"></i> ${formatConfidence(article.relevance_confidence)}</span>` : ""}
+          </div>
+        </article>`;
+    }).join("");
+  } catch (err) {
+    els.reviewList.innerHTML = `<div class="track-card-empty">Prüfliste konnte nicht geladen werden: ${escapeHtml(err.message)}</div>`;
+  }
 }
 
 function formatUrlDisplay(urlStr) {
@@ -585,4 +656,5 @@ export function initApp(client) {
   void loadFindings("marketing");
   void loadFindings("sales");
   void loadTaggingStats();
+  void loadReviewArticles();
 }

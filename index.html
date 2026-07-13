@@ -169,9 +169,11 @@
   @media (max-width: 720px) { .track-grid { grid-template-columns: 1fr; } }
 
   .track-findings-list { display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; }
-  .finding-item { border: 1px solid var(--line); border-radius: 10px; padding: .8rem .9rem; transition: border-color .15s; }
+  .finding-item { border: 1px solid var(--line); border-radius: 10px; padding: .9rem; transition: border-color .15s; }
   .finding-item:hover { border-color: var(--brand); }
+  .finding-item--legacy { border-style: dashed; }
   .finding-item-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: .3rem; }
+  .finding-top-tags { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
   .finding-dimension { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--brand); }
   .finding-date-tag {
     font-size: .68rem; font-weight: 600; white-space: nowrap; padding: 2px 8px; border-radius: 999px;
@@ -180,7 +182,28 @@
   .finding-date-tag--missing { background: var(--warning-bg); color: var(--warning-text); border-color: #fbbf24; }
   .finding-title { font-size: .88rem; font-weight: 600; color: var(--ink); text-decoration: none; display: block; margin-bottom: .3rem; }
   .finding-title:hover { color: var(--brand); }
+  .finding-summary { margin: .45rem 0; font-size: .8rem; line-height: 1.45; color: var(--status-text); }
+  .finding-rationale { margin: .45rem 0; padding: .5rem .6rem; border-radius: 8px; background: var(--surface); display: flex; gap: 7px; font-size: .74rem; line-height: 1.4; color: var(--muted); }
+  .finding-rationale i { color: var(--brand); margin-top: 1px; }
   .finding-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .finding-evidence { margin: .55rem 0 0; padding: .5rem .6rem; border-left: 2px solid var(--brand); background: var(--brand-light); display: flex; gap: 7px; font-size: .72rem; line-height: 1.4; color: var(--status-text); }
+  .finding-evidence i { color: var(--brand); }
+  .quality-tag { border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px; display: inline-flex; align-items: center; gap: 4px; font-size: .65rem; font-weight: 650; white-space: nowrap; }
+  .quality-tag--reliable { color: var(--success); background: #ecfdf5; border-color: #a7f3d0; }
+  .quality-tag--legacy { color: var(--muted); background: var(--status-bg); }
+  .quality-tag--uncertain, .quality-tag--pending { color: var(--warning-text); background: var(--warning-bg); border-color: #fbbf24; }
+  .quality-tag--error { color: var(--danger); background: #fef2f2; border-color: #fecaca; }
+  .stats-part { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; white-space: nowrap; }
+  .stats-part--reliable { color: var(--success); font-weight: 600; }
+  .stats-part--uncertain { color: var(--warning-text); font-weight: 600; }
+  .stats-part--error { color: var(--danger); font-weight: 600; }
+  .review-card { margin-top: 1.2rem; }
+  .review-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-height: 360px; overflow-y: auto; }
+  .review-item { border: 1px solid var(--line); border-radius: 10px; padding: .8rem .9rem; background: var(--bg); }
+  .review-item-main > .quality-tag { margin-bottom: .45rem; }
+  .review-reasons { display: flex; flex-wrap: wrap; gap: 4px; margin: .5rem 0; }
+  .review-reasons span { font-size: .68rem; color: var(--danger); background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 2px 6px; }
+  @media (max-width: 900px) { .review-list { grid-template-columns: 1fr; } }
 
   /* ---------- Keywords panel ---------- */
   .keyword-toolbar { display: flex; gap: 10px; padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); }
@@ -294,6 +317,7 @@
   .tag--source { color: var(--status-text); text-decoration: none; }
   .tag--source:hover { border-color: var(--brand); color: var(--brand-dark); }
   .tag--person { background: var(--warning-bg); border-color: #fbbf24; color: var(--warning-text); }
+  .tag--language { font-weight: 700; letter-spacing: .04em; }
   .tagging-stats-warning { color: var(--warning-text); font-weight: 600; }
   .meta-chip {
     background: var(--status-bg); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--line);
@@ -424,6 +448,13 @@
             </div>
           </div>
         </div>
+
+        <section class="track-card review-card">
+          <div class="track-card-header"><i class="ri-shield-check-line"></i> Qualitätsprüfung</div>
+          <div class="review-list" id="review-list">
+            <div class="track-card-empty">Lädt…</div>
+          </div>
+        </section>
       </div>
     </main>
   </div>
