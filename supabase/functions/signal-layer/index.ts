@@ -1085,7 +1085,7 @@ Deno.serve(async (req: Request) => {
         const { track, limit } = body as { track?: string; limit?: number };
         const admin = getAdminClient();
         let query = admin.schema("signal_layer").from("findings")
-          .select("*, article:articles(title, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id)")
+          .select("*, article:articles(title, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, source:sources(company, url, category))")
           .order("created_at", { ascending: false }).limit(limit || 50);
         if (track) query = query.eq("track", track);
         const { data, error } = await query;

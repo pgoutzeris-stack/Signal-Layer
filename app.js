@@ -128,6 +128,7 @@ async function loadFindings(track) {
       const territoryLabel = article.territory ? TERRITORY_LABELS[article.territory] || article.territory : null;
       const companies = article.matched_companies || [];
       const personCandidate = article.buying_center_candidate;
+      const source = article.source || null;
       return `
         <div class="finding-item">
           <div class="finding-item-top">
@@ -138,6 +139,7 @@ async function loadFindings(track) {
           <div class="finding-meta">
             ${territoryLabel ? `<span class="tag">${escapeHtml(territoryLabel)}</span>` : ""}
             ${companies.map((c) => `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(c)}</span>`).join("")}
+            ${source?.company ? `<a class="tag tag--source" href="${escapeHtml(source.url || article.url || "#")}" target="_blank" rel="noopener" title="Quelle: ${escapeHtml(source.company)}"><i class="ri-newspaper-line"></i> ${escapeHtml(source.company)}</a>` : ""}
             ${personCandidate ? `<span class="tag tag--person"><i class="ri-user-line"></i> Buying-Center-Kandidat</span>` : ""}
             ${(f.matched_keywords || []).map((k) => `<span class="meta-chip">${escapeHtml(k)}</span>`).join("")}
           </div>
