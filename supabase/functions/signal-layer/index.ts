@@ -495,10 +495,10 @@ const MATCH_TERM_FAMILIES: Record<string, string[]> = {
   "sparprogramm": ["sparprogramm", "cost-cutting program", "cost reduction program"],
 };
 
-const PERSONNEL_ONLY_TERMS = [
-  "neuer ceo", "new ceo", "appointed ceo", "appoints a ceo", "chief executive officer",
-  "neuer cmo", "new cmo", "new chief marketing officer", "chief marketing officer",
-  "personalwechsel", "executive appointment", "leadership appointment", "new hire",
+const ROLE_TERMS = [
+  "cmo", "chief marketing officer", "ceo", "chief executive officer",
+  "marketingleiter", "marketingleiterin", "marketingdirektor", "head of marketing",
+  "brand manager", "brand director", "geschäftsführer marketing", "neuer cmo", "new cmo",
 ];
 
 const STRATEGIC_TRIGGER_TERMS = [
@@ -538,50 +538,140 @@ function hasAnyMatchTerm(normalizedText: string, terms: string[]): boolean {
   return terms.some((term) => containsMatchTerm(normalizedText, term));
 }
 
-async function matchAndStoreFindings(
+// Best-effort person/role extraction — NOT reliable NER, just a regex net
+// around a role word and a nearby capitalized two-word name. Every hit is
+// meant to be manually verified against the Sales Navigator later (per spec),
+// so recall matters more than precision here.
+function extractPersonCandidates(rawText: string): string[] {
+  const candidates = new Set<string>();
+  const namePattern = "[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?\\s+[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?";
+  const roleWords = "(?:CMO|CEO|Chief Marketing Officer|Marketingleiter(?:in)?|Marketingdirektor(?:in)?|Head of Marketing|Brand Manager|Brand Director)";
+  const patterns = [
+    new RegExp(`(${namePattern})\\s+(?:wird|ist|übernimmt|als)\\s+(?:neue[rn]?\\s+)?${roleWords}`, "g"),
+    new RegExp(`${roleWords}\\s+(${namePattern})`, "g"),
+    new RegExp(`neue[rn]?\\s+${roleWords}[,:]?\\s+(${namePattern})`, "gi"),
+  ];
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(rawText)) !== null) {
+      if (match[1]) candidates.add(match[1].trim());
+    }
+  }
+  return [...candidates];
+}
+
+// ---------------------------------------------------------------------------
+// Tagging at ingest — the three-dimension model (Thema / Territory / Kunde).
+// An article is read once, tagged immediately, and everything downstream
+// (dashboard, engines) just looks the tags up — no re-reading the text.
+//   - Thema: which of the 5 canonical topics does it discuss (multi-select)
+//   - Territory: which ROOTS content territory does it map to (single pick)
+//   - Kunde: Tier-1 company entity match + role/person candidate
+// Routing derives from the tags, not the source: Marketing always if a topic
+// hit; + Sales the moment a Tier-1 company is recognized, REGARDLESS of which
+// source it came from; + Buying Center when a role is named alongside a real
+// business trigger (a standalone "new CMO" blurb alone doesn't qualify).
+// Articles that don't hit any of the three dimensions are tagged 'untagged'
+// rather than silently dropped, both on the row itself and in the UI.
+// ---------------------------------------------------------------------------
+async function tagArticle(
   admin: ReturnType<typeof createClient>,
   articleId: string,
   crawlRunId: string,
   title: string,
   content: string,
-  allKeywords: Array<{ track: string; dimension: string | null; keyword: string; active: boolean }>,
+  allKeywords: Array<{ track: string; dimension: string | null; keyword: string; kind: string; active: boolean }>,
+  tier1Companies: Array<{ name: string; aliases: string[] }>,
 ): Promise<void> {
   const normalizedTitle = normalizeMatchText(title);
   const normalizedBody = normalizeMatchText(content);
   const normalizedAll = `${normalizedTitle} ${normalizedBody}`.trim();
-  const personnelOnly = hasAnyMatchTerm(normalizedAll, PERSONNEL_ONLY_TERMS)
-    && !hasAnyMatchTerm(normalizedAll, STRATEGIC_TRIGGER_TERMS);
-  if (personnelOnly) return;
+  const rawText = `${title} ${content}`;
 
-  const byTrackDim = new Map<string, { matched: string[]; score: number; hasTrigger: boolean }>();
+  // --- Thema: multi-select, scored per topic (title hit outweighs body hit) ---
+  const topicScores = new Map<string, { matched: string[]; score: number }>();
   for (const kw of allKeywords) {
-    if (!kw.active) continue;
+    if (!kw.active || kw.kind !== "topic" || kw.track !== "marketing") continue;
     const variants = variantsForKeyword(kw.keyword);
-    const inTitle = variants.some((term) => containsMatchTerm(normalizedTitle, term));
-    const inBody = variants.some((term) => containsMatchTerm(normalizedBody, term));
+    const inTitle = variants.some((t) => containsMatchTerm(normalizedTitle, t));
+    const inBody = variants.some((t) => containsMatchTerm(normalizedBody, t));
     if (!inTitle && !inBody) continue;
-    const key = `${kw.track}::${kw.dimension || ""}`;
-    const current = byTrackDim.get(key) || { matched: [], score: 0, hasTrigger: false };
-    current.matched.push(kw.keyword);
-    current.score += inTitle ? 5 : 1;
-    if (hasAnyMatchTerm(normalizedAll, STRATEGIC_TRIGGER_TERMS)) current.hasTrigger = true;
-    byTrackDim.set(key, current);
+    const dim = kw.dimension || "";
+    const cur = topicScores.get(dim) || { matched: [], score: 0 };
+    cur.matched.push(kw.keyword);
+    cur.score += inTitle ? 5 : 1;
+    topicScores.set(dim, cur);
   }
-  for (const [key, result] of byTrackDim) {
-    const [track, dimension] = key.split("::");
-    // A single body mention is too weak. A title hit reaches the threshold,
-    // while several independent body matches can also qualify.
-    if (result.score < 5) continue;
-    // Buying-center data is useful only when tied to a concrete business
-    // trigger. A standalone CEO/CMO appointment must not become a signal.
-    if (dimension === "buying_center" && !result.hasTrigger) continue;
-    await admin.schema("signal_layer").from("findings").upsert({
-      article_id: articleId,
-      crawl_run_id: crawlRunId,
-      track,
-      dimension: dimension || null,
-      matched_keywords: result.matched,
-    }, { onConflict: "article_id,track,dimension" });
+  const topicEntries = [...topicScores.entries()].filter(([, r]) => r.score >= 5);
+  const topics = topicEntries.map(([dim]) => dim);
+  const topicKeywordsMatched = [...new Set(topicEntries.flatMap(([, r]) => r.matched))];
+
+  // --- Territory: single best match (highest score wins, no tie-break needed) ---
+  const territoryScores = new Map<string, number>();
+  for (const kw of allKeywords) {
+    if (!kw.active || kw.kind !== "territory") continue;
+    const variants = variantsForKeyword(kw.keyword);
+    const inTitle = variants.some((t) => containsMatchTerm(normalizedTitle, t));
+    const inBody = variants.some((t) => containsMatchTerm(normalizedBody, t));
+    if (!inTitle && !inBody) continue;
+    const dim = kw.dimension || "";
+    territoryScores.set(dim, (territoryScores.get(dim) || 0) + (inTitle ? 5 : 1));
+  }
+  let territory: string | null = null;
+  let bestTerritoryScore = 0;
+  for (const [dim, score] of territoryScores) {
+    if (score > bestTerritoryScore) { bestTerritoryScore = score; territory = dim; }
+  }
+  if (bestTerritoryScore < 5) territory = null;
+
+  // --- Kunde: Firma — entity match against the Tier-1 list, any source ---
+  const matchedCompanies: string[] = [];
+  for (const company of tier1Companies) {
+    if (company.aliases.some((alias) => containsMatchTerm(normalizedAll, alias))) {
+      matchedCompanies.push(company.name);
+    }
+  }
+
+  // --- Kunde: Person/Rolle — buying-center candidate, gated on a real trigger ---
+  const hasRoleTerm = hasAnyMatchTerm(normalizedAll, ROLE_TERMS);
+  const hasTrigger = hasAnyMatchTerm(normalizedAll, STRATEGIC_TRIGGER_TERMS);
+  const personCandidates = hasRoleTerm ? extractPersonCandidates(rawText) : [];
+  const buyingCenterCandidate = hasRoleTerm && hasTrigger;
+
+  // --- Routing: which engine(s) this article speaks to ---
+  const routing: string[] = [];
+  if (topics.length > 0) routing.push("marketing");
+  if (matchedCompanies.length > 0) routing.push("sales");
+  if (buyingCenterCandidate) routing.push("buying_center");
+
+  const tagStatus = routing.length > 0 || territory ? "tagged" : "untagged";
+
+  await admin.schema("signal_layer").from("articles").update({
+    topics,
+    territory,
+    matched_companies: matchedCompanies,
+    matched_persons: personCandidates,
+    buying_center_candidate: buyingCenterCandidate,
+    routing,
+    tag_status: tagStatus,
+  }).eq("id", articleId);
+
+  for (const track of routing) {
+    const trackDims = track === "marketing" ? (topics.length > 0 ? topics : ["kunde"])
+      : [track === "sales" ? "kunde" : "buying_center"];
+    const matchedForTrack =
+      track === "marketing" ? topicKeywordsMatched
+      : track === "sales" ? matchedCompanies
+      : (personCandidates.length > 0 ? personCandidates : ["Rollen-Trigger erkannt"]);
+    for (const dim of trackDims) {
+      await admin.schema("signal_layer").from("findings").upsert({
+        article_id: articleId,
+        crawl_run_id: crawlRunId,
+        track,
+        dimension: dim,
+        matched_keywords: matchedForTrack,
+      }, { onConflict: "article_id,track,dimension" });
+    }
   }
 }
 
@@ -722,12 +812,13 @@ Deno.serve(async (req: Request) => {
       }
 
       case "add_keyword": {
-        const { track, keyword, dimension } = body as { track: string; keyword: string; dimension?: string };
+        const { track, keyword, dimension, kind } = body as { track: string; keyword: string; dimension?: string; kind?: string };
         if (!track || !keyword) return errorResponse(origin, "track and keyword are required");
         if (!["marketing", "sales"].includes(track)) return errorResponse(origin, "invalid track");
+        if (kind && !["topic", "territory"].includes(kind)) return errorResponse(origin, "invalid kind");
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("keywords").insert({
-          track, keyword: keyword.trim(), dimension: dimension?.trim() || null, active: true,
+          track, keyword: keyword.trim(), dimension: dimension?.trim() || null, kind: kind || "topic", active: true,
           created_by: auth!.userId, updated_by: auth!.userId,
         }).select().single();
         if (error) return errorResponse(origin, error.message, 500);
@@ -735,12 +826,13 @@ Deno.serve(async (req: Request) => {
       }
 
       case "update_keyword": {
-        const { id, keyword, active, dimension } = body as { id: string; keyword?: string; active?: boolean; dimension?: string };
+        const { id, keyword, active, dimension, kind } = body as { id: string; keyword?: string; active?: boolean; dimension?: string; kind?: string };
         if (!id) return errorResponse(origin, "id is required");
         const updates: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: auth!.userId };
         if (keyword !== undefined) updates.keyword = keyword.trim();
         if (active !== undefined) updates.active = active;
         if (dimension !== undefined) updates.dimension = dimension?.trim() || null;
+        if (kind !== undefined) updates.kind = kind;
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("keywords")
           .update(updates).eq("id", id).select().single();
@@ -847,7 +939,9 @@ Deno.serve(async (req: Request) => {
           if (sourceErr || !source) throw new Error(sourceErr?.message || "source not found");
 
           const { data: allKeywords } = await admin.schema("signal_layer").from("keywords")
-            .select("track, dimension, keyword, active").eq("active", true);
+            .select("track, dimension, keyword, kind, active").eq("active", true);
+          const { data: tier1Companies } = await admin.schema("signal_layer").from("tier1_companies")
+            .select("name, aliases").eq("active", true);
 
           // Discover + cache the feed type once per source.
           let feedType = source.feed_type as string | null;
@@ -913,8 +1007,9 @@ Deno.serve(async (req: Request) => {
             // onConflict(url) race with a parallel run → just skip, not fatal.
             if (insertErr || !inserted) continue;
 
-            await matchAndStoreFindings(
-              admin, inserted.id, crawl_run_id, inserted.title || "", inserted.content || "", allKeywords || [],
+            await tagArticle(
+              admin, inserted.id, crawl_run_id, inserted.title || "", inserted.content || "",
+              allKeywords || [], tier1Companies || [],
             );
           }
 
@@ -990,12 +1085,26 @@ Deno.serve(async (req: Request) => {
         const { track, limit } = body as { track?: string; limit?: number };
         const admin = getAdminClient();
         let query = admin.schema("signal_layer").from("findings")
-          .select("*, article:articles(title, url, excerpt, published_at, source_id)")
+          .select("*, article:articles(title, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id)")
           .order("created_at", { ascending: false }).limit(limit || 50);
         if (track) query = query.eq("track", track);
         const { data, error } = await query;
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { findings: data || [] });
+      }
+
+      // Backend-side visibility into how many crawled articles could NOT be
+      // reliably tagged (no topic/territory/company/role hit at all) — per
+      // spec, these must be marked, not silently dropped from view.
+      case "get_tagging_stats": {
+        const admin = getAdminClient();
+        const { count: total } = await admin.schema("signal_layer").from("articles")
+          .select("id", { count: "exact", head: true });
+        const { count: tagged } = await admin.schema("signal_layer").from("articles")
+          .select("id", { count: "exact", head: true }).eq("tag_status", "tagged");
+        const { count: untagged } = await admin.schema("signal_layer").from("articles")
+          .select("id", { count: "exact", head: true }).eq("tag_status", "untagged");
+        return corsResponse(origin, { total: total || 0, tagged: tagged || 0, untagged: untagged || 0 });
       }
 
       case "list_crawl_runs": {
