@@ -230,7 +230,6 @@
     word-break: break-all;
   }
   .source-url:hover { text-decoration: underline; }
-  .source-tags { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
   .source-empty { text-align: center; color: var(--muted); padding: 2rem 0 !important; }
 
   .tag {
@@ -353,8 +352,8 @@
               <option value="inactive">Inaktiv</option>
             </select>
             <select class="toolbar-select" id="source-sort">
-              <option value="company_asc">Unternehmen A–Z</option>
-              <option value="company_desc">Unternehmen Z–A</option>
+              <option value="company_asc">Quelle A–Z</option>
+              <option value="company_desc">Quelle Z–A</option>
               <option value="category_asc">Kategorie A–Z</option>
               <option value="category_desc">Kategorie Z–A</option>
               <option value="created_desc">Neueste zuerst</option>
@@ -371,10 +370,9 @@
             <table class="source-table">
               <thead>
                 <tr>
-                  <th>Unternehmen</th>
+                  <th>Quelle</th>
                   <th>URL</th>
                   <th>Kategorie</th>
-                  <th>Tags</th>
                   <th>Aktiv</th>
                   <th></th>
                 </tr>
@@ -392,7 +390,7 @@
     <div class="modal-box">
       <div class="modal-title">Neue URL hinzufügen</div>
       <form id="add-source-form">
-        <label class="modern-label">Unternehmen / Quelle</label>
+        <label class="modern-label">Quelle</label>
         <input class="modern-input" id="f-company" required>
         <label class="modern-label">URL</label>
         <input class="modern-input" type="url" id="f-url" required placeholder="https://...">
@@ -400,8 +398,6 @@
         <input class="modern-input" id="f-category" list="category-suggestions" placeholder="z.B. Marketing & Werbung">
         <label class="modern-label">Beschreibung</label>
         <input class="modern-input" id="f-description" placeholder="Optional">
-        <label class="modern-label">Tags (Komma-getrennt)</label>
-        <input class="modern-input" id="f-tags" placeholder="z.B. FMCG, Handel">
         <div class="modal-btns">
           <button type="button" class="btn-secondary" id="btn-add-source-cancel">Abbrechen</button>
           <button type="submit" class="btn-primary"><i class="ri-add-line"></i> Hinzufügen</button>

@@ -69,7 +69,17 @@ function cacheEls() {
   els.fUrl = document.getElementById("f-url");
   els.fCategory = document.getElementById("f-category");
   els.fDescription = document.getElementById("f-description");
-  els.fTags = document.getElementById("f-tags");
+}
+
+function formatUrlDisplay(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    const path = u.pathname.replace(/\/$/, "");
+    if (path) return path + u.search;
+    return u.hostname.replace(/^www\./, "");
+  } catch {
+    return urlStr;
+  }
 }
 
 function openSettings() {
@@ -90,14 +100,14 @@ function closeAddSource() {
 }
 
 async function loadSources() {
-  els.sourceTableBody.innerHTML = `<tr><td colspan="6" class="source-empty"><i class="ri-loader-4-line ri-spin"></i> Lädt…</td></tr>`;
+  els.sourceTableBody.innerHTML = `<tr><td colspan="5" class="source-empty"><i class="ri-loader-4-line ri-spin"></i> Lädt…</td></tr>`;
   try {
     const { sources: data } = await callApi("list_sources");
     sources = data || [];
     populateCategoryFilter();
     renderSources();
   } catch (err) {
-    els.sourceTableBody.innerHTML = `<tr><td colspan="6" class="source-empty">Fehler beim Laden: ${escapeHtml(err.message)}</td></tr>`;
+    els.sourceTableBody.innerHTML = `<tr><td colspan="5" class="source-empty">Fehler beim Laden: ${escapeHtml(err.message)}</td></tr>`;
   }
 }
 
@@ -119,7 +129,7 @@ function getFilteredSorted() {
     if (state.status === "active" && !s.active) return false;
     if (state.status === "inactive" && s.active) return false;
     if (q) {
-      const hay = `${s.company} ${s.url} ${s.category || ""} ${s.description || ""} ${(s.tags || []).join(" ")}`.toLowerCase();
+      const hay = `${s.company} ${s.url} ${s.category || ""} ${s.description || ""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -143,7 +153,7 @@ function renderSources() {
   els.sourceCount.textContent = `${list.length} von ${sources.length}`;
 
   if (list.length === 0) {
-    els.sourceTableBody.innerHTML = `<tr><td colspan="6" class="source-empty">Keine URLs gefunden.</td></tr>`;
+    els.sourceTableBody.innerHTML = `<tr><td colspan="5" class="source-empty">Keine URLs gefunden.</td></tr>`;
     return;
   }
 
@@ -153,13 +163,8 @@ function renderSources() {
         <div class="source-company">${escapeHtml(s.company)}</div>
         ${s.description ? `<div class="source-desc">${escapeHtml(s.description)}</div>` : ""}
       </td>
-      <td><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" class="source-url"><i class="ri-external-link-line"></i> ${escapeHtml(s.url)}</a></td>
+      <td><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" class="source-url"><i class="ri-external-link-line"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
       <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}</td>
-      <td>
-        <div class="source-tags">
-          ${(s.tags || []).map((t) => `<span class="meta-chip">${escapeHtml(t)}</span>`).join("")}
-        </div>
-      </td>
       <td>
         <label class="source-toggle">
           <input type="checkbox" class="source-active-toggle" data-id="${s.id}" ${s.active ? "checked" : ""}>
@@ -209,10 +214,9 @@ async function submitAddSource(e) {
   const url = els.fUrl.value.trim();
   const category = els.fCategory.value.trim();
   const description = els.fDescription.value.trim();
-  const tags = els.fTags.value.split(",").map((t) => t.trim()).filter(Boolean);
   if (!company || !url) return;
   try {
-    const { source } = await callApi("add_source", { company, url, category, description, tags });
+    const { source } = await callApi("add_source", { company, url, category, description });
     sources.push(source);
     populateCategoryFilter();
     renderSources();
