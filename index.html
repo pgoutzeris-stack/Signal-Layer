@@ -168,6 +168,16 @@
   .track-card-empty { font-size: .85rem; color: var(--muted); padding: 1.5rem 0; text-align: center; }
   @media (max-width: 720px) { .track-grid { grid-template-columns: 1fr; } }
 
+  .track-findings-list { display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; }
+  .finding-item { border: 1px solid var(--line); border-radius: 10px; padding: .8rem .9rem; transition: border-color .15s; }
+  .finding-item:hover { border-color: var(--brand); }
+  .finding-item-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: .3rem; }
+  .finding-dimension { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--brand); }
+  .finding-date { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+  .finding-title { font-size: .88rem; font-weight: 600; color: var(--ink); text-decoration: none; display: block; margin-bottom: .3rem; }
+  .finding-title:hover { color: var(--brand); }
+  .finding-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+
   /* ---------- Keywords panel ---------- */
   .keyword-toolbar { display: flex; gap: 10px; padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); }
   .keyword-input { margin-bottom: 0 !important; flex: 1; }
@@ -388,11 +398,15 @@
         <div class="track-grid">
           <div class="track-card">
             <div class="track-card-header"><i class="ri-megaphone-line"></i> Marketing</div>
-            <div class="track-card-empty">Noch keine Ergebnisse — Auswertung folgt.</div>
+            <div class="track-findings-list" id="findings-list-marketing">
+              <div class="track-card-empty">Lädt…</div>
+            </div>
           </div>
           <div class="track-card">
             <div class="track-card-header"><i class="ri-line-chart-line"></i> Sales</div>
-            <div class="track-card-empty">Noch keine Ergebnisse — Auswertung folgt.</div>
+            <div class="track-findings-list" id="findings-list-sales">
+              <div class="track-card-empty">Lädt…</div>
+            </div>
           </div>
         </div>
       </div>

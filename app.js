@@ -82,6 +82,54 @@ function cacheEls() {
   els.crawlCategoryList = document.getElementById("crawl-category-list");
   els.btnCrawlConfirm = document.getElementById("btn-crawl-confirm");
   els.lastRunText = document.getElementById("last-run-text");
+
+  els.findingsListMarketing = document.getElementById("findings-list-marketing");
+  els.findingsListSales = document.getElementById("findings-list-sales");
+}
+
+const DIMENSION_LABELS = {
+  customer_marketing_insights: "Customer- & Marketing-Insights",
+  fmcg_retail_signale: "FMCG- & Retail-Signale",
+  sub_branchen_tier1: "Sub-Branchen Insights",
+  ai_trends_impact: "AI-Trends & Impact",
+  tier1_insights_quellen: "TIER 1 Insights",
+  buying_center: "Buying Center",
+  top_themen_trigger: "TOP-Themen & Trigger",
+  chancen_risiken: "Chancen & Risiken",
+};
+
+function formatFindingDate(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "short" });
+}
+
+async function loadFindings(track) {
+  const listEl = track === "marketing" ? els.findingsListMarketing : els.findingsListSales;
+  try {
+    const { findings } = await callApi("list_findings", { track, limit: 30 });
+    if (!findings || findings.length === 0) {
+      listEl.innerHTML = `<div class="track-card-empty">Noch keine Ergebnisse für diesen Track.</div>`;
+      return;
+    }
+    listEl.innerHTML = findings.map((f) => {
+      const article = f.article || {};
+      const dimLabel = DIMENSION_LABELS[f.dimension] || f.dimension || "";
+      return `
+        <div class="finding-item">
+          <div class="finding-item-top">
+            <span class="finding-dimension">${escapeHtml(dimLabel)}</span>
+            <span class="finding-date">${formatFindingDate(article.published_at)}</span>
+          </div>
+          <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeHtml(article.title || article.url || "Ohne Titel")}</a>
+          <div class="finding-meta">
+            ${(f.matched_keywords || []).map((k) => `<span class="meta-chip">${escapeHtml(k)}</span>`).join("")}
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    listEl.innerHTML = `<div class="track-card-empty">Fehler beim Laden: ${escapeHtml(err.message)}</div>`;
+  }
 }
 
 function formatUrlDisplay(urlStr) {
@@ -501,4 +549,6 @@ export function initApp(client) {
     bindUi();
   }
   void loadLastRun();
+  void loadFindings("marketing");
+  void loadFindings("sales");
 }
