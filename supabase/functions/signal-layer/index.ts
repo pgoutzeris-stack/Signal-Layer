@@ -556,120 +556,139 @@ Deno.serve(async (req: Request) => {
       // caller gets an immediate response instead of waiting minutes.
       // ---------------------------------------------------------------
       case "run_crawl": {
-        const { scope } = body as { scope?: Record<string, unknown> };
+        const { scope } = body as { scope?: { categories?: string[] } };
         const admin = getAdminClient();
+
+        let sourceQuery = admin.schema("signal_layer").from("sources").select("id").eq("active", true);
+        if (scope?.categories && scope.categories.length > 0) {
+          sourceQuery = sourceQuery.in("category", scope.categories);
+        }
+        const { data: matchingSources, error: sourcesErr } = await sourceQuery;
+        if (sourcesErr) return errorResponse(origin, sourcesErr.message, 500);
+        const sourceIds = (matchingSources || []).map((s: { id: string }) => s.id);
+
         const { data, error } = await admin.schema("signal_layer").from("crawl_runs").insert({
           trigger_type: isScheduled ? "scheduled" : "manual",
           scope: scope || {},
-          status: "queued",
+          status: sourceIds.length > 0 ? "queued" : "done",
           triggered_by: auth?.userId ?? null,
+          finished_at: sourceIds.length > 0 ? null : new Date().toISOString(),
         }).select().single();
         if (error) return errorResponse(origin, error.message, 500);
 
-        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
-        fetch(selfUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-          body: JSON.stringify({ action: "process_crawl", crawl_run_id: data.id, scope: scope || {} }),
-        }).catch((e) => console.error("Failed to trigger process_crawl:", e));
+        if (sourceIds.length > 0) {
+          const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
+          fetch(selfUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+            body: JSON.stringify({ action: "process_crawl", crawl_run_id: data.id, source_ids: sourceIds, index: 0 }),
+          }).catch((e) => console.error("Failed to trigger process_crawl:", e));
+        }
 
         return corsResponse(origin, { crawl_run: data });
       }
 
       // ---------------------------------------------------------------
-      // Actual crawl work — RSS/sitemap first per source (cheap, reliable),
-      // Apify web-scraper only as fallback when neither exists.
+      // Actual crawl work — processes exactly ONE source per invocation,
+      // then fire-and-forgets itself for the next index. This keeps each
+      // Edge Function call short (one RSS/sitemap fetch, or one bounded
+      // Apify run) no matter how many sources are in scope — a single
+      // long-running loop over all sources risked hitting the platform's
+      // execution time limit mid-run and leaving crawl_runs stuck at
+      // 'running' forever (observed during testing with 187 sources).
       // Internal-only, triggered by run_crawl above.
       // ---------------------------------------------------------------
       case "process_crawl": {
-        const { crawl_run_id, scope } = body as { crawl_run_id: string; scope?: { categories?: string[] } };
+        const { crawl_run_id, source_ids, index } = body as { crawl_run_id: string; source_ids: string[]; index: number };
+
         const admin = getAdminClient();
+        if (index === 0) {
+          await admin.schema("signal_layer").from("crawl_runs")
+            .update({ status: "running" }).eq("id", crawl_run_id);
+        }
 
-        await admin.schema("signal_layer").from("crawl_runs")
-          .update({ status: "running" }).eq("id", crawl_run_id);
+        if (index >= source_ids.length) {
+          await admin.schema("signal_layer").from("crawl_runs")
+            .update({ status: "done", finished_at: new Date().toISOString() }).eq("id", crawl_run_id);
+          return corsResponse(origin, { ok: true, done: true });
+        }
 
+        const sourceId = source_ids[index];
         try {
-          let sourceQuery = admin.schema("signal_layer").from("sources").select("*").eq("active", true);
-          if (scope?.categories && scope.categories.length > 0) {
-            sourceQuery = sourceQuery.in("category", scope.categories);
-          }
-          const { data: activeSources, error: sourcesErr } = await sourceQuery;
-          if (sourcesErr) throw new Error(sourcesErr.message);
+          const { data: source, error: sourceErr } = await admin.schema("signal_layer").from("sources")
+            .select("*").eq("id", sourceId).single();
+          if (sourceErr || !source) throw new Error(sourceErr?.message || "source not found");
 
           const { data: allKeywords } = await admin.schema("signal_layer").from("keywords")
             .select("track, dimension, keyword, active").eq("active", true);
 
-          for (const source of activeSources || []) {
-            try {
-              // Discover + cache the feed type once per source.
-              let feedType = source.feed_type as string | null;
-              let feedUrl = source.feed_url as string | null;
-              if (!feedType) {
-                const discovered = await discoverFeed(source.url);
-                feedType = discovered.type;
-                feedUrl = discovered.url;
-                await admin.schema("signal_layer").from("sources")
-                  .update({ feed_type: feedType, feed_url: feedUrl }).eq("id", source.id);
-              }
-
-              // First-ever crawl for this source → 6-month backfill.
-              // Every later crawl → only since the last successful crawl.
-              const { count: existingCount } = await admin.schema("signal_layer").from("articles")
-                .select("id", { count: "exact", head: true }).eq("source_id", source.id);
-              const sinceDate = existingCount && existingCount > 0
-                ? new Date(source.last_crawled_at || Date.now() - 24 * 60 * 60 * 1000)
-                : new Date(Date.now() - 183 * 24 * 60 * 60 * 1000); // ~6 months
-
-              let candidates: CrawlCandidate[] = [];
-              if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl, sinceDate);
-              else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl, sinceDate);
-              else candidates = await runApifySourceCrawl(source.url, sinceDate);
-
-              // Dedupe against URLs already stored for this source.
-              const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
-                .select("url").eq("source_id", source.id);
-              const knownUrls = new Set((existingArticles || []).map((a: { url: string }) => a.url));
-              const freshCandidates = candidates.filter((c) => !knownUrls.has(c.url));
-
-              for (const candidate of freshCandidates) {
-                const fetched = await fetchArticleContent(candidate.url);
-                if (!fetched) continue;
-                const { data: inserted, error: insertErr } = await admin.schema("signal_layer").from("articles")
-                  .insert({
-                    source_id: source.id,
-                    url: candidate.url,
-                    title: fetched.title || candidate.title || candidate.url,
-                    content: fetched.content,
-                    excerpt: fetched.excerpt,
-                    published_at: fetched.publishedAt || candidate.publishedAt || null,
-                  })
-                  .select().single();
-                // onConflict(url) race with a parallel run → just skip, not fatal.
-                if (insertErr || !inserted) continue;
-
-                await matchAndStoreFindings(
-                  admin, inserted.id, crawl_run_id, inserted.title || "", inserted.content || "", allKeywords || [],
-                );
-              }
-
-              await admin.schema("signal_layer").from("sources")
-                .update({ last_crawled_at: new Date().toISOString() }).eq("id", source.id);
-            } catch (sourceErr) {
-              console.error(`Crawl failed for source ${source.id}:`, sourceErr);
-              // One bad source shouldn't abort the whole run.
-            }
+          // Discover + cache the feed type once per source.
+          let feedType = source.feed_type as string | null;
+          let feedUrl = source.feed_url as string | null;
+          if (!feedType) {
+            const discovered = await discoverFeed(source.url);
+            feedType = discovered.type;
+            feedUrl = discovered.url;
+            await admin.schema("signal_layer").from("sources")
+              .update({ feed_type: feedType, feed_url: feedUrl }).eq("id", source.id);
           }
 
-          await admin.schema("signal_layer").from("crawl_runs")
-            .update({ status: "done", finished_at: new Date().toISOString() }).eq("id", crawl_run_id);
-        } catch (err) {
-          await admin.schema("signal_layer").from("crawl_runs")
-            .update({
-              status: "error",
-              finished_at: new Date().toISOString(),
-              error: err instanceof Error ? err.message : String(err),
-            }).eq("id", crawl_run_id);
+          // First-ever crawl for this source → 6-month backfill.
+          // Every later crawl → only since the last successful crawl.
+          const { count: existingCount } = await admin.schema("signal_layer").from("articles")
+            .select("id", { count: "exact", head: true }).eq("source_id", source.id);
+          const sinceDate = existingCount && existingCount > 0
+            ? new Date(source.last_crawled_at || Date.now() - 24 * 60 * 60 * 1000)
+            : new Date(Date.now() - 183 * 24 * 60 * 60 * 1000); // ~6 months
+
+          let candidates: CrawlCandidate[] = [];
+          if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl, sinceDate);
+          else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl, sinceDate);
+          else candidates = await runApifySourceCrawl(source.url, sinceDate);
+
+          // Dedupe against URLs already stored for this source.
+          const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
+            .select("url").eq("source_id", source.id);
+          const knownUrls = new Set((existingArticles || []).map((a: { url: string }) => a.url));
+          const freshCandidates = candidates.filter((c) => !knownUrls.has(c.url));
+
+          for (const candidate of freshCandidates) {
+            const fetched = await fetchArticleContent(candidate.url);
+            if (!fetched) continue;
+            const { data: inserted, error: insertErr } = await admin.schema("signal_layer").from("articles")
+              .insert({
+                source_id: source.id,
+                url: candidate.url,
+                title: fetched.title || candidate.title || candidate.url,
+                content: fetched.content,
+                excerpt: fetched.excerpt,
+                published_at: fetched.publishedAt || candidate.publishedAt || null,
+              })
+              .select().single();
+            // onConflict(url) race with a parallel run → just skip, not fatal.
+            if (insertErr || !inserted) continue;
+
+            await matchAndStoreFindings(
+              admin, inserted.id, crawl_run_id, inserted.title || "", inserted.content || "", allKeywords || [],
+            );
+          }
+
+          await admin.schema("signal_layer").from("sources")
+            .update({ last_crawled_at: new Date().toISOString() }).eq("id", source.id);
+        } catch (sourceErr) {
+          console.error(`Crawl failed for source ${sourceId}:`, sourceErr);
+          // One bad source shouldn't abort the whole chain — just move on.
         }
+
+        // Fire-and-forget the next source in the chain, regardless of
+        // whether this one succeeded, so a single bad source can't stall
+        // the whole run.
+        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
+        fetch(selfUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+          body: JSON.stringify({ action: "process_crawl", crawl_run_id, source_ids, index: index + 1 }),
+        }).catch((e) => console.error("Failed to trigger next process_crawl step:", e));
 
         return corsResponse(origin, { ok: true });
       }
