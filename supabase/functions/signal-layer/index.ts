@@ -124,6 +124,17 @@ interface CrawlCandidate {
   publishedAt?: string | null;
 }
 
+type SourceType = "editorial" | "corporate_newsroom" | "event" | "social";
+type CrawlPolicy = {
+  sourceType: SourceType;
+  entryPath: string;
+  maxDepth: number;
+  maxPages: number;
+  maxCandidates: number;
+  requireTier1: boolean;
+  requireTopicSignal: boolean;
+};
+
 const FETCH_TIMEOUT_MS = 15_000;
 
 // These are navigation/support sections, not editorial marketing or sales
@@ -139,6 +150,68 @@ const NON_EDITORIAL_URL_PARTS = [
   "/datenschutz", "/privacy", "/cookies", "/terms", "/agb", "/sitemap",
   "/search", "/suche", "/tag/", "/category/", "/kategorie/", "/author/",
 ];
+
+const EVENT_NON_EDITORIAL_URL_PARTS = [
+  "/ticketshop", "/travel", "/anreise", "/hotel", "/accommodation",
+  "/floorplan", "/hall-plan", "/exhibitor-directory", "/ausstellerverzeichnis",
+];
+
+const EDITORIAL_PATH_PARTS = [
+  "/news", "/press", "/presse", "/media", "/magazine", "/magazin",
+  "/blog", "/stories", "/story", "/insights", "/trends", "/innovation",
+  "/firmennews", "/company-news", "/exhibitor-news", "/press-releases",
+  "/pressreleases", "/pressinformation", "/presseinformationen",
+  "/pressemeldungen", "/newsticker",
+];
+
+const EVENT_TOPIC_TERMS = [
+  "brand strategy", "brand positioning", "relaunch", "campaign", "marketing",
+  "customer experience", "consumer behavior", "consumer trend", "retail media",
+  "private label", "category management", "pricing", "promotion", "assortment",
+  "store concept", "artificial intelligence", "automation", "measurable impact",
+  "innovation", "growth strategy", "market expansion", "markenstrategie",
+  "markenpositionierung", "kampagne", "kundenerlebnis", "konsumtrend",
+  "eigenmarke", "sortiment", "preisstrategie", "filialkonzept", "künstliche intelligenz",
+  "automatisierung", "wachstumsstrategie", "marktexpansion",
+];
+
+function getCrawlPolicy(source: { url?: string; source_type?: string; category?: string; crawl_config?: Record<string, unknown> }): CrawlPolicy {
+  const inferred = source.category === "Events & Messen" ? "event"
+    : source.category === "Social Media" ? "social"
+    : source.category === "Tier 1 Newsroom" ? "corporate_newsroom" : "editorial";
+  const sourceType = (["editorial", "corporate_newsroom", "event", "social"].includes(source.source_type || "")
+    ? source.source_type : inferred) as SourceType;
+  const config = source.crawl_config || {};
+  return {
+    sourceType,
+    entryPath: (() => {
+      try { return new URL(source.url || "https://invalid.local/").pathname.toLowerCase(); }
+      catch { return "/"; }
+    })(),
+    maxDepth: Number(config.max_depth ?? (sourceType === "event" ? 1 : 2)),
+    maxPages: Number(config.max_pages ?? (sourceType === "event" ? 24 : 40)),
+    maxCandidates: Number(config.max_candidates ?? (sourceType === "event" ? 60 : 250)),
+    requireTier1: Boolean(config.require_tier1 ?? sourceType === "event"),
+    requireTopicSignal: Boolean(config.require_topic_signal ?? sourceType === "event"),
+  };
+}
+
+function isAllowedBySourcePolicy(rawUrl: string, policy: CrawlPolicy): boolean {
+  if (isLikelyNonEditorialUrl(rawUrl)) return false;
+  try {
+    const value = `${new URL(rawUrl).pathname}${new URL(rawUrl).search}`.toLowerCase();
+    if (policy.sourceType === "corporate_newsroom") {
+      const underDedicatedEntry = policy.entryPath !== "/" && value.startsWith(policy.entryPath.replace(/\/$/, ""));
+      return underDedicatedEntry || EDITORIAL_PATH_PARTS.some((part) => value.includes(part));
+    }
+    if (policy.sourceType !== "event") return true;
+    if (EVENT_NON_EDITORIAL_URL_PARTS.some((part) => value.includes(part))) return false;
+    if (/(^|\/)(agenda|program|programme|speakers?|tickets?|visitors?|besucher)(\/|$|\?)/i.test(value)) return false;
+    return EDITORIAL_PATH_PARTS.some((part) => value.includes(part));
+  } catch {
+    return false;
+  }
+}
 
 const CAREER_CONTENT_TERMS = [
   "bewerbung", "bewerben", "stellenbörse", "stellenboerse", "freie stellen",
@@ -395,13 +468,30 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
 // Apify fallback — only used when a source has neither RSS nor sitemap.
 // Heuristic pageFunction: JSON-LD/og:type Article detection + light pagination.
 // ---------------------------------------------------------------------------
-async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date): Promise<CrawlCandidate[]> {
+async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date, policy: CrawlPolicy): Promise<CrawlCandidate[]> {
   const apifyKey = await getApifyKey();
   if (!apifyKey) return [];
 
   const pageFunction = `
     async function pageFunction(context) {
       const { request, $, log } = context;
+      const blocked = ${JSON.stringify(NON_EDITORIAL_URL_PARTS)};
+      const eventBlocked = ${JSON.stringify(EVENT_NON_EDITORIAL_URL_PARTS)};
+      const editorialPaths = ${JSON.stringify(EDITORIAL_PATH_PARTS)};
+      const eventMode = ${JSON.stringify(policy.sourceType === "event")};
+      const corporateMode = ${JSON.stringify(policy.sourceType === "corporate_newsroom")};
+      const entryPath = ${JSON.stringify(policy.entryPath.replace(/\/$/, ""))};
+      const allowed = (raw) => {
+        try {
+          const parsed = new URL(raw);
+          const value = (parsed.pathname + parsed.search).toLowerCase();
+          if (blocked.some((part) => value.includes(part))) return false;
+          if (eventMode && eventBlocked.some((part) => value.includes(part))) return false;
+          if (eventMode && /(^|\\/)(agenda|program|programme|speakers?|tickets?|visitors?|besucher)(\\/|$|\\?)/i.test(value)) return false;
+          if (corporateMode) return (entryPath !== '' && entryPath !== '/' && value.startsWith(entryPath)) || editorialPaths.some((part) => value.includes(part));
+          return !eventMode || editorialPaths.some((part) => value.includes(part));
+        } catch { return false; }
+      };
       const isArticle = !!(
         $('script[type="application/ld+json"]').filter((_, el) => /"@type"\\s*:\\s*"(NewsArticle|Article|BlogPosting)"/i.test($(el).html() || '')).length ||
         $('meta[property="og:type"]').attr('content') === 'article'
@@ -418,7 +508,7 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date): Promise<
         if (!href) return;
         try {
           const abs = new URL(href, request.url).toString();
-          if (new URL(abs).hostname === new URL(request.url).hostname) links.add(abs);
+          if (new URL(abs).hostname === new URL(request.url).hostname && allowed(abs)) links.add(abs);
         } catch {}
       });
       await context.enqueueLinks({ urls: [...links].slice(0, 40), userData: { label: 'ARTICLE' } });
@@ -434,8 +524,8 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date): Promise<
       body: JSON.stringify({
         startUrls: [{ url: sourceUrl }],
         pageFunction,
-        maxCrawlingDepth: 2,
-        maxPagesPerCrawl: 40,
+        maxCrawlingDepth: policy.maxDepth,
+        maxPagesPerCrawl: policy.maxPages,
         proxyConfiguration: { useApifyProxy: true },
       }),
     }
@@ -451,7 +541,9 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date): Promise<
   const items = await runRes.json().catch(() => []) as Array<{ url: string; title?: string; publishedAt?: string | null; isArticle?: boolean }>;
   return items
     .filter((it) => it.isArticle)
+    .filter((it) => isAllowedBySourcePolicy(it.url, policy))
     .filter((it) => !it.publishedAt || new Date(it.publishedAt) >= sinceDate)
+    .slice(0, policy.maxCandidates)
     .map((it) => ({ url: it.url, title: it.title, publishedAt: it.publishedAt }));
 }
 
@@ -798,6 +890,17 @@ function selectCompanyCandidates(
     const normalizedTerm = normalizeMatchText(term);
     return normalizedTerm.length >= 3 && normalizedText.includes(` ${normalizedTerm} `);
   }));
+}
+
+function passesEventPreClassificationGate(
+  articleText: string,
+  tier1Companies: Array<{ name: string; aliases: string[] }>,
+  policy: CrawlPolicy,
+): boolean {
+  if (policy.sourceType !== "event") return true;
+  const hasTier1 = selectCompanyCandidates(articleText, tier1Companies).length > 0;
+  const hasTopicSignal = hasAnyMatchTerm(normalizeMatchText(articleText), EVENT_TOPIC_TERMS);
+  return (!policy.requireTier1 || hasTier1) && (!policy.requireTopicSignal || hasTopicSignal);
 }
 
 function buildClassifierPrompt(
@@ -1386,6 +1489,7 @@ Deno.serve(async (req: Request) => {
             .select("track, dimension, keyword, kind, active").eq("active", true);
           const { data: tier1Companies } = await admin.schema("signal_layer").from("tier1_companies")
             .select("name, aliases").eq("active", true);
+          const crawlPolicy = getCrawlPolicy(source);
 
           // Discover + cache the feed type once per source.
           let feedType = source.feed_type as string | null;
@@ -1412,7 +1516,10 @@ Deno.serve(async (req: Request) => {
           let candidates: CrawlCandidate[] = [];
           if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl, sinceDate);
           else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl, sinceDate);
-          else candidates = await runApifySourceCrawl(source.url, sinceDate);
+          else candidates = await runApifySourceCrawl(source.url, sinceDate, crawlPolicy);
+          candidates = candidates
+            .filter((candidate) => isAllowedBySourcePolicy(candidate.url, crawlPolicy))
+            .slice(0, crawlPolicy.maxCandidates);
 
           const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
             .select("url").eq("source_id", source.id);
@@ -1427,6 +1534,10 @@ Deno.serve(async (req: Request) => {
             const fetched = await fetchArticleContent(candidate.url);
             if (!fetched) continue;
             if (isLikelyNonEditorialPage(fetched)) continue;
+            if (!passesEventPreClassificationGate(
+              `${fetched.title}\n${fetched.excerpt}\n${fetched.content}`,
+              tier1Companies || [], crawlPolicy,
+            )) continue;
 
             // A CONFIRMED date outside the freshness window is discarded —
             // sitemap `lastmod` is a last-MODIFIED date, not a publish date,
