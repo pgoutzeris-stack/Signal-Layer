@@ -255,6 +255,42 @@ async function fetchSitemapArticles(sitemapUrl: string, sinceDate: Date, depth =
 // ---------------------------------------------------------------------------
 // Article content extraction — best-effort, no headless browser available.
 // ---------------------------------------------------------------------------
+function extractPublishedDate(html: string, url: string): string | null {
+  // Try, in order, every place a publish date commonly hides. The deeper/
+  // less standard patterns near the end exist specifically for sites whose
+  // markup doesn't use the two most common tags — worth the extra regex
+  // passes since a wrongly-missing date means a real article gets excluded.
+  const patterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /"datePublished"\s*:\s*"([^"]+)"/i,
+    /<meta[^>]+name=["']date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']publish-date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']publish_date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']sailthru\.date["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+property=["']og:article:published_time["'][^>]+content=["']([^"']+)["']/i,
+    /<time[^>]+datetime=["']([^"']+)["']/i,
+    /<meta[^>]+property=["']article:modified_time["'][^>]+content=["']([^"']+)["']/i,
+    /"dateModified"\s*:\s*"([^"]+)"/i,
+  ];
+  for (const pattern of patterns) {
+    const m = html.match(pattern);
+    if (m?.[1]) {
+      const d = new Date(m[1]);
+      if (!isNaN(d.getTime())) return m[1];
+    }
+  }
+  // Last resort: a /YYYY/MM/DD/ date pattern baked into the URL itself
+  // (common WordPress/CMS permalink structure).
+  const urlDateMatch = url.match(/\/(20\d{2})\/(\d{2})\/(\d{2})(?:\/|$)/);
+  if (urlDateMatch) {
+    const iso = `${urlDateMatch[1]}-${urlDateMatch[2]}-${urlDateMatch[3]}`;
+    if (!isNaN(new Date(iso).getTime())) return iso;
+  }
+  return null;
+}
+
 async function fetchArticleContent(url: string): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
   try {
     const res = await fetchWithTimeout(url);
@@ -268,9 +304,7 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
     const descMatch = html.match(/<meta[^>]+(?:property=["']og:description["']|name=["']description["'])[^>]+content=["']([^"']+)["']/i);
     const excerpt = (descMatch?.[1] || "").trim();
 
-    const dateMatch = html.match(/<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i)
-      || html.match(/"datePublished"\s*:\s*"([^"]+)"/i);
-    const publishedAt = dateMatch?.[1] || null;
+    const publishedAt = extractPublishedDate(html, url);
 
     const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
     let text = bodyMatch ? bodyMatch[0] : html;
@@ -669,13 +703,15 @@ Deno.serve(async (req: Request) => {
             const fetched = await fetchArticleContent(candidate.url);
             if (!fetched) continue;
 
-            // Enforce the freshness window on the article's OWN resolved date,
-            // not just the pre-fetch candidate signal (sitemap `lastmod` is a
-            // last-MODIFIED date, not a publish date — evergreen pages can pass
-            // the candidate filter while being much older; Apify items with no
-            // detectable date must not be let through either).
+            // A CONFIRMED date outside the freshness window is discarded —
+            // sitemap `lastmod` is a last-MODIFIED date, not a publish date,
+            // so evergreen pages can otherwise sneak in as "new". But when no
+            // date can be found at all (despite the deep extraction above),
+            // we keep the article rather than silently drop it — it's tagged
+            // as dateless (published_at stays null) so it's visibly flagged
+            // as unverified in the DB/UI instead of pretending it's fresh.
             const resolvedPublishedAt = fetched.publishedAt || candidate.publishedAt || null;
-            if (!resolvedPublishedAt || new Date(resolvedPublishedAt) < sinceDate) continue;
+            if (resolvedPublishedAt && new Date(resolvedPublishedAt) < sinceDate) continue;
 
             const { data: inserted, error: insertErr } = await admin.schema("signal_layer").from("articles")
               .insert({
