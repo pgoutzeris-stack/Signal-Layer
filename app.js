@@ -48,6 +48,90 @@ function escapeText(value) {
   return escapeHtml(decodeHtmlEntities(value));
 }
 
+function normalizeTextWithMap(value) {
+  const text = decodeHtmlEntities(value);
+  let normalized = "";
+  const positions = [];
+  let pendingSpace = false;
+  let pendingPosition = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const folded = text[index].toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss");
+    for (const character of folded) {
+      if (/[a-z0-9]/.test(character)) {
+        if (pendingSpace && normalized) {
+          normalized += " ";
+          positions.push(pendingPosition);
+        }
+        normalized += character;
+        positions.push(index);
+        pendingSpace = false;
+      } else if (normalized) {
+        pendingSpace = true;
+        pendingPosition = index;
+      }
+    }
+  }
+  return { text, normalized, positions };
+}
+
+function findEvidenceRanges(value, evidence) {
+  const haystack = normalizeTextWithMap(value);
+  const ranges = [];
+  evidence.forEach(([, quote], evidenceIndex) => {
+    const needle = normalizeTextWithMap(String(quote || "")).normalized;
+    if (needle.length < 4) return;
+    let from = 0;
+    while (from < haystack.normalized.length) {
+      const match = haystack.normalized.indexOf(needle, from);
+      if (match < 0) break;
+      const start = haystack.positions[match];
+      const end = haystack.positions[match + needle.length - 1] + 1;
+      if (Number.isInteger(start) && Number.isInteger(end)) ranges.push({ start, end, evidenceIndex });
+      from = match + needle.length;
+    }
+  });
+  return { text: haystack.text, ranges };
+}
+
+function renderEvidenceLinkedText(value, evidence) {
+  const { text, ranges } = findEvidenceRanges(value, evidence);
+  if (!ranges.length) return escapeHtml(text);
+  const boundaries = [...new Set([0, text.length, ...ranges.flatMap(({ start, end }) => [start, end])])].sort((a, b) => a - b);
+  return boundaries.slice(0, -1).map((start, index) => {
+    const end = boundaries[index + 1];
+    const evidenceIndexes = ranges
+      .filter((range) => range.start <= start && range.end >= end)
+      .map((range) => range.evidenceIndex);
+    const content = escapeHtml(text.slice(start, end));
+    return evidenceIndexes.length
+      ? `<mark class="evidence-passage" data-evidence-indexes="${evidenceIndexes.join(",")}">${content}</mark>`
+      : content;
+  }).join("");
+}
+
+function bindEvidenceHover() {
+  const items = els.articleDetailContent.querySelectorAll(".evidence-item[data-evidence-index]");
+  const passages = els.articleDetailContent.querySelectorAll(".evidence-passage");
+  const setHighlight = (index, active) => {
+    passages.forEach((passage) => {
+      const indexes = (passage.dataset.evidenceIndexes || "").split(",");
+      if (indexes.includes(String(index))) passage.classList.toggle("is-active", active);
+    });
+    if (active) {
+      const firstMatch = [...passages].find((passage) => passage.classList.contains("is-active"));
+      firstMatch?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+  items.forEach((item) => {
+    const index = item.dataset.evidenceIndex;
+    item.addEventListener("mouseenter", () => setHighlight(index, true));
+    item.addEventListener("mouseleave", () => setHighlight(index, false));
+    item.addEventListener("focus", () => setHighlight(index, true));
+    item.addEventListener("blur", () => setHighlight(index, false));
+  });
+}
+
 async function callApi(action, payload = {}) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session?.access_token) throw new Error("Nicht angemeldet");
@@ -284,7 +368,7 @@ async function openArticleDetail(articleId) {
       <button type="button" class="article-detail-close" aria-label="Schließen"><i class="ri-close-line"></i></button>
       <main class="article-detail-main">
         <span class="article-detail-kicker">${escapeHtml(source?.company || "Signal Layer")}</span>
-        <h2 class="article-detail-title" id="article-detail-title">${escapeText(article.title || "Ohne Titel")}</h2>
+        <h2 class="article-detail-title" id="article-detail-title">${renderEvidenceLinkedText(article.title || "Ohne Titel", evidence)}</h2>
         <div class="article-detail-meta">
           ${article.published_at ? `<span class="tag"><i class="ri-calendar-line"></i> ${escapeHtml(new Date(article.published_at).toLocaleDateString("de-DE"))}</span>` : ""}
           ${article.article_type ? `<span class="tag"><i class="ri-file-text-line"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
@@ -292,7 +376,7 @@ async function openArticleDetail(articleId) {
           ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> Originalquelle</a>` : ""}
         </div>
         ${article.ai_summary ? `<p class="article-detail-summary">${escapeText(article.ai_summary)}</p>` : ""}
-        <div class="article-fulltext">${escapeText(fulltext)}</div>
+        <div class="article-fulltext">${renderEvidenceLinkedText(fulltext, evidence)}</div>
       </main>
       <aside class="article-detail-aside">
         <h3>Warum diese Entscheidung?</h3>
@@ -310,12 +394,13 @@ async function openArticleDetail(articleId) {
           <span class="decision-label">Tags & Routing</span>
           <div class="decision-tags">${renderDetailTags(article) || `<span class="decision-lead">Keine Tags vergeben</span>`}</div>
         </div>
-        ${evidence.length ? `<div class="decision-block"><span class="decision-label">Bestandene Evidenzregeln</span><div class="evidence-list">${evidence.map(([key, quote]) => `<blockquote class="evidence-item"><strong>${escapeHtml(key)}</strong>${escapeHtml(quote)}</blockquote>`).join("")}</div></div>` : ""}
+        ${evidence.length ? `<div class="decision-block"><span class="decision-label">Bestandene Evidenzregeln</span><div class="evidence-list">${evidence.map(([key, quote], index) => `<blockquote class="evidence-item" data-evidence-index="${index}" tabindex="0"><strong>${escapeHtml(key)}</strong>${escapeText(quote)}</blockquote>`).join("")}</div></div>` : ""}
         <div class="decision-block">
           <span class="decision-label">Technische Prüfung</span>
           <p class="decision-rationale">${escapeHtml(article.ai_model || "Regelbasiert")} ${article.reviewer_model ? `+ Review durch ${escapeHtml(article.reviewer_model)}` : ""}<br>Prompt: ${escapeHtml(article.prompt_version || "Legacy")}</p>
         </div>
       </aside>`;
+    bindEvidenceHover();
   } catch (err) {
     els.articleDetailContent.innerHTML = `<button type="button" class="article-detail-close" aria-label="Schließen"><i class="ri-close-line"></i></button><div class="detail-loading">Detail konnte nicht geladen werden: ${escapeHtml(err.message)}</div>`;
   }
