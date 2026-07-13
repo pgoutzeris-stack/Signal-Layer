@@ -437,8 +437,100 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date): Promise<
 
 // ---------------------------------------------------------------------------
 // Keyword matching — tags a newly stored article with every track/dimension
-// whose active keywords appear in its title+content.
+// whose active keywords appear in its title+content. Matching is deliberately
+// deterministic: normalized terms, curated DE/EN synonym families, weighted
+// title matches, and trigger gates for personnel-only articles.
 // ---------------------------------------------------------------------------
+const MATCH_TERM_FAMILIES: Record<string, string[]> = {
+  "kaufverhalten": ["kaufverhalten", "consumer buying behavior", "consumer behavior", "purchasing behavior"],
+  "konsumverhalten": ["konsumverhalten", "consumer behavior", "consumer trends"],
+  "kundenzufriedenheit": ["kundenzufriedenheit", "customer satisfaction", "customer sentiment"],
+  "markenstrategie": ["markenstrategie", "brand strategy", "brand positioning"],
+  "markenführung": ["markenführung", "brand management", "brand leadership"],
+  "markentreue": ["markentreue", "brand loyalty", "customer loyalty"],
+  "zielgruppenanalyse": ["zielgruppenanalyse", "target audience analysis", "audience insights", "consumer insights"],
+  "customer experience": ["customer experience", "cx", "kundenerlebnis"],
+  "einzelhandel": ["einzelhandel", "retail", "retailing"],
+  "handelsmarke": ["handelsmarke", "private label", "own label"],
+  "sortimentsstrategie": ["sortimentsstrategie", "assortment strategy", "range strategy"],
+  "omnichannel": ["omnichannel", "omni-channel"],
+  "produkteinführung": ["produkteinführung", "product launch", "product introduction"],
+  "markenrelaunch": ["markenrelaunch", "brand relaunch", "brand refresh"],
+  "kampagnenstart": ["kampagnenstart", "campaign launch", "campaign rollout"],
+  "rebranding": ["rebranding", "brand repositioning", "repositioning"],
+  "werbekampagne": ["werbekampagne", "advertising campaign", "marketing campaign"],
+  "expansion": ["expansion", "market expansion", "international expansion"],
+  "markteintritt": ["markteintritt", "market entry", "entering the market"],
+  "übernahme": ["übernahme", "acquisition", "takeover"],
+  "fusion": ["fusion", "merger"],
+  "investition": ["investition", "investment", "capital investment"],
+  "agenturwechsel": ["agenturwechsel", "agency change", "new agency appointment", "appoints agency"],
+  "restrukturierung": ["restrukturierung", "restructuring", "transformation program"],
+  "strategiewechsel": ["strategiewechsel", "strategy change", "strategic shift"],
+  "generative ki": ["generative ki", "generative ai", "genai"],
+  "künstliche intelligenz marketing": ["künstliche intelligenz marketing", "ai marketing", "artificial intelligence marketing"],
+  "ai-agenten": ["ai-agenten", "ai agents", "autonomous ai agents"],
+  "automatisierung marketing": ["automatisierung marketing", "marketing automation", "automated marketing"],
+  "ki case study": ["ki case study", "ai case study", "artificial intelligence case study"],
+  "ki umsatzsteigerung": ["ki umsatzsteigerung", "ai revenue growth", "ai-driven revenue growth"],
+  "ki-gestützte kampagne": ["ki-gestützte kampagne", "ai-powered campaign", "ai-driven campaign"],
+  "predictive analytics": ["predictive analytics", "prognoseanalyse", "predictive modelling"],
+  "brand manager": ["brand manager", "brand director", "brand lead"],
+  "chief marketing officer": ["chief marketing officer", "cmo", "neuer cmo", "new cmo", "marketingdirektor", "marketingleiter"],
+  "jahresergebnis": ["jahresergebnis", "annual results", "annual report", "full-year results"],
+  "quartalszahlen": ["quartalszahlen", "quarterly results", "quarterly figures", "earnings report"],
+  "pressemitteilung": ["pressemitteilung", "press release", "company announcement"],
+  "sponsoring": ["sponsoring", "sponsorship"],
+  "ausschreibung": ["ausschreibung", "tender", "request for proposal", "rfp"],
+  "budgetkürzung": ["budgetkürzung", "budget cut", "budget reduction"],
+  "marketingbudget": ["marketingbudget", "marketing budget"],
+  "pitch": ["pitch", "agency pitch", "creative pitch"],
+  "sparprogramm": ["sparprogramm", "cost-cutting program", "cost reduction program"],
+};
+
+const PERSONNEL_ONLY_TERMS = [
+  "neuer ceo", "new ceo", "appointed ceo", "appoints a ceo", "chief executive officer",
+  "neuer cmo", "new cmo", "new chief marketing officer", "chief marketing officer",
+  "personalwechsel", "executive appointment", "leadership appointment", "new hire",
+];
+
+const STRATEGIC_TRIGGER_TERMS = [
+  "rebranding", "brand strategy", "brand positioning", "brand repositioning", "kampagne",
+  "campaign", "launch", "produkteinführung", "product launch", "expansion", "market entry",
+  "restructuring", "transformation", "agency", "agentur", "investment", "investition",
+  "acquisition", "übernahme", "merger", "fusion", "new market", "neuer markt",
+  "target audience", "zielgruppe", "ai", "ki", "automation", "automatisierung",
+];
+
+function normalizeMatchText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function containsMatchTerm(normalizedText: string, rawTerm: string): boolean {
+  const term = normalizeMatchText(rawTerm);
+  if (!term) return false;
+  return ` ${normalizedText} `.includes(` ${term} `);
+}
+
+function variantsForKeyword(keyword: string): string[] {
+  const normalized = normalizeMatchText(keyword);
+  const family = Object.entries(MATCH_TERM_FAMILIES).find(([, variants]) =>
+    variants.some((variant) => normalizeMatchText(variant) === normalized),
+  );
+  return [...new Set([keyword, ...(family?.[1] || [])])];
+}
+
+function hasAnyMatchTerm(normalizedText: string, terms: string[]): boolean {
+  return terms.some((term) => containsMatchTerm(normalizedText, term));
+}
+
 async function matchAndStoreFindings(
   admin: ReturnType<typeof createClient>,
   articleId: string,
@@ -447,23 +539,41 @@ async function matchAndStoreFindings(
   content: string,
   allKeywords: Array<{ track: string; dimension: string | null; keyword: string; active: boolean }>,
 ): Promise<void> {
-  const haystack = `${title} ${content}`.toLowerCase();
-  const byTrackDim = new Map<string, string[]>();
+  const normalizedTitle = normalizeMatchText(title);
+  const normalizedBody = normalizeMatchText(content);
+  const normalizedAll = `${normalizedTitle} ${normalizedBody}`.trim();
+  const personnelOnly = hasAnyMatchTerm(normalizedAll, PERSONNEL_ONLY_TERMS)
+    && !hasAnyMatchTerm(normalizedAll, STRATEGIC_TRIGGER_TERMS);
+  if (personnelOnly) return;
+
+  const byTrackDim = new Map<string, { matched: string[]; score: number; hasTrigger: boolean }>();
   for (const kw of allKeywords) {
     if (!kw.active) continue;
-    if (!haystack.includes(kw.keyword.toLowerCase())) continue;
+    const variants = variantsForKeyword(kw.keyword);
+    const inTitle = variants.some((term) => containsMatchTerm(normalizedTitle, term));
+    const inBody = variants.some((term) => containsMatchTerm(normalizedBody, term));
+    if (!inTitle && !inBody) continue;
     const key = `${kw.track}::${kw.dimension || ""}`;
-    if (!byTrackDim.has(key)) byTrackDim.set(key, []);
-    byTrackDim.get(key)!.push(kw.keyword);
+    const current = byTrackDim.get(key) || { matched: [], score: 0, hasTrigger: false };
+    current.matched.push(kw.keyword);
+    current.score += inTitle ? 5 : 1;
+    if (hasAnyMatchTerm(normalizedAll, STRATEGIC_TRIGGER_TERMS)) current.hasTrigger = true;
+    byTrackDim.set(key, current);
   }
-  for (const [key, matched] of byTrackDim) {
+  for (const [key, result] of byTrackDim) {
     const [track, dimension] = key.split("::");
+    // A single body mention is too weak. A title hit reaches the threshold,
+    // while several independent body matches can also qualify.
+    if (result.score < 5) continue;
+    // Buying-center data is useful only when tied to a concrete business
+    // trigger. A standalone CEO/CMO appointment must not become a signal.
+    if (dimension === "buying_center" && !result.hasTrigger) continue;
     await admin.schema("signal_layer").from("findings").upsert({
       article_id: articleId,
       crawl_run_id: crawlRunId,
       track,
       dimension: dimension || null,
-      matched_keywords: matched,
+      matched_keywords: result.matched,
     }, { onConflict: "article_id,track,dimension" });
   }
 }
