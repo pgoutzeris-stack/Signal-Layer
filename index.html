@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal Layer</title>
+<link rel="stylesheet" href="https://fonts.cdnfonts.com/css/circular-std">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+<style>
+  :root {
+    --ink:            #0f172a;
+    --muted:          #475569;
+    --line:           #e2e8f0;
+    --brand:          #206efb;
+    --brand-light:    #eff6ff;
+    --brand-dark:     #165fd9;
+    --danger:         #dc2626;
+    --success:        #10b981;
+    --status-bg:      #f8fafc;
+    --status-border:  #94a3b8;
+    --status-text:    #334155;
+    --warning-bg:     #fffbf0;
+    --warning-text:   #b45309;
+    --bg:             #ffffff;
+    --app-bg:         #f4f7fb;
+    --shadow:         0 6px 20px rgba(15, 23, 42, .08);
+    --shadow-lg:      0 12px 40px rgba(15, 23, 42, .14);
+    --shadow-dash:    0 2px 8px rgba(15, 23, 42, .04);
+    --shadow-modal:   0 20px 60px rgba(15, 23, 42, .2);
+    --shadow-focus:   0 0 0 3px rgba(32, 110, 251, .15);
+    --radius:         16px;
+    --radius-dash:    14px;
+    --radius-pill:    999px;
+    --surface:        #f8fafc;
+    --disabled-bg:    #e2e8f0;
+    --disabled-text:  #94a3b8;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:            #f8fafc;
+      --muted:          #94a3b8;
+      --line:           #334155;
+      --brand:          #3b82f6;
+      --brand-light:    #1e3a8a;
+      --brand-dark:     #60a5fa;
+      --danger:         #ef4444;
+      --success:        #34d399;
+      --status-bg:      #1e293b;
+      --status-border:  #475569;
+      --status-text:    #cbd5e1;
+      --warning-bg:     #451a03;
+      --warning-text:   #fde68a;
+      --bg:             #0f172a;
+      --app-bg:         #0b1220;
+      --shadow:         0 6px 20px rgba(0, 0, 0, .5);
+      --surface:        #1e293b;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Circular Std', system-ui, sans-serif;
+    background: var(--app-bg);
+    color: var(--ink);
+    min-height: 100vh;
+  }
+
+  #app-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .8rem 1.5rem;
+    min-height: 64px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    box-shadow: var(--shadow-dash);
+    gap: 14px;
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: var(--brand);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .wordmark {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .wordmark span { color: var(--brand); }
+
+  main#main-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+
+  .placeholder-card {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 3rem 2.5rem;
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+  }
+  .placeholder-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: var(--brand-light);
+    color: var(--brand);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    margin: 0 auto 1.25rem;
+  }
+  .placeholder-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: .5rem;
+  }
+  .placeholder-text {
+    font-size: .92rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  @media (max-width: 980px) {
+    .app-header {
+      min-height: 64px;
+      padding: 12px;
+      flex-wrap: wrap;
+    }
+    .header-left { width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <div id="app-container">
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-mark"><i class="ri-broadcast-line"></i></div>
+        <div class="wordmark">Signal <span>Layer</span></div>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <div class="placeholder-card">
+        <div class="placeholder-icon"><i class="ri-tools-line"></i></div>
+        <div class="placeholder-title">Noch im Aufbau</div>
+        <div class="placeholder-text">Dieses Tool wird gerade eingerichtet. Der Inhalt folgt in Kuerze.</div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
