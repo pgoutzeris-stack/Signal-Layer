@@ -113,6 +113,58 @@ interface CrawlCandidate {
 
 const FETCH_TIMEOUT_MS = 15_000;
 
+// These are navigation/support sections, not editorial marketing or sales
+// content. Keep this list intentionally conservative: press and news paths
+// remain eligible because they can contain real business triggers.
+const NON_EDITORIAL_URL_PARTS = [
+  "/jobs", "/jobboerse", "/job-board", "/careers", "/career", "/karriere",
+  "/stellenangebote", "/stellenboerse", "/bewerbung", "/bewerben", "/ausbildung",
+  "/duales-studium", "/trainee", "/praktikum", "/werkstudent", "/internship",
+  "/apprenticeship", "/vacancies", "/apply", "/human-resources", "/hr",
+  "/faq", "/frequently-asked-questions", "/fragen-und-antworten", "/hilfe",
+  "/help", "/support", "/kontakt", "/contact", "/service", "/impressum",
+  "/datenschutz", "/privacy", "/cookies", "/terms", "/agb", "/sitemap",
+  "/search", "/suche", "/tag/", "/category/", "/kategorie/", "/author/",
+];
+
+const CAREER_CONTENT_TERMS = [
+  "bewerbung", "bewerben", "stellenbörse", "stellenboerse", "freie stellen",
+  "ausbildung", "praktikum", "traineeprogramm", "bewerbungsfrist", "lebenslauf",
+  "anschreiben", "bewerbungsunterlagen", "job suchen", "jobs & karriere",
+  "application process", "apply now", "open positions", "vacancies", "internship",
+  "apprenticeship", "graduate program", "resume", "cover letter", "job board",
+];
+
+function isLikelyNonEditorialUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    const value = `${url.pathname}${url.search}`.toLowerCase().replace(/\\+/g, "/");
+    return NON_EDITORIAL_URL_PARTS.some((part) => value.includes(part));
+  } catch {
+    return true;
+  }
+}
+
+function countTermMatches(text: string, terms: string[]): number {
+  return terms.reduce((count, term) => count + (text.includes(term) ? 1 : 0), 0);
+}
+
+function isLikelyNonEditorialPage(article: { title: string; content: string; excerpt: string }): boolean {
+  const text = `${article.title} ${article.excerpt} ${article.content}`.toLowerCase();
+  const title = article.title.toLowerCase();
+  const careerMatches = countTermMatches(text, CAREER_CONTENT_TERMS);
+  const questionCount = (text.match(/\?/g) || []).length;
+  const faqHeading = /(^|\s)(faq|frequently asked questions|noch fragen|häufige fragen)(\s|$)/i.test(title);
+
+  // A career/FAQ landing page is usually a cluster of application terms or
+  // questions. One incidental word is not enough, so ordinary press articles
+  // mentioning hiring still remain eligible.
+  if (faqHeading) return true;
+  if (careerMatches >= 3) return true;
+  if (questionCount >= 5 && careerMatches >= 2) return true;
+  return false;
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
@@ -292,6 +344,7 @@ function extractPublishedDate(html: string, url: string): string | null {
 }
 
 async function fetchArticleContent(url: string): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
+  if (isLikelyNonEditorialUrl(url)) return null;
   try {
     const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
@@ -695,13 +748,16 @@ Deno.serve(async (req: Request) => {
           const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
             .select("url").eq("source_id", source.id);
           const knownUrls = new Set((existingArticles || []).map((a: { url: string }) => a.url));
-          const freshCandidates = candidates.filter((c) => !knownUrls.has(c.url));
+          const freshCandidates = candidates
+            .filter((c) => !isLikelyNonEditorialUrl(c.url))
+            .filter((c) => !knownUrls.has(c.url));
 
           const batch = freshCandidates.slice(candidate_offset, candidate_offset + ARTICLE_BATCH_SIZE);
 
           for (const candidate of batch) {
             const fetched = await fetchArticleContent(candidate.url);
             if (!fetched) continue;
+            if (isLikelyNonEditorialPage(fetched)) continue;
 
             // A CONFIRMED date outside the freshness window is discarded —
             // sitemap `lastmod` is a last-MODIFIED date, not a publish date,
