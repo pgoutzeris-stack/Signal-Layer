@@ -581,7 +581,7 @@ Deno.serve(async (req: Request) => {
           fetch(selfUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-            body: JSON.stringify({ action: "process_crawl", crawl_run_id: data.id, source_ids: sourceIds, index: 0 }),
+            body: JSON.stringify({ action: "process_crawl", crawl_run_id: data.id, source_ids: sourceIds, index: 0, candidate_offset: 0 }),
           }).catch((e) => console.error("Failed to trigger process_crawl:", e));
         }
 
@@ -589,20 +589,26 @@ Deno.serve(async (req: Request) => {
       }
 
       // ---------------------------------------------------------------
-      // Actual crawl work — processes exactly ONE source per invocation,
-      // then fire-and-forgets itself for the next index. This keeps each
-      // Edge Function call short (one RSS/sitemap fetch, or one bounded
-      // Apify run) no matter how many sources are in scope — a single
-      // long-running loop over all sources risked hitting the platform's
-      // execution time limit mid-run and leaving crawl_runs stuck at
-      // 'running' forever (observed during testing with 187 sources).
+      // Actual crawl work — processes at most ARTICLE_BATCH_SIZE articles
+      // of ONE source per invocation, then fire-and-forgets itself for
+      // the next batch (same source) or the next source. This keeps each
+      // Edge Function call short no matter how many sources are in scope
+      // OR how many articles a single source has (a source with 300+
+      // articles in its 6-month backfill window was what actually caused
+      // the platform's execution time limit to kill an earlier version of
+      // this function mid-run, leaving crawl_runs stuck at 'running'
+      // forever — batching within a source, not just across sources, was
+      // needed to fix it).
       // Internal-only, triggered by run_crawl above.
       // ---------------------------------------------------------------
       case "process_crawl": {
-        const { crawl_run_id, source_ids, index } = body as { crawl_run_id: string; source_ids: string[]; index: number };
+        const ARTICLE_BATCH_SIZE = 10;
+        const { crawl_run_id, source_ids, index, candidate_offset } = body as {
+          crawl_run_id: string; source_ids: string[]; index: number; candidate_offset: number;
+        };
 
         const admin = getAdminClient();
-        if (index === 0) {
+        if (index === 0 && candidate_offset === 0) {
           await admin.schema("signal_layer").from("crawl_runs")
             .update({ status: "running" }).eq("id", crawl_run_id);
         }
@@ -614,6 +620,9 @@ Deno.serve(async (req: Request) => {
         }
 
         const sourceId = source_ids[index];
+        let nextIndex = index;
+        let nextOffset = candidate_offset;
+
         try {
           const { data: source, error: sourceErr } = await admin.schema("signal_layer").from("sources")
             .select("*").eq("id", sourceId).single();
@@ -641,18 +650,22 @@ Deno.serve(async (req: Request) => {
             ? new Date(source.last_crawled_at || Date.now() - 24 * 60 * 60 * 1000)
             : new Date(Date.now() - 183 * 24 * 60 * 60 * 1000); // ~6 months
 
+          // Re-deriving the candidate list every batch is cheap (one RSS/
+          // sitemap fetch, or a cached Apify-run result) — it's the same
+          // deterministic list, we just slice a different window of it.
           let candidates: CrawlCandidate[] = [];
           if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl, sinceDate);
           else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl, sinceDate);
           else candidates = await runApifySourceCrawl(source.url, sinceDate);
 
-          // Dedupe against URLs already stored for this source.
           const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
             .select("url").eq("source_id", source.id);
           const knownUrls = new Set((existingArticles || []).map((a: { url: string }) => a.url));
           const freshCandidates = candidates.filter((c) => !knownUrls.has(c.url));
 
-          for (const candidate of freshCandidates) {
+          const batch = freshCandidates.slice(candidate_offset, candidate_offset + ARTICLE_BATCH_SIZE);
+
+          for (const candidate of batch) {
             const fetched = await fetchArticleContent(candidate.url);
             if (!fetched) continue;
             const { data: inserted, error: insertErr } = await admin.schema("signal_layer").from("articles")
@@ -673,21 +686,29 @@ Deno.serve(async (req: Request) => {
             );
           }
 
-          await admin.schema("signal_layer").from("sources")
-            .update({ last_crawled_at: new Date().toISOString() }).eq("id", source.id);
+          if (candidate_offset + ARTICLE_BATCH_SIZE < freshCandidates.length) {
+            // More articles left for this same source — continue the batch.
+            nextIndex = index;
+            nextOffset = candidate_offset + ARTICLE_BATCH_SIZE;
+          } else {
+            // This source is fully done — move to the next one.
+            await admin.schema("signal_layer").from("sources")
+              .update({ last_crawled_at: new Date().toISOString() }).eq("id", source.id);
+            nextIndex = index + 1;
+            nextOffset = 0;
+          }
         } catch (sourceErr) {
           console.error(`Crawl failed for source ${sourceId}:`, sourceErr);
-          // One bad source shouldn't abort the whole chain — just move on.
+          // One bad source shouldn't abort the whole chain — skip to the next one.
+          nextIndex = index + 1;
+          nextOffset = 0;
         }
 
-        // Fire-and-forget the next source in the chain, regardless of
-        // whether this one succeeded, so a single bad source can't stall
-        // the whole run.
         const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
         fetch(selfUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-          body: JSON.stringify({ action: "process_crawl", crawl_run_id, source_ids, index: index + 1 }),
+          body: JSON.stringify({ action: "process_crawl", crawl_run_id, source_ids, index: nextIndex, candidate_offset: nextOffset }),
         }).catch((e) => console.error("Failed to trigger next process_crawl step:", e));
 
         return corsResponse(origin, { ok: true });
