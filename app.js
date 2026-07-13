@@ -32,6 +32,22 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+function decodeHtmlEntities(value) {
+  let decoded = String(value ?? "");
+  // Some feeds encode entities twice, e.g. &amp;#039; instead of an apostrophe.
+  for (let i = 0; i < 2; i += 1) {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = decoded;
+    if (textarea.value === decoded) break;
+    decoded = textarea.value;
+  }
+  return decoded;
+}
+
+function escapeText(value) {
+  return escapeHtml(decodeHtmlEntities(value));
+}
+
 async function callApi(action, payload = {}) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session?.access_token) throw new Error("Nicht angemeldet");
@@ -152,12 +168,9 @@ async function loadFindings(track) {
     listEl.innerHTML = findings.map((f) => {
       const article = f.article || {};
       const dimLabel = TOPIC_LABELS[f.dimension] || f.dimension || "";
-      const territoryLabel = article.territory ? TERRITORY_LABELS[article.territory] || article.territory : null;
       const companies = article.matched_companies || [];
-      const personCandidate = article.buying_center_candidate;
       const source = article.source || null;
       const confidence = formatConfidence(f.confidence ?? article.relevance_confidence);
-      const evidence = (f.evidence || [])[0] || null;
       const isLegacy = article.classification_status === "legacy";
       return `
         <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}" data-article-id="${escapeHtml(article.id)}">
@@ -168,19 +181,12 @@ async function loadFindings(track) {
               ${formatFindingDate(article.published_at)}
             </div>
           </div>
-          <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeHtml(article.title || article.url || "Ohne Titel")}</a>
-          ${article.ai_summary ? `<p class="finding-summary">${escapeHtml(article.ai_summary)}</p>` : ""}
-          ${article.ai_rationale ? `<p class="finding-rationale"><i class="ri-focus-3-line"></i><span>${escapeHtml(article.ai_rationale)}</span></p>` : ""}
+          <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeText(article.title || article.url || "Ohne Titel")}</a>
+          ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
           <div class="finding-meta">
-            ${territoryLabel ? `<span class="tag">${escapeHtml(territoryLabel)}</span>` : ""}
             ${companies.map((c) => `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(c)}</span>`).join("")}
             ${source?.company ? `<a class="tag tag--source" href="${escapeHtml(source.url || article.url || "#")}" target="_blank" rel="noopener" title="Quelle: ${escapeHtml(source.company)}"><i class="ri-newspaper-line"></i> ${escapeHtml(source.company)}</a>` : ""}
-            ${personCandidate ? `<span class="tag tag--person"><i class="ri-user-line"></i> Buying-Center-Kandidat</span>` : ""}
-            ${article.article_type ? `<span class="tag"><i class="ri-file-text-line"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
-            ${article.language ? `<span class="tag tag--language">${escapeHtml(article.language.toUpperCase())}</span>` : ""}
-            ${(f.matched_keywords || []).map((k) => `<span class="meta-chip">${escapeHtml(k)}</span>`).join("")}
           </div>
-          ${evidence ? `<blockquote class="finding-evidence"><i class="ri-double-quotes-l"></i><span>${escapeHtml(evidence)}</span></blockquote>` : ""}
         </article>
       `;
     }).join("");
@@ -223,8 +229,8 @@ async function loadReviewArticles() {
         <article class="review-item" data-article-id="${escapeHtml(article.id)}">
           <div class="review-item-main">
             <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "error" ? "alert-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i> ${status === "uncertain" ? "Manuelle Prüfung" : status === "pending" ? "Ausstehend" : "Klassifikationsfehler"}</span>
-            <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeHtml(article.title || "Ohne Titel")}</a>
-            ${article.ai_summary ? `<p class="finding-summary">${escapeHtml(article.ai_summary)}</p>` : ""}
+            <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeText(article.title || "Ohne Titel")}</a>
+            ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
             ${article.ai_rationale ? `<p class="finding-rationale"><i class="ri-focus-3-line"></i><span>${escapeHtml(article.ai_rationale)}</span></p>` : ""}
             ${reasons.length ? `<div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div>` : ""}
           </div>
@@ -278,15 +284,15 @@ async function openArticleDetail(articleId) {
       <button type="button" class="article-detail-close" aria-label="Schließen"><i class="ri-close-line"></i></button>
       <main class="article-detail-main">
         <span class="article-detail-kicker">${escapeHtml(source?.company || "Signal Layer")}</span>
-        <h2 class="article-detail-title" id="article-detail-title">${escapeHtml(article.title || "Ohne Titel")}</h2>
+        <h2 class="article-detail-title" id="article-detail-title">${escapeText(article.title || "Ohne Titel")}</h2>
         <div class="article-detail-meta">
           ${article.published_at ? `<span class="tag"><i class="ri-calendar-line"></i> ${escapeHtml(new Date(article.published_at).toLocaleDateString("de-DE"))}</span>` : ""}
           ${article.article_type ? `<span class="tag"><i class="ri-file-text-line"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
           ${article.language ? `<span class="tag tag--language">${escapeHtml(article.language.toUpperCase())}</span>` : ""}
           ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> Originalquelle</a>` : ""}
         </div>
-        ${article.ai_summary ? `<p class="article-detail-summary">${escapeHtml(article.ai_summary)}</p>` : ""}
-        <div class="article-fulltext">${escapeHtml(fulltext)}</div>
+        ${article.ai_summary ? `<p class="article-detail-summary">${escapeText(article.ai_summary)}</p>` : ""}
+        <div class="article-fulltext">${escapeText(fulltext)}</div>
       </main>
       <aside class="article-detail-aside">
         <h3>Warum diese Entscheidung?</h3>
@@ -335,7 +341,7 @@ async function loadClassificationTests() {
       const reason = article.ai_rationale || (article.rejection_reasons || [])[0] || "Entscheidung gespeichert";
       return `<article class="test-result" data-article-id="${escapeHtml(article.id)}" tabindex="0">
         <div class="test-result-top"><span class="finding-dimension">Test ${index + 1}</span><span class="quality-tag quality-tag--${escapeHtml(status)}">${escapeHtml(STATUS_LABELS[status] || status)}${confidence ? ` · ${confidence}` : ""}</span></div>
-        <span class="test-result-title">${escapeHtml(article.title || "Ohne Titel")}</span>
+        <span class="test-result-title">${escapeText(article.title || "Ohne Titel")}</span>
         <p class="test-result-reason">${escapeHtml(reason)}</p>
       </article>`;
     }).join("");
