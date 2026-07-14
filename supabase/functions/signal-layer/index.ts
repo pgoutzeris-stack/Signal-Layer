@@ -114,6 +114,54 @@ async function getGeminiKey(): Promise<string> {
   return _geminiKeyCache.value;
 }
 
+type GeminiModelOption = {
+  id: string;
+  display_name: string;
+  description: string;
+  input_token_limit: number;
+  output_token_limit: number;
+  thinking: boolean;
+};
+
+let geminiModelsCache: { models: GeminiModelOption[]; at: number } = { models: [], at: 0 };
+const GEMINI_MODELS_CACHE_TTL = 10 * 60 * 1000;
+
+async function getAvailableGeminiModels(force = false): Promise<GeminiModelOption[]> {
+  const now = Date.now();
+  if (!force && geminiModelsCache.models.length && now - geminiModelsCache.at < GEMINI_MODELS_CACHE_TTL) {
+    return geminiModelsCache.models;
+  }
+  const key = await getGeminiKey();
+  if (!key) throw new Error("Gemini API key is not configured");
+  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", {
+    headers: { "x-goog-api-key": key },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Gemini model validation failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
+  }
+  const payload = await response.json();
+  const models = (Array.isArray(payload.models) ? payload.models : [])
+    .filter((model: Record<string, unknown>) => {
+      const id = String(model.name || "").replace(/^models\//, "");
+      const methods = Array.isArray(model.supportedGenerationMethods) ? model.supportedGenerationMethods : [];
+      return id.startsWith("gemini-") && methods.includes("generateContent")
+        && !/(embedding|image|tts|robotics|computer-use|live)/i.test(id);
+    })
+    .map((model: Record<string, unknown>) => ({
+      id: String(model.name || "").replace(/^models\//, ""),
+      display_name: String(model.displayName || model.name || "Gemini"),
+      description: String(model.description || ""),
+      input_token_limit: Number(model.inputTokenLimit || 0),
+      output_token_limit: Number(model.outputTokenLimit || 0),
+      thinking: Boolean(model.thinking),
+    }))
+    .sort((a: GeminiModelOption, b: GeminiModelOption) => a.display_name.localeCompare(b.display_name));
+  if (!models.length) throw new Error("Gemini API returned no compatible generateContent models");
+  geminiModelsCache = { models, at: now };
+  return models;
+}
+
 // ===========================================================================
 // Crawl pipeline — RSS/sitemap first (cheap, reliable), Apify as fallback.
 // ===========================================================================
@@ -1709,6 +1757,11 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { settings: { ...data, config: mergePipelineConfig(data.config) } });
       }
 
+      case "list_gemini_models": {
+        const models = await getAvailableGeminiModels(Boolean(body.force));
+        return corsResponse(origin, { models, validated_at: new Date(geminiModelsCache.at).toISOString() });
+      }
+
       case "update_pipeline_settings": {
         const requested = mergePipelineConfig(body.config as Partial<PipelineConfig> | undefined);
         const profiles = new Set(["strict", "balanced", "discovery"]);
@@ -1717,9 +1770,9 @@ Deno.serve(async (req: Request) => {
             || !TOPIC_IDS.every((topic) => relevanceModes.has(String(requested.relevance[topic])))) {
           return errorResponse(origin, "Ungültiges Relevanz- oder Qualitätsprofil");
         }
-        const allowedModels = new Set(["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite"]);
+        const allowedModels = new Set((await getAvailableGeminiModels()).map((model) => model.id));
         if (!allowedModels.has(requested.ai.primary_model) || !allowedModels.has(requested.ai.review_model)) {
-          return errorResponse(origin, "Nicht unterstütztes Gemini-Modell");
+          return errorResponse(origin, "Das ausgewählte Gemini-Modell ist für diesen API-Key nicht verfügbar oder unterstützt generateContent nicht");
         }
         const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Number(value)));
         requested.crawl.freshness_days = Math.round(clamp(requested.crawl.freshness_days, 1, 365));

@@ -758,6 +758,53 @@
     .pipeline-savebar > div { display: grid; width: 100%; }
   }
 
+  /* ---------- Direct pipeline editing ---------- */
+  .pipeline-drilldown-card { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  .pipeline-inline-tabs { display: flex; align-items: center; gap: 6px; padding: .6rem 1rem; border-bottom: 1px solid var(--line); background: var(--surface); overflow-x: auto; scrollbar-width: none; }
+  .pipeline-inline-tabs::-webkit-scrollbar { display: none; }
+  .pipeline-inline-tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 11px; border: 1px solid transparent; border-radius: 999px; color: var(--muted); background: transparent; font: 600 .62rem/1 CircularStd, sans-serif; white-space: nowrap; cursor: pointer; }
+  .pipeline-inline-tabs button:hover, .pipeline-inline-tabs button:focus-visible { outline: none; color: var(--brand); border-color: #cfe0ff; background: var(--brand-light); }
+  .pipeline-inline-tabs button.active { color: #fff; border-color: var(--brand); background: var(--brand); box-shadow: 0 5px 12px rgba(32,110,251,.18); }
+  .pipeline-drilldown-body--direct { display: block; min-height: 0; }
+  .pipeline-drilldown-body--direct .pipeline-depth-content { height: 100%; }
+  .model-manager-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 10px; padding: .8rem; border: 1px solid #d8e5fb; border-radius: 12px; background: #f7faff; }
+  .model-manager-head p { margin: 5px 0 0; color: var(--muted); font-size: .57rem; line-height: 1.45; }
+  .model-validation { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; color: var(--muted); background: var(--surface); font-size: .55rem; font-weight: 700; }
+  .model-validation--ready { color: #136246; background: #e9f8f1; }
+  .model-validation--loading { color: #174b83; background: var(--brand-light); }
+  .model-validation--error { color: #9c2f2f; background: #fff0f0; }
+  .pipeline-model-select { width: min(280px, 100%); }
+  .gemini-model-list { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; }
+  .gemini-model-list > span { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 6px 8px; border: 1px solid #d8e5fb; border-radius: 9px; color: #174b83; background: #f7faff; font-size: .55rem; font-weight: 700; }
+  .gemini-model-list small { padding-left: 5px; border-left: 1px solid #c9d9ef; color: var(--muted); font-size: .48rem; font-weight: 500; }
+  .pipeline-layer-map { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 7px; margin-bottom: 10px; }
+  .pipeline-layer-map > i { color: #a6b8d2; font-size: .75rem; }
+  .pipeline-layer-map article { min-width: 0; min-height: 116px; padding: .75rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .pipeline-layer-map article > i { display: grid; place-items: center; width: 27px; height: 27px; margin-bottom: 9px; border-radius: 8px; color: var(--brand); background: var(--brand-light); }
+  .pipeline-layer-map span, .pipeline-layer-map b, .pipeline-layer-map small { display: block; }
+  .pipeline-layer-map span { color: var(--brand); font-size: .48rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+  .pipeline-layer-map b { margin-top: 3px; font-size: .61rem; line-height: 1.25; }
+  .pipeline-layer-map small { margin-top: 4px; color: var(--muted); font-size: .51rem; line-height: 1.4; }
+  .pipeline-source-methods { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pipeline-responsibility-note { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; padding: .7rem .75rem; border: 1px solid #d4e2f8; border-radius: 11px; background: #f6f9ff; }
+  .pipeline-responsibility-note > i { color: var(--brand); font-size: 1rem; }
+  .pipeline-responsibility-note b, .pipeline-responsibility-note span { display: block; }
+  .pipeline-responsibility-note b { font-size: .61rem; }
+  .pipeline-responsibility-note span { margin-top: 3px; color: var(--muted); font-size: .54rem; line-height: 1.4; }
+  .pipeline-responsibility-note--content { border-color: #d8e8df; background: #f5fbf8; }
+  .pipeline-responsibility-note--content > i { color: #16845b; }
+  @media (max-width: 700px) {
+    .pipeline-inline-tabs { padding: .5rem .65rem; }
+    .pipeline-inline-tabs button { min-height: 38px; }
+    .model-manager-head { align-items: stretch; flex-direction: column; }
+    .model-manager-head .btn-secondary { justify-content: center; width: 100%; }
+    .pipeline-model-select { width: 100%; }
+    .pipeline-layer-map { grid-template-columns: 1fr; }
+    .pipeline-layer-map > i { justify-self: center; transform: rotate(90deg); }
+    .pipeline-layer-map article { min-height: 0; }
+    .pipeline-source-methods { grid-template-columns: 1fr; }
+  }
+
   /* ---------- Settings modal ---------- */
   .modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, .6);
@@ -1115,23 +1162,6 @@
 
         <div class="settings-panel pipeline-panel" id="settings-panel-pipeline-overview">
           <div class="pipeline-scroll pipeline-scroll--overview">
-            <header class="pipeline-overview-head">
-              <div><span>ROOTS Signal Layer</span><h3>Vom Artikel zur belastbaren Entscheidung</h3><p>Die fünf Stationen zeigen, wie aus einer Quelle ein erklärbares Marketing- oder Sales-Signal wird. Öffne eine Station oder starte die geführte Erklärung.</p></div>
-              <div class="pipeline-overview-actions">
-                <div class="pipeline-mode-switch" role="group" aria-label="Erklärungstiefe"><button type="button" data-pipeline-mode="guided"><i class="ri-graduation-cap-line"></i> Einfach</button><button type="button" data-pipeline-mode="expert"><i class="ri-code-box-line"></i> Experte</button></div>
-                <button type="button" class="btn-primary" data-pipeline-tour-start><i class="ri-play-circle-line"></i> In 2 Minuten verstehen</button>
-              </div>
-            </header>
-            <div class="pipeline-learning-toolbar">
-              <div class="pipeline-start-end" aria-label="Start und Ziel der Pipeline"><span><i class="ri-article-line"></i><small>Start</small><b>Rohartikel</b></span><i class="ri-arrow-right-line"></i><span><i class="ri-layout-grid-line"></i><small>Ziel</small><b>Erklärte Kachel</b></span></div>
-              <div class="pipeline-overview-legend" aria-label="Entscheidungsquellen"><span><i class="ri-code-line"></i> Regeln</span><span><i class="ri-sparkling-line"></i> Gemini</span><span><i class="ri-shield-check-line"></i> Server</span></div>
-              <div class="pipeline-help-actions"><button type="button" class="btn-text" data-pipeline-support="glossary"><i class="ri-book-open-line"></i> Glossar</button><button type="button" class="btn-text" data-pipeline-support="changes"><i class="ri-history-line"></i> Änderungen</button></div>
-            </div>
-            <section class="pipeline-example-switcher" aria-label="Beispiel auswählen">
-              <div><span>Beispielartikel durch die Pipeline verfolgen</span><p>Wechsle zwischen einem passenden Signal und einer bewusst aussortierten Meldung.</p></div>
-              <div class="pipeline-scenario-switch" role="group" aria-label="Beispieltyp"><button type="button" data-pipeline-scenario="pass"><i class="ri-checkbox-circle-line"></i> Passendes Signal</button><button type="button" data-pipeline-scenario="reject"><i class="ri-close-circle-line"></i> Unpassende Personalie</button></div>
-              <div id="pipeline-guide-sample"></div>
-            </section>
             <div class="pipeline-flow-shell">
               <div class="pipeline-flow" id="pipeline-studio" aria-label="High-Level-Pipeline"><div class="keyword-empty">Pipeline wird geladen…</div></div>
             </div>
@@ -1146,7 +1176,6 @@
             <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><div><button type="button" class="btn-secondary" data-pipeline-preview><i class="ri-flask-line"></i> Auswirkungen prüfen</button><button class="btn-primary" id="btn-save-pipeline"><i class="ri-save-line"></i> Änderungen speichern</button></div></div>
           </div>
           <section class="pipeline-drilldown" id="pipeline-drilldown" aria-modal="true" aria-label="Pipeline-Details" hidden></section>
-          <section class="pipeline-support-panel" id="pipeline-support-panel" hidden></section>
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-manual-review">
@@ -1154,7 +1183,7 @@
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-operations">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Laufender Betrieb</span><h3>Kosten &amp; Betrieb</h3><p>Verständliche Qualitätswahl, Reviewer-Einsatz und Kostenkontrolle. Technische Modellnamen stehen in der Systemdiagnose.</p></div><div id="operations-content"></div></div>
+          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Laufender Betrieb</span><h3>Kosten &amp; Betrieb</h3><p>Gemini-Modelle per API validieren und auswählen sowie Request-, Review- und Kostenlimits steuern.</p></div><div id="operations-content"></div></div>
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-diagnostics">
