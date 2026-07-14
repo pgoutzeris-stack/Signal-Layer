@@ -215,6 +215,8 @@ interface CrawlCandidate {
   title?: string;
   publishedAt?: string | null;
   hasConfirmedPublishDate?: boolean;
+  content?: string;
+  excerpt?: string;
 }
 
 type CrawlProviderResult = {
@@ -683,9 +685,17 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date, policy: C
         isMarkenartikelDetail
       );
       if (request.userData.label === 'ARTICLE' || isArticle) {
-        const title = $('meta[property="og:title"]').attr('content') || $('title').text() || '';
-        const published = $('meta[property="article:published_time"]').attr('content') || null;
-        return { url: request.url, title, publishedAt: published, isArticle: true };
+        const title = $('meta[property="og:title"]').attr('content') || $('h1').first().text() || $('title').text() || '';
+        const excerpt = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || '';
+        const published = $('meta[property="article:published_time"]').attr('content')
+          || $('meta[itemprop="datePublished"]').attr('content')
+          || $('time[datetime]').first().attr('datetime')
+          || null;
+        const preferred = $('article, main, [role="main"], .article-content, .article__content, .post-content, .entry-content, .content-body, .news-detail').first();
+        const contentRoot = (preferred.length ? preferred : $('body')).clone();
+        contentRoot.find('script, style, nav, header, footer, form, aside, noscript, svg').remove();
+        const content = contentRoot.text().replace(/\s+/g, ' ').trim().slice(0, 12000);
+        return { url: request.url, title: title.trim(), excerpt: excerpt.trim(), content, publishedAt: published, isArticle: true };
       }
       // Listing/homepage: enqueue same-domain links as candidate articles.
       const links = new Set();
@@ -726,13 +736,27 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date, policy: C
     console.error(`Apify run-sync failed for ${sourceUrl}: ${runRes.status} ${errorMessage}`);
     return { candidates: [], discoveredCount: 0, httpStatus: runRes.status, providerRunId: null, errorCode: `http_${runRes.status}`, errorMessage };
   }
-  const items = await runRes.json().catch(() => []) as Array<{ url: string; title?: string; publishedAt?: string | null; isArticle?: boolean }>;
+  const items = await runRes.json().catch(() => []) as Array<{
+    url: string;
+    title?: string;
+    excerpt?: string;
+    content?: string;
+    publishedAt?: string | null;
+    isArticle?: boolean;
+  }>;
   const candidates = items
     .filter((it) => it.isArticle)
     .filter((it) => isAllowedBySourcePolicy(it.url, policy))
     .filter((it) => !it.publishedAt || new Date(it.publishedAt) >= sinceDate)
     .slice(0, policy.maxCandidates)
-    .map((it) => ({ url: it.url, title: it.title, publishedAt: it.publishedAt, hasConfirmedPublishDate: Boolean(it.publishedAt) }));
+    .map((it) => ({
+      url: it.url,
+      title: it.title,
+      excerpt: it.excerpt,
+      content: it.content,
+      publishedAt: it.publishedAt,
+      hasConfirmedPublishDate: Boolean(it.publishedAt),
+    }));
   return {
     candidates,
     discoveredCount: items.length,
@@ -2362,7 +2386,15 @@ Deno.serve(async (req: Request) => {
           const rejected: Record<string, number> = {};
 
           for (const candidate of batch) {
-            const fetched = await fetchArticleContent(candidate.url);
+            const apifyContent = String(candidate.content || "").trim();
+            const fetched = apifyContent.length >= 300
+              ? {
+                title: String(candidate.title || "").trim(),
+                content: apifyContent.slice(0, 8000),
+                excerpt: String(candidate.excerpt || "").trim(),
+                publishedAt: candidate.publishedAt || null,
+              }
+              : await fetchArticleContent(candidate.url);
             if (!fetched) { rejected.fetch_failed = (rejected.fetch_failed || 0) + 1; continue; }
             if (isLikelyNonEditorialPage(fetched)) { rejected.non_editorial = (rejected.non_editorial || 0) + 1; continue; }
             if (!passesEventPreClassificationGate(

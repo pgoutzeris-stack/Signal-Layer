@@ -1590,10 +1590,10 @@ async function loadLastRun() {
     els.geminiRequestCount.textContent = Number(costs?.requests || 0).toLocaleString("de-DE");
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
     els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
-    const crawlResults = health ? [
-      { value: Number(health.successful || 0), label: "Quellen erfolgreich", tone: "success", icon: "ri-checkbox-circle-line" },
-      { value: Number(health.errors || 0), label: "Quellen fehlgeschlagen", tone: "error", icon: "ri-error-warning-line" },
-    ].filter((result) => result.value > 0) : [];
+    const foundArticles = Number(health?.candidates || 0);
+    const crawlResults = foundArticles > 0
+      ? [{ value: foundArticles, label: "Artikel gefunden", tone: "success", icon: "ri-article-line" }]
+      : [];
     els.sourceHealthNote.hidden = crawlResults.length === 0;
     els.sourceHealthNote.innerHTML = crawlResults.map((result) =>
       `<span class="crawl-result-pill crawl-result-pill--${result.tone}"><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
