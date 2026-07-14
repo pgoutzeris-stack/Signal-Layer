@@ -2329,13 +2329,15 @@ Deno.serve(async (req: Request) => {
       }
 
       case "list_review_articles": {
-        const { limit } = body as { limit?: number };
+        const { limit, status } = body as { limit?: number; status?: string };
         const admin = getAdminClient();
-        const { data, error } = await admin.schema("signal_layer").from("articles")
+        let reviewQuery = admin.schema("signal_layer").from("articles")
           .select("id, title, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, source:sources(company, url, category)")
           .in("classification_status", ["uncertain", "error", "pending"])
           .order("classified_at", { ascending: false, nullsFirst: false })
           .limit(limit || 20);
+        if (status && ["uncertain", "error", "pending"].includes(status)) reviewQuery = reviewQuery.eq("classification_status", status);
+        const { data, error } = await reviewQuery;
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { articles: data || [] });
       }

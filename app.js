@@ -337,7 +337,7 @@ function renderBusinessPipelineStudio() {
 async function loadPipelineReview() {
   const target = document.getElementById("pipeline-review-list");
   if (!target) return;
-  const { articles } = await callApi("list_review_articles");
+  const { articles } = await callApi("list_review_articles", { status: "uncertain", limit: 50 });
   target.innerHTML = (articles || []).map((article) => `<article class="review-item" data-article-id="${article.id}"><div class="review-item-main"><span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span><strong class="test-result-title">${escapeText(article.title)}</strong><p class="test-result-reason">${escapeText(article.ai_rationale || article.rejection_reasons?.[0] || "Unsichere Evidenz oder Einordnung")}</p></div></article>`).join("") || `<div class="keyword-empty">Aktuell sind keine Artikel in der manuellen Prüfung.</div>`;
 }
 
