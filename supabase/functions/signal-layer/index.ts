@@ -261,6 +261,7 @@ const EVENT_NON_EDITORIAL_URL_PARTS = [
 const EDITORIAL_PATH_PARTS = [
   "/news", "/press", "/presse", "/media", "/magazine", "/magazin",
   "/blog", "/stories", "/story", "/insights", "/trends", "/innovation",
+  "/daily",
   "/firmennews", "/company-news", "/exhibitor-news", "/press-releases",
   "/pressreleases", "/pressinformation", "/presseinformationen",
   "/pressemeldungen", "/newsticker",
@@ -2463,7 +2464,11 @@ Deno.serve(async (req: Request) => {
       // ---------------------------------------------------------------
       case "resume_stalled_crawls": {
         if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
-        const WATCHDOG_STALL_SECONDS = 90;
+        // Apify's synchronous browser crawl may legitimately run for up to
+        // 185 seconds. A 90-second watchdog created overlapping retries for
+        // slow JavaScript-heavy sources such as OMR. Leave enough headroom
+        // for the provider timeout plus persistence and classification work.
+        const WATCHDOG_STALL_SECONDS = 240;
         const admin = getAdminClient();
         const cutoff = new Date(Date.now() - WATCHDOG_STALL_SECONDS * 1000).toISOString();
 
