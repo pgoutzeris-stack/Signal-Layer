@@ -2509,16 +2509,19 @@ Deno.serve(async (req: Request) => {
 
       case "list_archive_articles": {
         const { limit, status, offset } = body as { limit?: number; status?: string; offset?: number };
-        const archiveStatuses = ["legacy", "pending", "rejected", "error"];
-        const selectedStatuses = status && archiveStatuses.includes(status) ? [status] : archiveStatuses;
         const admin = getAdminClient();
         const safeLimit = Math.min(Math.max(limit || 100, 1), 200);
         const safeOffset = Math.max(Number(offset || 0), 0);
-        const { data, error, count } = await admin.schema("signal_layer").from("articles")
+        const archiveCutoff = new Date();
+        archiveCutoff.setUTCMonth(archiveCutoff.getUTCMonth() - 3);
+        let query = admin.schema("signal_layer").from("articles")
           .select("id, title, title_de, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, source:sources(company, url, category)", { count: "exact" })
-          .in("classification_status", selectedStatuses)
           .order("published_at", { ascending: false, nullsFirst: false })
           .range(safeOffset, safeOffset + safeLimit - 1);
+        if (status === "legacy") query = query.in("classification_status", ["legacy", "pending"]);
+        else if (status === "older") query = query.lt("published_at", archiveCutoff.toISOString());
+        else query = query.or(`classification_status.in.(legacy,pending),published_at.lt.${archiveCutoff.toISOString()}`);
+        const { data, error, count } = await query;
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { articles: data || [], total: count || 0 });
       }

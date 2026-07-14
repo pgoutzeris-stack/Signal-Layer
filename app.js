@@ -220,6 +220,7 @@ function cacheEls() {
 
   els.findingsListMarketing = document.getElementById("findings-list-marketing");
   els.findingsListSales = document.getElementById("findings-list-sales");
+  els.reviewList = document.getElementById("results-review-list");
   els.signalStatusFilter = document.getElementById("signal-status-filter");
   els.signalCompanyFilter = document.getElementById("signal-company-filter");
   els.signalSourceFilter = document.getElementById("signal-source-filter");
@@ -1131,7 +1132,7 @@ async function loadReviewArticles() {
         <article class="review-item" data-article-id="${escapeHtml(article.id)}">
           <div class="review-item-main">
             <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "error" ? "alert-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i> ${status === "uncertain" ? "Manuelle Prüfung" : status === "pending" ? "Ausstehend" : "Klassifikationsfehler"}</span>
-            <a href="${escapeHtml(article.url || "#")}" target="_blank" rel="noopener" class="finding-title">${escapeText(article.title || "Ohne Titel")}</a>
+            <a href="${escapeHtml(article.url || "#")}" class="finding-title">${escapeText(article.title || "Ohne Titel")}</a>
             ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
             ${article.ai_rationale ? `<p class="finding-rationale"><i class="ri-focus-3-line"></i><span>${escapeHtml(article.ai_rationale)}</span></p>` : ""}
             ${reasons.length ? `<div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div>` : ""}
@@ -1199,7 +1200,7 @@ async function openArticleDetail(articleId) {
           ${article.published_at ? `<span class="tag"><i class="ri-calendar-line"></i> ${escapeHtml(new Date(article.published_at).toLocaleDateString("de-DE"))}</span>` : ""}
           ${article.article_type ? `<span class="tag"><i class="ri-file-text-line"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
           ${article.language ? `<span class="tag tag--language">${escapeHtml(article.language.toUpperCase())}</span>` : ""}
-          ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> Originalquelle</a>` : ""}
+          ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}"><i class="ri-external-link-line"></i> Originalquelle</a>` : ""}
         </div>
         ${article.ai_summary ? `<p class="article-detail-summary">${escapeText(article.ai_summary)}</p>` : ""}
         <div class="article-fulltext">${renderEvidenceLinkedText(fulltext, evidence)}</div>
@@ -1396,7 +1397,7 @@ function renderSources() {
         <div class="source-company">${escapeHtml(s.company)}</div>
         ${s.description ? `<div class="source-desc">${escapeHtml(s.description)}</div>` : ""}
       </td>
-      <td><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" class="source-url"><i class="ri-external-link-line"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
+      <td><a href="${escapeHtml(s.url)}" class="source-url"><i class="ri-external-link-line"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
       <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}${loginRequired ? `<span class="source-login-badge ${loginConfigured ? "source-login-badge--configured" : ""}"><i class="ri-lock-2-line"></i> Login nötig</span>` : ""}</td>
       <td title="${escapeHtml(s.last_error || "")}">
         <span class="quality-tag ${s.last_error ? "quality-tag--error" : s.last_successful_at ? "quality-tag--reliable" : "quality-tag--pending"}">
@@ -1858,5 +1859,6 @@ export function initApp(client) {
   void loadLastRun();
   void loadFindings("marketing");
   void loadFindings("sales");
+  void loadReviewArticles();
   void loadDashboardSummary();
 }
