@@ -3,6 +3,7 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 let sb = null;
 let sources = [];
 let appInitialized = false;
+let pipelineSettings = null;
 
 const state = {
   search: "",
@@ -189,6 +190,9 @@ function cacheEls() {
   els.backfillProgressBar = document.getElementById("backfill-progress-bar");
   els.backfillProgressDetail = document.getElementById("backfill-progress-detail");
   els.apiErrorList = document.getElementById("api-error-list");
+  els.pipelineVersion = document.getElementById("pipeline-version");
+  els.btnSavePipeline = document.getElementById("btn-save-pipeline");
+  els.btnSavePipelineHeader = document.getElementById("btn-save-pipeline-header");
   els.geminiCostStat = document.getElementById("gemini-cost-stat");
   els.geminiCostMonth = document.getElementById("gemini-cost-month");
   els.geminiCostToday = document.getElementById("gemini-cost-today");
@@ -206,6 +210,96 @@ function cacheEls() {
   els.salesCount = document.getElementById("sales-count");
   els.articleDetailModal = document.getElementById("article-detail-modal");
   els.articleDetailContent = document.getElementById("article-detail-content");
+}
+
+const PIPELINE_FIELDS = {
+  crawl: [
+    ["crawl.freshness_days", "number", "Rückblick in Tagen", "Beim ersten Crawl werden nur Artikel aus diesem Zeitraum berücksichtigt.", 1, 365],
+    ["crawl.future_tolerance_hours", "number", "Toleranz für Zukunftsdaten", "Zeitverschiebungen bis zu dieser Stundenzahl werden akzeptiert.", 0, 72],
+    ["crawl.default_max_depth", "number", "Normale Crawl-Tiefe", "Maximale Linktiefe für redaktionelle Quellen und Newsrooms.", 1, 4],
+    ["crawl.default_max_pages", "number", "Seiten je normaler Quelle", "Begrenzt die pro Lauf geöffneten Seiten.", 1, 250],
+    ["crawl.event_max_depth", "number", "Event-Crawl-Tiefe", "Eventseiten bleiben bewusst flacher als Newsrooms.", 0, 3],
+    ["crawl.event_max_pages", "number", "Seiten je Eventquelle", "Schützt vor Agenda-, Aussteller- und Navigationsmassen.", 1, 100],
+  ],
+  filters: [
+    ["filters.minimum_text_length", "number", "Mindestlänge Artikeltext", "Kürzere Inhalte werden vor Gemini abgelehnt.", 100, 5000],
+    ["filters.require_professional_signal", "boolean", "Fachsignal erforderlich", "Fordert Marketing, Customer, Retail, Innovation oder Strategie auf Deutsch oder Englisch."],
+    ["filters.reject_career_pages", "boolean", "Karriereseiten ablehnen", "Filtert Jobs, Ausbildung, Bewerbung und Praktika."],
+    ["filters.reject_faq_pages", "boolean", "FAQ- und Hilfeseiten ablehnen", "Entfernt allgemeine Fragen, Support und Serviceinhalte."],
+    ["filters.reject_event_programs", "boolean", "Eventprogramme ablehnen", "Agenda, Tickets und reine Speakerlisten werden ausgeschlossen."],
+    ["filters.reject_future_dates", "boolean", "Zukunftsdaten ablehnen", "Verhindert falsch interpretierte Event- oder Sitemap-Daten."],
+    ["filters.deduplicate", "boolean", "Duplikate erkennen", "Identischer normalisierter Inhalt wird nur einmal ausgewertet."],
+  ],
+  ai: [
+    ["ai.primary_model", "model", "Primary-Modell", "Analysiert alle Kandidaten nach dem deterministischen Vorfilter."],
+    ["ai.review_model", "model", "Review-Modell", "Prüft nur die unten definierten Grenzfälle erneut."],
+    ["ai.review_enabled", "boolean", "Zweite KI-Prüfung aktiv", "Schaltet die unabhängige Reviewer-Stufe ein oder aus."],
+    ["ai.review_confidence_below", "decimal", "Review unter Konfidenz", "Plausible Ergebnisse unter diesem Wert erhalten eine zweite Prüfung.", .5, 1],
+    ["ai.review_rejected_articles", "boolean", "Abgelehnte Artikel reviewen", "Normalerweise aus Kostengründen deaktiviert."],
+    ["ai.thinking_level", "thinking", "Thinking-Level", "Mehr Thinking kann Qualität und Kosten erhöhen."],
+    ["ai.max_output_tokens", "number", "Maximale Output-Tokens", "Obergrenze für Klassifikation, Übersetzung und Begründung.", 512, 8192],
+    ["ai.daily_request_limit", "number", "Tägliches KI-Limit", "Technische Sicherheitsgrenze unabhängig vom AI-Studio-Budget.", 1, 10000],
+    ["ai.daily_review_limit", "number", "Tägliches Pro-Review-Limit", "Separate Grenze für das teurere Review-Modell.", 0, 5000],
+    ["ai.monthly_warning_usd", "number", "Kostenwarnung in USD", "Zeigt eine Warnung, stoppt die Pipeline aber nicht.", 0, 10000],
+  ],
+  quality: [
+    ["quality.topic_confidence", "decimal", "Themen-Konfidenz", "Mindestwert für Marketing-, Customer-, Retail- und KI-Tags.", .5, 1],
+    ["quality.territory_confidence", "decimal", "Territory-Konfidenz", "Mindestwert für ROOTS-Territories.", .5, 1],
+    ["quality.company_confidence", "decimal", "Unternehmens-Konfidenz", "Mindestwert für belastbare Tier-1-Erkennung.", .5, 1],
+    ["quality.person_confidence", "decimal", "Personen-Konfidenz", "Mindestwert für Person und Rolle.", .5, 1],
+    ["quality.sales_trigger_confidence", "decimal", "Sales-Trigger-Konfidenz", "Mindestwert für strategische Trigger.", .5, 1],
+    ["quality.routing_confidence", "decimal", "Routing-Konfidenz", "Mindestwert für separate Marketing-/Sales-Evidenz.", .5, 1],
+    ["quality.reliable_confidence", "decimal", "Zuverlässig ab", "Gesamtschwelle für eine automatische Freigabe.", .5, 1],
+  ],
+  routing: [
+    ["routing.marketing_enabled", "boolean", "Marketing-Routing", "Erzeugt Marketing-Kacheln bei direkter Evidenz."],
+    ["routing.sales_enabled", "boolean", "Sales-Routing", "Erzeugt Sales-Kacheln bei erfüllten Bedingungen."],
+    ["routing.buying_center_enabled", "boolean", "Buying-Center-Routing", "Markiert geeignete Rollen und Personen."],
+    ["routing.sales_requires_tier1", "boolean", "Sales braucht Tier-1", "Verhindert Sales-Routing ohne Zielunternehmen."],
+    ["routing.sales_requires_trigger", "boolean", "Sales braucht strategischen Trigger", "Eine Unternehmensnennung allein reicht nicht."],
+    ["routing.buying_center_requires_person", "boolean", "Buying Center braucht Person/Rolle", "Verhindert generische Buying-Center-Zuordnung."],
+    ["routing.subsector_alone_is_marketing", "boolean", "Sub-Branche allein als Marketing", "Bewusst streng deaktiviert: Marktbeobachtung allein ist kein direktes Marketingsignal."],
+  ],
+};
+
+function getConfigValue(path) { return path.split(".").reduce((value, key) => value?.[key], pipelineSettings?.config); }
+function setConfigValue(path, value) {
+  const keys = path.split("."); let target = pipelineSettings.config;
+  keys.slice(0, -1).forEach((key) => { target = target[key]; });
+  target[keys.at(-1)] = value;
+}
+
+function renderPipelineFields(section) {
+  const target = document.getElementById(`pipeline-form-${section}`);
+  if (!target || !pipelineSettings) return;
+  target.innerHTML = PIPELINE_FIELDS[section].map(([path, type, label, description, min, max]) => {
+    const value = getConfigValue(path);
+    let control = `<input class="pipeline-control" data-pipeline-path="${path}" type="number" value="${value}" min="${min}" max="${max}" step="${type === "decimal" ? ".01" : "1"}">`;
+    if (type === "boolean") control = `<label class="source-toggle pipeline-switch"><input data-pipeline-path="${path}" type="checkbox" ${value ? "checked" : ""}><span class="source-toggle-slider"></span></label>`;
+    if (type === "model") control = `<select class="pipeline-control" data-pipeline-path="${path}">${["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite"].map((model) => `<option ${model === value ? "selected" : ""}>${model}</option>`).join("")}</select>`;
+    if (type === "thinking") control = `<select class="pipeline-control" data-pipeline-path="${path}">${["minimal", "low", "medium", "high"].map((level) => `<option ${level === value ? "selected" : ""}>${level}</option>`).join("")}</select>`;
+    return `<div class="pipeline-field"><div class="pipeline-field-copy"><label>${escapeHtml(label)}</label><small>${escapeHtml(description)}</small></div>${control}</div>`;
+  }).join("");
+}
+
+async function loadPipelineSettings() {
+  if (pipelineSettings) return;
+  const { settings } = await callApi("get_pipeline_settings");
+  pipelineSettings = settings;
+  ["crawl", "filters", "ai", "quality", "routing"].forEach(renderPipelineFields);
+  els.pipelineVersion.textContent = `Version ${settings.version} · zuletzt ${new Date(settings.updated_at).toLocaleString("de-DE")}`;
+}
+
+async function savePipelineSettings() {
+  if (!pipelineSettings) return;
+  document.querySelectorAll("[data-pipeline-path]").forEach((control) => {
+    const value = control.type === "checkbox" ? control.checked : control.type === "number" ? Number(control.value) : control.value;
+    setConfigValue(control.dataset.pipelinePath, value);
+  });
+  const { settings } = await callApi("update_pipeline_settings", { config: pipelineSettings.config });
+  pipelineSettings = settings;
+  els.pipelineVersion.textContent = `Version ${settings.version} · gerade gespeichert`;
+  toast("Pipeline-Konfiguration gespeichert");
 }
 
 // Thema (topic) — the 5 canonical dimensions, multi-select per article.
@@ -912,10 +1006,16 @@ function bindUi() {
       const panel = item.dataset.panel;
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
       document.getElementById(`settings-panel-${panel}`)?.classList.add("show");
-      if (panel === "keywords-marketing" && !keywordsByTrack.marketing) void loadKeywords("marketing");
-      if (panel === "keywords-sales" && !keywordsByTrack.sales) void loadKeywords("sales");
+      if (panel.startsWith("pipeline-")) void loadPipelineSettings().catch((error) => toast(error.message, "err"));
+      if (panel === "pipeline-filters") {
+        if (!keywordsByTrack.marketing) void loadKeywords("marketing");
+        if (!keywordsByTrack.sales) void loadKeywords("sales");
+      }
     });
   });
+
+  els.btnSavePipeline.addEventListener("click", () => void savePipelineSettings().catch((error) => toast(error.message, "err")));
+  els.btnSavePipelineHeader.addEventListener("click", () => void savePipelineSettings().catch((error) => toast(error.message, "err")));
 
   els.btnAddKeywordMarketing.addEventListener("click", () => void addKeyword("marketing"));
   els.btnAddKeywordSales.addEventListener("click", () => void addKeyword("sales"));

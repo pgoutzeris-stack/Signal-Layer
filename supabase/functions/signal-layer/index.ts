@@ -763,6 +763,40 @@ const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
 const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.2.0";
 const MAX_DAILY_AI_REQUESTS = 1000;
 const MAX_DAILY_PRO_REVIEWS = 250;
+type PipelineConfig = {
+  crawl: { freshness_days: number; future_tolerance_hours: number; article_batch_size: number; default_max_depth: number; default_max_pages: number; event_max_depth: number; event_max_pages: number };
+  filters: { minimum_text_length: number; require_professional_signal: boolean; reject_career_pages: boolean; reject_faq_pages: boolean; reject_event_programs: boolean; reject_future_dates: boolean; deduplicate: boolean };
+  ai: { primary_model: string; review_model: string; review_enabled: boolean; review_confidence_below: number; review_rejected_articles: boolean; thinking_level: "minimal" | "low" | "medium" | "high"; max_output_tokens: number; daily_request_limit: number; daily_review_limit: number; monthly_warning_usd: number };
+  quality: { topic_confidence: number; territory_confidence: number; company_confidence: number; person_confidence: number; sales_trigger_confidence: number; routing_confidence: number; reliable_confidence: number };
+  routing: { marketing_enabled: boolean; sales_enabled: boolean; buying_center_enabled: boolean; sales_requires_tier1: boolean; sales_requires_trigger: boolean; buying_center_requires_person: boolean; subsector_alone_is_marketing: boolean };
+};
+const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
+  crawl: { freshness_days: 183, future_tolerance_hours: 24, article_batch_size: 10, default_max_depth: 2, default_max_pages: 40, event_max_depth: 1, event_max_pages: 24 },
+  filters: { minimum_text_length: 240, require_professional_signal: true, reject_career_pages: true, reject_faq_pages: true, reject_event_programs: true, reject_future_dates: true, deduplicate: true },
+  ai: { primary_model: GEMINI_PRIMARY_MODEL, review_model: GEMINI_REVIEW_MODEL, review_enabled: true, review_confidence_below: 0.94, review_rejected_articles: false, thinking_level: "low", max_output_tokens: 4096, daily_request_limit: MAX_DAILY_AI_REQUESTS, daily_review_limit: MAX_DAILY_PRO_REVIEWS, monthly_warning_usd: 10 },
+  quality: { topic_confidence: 0.82, territory_confidence: 0.84, company_confidence: 0.86, person_confidence: 0.86, sales_trigger_confidence: 0.86, routing_confidence: 0.88, reliable_confidence: 0.9 },
+  routing: { marketing_enabled: true, sales_enabled: true, buying_center_enabled: true, sales_requires_tier1: true, sales_requires_trigger: true, buying_center_requires_person: true, subsector_alone_is_marketing: false },
+};
+let pipelineConfigCache: { value: PipelineConfig; at: number } | null = null;
+
+function mergePipelineConfig(raw: Partial<PipelineConfig> | null | undefined): PipelineConfig {
+  return {
+    crawl: { ...DEFAULT_PIPELINE_CONFIG.crawl, ...(raw?.crawl || {}) },
+    filters: { ...DEFAULT_PIPELINE_CONFIG.filters, ...(raw?.filters || {}) },
+    ai: { ...DEFAULT_PIPELINE_CONFIG.ai, ...(raw?.ai || {}) },
+    quality: { ...DEFAULT_PIPELINE_CONFIG.quality, ...(raw?.quality || {}) },
+    routing: { ...DEFAULT_PIPELINE_CONFIG.routing, ...(raw?.routing || {}) },
+  };
+}
+
+async function getPipelineConfig(force = false): Promise<PipelineConfig> {
+  if (!force && pipelineConfigCache && Date.now() - pipelineConfigCache.at < 60_000) return pipelineConfigCache.value;
+  const { data } = await getAdminClient().schema("signal_layer").from("pipeline_settings")
+    .select("config").eq("id", "active").maybeSingle();
+  const value = mergePipelineConfig(data?.config as Partial<PipelineConfig> | undefined);
+  pipelineConfigCache = { value, at: Date.now() };
+  return value;
+}
 const TOPIC_IDS = [
   "customer_insights", "marketing_insights", "fmcg_retail_signale",
   "sub_branchen_insight", "ki_performance",
@@ -946,17 +980,17 @@ function detectLanguage(text: string): "de" | "en" | "other" {
   return "other";
 }
 
-function hardRejectionReasons(title: string, text: string): string[] {
+function hardRejectionReasons(title: string, text: string, config: PipelineConfig = DEFAULT_PIPELINE_CONFIG): string[] {
   const normalized = normalizeMatchText(`${title} ${text.slice(0, 5000)}`);
   const reasons: string[] = [];
   const careerHits = CAREER_CONTENT_TERMS.filter((term) => containsMatchTerm(normalized, term)).length;
-  if (careerHits >= 3) reasons.push("Karriere-, Bewerbungs- oder Ausbildungsinhalt");
-  if (/\b(faq|frequently asked questions|fragen und antworten|noch fragen)\b/i.test(title)) reasons.push("FAQ- oder Hilfeseite");
-  if (/\b(attendees|speakers|agenda|schedule|tickets|event program|teilnehmer|programm|anmeldung)\b/i.test(title)
+  if (config.filters.reject_career_pages && careerHits >= 3) reasons.push("Karriere-, Bewerbungs- oder Ausbildungsinhalt");
+  if (config.filters.reject_faq_pages && /\b(faq|frequently asked questions|fragen und antworten|noch fragen)\b/i.test(title)) reasons.push("FAQ- oder Hilfeseite");
+  if (config.filters.reject_event_programs && /\b(attendees|speakers|agenda|schedule|tickets|event program|teilnehmer|programm|anmeldung)\b/i.test(title)
       && !/\b(report|rückblick|results|ergebnisse|launch|kampagne|strategy|strategie)\b/i.test(title)) {
     reasons.push("Event-, Teilnehmer- oder Programmseite ohne strategisches Signal");
   }
-  if (text.trim().length < 240) reasons.push("Zu wenig redaktioneller Artikeltext");
+  if (text.trim().length < config.filters.minimum_text_length) reasons.push("Zu wenig redaktioneller Artikeltext");
   const professionalSignalPatterns = [
     /\b(markenstrateg\w*|markenpositionier\w*|rebrand\w*|relaunch\w*|kampagn\w*|markenaktivier\w*)\b/i,
     /\b(brand strateg\w*|brand position\w*|campaign\w*|brand activat\w*|media strateg\w*)\b/i,
@@ -969,7 +1003,7 @@ function hardRejectionReasons(title: string, text: string): string[] {
     /\b(market entr\w*|market expansion|growth strateg\w*|business model\w*|portfolio (?:change|transformation)|restructur\w*)\b/i,
     /\b(acquisition|merger|ubernahm\w*|fusion\w*|agency change|agenturwechsel|retail strateg\w*)\b/i,
   ];
-  if (!professionalSignalPatterns.some((pattern) => pattern.test(normalized))) {
+  if (config.filters.require_professional_signal && !professionalSignalPatterns.some((pattern) => pattern.test(normalized))) {
     reasons.push("Kein fachliches Marketing-, Retail-, Customer-, Innovations- oder Strategiesignal");
   }
   return [...new Set(reasons)];
@@ -999,10 +1033,10 @@ function hasDirectMarketingContext(topic: AiTag): boolean {
     .test(normalizeMatchText(topic.evidence));
 }
 
-function validateRouteDecision(raw: AiRouteDecision | undefined, articleText: string): AiRouteDecision {
+function validateRouteDecision(raw: AiRouteDecision | undefined, articleText: string, threshold = 0.88): AiRouteDecision {
   const confidence = clampConfidence(raw?.confidence);
   const evidence = String(raw?.evidence || "").trim();
-  const eligible = Boolean(raw?.eligible) && confidence >= 0.88 && evidenceExists(evidence, articleText);
+  const eligible = Boolean(raw?.eligible) && confidence >= threshold && evidenceExists(evidence, articleText);
   return {
     eligible,
     confidence,
@@ -1018,19 +1052,20 @@ async function callGeminiClassifier(
   telemetry: { articleId?: string; crawlRunId?: string; operation?: "classification" | "review" | "preview" | "test" } = {},
 ): Promise<AiClassification> {
   const admin = getAdminClient();
+  const pipelineConfig = await getPipelineConfig();
   const dayStart = new Date();
   dayStart.setUTCHours(0, 0, 0, 0);
   const { count: dailyRequests } = await admin.schema("signal_layer").from("ai_usage_events")
     .select("id", { count: "exact", head: true }).gte("created_at", dayStart.toISOString());
-  if ((dailyRequests || 0) >= MAX_DAILY_AI_REQUESTS) {
-    throw new Error(`Daily Gemini request safety limit (${MAX_DAILY_AI_REQUESTS}) reached`);
+  if ((dailyRequests || 0) >= pipelineConfig.ai.daily_request_limit) {
+    throw new Error(`Daily Gemini request safety limit (${pipelineConfig.ai.daily_request_limit}) reached`);
   }
-  if (model === GEMINI_REVIEW_MODEL) {
+  if (model === pipelineConfig.ai.review_model) {
     const { count: dailyReviews } = await admin.schema("signal_layer").from("ai_usage_events")
-      .select("id", { count: "exact", head: true }).eq("model", GEMINI_REVIEW_MODEL)
+      .select("id", { count: "exact", head: true }).eq("model", pipelineConfig.ai.review_model)
       .gte("created_at", dayStart.toISOString());
-    if ((dailyReviews || 0) >= MAX_DAILY_PRO_REVIEWS) {
-      throw new Error(`Daily Gemini Pro review safety limit (${MAX_DAILY_PRO_REVIEWS}) reached`);
+    if ((dailyReviews || 0) >= pipelineConfig.ai.daily_review_limit) {
+      throw new Error(`Daily Gemini Pro review safety limit (${pipelineConfig.ai.daily_review_limit}) reached`);
     }
   }
   const key = await getGeminiKey();
@@ -1049,8 +1084,8 @@ async function callGeminiClassifier(
     generationConfig: {
       responseMimeType: "application/json",
       responseSchema: GEMINI_RESPONSE_SCHEMA,
-      maxOutputTokens: 4096,
-      thinkingConfig: { thinkingLevel: "low" },
+      maxOutputTokens: pipelineConfig.ai.max_output_tokens,
+      thinkingConfig: { thinkingLevel: pipelineConfig.ai.thinking_level },
     },
   });
   const makeRequestInit = (): RequestInit => ({
@@ -1097,8 +1132,14 @@ async function callGeminiClassifier(
   const outputTokens = Number(usage.candidatesTokenCount || 0);
   const thinkingTokens = Number(usage.thoughtsTokenCount || 0);
   const totalTokens = Number(usage.totalTokenCount || inputTokens + outputTokens + thinkingTokens);
-  const inputRate = model === GEMINI_REVIEW_MODEL ? 2 : 0.75;
-  const outputRate = model === GEMINI_REVIEW_MODEL ? 12 : 4.5;
+  const modelRates: Record<string, { input: number; output: number }> = {
+    "gemini-3.5-flash": { input: 0.75, output: 4.5 },
+    "gemini-3.1-pro-preview": { input: 2, output: 12 },
+    "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
+  };
+  const rates = modelRates[model] || modelRates["gemini-3.5-flash"];
+  const inputRate = rates.input;
+  const outputRate = rates.output;
   const estimatedCost = (inputTokens * inputRate + (outputTokens + thinkingTokens) * outputRate) / 1_000_000;
   const text = payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("");
   let classification: AiClassification;
@@ -1185,16 +1226,17 @@ function validateClassification(
   raw: AiClassification,
   articleText: string,
   tier1Companies: Array<{ name: string; aliases: string[] }>,
+  config: PipelineConfig = DEFAULT_PIPELINE_CONFIG,
 ): AiClassification {
   const canonicalCompanies = new Map(tier1Companies.map((company) => [normalizeMatchText(company.name), company.name]));
   const marketInsightTransferable = Boolean(raw.market_insight_transferable);
   const topics = (Array.isArray(raw.topics) ? raw.topics : [])
     .filter((tag) => TOPIC_IDS.includes(tag.id as typeof TOPIC_IDS[number]))
     .map((tag) => ({ ...tag, confidence: clampConfidence(tag.confidence) }))
-    .filter((tag) => tag.confidence >= 0.82 && evidenceExists(tag.evidence, articleText))
+    .filter((tag) => tag.confidence >= config.quality.topic_confidence && evidenceExists(tag.evidence, articleText))
     .filter((tag) => tag.id !== "sub_branchen_insight" || marketInsightTransferable);
   const territory = raw.territory && TERRITORY_IDS.includes(raw.territory.id as typeof TERRITORY_IDS[number])
-      && clampConfidence(raw.territory.confidence) >= 0.84 && evidenceExists(raw.territory.evidence, articleText)
+      && clampConfidence(raw.territory.confidence) >= config.quality.territory_confidence && evidenceExists(raw.territory.evidence, articleText)
     ? { ...raw.territory, confidence: clampConfidence(raw.territory.confidence) }
     : { id: "none", confidence: 0, evidence: "" };
   const companies = (Array.isArray(raw.companies) ? raw.companies : [])
@@ -1203,17 +1245,17 @@ function validateClassification(
       name: canonicalCompanies.get(normalizeMatchText(company.name)) || "",
       confidence: clampConfidence(company.confidence),
     }))
-    .filter((company) => company.name && company.confidence >= 0.86 && evidenceExists(company.evidence, articleText));
+    .filter((company) => company.name && company.confidence >= config.quality.company_confidence && evidenceExists(company.evidence, articleText));
   const people = (Array.isArray(raw.people) ? raw.people : [])
     .map((person) => ({ ...person, name: String(person.name || "").trim(), role: String(person.role || "").trim(), confidence: clampConfidence(person.confidence) }))
-    .filter((person) => person.name && person.role && person.confidence >= 0.86 && evidenceExists(person.evidence, articleText));
+    .filter((person) => person.name && person.role && person.confidence >= config.quality.person_confidence && evidenceExists(person.evidence, articleText));
   const salesTriggers = (Array.isArray(raw.sales_triggers) ? raw.sales_triggers : [])
     .filter((trigger) => SALES_TRIGGER_IDS.includes(trigger.id as typeof SALES_TRIGGER_IDS[number]))
     .map((trigger) => ({ ...trigger, confidence: clampConfidence(trigger.confidence) }))
-    .filter((trigger) => trigger.confidence >= 0.86 && evidenceExists(trigger.evidence, articleText));
+    .filter((trigger) => trigger.confidence >= config.quality.sales_trigger_confidence && evidenceExists(trigger.evidence, articleText));
   const routingDecisions = {
-    marketing: validateRouteDecision(raw.routing_decisions?.marketing, articleText),
-    sales: validateRouteDecision(raw.routing_decisions?.sales, articleText),
+    marketing: validateRouteDecision(raw.routing_decisions?.marketing, articleText, config.quality.routing_confidence),
+    sales: validateRouteDecision(raw.routing_decisions?.sales, articleText, config.quality.routing_confidence),
   };
   const overallConfidence = clampConfidence(raw.overall_confidence);
   const articleType = ARTICLE_TYPES.includes(raw.article_type as typeof ARTICLE_TYPES[number]) ? raw.article_type : "other";
@@ -1226,11 +1268,11 @@ function validateClassification(
   const evidenceComplete = topics.length === expectedTopics.length
     && companies.filter((company) => company.role !== "incidental_mention").length
       === (raw.companies || []).filter((company) => company.role !== "incidental_mention").length;
-  const stronglySupportedMarketingSignal = directMarketingTopics.some((topic) => topic.confidence >= 0.9)
-    && routingDecisions.marketing.eligible && overallConfidence >= 0.9;
+  const stronglySupportedMarketingSignal = directMarketingTopics.some((topic) => topic.confidence >= config.quality.reliable_confidence)
+    && routingDecisions.marketing.eligible && overallConfidence >= config.quality.reliable_confidence;
   let status: AiClassification["relevance_status"] = "uncertain";
-  if (raw.relevance_status === "rejected" && overallConfidence >= 0.9) status = "rejected";
-  if (raw.relevance_status === "reliable" && overallConfidence >= 0.9 && hasSignal
+  if (raw.relevance_status === "rejected" && overallConfidence >= config.quality.reliable_confidence) status = "rejected";
+  if (raw.relevance_status === "reliable" && overallConfidence >= config.quality.reliable_confidence && hasSignal
       && titleDe && evidenceComplete && !NON_RELEVANT_ARTICLE_TYPES.has(articleType) && rejectionReasons.length === 0) {
     status = "reliable";
   }
@@ -1272,15 +1314,23 @@ async function tagArticle(
   tier1Companies: Array<{ name: string; aliases: string[] }>,
   source: { company?: string; category?: string },
 ): Promise<void> {
-  void allKeywords;
+  const config = await getPipelineConfig();
   const cleanedContent = cleanArticleText(content);
   const articleText = `${title}\n${cleanedContent}`;
   const contentHash = await sha256(normalizeMatchText(articleText));
   const language = detectLanguage(articleText);
-  const hardReasons = hardRejectionReasons(title, cleanedContent);
-  const { data: exactDuplicate } = await admin.schema("signal_layer").from("articles")
-    .select("id").eq("content_hash", contentHash).neq("id", articleId).limit(1).maybeSingle();
-  if (exactDuplicate?.id) hardReasons.push("Technisches oder inhaltlich identisches Duplikat");
+  const hardReasons = hardRejectionReasons(title, cleanedContent, config);
+  const hasConfiguredSignal = allKeywords.some((keyword) => keyword.active
+    && variantsForKeyword(keyword.keyword).some((variant) => containsMatchTerm(normalizeMatchText(articleText), variant)));
+  if (hasConfiguredSignal) {
+    const noSignalIndex = hardReasons.indexOf("Kein fachliches Marketing-, Retail-, Customer-, Innovations- oder Strategiesignal");
+    if (noSignalIndex >= 0) hardReasons.splice(noSignalIndex, 1);
+  }
+  const { data: exactDuplicate } = config.filters.deduplicate
+    ? await admin.schema("signal_layer").from("articles").select("id")
+      .eq("content_hash", contentHash).neq("id", articleId).limit(1).maybeSingle()
+    : { data: null };
+  if (config.filters.deduplicate && exactDuplicate?.id) hardReasons.push("Technisches oder inhaltlich identisches Duplikat");
 
   await admin.schema("signal_layer").from("findings").delete().eq("article_id", articleId);
   if (hardReasons.length > 0) {
@@ -1311,20 +1361,21 @@ async function tagArticle(
   let reviewerModel: string | null = null;
   try {
     primary = validateClassification(await callGeminiClassifier(
-      GEMINI_PRIMARY_MODEL, prompt, undefined,
+      config.ai.primary_model, prompt, undefined,
       { articleId, crawlRunId: crawlRunId || undefined, operation: "classification" },
-    ), articleText, companyCandidates);
+    ), articleText, companyCandidates, config);
     classification = primary;
     // A rejected primary result does not justify an expensive Pro review.
     // Review only plausible candidates that could still become a signal.
-    if (primary.relevance_status !== "rejected"
-        && (primary.relevance_status === "uncertain" || primary.overall_confidence < 0.94)) {
-      reviewerModel = GEMINI_REVIEW_MODEL;
+    if (config.ai.review_enabled
+        && (config.ai.review_rejected_articles || primary.relevance_status !== "rejected")
+        && (primary.relevance_status === "uncertain" || primary.overall_confidence < config.ai.review_confidence_below)) {
+      reviewerModel = config.ai.review_model;
       classification = validateClassification(
         await callGeminiClassifier(
-          GEMINI_REVIEW_MODEL, prompt, primary,
+          config.ai.review_model, prompt, primary,
           { articleId, crawlRunId: crawlRunId || undefined, operation: "review" },
-        ), articleText, companyCandidates,
+        ), articleText, companyCandidates, config,
       );
     }
   } catch (error) {
@@ -1334,7 +1385,7 @@ async function tagArticle(
       classification_status: "error",
       rejection_reasons: [error instanceof Error ? error.message.slice(0, 300) : "Unbekannter Klassifikationsfehler"],
       language,
-      ai_model: GEMINI_PRIMARY_MODEL,
+      ai_model: config.ai.primary_model,
       reviewer_model: reviewerModel,
       prompt_version: CLASSIFIER_PROMPT_VERSION,
       classified_at: new Date().toISOString(),
@@ -1348,12 +1399,15 @@ async function tagArticle(
   const primaryCompany = classification.companies.find((company) => company.role === "primary_subject")?.name
     || activeCompanies[0]?.name || null;
   const directMarketingTopics = classification.topics.filter(hasDirectMarketingContext);
-  const marketingEligible = classification.relevance_status === "reliable"
-    && directMarketingTopics.length > 0 && classification.routing_decisions.marketing.eligible;
-  const salesEligible = classification.relevance_status === "reliable"
-    && activeCompanies.length > 0 && classification.sales_triggers.length > 0
+  const marketingEligible = config.routing.marketing_enabled && classification.relevance_status === "reliable"
+    && (directMarketingTopics.length > 0 || config.routing.subsector_alone_is_marketing && classification.topics.some((topic) => topic.id === "sub_branchen_insight"))
+    && classification.routing_decisions.marketing.eligible;
+  const salesEligible = config.routing.sales_enabled && classification.relevance_status === "reliable"
+    && (!config.routing.sales_requires_tier1 || activeCompanies.length > 0)
+    && (!config.routing.sales_requires_trigger || classification.sales_triggers.length > 0)
     && classification.routing_decisions.sales.eligible;
-  const buyingCenterCandidate = salesEligible && classification.people.length > 0;
+  const buyingCenterCandidate = config.routing.buying_center_enabled && salesEligible
+    && (!config.routing.buying_center_requires_person || classification.people.length > 0);
   const routing: string[] = [];
   if (marketingEligible) routing.push("marketing");
   if (salesEligible) routing.push("sales");
@@ -1391,7 +1445,7 @@ async function tagArticle(
     title_de: classification.title_de,
     ai_rationale: classification.rationale,
     language: classification.language || language,
-    ai_model: GEMINI_PRIMARY_MODEL,
+    ai_model: config.ai.primary_model,
     reviewer_model: reviewerModel,
     prompt_version: CLASSIFIER_PROMPT_VERSION,
     classified_at: new Date().toISOString(),
@@ -1510,8 +1564,9 @@ Deno.serve(async (req: Request) => {
           .select("name, aliases").eq("active", true);
         if (error) return errorResponse(origin, error.message, 500);
         const cleanedContent = cleanArticleText(content);
+        const config = await getPipelineConfig();
         const articleText = `${title}\n${cleanedContent}`;
-        const hardReasons = hardRejectionReasons(title, cleanedContent);
+        const hardReasons = hardRejectionReasons(title, cleanedContent, config);
         if (hardReasons.length) {
           return corsResponse(origin, {
             model: "deterministic-rules", classification: {
@@ -1526,19 +1581,19 @@ Deno.serve(async (req: Request) => {
           company: source_company, category: source_category,
         }, companyCandidates);
         const primary = validateClassification(
-          await callGeminiClassifier(GEMINI_PRIMARY_MODEL, prompt, undefined, { operation: "preview" }), articleText, companyCandidates,
+          await callGeminiClassifier(config.ai.primary_model, prompt, undefined, { operation: "preview" }), articleText, companyCandidates, config,
         );
         let result = primary;
         let reviewer: string | null = null;
-        if (primary.relevance_status !== "rejected"
-            && (primary.relevance_status === "uncertain" || primary.overall_confidence < 0.94)) {
-          reviewer = GEMINI_REVIEW_MODEL;
+        if (config.ai.review_enabled && (config.ai.review_rejected_articles || primary.relevance_status !== "rejected")
+            && (primary.relevance_status === "uncertain" || primary.overall_confidence < config.ai.review_confidence_below)) {
+          reviewer = config.ai.review_model;
           result = validateClassification(
-            await callGeminiClassifier(GEMINI_REVIEW_MODEL, prompt, primary, { operation: "preview" }), articleText, companyCandidates,
+            await callGeminiClassifier(config.ai.review_model, prompt, primary, { operation: "preview" }), articleText, companyCandidates, config,
           );
         }
         return corsResponse(origin, {
-          model: GEMINI_PRIMARY_MODEL, reviewer_model: reviewer,
+          model: config.ai.primary_model, reviewer_model: reviewer,
           prompt_version: CLASSIFIER_PROMPT_VERSION, classification: result,
         });
       }
@@ -1568,6 +1623,44 @@ Deno.serve(async (req: Request) => {
           .eq("id", articleId).single();
         if (resultError) return errorResponse(origin, resultError.message, 500);
         return corsResponse(origin, { article: result });
+      }
+
+      case "get_pipeline_settings": {
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("pipeline_settings")
+          .select("config, version, updated_at").eq("id", "active").single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { settings: { ...data, config: mergePipelineConfig(data.config) } });
+      }
+
+      case "update_pipeline_settings": {
+        const requested = mergePipelineConfig(body.config as Partial<PipelineConfig> | undefined);
+        const allowedModels = new Set(["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite"]);
+        if (!allowedModels.has(requested.ai.primary_model) || !allowedModels.has(requested.ai.review_model)) {
+          return errorResponse(origin, "Nicht unterstütztes Gemini-Modell");
+        }
+        const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Number(value)));
+        requested.crawl.freshness_days = Math.round(clamp(requested.crawl.freshness_days, 1, 365));
+        requested.crawl.future_tolerance_hours = Math.round(clamp(requested.crawl.future_tolerance_hours, 0, 72));
+        requested.filters.minimum_text_length = Math.round(clamp(requested.filters.minimum_text_length, 100, 5000));
+        requested.ai.review_confidence_below = clamp(requested.ai.review_confidence_below, 0.5, 1);
+        requested.ai.max_output_tokens = Math.round(clamp(requested.ai.max_output_tokens, 512, 8192));
+        requested.ai.daily_request_limit = Math.round(clamp(requested.ai.daily_request_limit, 1, 10000));
+        requested.ai.daily_review_limit = Math.round(clamp(requested.ai.daily_review_limit, 0, 5000));
+        requested.ai.monthly_warning_usd = clamp(requested.ai.monthly_warning_usd, 0, 10000);
+        for (const key of Object.keys(requested.quality) as Array<keyof PipelineConfig["quality"]>) {
+          requested.quality[key] = clamp(requested.quality[key], 0.5, 1);
+        }
+        const admin = getAdminClient();
+        const { data: current } = await admin.schema("signal_layer").from("pipeline_settings")
+          .select("version").eq("id", "active").single();
+        const { data, error } = await admin.schema("signal_layer").from("pipeline_settings").update({
+          config: requested, version: Number(current?.version || 0) + 1,
+          updated_at: new Date().toISOString(), updated_by: auth?.userId || null,
+        }).eq("id", "active").select("config, version, updated_at").single();
+        if (error) return errorResponse(origin, error.message, 500);
+        pipelineConfigCache = { value: requested, at: Date.now() };
+        return corsResponse(origin, { settings: data });
       }
 
       case "start_classification_backfill": {
@@ -1875,6 +1968,14 @@ Deno.serve(async (req: Request) => {
           const { data: tier1Companies } = await admin.schema("signal_layer").from("tier1_companies")
             .select("name, aliases").eq("active", true);
           const crawlPolicy = getCrawlPolicy(source);
+          const pipelineConfig = await getPipelineConfig();
+          if (source.source_type === "event") {
+            crawlPolicy.maxDepth = pipelineConfig.crawl.event_max_depth;
+            crawlPolicy.maxPages = pipelineConfig.crawl.event_max_pages;
+          } else {
+            crawlPolicy.maxDepth = pipelineConfig.crawl.default_max_depth;
+            crawlPolicy.maxPages = pipelineConfig.crawl.default_max_pages;
+          }
 
           // Discover + cache the feed type once per source.
           let feedType = source.feed_type as string | null;
@@ -1899,7 +2000,7 @@ Deno.serve(async (req: Request) => {
             .select("id", { count: "exact", head: true }).eq("source_id", source.id);
           const sinceDate = existingCount && existingCount > 0
             ? new Date(source.last_crawled_at || Date.now() - 24 * 60 * 60 * 1000)
-            : new Date(Date.now() - 183 * 24 * 60 * 60 * 1000); // ~6 months
+            : new Date(Date.now() - pipelineConfig.crawl.freshness_days * 24 * 60 * 60 * 1000);
 
           // Re-deriving the candidate list every batch is cheap (one RSS/
           // sitemap fetch, or a cached Apify-run result) — it's the same
@@ -1921,7 +2022,8 @@ Deno.serve(async (req: Request) => {
           if (!discoveredCount) discoveredCount = candidates.length;
           candidates = candidates
             .filter((candidate) => isAllowedBySourcePolicy(candidate.url, crawlPolicy))
-            .filter((candidate) => !candidate.publishedAt || new Date(candidate.publishedAt) <= new Date(Date.now() + 24 * 60 * 60 * 1000))
+            .filter((candidate) => !pipelineConfig.filters.reject_future_dates || !candidate.publishedAt
+              || new Date(candidate.publishedAt) <= new Date(Date.now() + pipelineConfig.crawl.future_tolerance_hours * 60 * 60 * 1000))
             .slice(0, crawlPolicy.maxCandidates);
 
           const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
@@ -1954,7 +2056,8 @@ Deno.serve(async (req: Request) => {
             const resolvedPublishedAt = fetched.publishedAt
               || (candidate.hasConfirmedPublishDate ? candidate.publishedAt : null) || null;
             if (resolvedPublishedAt && new Date(resolvedPublishedAt) < sinceDate) { rejected.too_old = (rejected.too_old || 0) + 1; continue; }
-            if (resolvedPublishedAt && new Date(resolvedPublishedAt) > new Date(Date.now() + 24 * 60 * 60 * 1000)) {
+            if (pipelineConfig.filters.reject_future_dates && resolvedPublishedAt
+                && new Date(resolvedPublishedAt) > new Date(Date.now() + pipelineConfig.crawl.future_tolerance_hours * 60 * 60 * 1000)) {
               rejected.future_date = (rejected.future_date || 0) + 1; continue;
             }
 
@@ -2161,6 +2264,7 @@ Deno.serve(async (req: Request) => {
 
       case "get_dashboard_status": {
         const admin = getAdminClient();
+        const pipelineConfig = await getPipelineConfig();
         const monthStart = new Date();
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
@@ -2231,7 +2335,7 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, {
           crawl_run: crawl || null,
           backfill_run: backfill ? { ...backfill, error_count: backfillErrorCount, error_breakdown: errorBreakdown } : null,
-          cost_summary: { ...costSummary, warning: costSummary.month_usd >= 10 },
+          cost_summary: { ...costSummary, warning: costSummary.month_usd >= pipelineConfig.ai.monthly_warning_usd, warning_threshold_usd: pipelineConfig.ai.monthly_warning_usd },
           source_health: sourceHealth,
         });
       }
