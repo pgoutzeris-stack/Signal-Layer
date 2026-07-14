@@ -2596,7 +2596,7 @@ Deno.serve(async (req: Request) => {
             .select("model, status, operation, input_tokens, output_tokens, thinking_tokens, estimated_cost_usd, created_at")
             .gte("created_at", monthStart.toISOString()).limit(10000),
           admin.schema("signal_layer").from("source_crawl_attempts")
-            .select("feed_type, status, discovered_count, candidate_count, inserted_count, error_code, error_message, started_at")
+            .select("crawl_run_id, source_id, feed_type, status, discovered_count, candidate_count, inserted_count, error_code, error_message, started_at")
             .order("started_at", { ascending: false }).limit(1000),
         ]);
         let backfillErrorCount = 0;
@@ -2611,7 +2611,7 @@ Deno.serve(async (req: Request) => {
             rate_limit: { label: "Gemini-Quota / Rate Limit", explanation: "Gemini hat zu viele Anfragen oder ein Modellkontingent abgelehnt." },
             timeout: { label: "Zeitüberschreitung", explanation: "Die Modellantwort dauerte länger als das technische Zeitlimit." },
             invalid_response: { label: "Ungültige Modellantwort", explanation: "Gemini lieferte kein vollständig lesbares Klassifikations-JSON." },
-            other: { label: "Sonstiger API-Fehler", explanation: "Ein nicht separat klassifizierter Verarbeitungsfehler ist aufgetreten." },
+            other: { label: "Artikelanalyse fehlgeschlagen", explanation: "Diese Artikel konnten wegen eines nicht genauer klassifizierten Verarbeitungsfehlers nicht analysiert werden." },
           };
           const counts: Record<keyof typeof definitions, number> = { spending_cap: 0, rate_limit: 0, timeout: 0, invalid_response: 0, other: 0 };
           for (const row of errors || []) {
@@ -2639,11 +2639,16 @@ Deno.serve(async (req: Request) => {
           if (row.status === "error") summary.errors += 1;
           return summary;
         }, { month_usd: 0, today_usd: 0, input_tokens: 0, output_tokens: 0, thinking_tokens: 0, requests: 0, errors: 0 });
-        const sourceHealth = (crawlHealth || []).reduce((summary, row) => {
+        const latestAttemptBySource = new Map<string, Record<string, unknown>>();
+        for (const row of (crawlHealth || []).filter((item) => !crawl?.id || item.crawl_run_id === crawl.id)) {
+          if (!latestAttemptBySource.has(row.source_id)) latestAttemptBySource.set(row.source_id, row);
+        }
+        const currentCrawlHealth = [...latestAttemptBySource.values()];
+        const sourceHealth = currentCrawlHealth.reduce((summary, row) => {
           summary.attempts += 1;
           if (row.status === "error") summary.errors += 1;
           else if (row.status === "empty") summary.empty += 1;
-          else summary.successful += 1;
+          else if (row.status === "success") summary.successful += 1;
           summary.candidates += Number(row.candidate_count || 0);
           summary.inserted += Number(row.inserted_count || 0);
           if (row.feed_type === "apify") summary.apify_attempts += 1;

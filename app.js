@@ -1590,10 +1590,9 @@ async function loadLastRun() {
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
     els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
     const crawlResults = health ? [
-      { value: Number(health.successful || 0), label: "erfolgreich", tone: "success", icon: "ri-checkbox-circle-line" },
-      { value: Number(health.empty || 0), label: "leer", tone: "muted", icon: "ri-file-search-line" },
-      { value: Number(health.errors || 0), label: "Fehler", tone: "error", icon: "ri-error-warning-line" },
-      { value: Number(health.apify_errors || 0), label: "Apify-Fehler", tone: "error", icon: "ri-links-line" },
+      { value: Number(health.successful || 0), label: "Quellen erfolgreich", tone: "success", icon: "ri-checkbox-circle-line" },
+      { value: Number(health.empty || 0), label: "ohne neue Artikel", tone: "muted", icon: "ri-file-search-line" },
+      { value: Number(health.errors || 0), label: "Quellen fehlgeschlagen", tone: "error", icon: "ri-error-warning-line" },
     ].filter((result) => result.value > 0) : [];
     els.sourceHealthNote.hidden = crawlResults.length === 0;
     els.sourceHealthNote.innerHTML = crawlResults.map((result) =>
@@ -1639,14 +1638,12 @@ async function loadLastRun() {
       const status = backfill.status === "done" ? "Abgeschlossen" : backfill.status === "error" ? "Fehler" : "Läuft";
       const errors = Number(backfill.error_count || 0);
       els.backfillProgressDetail.textContent = errors > 0
-        ? `${status} · ${errors.toLocaleString("de-DE")} API-Fehler · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`
+        ? `${status} · ${errors.toLocaleString("de-DE")} Artikel nicht analysiert · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`
         : `${status} · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`;
       els.apiErrorList.innerHTML = (backfill.error_breakdown || []).map((error) => `
-        <div class="api-error-row">
-          <i class="ri-alert-line"></i>
-          <div class="api-error-copy"><b>${escapeHtml(error.label)}</b><span>${escapeHtml(error.explanation)}</span></div>
-          <span class="api-error-count">${Number(error.count || 0).toLocaleString("de-DE")}</span>
-        </div>`).join("");
+        <span class="crawl-result-pill crawl-result-pill--error" title="${escapeHtml(error.explanation)}">
+          <i class="ri-alert-line"></i>${Number(error.count || 0).toLocaleString("de-DE")} ${escapeHtml(error.label)}
+        </span>`).join("");
     } else {
       els.backfillProgressText.textContent = "Kein Lauf";
       els.backfillProgressDetail.textContent = "Aktuell werden keine Altartikel geprüft.";

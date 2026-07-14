@@ -181,22 +181,17 @@
   .backfill-progress-track { height: 5px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: var(--status-bg); }
   .backfill-progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--brand); transition: width .25s ease; }
   .backfill-status small { display: block; margin-top: 5px; color: var(--muted); font-size: .63rem; line-height: 1.35; }
-  .crawl-source-progress { margin: 3px 0 10px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .crawl-source-progress { margin-top: 3px; padding-top: 10px; border-top: 1px solid var(--line); }
   .crawl-source-progress[hidden] { display: none; }
-  .crawl-source-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .65rem; }
-  .crawl-source-head b { color: var(--ink); font-size: .67rem; }
-  .crawl-source-track { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--line) 72%, transparent); }
-  .crawl-source-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--brand); transition: width .3s ease; }
-  .crawl-source-current { min-width: 0; margin-top: 8px; }
-  .crawl-source-current strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; }
-  .crawl-source-current a { display: block; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: .6rem; line-height: 1.35; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+  .crawl-source-current { min-width: 0; }
+  .crawl-source-current a { display: block; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: .59rem; line-height: 1.35; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
   .crawl-source-current a:hover { color: var(--brand-dark); text-decoration: underline; }
   .live-shimmer { color: var(--muted) !important; }
   .is-live .live-shimmer { color: transparent !important; background: linear-gradient(100deg, #a8adb4 20%, #e7e9ec 42%, #a8adb4 64%); background-size: 220% 100%; background-clip: text; -webkit-background-clip: text; animation: liveTextShimmer 2.1s linear infinite; }
   .backfill-current-article { display: block; margin-top: 7px; overflow: hidden; color: var(--muted); font-size: .63rem; font-weight: 650; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
   @keyframes liveTextShimmer { to { background-position: -220% 0; } }
   @media (prefers-reduced-motion: reduce) { .is-live .live-shimmer { color: var(--muted) !important; background: none; animation: none; } }
-  .api-error-list { display: grid; gap: 5px; margin-top: 9px; }
+  .api-error-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
   .telemetry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
   .telemetry-stat { padding: 7px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
   .telemetry-stat span { display: block; color: var(--muted); font-size: .58rem; text-transform: uppercase; letter-spacing: .04em; }
@@ -1417,9 +1412,9 @@
             <div class="crawl-status-popover" role="status">
               <div class="crawl-status-head"><div><span class="crawl-status-kicker">Letzter Crawl</span><strong id="last-run-text">--:--</strong></div><span class="crawl-live-state" id="crawl-live-state">Wird geladen</span></div>
               <div class="crawl-source-progress" id="crawl-source-progress" hidden>
-                <div class="crawl-source-head"><span>Quellen</span><b id="crawl-source-progress-text">0 / 0</b></div>
-                <div class="crawl-source-track"><span id="crawl-source-progress-bar"></span></div>
-                <div class="crawl-source-current"><strong class="live-shimmer" id="crawl-current-source">–</strong><a class="live-shimmer" id="crawl-current-source-url" href="#" target="_blank" rel="noopener noreferrer"></a></div>
+                <div class="backfill-status-row"><span>Quellen-Crawl</span><b id="crawl-source-progress-text">0 / 0</b></div>
+                <div class="backfill-progress-track"><span id="crawl-source-progress-bar"></span></div>
+                <div class="crawl-source-current"><span class="backfill-current-article live-shimmer" id="crawl-current-source">–</span><a class="live-shimmer" id="crawl-current-source-url" href="#" target="_blank" rel="noopener noreferrer"></a></div>
               </div>
               <div class="backfill-status" id="backfill-status">
                 <div class="backfill-status-row"><span>Artikelprüfung</span><b id="backfill-progress-text">Wird geladen…</b></div>
