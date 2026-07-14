@@ -1281,6 +1281,10 @@
   }
   .source-url:hover { text-decoration: underline; }
   .source-empty { text-align: center; color: var(--muted); padding: 2rem 0 !important; }
+  .source-login-badge { display: inline-flex; align-items: center; gap: 4px; margin: 5px 0 0 4px; padding: 3px 6px; border: 1px solid #fbbf24; border-radius: var(--radius-pill); color: var(--warning-text); background: var(--warning-bg); font-size: .58rem; font-weight: 750; white-space: nowrap; }
+  .source-login-badge--configured { border-color: #bbf7d0; color: #15803d; background: #f0fdf4; }
+  .source-login-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 .8rem; color: var(--ink); font-size: .82rem; font-weight: 650; }
+  .source-login-note { margin: 0 0 1rem; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: var(--surface); font-size: .69rem; line-height: 1.45; }
 
   .tag {
     background: var(--status-bg); border: 1px solid var(--line); border-radius: 999px;
@@ -1618,6 +1622,22 @@
           <button type="button" class="btn-secondary" id="btn-add-source-cancel">Abbrechen</button>
           <button type="submit" class="btn-primary"><i class="ri-add-line"></i> Hinzufügen</button>
         </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="source-login-modal">
+    <div class="modal-box">
+      <div class="modal-title">Zugang für <span id="source-login-source"></span></div>
+      <form id="source-login-form">
+        <input type="hidden" id="source-login-id">
+        <label class="source-login-toggle"><input type="checkbox" id="source-login-required"><span>Login für diese Quelle erforderlich</span></label>
+        <p class="source-login-note">Zugangsdaten werden verschlüsselt gespeichert und nie wieder im Frontend angezeigt. Sie werden erst verwendet, wenn der Login-Ablauf dieser Quelle technisch geprüft und freigegeben ist.</p>
+        <label class="modern-label">Benutzername oder E-Mail</label>
+        <input class="modern-input" id="source-login-username" autocomplete="username">
+        <label class="modern-label">Passwort</label>
+        <input class="modern-input" type="password" id="source-login-password" autocomplete="current-password">
+        <div class="modal-btns"><button type="button" class="btn-secondary" id="btn-source-login-cancel">Abbrechen</button><button type="submit" class="btn-primary"><i class="ri-shield-keyhole-line"></i> Geschützt speichern</button></div>
       </form>
     </div>
   </div>

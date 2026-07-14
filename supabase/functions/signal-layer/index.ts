@@ -2036,6 +2036,36 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { source: data });
       }
 
+      case "set_source_login": {
+        const { id, login_required, username, password } = body as {
+          id: string; login_required: boolean; username?: string; password?: string;
+        };
+        if (!id) return errorResponse(origin, "id is required");
+        if ((username && !password) || (!username && password)) {
+          return errorResponse(origin, "Benutzername und Passwort müssen zusammen angegeben werden");
+        }
+        const admin = getAdminClient();
+        const { data: source, error: sourceError } = await admin.schema("signal_layer").from("sources")
+          .select("id, company, crawl_config").eq("id", id).single();
+        if (sourceError || !source) return errorResponse(origin, sourceError?.message || "Quelle nicht gefunden", 404);
+        const crawlConfig = { ...(source.crawl_config || {}), login_required: Boolean(login_required) } as Record<string, unknown>;
+        if (username && password) {
+          const { error: vaultError } = await admin.schema("shared").rpc("set_api_key", {
+            p_key_name: `signal_layer_source_${id}_login`,
+            p_api_key: JSON.stringify({ username, password }),
+            p_description: `Signal Layer login for ${source.company}`,
+            p_updated_by: auth!.userId,
+          });
+          if (vaultError) return errorResponse(origin, vaultError.message, 500);
+          crawlConfig.login_configured_at = new Date().toISOString();
+        }
+        const { data, error } = await admin.schema("signal_layer").from("sources")
+          .update({ crawl_config: crawlConfig, updated_at: new Date().toISOString(), updated_by: auth!.userId })
+          .eq("id", id).select().single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { source: data });
+      }
+
       case "delete_source": {
         const { id } = body as { id: string };
         if (!id) return errorResponse(origin, "id is required");

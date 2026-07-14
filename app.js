@@ -184,6 +184,14 @@ function cacheEls() {
   els.addSourceModal = document.getElementById("add-source-modal");
   els.addSourceForm = document.getElementById("add-source-form");
   els.btnAddSourceCancel = document.getElementById("btn-add-source-cancel");
+  els.sourceLoginModal = document.getElementById("source-login-modal");
+  els.sourceLoginForm = document.getElementById("source-login-form");
+  els.sourceLoginSource = document.getElementById("source-login-source");
+  els.sourceLoginId = document.getElementById("source-login-id");
+  els.sourceLoginRequired = document.getElementById("source-login-required");
+  els.sourceLoginUsername = document.getElementById("source-login-username");
+  els.sourceLoginPassword = document.getElementById("source-login-password");
+  els.btnSourceLoginCancel = document.getElementById("btn-source-login-cancel");
   els.fCompany = document.getElementById("f-company");
   els.fUrl = document.getElementById("f-url");
   els.fCategory = document.getElementById("f-category");
@@ -1276,6 +1284,40 @@ function closeAddSource() {
   els.addSourceModal.classList.remove("show");
 }
 
+function openSourceLogin(id) {
+  const source = sources.find((item) => item.id === id);
+  if (!source) return;
+  els.sourceLoginForm.reset();
+  els.sourceLoginId.value = id;
+  els.sourceLoginSource.textContent = source.company;
+  els.sourceLoginRequired.checked = Boolean(source.crawl_config?.login_required);
+  els.sourceLoginModal.classList.add("show");
+}
+
+function closeSourceLogin() {
+  els.sourceLoginModal.classList.remove("show");
+}
+
+async function submitSourceLogin(event) {
+  event.preventDefault();
+  const id = els.sourceLoginId.value;
+  const login_required = els.sourceLoginRequired.checked;
+  const username = els.sourceLoginUsername.value.trim();
+  const password = els.sourceLoginPassword.value;
+  try {
+    const { source } = await callApi("set_source_login", {
+      id, login_required, username: username || undefined, password: password || undefined,
+    });
+    const index = sources.findIndex((item) => item.id === id);
+    if (index >= 0) sources[index] = source;
+    renderSources();
+    closeSourceLogin();
+    toast(login_required ? "Login-Status gespeichert" : "Login-Anforderung entfernt");
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
 async function loadSources() {
   els.sourceTableBody.innerHTML = `<tr><td colspan="6" class="source-empty"><i class="ri-loader-4-line ri-spin"></i> Lädt…</td></tr>`;
   try {
@@ -1334,14 +1376,17 @@ function renderSources() {
     return;
   }
 
-  els.sourceTableBody.innerHTML = list.map((s) => `
+  els.sourceTableBody.innerHTML = list.map((s) => {
+    const loginRequired = Boolean(s.crawl_config?.login_required);
+    const loginConfigured = Boolean(s.crawl_config?.login_configured_at);
+    return `
     <tr data-id="${s.id}" class="${s.active ? "" : "source-row--inactive"}">
       <td>
         <div class="source-company">${escapeHtml(s.company)}</div>
         ${s.description ? `<div class="source-desc">${escapeHtml(s.description)}</div>` : ""}
       </td>
       <td><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" class="source-url"><i class="ri-external-link-line"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
-      <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}</td>
+      <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}${loginRequired ? `<span class="source-login-badge ${loginConfigured ? "source-login-badge--configured" : ""}"><i class="ri-lock-2-line"></i> Login nötig</span>` : ""}</td>
       <td title="${escapeHtml(s.last_error || "")}">
         <span class="quality-tag ${s.last_error ? "quality-tag--error" : s.last_successful_at ? "quality-tag--reliable" : "quality-tag--pending"}">
           <i class="ri-${s.last_error ? "alert-line" : s.last_successful_at ? "check-line" : "time-line"}"></i>
@@ -1355,12 +1400,16 @@ function renderSources() {
         </label>
       </td>
       <td>
+        <button type="button" class="icon-btn source-login-btn" data-id="${s.id}" title="Zugang verwalten">
+          <i class="ri-key-2-line"></i>
+        </button>
         <button type="button" class="icon-btn source-delete-btn" data-id="${s.id}" title="Löschen">
           <i class="ri-delete-bin-line"></i>
         </button>
       </td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 }
 
 async function toggleSourceActive(id, active) {
@@ -1756,6 +1805,8 @@ function bindUi() {
     if (toggle) void toggleSourceActive(toggle.dataset.id, toggle.checked);
   });
   els.sourceTableBody.addEventListener("click", (e) => {
+    const login = e.target.closest(".source-login-btn");
+    if (login) { openSourceLogin(login.dataset.id); return; }
     const btn = e.target.closest(".source-delete-btn");
     if (btn) void deleteSource(btn.dataset.id);
   });
@@ -1766,6 +1817,11 @@ function bindUi() {
     if (e.target === els.addSourceModal) closeAddSource();
   });
   els.addSourceForm.addEventListener("submit", submitAddSource);
+  els.btnSourceLoginCancel.addEventListener("click", closeSourceLogin);
+  els.sourceLoginForm.addEventListener("submit", submitSourceLogin);
+  els.sourceLoginModal.addEventListener("click", (e) => {
+    if (e.target === els.sourceLoginModal) closeSourceLogin();
+  });
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
