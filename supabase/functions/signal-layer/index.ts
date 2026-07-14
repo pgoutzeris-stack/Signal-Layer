@@ -2671,7 +2671,9 @@ Deno.serve(async (req: Request) => {
             finished_at: retry ? null : new Date().toISOString(),
           }).eq("id", job.id).eq("status", "running");
         }
-        if ((stalledAnalysis || []).length > 0) {
+        const { count: queuedAnalysisCount } = await admin.schema("signal_layer").from("article_analysis_jobs")
+          .select("id", { count: "exact", head: true }).eq("status", "queued");
+        if ((stalledAnalysis || []).length > 0 || Number(queuedAnalysisCount || 0) > 0) {
           for (let worker = 0; worker < 2; worker += 1) {
             fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_worker" }) }).catch(() => {});
           }
