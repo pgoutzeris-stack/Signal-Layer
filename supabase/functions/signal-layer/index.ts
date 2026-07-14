@@ -486,7 +486,7 @@ function extractTag(block: string, tag: string): string | null {
   return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
 }
 
-async function fetchRssArticles(feedUrl: string, sinceDate: Date): Promise<CrawlCandidate[]> {
+async function fetchRssArticles(feedUrl: string): Promise<CrawlCandidate[]> {
   const res = await fetchWithTimeout(feedUrl);
   if (!res.ok) return [];
   const xml = await res.text();
@@ -501,7 +501,6 @@ async function fetchRssArticles(feedUrl: string, sinceDate: Date): Promise<Crawl
       if (!url) continue;
       const title = extractTag(entry, "title") || undefined;
       const published = extractTag(entry, "published");
-      if (published && new Date(published) < sinceDate) continue;
       items.push({ url, title, publishedAt: published, hasConfirmedPublishDate: Boolean(published) });
     }
   } else {
@@ -511,7 +510,6 @@ async function fetchRssArticles(feedUrl: string, sinceDate: Date): Promise<Crawl
       if (!url) continue;
       const title = extractTag(entry, "title") || undefined;
       const pubDate = extractTag(entry, "pubDate") || extractTag(entry, "dc:date");
-      if (pubDate && new Date(pubDate) < sinceDate) continue;
       items.push({ url, title, publishedAt: pubDate, hasConfirmedPublishDate: Boolean(pubDate) });
     }
   }
@@ -521,7 +519,7 @@ async function fetchRssArticles(feedUrl: string, sinceDate: Date): Promise<Crawl
 // ---------------------------------------------------------------------------
 // Sitemap parsing (handles nested sitemap indexes, capped to avoid runaway).
 // ---------------------------------------------------------------------------
-async function fetchSitemapArticles(sitemapUrl: string, sinceDate: Date, depth = 0): Promise<CrawlCandidate[]> {
+async function fetchSitemapArticles(sitemapUrl: string, depth = 0): Promise<CrawlCandidate[]> {
   if (depth > 2) return [];
   const res = await fetchWithTimeout(sitemapUrl);
   if (!res.ok) return [];
@@ -533,7 +531,7 @@ async function fetchSitemapArticles(sitemapUrl: string, sinceDate: Date, depth =
       .slice(0, 5); // cap sub-sitemap fan-out
     const results: CrawlCandidate[] = [];
     for (const sub of subSitemaps) {
-      results.push(...(await fetchSitemapArticles(sub, sinceDate, depth + 1)));
+      results.push(...(await fetchSitemapArticles(sub, depth + 1)));
     }
     return results;
   }
@@ -544,7 +542,6 @@ async function fetchSitemapArticles(sitemapUrl: string, sinceDate: Date, depth =
     const url = extractTag(block, "loc");
     if (!url) continue;
     const lastmod = extractTag(block, "lastmod");
-    if (lastmod && new Date(lastmod) < sinceDate) continue;
     // Skip obvious non-article URLs (homepage/root, pure category listings).
     const path = new URL(url).pathname;
     if (path === "/" || path.split("/").filter(Boolean).length < 1) continue;
@@ -643,7 +640,7 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
 // Apify fallback — only used when a source has neither RSS nor sitemap.
 // Heuristic pageFunction: JSON-LD/og:type Article detection + light pagination.
 // ---------------------------------------------------------------------------
-async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date, policy: CrawlPolicy): Promise<CrawlProviderResult> {
+async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Promise<CrawlProviderResult> {
   const apifyKey = await getApifyKey();
   if (!apifyKey) return { candidates: [], discoveredCount: 0, httpStatus: null, providerRunId: null, errorCode: "missing_api_key", errorMessage: "Apify API key is not configured" };
 
@@ -747,7 +744,6 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date, policy: C
   const candidates = items
     .filter((it) => it.isArticle)
     .filter((it) => isAllowedBySourcePolicy(it.url, policy))
-    .filter((it) => !it.publishedAt || new Date(it.publishedAt) >= sinceDate)
     .slice(0, policy.maxCandidates)
     .map((it) => ({
       url: it.url,
@@ -2342,14 +2338,6 @@ Deno.serve(async (req: Request) => {
           }).select("id").single();
           attemptId = attempt?.id || null;
 
-          // First-ever crawl for this source → 6-month backfill.
-          // Every later crawl → only since the last successful crawl.
-          const { count: existingCount } = await admin.schema("signal_layer").from("articles")
-            .select("id", { count: "exact", head: true }).eq("source_id", source.id);
-          const sinceDate = existingCount && existingCount > 0
-            ? new Date(source.last_crawled_at || Date.now() - 24 * 60 * 60 * 1000)
-            : new Date(Date.now() - pipelineConfig.crawl.freshness_days * 24 * 60 * 60 * 1000);
-
           // Re-deriving the candidate list every batch is cheap (one RSS/
           // sitemap fetch, or a cached Apify-run result) — it's the same
           // deterministic list, we just slice a different window of it.
@@ -2357,10 +2345,10 @@ Deno.serve(async (req: Request) => {
           let discoveredCount = 0;
           let providerHttpStatus: number | null = null;
           let providerRunId: string | null = null;
-          if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl, sinceDate);
-          else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl, sinceDate);
+          if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl);
+          else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl);
           else {
-            const apifyResult = await runApifySourceCrawl(source.url, sinceDate, crawlPolicy);
+            const apifyResult = await runApifySourceCrawl(source.url, crawlPolicy);
             candidates = apifyResult.candidates;
             discoveredCount = apifyResult.discoveredCount;
             providerHttpStatus = apifyResult.httpStatus;
@@ -2370,8 +2358,6 @@ Deno.serve(async (req: Request) => {
           if (!discoveredCount) discoveredCount = candidates.length;
           candidates = candidates
             .filter((candidate) => isAllowedBySourcePolicy(candidate.url, crawlPolicy))
-            .filter((candidate) => !pipelineConfig.filters.reject_future_dates || !candidate.publishedAt
-              || new Date(candidate.publishedAt) <= new Date(Date.now() + pipelineConfig.crawl.future_tolerance_hours * 60 * 60 * 1000))
             .slice(0, crawlPolicy.maxCandidates);
 
           const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
@@ -2402,20 +2388,11 @@ Deno.serve(async (req: Request) => {
               tier1Companies || [], crawlPolicy,
             )) { rejected.event_gate = (rejected.event_gate || 0) + 1; continue; }
 
-            // A CONFIRMED date outside the freshness window is discarded —
-            // sitemap `lastmod` is a last-MODIFIED date, not a publish date,
-            // so evergreen pages can otherwise sneak in as "new". But when no
-            // date can be found at all (despite the deep extraction above),
-            // we keep the article rather than silently drop it — it's tagged
-            // as dateless (published_at stays null) so it's visibly flagged
-            // as unverified in the DB/UI instead of pretending it's fresh.
+            // Publication dates are retained for sorting and display only.
+            // Scheduled and manual crawls deliberately apply no date gate;
+            // known URLs below remain the authoritative incremental boundary.
             const resolvedPublishedAt = fetched.publishedAt
               || (candidate.hasConfirmedPublishDate ? candidate.publishedAt : null) || null;
-            if (resolvedPublishedAt && new Date(resolvedPublishedAt) < sinceDate) { rejected.too_old = (rejected.too_old || 0) + 1; continue; }
-            if (pipelineConfig.filters.reject_future_dates && resolvedPublishedAt
-                && new Date(resolvedPublishedAt) > new Date(Date.now() + pipelineConfig.crawl.future_tolerance_hours * 60 * 60 * 1000)) {
-              rejected.future_date = (rejected.future_date || 0) + 1; continue;
-            }
 
             const { data: inserted, error: insertErr } = await admin.schema("signal_layer").from("articles")
               .insert({
