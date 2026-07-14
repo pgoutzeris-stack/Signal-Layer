@@ -2677,10 +2677,21 @@ Deno.serve(async (req: Request) => {
             },
           };
         }
+        let backfillWithProgress = backfill || null;
+        if (backfill && ["queued", "running"].includes(backfill.status)) {
+          const { data: currentArticle } = await admin.schema("signal_layer").from("articles")
+            .select("id, title")
+            .eq("classification_status", "legacy").not("published_at", "is", null)
+            .gte("published_at", backfill.cutoff_at).lte("published_at", new Date().toISOString())
+            .order("published_at", { ascending: false }).limit(1).maybeSingle();
+          backfillWithProgress = { ...backfill, current_article: currentArticle || null };
+        }
         const usdEurRate = await getUsdEurRate();
         return corsResponse(origin, {
           crawl_run: crawlWithProgress,
-          backfill_run: backfill ? { ...backfill, error_count: backfillErrorCount, error_breakdown: errorBreakdown } : null,
+          backfill_run: backfillWithProgress
+            ? { ...backfillWithProgress, error_count: backfillErrorCount, error_breakdown: errorBreakdown }
+            : null,
           cost_summary: {
             ...costSummary,
             month_eur: usdEurRate === null ? null : costSummary.month_usd * usdEurRate,

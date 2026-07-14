@@ -210,6 +210,7 @@ function cacheEls() {
   els.crawlCurrentSourceUrl = document.getElementById("crawl-current-source-url");
   els.backfillProgressText = document.getElementById("backfill-progress-text");
   els.backfillProgressBar = document.getElementById("backfill-progress-bar");
+  els.backfillCurrentArticle = document.getElementById("backfill-current-article");
   els.backfillProgressDetail = document.getElementById("backfill-progress-detail");
   els.apiErrorList = document.getElementById("api-error-list");
   els.pipelineVersion = document.getElementById("pipeline-version");
@@ -1612,6 +1613,7 @@ async function loadLastRun() {
       const visiblePosition = Number(sourceProgress.current_position || completedSources);
       const sourcePercent = Math.round((visiblePosition / totalSources) * 100);
       els.crawlSourceProgress.hidden = false;
+      els.crawlSourceProgress.classList.toggle("is-live", ["queued", "running"].includes(last.status));
       els.crawlSourceProgressText.textContent = `${visiblePosition.toLocaleString("de-DE")} / ${totalSources.toLocaleString("de-DE")}`;
       els.crawlSourceProgressBar.style.width = `${sourcePercent}%`;
       els.crawlCurrentSource.textContent = sourceProgress.current_source?.company
@@ -1622,6 +1624,7 @@ async function loadLastRun() {
       els.crawlCurrentSourceUrl.href = currentUrl || "#";
     } else {
       els.crawlSourceProgress.hidden = true;
+      els.crawlSourceProgress.classList.remove("is-live");
     }
     if (backfill) {
       const total = Number(backfill.total_count || 0);
@@ -1629,6 +1632,10 @@ async function loadLastRun() {
       const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 100;
       els.backfillProgressText.textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")}`;
       els.backfillProgressBar.style.width = `${percent}%`;
+      const currentArticleTitle = backfill.current_article?.title || "";
+      els.backfillCurrentArticle.hidden = !currentArticleTitle;
+      els.backfillCurrentArticle.textContent = currentArticleTitle;
+      document.getElementById("backfill-status")?.classList.toggle("is-live", ["queued", "running"].includes(backfill.status));
       const status = backfill.status === "done" ? "Abgeschlossen" : backfill.status === "error" ? "Fehler" : "Läuft";
       const errors = Number(backfill.error_count || 0);
       els.backfillProgressDetail.textContent = errors > 0
@@ -1644,6 +1651,9 @@ async function loadLastRun() {
       els.backfillProgressText.textContent = "Kein Lauf";
       els.backfillProgressDetail.textContent = "Aktuell werden keine Altartikel geprüft.";
       els.apiErrorList.innerHTML = "";
+      els.backfillCurrentArticle.hidden = true;
+      els.backfillCurrentArticle.textContent = "";
+      document.getElementById("backfill-status")?.classList.remove("is-live");
     }
     scheduleStatusRefresh(isActive);
   } catch {
