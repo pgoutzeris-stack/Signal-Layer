@@ -2673,9 +2673,12 @@ Deno.serve(async (req: Request) => {
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
-        const [{ data: crawl }, { data: backfill }, { data: usage }, { data: crawlHealth }] = await Promise.all([
+        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }] = await Promise.all([
           admin.schema("signal_layer").from("crawl_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
+          admin.schema("signal_layer").from("crawl_runs").select("id, finished_at, current_index, source_ids")
+            .eq("status", "done").not("finished_at", "is", null)
+            .order("finished_at", { ascending: false }).limit(20),
           admin.schema("signal_layer").from("classification_backfill_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("ai_usage_events")
@@ -2714,6 +2717,9 @@ Deno.serve(async (req: Request) => {
             .sort((a, b) => b.count - a.count);
         }
         const usageRows = usage || [];
+        const completedCrawl = (completedCrawls || []).find((run) =>
+          Number(run.current_index || 0) >= (Array.isArray(run.source_ids) ? run.source_ids.length : 0)
+        ) || null;
         const costSummary = usageRows.reduce((summary, row) => {
           const cost = Number(row.estimated_cost_usd || 0);
           summary.month_usd += cost;
@@ -2780,6 +2786,7 @@ Deno.serve(async (req: Request) => {
         const usdEurRate = await getUsdEurRate();
         return corsResponse(origin, {
           crawl_run: crawlWithProgress,
+          last_completed_crawl: completedCrawl || null,
           backfill_run: backfillWithProgress
             ? { ...backfillWithProgress, error_count: backfillErrorCount, error_breakdown: errorBreakdown }
             : null,

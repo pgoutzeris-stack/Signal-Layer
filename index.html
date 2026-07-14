@@ -175,6 +175,9 @@
   .crawl-status-popover strong { display: block; color: var(--ink); font-size: .9rem; line-height: 1.2; }
   .crawl-live-state { display: inline-flex; align-items: center; gap: 5px; color: var(--brand-dark); font-size: .65rem; font-weight: 750; white-space: nowrap; }
   .crawl-live-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .crawl-live-state[hidden] { display: none; }
+  .crawl-live-primary { display: inline-flex; align-items: center; gap: 7px; color: var(--brand-dark); }
+  .crawl-live-primary::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: statusPulse 1.25s ease-in-out infinite; }
   .backfill-status { margin-top: 3px; padding-top: 10px; border-top: 1px solid var(--line); }
   .article-live-progress[hidden] { display: none; }
   .backfill-status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .68rem; }
@@ -1411,7 +1414,7 @@
               <span class="status-pill-dot"></span><span>Status</span>
             </button>
             <div class="crawl-status-popover" role="status">
-              <div class="crawl-status-head"><div><span class="crawl-status-kicker">Letzter Crawl</span><strong id="last-run-text">--:--</strong></div><span class="crawl-live-state" id="crawl-live-state">Wird geladen</span></div>
+              <div class="crawl-status-head"><div><span class="crawl-status-kicker" id="crawl-status-kicker">Letzter Crawl</span><strong id="last-run-text">--:--</strong></div><span class="crawl-live-state" id="crawl-live-state" hidden>Wird geladen</span></div>
               <div class="crawl-source-progress" id="crawl-source-progress" hidden>
                 <div class="backfill-status-row"><span>Quellen-Crawl</span><b id="crawl-source-progress-text">0 / 0</b></div>
                 <div class="backfill-progress-track"><span id="crawl-source-progress-bar"></span></div>

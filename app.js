@@ -202,6 +202,7 @@ function cacheEls() {
   els.crawlCategoryList = document.getElementById("crawl-category-list");
   els.btnCrawlConfirm = document.getElementById("btn-crawl-confirm");
   els.lastRunText = document.getElementById("last-run-text");
+  els.crawlStatusKicker = document.getElementById("crawl-status-kicker");
   els.crawlLiveState = document.getElementById("crawl-live-state");
   els.crawlSourceProgress = document.getElementById("crawl-source-progress");
   els.crawlSourceProgressText = document.getElementById("crawl-source-progress-text");
@@ -1581,7 +1582,7 @@ function scheduleStatusRefresh(isActive) {
 
 async function loadLastRun() {
   try {
-    const { crawl_run: last, backfill_run: backfill, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
+    const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
     const formatEur = (value) => value === null || value === undefined
       ? "Kurs wird geladen"
       : `${Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1599,14 +1600,20 @@ async function loadLastRun() {
       `<span class="crawl-result-pill crawl-result-pill--${result.tone}"><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
     ).join("");
     const isActive = setLiveStatus(last, backfill);
+    const sourceCrawlActive = ["queued", "running"].includes(last?.status);
+    els.crawlLiveState.hidden = true;
+    if (sourceCrawlActive) {
+      els.crawlStatusKicker.textContent = "Aktueller Status";
+      els.lastRunText.innerHTML = '<span class="crawl-live-primary">Crawl läuft</span>';
+    } else {
+      els.crawlStatusKicker.textContent = "Letzter Crawl";
+      els.lastRunText.textContent = formatCrawlTime(lastCompleted?.finished_at);
+    }
     if (!last) {
-      els.lastRunText.textContent = "--:--";
       scheduleStatusRefresh(isActive);
       return;
     }
-    els.lastRunText.textContent = formatCrawlTime(last.started_at);
     const sourceProgress = last.source_progress;
-    const sourceCrawlActive = ["queued", "running"].includes(last.status);
     if (sourceCrawlActive && sourceProgress && Number(sourceProgress.total || 0) > 0) {
       const totalSources = Number(sourceProgress.total || 0);
       const completedSources = Math.min(totalSources, Number(sourceProgress.completed || 0));
