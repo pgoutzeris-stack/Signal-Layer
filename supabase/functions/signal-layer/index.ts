@@ -644,20 +644,29 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
       // strip below collapses everything into one flat blob — otherwise
       // headings/bold/lists are indistinguishable from body text once the
       // tags are gone, and that structure can't be reconstructed afterwards.
-      .replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi, "\n\n## $1\n\n")
-      .replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, "**$2**")
-      .replace(/<(em|i)[^>]*>([\s\S]*?)<\/\1>/gi, "*$2*")
-      .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "\n- $1")
+      // Only emit a Markdown marker when the element actually wraps text —
+      // an empty or image-only <strong>/<em>/<h*> otherwise leaves orphaned
+      // ** or * artifacts once its inner tags are stripped below.
+      .replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_m, inner) => inner.trim() ? `\n\n## ${inner}\n\n` : " ")
+      .replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, inner) => inner.trim() ? `**${inner}**` : " ")
+      .replace(/<(em|i)[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, inner) => inner.trim() ? `*${inner}*` : " ")
+      .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_m, inner) => inner.trim() ? `\n- ${inner}` : " ")
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<\/(p|div|tr|blockquote)>/gi, "\n\n")
       .replace(/<[^>]+>/g, " ")
+      // Clean up markers left empty after an inner tag (e.g. an image) was
+      // stripped. The bold pattern only matches an empty pair, and the italic
+      // pattern requires whitespace between, so real **bold**/*italic* stay.
+      .replace(/\*\*\s*\*\*/g, " ")
+      .replace(/\*[ \t]+\*/g, " ")
       .replace(/&nbsp;/g, " ")
       .replace(/[ \t]+/g, " ")
       .split("\n").map((line) => line.trim()).join("\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
+    text = decodeArticleText(text);
 
-    return { title, content: text.slice(0, 8000), excerpt, publishedAt };
+    return { title: decodeArticleText(title), content: text.slice(0, 8000), excerpt: decodeArticleText(excerpt), publishedAt };
   } catch {
     return null;
   }
@@ -1251,8 +1260,21 @@ const GEMINI_RESPONSE_SCHEMA = {
 
 function decodeArticleText(value: string): string {
   return value
-    .replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#x27;|&#39;/gi, "'")
-    .replace(/&nbsp;/gi, " ").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">");
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&auml;/g, "ä").replace(/&ouml;/g, "ö").replace(/&uuml;/g, "ü")
+    .replace(/&Auml;/g, "Ä").replace(/&Ouml;/g, "Ö").replace(/&Uuml;/g, "Ü")
+    .replace(/&szlig;/g, "ß")
+    .replace(/&copy;/gi, "©").replace(/&reg;/gi, "®").replace(/&trade;/gi, "™")
+    .replace(/&ndash;/gi, "–").replace(/&mdash;/gi, "—").replace(/&shy;/gi, "")
+    .replace(/&hellip;/gi, "…").replace(/&euro;/gi, "€").replace(/&deg;/gi, "°")
+    .replace(/&bdquo;/g, "„").replace(/&ldquo;/g, "“").replace(/&rdquo;/g, "”")
+    .replace(/&sbquo;/g, "‚").replace(/&lsquo;/g, "‘").replace(/&rsquo;/g, "’")
+    .replace(/&laquo;/gi, "«").replace(/&raquo;/gi, "»").replace(/&middot;/gi, "·")
+    .replace(/&quot;/gi, '"').replace(/&#x27;|&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+    .replace(/&#(\d+);/g, (_m, n) => { try { return String.fromCodePoint(Number(n)); } catch { return _m; } })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, n) => { try { return String.fromCodePoint(parseInt(n, 16)); } catch { return _m; } })
+    .replace(/&amp;/gi, "&");
 }
 
 function cleanArticleText(raw: string): string {
@@ -2198,6 +2220,15 @@ Deno.serve(async (req: Request) => {
   let isScheduled = false;
   if (["process_crawl", "process_crawl_worker", "process_analysis_worker", "process_classification_backfill"].includes(action)) {
     if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
+  } else if (action === "reformat_recent_articles") {
+    // Self-refires via the service-role bearer; a user may also kick it off.
+    if (!isInternalCall(req)) {
+      auth = await requireAuth(req);
+      if (!auth) {
+        isScheduled = await isScheduledTrigger(req);
+        if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
+      }
+    }
   } else if (["resume_stalled_crawls", "resume_classification_backfill", "preview_classification", "classify_test_article", "start_classification_backfill"].includes(action)) {
     isScheduled = await isScheduledTrigger(req);
     if (!isScheduled) {
@@ -3391,6 +3422,62 @@ Deno.serve(async (req: Request) => {
           .select("*").order("started_at", { ascending: false }).limit(20);
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { crawl_runs: data || [] });
+      }
+
+      // ---------------------------------------------------------------
+      // One-off content refresh: re-fetches the source page for articles
+      // currently visible in Marketing/Sales and rewrites their stored text
+      // with the structure-preserving extractor. Deliberately does NOT touch
+      // classification (no Gemini call, no routing change) — it only upgrades
+      // how the SAME article reads. Batched + fire-and-forget, self-terminates
+      // once every eligible article carries a content_reformatted_at marker.
+      // ---------------------------------------------------------------
+      case "reformat_recent_articles": {
+        const admin = getAdminClient();
+        const REFORMAT_BATCH = 5;
+        const cutoff = new Date();
+        cutoff.setUTCMonth(cutoff.getUTCMonth() - 3);
+        const { data: articles, error } = await admin.schema("signal_layer").from("articles")
+          .select("id, url")
+          .eq("classification_status", "reliable")
+          .or("routing.cs.{marketing},routing.cs.{sales}")
+          .not("published_at", "is", null)
+          .gte("published_at", cutoff.toISOString())
+          .is("content_reformatted_at", null)
+          .not("url", "is", null)
+          .limit(REFORMAT_BATCH);
+        if (error) return errorResponse(origin, error.message, 500);
+        if (!articles || articles.length === 0) return corsResponse(origin, { ok: true, done: true });
+
+        let updated = 0;
+        for (const article of articles) {
+          const now = new Date().toISOString();
+          try {
+            const fetched = await fetchArticleContent(article.url);
+            if (fetched && (fetched.content || "").trim().length >= 80) {
+              const cleaned = cleanArticleText(fetched.content);
+              await admin.schema("signal_layer").from("articles").update({
+                content: fetched.content,
+                cleaned_content: cleaned,
+                content_reformatted_at: now,
+              }).eq("id", article.id);
+              updated += 1;
+            } else {
+              // Re-fetch failed or too thin (paywall / moved) — mark attempted
+              // so the batch loop terminates instead of retrying forever.
+              await admin.schema("signal_layer").from("articles").update({ content_reformatted_at: now }).eq("id", article.id);
+            }
+          } catch {
+            await admin.schema("signal_layer").from("articles").update({ content_reformatted_at: new Date().toISOString() }).eq("id", article.id);
+          }
+        }
+
+        fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+          body: JSON.stringify({ action: "reformat_recent_articles" }),
+        }).catch((e) => console.error("Failed to continue reformat batch:", e));
+        return corsResponse(origin, { ok: true, processed: articles.length, updated });
       }
 
       default:
