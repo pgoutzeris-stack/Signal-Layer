@@ -1807,7 +1807,7 @@ Deno.serve(async (req: Request) => {
   // fire-and-forget self-call, authenticated with the service-role key.
   let auth: { userId: string } | null = null;
   let isScheduled = false;
-  if (["process_crawl", "process_classification_backfill"].includes(action)) {
+  if (["process_crawl", "process_crawl_worker", "process_analysis_worker", "process_classification_backfill"].includes(action)) {
     if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
   } else if (["resume_stalled_crawls", "resume_classification_backfill", "preview_classification", "classify_test_article", "start_classification_backfill"].includes(action)) {
     isScheduled = await isScheduledTrigger(req);
@@ -2268,14 +2268,66 @@ Deno.serve(async (req: Request) => {
 
         if (sourceIds.length > 0) {
           const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
-          fetch(selfUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-            body: JSON.stringify({ action: "process_crawl", crawl_run_id: data.id, source_ids: sourceIds, index: 0, candidate_offset: 0 }),
-          }).catch((e) => console.error("Failed to trigger process_crawl:", e));
+          await admin.schema("signal_layer").from("source_crawl_jobs").insert(
+            sourceIds.map((sourceId: string, position: number) => ({ crawl_run_id: data.id, source_id: sourceId, position }))
+          );
+          for (let worker = 0; worker < 3; worker += 1) {
+            fetch(selfUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+              body: JSON.stringify({ action: "process_crawl_worker", crawl_run_id: data.id }),
+            }).catch((e) => console.error("Failed to trigger crawl worker:", e));
+          }
         }
 
         return corsResponse(origin, { crawl_run: data });
+      }
+
+      case "process_crawl_worker": {
+        const { crawl_run_id } = body as { crawl_run_id: string };
+        const admin = getAdminClient();
+        const { data: jobs, error } = await admin.schema("signal_layer").rpc("claim_source_crawl_job", { p_crawl_run_id: crawl_run_id });
+        if (error) return errorResponse(origin, error.message, 500);
+        const job = jobs?.[0];
+        if (!job) {
+          const { count } = await admin.schema("signal_layer").from("source_crawl_jobs")
+            .select("id", { count: "exact", head: true }).eq("crawl_run_id", crawl_run_id).in("status", ["queued", "running"]);
+          if (!count) {
+            const { data: run } = await admin.schema("signal_layer").from("crawl_runs").select("source_ids").eq("id", crawl_run_id).single();
+            await admin.schema("signal_layer").from("crawl_runs").update({
+              status: "done", finished_at: new Date().toISOString(),
+              current_index: Array.isArray(run?.source_ids) ? run.source_ids.length : 0,
+            }).eq("id", crawl_run_id);
+          }
+          return corsResponse(origin, { ok: true, idle: true });
+        }
+        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
+        fetch(selfUrl, {
+          method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+          body: JSON.stringify({ action: "process_crawl", crawl_run_id, source_ids: [job.source_id], index: 0, candidate_offset: 0, queue_job_id: job.id }),
+        }).catch((e) => console.error("Failed to process claimed source:", e));
+        return corsResponse(origin, { ok: true, job_id: job.id });
+      }
+
+      case "process_analysis_worker": {
+        const admin = getAdminClient();
+        const { data: jobs, error } = await admin.schema("signal_layer").rpc("claim_article_analysis_job");
+        if (error) return errorResponse(origin, error.message, 500);
+        const job = jobs?.[0];
+        if (!job) return corsResponse(origin, { ok: true, idle: true });
+        const { data: article } = await admin.schema("signal_layer").from("articles")
+          .select("id,title,content,source:sources(company,category)").eq("id", job.article_id).single();
+        const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
+        try {
+          const source = Array.isArray(article?.source) ? article.source[0] : article?.source;
+          await tagArticle(admin, article.id, job.crawl_run_id, article.title || "", article.content || "", [], companies || [], source || {});
+          await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "done", finished_at: new Date().toISOString() }).eq("id", job.id);
+        } catch (workerError) {
+          await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", error_message: String(workerError).slice(0, 1000), finished_at: new Date().toISOString() }).eq("id", job.id);
+        }
+        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
+        fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_worker" }) }).catch(() => {});
+        return corsResponse(origin, { ok: true });
       }
 
       // ---------------------------------------------------------------
@@ -2295,8 +2347,8 @@ Deno.serve(async (req: Request) => {
         // AI classification can require a second model pass. Keep each Edge
         // invocation short and let the persisted cursor continue the chain.
         const ARTICLE_BATCH_SIZE = 1;
-        const { crawl_run_id, source_ids, index, candidate_offset } = body as {
-          crawl_run_id: string; source_ids: string[]; index: number; candidate_offset: number;
+        const { crawl_run_id, source_ids, index, candidate_offset, queue_job_id } = body as {
+          crawl_run_id: string; source_ids: string[]; index: number; candidate_offset: number; queue_job_id?: string;
         };
 
         const admin = getAdminClient();
@@ -2311,7 +2363,7 @@ Deno.serve(async (req: Request) => {
         }
         const persistedIndex = Number(runState.current_index || 0);
         const persistedOffset = Number(runState.current_offset || 0);
-        if (persistedIndex > index || (persistedIndex === index && persistedOffset > candidate_offset)) {
+        if (!queue_job_id && (persistedIndex > index || (persistedIndex === index && persistedOffset > candidate_offset))) {
           return corsResponse(origin, { ok: true, stopped: true, reason: "stale_crawl_hop" });
         }
 
@@ -2319,10 +2371,10 @@ Deno.serve(async (req: Request) => {
         // success) so the watchdog below always has an accurate "last known
         // point" to restart from, even if THIS invocation dies mid-way.
         await admin.schema("signal_layer").from("crawl_runs")
-          .update({
-            status: "running",
-            current_index: index,
-            current_offset: candidate_offset,
+          .update(queue_job_id ? {
+            status: "running", last_progress_at: new Date().toISOString(),
+          } : {
+            status: "running", current_index: index, current_offset: candidate_offset,
             last_progress_at: new Date().toISOString(),
           }).eq("id", crawl_run_id);
 
@@ -2445,17 +2497,16 @@ Deno.serve(async (req: Request) => {
                 content: fetched.content,
                 excerpt: fetched.excerpt,
                 published_at: resolvedPublishedAt,
+                classification_status: "pending",
               })
               .select().single();
             // onConflict(url) race with a parallel run → just skip, not fatal.
             if (insertErr || !inserted) continue;
             insertedCount += 1;
 
-            await tagArticle(
-              admin, inserted.id, crawl_run_id, inserted.title || "", inserted.content || "",
-              [], tier1Companies || [],
-              { company: source.company, category: source.category },
-            );
+            await admin.schema("signal_layer").from("article_analysis_jobs").upsert({
+              article_id: inserted.id, crawl_run_id, status: "queued",
+            }, { onConflict: "article_id" });
           }
 
           if (candidate_offset + effectiveBatchSize < candidatePool.length) {
@@ -2495,11 +2546,26 @@ Deno.serve(async (req: Request) => {
         }
 
         const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
-        fetch(selfUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-          body: JSON.stringify({ action: "process_crawl", crawl_run_id, source_ids, index: nextIndex, candidate_offset: nextOffset }),
-        }).catch((e) => console.error("Failed to trigger next process_crawl step:", e));
+        if (queue_job_id && nextIndex !== index) {
+          const { data: latestAttempt } = await admin.schema("signal_layer").from("source_crawl_attempts")
+            .select("status,error_code,error_message").eq("crawl_run_id", crawl_run_id).eq("source_id", sourceId)
+            .order("started_at", { ascending: false }).limit(1).maybeSingle();
+          await admin.schema("signal_layer").from("source_crawl_jobs").update({
+            status: latestAttempt?.status === "error" ? "error" : latestAttempt?.status === "empty" ? "empty" : "success",
+            error_code: latestAttempt?.error_code || null, error_message: latestAttempt?.error_message || null,
+            finished_at: new Date().toISOString(),
+          }).eq("id", queue_job_id);
+          fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_crawl_worker", crawl_run_id }) }).catch(() => {});
+          for (let worker = 0; worker < 2; worker += 1) {
+            fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_worker" }) }).catch(() => {});
+          }
+        } else {
+          fetch(selfUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+            body: JSON.stringify({ action: "process_crawl", crawl_run_id, source_ids, index: nextIndex, candidate_offset: nextOffset, queue_job_id }),
+          }).catch((e) => console.error("Failed to trigger next process_crawl step:", e));
+        }
 
         return corsResponse(origin, { ok: true });
       }
@@ -2531,6 +2597,31 @@ Deno.serve(async (req: Request) => {
 
         const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
         for (const run of stalled || []) {
+          const { data: parallelJobs } = await admin.schema("signal_layer").from("source_crawl_jobs")
+            .select("id,source_id,attempts,status").eq("crawl_run_id", run.id).in("status", ["queued", "running"]);
+          if ((parallelJobs || []).length > 0) {
+            const timedOutJobs = (parallelJobs || []).filter((job) => job.status === "running");
+            for (const job of timedOutJobs) {
+              const retry = Number(job.attempts || 0) < 2;
+              const timeoutMessage = retry
+                ? "Quellenjob nach Zeitüberschreitung einmal neu eingereiht."
+                : "Quelle nach zwei Zeitüberschreitungen übersprungen.";
+              await admin.schema("signal_layer").from("source_crawl_jobs").update({
+                status: retry ? "queued" : "error", error_code: "source_timeout",
+                error_message: timeoutMessage, finished_at: retry ? null : new Date().toISOString(),
+              }).eq("id", job.id).eq("status", "running");
+              await admin.schema("signal_layer").from("source_crawl_attempts").update({
+                status: "error", error_code: "source_timeout", error_message: timeoutMessage,
+                finished_at: new Date().toISOString(), duration_ms: WATCHDOG_STALL_SECONDS * 1000,
+              }).eq("crawl_run_id", run.id).eq("source_id", job.source_id).eq("status", "running");
+              if (!retry) await admin.schema("signal_layer").from("sources").update({ last_error: timeoutMessage }).eq("id", job.source_id);
+            }
+            await admin.schema("signal_layer").from("crawl_runs").update({ last_progress_at: new Date().toISOString() }).eq("id", run.id);
+            for (let worker = 0; worker < 3; worker += 1) {
+              fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_crawl_worker", crawl_run_id: run.id }) }).catch(() => {});
+            }
+            continue;
+          }
           const sourceIds = Array.isArray(run.source_ids) ? run.source_ids as string[] : [];
           const currentIndex = Math.max(0, Number(run.current_index || 0));
           const currentSourceId = sourceIds[currentIndex] || null;
@@ -2568,6 +2659,22 @@ Deno.serve(async (req: Request) => {
               candidate_offset: resumeOffset,
             }),
           }).catch((e) => console.error(`Watchdog: failed to resume crawl_run ${run.id}:`, e));
+        }
+
+        const { data: stalledAnalysis } = await admin.schema("signal_layer").from("article_analysis_jobs")
+          .select("id,attempts").eq("status", "running").lt("started_at", cutoff);
+        for (const job of stalledAnalysis || []) {
+          const retry = Number(job.attempts || 0) < 2;
+          await admin.schema("signal_layer").from("article_analysis_jobs").update({
+            status: retry ? "queued" : "error",
+            error_message: retry ? "Analyse nach Timeout neu eingereiht." : "Analyse nach zwei Timeouts beendet.",
+            finished_at: retry ? null : new Date().toISOString(),
+          }).eq("id", job.id).eq("status", "running");
+        }
+        if ((stalledAnalysis || []).length > 0) {
+          for (let worker = 0; worker < 2; worker += 1) {
+            fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_worker" }) }).catch(() => {});
+          }
         }
 
         return corsResponse(origin, { resumed: (stalled || []).map((r: { id: string }) => r.id) });
@@ -2710,7 +2817,7 @@ Deno.serve(async (req: Request) => {
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
-        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }] = await Promise.all([
+        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }] = await Promise.all([
           admin.schema("signal_layer").from("crawl_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("crawl_runs").select("id, finished_at, current_index, source_ids")
@@ -2724,6 +2831,10 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("source_crawl_attempts")
             .select("crawl_run_id, source_id, feed_type, status, discovered_count, candidate_count, inserted_count, error_code, error_message, started_at")
             .order("started_at", { ascending: false }).limit(1000),
+          admin.schema("signal_layer").from("source_crawl_jobs")
+            .select("crawl_run_id,source_id,position,status,error_code").order("position").limit(1000),
+          admin.schema("signal_layer").from("article_analysis_jobs")
+            .select("crawl_run_id,status").limit(5000),
         ]);
         let backfillErrorCount = 0;
         let errorBreakdown: Array<{ code: string; label: string; explanation: string; count: number }> = [];
@@ -2788,14 +2899,20 @@ Deno.serve(async (req: Request) => {
         if (crawl) {
           const sourceIds = Array.isArray(crawl.source_ids) ? crawl.source_ids as string[] : [];
           const totalSources = sourceIds.length;
+          const runJobs = (crawlJobs || []).filter((job) => job.crawl_run_id === crawl.id);
+          const completedJobs = runJobs.filter((job) => ["success", "empty", "error"].includes(job.status));
+          const runningJob = runJobs.find((job) => job.status === "running");
+          const runningSourceIds = runJobs.filter((job) => job.status === "running").map((job) => job.source_id);
           const currentIndex = Math.max(0, Number(crawl.current_index || 0));
-          const completedSources = crawl.status === "done"
-            ? totalSources
-            : Math.min(totalSources, currentIndex);
-          const currentSourceId = ["queued", "running"].includes(crawl.status)
-            ? sourceIds[currentIndex] || null
-            : null;
+          const completedSources = runJobs.length ? completedJobs.length : crawl.status === "done" ? totalSources : Math.min(totalSources, currentIndex);
+          const currentSourceId = runningJob?.source_id || (["queued", "running"].includes(crawl.status) ? sourceIds[currentIndex] || null : null);
           let currentSource: { id: string; company: string; url: string } | null = null;
+          let activeSources: Array<{ id: string; company: string; url: string }> = [];
+          if (runningSourceIds.length > 0) {
+            const { data } = await admin.schema("signal_layer").from("sources")
+              .select("id, company, url").in("id", runningSourceIds);
+            activeSources = data || [];
+          }
           if (currentSourceId) {
             const { data } = await admin.schema("signal_layer").from("sources")
               .select("id, company, url").eq("id", currentSourceId).maybeSingle();
@@ -2806,8 +2923,10 @@ Deno.serve(async (req: Request) => {
             source_progress: {
               completed: completedSources,
               total: totalSources,
-              current_position: currentSourceId ? Math.min(totalSources, currentIndex + 1) : null,
+              current_position: currentSourceId ? Math.min(totalSources, completedSources + 1) : null,
               current_source: currentSource,
+              active_sources: activeSources,
+              active_workers: runJobs.filter((job) => job.status === "running").length,
             },
           };
         }
@@ -2836,6 +2955,10 @@ Deno.serve(async (req: Request) => {
             warning_threshold_usd: pipelineConfig.ai.monthly_warning_usd,
           },
           source_health: sourceHealth,
+          analysis_queue: (analysisJobs || []).filter((job) => !crawl?.id || job.crawl_run_id === crawl.id).reduce((summary, job) => {
+            summary[job.status] = (summary[job.status] || 0) + 1;
+            return summary;
+          }, {} as Record<string, number>),
         });
       }
 

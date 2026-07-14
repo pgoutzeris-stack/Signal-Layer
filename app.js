@@ -1583,7 +1583,7 @@ function scheduleStatusRefresh(isActive) {
 
 async function loadLastRun() {
   try {
-    const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
+    const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
     const formatEur = (value) => value === null || value === undefined
       ? "Kurs wird geladen"
       : `${Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1624,7 +1624,8 @@ async function loadLastRun() {
       els.crawlSourceProgress.classList.add("is-live");
       els.crawlSourceProgressText.textContent = `${visiblePosition.toLocaleString("de-DE")} / ${totalSources.toLocaleString("de-DE")}`;
       els.crawlSourceProgressBar.style.width = `${sourcePercent}%`;
-      els.crawlCurrentSource.textContent = sourceProgress.current_source?.company
+      const activeSourceNames = (sourceProgress.active_sources || []).map((source) => source.company).filter(Boolean);
+      els.crawlCurrentSource.textContent = activeSourceNames.length ? activeSourceNames.join(" · ") : sourceProgress.current_source?.company
         || (last.status === "done" ? "Alle Quellen abgeschlossen" : "Quelle wird geladen");
       const currentUrl = sourceProgress.current_source?.url || "";
       els.crawlCurrentSourceUrl.hidden = !currentUrl;
@@ -1634,24 +1635,29 @@ async function loadLastRun() {
       els.crawlSourceProgress.hidden = true;
       els.crawlSourceProgress.classList.remove("is-live");
     }
-    const articleAnalysisActive = Boolean(backfill && ["queued", "running"].includes(backfill.status));
+    const queuedAnalyses = Number(analysisQueue.queued || 0);
+    const runningAnalyses = Number(analysisQueue.running || 0);
+    const completedAnalyses = Number(analysisQueue.done || 0);
+    const failedAnalyses = Number(analysisQueue.error || 0);
+    const queueAnalysisActive = queuedAnalyses + runningAnalyses > 0;
+    const articleAnalysisActive = queueAnalysisActive || Boolean(backfill && ["queued", "running"].includes(backfill.status));
     els.articleLiveProgress.hidden = !articleAnalysisActive;
     if (articleAnalysisActive) {
-      const total = Number(backfill.total_count || 0);
-      const processed = Number(backfill.processed_count || 0);
+      const total = queueAnalysisActive ? queuedAnalyses + runningAnalyses + completedAnalyses + failedAnalyses : Number(backfill.total_count || 0);
+      const processed = queueAnalysisActive ? completedAnalyses + failedAnalyses : Number(backfill.processed_count || 0);
       const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 100;
       els.backfillProgressText.textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")}`;
       els.backfillProgressBar.style.width = `${percent}%`;
-      const currentArticleTitle = backfill.current_article?.title || "";
+      const currentArticleTitle = queueAnalysisActive ? "Neue Artikel werden unabhängig vom Crawl analysiert" : backfill?.current_article?.title || "";
       els.backfillCurrentArticle.hidden = !currentArticleTitle;
       els.backfillCurrentArticle.textContent = currentArticleTitle;
       document.getElementById("backfill-status")?.classList.add("is-live");
-      const status = backfill.status === "done" ? "Abgeschlossen" : backfill.status === "error" ? "Fehler" : "Läuft";
-      const errors = Number(backfill.error_count || 0);
+      const status = queueAnalysisActive ? "Läuft" : backfill.status === "done" ? "Abgeschlossen" : backfill.status === "error" ? "Fehler" : "Läuft";
+      const errors = queueAnalysisActive ? failedAnalyses : Number(backfill.error_count || 0);
       els.backfillProgressDetail.textContent = errors > 0
         ? `${status} · ${errors.toLocaleString("de-DE")} Artikel nicht analysiert · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`
-        : `${status} · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`;
-      els.apiErrorList.innerHTML = (backfill.error_breakdown || []).map((error) => `
+        : queueAnalysisActive ? `${status} · ${queuedAnalyses.toLocaleString("de-DE")} warten · ${runningAnalyses.toLocaleString("de-DE")} aktiv` : `${status} · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`;
+      els.apiErrorList.innerHTML = (backfill?.error_breakdown || []).map((error) => `
         <span class="crawl-result-pill crawl-result-pill--error" title="${escapeHtml(error.explanation)}">
           <i class="ri-alert-line"></i>${Number(error.count || 0).toLocaleString("de-DE")} ${escapeHtml(error.label)}
         </span>`).join("");
