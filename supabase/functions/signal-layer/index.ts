@@ -956,7 +956,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-3.5-flash";
 const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.8";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.12";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -1076,10 +1076,10 @@ const SALES_TRIGGERS_REQUIRING_ROOTS_CONTEXT = new Set([
   "event_participation", "marketing_problem",
 ]);
 
-const ROOTS_SALES_CONTEXT_PATTERN = /\b(agency|agentur|consult\w*|beratung|advis\w*|partner(?:ship)?|partnerschaft|pitch|tender|ausschreibung|mandat|budget|marketing (?:organi[sz]ation|operating model|transformation|strateg\w*|capabilit\w*|technolog\w*)|marketingorgani[sz]ation|marketingtransformation|marketingstrateg\w*|martech|customer insights?|consumer insights?|shopper insights?|retail media|category management|brand (?:strateg\w*|position\w*|transform\w*|architecture)|markenstrateg\w*|markenpositionier\w*|markentransform\w*|markenarchitektur|customer journey|kundenerlebnis|target group|zielgruppe|operating model|organisationsmodell|capabilit\w*|kompetenzaufbau)\b/i;
+const ROOTS_SALES_CONTEXT_PATTERN = /\b(agency|agentur|consult\w*|beratung|advis\w*|partner(?:ship)?|partnerschaft|pitch|tender|ausschreibung|mandat|budget|marketing (?:organi[sz]ation|operating model|transformation|strateg\w*|capabilit\w*|technolog\w*)|marketingorgani[sz]ation|marketingtransformation|marketingstrateg\w*|martech|customer insights?|consumer insights?|shopper insights?|retail media|category management|brand (?:strateg\w*|position\w*|transform\w*|architecture)|markenstrateg\w*|markenpositionier\w*|markentransform\w*|markenarchitektur|customer journey|kundenerlebnis|target group|zielgruppe|direct[- ]to[- ]consumer|\bd2c\b|sell[- ]through|marketplace elevation|marketplace strateg\w*|operating model|organisationsmodell|capabilit\w*|kompetenzaufbau)\b/i;
 
 const OPERATIONAL_ONLY_PATTERN = /\b(factory|factories|plant|production|manufactur\w*|filling|packaging|warehouse|logistics|machinery|machine|facility|facilities|site|sites|fabrik\w*|werk(?:e|en)?|produktions\w*|herstell\w*|abfull\w*|abfuell\w*|verpackung\w*|lager\w*|logistik\w*|maschine\w*|betriebsstatte\w*|standort\w*)\b/i;
-const EXPLICIT_MARKETING_PROBLEM_PATTERN = /\b(problem\w*|challenge\w*|herausforderung\w*|declin\w*|ruckgang\w*|verlust\w*|stagn\w*|verfehl\w*|scheiter\w*|ineffiz\w*|fragment\w*|silo\w*|mangel\w*|lucke\w*|risiko\w*|akzeptanzproblem\w*|vertrauensverlust\w*|relevanzverlust\w*|kostendruck\w*|wettbewerbsdruck\w*|konsumzuruckhaltung\w*)\b/i;
+const EXPLICIT_MARKETING_PROBLEM_PATTERN = /\b(problem\w*|challenge\w*|challenged|headwind\w*|declin\w*|sell[- ]through|herausforderung\w*|ruckgang\w*|verlust\w*|stagn\w*|verfehl\w*|scheiter\w*|ineffiz\w*|fragment\w*|silo\w*|mangel\w*|lucke\w*|risiko\w*|akzeptanzproblem\w*|vertrauensverlust\w*|relevanzverlust\w*|kostendruck\w*|umsatzdruck\w*|absatzproblem\w*|wettbewerbsdruck\w*|konsumzuruckhaltung\w*)\b/i;
 const RESOLVED_PROBLEM_PATTERN = /\b(fully resolved|completely resolved|problem solved|challenge solved|vollstandig gelost|abschliessend gelost|bereits behoben|successfully completed|erfolgreich abgeschlossen)\b/i;
 type AiSalesTrigger = { id: string; confidence: number; evidence: string };
 type AiRouteDecision = { eligible: boolean; confidence: number; evidence: string; reason: string };
@@ -1283,6 +1283,8 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
     /\b(brand strateg\w*|brand position\w*|campaign\w*|brand activat\w*|media strateg\w*)\b/i,
     /\b(kaufverhalten|konsumverhalten|kundenerlebnis|kundenbind\w*|zielgrupp\w*|shopper insight\w*)\b/i,
     /\b(consumer behavio\w*|customer experience|customer insight\w*|customer loyalty|target audience\w*)\b/i,
+    /\b(brand strength|brand health|brand relevance|consumer demand|consumer engagement|serve consumers?|marketplace elevation|sell[- ]through|top[- ]line headwinds?)\b/i,
+    /\b(markenstarke|markengesundheit|markenrelevanz|konsumentennachfrage|kundenansprache|absatzproblem\w*|umsatzdruck\w*)\b/i,
     /\b(sortiment\w*|eigenmark\w*|handelsmark\w*|kategoriemanagement|preisstrateg\w*|aktionsmechanik\w*|filialkonzept\w*)\b/i,
     /\b(assortment strateg\w*|private label\w*|category management|pricing strateg\w*|promotion strateg\w*|store concept\w*)\b/i,
     /\b(ki[- ](?:initiative|anwendung|plattform)|kunstliche intelligenz|generative ai|ai[- ](?:initiative|platform|application)|automation\w*)\b/i,
@@ -1335,6 +1337,8 @@ const THIN_SPONSORSHIP_PATTERN = /\b(title sponsor|titelsponsor|sponsorship|spon
 const TACTICAL_PRICE_PROMOTION_PATTERN = /\b(tankrabatt|preisnachlass|discount|rabatt|coupon|gutschein|gift with purchase|zugabeaktion)\b/i;
 const MARKETING_DEPTH_PATTERN = /\b(strateg\w*|position\w*|target audience|zielgrupp\w*|customer (?:need|behavio|journey|experience)|consumer (?:need|behavio|insight)|kundenbedurf\w*|kaufverhalten|konsumverhalten|customer insight|consumer insight|shopper insight|brand architecture|markenarchitektur|operating model|organisationsmodell|measur\w*|messbar\w*|uplift|conversion|roi|pilot|testet|learning\w*|erkenntnis\w*|plattform|platform|ecosystem|okosystem|innovation\w*|format\w*|digital\w*|omnichannel|customer experience|kundenerlebnis|loyalty|treueprogramm|experience space|eventspace|shop in shop)\b/i;
 const CONCRETE_ACTIVATION_PATTERN = /\b(sampling|verkost\w*|service\w*|finisher|workshop|make it lab|personalis\w*|interactive|interaktiv|receipt scan|belegscan|app|shop in shop|experience space|eventspace|point of sale|\bpos\b)\b/i;
+const RESEARCH_CONTENT_PATTERN = /\b(stud(?:y|ies|ie|ien)|research|white ?paper|survey|poll|report|benchmark|analysis|analyse|forschung|untersuchung|umfrage|befragung|marktstudie|verbraucherstudie|consumer study|consumer research|shopper study|market research)\b/i;
+const RESEARCH_SUBSTANCE_PATTERN = /\b(method(?:ology)?|methodik|sample|stichprobe|respondent\w*|befragt\w*|participants?|teilnehm\w*|findings?|results?|ergebnis\w*|percent|prozent|data|daten|benchmark|trend\w*|zeigt|found|reveals?|according to)\b/i;
 
 function hasTransferableMarketingSubstance(
   articleType: string,
@@ -1351,6 +1355,8 @@ function hasTransferableMarketingSubstance(
   const article = normalizeMatchText(articleText);
   const hasCustomerInsight = directTopics.some((topic) => topic.id === "customer_insights");
   const hasDepth = MARKETING_DEPTH_PATTERN.test(combined);
+  const hasSubstantiveResearch = RESEARCH_CONTENT_PATTERN.test(article)
+    && RESEARCH_SUBSTANCE_PATTERN.test(normalizeMatchText(`${articleText} ${combined}`));
 
   // A logo placement, title sponsorship or generic visibility/community claim
   // is not a transferable Marketing insight without a concrete mechanism,
@@ -1366,6 +1372,10 @@ function hasTransferableMarketingSubstance(
   // Campaign and product news need more than the fact that something launched.
   if (["campaign_news", "product_news"].includes(articleType)
       && !hasCustomerInsight && !hasDepth) return false;
+  // A consultancy, institute or trade body study is useful Marketing content
+  // only when the article exposes an actual method, finding or data point.
+  // A landing page that merely advertises a download does not qualify.
+  if (RESEARCH_CONTENT_PATTERN.test(article) && !hasSubstantiveResearch) return false;
   return true;
 }
 
@@ -1591,10 +1601,11 @@ Territories:
 </taxonomy>
 <active_business_policy>${JSON.stringify({ relevance: config.relevance, decisions: config.decisions, routing: config.routing })}</active_business_policy>
 <routing_rules>
-Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Company news that cannot teach a broader audience anything is not Marketing. It still needs direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, or AI with a concrete marketing/customer/retail/brand application. sub_branchen_insight alone NEVER qualifies Marketing. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing evidence exists.
+Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Company news that cannot teach a broader audience anything is not Marketing. It still needs direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, or AI with a concrete marketing/customer/retail/brand application. sub_branchen_insight alone NEVER qualifies Marketing. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing evidence exists. A study, research paper, whitepaper, benchmark or original survey from a consultancy, institute, association or company qualifies Marketing when it addresses a ROOTS topic and the article contains concrete methodology, findings, data or transferable conclusions. A download announcement, gated landing page or self-promotional claim without an exposed finding does not qualify.
 sub_branchen_insight is valid only for a transferable market observation that remains useful beyond the reported company event. A single acquisition, product, expansion, financial result or facility is not transferable.
-Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. A company mention or generic strategic change alone is insufficient. For sources in category "Events & Messen", event_participation is only a candidate trigger; it still needs an actionable company challenge and sufficient company-specific substance. Attendee lists, speaker directories, schedules, navigation and a name merely appearing somewhere on the same page are insufficient.
+Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge or evidenced ROOTS-relevant opportunity, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. A company mention or generic strategic change alone is insufficient. For sources in category "Events & Messen", a named person with a credible role at a Tier-1 company who substantively speaks, presents, discusses or is quoted about a ROOTS marketing, brand, customer, retail, category, innovation or applied-AI topic qualifies event_participation as a Sales trigger. The person's contribution and company affiliation must both be evidenced locally in the article. Attendee lists, speaker directories, schedules, navigation, a session title without described contribution, and a name merely appearing somewhere on the same page are insufficient.
 marketing_problem is a valid Sales trigger when the article explicitly proves an unresolved or currently material marketing, brand, customer, consumer, loyalty, media, retail-media, category, positioning or customer-journey problem of a Tier-1 company. The evidenced problem itself supplies the trigger; a separate pitch, investment or transformation announcement is not required. Still require company-specific facts, a credible ROOTS contribution and personalization substance. Generic competitive pressure, sector-wide commentary, speculative criticism, weak performance without a marketing/customer connection, and problems described as fully resolved are not marketing_problem.
+Financial_news is not an article-level rejection reason when it explicitly proves such an unresolved Tier-1 marketing_problem. Ignore the surrounding earnings figures for routing, but evaluate evidenced brand weakness, consumer/customer pressure, sell-through difficulty, marketplace relevance or a stated need to strengthen how the company serves consumers as a possible Sales signal. Pure financial performance without that direct ROOTS connection remains irrelevant.
 Buying Center is downstream of Sales. Recommend one to four specific roles that would genuinely benefit from the proposed asset. A named person from the article is preferred when their responsibility fits; otherwise recommend roles and set research_required=true. A pure CEO/CMO appointment, press contact, testimonial or spokesperson is insufficient.
 Sales is not a synonym for Marketing. A campaign_launch alone is NEVER a Sales signal. General product launches, portfolio news, sponsorships, testimonials and campaign execution remain Marketing unless the article separately proves a concrete strategic change or commercial need relevant to ROOTS. Investment qualifies only when it concerns marketing, brand, customer/consumer insights, retail media, category management, marketing technology, capabilities or an external partner/agency/consulting mandate. Investment in factories, filling, packaging, machinery, production, logistics, buildings or other operational infrastructure is not a ROOTS Sales signal. Require verbatim Sales evidence for the strategic change, buying need, mandate, budget, tender, partner search or ROOTS-relevant capability build. The same strategic passage may support Marketing and Sales only when all additional Sales substance requirements are independently fulfilled.
 Marketing and Sales are evaluated independently. Missing Tier-1 status, a missing Sales trigger or an ineligible Buying Center must NEVER make an otherwise evidence-backed Marketing result uncertain or rejected. Put route-specific failures only into routing_decisions.sales.reason, not into the article-level rejection_reasons array. Article-level rejection_reasons are reserved for reasons that invalidate every route.
@@ -1687,10 +1698,22 @@ function validateClassification(
       .find((label) => containsMatchTerm(articleText, label)) || candidate.name;
     companies.push({ name: candidate.name, role: "affected_party", confidence: 1, evidence: matchedLabel });
   }
-  const normalizedProblemEvidence = normalizeMatchText(salesUse.evidence);
+  const validatedMarketingProblem = salesTriggers.find((trigger) => trigger.id === "marketing_problem");
+  const problemEvidence = salesUse.evidence || validatedMarketingProblem?.evidence || "";
+  const normalizedProblemEvidence = normalizeMatchText(problemEvidence);
   const hasExplicitMarketingProblem = EXPLICIT_MARKETING_PROBLEM_PATTERN.test(normalizedProblemEvidence)
     && ROOTS_SALES_CONTEXT_PATTERN.test(normalizedProblemEvidence)
     && !RESOLVED_PROBLEM_PATTERN.test(normalizedProblemEvidence);
+  if (validatedMarketingProblem && companies.some((company) => company.role !== "incidental_mention")
+      && hasExplicitMarketingProblem) {
+    salesUse.actionable = true;
+    salesUse.company_challenge ||= "Explizit belegtes, aktuell relevantes Marketing-, Marken- oder Customer-Problem.";
+    salesUse.roots_relevance ||= "Das belegte Problem liegt unmittelbar in einem ROOTS-Beratungsfeld.";
+    salesUse.sufficient_substance = true;
+    salesUse.personalization_facts = salesUse.personalization_facts.length
+      ? salesUse.personalization_facts : [problemEvidence];
+    salesUse.evidence = problemEvidence;
+  }
   if (salesUse.actionable && companies.some((company) => company.role !== "incidental_mention")
       && hasExplicitMarketingProblem && !salesTriggers.some((trigger) => trigger.id === "marketing_problem")) {
     salesTriggers.push({
@@ -1766,6 +1789,10 @@ function validateClassification(
   }
   const stronglySupportedSalesSignal = hasSalesSignal && routingDecisions.sales.eligible
     && salesUse.actionable && salesTriggers.length > 0;
+  if (raw.relevance_status !== "rejected" && stronglySupportedSalesSignal
+      && titleDe && !NON_RELEVANT_ARTICLE_TYPES.has(articleType) && rejectionReasons.length === 0) {
+    status = "reliable";
+  }
   // "Reliable" is an output state, not merely a model confidence label. A
   // reliable article must be eligible for at least one visible route.
   if (status === "reliable" && !marketingHasSubstance && !stronglySupportedSalesSignal) {
