@@ -1592,7 +1592,6 @@ async function loadLastRun() {
     els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
     const crawlResults = health ? [
       { value: Number(health.successful || 0), label: "Quellen erfolgreich", tone: "success", icon: "ri-checkbox-circle-line" },
-      { value: Number(health.empty || 0), label: "ohne neue Artikel", tone: "muted", icon: "ri-file-search-line" },
       { value: Number(health.errors || 0), label: "Quellen fehlgeschlagen", tone: "error", icon: "ri-error-warning-line" },
     ].filter((result) => result.value > 0) : [];
     els.sourceHealthNote.hidden = crawlResults.length === 0;
