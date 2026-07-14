@@ -189,6 +189,12 @@ function cacheEls() {
   els.backfillProgressBar = document.getElementById("backfill-progress-bar");
   els.backfillProgressDetail = document.getElementById("backfill-progress-detail");
   els.apiErrorList = document.getElementById("api-error-list");
+  els.geminiCostStat = document.getElementById("gemini-cost-stat");
+  els.geminiCostMonth = document.getElementById("gemini-cost-month");
+  els.geminiCostToday = document.getElementById("gemini-cost-today");
+  els.geminiRequestCount = document.getElementById("gemini-request-count");
+  els.sourceAttemptCount = document.getElementById("source-attempt-count");
+  els.sourceHealthNote = document.getElementById("source-health-note");
 
   els.findingsListMarketing = document.getElementById("findings-list-marketing");
   els.findingsListSales = document.getElementById("findings-list-sales");
@@ -550,14 +556,14 @@ function closeAddSource() {
 }
 
 async function loadSources() {
-  els.sourceTableBody.innerHTML = `<tr><td colspan="5" class="source-empty"><i class="ri-loader-4-line ri-spin"></i> Lädt…</td></tr>`;
+  els.sourceTableBody.innerHTML = `<tr><td colspan="6" class="source-empty"><i class="ri-loader-4-line ri-spin"></i> Lädt…</td></tr>`;
   try {
     const { sources: data } = await callApi("list_sources");
     sources = data || [];
     populateCategoryFilter();
     renderSources();
   } catch (err) {
-    els.sourceTableBody.innerHTML = `<tr><td colspan="5" class="source-empty">Fehler beim Laden: ${escapeHtml(err.message)}</td></tr>`;
+    els.sourceTableBody.innerHTML = `<tr><td colspan="6" class="source-empty">Fehler beim Laden: ${escapeHtml(err.message)}</td></tr>`;
   }
 }
 
@@ -603,7 +609,7 @@ function renderSources() {
   els.sourceCount.textContent = `${list.length} von ${sources.length}`;
 
   if (list.length === 0) {
-    els.sourceTableBody.innerHTML = `<tr><td colspan="5" class="source-empty">Keine URLs gefunden.</td></tr>`;
+    els.sourceTableBody.innerHTML = `<tr><td colspan="6" class="source-empty">Keine URLs gefunden.</td></tr>`;
     return;
   }
 
@@ -615,6 +621,12 @@ function renderSources() {
       </td>
       <td><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" class="source-url"><i class="ri-external-link-line"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
       <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}</td>
+      <td title="${escapeHtml(s.last_error || "")}">
+        <span class="quality-tag ${s.last_error ? "quality-tag--error" : s.last_successful_at ? "quality-tag--reliable" : "quality-tag--pending"}">
+          <i class="ri-${s.last_error ? "alert-line" : s.last_successful_at ? "check-line" : "time-line"}"></i>
+          ${s.last_error ? "Fehler" : s.last_successful_at ? `${Number(s.last_inserted_count || 0)} neu` : "Offen"}
+        </span>
+      </td>
       <td>
         <label class="source-toggle">
           <input type="checkbox" class="source-active-toggle" data-id="${s.id}" ${s.active ? "checked" : ""}>
@@ -820,7 +832,16 @@ const STATUS_LABEL = { queued: "eingereiht", running: "läuft", done: "abgeschlo
 
 async function loadLastRun() {
   try {
-    const { crawl_run: last, backfill_run: backfill } = await callApi("get_dashboard_status");
+    const { crawl_run: last, backfill_run: backfill, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
+    const formatUsd = (value) => `${Number(value || 0).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+    els.geminiCostMonth.textContent = formatUsd(costs?.month_usd);
+    els.geminiCostToday.textContent = formatUsd(costs?.today_usd);
+    els.geminiRequestCount.textContent = Number(costs?.requests || 0).toLocaleString("de-DE");
+    els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
+    els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
+    els.sourceHealthNote.textContent = health
+      ? `${Number(health.successful || 0).toLocaleString("de-DE")} erfolgreich · ${Number(health.empty || 0).toLocaleString("de-DE")} leer · ${Number(health.errors || 0).toLocaleString("de-DE")} Fehler · Apify ${Number(health.apify_errors || 0).toLocaleString("de-DE")} Fehler`
+      : "Noch keine detaillierte Crawl-Telemetrie vorhanden.";
     if (!last) { els.lastRunText.textContent = "Noch kein Crawl-Lauf."; return; }
     const trigger = last.trigger_type === "scheduled" ? "automatisch (6 Uhr)" : "manuell";
     els.lastRunText.textContent =

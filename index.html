@@ -150,6 +150,12 @@
   .backfill-progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--brand); transition: width .25s ease; }
   .backfill-status small { display: block; margin-top: 5px; color: var(--muted); font-size: .63rem; line-height: 1.35; }
   .api-error-list { display: grid; gap: 5px; margin-top: 9px; }
+  .telemetry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
+  .telemetry-stat { padding: 7px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+  .telemetry-stat span { display: block; color: var(--muted); font-size: .58rem; text-transform: uppercase; letter-spacing: .04em; }
+  .telemetry-stat b { display: block; margin-top: 2px; color: var(--ink); font-size: .72rem; }
+  .telemetry-stat--warning { border-color: #fbbf24; background: var(--warning-bg); }
+  .source-health-note { margin-top: 7px; color: var(--muted); font-size: .62rem; line-height: 1.4; }
   .api-error-row { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 7px; padding: 7px 8px; border-radius: 9px; background: #fff8f5; color: var(--status-text); }
   .api-error-row i { margin-top: 1px; color: var(--danger); }
   .api-error-copy b { display: block; font-size: .67rem; line-height: 1.25; }
@@ -486,6 +492,13 @@
                 <div class="backfill-progress-track"><span id="backfill-progress-bar"></span></div>
                 <small id="backfill-progress-detail"></small>
                 <div class="api-error-list" id="api-error-list"></div>
+                <div class="telemetry-grid">
+                  <div class="telemetry-stat" id="gemini-cost-stat"><span>Gemini im Monat</span><b id="gemini-cost-month">–</b></div>
+                  <div class="telemetry-stat"><span>Heute</span><b id="gemini-cost-today">–</b></div>
+                  <div class="telemetry-stat"><span>KI-Aufrufe</span><b id="gemini-request-count">–</b></div>
+                  <div class="telemetry-stat"><span>Quellenläufe</span><b id="source-attempt-count">–</b></div>
+                </div>
+                <div class="source-health-note" id="source-health-note"></div>
               </div>
               <span class="crawl-status-hint">Klicken, um Quellen auszuwählen</span>
             </div>
@@ -608,6 +621,7 @@
                   <th>Quelle</th>
                   <th>URL</th>
                   <th>Kategorie</th>
+                  <th>Letzter Lauf</th>
                   <th>Aktiv</th>
                   <th></th>
                 </tr>
