@@ -13,6 +13,7 @@ let pipelineStageDefinitions = [];
 const pipelineDrilldownState = { stageId: null, editorOpen: false };
 let statusPollTimer = null;
 let archiveArticles = [];
+let archiveTotalCount = 0;
 
 const state = {
   search: "",
@@ -219,7 +220,9 @@ function cacheEls() {
   els.salesCount = document.getElementById("sales-count");
   els.archiveStatusFilter = document.getElementById("archive-status-filter");
   els.archiveCount = document.getElementById("archive-count");
+  els.archiveSummary = document.getElementById("archive-summary");
   els.archiveList = document.getElementById("archive-list");
+  els.archiveLoadMore = document.getElementById("archive-load-more");
   els.articleDetailModal = document.getElementById("article-detail-modal");
   els.articleDetailContent = document.getElementById("article-detail-content");
 }
@@ -1024,9 +1027,12 @@ function archiveExplanation(article) {
 
 function renderArchive() {
   if (!els.archiveList) return;
-  const filter = els.archiveStatusFilter.value;
-  const articles = archiveArticles.filter((article) => filter === "all" || article.classification_status === filter);
-  els.archiveCount.textContent = articles.length.toLocaleString("de-DE");
+  const articles = archiveArticles;
+  els.archiveCount.textContent = archiveTotalCount.toLocaleString("de-DE");
+  els.archiveSummary.textContent = archiveTotalCount > articles.length
+    ? `${articles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} Artikeln geladen`
+    : `${archiveTotalCount.toLocaleString("de-DE")} Artikel`;
+  els.archiveLoadMore.hidden = articles.length >= archiveTotalCount;
   if (!articles.length) {
     els.archiveList.innerHTML = `<div class="track-card-empty">Keine Artikel für diesen Archivstatus.</div>`;
     return;
@@ -1043,11 +1049,14 @@ function renderArchive() {
   }).join("");
 }
 
-async function loadArchive() {
+async function loadArchive(append = false) {
   if (!els.archiveList) return;
   try {
-    const { articles } = await callApi("list_archive_articles", { limit: 200 });
-    archiveArticles = articles || [];
+    const status = els.archiveStatusFilter.value;
+    const offset = append ? archiveArticles.length : 0;
+    const { articles, total } = await callApi("list_archive_articles", { limit: 100, offset, status: status === "all" ? undefined : status });
+    archiveArticles = append ? [...archiveArticles, ...(articles || [])] : (articles || []);
+    archiveTotalCount = Number(total || 0);
     renderArchive();
   } catch (err) {
     els.archiveList.innerHTML = `<div class="track-card-empty">Archiv konnte nicht geladen werden: ${escapeHtml(err.message)}</div>`;
@@ -1559,7 +1568,8 @@ function bindUi() {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);
   });
-  els.archiveStatusFilter.addEventListener("change", renderArchive);
+  els.archiveStatusFilter.addEventListener("change", () => void loadArchive());
+  els.archiveLoadMore.addEventListener("click", () => void loadArchive(true));
   const updateSignalView = () => {
     signalViewState.status = els.signalStatusFilter.value;
     signalViewState.company = els.signalCompanyFilter.value;

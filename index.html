@@ -154,6 +154,8 @@
   .archive-item:hover { border-color: #cbd5e1; box-shadow: 0 6px 18px rgba(15, 23, 42, .06); }
   .archive-reason { display: flex; gap: 6px; margin: .45rem 0 .7rem; color: var(--muted); font-size: .72rem; line-height: 1.4; }
   .archive-reason i { flex: 0 0 auto; margin-top: 1px; color: var(--brand); }
+  .archive-summary { display: block; margin-top: 4px; color: var(--muted); font-size: .64rem; }
+  .archive-load-more { margin: 14px auto 0; }
   @media (max-width: 720px) { .overview-grid, .archive-list { grid-template-columns: 1fr; } }
 
   .crawl-trigger-wrap { position: relative; }
@@ -1480,8 +1482,9 @@
         </section>
 
         <section class="app-view" id="view-archive">
-          <div class="view-header"><div><h2>Archiv <span class="track-count" id="archive-count">0</span></h2><p>Altbestand, noch nicht analysierte, abgelehnte und technisch fehlgeschlagene Artikel.</p></div><select class="signal-toolbar-select" id="archive-status-filter" aria-label="Archivstatus filtern"><option value="all">Alle</option><option value="legacy">Altbestand</option><option value="pending">Nicht analysiert</option><option value="rejected">Abgelehnt</option><option value="error">Technischer Fehler</option></select></div>
+          <div class="view-header"><div><h2>Archiv <span class="track-count" id="archive-count">0</span></h2><p>Altbestand, nicht analysierte, abgelehnte und technisch fehlgeschlagene Artikel.</p><small class="archive-summary" id="archive-summary"></small></div><select class="signal-toolbar-select" id="archive-status-filter" aria-label="Archivstatus filtern"><option value="all">Alle</option><option value="legacy">Altbestand</option><option value="pending">Nicht analysiert</option><option value="rejected">Abgelehnt</option><option value="error">Technischer Fehler</option></select></div>
           <div class="archive-list" id="archive-list"><div class="track-card-empty">Archiv wird geladen…</div></div>
+          <button type="button" class="btn-secondary archive-load-more" id="archive-load-more" hidden><i class="ri-add-line"></i> Weitere Artikel laden</button>
         </section>
 
       </div>

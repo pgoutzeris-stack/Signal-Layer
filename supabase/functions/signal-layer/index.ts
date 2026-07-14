@@ -1871,7 +1871,7 @@ Deno.serve(async (req: Request) => {
       case "preview_pipeline_impact": {
         const requested = mergePipelineConfig(body.config as Partial<PipelineConfig> | undefined);
         const admin = getAdminClient();
-        const { data, error } = await admin.schema("signal_layer").from("articles")
+        const { data, error, count } = await admin.schema("signal_layer").from("articles")
           .select("classification_status, relevance_confidence, topics, routing")
           .in("classification_status", ["reliable", "uncertain", "rejected"])
           .order("classified_at", { ascending: false, nullsFirst: false }).limit(100);
@@ -2466,17 +2466,19 @@ Deno.serve(async (req: Request) => {
       }
 
       case "list_archive_articles": {
-        const { limit, status } = body as { limit?: number; status?: string };
+        const { limit, status, offset } = body as { limit?: number; status?: string; offset?: number };
         const archiveStatuses = ["legacy", "pending", "rejected", "error"];
         const selectedStatuses = status && archiveStatuses.includes(status) ? [status] : archiveStatuses;
         const admin = getAdminClient();
-        const { data, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, source:sources(company, url, category)")
+        const safeLimit = Math.min(Math.max(limit || 100, 1), 200);
+        const safeOffset = Math.max(Number(offset || 0), 0);
+        const { data, error, count } = await admin.schema("signal_layer").from("articles")
+          .select("id, title, title_de, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, source:sources(company, url, category)", { count: "exact" })
           .in("classification_status", selectedStatuses)
           .order("published_at", { ascending: false, nullsFirst: false })
-          .limit(Math.min(Math.max(limit || 100, 1), 200));
+          .range(safeOffset, safeOffset + safeLimit - 1);
         if (error) return errorResponse(origin, error.message, 500);
-        return corsResponse(origin, { articles: data || [] });
+        return corsResponse(origin, { articles: data || [], total: count || 0 });
       }
 
       case "list_classification_tests": {
