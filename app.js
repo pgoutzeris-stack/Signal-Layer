@@ -22,7 +22,7 @@ const state = {
   sort: "company_asc",
 };
 
-const signalViewState = { status: "all", company: "all", source: "all", sort: "recommended" };
+const signalViewState = { articleType: "all", source: "all", sort: "recommended" };
 const archiveViewState = { company: "all", source: "all", sort: "recommended" };
 const findingsByTrack = { marketing: [], sales: [] };
 
@@ -230,8 +230,7 @@ function cacheEls() {
   els.findingsListMarketing = document.getElementById("findings-list-marketing");
   els.findingsListSales = document.getElementById("findings-list-sales");
   els.reviewList = document.getElementById("results-review-list");
-  els.signalStatusFilter = document.getElementById("signal-status-filter");
-  els.signalCompanyFilter = document.getElementById("signal-company-filter");
+  els.signalArticleTypeFilter = document.getElementById("signal-article-type-filter");
   els.signalSourceFilter = document.getElementById("signal-source-filter");
   els.signalSort = document.getElementById("signal-sort");
   els.marketingCount = document.getElementById("marketing-count");
@@ -885,21 +884,44 @@ const TERRITORY_LABELS = {
 
 const ARTICLE_TYPE_LABELS = {
   editorial_news: "Redaktionelle Nachricht",
-  press_release: "Pressemitteilung",
+  commentary: "Kommentar / Meinung",
   interview: "Interview",
   analysis: "Analyse",
+  background_report: "Hintergrundbericht",
+  trend_report: "Trendbericht",
+  market_report: "Marktbericht",
+  study: "Studie",
+  survey: "Umfrage",
+  whitepaper: "Whitepaper",
+  benchmark: "Benchmark",
+  forecast: "Prognose",
+  case_study: "Case Study",
+  press_release: "Pressemitteilung",
+  strategy_update: "Strategie-Update",
   product_news: "Produktmeldung",
   campaign_news: "Kampagnenmeldung",
   financial_news: "Finanzmeldung",
   acquisition_news: "M&A-Meldung",
+  partnership_news: "Partnerschaft",
+  investment_news: "Investitionsmeldung",
+  expansion_news: "Expansionsmeldung",
+  restructuring_news: "Restrukturierung",
   operations_news: "Operations-/Logistikmeldung",
   personnel_news: "Personalnachricht",
+  event_announcement: "Event-Ankündigung",
   event_report: "Event-Bericht",
+  panel_summary: "Panel-/Vortragsbericht",
+  exhibitor_news: "Messe-/Ausstellernews",
   event_program: "Event-Programm",
+  speaker_page: "Speaker-/Teilnehmerseite",
   career: "Karriere",
   faq: "FAQ",
   overview: "Übersichtsseite",
+  navigation_page: "Navigation / Kategorie",
+  product_catalog: "Produktkatalog",
+  download_landing: "Download-/Loginseite",
   advertisement: "Anzeige",
+  aggregation: "News-Aggregation",
   other: "Sonstiger Inhalt",
 };
 
@@ -970,13 +992,23 @@ function refreshSignalSourceOptions() {
   signalViewState.source = els.signalSourceFilter.value;
 }
 
+function refreshSignalArticleTypeOptions() {
+  const selected = signalViewState.articleType;
+  const types = [...new Set([...findingsByTrack.marketing, ...findingsByTrack.sales]
+    .map((finding) => finding.article?.article_type).filter(Boolean))]
+    .sort((a, b) => (ARTICLE_TYPE_LABELS[a] || a).localeCompare(ARTICLE_TYPE_LABELS[b] || b, "de"));
+  els.signalArticleTypeFilter.innerHTML = `<option value="all">Alle Artikeltypen</option>${types
+    .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(ARTICLE_TYPE_LABELS[type] || type)}</option>`).join("")}`;
+  els.signalArticleTypeFilter.value = types.includes(selected) ? selected : "all";
+  signalViewState.articleType = els.signalArticleTypeFilter.value;
+}
+
 function visibleFindings(track) {
   const filtered = findingsByTrack[track].filter((finding) => {
     const article = finding.article || {};
-    const statusMatches = signalViewState.status === "all" || article.classification_status === signalViewState.status;
-    const companyMatches = signalViewState.company === "all" || articleCompanies(article).length > 0;
+    const articleTypeMatches = signalViewState.articleType === "all" || article.article_type === signalViewState.articleType;
     const sourceMatches = signalViewState.source === "all" || findingSourceName(finding) === signalViewState.source;
-    return statusMatches && companyMatches && sourceMatches;
+    return articleTypeMatches && sourceMatches;
   });
   return [...filtered].sort((a, b) => {
     if (signalViewState.sort === "newest") return findingDate(b) - findingDate(a) || findingConfidence(b) - findingConfidence(a);
@@ -1039,6 +1071,7 @@ async function loadFindings(track) {
     const { findings } = await callApi("list_findings", { track, limit: 250 });
     findingsByTrack[track] = findings || [];
     refreshSignalSourceOptions();
+    refreshSignalArticleTypeOptions();
     renderFindings(track === "marketing" ? "sales" : "marketing");
     renderFindings(track);
   } catch (err) {
@@ -1805,14 +1838,13 @@ function bindUi() {
   );
   els.archiveLoadMore.addEventListener("click", () => void loadArchive(true));
   const updateSignalView = () => {
-    signalViewState.status = els.signalStatusFilter.value;
-    signalViewState.company = els.signalCompanyFilter.value;
+    signalViewState.articleType = els.signalArticleTypeFilter.value;
     signalViewState.source = els.signalSourceFilter.value;
     signalViewState.sort = els.signalSort.value;
     renderFindings("marketing");
     renderFindings("sales");
   };
-  [els.signalStatusFilter, els.signalCompanyFilter, els.signalSourceFilter, els.signalSort].forEach((control) =>
+  [els.signalArticleTypeFilter, els.signalSourceFilter, els.signalSort].forEach((control) =>
     control.addEventListener("change", updateSignalView)
   );
   const openCardDetail = (event) => {

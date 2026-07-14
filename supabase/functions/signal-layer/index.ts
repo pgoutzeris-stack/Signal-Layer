@@ -1047,12 +1047,19 @@ const TERRITORY_IDS = [
   "operational_excellence", "empowered_marketers",
 ] as const;
 const ARTICLE_TYPES = [
-  "editorial_news", "press_release", "interview", "analysis", "product_news",
-  "campaign_news", "financial_news", "event_report", "event_program", "career",
-  "acquisition_news", "operations_news", "personnel_news", "faq", "overview", "advertisement", "other",
+  "editorial_news", "commentary", "interview", "analysis", "background_report",
+  "trend_report", "market_report", "study", "survey", "whitepaper", "benchmark",
+  "forecast", "case_study", "press_release", "strategy_update", "campaign_news",
+  "product_news", "financial_news", "acquisition_news", "partnership_news",
+  "investment_news", "expansion_news", "restructuring_news", "operations_news",
+  "personnel_news", "event_announcement", "event_report", "panel_summary",
+  "exhibitor_news", "event_program", "speaker_page", "career", "faq", "overview",
+  "navigation_page", "product_catalog", "download_landing", "advertisement",
+  "aggregation", "other",
 ] as const;
 const NON_RELEVANT_ARTICLE_TYPES = new Set([
-  "event_program", "career", "faq", "overview", "advertisement",
+  "event_program", "speaker_page", "career", "faq", "overview", "navigation_page",
+  "product_catalog", "download_landing", "advertisement", "aggregation",
 ]);
 
 type AiTag = { id: string; confidence: number; evidence: string };
@@ -1629,6 +1636,12 @@ Territories:
 - marke_im_wandel: rebranding, repositioning, portfolio or brand transformation
 - operational_excellence: efficiency, organization, process, restructuring or cost optimization
 - empowered_marketers: marketing operating model, capabilities, teams, leadership or technology enablement
+Article types:
+- editorial_news/commentary/interview/analysis/background_report: editorial formats
+- trend_report/market_report/study/survey/whitepaper/benchmark/forecast/case_study: evidence and research formats; use the most specific type instead of analysis
+- press_release/strategy_update/campaign_news/product_news/financial_news/acquisition_news/partnership_news/investment_news/expansion_news/restructuring_news/operations_news/personnel_news: company formats
+- event_announcement/event_report/panel_summary/exhibitor_news/event_program/speaker_page: event formats; distinguish substantive panel coverage from a schedule or directory
+- career/faq/overview/navigation_page/product_catalog/download_landing/advertisement/aggregation/other: non-editorial or fallback formats
 </taxonomy>
 <active_business_policy>${JSON.stringify({ relevance: config.relevance, decisions: config.decisions, routing: config.routing })}</active_business_policy>
 <routing_rules>
