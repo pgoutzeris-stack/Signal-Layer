@@ -956,7 +956,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-3.5-flash";
 const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.5";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.6";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -1331,7 +1331,8 @@ function hasDirectMarketingContext(topic: AiTag): boolean {
 const SALES_ONLY_REJECTION_PATTERN = /\b(sales|vertrieb|tier[ -]?1|buying center|kaufsignal|sales[- ]?trigger|mandat|consulting|beratungsbedarf)\b/i;
 const THIN_SPONSORSHIP_PATTERN = /\b(title sponsor|titelsponsor|sponsorship|sponsoring|official partner|offizieller partner)\b/i;
 const TACTICAL_PRICE_PROMOTION_PATTERN = /\b(tankrabatt|preisnachlass|discount|rabatt|coupon|gutschein|gift with purchase|zugabeaktion)\b/i;
-const MARKETING_DEPTH_PATTERN = /\b(strateg\w*|position\w*|target audience|zielgrupp\w*|customer (?:need|behavio|journey|experience)|consumer (?:need|behavio|insight)|kundenbedurf\w*|kaufverhalten|konsumverhalten|customer insight|consumer insight|shopper insight|brand architecture|markenarchitektur|operating model|organisationsmodell|measur\w*|messbar\w*|uplift|conversion|roi|pilot|testet|learning\w*|erkenntnis\w*|plattform|ecosystem|okosystem|innovation\w*)\b/i;
+const MARKETING_DEPTH_PATTERN = /\b(strateg\w*|position\w*|target audience|zielgrupp\w*|customer (?:need|behavio|journey|experience)|consumer (?:need|behavio|insight)|kundenbedurf\w*|kaufverhalten|konsumverhalten|customer insight|consumer insight|shopper insight|brand architecture|markenarchitektur|operating model|organisationsmodell|measur\w*|messbar\w*|uplift|conversion|roi|pilot|testet|learning\w*|erkenntnis\w*|plattform|platform|ecosystem|okosystem|innovation\w*|format\w*|digital\w*|omnichannel|customer experience|kundenerlebnis|loyalty|treueprogramm|experience space|eventspace|shop in shop)\b/i;
+const CONCRETE_ACTIVATION_PATTERN = /\b(sampling|verkost\w*|service\w*|finisher|workshop|make it lab|personalis\w*|interactive|interaktiv|receipt scan|belegscan|app|shop in shop|experience space|eventspace|point of sale|\bpos\b)\b/i;
 
 function hasTransferableMarketingSubstance(
   articleType: string,
@@ -1353,7 +1354,7 @@ function hasTransferableMarketingSubstance(
   // is not a transferable Marketing insight without a concrete mechanism,
   // audience insight, strategic rationale, test or measurable outcome.
   if (THIN_SPONSORSHIP_PATTERN.test(article)
-      && !hasCustomerInsight && !hasDepth) return false;
+      && !hasCustomerInsight && !CONCRETE_ACTIVATION_PATTERN.test(combined)) return false;
 
   // Tactical discounts remain archive material unless the article proves a
   // broader pricing/customer strategy or contains an actual consumer insight.
@@ -1748,6 +1749,13 @@ function validateClassification(
       && titleDe && !NON_RELEVANT_ARTICLE_TYPES.has(articleType) && rejectionReasons.length === 0) {
     status = "reliable";
   }
+  const stronglySupportedSalesSignal = hasSalesSignal && routingDecisions.sales.eligible
+    && salesUse.actionable && salesTriggers.length > 0;
+  // "Reliable" is an output state, not merely a model confidence label. A
+  // reliable article must be eligible for at least one visible route.
+  if (status === "reliable" && !marketingHasSubstance && !stronglySupportedSalesSignal) {
+    status = "uncertain";
+  }
   return {
     ...raw,
     relevance_status: status,
@@ -1810,10 +1818,13 @@ async function tagArticle(
         .gte("published_at", from).lte("published_at", to).limit(100);
       const currentHeadline = canonicalHeadline(title);
       const match = (candidates || []).find((candidate: { id: string; title?: string; title_de?: string }) => {
-        const candidateHeadline = canonicalHeadline(candidate.title || candidate.title_de || "");
-        if (currentHeadline.length >= 12 && currentHeadline === candidateHeadline) return true;
-        const similarity = tokenSimilarity(title, candidate.title || candidate.title_de || "");
-        return similarity.shared >= 5 && similarity.score >= 0.86;
+        const candidateHeadlines = [candidate.title, candidate.title_de].filter(Boolean) as string[];
+        return candidateHeadlines.some((candidateTitle) => {
+          const candidateHeadline = canonicalHeadline(candidateTitle);
+          if (currentHeadline.length >= 12 && currentHeadline === candidateHeadline) return true;
+          const similarity = tokenSimilarity(title, candidateTitle);
+          return similarity.shared >= 5 && similarity.score >= 0.86;
+        });
       });
       titleDuplicate = match ? { id: match.id } : null;
     }
