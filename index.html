@@ -143,6 +143,12 @@
   .crawl-trigger-wrap:has(.crawl-dropdown.show) .crawl-status-popover { opacity: 0; visibility: hidden; }
   .crawl-status-kicker { display: block; margin-bottom: 4px; color: var(--brand); font-size: .64rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
   .crawl-status-popover strong { display: block; color: var(--ink); font-size: .78rem; line-height: 1.4; }
+  .backfill-status { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
+  .backfill-status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .68rem; }
+  .backfill-status-row b { color: var(--ink); font-size: .68rem; }
+  .backfill-progress-track { height: 5px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: var(--status-bg); }
+  .backfill-progress-track span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--brand); transition: width .25s ease; }
+  .backfill-status small { display: block; margin-top: 5px; color: var(--muted); font-size: .63rem; line-height: 1.35; }
   .crawl-status-hint { display: block; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--line); color: var(--muted); font-size: .68rem; }
   .crawl-dropdown {
     display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 300px;
@@ -468,6 +474,11 @@
             <div class="crawl-status-popover" role="status">
               <span class="crawl-status-kicker">Letzter Crawl</span>
               <strong id="last-run-text">Wird geladen…</strong>
+              <div class="backfill-status" id="backfill-status">
+                <div class="backfill-status-row"><span>Artikelprüfung</span><b id="backfill-progress-text">Wird geladen…</b></div>
+                <div class="backfill-progress-track"><span id="backfill-progress-bar"></span></div>
+                <small id="backfill-progress-detail"></small>
+              </div>
               <span class="crawl-status-hint">Klicken, um Quellen auszuwählen</span>
             </div>
             <div class="crawl-dropdown" id="crawl-dropdown">

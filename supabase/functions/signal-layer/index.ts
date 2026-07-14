@@ -122,6 +122,7 @@ interface CrawlCandidate {
   url: string;
   title?: string;
   publishedAt?: string | null;
+  hasConfirmedPublishDate?: boolean;
 }
 
 type SourceType = "editorial" | "corporate_newsroom" | "event" | "social";
@@ -395,9 +396,9 @@ async function fetchRssArticles(feedUrl: string, sinceDate: Date): Promise<Crawl
       const url = linkMatch?.[1];
       if (!url) continue;
       const title = extractTag(entry, "title") || undefined;
-      const published = extractTag(entry, "published") || extractTag(entry, "updated");
+      const published = extractTag(entry, "published");
       if (published && new Date(published) < sinceDate) continue;
-      items.push({ url, title, publishedAt: published });
+      items.push({ url, title, publishedAt: published, hasConfirmedPublishDate: Boolean(published) });
     }
   } else {
     const entries = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
@@ -407,7 +408,7 @@ async function fetchRssArticles(feedUrl: string, sinceDate: Date): Promise<Crawl
       const title = extractTag(entry, "title") || undefined;
       const pubDate = extractTag(entry, "pubDate") || extractTag(entry, "dc:date");
       if (pubDate && new Date(pubDate) < sinceDate) continue;
-      items.push({ url, title, publishedAt: pubDate });
+      items.push({ url, title, publishedAt: pubDate, hasConfirmedPublishDate: Boolean(pubDate) });
     }
   }
   return items;
@@ -443,7 +444,7 @@ async function fetchSitemapArticles(sitemapUrl: string, sinceDate: Date, depth =
     // Skip obvious non-article URLs (homepage/root, pure category listings).
     const path = new URL(url).pathname;
     if (path === "/" || path.split("/").filter(Boolean).length < 1) continue;
-    items.push({ url, publishedAt: lastmod });
+    items.push({ url, publishedAt: lastmod, hasConfirmedPublishDate: false });
   }
   return items;
 }
@@ -459,30 +460,42 @@ function extractPublishedDate(html: string, url: string): string | null {
   const patterns = [
     /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/i,
     /"datePublished"\s*:\s*"([^"]+)"/i,
-    /<meta[^>]+name=["']date["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+name=["']publish-date["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+name=["']publish_date["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+name=["']sailthru\.date["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+property=["']og:article:published_time["'][^>]+content=["']([^"']+)["']/i,
-    /<time[^>]+datetime=["']([^"']+)["']/i,
-    /<meta[^>]+property=["']article:modified_time["'][^>]+content=["']([^"']+)["']/i,
-    /"dateModified"\s*:\s*"([^"]+)"/i,
   ];
   for (const pattern of patterns) {
     const m = html.match(pattern);
     if (m?.[1]) {
       const d = new Date(m[1]);
-      if (!isNaN(d.getTime())) return m[1];
+      if (!isNaN(d.getTime()) && d.getUTCFullYear() >= 1990
+          && d <= new Date(Date.now() + 24 * 60 * 60 * 1000)) return d.toISOString();
     }
+  }
+  const visibleText = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 1800);
+  const visibleDate = visibleText.match(/(?:^|\D)([0-3]?\d)[.\/-]([01]?\d)[.\/-](20\d{2})(?:\D|$)/);
+  if (visibleDate) {
+    const day = Number(visibleDate[1]);
+    const month = Number(visibleDate[2]);
+    const year = Number(visibleDate[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+        && date <= new Date(Date.now() + 24 * 60 * 60 * 1000)) return date.toISOString();
   }
   // Last resort: a /YYYY/MM/DD/ date pattern baked into the URL itself
   // (common WordPress/CMS permalink structure).
   const urlDateMatch = url.match(/\/(20\d{2})\/(\d{2})\/(\d{2})(?:\/|$)/);
   if (urlDateMatch) {
     const iso = `${urlDateMatch[1]}-${urlDateMatch[2]}-${urlDateMatch[3]}`;
-    if (!isNaN(new Date(iso).getTime())) return iso;
+    const date = new Date(iso);
+    if (!isNaN(date.getTime()) && date <= new Date(Date.now() + 24 * 60 * 60 * 1000)) return iso;
   }
   return null;
 }
@@ -602,7 +615,7 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date, policy: C
     .filter((it) => isAllowedBySourcePolicy(it.url, policy))
     .filter((it) => !it.publishedAt || new Date(it.publishedAt) >= sinceDate)
     .slice(0, policy.maxCandidates)
-    .map((it) => ({ url: it.url, title: it.title, publishedAt: it.publishedAt }));
+    .map((it) => ({ url: it.url, title: it.title, publishedAt: it.publishedAt, hasConfirmedPublishDate: Boolean(it.publishedAt) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -1710,7 +1723,8 @@ Deno.serve(async (req: Request) => {
             // we keep the article rather than silently drop it — it's tagged
             // as dateless (published_at stays null) so it's visibly flagged
             // as unverified in the DB/UI instead of pretending it's fresh.
-            const resolvedPublishedAt = fetched.publishedAt || candidate.publishedAt || null;
+            const resolvedPublishedAt = fetched.publishedAt
+              || (candidate.hasConfirmedPublishDate ? candidate.publishedAt : null) || null;
             if (resolvedPublishedAt && new Date(resolvedPublishedAt) < sinceDate) continue;
 
             const { data: inserted, error: insertErr } = await admin.schema("signal_layer").from("articles")
@@ -1804,12 +1818,16 @@ Deno.serve(async (req: Request) => {
       case "list_findings": {
         const { track, limit } = body as { track?: string; limit?: number };
         const admin = getAdminClient();
+        const cutoff = new Date();
+        cutoff.setUTCMonth(cutoff.getUTCMonth() - 6);
+        const fetchLimit = Math.min(Math.max((limit || 50) * 5, 50), 250);
         let query = admin.schema("signal_layer").from("findings")
           .select("*, article:articles!inner(id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category))")
-          // Keep the untouched historical inventory visible until the user
-          // explicitly approves its backfill; new articles must be reliable.
-          .in("article.classification_status", ["reliable", "legacy"])
-          .order("created_at", { ascending: false }).limit(limit || 50);
+          .eq("article.classification_status", "reliable")
+          .not("article.published_at", "is", null)
+          .gte("article.published_at", cutoff.toISOString())
+          .lte("article.published_at", new Date().toISOString())
+          .order("created_at", { ascending: false }).limit(fetchLimit);
         if (track) query = query.eq("track", track);
         const { data, error } = await query;
         if (error) return errorResponse(origin, error.message, 500);
@@ -1820,6 +1838,9 @@ Deno.serve(async (req: Request) => {
         const { data: uncertain, error: uncertainError } = await admin.schema("signal_layer").from("articles")
           .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "uncertain")
+          .not("published_at", "is", null)
+          .gte("published_at", cutoff.toISOString())
+          .lte("published_at", new Date().toISOString())
           .order("classified_at", { ascending: false, nullsFirst: false })
           .limit(limit || 50);
         if (uncertainError) return errorResponse(origin, uncertainError.message, 500);
@@ -1836,7 +1857,20 @@ Deno.serve(async (req: Request) => {
           }];
           return [];
         });
-        return corsResponse(origin, { findings: [...(data || []), ...reviewFindings] });
+        const combined = [...(data || []), ...reviewFindings]
+          .sort((a: any, b: any) => Number(b.confidence || 0) - Number(a.confidence || 0));
+        const seenArticles = new Set<string>();
+        const seenEvents = new Set<string>();
+        const deduplicated = combined.filter((finding: any) => {
+          const article = finding.article || {};
+          const articleKey = String(article.id || "");
+          const eventKey = normalizeMatchText(String(article.event_cluster_key || ""));
+          if (!articleKey || seenArticles.has(articleKey) || (eventKey && seenEvents.has(eventKey))) return false;
+          seenArticles.add(articleKey);
+          if (eventKey) seenEvents.add(eventKey);
+          return true;
+        }).slice(0, limit || 50);
+        return corsResponse(origin, { findings: deduplicated });
       }
 
       case "list_review_articles": {
@@ -1872,6 +1906,27 @@ Deno.serve(async (req: Request) => {
           .eq("id", articleId).single();
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
         return corsResponse(origin, { article: data });
+      }
+
+      case "get_dashboard_status": {
+        const admin = getAdminClient();
+        const [{ data: crawl }, { data: backfill }] = await Promise.all([
+          admin.schema("signal_layer").from("crawl_runs").select("*")
+            .order("started_at", { ascending: false }).limit(1).maybeSingle(),
+          admin.schema("signal_layer").from("classification_backfill_runs").select("*")
+            .order("started_at", { ascending: false }).limit(1).maybeSingle(),
+        ]);
+        let backfillErrorCount = 0;
+        if (backfill?.started_at) {
+          const { count } = await admin.schema("signal_layer").from("articles")
+            .select("id", { count: "exact", head: true })
+            .eq("classification_status", "error").gte("classified_at", backfill.started_at);
+          backfillErrorCount = count || 0;
+        }
+        return corsResponse(origin, {
+          crawl_run: crawl || null,
+          backfill_run: backfill ? { ...backfill, error_count: backfillErrorCount } : null,
+        });
       }
 
       // Backend-side visibility into how many crawled articles could NOT be

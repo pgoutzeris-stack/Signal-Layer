@@ -185,6 +185,9 @@ function cacheEls() {
   els.crawlCategoryList = document.getElementById("crawl-category-list");
   els.btnCrawlConfirm = document.getElementById("btn-crawl-confirm");
   els.lastRunText = document.getElementById("last-run-text");
+  els.backfillProgressText = document.getElementById("backfill-progress-text");
+  els.backfillProgressBar = document.getElementById("backfill-progress-bar");
+  els.backfillProgressDetail = document.getElementById("backfill-progress-detail");
 
   els.findingsListMarketing = document.getElementById("findings-list-marketing");
   els.findingsListSales = document.getElementById("findings-list-sales");
@@ -779,12 +782,26 @@ const STATUS_LABEL = { queued: "eingereiht", running: "läuft", done: "abgeschlo
 
 async function loadLastRun() {
   try {
-    const { crawl_runs } = await callApi("list_crawl_runs");
-    const last = (crawl_runs || [])[0];
+    const { crawl_run: last, backfill_run: backfill } = await callApi("get_dashboard_status");
     if (!last) { els.lastRunText.textContent = "Noch kein Crawl-Lauf."; return; }
     const trigger = last.trigger_type === "scheduled" ? "automatisch (6 Uhr)" : "manuell";
     els.lastRunText.textContent =
       `Letzter Crawl: ${formatRelativeTime(last.started_at)} · ${trigger} · Status: ${STATUS_LABEL[last.status] || last.status}`;
+    if (backfill) {
+      const total = Number(backfill.total_count || 0);
+      const processed = Number(backfill.processed_count || 0);
+      const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 100;
+      els.backfillProgressText.textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")}`;
+      els.backfillProgressBar.style.width = `${percent}%`;
+      const status = backfill.status === "done" ? "Abgeschlossen" : backfill.status === "error" ? "Fehler" : "Läuft";
+      const errors = Number(backfill.error_count || 0);
+      els.backfillProgressDetail.textContent = errors > 0
+        ? `${status} · ${errors.toLocaleString("de-DE")} API-Fehler · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`
+        : `${status} · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`;
+    } else {
+      els.backfillProgressText.textContent = "Kein Lauf";
+      els.backfillProgressDetail.textContent = "Aktuell werden keine Altartikel geprüft.";
+    }
   } catch {
     els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
   }
