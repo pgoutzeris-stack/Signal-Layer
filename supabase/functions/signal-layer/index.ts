@@ -486,6 +486,19 @@ function extractTag(block: string, tag: string): string | null {
   return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
 }
 
+function rssText(value: string | null): string {
+  return String(value || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function fetchRssArticles(feedUrl: string): Promise<CrawlCandidate[]> {
   const res = await fetchWithTimeout(feedUrl);
   if (!res.ok) return [];
@@ -501,7 +514,8 @@ async function fetchRssArticles(feedUrl: string): Promise<CrawlCandidate[]> {
       if (!url) continue;
       const title = extractTag(entry, "title") || undefined;
       const published = extractTag(entry, "published");
-      items.push({ url, title, publishedAt: published, hasConfirmedPublishDate: Boolean(published) });
+      const content = rssText(extractTag(entry, "content") || extractTag(entry, "summary"));
+      items.push({ url, title, content, excerpt: content.slice(0, 500), publishedAt: published, hasConfirmedPublishDate: Boolean(published) });
     }
   } else {
     const entries = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
@@ -510,7 +524,8 @@ async function fetchRssArticles(feedUrl: string): Promise<CrawlCandidate[]> {
       if (!url) continue;
       const title = extractTag(entry, "title") || undefined;
       const pubDate = extractTag(entry, "pubDate") || extractTag(entry, "dc:date");
-      items.push({ url, title, publishedAt: pubDate, hasConfirmedPublishDate: Boolean(pubDate) });
+      const content = rssText(extractTag(entry, "content:encoded") || extractTag(entry, "description"));
+      items.push({ url, title, content, excerpt: content.slice(0, 500), publishedAt: pubDate, hasConfirmedPublishDate: Boolean(pubDate) });
     }
   }
   return items;
@@ -646,13 +661,16 @@ async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Prom
 
   const pageFunction = `
     async function pageFunction(context) {
-      const { request, $, log } = context;
+      const { request, log } = context;
+      const $ = context.jQuery || context.$;
+      if (!$) throw new Error('Apify Web Scraper jQuery injection is unavailable');
       const blocked = ${JSON.stringify(NON_EDITORIAL_URL_PARTS)};
       const eventBlocked = ${JSON.stringify(EVENT_NON_EDITORIAL_URL_PARTS)};
       const editorialPaths = ${JSON.stringify(EDITORIAL_PATH_PARTS)};
       const eventMode = ${JSON.stringify(policy.sourceType === "event")};
       const corporateMode = ${JSON.stringify(policy.sourceType === "corporate_newsroom")};
       const entryPath = ${JSON.stringify(policy.entryPath.replace(/\/$/, ""))};
+      const maxDepth = ${JSON.stringify(policy.maxDepth)};
       const allowed = (raw) => {
         try {
           const parsed = new URL(raw);
@@ -681,7 +699,17 @@ async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Prom
         $('meta[property="og:type"]').attr('content') === 'article' ||
         isMarkenartikelDetail
       );
-      if (request.userData.label === 'ARTICLE' || isArticle) {
+      const parsedRequest = new URL(request.url);
+      const pathParts = parsedRequest.pathname.split('/').filter(Boolean);
+      const lastPart = (pathParts[pathParts.length - 1] || '').toLowerCase();
+      const genericLastParts = ['news', 'blog', 'presse', 'press', 'insights', 'magazin', 'magazine', 'artikel', 'articles', 'stories'];
+      const hasDetailQuery = [...parsedRequest.searchParams.keys()].some((key) => /^(id|nr|article|story|newsid)$/i.test(key));
+      const hasDatedPath = /\\/20\\d{2}\\/(?:0?[1-9]|1[0-2])\\//.test(parsedRequest.pathname);
+      const hasArticlePath = pathParts.length >= 2 && !genericLastParts.includes(lastPart) && (lastPart.length >= 12 || hasDetailQuery || hasDatedPath);
+      const articleNode = $('article').first();
+      const hasArticleStructure = $('h1').length === 1 && articleNode.length === 1 && articleNode.text().replace(/\\s+/g, ' ').trim().length >= 300;
+      const shouldExtract = isArticle || (request.userData.label === 'CANDIDATE' && (hasArticlePath || hasArticleStructure));
+      if (shouldExtract) {
         const title = $('meta[property="og:title"]').attr('content') || $('h1').first().text() || $('title').text() || '';
         const excerpt = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || '';
         const published = $('meta[property="article:published_time"]').attr('content')
@@ -694,7 +722,10 @@ async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Prom
         const content = contentRoot.text().replace(/\\s+/g, ' ').trim().slice(0, 12000);
         return { url: request.url, title: title.trim(), excerpt: excerpt.trim(), content, publishedAt: published, isArticle: true };
       }
-      // Listing/homepage: enqueue same-domain links as candidate articles.
+      // Listing pages are revisited on every run; only concrete candidate
+      // URLs are later deduplicated against the articles table.
+      const depth = Number(request.userData.depth || 0);
+      if (depth >= maxDepth) return { url: request.url, isArticle: false };
       const links = new Set();
       $('a[href]').each((_, el) => {
         const href = $(el).attr('href');
@@ -704,7 +735,9 @@ async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Prom
           if (new URL(abs).hostname === new URL(request.url).hostname && allowed(abs)) links.add(abs);
         } catch {}
       });
-      await context.enqueueLinks({ urls: [...links].slice(0, 40), userData: { label: 'ARTICLE' } });
+      for (const url of [...links].slice(0, 40)) {
+        await context.enqueueRequest({ url, userData: { label: 'CANDIDATE', depth: depth + 1 } });
+      }
       return { url: request.url, isArticle: false };
     }
   `.trim();
@@ -715,8 +748,9 @@ async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Prom
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        startUrls: [{ url: sourceUrl }],
+        startUrls: [{ url: sourceUrl, userData: { label: "LISTING", depth: 0 } }],
         pageFunction,
+        injectJQuery: true,
         maxCrawlingDepth: policy.maxDepth,
         maxPagesPerCrawl: policy.maxPages,
         proxyConfiguration: { useApifyProxy: true },
@@ -2372,11 +2406,11 @@ Deno.serve(async (req: Request) => {
           const rejected: Record<string, number> = {};
 
           for (const candidate of batch) {
-            const apifyContent = String(candidate.content || "").trim();
-            const fetched = apifyContent.length >= 300
+            const suppliedContent = String(candidate.content || "").trim();
+            const fetched = suppliedContent.length >= 240
               ? {
                 title: String(candidate.title || "").trim(),
-                content: apifyContent.slice(0, 8000),
+                content: suppliedContent.slice(0, 8000),
                 excerpt: String(candidate.excerpt || "").trim(),
                 publishedAt: candidate.publishedAt || null,
               }
