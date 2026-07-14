@@ -2305,9 +2305,14 @@ Deno.serve(async (req: Request) => {
         // Without this guard an already queued self-call kept spawning the
         // next source even after operators had stopped the run.
         const { data: runState } = await admin.schema("signal_layer").from("crawl_runs")
-          .select("status").eq("id", crawl_run_id).single();
+          .select("status, current_index, current_offset").eq("id", crawl_run_id).single();
         if (!runState || !["queued", "running"].includes(runState.status)) {
           return corsResponse(origin, { ok: true, stopped: true });
+        }
+        const persistedIndex = Number(runState.current_index || 0);
+        const persistedOffset = Number(runState.current_offset || 0);
+        if (persistedIndex > index || (persistedIndex === index && persistedOffset > candidate_offset)) {
+          return corsResponse(origin, { ok: true, stopped: true, reason: "stale_crawl_hop" });
         }
 
         // Persist the resume point at the START of every hop (not just on
@@ -2397,11 +2402,15 @@ Deno.serve(async (req: Request) => {
           const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
             .select("url").eq("source_id", source.id);
           const knownUrls = new Set((existingArticles || []).map((a: { url: string }) => a.url));
-          const freshCandidates = candidates
-            .filter((c) => !isLikelyNonEditorialUrl(c.url))
+          // Keep the cursor on the stable provider result. Applying the
+          // offset after removing newly inserted URLs shrinks the list on
+          // every hop and silently skips candidates.
+          const candidatePool = candidates.filter((c) => !isLikelyNonEditorialUrl(c.url));
+          const freshCandidateCount = candidatePool.filter((c) => !knownUrls.has(c.url)).length;
+          const effectiveBatchSize = feedType === "apify" ? 3 : ARTICLE_BATCH_SIZE;
+          const batch = candidatePool
+            .slice(candidate_offset, candidate_offset + effectiveBatchSize)
             .filter((c) => !knownUrls.has(c.url));
-
-          const batch = freshCandidates.slice(candidate_offset, candidate_offset + ARTICLE_BATCH_SIZE);
           let insertedCount = 0;
           const rejected: Record<string, number> = {};
 
@@ -2449,16 +2458,16 @@ Deno.serve(async (req: Request) => {
             );
           }
 
-          if (candidate_offset + ARTICLE_BATCH_SIZE < freshCandidates.length) {
+          if (candidate_offset + effectiveBatchSize < candidatePool.length) {
             // More articles left for this same source — continue the batch.
             nextIndex = index;
-            nextOffset = candidate_offset + ARTICLE_BATCH_SIZE;
+            nextOffset = candidate_offset + effectiveBatchSize;
           } else {
             // This source is fully done — move to the next one.
             await admin.schema("signal_layer").from("sources")
               .update({
                 last_crawled_at: new Date().toISOString(), last_successful_at: new Date().toISOString(),
-                last_error: null, last_candidate_count: freshCandidates.length, last_inserted_count: insertedCount,
+                last_error: null, last_candidate_count: freshCandidateCount, last_inserted_count: insertedCount,
               }).eq("id", source.id);
             nextIndex = index + 1;
             nextOffset = 0;
@@ -2466,7 +2475,7 @@ Deno.serve(async (req: Request) => {
           if (attemptId) await admin.schema("signal_layer").from("source_crawl_attempts").update({
             status: candidates.length ? "success" : "empty", provider_run_id: providerRunId,
             http_status: providerHttpStatus, discovered_count: discoveredCount,
-            candidate_count: freshCandidates.length, rejected_count: Object.values(rejected).reduce((sum, value) => sum + value, 0),
+            candidate_count: freshCandidateCount, rejected_count: Object.values(rejected).reduce((sum, value) => sum + value, 0),
             inserted_count: insertedCount, rejection_breakdown: rejected,
             finished_at: new Date().toISOString(), duration_ms: Date.now() - attemptStartedAt,
           }).eq("id", attemptId);
@@ -2508,10 +2517,9 @@ Deno.serve(async (req: Request) => {
       case "resume_stalled_crawls": {
         if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
         // Apify's synchronous browser crawl may legitimately run for up to
-        // 185 seconds. A 90-second watchdog created overlapping retries for
-        // slow JavaScript-heavy sources such as OMR. Leave enough headroom
-        // for the provider timeout plus persistence and classification work.
-        const WATCHDOG_STALL_SECONDS = 240;
+        // 185 seconds. Leave enough headroom for provider work plus the
+        // current Gemini batch before treating a source as truly stalled.
+        const WATCHDOG_STALL_SECONDS = 360;
         const admin = getAdminClient();
         const cutoff = new Date(Date.now() - WATCHDOG_STALL_SECONDS * 1000).toISOString();
 
@@ -2523,6 +2531,32 @@ Deno.serve(async (req: Request) => {
 
         const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
         for (const run of stalled || []) {
+          const sourceIds = Array.isArray(run.source_ids) ? run.source_ids as string[] : [];
+          const currentIndex = Math.max(0, Number(run.current_index || 0));
+          const currentSourceId = sourceIds[currentIndex] || null;
+          let resumeIndex = currentIndex;
+          let resumeOffset = Number(run.current_offset || 0);
+
+          if (currentSourceId) {
+            const { data: timedOutAttempts } = await admin.schema("signal_layer").from("source_crawl_attempts")
+              .select("id").eq("crawl_run_id", run.id).eq("source_id", currentSourceId)
+              .eq("status", "running").lt("started_at", cutoff);
+            if ((timedOutAttempts || []).length > 0) {
+              const timeoutMessage = `Quelle nach ${WATCHDOG_STALL_SECONDS} Sekunden ohne Fortschritt übersprungen.`;
+              await admin.schema("signal_layer").from("source_crawl_attempts").update({
+                status: "error", error_code: "source_timeout", error_message: timeoutMessage,
+                finished_at: new Date().toISOString(), duration_ms: WATCHDOG_STALL_SECONDS * 1000,
+              }).in("id", (timedOutAttempts || []).map((attempt: { id: string }) => attempt.id));
+              await admin.schema("signal_layer").from("sources").update({
+                last_error: timeoutMessage, last_attempted_at: new Date().toISOString(),
+              }).eq("id", currentSourceId);
+              resumeIndex = currentIndex + 1;
+              resumeOffset = 0;
+              await admin.schema("signal_layer").from("crawl_runs").update({
+                current_index: resumeIndex, current_offset: 0, last_progress_at: new Date().toISOString(),
+              }).eq("id", run.id).eq("status", "running");
+            }
+          }
           fetch(selfUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
@@ -2530,8 +2564,8 @@ Deno.serve(async (req: Request) => {
               action: "process_crawl",
               crawl_run_id: run.id,
               source_ids: run.source_ids,
-              index: run.current_index,
-              candidate_offset: run.current_offset,
+              index: resumeIndex,
+              candidate_offset: resumeOffset,
             }),
           }).catch((e) => console.error(`Watchdog: failed to resume crawl_run ${run.id}:`, e));
         }
