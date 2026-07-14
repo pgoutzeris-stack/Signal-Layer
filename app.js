@@ -1036,7 +1036,7 @@ function renderFindings(track) {
 async function loadFindings(track) {
   const listEl = track === "marketing" ? els.findingsListMarketing : els.findingsListSales;
   try {
-    const { findings } = await callApi("list_findings", { track, limit: 50 });
+    const { findings } = await callApi("list_findings", { track, limit: 250 });
     findingsByTrack[track] = findings || [];
     refreshSignalSourceOptions();
     renderFindings(track === "marketing" ? "sales" : "marketing");
