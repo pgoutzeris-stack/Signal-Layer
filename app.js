@@ -1391,6 +1391,12 @@ function renderSources() {
   els.sourceTableBody.innerHTML = list.map((s) => {
     const loginRequired = Boolean(s.crawl_config?.login_required);
     const loginConfigured = Boolean(s.crawl_config?.login_configured_at);
+    const storedArticles = Number(s.stored_article_count || 0);
+    const crawlHealth = s.last_attempted_at === null ? "Noch nie gecrawlt"
+      : storedArticles === 0 ? "Keine Artikel gespeichert"
+      : `${storedArticles.toLocaleString("de-DE")} gespeichert`;
+    const crawlHealthClass = s.last_attempted_at === null ? "quality-tag--pending"
+      : storedArticles === 0 ? "quality-tag--error" : "quality-tag--reliable";
     return `
     <tr data-id="${s.id}" class="${s.active ? "" : "source-row--inactive"}">
       <td>
@@ -1400,9 +1406,9 @@ function renderSources() {
       <td><a href="${escapeHtml(s.url)}" class="source-url"><i class="ri-external-link-line"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
       <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}${loginRequired ? `<span class="source-login-badge ${loginConfigured ? "source-login-badge--configured" : ""}"><i class="ri-lock-2-line"></i> Login nötig</span>` : ""}</td>
       <td title="${escapeHtml(s.last_error || "")}">
-        <span class="quality-tag ${s.last_error ? "quality-tag--error" : s.last_successful_at ? "quality-tag--reliable" : "quality-tag--pending"}">
-          <i class="ri-${s.last_error ? "alert-line" : s.last_successful_at ? "check-line" : "time-line"}"></i>
-          ${s.last_error ? "Fehler" : s.last_successful_at ? `${Number(s.last_inserted_count || 0)} neu` : "Offen"}
+        <span class="quality-tag ${s.last_error ? "quality-tag--error" : crawlHealthClass}">
+          <i class="ri-${s.last_error ? "alert-line" : storedArticles === 0 ? "search-eye-line" : "check-line"}"></i>
+          ${s.last_error ? "Fehler" : crawlHealth}
         </span>
       </td>
       <td>

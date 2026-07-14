@@ -1991,7 +1991,18 @@ Deno.serve(async (req: Request) => {
         const { data, error } = await admin.schema("signal_layer").from("sources")
           .select("*").order("category", { ascending: true }).order("company", { ascending: true });
         if (error) return errorResponse(origin, error.message, 500);
-        return corsResponse(origin, { sources: data || [] });
+        const { data: articleSources, error: articleSourcesError } = await admin.schema("signal_layer").from("articles")
+          .select("source_id").not("source_id", "is", null);
+        if (articleSourcesError) return errorResponse(origin, articleSourcesError.message, 500);
+        const articleCountBySource = (articleSources || []).reduce((counts: Record<string, number>, row: { source_id: string | null }) => {
+          if (row.source_id) counts[row.source_id] = (counts[row.source_id] || 0) + 1;
+          return counts;
+        }, {});
+        const sources = (data || []).map((source: Record<string, unknown>) => ({
+          ...source,
+          stored_article_count: articleCountBySource[String(source.id)] || 0,
+        }));
+        return corsResponse(origin, { sources });
       }
 
       case "add_source": {
