@@ -956,7 +956,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-3.5-flash";
 const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.7";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.8";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -1067,18 +1067,20 @@ const SALES_TRIGGER_IDS = [
   "acquisition", "merger", "market_entry", "market_expansion", "investment",
   "restructuring", "portfolio_change", "transformation", "rebranding",
   "campaign_launch", "agency_change", "ai_initiative", "retail_strategy",
-  "new_business_model", "event_participation",
+  "new_business_model", "event_participation", "marketing_problem",
 ] as const;
 
 const SALES_TRIGGERS_REQUIRING_ROOTS_CONTEXT = new Set([
   "acquisition", "merger", "market_entry", "market_expansion", "investment",
   "restructuring", "portfolio_change", "rebranding", "campaign_launch",
-  "event_participation",
+  "event_participation", "marketing_problem",
 ]);
 
 const ROOTS_SALES_CONTEXT_PATTERN = /\b(agency|agentur|consult\w*|beratung|advis\w*|partner(?:ship)?|partnerschaft|pitch|tender|ausschreibung|mandat|budget|marketing (?:organi[sz]ation|operating model|transformation|strateg\w*|capabilit\w*|technolog\w*)|marketingorgani[sz]ation|marketingtransformation|marketingstrateg\w*|martech|customer insights?|consumer insights?|shopper insights?|retail media|category management|brand (?:strateg\w*|position\w*|transform\w*|architecture)|markenstrateg\w*|markenpositionier\w*|markentransform\w*|markenarchitektur|customer journey|kundenerlebnis|target group|zielgruppe|operating model|organisationsmodell|capabilit\w*|kompetenzaufbau)\b/i;
 
 const OPERATIONAL_ONLY_PATTERN = /\b(factory|factories|plant|production|manufactur\w*|filling|packaging|warehouse|logistics|machinery|machine|facility|facilities|site|sites|fabrik\w*|werk(?:e|en)?|produktions\w*|herstell\w*|abfull\w*|abfuell\w*|verpackung\w*|lager\w*|logistik\w*|maschine\w*|betriebsstatte\w*|standort\w*)\b/i;
+const EXPLICIT_MARKETING_PROBLEM_PATTERN = /\b(problem\w*|challenge\w*|herausforderung\w*|declin\w*|ruckgang\w*|verlust\w*|stagn\w*|verfehl\w*|scheiter\w*|ineffiz\w*|fragment\w*|silo\w*|mangel\w*|lucke\w*|risiko\w*|akzeptanzproblem\w*|vertrauensverlust\w*|relevanzverlust\w*|kostendruck\w*|wettbewerbsdruck\w*|konsumzuruckhaltung\w*)\b/i;
+const RESOLVED_PROBLEM_PATTERN = /\b(fully resolved|completely resolved|problem solved|challenge solved|vollstandig gelost|abschliessend gelost|bereits behoben|successfully completed|erfolgreich abgeschlossen)\b/i;
 type AiSalesTrigger = { id: string; confidence: number; evidence: string };
 type AiRouteDecision = { eligible: boolean; confidence: number; evidence: string; reason: string };
 type AiMarketingUse = { publishable: boolean; transferable_value: string; sufficient_substance: boolean; evidence: string };
@@ -1592,6 +1594,7 @@ Territories:
 Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Company news that cannot teach a broader audience anything is not Marketing. It still needs direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, or AI with a concrete marketing/customer/retail/brand application. sub_branchen_insight alone NEVER qualifies Marketing. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing evidence exists.
 sub_branchen_insight is valid only for a transferable market observation that remains useful beyond the reported company event. A single acquisition, product, expansion, financial result or facility is not transferable.
 Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. A company mention or generic strategic change alone is insufficient. For sources in category "Events & Messen", event_participation is only a candidate trigger; it still needs an actionable company challenge and sufficient company-specific substance. Attendee lists, speaker directories, schedules, navigation and a name merely appearing somewhere on the same page are insufficient.
+marketing_problem is a valid Sales trigger when the article explicitly proves an unresolved or currently material marketing, brand, customer, consumer, loyalty, media, retail-media, category, positioning or customer-journey problem of a Tier-1 company. The evidenced problem itself supplies the trigger; a separate pitch, investment or transformation announcement is not required. Still require company-specific facts, a credible ROOTS contribution and personalization substance. Generic competitive pressure, sector-wide commentary, speculative criticism, weak performance without a marketing/customer connection, and problems described as fully resolved are not marketing_problem.
 Buying Center is downstream of Sales. Recommend one to four specific roles that would genuinely benefit from the proposed asset. A named person from the article is preferred when their responsibility fits; otherwise recommend roles and set research_required=true. A pure CEO/CMO appointment, press contact, testimonial or spokesperson is insufficient.
 Sales is not a synonym for Marketing. A campaign_launch alone is NEVER a Sales signal. General product launches, portfolio news, sponsorships, testimonials and campaign execution remain Marketing unless the article separately proves a concrete strategic change or commercial need relevant to ROOTS. Investment qualifies only when it concerns marketing, brand, customer/consumer insights, retail media, category management, marketing technology, capabilities or an external partner/agency/consulting mandate. Investment in factories, filling, packaging, machinery, production, logistics, buildings or other operational infrastructure is not a ROOTS Sales signal. Require verbatim Sales evidence for the strategic change, buying need, mandate, budget, tender, partner search or ROOTS-relevant capability build. The same strategic passage may support Marketing and Sales only when all additional Sales substance requirements are independently fulfilled.
 Marketing and Sales are evaluated independently. Missing Tier-1 status, a missing Sales trigger or an ineligible Buying Center must NEVER make an otherwise evidence-backed Marketing result uncertain or rejected. Put route-specific failures only into routing_decisions.sales.reason, not into the article-level rejection_reasons array. Article-level rejection_reasons are reserved for reasons that invalidate every route.
@@ -1683,6 +1686,18 @@ function validateClassification(
     const matchedLabel = [candidate.name, ...(candidate.aliases || [])]
       .find((label) => containsMatchTerm(articleText, label)) || candidate.name;
     companies.push({ name: candidate.name, role: "affected_party", confidence: 1, evidence: matchedLabel });
+  }
+  const normalizedProblemEvidence = normalizeMatchText(salesUse.evidence);
+  const hasExplicitMarketingProblem = EXPLICIT_MARKETING_PROBLEM_PATTERN.test(normalizedProblemEvidence)
+    && ROOTS_SALES_CONTEXT_PATTERN.test(normalizedProblemEvidence)
+    && !RESOLVED_PROBLEM_PATTERN.test(normalizedProblemEvidence);
+  if (salesUse.actionable && companies.some((company) => company.role !== "incidental_mention")
+      && hasExplicitMarketingProblem && !salesTriggers.some((trigger) => trigger.id === "marketing_problem")) {
+    salesTriggers.push({
+      id: "marketing_problem",
+      confidence: Math.max(config.quality.sales_trigger_confidence, 0.9),
+      evidence: salesUse.evidence,
+    });
   }
   const buyingCenter: AiBuyingCenter = {
     recommended_roles: (Array.isArray(raw.buying_center?.recommended_roles) ? raw.buying_center.recommended_roles : [])
