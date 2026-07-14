@@ -907,7 +907,7 @@ function formatConfidence(value) {
 
 function formatFindingDate(iso) {
   if (!iso) return `<span class="finding-date-tag finding-date-tag--missing">Ohne Datum</span>`;
-  const dateStr = new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "short" });
+  const dateStr = new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric" });
   return `<span class="finding-date-tag">${dateStr}</span>`;
 }
 
@@ -938,6 +938,11 @@ function findingDate(finding) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function findingApprovedAt(finding) {
+  const timestamp = new Date(finding.article?.classified_at || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function findingSourceName(finding) {
   const source = finding.article?.source;
   const resolved = Array.isArray(source) ? source[0] : source;
@@ -965,10 +970,14 @@ function visibleFindings(track) {
   return [...filtered].sort((a, b) => {
     if (signalViewState.sort === "newest") return findingDate(b) - findingDate(a) || findingConfidence(b) - findingConfidence(a);
     if (signalViewState.sort === "confidence") return findingConfidence(b) - findingConfidence(a) || findingDate(b) - findingDate(a);
+    const newA = isToday(a.article?.classified_at) ? 1 : 0;
+    const newB = isToday(b.article?.classified_at) ? 1 : 0;
+    if (newB !== newA) return newB - newA;
     const statusRank = { reliable: 2, uncertain: 1, legacy: 0 };
     const rankA = statusRank[a.article?.classification_status] ?? 0;
     const rankB = statusRank[b.article?.classification_status] ?? 0;
-    return rankB - rankA || findingConfidence(b) - findingConfidence(a) || findingDate(b) - findingDate(a);
+    return rankB - rankA || findingConfidence(b) - findingConfidence(a)
+      || findingApprovedAt(b) - findingApprovedAt(a) || findingDate(b) - findingDate(a);
   });
 }
 
