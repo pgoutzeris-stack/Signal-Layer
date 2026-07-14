@@ -411,9 +411,9 @@ function isLikelyNonEditorialPage(article: { title: string; content: string; exc
   return false;
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: ctrl.signal, headers: { "User-Agent": "ROOTS-SignalLayer/1.0", ...(init.headers || {}) } });
   } finally {
@@ -713,7 +713,8 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date, policy: C
         maxPagesPerCrawl: policy.maxPages,
         proxyConfiguration: { useApifyProxy: true },
       }),
-    }
+    },
+    185_000,
   );
   if (!runRes.ok) {
     // Surface this instead of silently returning [] — a misconfigured/
@@ -2143,12 +2144,17 @@ Deno.serve(async (req: Request) => {
       // caller gets an immediate response instead of waiting minutes.
       // ---------------------------------------------------------------
       case "run_crawl": {
-        const { scope } = body as { scope?: { categories?: string[] } };
+        const { scope } = body as { scope?: { categories?: string[]; source_ids?: string[] } };
         const admin = getAdminClient();
 
         let sourceQuery = admin.schema("signal_layer").from("sources").select("id").eq("active", true);
         if (scope?.categories && scope.categories.length > 0) {
           sourceQuery = sourceQuery.in("category", scope.categories);
+        }
+        if (scope?.source_ids && scope.source_ids.length > 0) {
+          // Keep targeted recovery runs bounded and only select active source
+          // IDs from the database; callers cannot inject arbitrary work.
+          sourceQuery = sourceQuery.in("id", scope.source_ids.slice(0, 200));
         }
         const { data: matchingSources, error: sourcesErr } = await sourceQuery;
         if (sourcesErr) return errorResponse(origin, sourcesErr.message, 500);
@@ -2202,6 +2208,15 @@ Deno.serve(async (req: Request) => {
 
         const admin = getAdminClient();
 
+        // A recovery run can be stopped by setting its status to done/failed.
+        // Without this guard an already queued self-call kept spawning the
+        // next source even after operators had stopped the run.
+        const { data: runState } = await admin.schema("signal_layer").from("crawl_runs")
+          .select("status").eq("id", crawl_run_id).single();
+        if (!runState || !["queued", "running"].includes(runState.status)) {
+          return corsResponse(origin, { ok: true, stopped: true });
+        }
+
         // Persist the resume point at the START of every hop (not just on
         // success) so the watchdog below always has an accurate "last known
         // point" to restart from, even if THIS invocation dies mid-way.
@@ -2234,12 +2249,17 @@ Deno.serve(async (req: Request) => {
             .select("name, aliases").eq("active", true);
           const crawlPolicy = getCrawlPolicy(source);
           const pipelineConfig = await getPipelineConfig();
-          if (source.source_type === "event") {
-            crawlPolicy.maxDepth = pipelineConfig.crawl.event_max_depth;
-            crawlPolicy.maxPages = pipelineConfig.crawl.event_max_pages;
-          } else {
-            crawlPolicy.maxDepth = pipelineConfig.crawl.default_max_depth;
-            crawlPolicy.maxPages = pipelineConfig.crawl.default_max_pages;
+          // Source-specific settings are the result of the source audit and
+          // must win over global defaults.
+          if (source.crawl_config?.max_depth == null) {
+            crawlPolicy.maxDepth = source.source_type === "event"
+              ? pipelineConfig.crawl.event_max_depth
+              : pipelineConfig.crawl.default_max_depth;
+          }
+          if (source.crawl_config?.max_pages == null) {
+            crawlPolicy.maxPages = source.source_type === "event"
+              ? pipelineConfig.crawl.event_max_pages
+              : pipelineConfig.crawl.default_max_pages;
           }
 
           // Discover + cache the feed type once per source.
