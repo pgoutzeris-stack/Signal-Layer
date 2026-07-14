@@ -1068,8 +1068,9 @@ function renderArchive() {
   els.archiveList.innerHTML = articles.map((article) => {
     const status = article.classification_status || "legacy";
     const source = Array.isArray(article.source) ? article.source[0] : article.source;
+    const isNew = isToday(article.classified_at);
     return `<article class="archive-item" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
-      <div class="finding-item-top"><span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "rejected" ? "filter-off-line" : status === "legacy" ? "history-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span>${formatFindingDate(article.published_at)}</div>
+      <div class="finding-item-top"><span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "rejected" ? "filter-off-line" : status === "legacy" ? "history-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span><div class="finding-top-tags">${isNew ? '<span class="finding-new-badge">NEU</span>' : ""}${formatFindingDate(article.published_at)}</div></div>
       <span class="finding-title">${escapeText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
       <p class="archive-reason"><i class="ri-information-line"></i><span>${escapeHtml(archiveExplanation(article))}</span></p>
       <div class="finding-meta">${source?.company ? `<span class="tag tag--source"><i class="ri-newspaper-line"></i>${escapeHtml(source.company)}</span>` : ""}${article.article_type ? `<span class="tag">${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}</div>

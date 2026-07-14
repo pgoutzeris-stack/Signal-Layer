@@ -2633,11 +2633,14 @@ Deno.serve(async (req: Request) => {
         archiveCutoff.setUTCMonth(archiveCutoff.getUTCMonth() - 3);
         let query = admin.schema("signal_layer").from("articles")
           .select("id, title, title_de, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, source:sources(company, url, category)", { count: "exact" })
+          .order("classified_at", { ascending: false, nullsFirst: false })
           .order("published_at", { ascending: false, nullsFirst: false })
           .range(safeOffset, safeOffset + safeLimit - 1);
         if (status === "legacy") query = query.in("classification_status", ["legacy", "pending"]);
+        else if (status === "rejected") query = query.eq("classification_status", "rejected");
+        else if (status === "error") query = query.eq("classification_status", "error");
         else if (status === "older") query = query.lt("published_at", archiveCutoff.toISOString());
-        else query = query.or(`classification_status.in.(legacy,pending),published_at.lt.${archiveCutoff.toISOString()}`);
+        else query = query.or(`classification_status.in.(legacy,pending,rejected,error),published_at.lt.${archiveCutoff.toISOString()}`);
         const { data, error, count } = await query;
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { articles: data || [], total: count || 0 });
