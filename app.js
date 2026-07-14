@@ -4,6 +4,8 @@ let sb = null;
 let sources = [];
 let appInitialized = false;
 let pipelineSettings = null;
+let pipelineStageDefinitions = [];
+const pipelineDrilldownState = { stageId: null, tabId: "flow" };
 
 const state = {
   search: "",
@@ -324,25 +326,52 @@ function lockedRule(title, description) {
   return `<div class="pipeline-locked-rule"><div><b>${escapeHtml(title)}</b><small>${escapeHtml(description)}</small></div><i class="ri-lock-line" title="Fest im Servercode"></i></div>`;
 }
 
-function pipelineStage({ id, number, icon, title, description, owners, tabs, open = false }) {
-  return `<details class="pipeline-stage" id="pipeline-stage-${id}" ${open ? "open" : ""}>
-    <summary class="pipeline-stage-summary">
-      <span class="pipeline-stage-number">${number}</span>
-      <div class="pipeline-stage-title"><h4><i class="${icon}"></i> ${title}</h4><p>${description}</p></div>
-      <div class="pipeline-stage-owners">${owners.map(pipelineOwner).join("")}</div>
-      <span class="pipeline-stage-chevron"><i class="ri-arrow-down-s-line"></i></span>
-    </summary>
-    <div class="pipeline-stage-body">
-      <div class="pipeline-stage-tabs" role="tablist">${tabs.map((tab, index) => `<button type="button" class="pipeline-stage-tab ${index === 0 ? "active" : ""}" data-stage-tab="${tab.id}" role="tab" aria-selected="${index === 0}"><i class="${tab.icon}"></i>${tab.label}</button>`).join("")}</div>
-      ${tabs.map((tab, index) => `<div class="pipeline-stage-panel ${index === 0 ? "active" : ""}" data-stage-panel="${tab.id}" role="tabpanel">${tab.content}</div>`).join("")}
+const PIPELINE_OVERVIEW_META = {
+  crawl: { label: "Quellen", summary: "RSS, Sitemap und Apify liefern neue Artikel.", hover: ["RSS wird zuerst geprüft", "Sitemap ergänzt Artikel-URLs", "Apify greift nur als Fallback"] },
+  prefilter: { label: "Vorfilter", summary: "Feste Regeln entfernen offensichtliches Rauschen.", hover: ["Entfernt Karriere, FAQ und Eventprogramme", "Prüft Mindestlänge und Fachsignal", "Stoppt Duplikate vor Gemini"] },
+  gemini: { label: "KI-Prüfung", summary: "Gemini bewertet Bedeutung, Themen und Belege.", hover: ["Versteht den inhaltlichen Zusammenhang", "Liefert Themen, Trigger und Textbelege", "Unsichere Fälle können ein Review erhalten"] },
+  validation: { label: "Validierung", summary: "Der Server kontrolliert Evidenz und Sicherheit.", hover: ["Prüft Belege im Originaltext", "Kontrolliert alle Schwellenwerte", "Vergibt zuverlässig, unsicher oder abgelehnt"] },
+  routing: { label: "Routing", summary: "Marketing, Sales und Buying Center werden getrennt vergeben.", hover: ["Marketing braucht direkte Evidenz", "Sales braucht Tier-1 und Trigger", "Buying Center braucht Person oder Rolle"] },
+};
+
+function renderPipelineDrilldown() {
+  const target = document.getElementById("pipeline-drilldown");
+  if (!target) return;
+  const stage = pipelineStageDefinitions.find((candidate) => candidate.id === pipelineDrilldownState.stageId);
+  if (!stage) {
+    target.hidden = true;
+    target.innerHTML = "";
+    return;
+  }
+  const stageIndex = pipelineStageDefinitions.indexOf(stage);
+  const tabIndex = Math.max(0, stage.tabs.findIndex((tab) => tab.id === pipelineDrilldownState.tabId));
+  const activeTab = stage.tabs[tabIndex] || stage.tabs[0];
+  pipelineDrilldownState.tabId = activeTab.id;
+  const previousStage = pipelineStageDefinitions[stageIndex - 1];
+  const nextStage = pipelineStageDefinitions[stageIndex + 1];
+  const nextDepth = stage.tabs[tabIndex + 1];
+  const depthDescriptions = {
+    flow: "Verstehe zuerst den Ablauf und was diese Station an die nächste übergibt.",
+    rules: "Sieh exakt, welche Regeln, Belege und Bedingungen geprüft werden.",
+    edit: "Ändere nur die Stellschrauben, die an dieser Station tatsächlich wirken.",
+  };
+  target.hidden = false;
+  target.innerHTML = `<div class="pipeline-drilldown-card">
+    <header class="pipeline-drilldown-head">
+      <div><div class="pipeline-breadcrumb"><span>Pipeline</span><i class="ri-arrow-right-s-line"></i><b>${stage.number} ${escapeHtml(PIPELINE_OVERVIEW_META[stage.id]?.label || "Ergebnis")}</b><i class="ri-arrow-right-s-line"></i><span>${escapeHtml(activeTab.label)}</span></div><div class="pipeline-drilldown-title"><span><i class="${stage.icon}"></i></span><div><h4>${escapeHtml(stage.title)}</h4><p>${escapeHtml(stage.description)}</p></div></div></div>
+      <div class="pipeline-drilldown-head-actions"><button type="button" class="pipeline-icon-btn" data-pipeline-stage-prev title="Vorherige Station" ${previousStage ? "" : "disabled"}><i class="ri-arrow-left-line"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-stage-next title="Nächste Station" ${nextStage ? "" : "disabled"}><i class="ri-arrow-right-line"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-detail-close title="Schließen"><i class="ri-close-line"></i></button></div>
+    </header>
+    <div class="pipeline-drilldown-body">
+      <nav class="pipeline-depth-nav" aria-label="Detailtiefe"><span>Schrittweise tiefer</span>${stage.tabs.map((tab, index) => `<button type="button" class="pipeline-depth-tab ${tab.id === activeTab.id ? "active" : ""}" data-pipeline-detail-tab="${tab.id}"><i class="${tab.icon}"></i><span><b>${index + 1}. ${escapeHtml(tab.label)}</b><small>${index === 0 ? "Ablauf verstehen" : index === 1 ? "Logik nachvollziehen" : "Stellschrauben ändern"}</small></span></button>`).join("")}</nav>
+      <main class="pipeline-depth-content"><div class="pipeline-depth-intro"><div><span>Ebene ${tabIndex + 1} von ${stage.tabs.length}</span><h5>${escapeHtml(activeTab.label)}</h5><p>${escapeHtml(depthDescriptions[activeTab.id] || "Nachvollziehbare Details dieser Pipeline-Station.")}</p></div><div>${stage.owners.map(pipelineOwner).join("")}</div></div>${activeTab.content}</main>
     </div>
-  </details>`;
+    <footer class="pipeline-drilldown-footer"><button type="button" class="btn-secondary" data-pipeline-detail-back><i class="ri-arrow-left-line"></i>${tabIndex > 0 ? "Eine Ebene zurück" : "Zur Pipeline"}</button><span class="pipeline-depth-progress">${stageIndex < 5 ? `Station ${stageIndex + 1} von 5` : "Ergebnis"} · Ebene ${tabIndex + 1} von ${stage.tabs.length}</span><button type="button" class="btn-primary" data-pipeline-detail-forward>${nextDepth ? `Tiefer: ${escapeHtml(nextDepth.label)}` : nextStage ? "Nächste Station" : "Zur Pipeline"}<i class="ri-arrow-right-line"></i></button></footer>
+  </div>`;
 }
 
 function renderPipelineStudio() {
   const studio = document.getElementById("pipeline-studio");
-  const nav = document.getElementById("pipeline-stage-nav");
-  if (!studio || !nav || !pipelineSettings) return;
+  if (!studio || !pipelineSettings) return;
   const q = pipelineSettings.config.quality;
   const relevanceRules = RELEVANCE_CARDS.map((card) => `<article class="logic-card"><div class="logic-card-top"><h5>${escapeHtml(card.title)}</h5>${pipelineOwner("ai")}</div><p><b>Code:</b> ${escapeHtml(card.code)}</p><p><b>Prompt:</b> ${escapeHtml(card.prompt)}</p><p><b>Gemini:</b> ${escapeHtml(card.ai)}</p><p><b>Server:</b> ${escapeHtml(card.server)}</p></article>`).join("");
   const relevanceEditor = RELEVANCE_CARDS.map((card) => {
@@ -465,8 +494,12 @@ function renderPipelineStudio() {
     },
   ];
 
-  nav.innerHTML = stages.map((stage) => `<button type="button" class="pipeline-stage-jump" data-pipeline-jump="${stage.id}"><b>${stage.number}</b>${stage.title.split(" und ")[0]}</button>`).join("");
-  studio.innerHTML = stages.map(pipelineStage).join("");
+  pipelineStageDefinitions = stages;
+  studio.innerHTML = stages.slice(0, 5).map((stage) => {
+    const overview = PIPELINE_OVERVIEW_META[stage.id];
+    return `<button type="button" class="pipeline-overview-card" data-pipeline-open-stage="${stage.id}" aria-label="${escapeHtml(overview.label)} öffnen"><span class="pipeline-overview-card-number">${stage.number}</span><span class="pipeline-overview-card-icon"><i class="${stage.icon}"></i></span><h4>${escapeHtml(overview.label)}</h4><p>${escapeHtml(overview.summary)}</p><span class="pipeline-overview-card-action">Details öffnen <i class="ri-arrow-right-line"></i></span><span class="pipeline-card-popover" aria-hidden="true"><strong>In dieser Station</strong><ul>${overview.hover.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></span></button>`;
+  }).join("");
+  renderPipelineDrilldown();
 }
 
 function renderBusinessPipelineStudio() {
@@ -858,6 +891,12 @@ function openSettings() {
   if (sources.length === 0) void loadSources();
 }
 function closeSettings() {
+  if (pipelineDrilldownState.stageId && pipelineSettings) {
+    collectPipelineDraft();
+    pipelineDrilldownState.stageId = null;
+    pipelineDrilldownState.tabId = "flow";
+    renderPipelineStudio();
+  }
   els.settingsModal.classList.remove("show");
 }
 
@@ -1142,6 +1181,12 @@ function bindUi() {
       els.settingsNav.querySelectorAll(".settings-nav-item").forEach((i) => i.classList.remove("active"));
       item.classList.add("active");
       const panel = item.dataset.panel;
+      if (panel !== "pipeline-overview" && pipelineDrilldownState.stageId) {
+        collectPipelineDraft();
+        pipelineDrilldownState.stageId = null;
+        pipelineDrilldownState.tabId = "flow";
+        renderPipelineStudio();
+      }
       els.btnSavePipelineHeader.hidden = !["pipeline-overview", "operations"].includes(panel);
       els.btnPreviewPipeline.hidden = panel !== "pipeline-overview";
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
@@ -1157,28 +1202,71 @@ function bindUi() {
   els.btnPreviewPipeline.addEventListener("click", () => void previewPipelineImpact().catch((error) => toast(error.message, "err")));
 
   els.settingsModal.addEventListener("click", (event) => {
-    const tab = event.target.closest("[data-stage-tab]");
-    if (tab) {
-      const body = tab.closest(".pipeline-stage-body");
-      body.querySelectorAll("[data-stage-tab]").forEach((button) => {
-        const active = button === tab;
-        button.classList.toggle("active", active);
-        button.setAttribute("aria-selected", String(active));
-      });
-      body.querySelectorAll("[data-stage-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.stagePanel === tab.dataset.stageTab));
+    const syncDraft = () => { if (pipelineSettings) collectPipelineDraft(); };
+    const openStage = event.target.closest("[data-pipeline-open-stage]");
+    if (openStage) {
+      syncDraft();
+      pipelineDrilldownState.stageId = openStage.dataset.pipelineOpenStage;
+      pipelineDrilldownState.tabId = "flow";
+      renderPipelineStudio();
       return;
     }
-    const jump = event.target.closest("[data-pipeline-jump]");
-    if (jump) {
-      const stage = document.getElementById(`pipeline-stage-${jump.dataset.pipelineJump}`);
-      if (stage) {
-        stage.open = true;
-        stage.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+    const detailTab = event.target.closest("[data-pipeline-detail-tab]");
+    if (detailTab) {
+      syncDraft();
+      pipelineDrilldownState.tabId = detailTab.dataset.pipelineDetailTab;
+      renderPipelineStudio();
+      return;
+    }
+    if (event.target.closest("[data-pipeline-detail-close]")) {
+      syncDraft();
+      pipelineDrilldownState.stageId = null;
+      pipelineDrilldownState.tabId = "flow";
+      renderPipelineStudio();
+      return;
+    }
+    const activeStage = pipelineStageDefinitions.find((stage) => stage.id === pipelineDrilldownState.stageId);
+    const activeStageIndex = pipelineStageDefinitions.indexOf(activeStage);
+    if (event.target.closest("[data-pipeline-stage-prev]") && activeStageIndex > 0) {
+      syncDraft();
+      pipelineDrilldownState.stageId = pipelineStageDefinitions[activeStageIndex - 1].id;
+      pipelineDrilldownState.tabId = "flow";
+      renderPipelineStudio();
+      return;
+    }
+    if (event.target.closest("[data-pipeline-stage-next]") && activeStageIndex < pipelineStageDefinitions.length - 1) {
+      syncDraft();
+      pipelineDrilldownState.stageId = pipelineStageDefinitions[activeStageIndex + 1].id;
+      pipelineDrilldownState.tabId = "flow";
+      renderPipelineStudio();
+      return;
+    }
+    if (event.target.closest("[data-pipeline-detail-back]") && activeStage) {
+      syncDraft();
+      const tabIndex = activeStage.tabs.findIndex((tab) => tab.id === pipelineDrilldownState.tabId);
+      if (tabIndex > 0) pipelineDrilldownState.tabId = activeStage.tabs[tabIndex - 1].id;
+      else pipelineDrilldownState.stageId = null;
+      renderPipelineStudio();
+      return;
+    }
+    if (event.target.closest("[data-pipeline-detail-forward]") && activeStage) {
+      syncDraft();
+      const tabIndex = activeStage.tabs.findIndex((tab) => tab.id === pipelineDrilldownState.tabId);
+      if (tabIndex < activeStage.tabs.length - 1) pipelineDrilldownState.tabId = activeStage.tabs[tabIndex + 1].id;
+      else if (activeStageIndex < pipelineStageDefinitions.length - 1) {
+        pipelineDrilldownState.stageId = pipelineStageDefinitions[activeStageIndex + 1].id;
+        pipelineDrilldownState.tabId = "flow";
+      } else pipelineDrilldownState.stageId = null;
+      renderPipelineStudio();
       return;
     }
     const panelLink = event.target.closest("[data-open-settings-panel]");
-    if (panelLink) els.settingsNav.querySelector(`[data-panel="${panelLink.dataset.openSettingsPanel}"]`)?.click();
+    if (panelLink) {
+      syncDraft();
+      pipelineDrilldownState.stageId = null;
+      renderPipelineStudio();
+      els.settingsNav.querySelector(`[data-panel="${panelLink.dataset.openSettingsPanel}"]`)?.click();
+    }
   });
 
   const markPipelineDraft = (event) => {
@@ -1248,6 +1336,12 @@ function bindUi() {
     if (e.key !== "Escape") return;
     if (els.articleDetailModal.classList.contains("show")) closeArticleDetail();
     else if (els.addSourceModal.classList.contains("show")) closeAddSource();
+    else if (pipelineDrilldownState.stageId) {
+      collectPipelineDraft();
+      pipelineDrilldownState.stageId = null;
+      pipelineDrilldownState.tabId = "flow";
+      renderPipelineStudio();
+    }
     else if (els.settingsModal.classList.contains("show")) closeSettings();
   });
 }

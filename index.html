@@ -354,20 +354,6 @@
   @media (max-width: 900px) { .policy-card-head, .decision-map, .quality-choice, .diagnostic-grid { grid-template-columns: 1fr; } .decision-step { border-right: 0; border-bottom: 1px solid var(--line); } }
 
   /* ---------- Explainable pipeline studio ---------- */
-  .pipeline-scroll--studio { background: linear-gradient(180deg, #f6f8f7 0, var(--bg) 320px); }
-  .pipeline-hero--studio { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 28px; }
-  .pipeline-hero-status { min-width: 190px; padding: .8rem .9rem; border: 1px solid rgba(255,255,255,.22); border-radius: 12px; background: rgba(255,255,255,.1); backdrop-filter: blur(8px); }
-  .pipeline-hero-status i { float: left; margin: 2px 8px 18px 0; font-size: 1.15rem; }
-  .pipeline-hero-status strong, .pipeline-hero-status small { display: block; }
-  .pipeline-hero-status strong { font-size: .72rem; }
-  .pipeline-hero-status small { margin-top: 3px; font-size: .6rem; opacity: .72; }
-  .pipeline-studio-toolbar { position: sticky; top: -1.5rem; z-index: 20; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; margin: 1rem 0 12px; padding: .7rem; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.94); box-shadow: 0 9px 24px rgba(25,45,38,.08); backdrop-filter: blur(12px); }
-  .pipeline-stage-nav { display: flex; align-items: center; gap: 5px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-  .pipeline-stage-nav::-webkit-scrollbar { display: none; }
-  .pipeline-stage-jump { display: inline-flex; align-items: center; gap: 6px; min-width: max-content; padding: 7px 9px; border: 0; border-radius: 9px; color: var(--muted); background: transparent; font-size: .63rem; font-weight: 700; cursor: pointer; transition: .16s ease; }
-  .pipeline-stage-jump:hover, .pipeline-stage-jump:focus-visible { outline: 0; color: var(--brand); background: var(--brand-light); }
-  .pipeline-stage-jump b { display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; color: var(--brand); background: #e5eee9; font-size: .57rem; }
-  .pipeline-owner-legend { display: flex; align-items: center; gap: 5px; }
   .logic-owner { position: relative; display: inline-flex; align-items: center; gap: 4px; width: max-content; padding: 4px 7px; border: 1px solid transparent; border-radius: 999px; font-size: .55rem; font-weight: 800; letter-spacing: .02em; white-space: nowrap; cursor: help; }
   .logic-owner--code { color: #285446; background: #eaf3ef; border-color: #cfe3da; }
   .logic-owner--prompt { color: #735b18; background: #fff8dd; border-color: #f0df9f; }
@@ -375,25 +361,6 @@
   .logic-owner--server { color: #6c4937; background: #f8eee8; border-color: #ead7cb; }
   .logic-owner::after { content: attr(data-tooltip); position: absolute; right: 0; bottom: calc(100% + 9px); z-index: 50; width: 250px; padding: .65rem .7rem; border: 1px solid #2d4a40; border-radius: 9px; color: #fff; background: #17382e; box-shadow: 0 12px 30px rgba(17,37,31,.22); font-size: .62rem; font-weight: 500; line-height: 1.45; white-space: normal; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(4px); transition: .15s ease; }
   .logic-owner:hover::after, .logic-owner:focus-visible::after { opacity: 1; visibility: visible; transform: translateY(0); }
-  .pipeline-studio { display: grid; gap: 10px; min-width: 0; }
-  .pipeline-stage { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: 0 4px 14px rgba(28,50,42,.045); overflow: clip; transition: border-color .2s, box-shadow .2s; }
-  .pipeline-stage[open] { border-color: #bed3ca; box-shadow: 0 14px 34px rgba(28,50,42,.09); }
-  .pipeline-stage-summary { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto 26px; align-items: center; gap: 13px; min-height: 82px; padding: .9rem 1rem; list-style: none; cursor: pointer; }
-  .pipeline-stage-summary::-webkit-details-marker { display: none; }
-  .pipeline-stage-number { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 13px; color: #fff; background: linear-gradient(145deg, #173d31, #2d6952); font-size: .72rem; font-weight: 800; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
-  .pipeline-stage-title h4 { margin: 0; font-size: .9rem; }
-  .pipeline-stage-title p { margin: 4px 0 0; max-width: 670px; color: var(--muted); font-size: .66rem; line-height: 1.45; }
-  .pipeline-stage-owners { display: flex; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
-  .pipeline-stage-chevron { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: var(--muted); background: var(--surface); transition: transform .18s; }
-  .pipeline-stage[open] .pipeline-stage-chevron { color: var(--brand); transform: rotate(180deg); }
-  .pipeline-stage-body { min-width: 0; border-top: 1px solid var(--line); background: #fbfcfb; }
-  .pipeline-stage-tabs { display: flex; gap: 4px; padding: .65rem 1rem 0; overflow-x: auto; }
-  .pipeline-stage-tab { display: inline-flex; align-items: center; gap: 6px; min-width: max-content; padding: 7px 10px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: .64rem; font-weight: 700; cursor: pointer; }
-  .pipeline-stage-tab:hover, .pipeline-stage-tab:focus-visible { outline: 0; color: var(--brand); background: var(--brand-light); }
-  .pipeline-stage-tab.active { color: #fff; background: var(--brand); }
-  .pipeline-stage-panel { display: none; min-width: 0; padding: 1rem; }
-  .pipeline-stage-panel.active { display: block; animation: pipeline-panel-in .18s ease both; }
-  @keyframes pipeline-panel-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
   .logic-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .logic-card { min-width: 0; padding: .85rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
   .logic-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
@@ -449,22 +416,123 @@
   .status-card--error { border-top: 3px solid #87918d; }
   .pipeline-action-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: .8rem; }
   @media (max-width: 1050px) {
-    .pipeline-studio-toolbar { grid-template-columns: 1fr; }
-    .pipeline-owner-legend { justify-content: flex-start; }
     .logic-grid, .threshold-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 760px) {
-    .pipeline-hero--studio, .pipeline-explainer { grid-template-columns: 1fr; }
-    .pipeline-hero-status { min-width: 0; }
-    .pipeline-stage-summary { grid-template-columns: 42px minmax(0, 1fr) 24px; }
-    .pipeline-stage-number { width: 40px; height: 40px; }
-    .pipeline-stage-owners { display: none; }
+    .pipeline-explainer { grid-template-columns: 1fr; }
     .logic-grid, .signal-family-grid, .pipeline-locked-grid, .threshold-grid, .route-grid, .status-grid { grid-template-columns: 1fr; }
     .relevance-editor-card { grid-template-columns: 38px minmax(0, 1fr); }
     .relevance-editor-card .pipeline-control { grid-column: 1 / -1; width: 100%; }
-    .pipeline-owner-legend { overflow-x: auto; padding-bottom: 2px; }
     .pipeline-savebar { flex-direction: column; align-items: stretch; }
     .pipeline-savebar .btn-primary, .pipeline-savebar .btn-secondary { justify-content: center; width: 100%; }
+  }
+
+  /* ---------- Guided ROOTS pipeline ---------- */
+  #settings-panel-pipeline-overview { position: relative; }
+  .pipeline-scroll--overview { background: linear-gradient(180deg, var(--brand-light) 0, var(--bg) 250px); }
+  .pipeline-overview-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 24px; padding: 1.35rem; border: 1px solid #dbe8ff; border-radius: 16px; background: rgba(255,255,255,.88); box-shadow: 0 8px 28px rgba(32,110,251,.07); }
+  .pipeline-overview-head > div:first-child > span { color: var(--brand); font-size: .62rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .pipeline-overview-head h3 { margin: .35rem 0 .4rem; font-size: 1.3rem; }
+  .pipeline-overview-head p { max-width: 720px; margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.55; }
+  .pipeline-overview-legend { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+  .pipeline-overview-legend span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #dbe8ff; border-radius: 999px; color: var(--brand); background: var(--brand-light); font-size: .58rem; font-weight: 700; white-space: nowrap; }
+  .pipeline-flow-shell { position: relative; margin-top: 14px; }
+  .pipeline-flow-shell, .pipeline-depth-nav { scrollbar-width: none; }
+  .pipeline-flow-shell::-webkit-scrollbar, .pipeline-depth-nav::-webkit-scrollbar { display: none; }
+  .pipeline-flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0; }
+  .pipeline-overview-card { position: relative; min-width: 0; min-height: 178px; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--bg); font-family: inherit; text-align: left; cursor: pointer; box-shadow: 0 4px 14px rgba(15,23,42,.04); transition: border-color .18s, box-shadow .18s, transform .18s; }
+  .pipeline-overview-card::after { content: ''; position: absolute; top: 34px; right: -11px; z-index: 2; width: 10px; border-top: 1px solid #9fc0ff; }
+  .pipeline-overview-card:last-child::after { display: none; }
+  .pipeline-overview-card:hover, .pipeline-overview-card:focus-visible { z-index: 12; outline: none; border-color: var(--brand); box-shadow: 0 14px 34px rgba(32,110,251,.14); transform: translateY(-3px); }
+  .pipeline-overview-card-number { position: absolute; top: 11px; right: 12px; color: #b5c8ea; font-size: 1.25rem; font-weight: 800; }
+  .pipeline-overview-card-icon { display: grid; place-items: center; width: 38px; height: 38px; margin-bottom: 18px; border-radius: 11px; color: #fff; background: var(--brand); font-size: 1rem; box-shadow: 0 7px 16px rgba(32,110,251,.2); }
+  .pipeline-overview-card-icon i { display: block; margin: 0; color: #fff; font-size: 1rem; }
+  .pipeline-overview-card h4 { margin: 0 0 6px; font-size: .8rem; }
+  .pipeline-overview-card > p { margin: 0; color: var(--muted); font-size: .64rem; line-height: 1.45; }
+  .pipeline-overview-card-action { position: absolute; left: 1rem; right: 1rem; bottom: .85rem; display: flex; align-items: center; justify-content: space-between; color: var(--brand); font-size: .59rem; font-weight: 700; }
+  .pipeline-overview-card-action i { display: inline-block; margin: 0; color: inherit; font-size: .75rem; }
+  .pipeline-card-popover { position: absolute; top: calc(100% + 9px); left: 0; z-index: 30; width: 250px; padding: .8rem; border: 1px solid #cfe0ff; border-radius: 12px; color: var(--ink); background: var(--bg); box-shadow: 0 18px 44px rgba(15,23,42,.18); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-5px); transition: .16s ease; }
+  .pipeline-overview-card:nth-child(n+4) .pipeline-card-popover { right: 0; left: auto; }
+  .pipeline-overview-card:hover .pipeline-card-popover, .pipeline-overview-card:focus-visible .pipeline-card-popover { opacity: 1; visibility: visible; transform: translateY(0); }
+  .pipeline-card-popover strong { display: block; margin-bottom: 6px; color: var(--brand); font-size: .65rem; }
+  .pipeline-card-popover ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+  .pipeline-card-popover li { position: relative; padding-left: 12px; color: var(--muted); font-size: .59rem; line-height: 1.4; }
+  .pipeline-card-popover li::before { content: ''; position: absolute; top: 6px; left: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--brand); }
+  .pipeline-result-strip { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto 22px; align-items: center; gap: 12px; width: 100%; margin-top: 14px; padding: .75rem .85rem; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); background: var(--bg); font-family: inherit; text-align: left; cursor: pointer; transition: .18s ease; }
+  .pipeline-result-strip:hover, .pipeline-result-strip:focus-visible { outline: none; border-color: var(--brand); box-shadow: 0 8px 22px rgba(32,110,251,.1); }
+  .pipeline-result-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: var(--brand); background: var(--brand-light); }
+  .pipeline-result-strip strong, .pipeline-result-strip small { display: block; }
+  .pipeline-result-strip strong { font-size: .72rem; }
+  .pipeline-result-strip small { margin-top: 2px; color: var(--muted); font-size: .6rem; }
+  .pipeline-result-statuses { display: flex; gap: 5px; }
+  .pipeline-result-statuses b { padding: 4px 7px; border-radius: 999px; color: var(--status-text); background: var(--surface); font-size: .54rem; }
+  .pipeline-drilldown[hidden] { display: none; }
+  .pipeline-drilldown { position: absolute; inset: 0; z-index: 80; display: grid; place-items: center; padding: 18px; background: rgba(15,23,42,.48); backdrop-filter: blur(6px); }
+  .pipeline-drilldown-card { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(930px, 100%); height: min(720px, calc(100% - 8px)); border: 1px solid #d8e4f7; border-radius: 18px; background: var(--bg); box-shadow: var(--shadow-modal); overflow: hidden; animation: pipeline-dialog-in .2s ease both; }
+  @keyframes pipeline-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.99); } to { opacity: 1; transform: none; } }
+  .pipeline-drilldown-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; padding: 1rem 1.1rem; border-bottom: 1px solid var(--line); background: linear-gradient(135deg, var(--brand-light), var(--bg)); }
+  .pipeline-breadcrumb { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: var(--muted); font-size: .58rem; font-weight: 700; }
+  .pipeline-breadcrumb b { color: var(--brand); }
+  .pipeline-drilldown-title { display: flex; align-items: center; gap: 11px; }
+  .pipeline-drilldown-title > span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: #fff; background: var(--brand); font-size: 1rem; }
+  .pipeline-drilldown-title h4 { margin: 0; font-size: 1rem; }
+  .pipeline-drilldown-title p { margin: 3px 0 0; color: var(--muted); font-size: .64rem; }
+  .pipeline-drilldown-head-actions { display: flex; align-items: center; gap: 6px; }
+  .pipeline-icon-btn { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: var(--bg); cursor: pointer; }
+  .pipeline-icon-btn:hover, .pipeline-icon-btn:focus-visible { outline: none; color: var(--brand); border-color: var(--brand); }
+  .pipeline-drilldown-body { display: grid; grid-template-columns: 190px minmax(0, 1fr); min-height: 0; }
+  .pipeline-depth-nav { display: flex; flex-direction: column; gap: 5px; padding: 1rem .75rem; border-right: 1px solid var(--line); background: var(--surface); }
+  .pipeline-depth-nav > span { margin: 0 8px 8px; color: var(--muted); font-size: .56rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .pipeline-depth-tab { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 8px; padding: .65rem; border: 0; border-radius: 10px; color: var(--muted); background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
+  .pipeline-depth-tab b, .pipeline-depth-tab small { display: block; }
+  .pipeline-depth-tab b { font-size: .66rem; }
+  .pipeline-depth-tab small { margin-top: 2px; font-size: .54rem; line-height: 1.3; }
+  .pipeline-depth-tab > i { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--bg); }
+  .pipeline-depth-tab:hover, .pipeline-depth-tab:focus-visible { outline: none; color: var(--brand); background: var(--brand-light); }
+  .pipeline-depth-tab.active { color: #fff; background: var(--brand); }
+  .pipeline-depth-tab.active > i { color: var(--brand); background: #fff; }
+  .pipeline-depth-content { min-width: 0; overflow-y: auto; padding: 1.1rem; }
+  .pipeline-depth-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: .9rem; padding-bottom: .8rem; border-bottom: 1px solid var(--line); }
+  .pipeline-depth-intro span { color: var(--brand); font-size: .57rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .pipeline-depth-intro h5 { margin: 4px 0 0; font-size: .86rem; }
+  .pipeline-depth-intro p { max-width: 520px; margin: 4px 0 0; color: var(--muted); font-size: .62rem; line-height: 1.45; }
+  .pipeline-drilldown-footer { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: .8rem 1rem; border-top: 1px solid var(--line); background: var(--bg); }
+  .pipeline-drilldown-footer .btn-secondary:first-child { justify-self: start; }
+  .pipeline-drilldown-footer .btn-primary { justify-self: end; }
+  .pipeline-depth-progress { color: var(--muted); font-size: .58rem; font-weight: 700; text-align: center; }
+  .logic-owner--code { color: #155fca; background: #edf5ff; border-color: #d1e3ff; }
+  .logic-owner--prompt { color: #805f08; background: #fff8dc; border-color: #f0dfa0; }
+  .logic-owner--ai { color: #174b9b; background: #eaf1ff; border-color: #cbdcff; }
+  .logic-owner--server { color: #475569; background: #f1f5f9; border-color: #dce4ed; }
+  .logic-owner::after { color: #fff; background: #172554; border-color: #27418b; }
+  .pipeline-edit-head { background: var(--brand); }
+  .pipeline-locked-rule { border-color: #d6e5ff; background: #f5f9ff; }
+  .pipeline-locked-rule i { color: var(--brand); }
+  .route-formula span { color: #164c96; background: #edf5ff; }
+  .logic-card code, .pipeline-code { color: #174b83; background: #f4f8ff; border-color: #dae7fa; }
+  @media (max-width: 900px) {
+    .pipeline-overview-head { grid-template-columns: 1fr; }
+    .pipeline-overview-legend { justify-content: flex-start; }
+    .pipeline-flow-shell { overflow-x: auto; padding-bottom: 8px; }
+    .pipeline-flow { grid-template-columns: repeat(5, 190px); min-width: max-content; }
+    .pipeline-card-popover { display: none; }
+  }
+  @media (max-width: 700px) {
+    .pipeline-overview-head { padding: 1rem; }
+    .pipeline-result-strip { grid-template-columns: 38px minmax(0, 1fr) 20px; }
+    .pipeline-result-statuses { display: none; }
+    .pipeline-drilldown { padding: 0; }
+    .pipeline-drilldown-card { width: 100%; height: 100%; border: 0; border-radius: 0; }
+    .pipeline-drilldown-head { padding: .85rem; }
+    .pipeline-drilldown-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    .pipeline-depth-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: .55rem; }
+    .pipeline-depth-nav > span { display: none; }
+    .pipeline-depth-tab { min-width: max-content; grid-template-columns: 24px auto; padding: .5rem .6rem; }
+    .pipeline-depth-tab small { display: none; }
+    .pipeline-depth-content { padding: .85rem; }
+    .pipeline-drilldown-footer { grid-template-columns: 1fr 1fr; }
+    .pipeline-depth-progress { display: none; }
+    .pipeline-drilldown-footer .btn-secondary, .pipeline-drilldown-footer .btn-primary { width: 100%; justify-content: center; }
   }
 
   /* ---------- Settings modal ---------- */
@@ -823,24 +891,24 @@
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-pipeline-overview">
-          <div class="pipeline-scroll pipeline-scroll--studio">
-            <div class="pipeline-hero pipeline-hero--studio">
-              <div><span>ROOTS Signal Layer</span><h3>Jede Entscheidung, Regel für Regel</h3><p>Öffne eine Station, um exakt zu sehen, was Code, System-Prompt, Gemini und Server prüfen. Änderbare Stellschrauben liegen direkt an der Stelle, an der sie wirken.</p></div>
-              <div class="pipeline-hero-status"><i class="ri-shield-check-line"></i><strong>Guardrails aktiv</strong><small>Änderungen gelten für zukünftige Analysen.</small></div>
+          <div class="pipeline-scroll pipeline-scroll--overview">
+            <header class="pipeline-overview-head">
+              <div><span>ROOTS Signal Layer</span><h3>Vom Artikel zur belastbaren Entscheidung</h3><p>Die fünf Stationen zeigen den Gesamtprozess. Fahre über eine Station für eine Kurzvorschau oder öffne sie, um Schritt für Schritt tiefer einzusteigen.</p></div>
+              <div class="pipeline-overview-legend" aria-label="Entscheidungsquellen"><span><i class="ri-code-line"></i> Regeln</span><span><i class="ri-sparkling-line"></i> Gemini</span><span><i class="ri-shield-check-line"></i> Kontrolle</span></div>
+            </header>
+            <div class="pipeline-flow-shell">
+              <div class="pipeline-flow" id="pipeline-studio" aria-label="High-Level-Pipeline"><div class="keyword-empty">Pipeline wird geladen…</div></div>
             </div>
-            <div class="pipeline-studio-toolbar">
-              <nav class="pipeline-stage-nav" id="pipeline-stage-nav" aria-label="Pipeline-Stationen"></nav>
-              <div class="pipeline-owner-legend" aria-label="Entscheidungsquellen">
-                <span class="logic-owner logic-owner--code" tabindex="0" data-tooltip="Feste TypeScript-Regel: schnell, deterministisch und ohne KI-Kosten."><i class="ri-code-line"></i> Code</span>
-                <span class="logic-owner logic-owner--prompt" tabindex="0" data-tooltip="Verbindliche Arbeitsanweisung, die Geminis inhaltliche Bewertung steuert."><i class="ri-file-text-line"></i> Prompt</span>
-                <span class="logic-owner logic-owner--ai" tabindex="0" data-tooltip="Semantische Bewertung des Artikelzusammenhangs durch Gemini."><i class="ri-sparkling-line"></i> Gemini</span>
-                <span class="logic-owner logic-owner--server" tabindex="0" data-tooltip="Finale technische Kontrolle von Evidenz, Schwellenwerten und Routing."><i class="ri-shield-check-line"></i> Server</span>
-              </div>
-            </div>
-            <div class="pipeline-studio" id="pipeline-studio"><div class="keyword-empty">Pipeline wird geladen…</div></div>
+            <button type="button" class="pipeline-result-strip" id="pipeline-result-strip" data-pipeline-open-stage="output">
+              <span class="pipeline-result-icon"><i class="ri-layout-grid-line"></i></span>
+              <span><strong>Was kommt am Ende heraus?</strong><small>Zuverlässige Kacheln, manuelle Prüfung, Ablehnungen, Fehler und Altbestand.</small></span>
+              <span class="pipeline-result-statuses"><b>Zuverlässig</b><b>Prüfung</b><b>Abgelehnt</b></span>
+              <i class="ri-arrow-right-line"></i>
+            </button>
             <div class="pipeline-impact" id="pipeline-impact-result" hidden></div>
             <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><button class="btn-primary" id="btn-save-pipeline"><i class="ri-save-line"></i> Änderungen speichern</button></div>
           </div>
+          <section class="pipeline-drilldown" id="pipeline-drilldown" aria-modal="true" aria-label="Pipeline-Details" hidden></section>
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-manual-review">
