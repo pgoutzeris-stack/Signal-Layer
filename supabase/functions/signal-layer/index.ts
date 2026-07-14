@@ -957,8 +957,6 @@ function hasEventTier1PersonLink(
 const GEMINI_PRIMARY_MODEL = "gemini-3.5-flash";
 const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
 const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.3.0";
-const MAX_DAILY_AI_REQUESTS = 1000;
-const MAX_DAILY_PRO_REVIEWS = 250;
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -977,7 +975,7 @@ type PipelineConfig = {
   };
   crawl: { freshness_days: number; future_tolerance_hours: number; article_batch_size: number; default_max_depth: number; default_max_pages: number; event_max_depth: number; event_max_pages: number };
   filters: { minimum_text_length: number; require_professional_signal: boolean; reject_career_pages: boolean; reject_faq_pages: boolean; reject_event_programs: boolean; reject_future_dates: boolean; deduplicate: boolean };
-  ai: { primary_model: string; review_model: string; review_enabled: boolean; review_confidence_below: number; review_rejected_articles: boolean; thinking_level: "minimal" | "low" | "medium" | "high"; max_output_tokens: number; daily_request_limit: number; daily_review_limit: number; monthly_warning_usd: number };
+  ai: { primary_model: string; review_model: string; review_enabled: boolean; review_confidence_below: number; review_rejected_articles: boolean; thinking_level: "minimal" | "low" | "medium" | "high"; max_output_tokens: number; monthly_warning_usd: number };
   quality: { topic_confidence: number; territory_confidence: number; company_confidence: number; person_confidence: number; sales_trigger_confidence: number; routing_confidence: number; reliable_confidence: number };
   routing: { marketing_enabled: boolean; sales_enabled: boolean; buying_center_enabled: boolean; sales_requires_tier1: boolean; sales_requires_trigger: boolean; buying_center_requires_person: boolean; subsector_alone_is_marketing: boolean };
 };
@@ -996,7 +994,7 @@ const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
   },
   crawl: { freshness_days: 183, future_tolerance_hours: 24, article_batch_size: 10, default_max_depth: 2, default_max_pages: 40, event_max_depth: 1, event_max_pages: 24 },
   filters: { minimum_text_length: 240, require_professional_signal: true, reject_career_pages: true, reject_faq_pages: true, reject_event_programs: true, reject_future_dates: true, deduplicate: true },
-  ai: { primary_model: GEMINI_PRIMARY_MODEL, review_model: GEMINI_REVIEW_MODEL, review_enabled: true, review_confidence_below: 0.94, review_rejected_articles: false, thinking_level: "low", max_output_tokens: 4096, daily_request_limit: MAX_DAILY_AI_REQUESTS, daily_review_limit: MAX_DAILY_PRO_REVIEWS, monthly_warning_usd: 10 },
+  ai: { primary_model: GEMINI_PRIMARY_MODEL, review_model: GEMINI_REVIEW_MODEL, review_enabled: true, review_confidence_below: 0.94, review_rejected_articles: false, thinking_level: "low", max_output_tokens: 4096, monthly_warning_usd: 10 },
   quality: { topic_confidence: 0.82, territory_confidence: 0.84, company_confidence: 0.86, person_confidence: 0.86, sales_trigger_confidence: 0.86, routing_confidence: 0.88, reliable_confidence: 0.9 },
   routing: { marketing_enabled: true, sales_enabled: true, buying_center_enabled: true, sales_requires_tier1: true, sales_requires_trigger: true, buying_center_requires_person: true, subsector_alone_is_marketing: false },
 };
@@ -1306,21 +1304,6 @@ async function callGeminiClassifier(
 ): Promise<AiClassification> {
   const admin = getAdminClient();
   const pipelineConfig = await getPipelineConfig();
-  const dayStart = new Date();
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const { count: dailyRequests } = await admin.schema("signal_layer").from("ai_usage_events")
-    .select("id", { count: "exact", head: true }).gte("created_at", dayStart.toISOString());
-  if ((dailyRequests || 0) >= pipelineConfig.ai.daily_request_limit) {
-    throw new Error(`Daily Gemini request safety limit (${pipelineConfig.ai.daily_request_limit}) reached`);
-  }
-  if (model === pipelineConfig.ai.review_model) {
-    const { count: dailyReviews } = await admin.schema("signal_layer").from("ai_usage_events")
-      .select("id", { count: "exact", head: true }).eq("model", pipelineConfig.ai.review_model)
-      .gte("created_at", dayStart.toISOString());
-    if ((dailyReviews || 0) >= pipelineConfig.ai.daily_review_limit) {
-      throw new Error(`Daily Gemini Pro review safety limit (${pipelineConfig.ai.daily_review_limit}) reached`);
-    }
-  }
   const key = await getGeminiKey();
   if (!key) throw new Error("Gemini API key is not configured");
   const reviewInstruction = reviewOf
@@ -1944,8 +1927,6 @@ Deno.serve(async (req: Request) => {
         requested.filters.minimum_text_length = Math.round(clamp(requested.filters.minimum_text_length, 100, 5000));
         requested.ai.review_confidence_below = clamp(requested.ai.review_confidence_below, 0.5, 1);
         requested.ai.max_output_tokens = Math.round(clamp(requested.ai.max_output_tokens, 512, 8192));
-        requested.ai.daily_request_limit = Math.round(clamp(requested.ai.daily_request_limit, 1, 10000));
-        requested.ai.daily_review_limit = Math.round(clamp(requested.ai.daily_review_limit, 0, 5000));
         requested.ai.monthly_warning_usd = clamp(requested.ai.monthly_warning_usd, 0, 10000);
         for (const key of Object.keys(requested.quality) as Array<keyof PipelineConfig["quality"]>) {
           requested.quality[key] = clamp(requested.quality[key], 0.5, 1);

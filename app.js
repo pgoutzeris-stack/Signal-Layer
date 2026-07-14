@@ -270,8 +270,6 @@ const PIPELINE_FIELDS = {
     ["ai.review_rejected_articles", "boolean", "Auch klare Ablehnungen erneut prüfen", "Normalerweise aus Kostengründen ausgeschaltet."],
     ["ai.thinking_level", "thinking", "Prüftiefe", "Mehr Tiefe kann Qualität und Kosten erhöhen."],
     ["ai.max_output_tokens", "number", "Maximale Antwortlänge", "Begrenzt Analyse, Übersetzung und Begründung.", 512, 8192],
-    ["ai.daily_request_limit", "number", "Tägliches KI-Limit", "Technische Sicherheitsgrenze unabhängig vom AI-Studio-Budget.", 1, 10000],
-    ["ai.daily_review_limit", "number", "Tägliches Pro-Review-Limit", "Separate Grenze für das teurere Review-Modell.", 0, 5000],
     ["ai.monthly_warning_usd", "number", "Kostenwarnung in USD", "Zeigt eine Warnung, stoppt die Pipeline aber nicht.", 0, 10000],
   ],
   quality: [
@@ -789,7 +787,7 @@ function renderBusinessPipelineStudio() {
     const telemetry = pipelineOperationsTelemetry;
     const euro = (value) => value === null || value === undefined ? "Kurs wird geladen" : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
     const telemetryHtml = telemetry ? `<div class="telemetry-grid" style="margin-bottom:12px"><div class="telemetry-stat"><span>Gemini heute</span><b>${euro(telemetry.costs?.today_eur)}</b></div><div class="telemetry-stat ${telemetry.costs?.warning ? "telemetry-stat--warning" : ""}"><span>Gemini im Monat</span><b>${euro(telemetry.costs?.month_eur)}</b></div><div class="telemetry-stat"><span>Quellenläufe</span><b>${Number(telemetry.health?.attempts || 0).toLocaleString("de-DE")}</b></div><div class="telemetry-stat"><span>Crawl-Fehler</span><b>${Number(telemetry.health?.errors || 0).toLocaleString("de-DE")}</b></div></div>` : "";
-    operations.innerHTML = `${telemetryHtml}${renderGeminiModelManager()}${pipelineEditHead("Betriebsgrenzen", "Diese Limits schützen Laufzeit und Kosten, verändern aber keine fachliche Relevanzentscheidung.")}${pipelineFields(["ai.daily_request_limit", "ai.daily_review_limit", "ai.monthly_warning_usd"])}<div class="pipeline-savebar"><span>Modellwechsel und Limits werden erst nach dem Speichern für neue Analysen aktiv.</span><button class="btn-primary" type="button" data-pipeline-save><i class="ri-save-line"></i> Änderungen speichern</button></div>`;
+    operations.innerHTML = `${telemetryHtml}${renderGeminiModelManager()}${pipelineEditHead("Kostenhinweis", "Die Kostenwarnung ist rein informativ. Ausgabenlimits werden ausschließlich in Google AI Studio verwaltet.")}${pipelineFields(["ai.monthly_warning_usd"])}<div class="pipeline-savebar"><span>Modellwechsel und Kostenhinweise gelten nach dem Speichern für neue Analysen.</span><button class="btn-primary" type="button" data-pipeline-save><i class="ri-save-line"></i> Änderungen speichern</button></div>`;
   }
 
   const diagnostics = document.getElementById("diagnostics-content");
