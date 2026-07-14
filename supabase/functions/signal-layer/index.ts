@@ -1299,7 +1299,11 @@ function validateClassification(
     .filter((tag) => relevanceMode(tag.id) !== "not_relevant")
     .filter((tag) => relevanceMode(tag.id) !== "impact_required" || hasRequiredImpact(tag))
     .filter((tag) => tag.id !== "sub_branchen_insight" || !config.relevance.require_subsector_transferability || marketInsightTransferable)
-    .filter((tag) => tag.id !== "ki_performance" || config.relevance.allow_ai_pilot || !/\bpilot\b/i.test(normalizeMatchText(tag.evidence)));
+    .filter((tag) => tag.id !== "ki_performance" || config.relevance.allow_ai_pilot || !/\bpilot\b/i.test(normalizeMatchText(tag.evidence)))
+    .filter((tag) => tag.id !== "ki_performance" || !config.relevance.require_ai_application
+      || /\b(used|uses|using|deploy\w*|implement\w*|pilot|application|anwendung|eingesetzt|einfuhr\w*|automati\w*|optimier\w*)\b/i.test(normalizeMatchText(tag.evidence)))
+    .filter((tag) => tag.id !== "marketing_insights" || config.relevance.allow_campaign_without_results
+      || !/\b(campaign|kampagn)\w*\b/i.test(normalizeMatchText(tag.evidence)) || hasRequiredImpact(tag));
   const territory = raw.territory && TERRITORY_IDS.includes(raw.territory.id as typeof TERRITORY_IDS[number])
       && clampConfidence(raw.territory.confidence) >= config.quality.territory_confidence && evidenceExists(raw.territory.evidence, articleText)
     ? { ...raw.territory, confidence: clampConfidence(raw.territory.confidence) }
