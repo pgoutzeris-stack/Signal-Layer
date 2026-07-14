@@ -2424,20 +2424,32 @@ Deno.serve(async (req: Request) => {
 
       case "list_findings": {
         const { track, limit } = body as { track?: string; limit?: number };
+        if (track && !["marketing", "sales"].includes(track)) return errorResponse(origin, "invalid track");
         const admin = getAdminClient();
         const cutoff = new Date();
         cutoff.setUTCMonth(cutoff.getUTCMonth() - 6);
         const fetchLimit = Math.min(Math.max((limit || 50) * 5, 50), 250);
-        let query = admin.schema("signal_layer").from("findings")
-          .select("*, article:articles!inner(id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category))")
-          .eq("article.classification_status", "reliable")
-          .not("article.published_at", "is", null)
-          .gte("article.published_at", cutoff.toISOString())
-          .lte("article.published_at", new Date().toISOString())
-          .order("created_at", { ascending: false }).limit(fetchLimit);
-        if (track) query = query.eq("track", track);
+        // Routing is the canonical result of the current pipeline. Findings is
+        // retained for audit/history, but must not hide newly classified cards.
+        let query = admin.schema("signal_layer").from("articles")
+          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
+          .eq("classification_status", "reliable")
+          .not("published_at", "is", null)
+          .gte("published_at", cutoff.toISOString())
+          .lte("published_at", new Date().toISOString())
+          .order("classified_at", { ascending: false, nullsFirst: false }).limit(fetchLimit);
+        if (track) query = query.contains("routing", [track]);
         const { data, error } = await query;
         if (error) return errorResponse(origin, error.message, 500);
+
+        const reliableFindings = (data || []).map((article: Record<string, unknown>) => ({
+          id: `reliable-${article.id}-${track || "all"}`,
+          track: track || "marketing",
+          dimension: Array.isArray(article.topics) ? article.topics[0] || null : null,
+          confidence: article.relevance_confidence,
+          created_at: article.classified_at,
+          article,
+        }));
 
         // Uncertain articles no longer live in a separate dashboard section.
         // Surface them in the same card structure when validated topic/company
@@ -2465,7 +2477,7 @@ Deno.serve(async (req: Request) => {
           }];
           return [];
         });
-        const combined = [...(data || []), ...reviewFindings]
+        const combined = [...reliableFindings, ...reviewFindings]
           .sort((a: any, b: any) => Number(b.confidence || 0) - Number(a.confidence || 0));
         const seenArticles = new Set<string>();
         const seenEvents = new Set<string>();
