@@ -956,7 +956,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-3.5-flash";
 const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.12";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.14";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -1278,6 +1278,11 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
     reasons.push("Event-, Teilnehmer- oder Programmseite ohne strategisches Signal");
   }
   if (text.trim().length < config.filters.minimum_text_length) reasons.push("Zu wenig redaktioneller Artikeltext");
+  const titleYear = title.match(/\b(20\d{2})\b/)?.[1];
+  if (titleYear && Number(titleYear) <= new Date().getUTCFullYear() - 2
+      && /\b(event|messe|festival|conference|konferenz|forum|summit|all in)\b/i.test(title)) {
+    reasons.push("Veralteter Eventinhalt trotz aktuellem Crawl-Datum");
+  }
   const professionalSignalPatterns = [
     /\b(markenstrateg\w*|markenpositionier\w*|rebrand\w*|relaunch\w*|kampagn\w*|markenaktivier\w*)\b/i,
     /\b(brand strateg\w*|brand position\w*|campaign\w*|brand activat\w*|media strateg\w*)\b/i,
@@ -1339,6 +1344,32 @@ const MARKETING_DEPTH_PATTERN = /\b(strateg\w*|position\w*|target audience|zielg
 const CONCRETE_ACTIVATION_PATTERN = /\b(sampling|verkost\w*|service\w*|finisher|workshop|make it lab|personalis\w*|interactive|interaktiv|receipt scan|belegscan|app|shop in shop|experience space|eventspace|point of sale|\bpos\b)\b/i;
 const RESEARCH_CONTENT_PATTERN = /\b(stud(?:y|ies|ie|ien)|research|white ?paper|survey|poll|report|benchmark|analysis|analyse|forschung|untersuchung|umfrage|befragung|marktstudie|verbraucherstudie|consumer study|consumer research|shopper study|market research)\b/i;
 const RESEARCH_SUBSTANCE_PATTERN = /\b(method(?:ology)?|methodik|sample|stichprobe|respondent\w*|befragt\w*|participants?|teilnehm\w*|findings?|results?|ergebnis\w*|percent|prozent|data|daten|benchmark|trend\w*|zeigt|found|reveals?|according to)\b/i;
+const MARKETING_RECOVERY_TOPIC_PATTERN = /\b(marketing|brand|marke\w*|customer|kund\w*|consumer|konsument\w*|shopper|retail media|category management|kategoriemanagement|campaign|kampagn\w*|media|werbung|loyalty|omnichannel|d2c|e-?commerce|customer experience|customer journey|ki|kunstliche intelligenz|artificial intelligence)\b/i;
+const MARKETING_RECOVERY_VALUE_PATTERN = /\b(strateg\w*|insight\w*|erkenntnis\w*|learning\w*|trend\w*|method\w*|modell\w*|framework|result\w*|ergebnis\w*|percent|prozent|impact|wirkung|roi|uplift|conversion|wachstum|ruckgang|verander\w*|transform\w*|optimier\w*|zielgrupp\w*|verhalten|bedurf\w*|expectation\w*|erwartung\w*)\b/i;
+
+function recoverExactMarketingEvidence(articleText: string): string {
+  return articleText
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .find((sentence) => sentence.length >= 60 && sentence.length <= 700
+      && MARKETING_RECOVERY_TOPIC_PATTERN.test(normalizeMatchText(sentence))
+      && MARKETING_RECOVERY_VALUE_PATTERN.test(normalizeMatchText(sentence))) || "";
+}
+
+function inferRecoveredMarketingTopic(evidence: string): typeof TOPIC_IDS[number] {
+  const normalized = normalizeMatchText(evidence);
+  if (/\b(customer|kund\w*|consumer|konsument\w*|shopper|zielgrupp\w*|loyalty|customer experience|customer journey)\b/i.test(normalized)) {
+    return "customer_insights";
+  }
+  if (/\b(retail|handel\w*|category|kategorie\w*|sortiment\w*|pricing|preis\w*|promotion)\b/i.test(normalized)) {
+    return "fmcg_retail_signale";
+  }
+  if (/\b(ki|kunstliche intelligenz|artificial intelligence|ai)\b/i.test(normalized)
+      && /\b(anwendung|eingesetzt|implement\w*|optimier\w*|automati\w*|application|deployed|used)\b/i.test(normalized)) {
+    return "ki_performance";
+  }
+  return "marketing_insights";
+}
 
 function hasTransferableMarketingSubstance(
   articleType: string,
@@ -1601,7 +1632,7 @@ Territories:
 </taxonomy>
 <active_business_policy>${JSON.stringify({ relevance: config.relevance, decisions: config.decisions, routing: config.routing })}</active_business_policy>
 <routing_rules>
-Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Company news that cannot teach a broader audience anything is not Marketing. It still needs direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, or AI with a concrete marketing/customer/retail/brand application. sub_branchen_insight alone NEVER qualifies Marketing. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing evidence exists. A study, research paper, whitepaper, benchmark or original survey from a consultancy, institute, association or company qualifies Marketing when it addresses a ROOTS topic and the article contains concrete methodology, findings, data or transferable conclusions. A download announcement, gated landing page or self-promotional claim without an exposed finding does not qualify.
+Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item, whitepaper or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Marketing NEVER requires a Tier-1 company or any named company. Missing Tier-1 status is exclusively a Sales limitation and must never appear in article-level rejection_reasons or make Marketing uncertain. General analyses, interviews, studies and market observations qualify when they teach a broader audience something concrete and evidence-backed about a ROOTS topic; a company case study is useful but not required. Company news that cannot teach a broader audience anything is not Marketing. It still needs direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, or AI with a concrete marketing/customer/retail/brand application. sub_branchen_insight alone NEVER qualifies Marketing. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing evidence exists. A study, research paper, whitepaper, benchmark or original survey from a consultancy, institute, association or company qualifies Marketing when it addresses a ROOTS topic and the article contains concrete methodology, findings, data or transferable conclusions. A download announcement, gated landing page or self-promotional claim without an exposed finding does not qualify. If marketing_use.sufficient_substance is true or routing_decisions.marketing.reason describes transferable value, you MUST copy a verbatim supporting sentence into marketing_use.evidence and evaluate publishable independently of Sales.
 sub_branchen_insight is valid only for a transferable market observation that remains useful beyond the reported company event. A single acquisition, product, expansion, financial result or facility is not transferable.
 Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge or evidenced ROOTS-relevant opportunity, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. A company mention or generic strategic change alone is insufficient. For sources in category "Events & Messen", a named person with a credible role at a Tier-1 company who substantively speaks, presents, discusses or is quoted about a ROOTS marketing, brand, customer, retail, category, innovation or applied-AI topic qualifies event_participation as a Sales trigger. The person's contribution and company affiliation must both be evidenced locally in the article. Attendee lists, speaker directories, schedules, navigation, a session title without described contribution, and a name merely appearing somewhere on the same page are insufficient.
 marketing_problem is a valid Sales trigger when the article explicitly proves an unresolved or currently material marketing, brand, customer, consumer, loyalty, media, retail-media, category, positioning or customer-journey problem of a Tier-1 company. The evidenced problem itself supplies the trigger; a separate pitch, investment or transformation announcement is not required. Still require company-specific facts, a credible ROOTS contribution and personalization substance. Generic competitive pressure, sector-wide commentary, speculative criticism, weak performance without a marketing/customer connection, and problems described as fully resolved are not marketing_problem.
@@ -1672,6 +1703,20 @@ function validateClassification(
     sufficient_substance: Boolean(raw.marketing_use?.sufficient_substance),
     evidence: evidenceExists(raw.marketing_use?.evidence || "", articleText) ? String(raw.marketing_use.evidence).trim() : "",
   };
+  if (marketInsightTransferable && marketingUse.sufficient_substance && marketingUse.transferable_value) {
+    const recoveredEvidence = marketingUse.evidence || recoverExactMarketingEvidence(articleText);
+    if (recoveredEvidence) {
+      if (!topics.some(hasDirectMarketingContext)) {
+        topics.push({
+          id: inferRecoveredMarketingTopic(recoveredEvidence),
+          confidence: Math.max(config.quality.topic_confidence, clampConfidence(raw.routing_decisions?.marketing?.confidence)),
+          evidence: recoveredEvidence,
+        });
+      }
+      marketingUse.evidence = recoveredEvidence;
+      marketingUse.publishable = true;
+    }
+  }
   if (!marketingUse.transferable_value || !marketingUse.sufficient_substance || !marketingUse.evidence) {
     marketingUse.publishable = false;
   }
