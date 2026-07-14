@@ -1001,7 +1001,7 @@ function renderFindings(track) {
       const article = f.article || {};
       const dimLabel = TOPIC_LABELS[f.dimension] || f.dimension || "";
       const companies = articleCompanies(article);
-      const source = article.source || null;
+      const source = Array.isArray(article.source) ? article.source[0] : article.source;
       const confidence = formatConfidence(f.confidence ?? article.relevance_confidence);
       const status = article.classification_status || "legacy";
       const isLegacy = status === "legacy";
@@ -1125,8 +1125,10 @@ async function loadTaggingStats() {
 
 async function loadReviewArticles() {
   if (!els.reviewList) return;
+  const countEl = document.getElementById("review-count");
   try {
     const { articles } = await callApi("list_review_articles", { limit: 20 });
+    if (countEl) countEl.textContent = Number(articles?.length || 0).toLocaleString("de-DE");
     if (!articles?.length) {
       els.reviewList.innerHTML = `<div class="track-card-empty">Keine offenen oder fehlerhaften Klassifikationen.</div>`;
       return;
@@ -1135,19 +1137,23 @@ async function loadReviewArticles() {
       const source = article.source || null;
       const status = article.classification_status;
       const reasons = article.rejection_reasons || [];
+      const confidence = formatConfidence(article.relevance_confidence);
+      const isNew = isToday(article.classified_at);
       return `
-        <article class="review-item" data-article-id="${escapeHtml(article.id)}">
-          <div class="review-item-main">
-            <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "error" ? "alert-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i> ${status === "uncertain" ? "Manuelle Prüfung" : status === "pending" ? "Ausstehend" : "Klassifikationsfehler"}</span>
-            <a href="${escapeHtml(article.url || "#")}" class="finding-title">${escapeText(article.title || "Ohne Titel")}</a>
-            ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
-            ${article.ai_rationale ? `<p class="finding-rationale"><i class="ri-focus-3-line"></i><span>${escapeHtml(article.ai_rationale)}</span></p>` : ""}
-            ${reasons.length ? `<div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div>` : ""}
+        <article class="finding-item" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
+          <div class="finding-item-top">
+            <span class="finding-dimension">Prüffall</span>
+            <div class="finding-top-tags">
+              ${isNew ? `<span class="finding-new-badge">NEU</span>` : ""}
+              <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "error" ? "alert-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i> ${status === "uncertain" ? "Manuelle Prüfung" : status === "pending" ? "Ausstehend" : "Klassifikationsfehler"}${confidence ? ` · ${confidence}` : ""}</span>
+              ${formatFindingDate(article.published_at)}
+            </div>
           </div>
+          <span class="finding-title">${escapeText(article.title_de || article.title || "Ohne Titel")}</span>
+          ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : reasons[0] ? `<p class="finding-summary">${escapeText(reasons[0])}</p>` : ""}
           <div class="finding-meta">
             ${article.primary_company ? `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
             ${source?.company ? `<span class="tag tag--source"><i class="ri-newspaper-line"></i> ${escapeHtml(source.company)}</span>` : ""}
-            ${formatConfidence(article.relevance_confidence) ? `<span class="tag"><i class="ri-percent-line"></i> ${formatConfidence(article.relevance_confidence)}</span>` : ""}
           </div>
         </article>`;
     }).join("");
@@ -1697,7 +1703,7 @@ function bindUi() {
     const card = event.target.closest("[data-article-id]");
     if (card) void openArticleDetail(card.dataset.articleId);
   };
-  [els.findingsListMarketing, els.findingsListSales, els.archiveList].forEach((container) => {
+  [els.findingsListMarketing, els.findingsListSales, els.reviewList, els.archiveList].forEach((container) => {
     container?.addEventListener("click", openCardDetail);
     container?.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") openCardDetail(event);

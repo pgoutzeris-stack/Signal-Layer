@@ -282,12 +282,10 @@
   .stats-part--uncertain { color: var(--warning-text); font-weight: 600; }
   .stats-part--error { color: var(--danger); font-weight: 600; }
   .review-card { margin-top: 1.2rem; }
-  .review-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-height: 360px; overflow-y: auto; }
-  .review-item { border: 1px solid var(--line); border-radius: 10px; padding: .8rem .9rem; background: var(--bg); cursor: pointer; }
-  .review-item-main > .quality-tag { margin-bottom: .45rem; }
+  .results-review-section { margin-top: 1.2rem; }
+  .review-list { display: flex; flex-direction: column; gap: 8px; max-height: 520px; overflow-y: auto; }
   .review-reasons { display: flex; flex-wrap: wrap; gap: 4px; margin: .5rem 0; }
   .review-reasons span { font-size: .68rem; color: var(--danger); background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 2px 6px; }
-  @media (max-width: 900px) { .review-list { grid-template-columns: 1fr; } }
   .test-card { margin-top: 1.2rem; }
   .test-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: .9rem; }
   .test-card-head .track-card-header { margin: 0; }
@@ -1499,7 +1497,7 @@
             </div>
           </div>
         </div>
-        <section class="results-review-section"><div class="track-card-header"><i class="ri-user-search-line"></i> Manuelle Prüfung</div><div class="review-list" id="results-review-list"><div class="track-card-empty">Lädt…</div></div></section>
+        <section class="track-card results-review-section"><div class="track-card-header"><i class="ri-user-search-line"></i> Manuelle Prüfung <span class="track-count" id="review-count">0</span></div><div class="review-list" id="results-review-list"><div class="track-card-empty">Lädt…</div></div></section>
         </section>
 
         <section class="app-view" id="view-archive">
