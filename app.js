@@ -12,6 +12,7 @@ let pipelineOperationsTelemetry = null;
 let pipelineStageDefinitions = [];
 const pipelineDrilldownState = { stageId: null, editorOpen: false };
 let statusPollTimer = null;
+let archiveArticles = [];
 
 const state = {
   search: "",
@@ -163,6 +164,11 @@ async function callApi(action, payload = {}) {
 function cacheEls() {
   els.toastContainer = document.getElementById("toast-container");
   els.btnSettings = document.getElementById("btn-settings");
+  els.appNav = document.getElementById("app-nav");
+  els.appViews = document.querySelectorAll(".app-view");
+  els.dashboardReliableCount = document.getElementById("dashboard-reliable-count");
+  els.dashboardReviewCount = document.getElementById("dashboard-review-count");
+  els.dashboardArchiveCount = document.getElementById("dashboard-archive-count");
   els.settingsModal = document.getElementById("settings-modal");
   els.btnSettingsClose = document.getElementById("btn-settings-close");
   els.settingsNav = document.getElementById("settings-nav");
@@ -211,6 +217,9 @@ function cacheEls() {
   els.signalSort = document.getElementById("signal-sort");
   els.marketingCount = document.getElementById("marketing-count");
   els.salesCount = document.getElementById("sales-count");
+  els.archiveStatusFilter = document.getElementById("archive-status-filter");
+  els.archiveCount = document.getElementById("archive-count");
+  els.archiveList = document.getElementById("archive-list");
   els.articleDetailModal = document.getElementById("article-detail-modal");
   els.articleDetailContent = document.getElementById("article-detail-content");
 }
@@ -1004,6 +1013,62 @@ async function loadFindings(track) {
   }
 }
 
+function archiveExplanation(article) {
+  if (article.ai_rationale) return article.ai_rationale;
+  if (article.rejection_reasons?.length) return article.rejection_reasons[0];
+  if (article.classification_status === "legacy") return "Altbestand: noch nicht durch die aktuelle Pipeline analysiert.";
+  if (article.classification_status === "pending") return "Noch nicht analysiert: wartet auf die nächste Verarbeitung.";
+  if (article.classification_status === "error") return "Die technische Analyse konnte nicht abgeschlossen werden.";
+  return "Kein ausreichendes Signal für eine Freigabe gefunden.";
+}
+
+function renderArchive() {
+  if (!els.archiveList) return;
+  const filter = els.archiveStatusFilter.value;
+  const articles = archiveArticles.filter((article) => filter === "all" || article.classification_status === filter);
+  els.archiveCount.textContent = articles.length.toLocaleString("de-DE");
+  if (!articles.length) {
+    els.archiveList.innerHTML = `<div class="track-card-empty">Keine Artikel für diesen Archivstatus.</div>`;
+    return;
+  }
+  els.archiveList.innerHTML = articles.map((article) => {
+    const status = article.classification_status || "legacy";
+    const source = Array.isArray(article.source) ? article.source[0] : article.source;
+    return `<article class="archive-item" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
+      <div class="finding-item-top"><span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "rejected" ? "filter-off-line" : status === "legacy" ? "history-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span>${formatFindingDate(article.published_at)}</div>
+      <span class="finding-title">${escapeText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
+      <p class="archive-reason"><i class="ri-information-line"></i><span>${escapeHtml(archiveExplanation(article))}</span></p>
+      <div class="finding-meta">${source?.company ? `<span class="tag tag--source"><i class="ri-newspaper-line"></i>${escapeHtml(source.company)}</span>` : ""}${article.article_type ? `<span class="tag">${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}</div>
+    </article>`;
+  }).join("");
+}
+
+async function loadArchive() {
+  if (!els.archiveList) return;
+  try {
+    const { articles } = await callApi("list_archive_articles", { limit: 200 });
+    archiveArticles = articles || [];
+    renderArchive();
+  } catch (err) {
+    els.archiveList.innerHTML = `<div class="track-card-empty">Archiv konnte nicht geladen werden: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function loadDashboardSummary() {
+  try {
+    const stats = await callApi("get_tagging_stats");
+    els.dashboardReliableCount.textContent = Number(stats.reliable || 0).toLocaleString("de-DE");
+    els.dashboardReviewCount.textContent = Number(stats.uncertain || 0).toLocaleString("de-DE");
+    els.dashboardArchiveCount.textContent = Number((stats.legacy || 0) + (stats.rejected || 0) + (stats.error || 0) + (stats.pending || 0)).toLocaleString("de-DE");
+  } catch { /* dashboard counters are non-critical */ }
+}
+
+function switchAppView(view) {
+  els.appNav.querySelectorAll("[data-app-view]").forEach((button) => button.classList.toggle("active", button.dataset.appView === view));
+  els.appViews.forEach((section) => section.classList.toggle("show", section.id === `view-${view}`));
+  if (view === "archive" && !archiveArticles.length) void loadArchive();
+}
+
 async function loadTaggingStats() {
   try {
     const stats = await callApi("get_tagging_stats");
@@ -1091,6 +1156,11 @@ async function openArticleDetail(articleId) {
     const evidence = Object.entries(article.tag_evidence || {});
     const confidence = formatConfidence(article.relevance_confidence);
     const fulltext = article.cleaned_content || article.content || article.excerpt || "Kein Artikeltext gespeichert.";
+    const decisionExplanation = article.ai_rationale || reasons[0]
+      || (status === "legacy" ? "Altbestand: Dieser Artikel wurde noch nicht durch die aktuelle Pipeline analysiert."
+        : status === "pending" ? "Noch nicht analysiert: Der Artikel wartet auf die nächste Verarbeitung."
+          : status === "error" ? "Die technische Analyse konnte nicht abgeschlossen werden."
+            : "Für diesen Artikel liegt keine zusätzliche Prüfbegründung vor.");
     els.articleDetailContent.innerHTML = `
       <button type="button" class="article-detail-close" aria-label="Schließen"><i class="ri-close-line"></i></button>
       <main class="article-detail-main">
@@ -1115,7 +1185,7 @@ async function openArticleDetail(articleId) {
         </div>
         <div class="decision-block">
           <span class="decision-label">Begründung</span>
-          <p class="decision-rationale">${escapeHtml(article.ai_rationale || reasons[0] || "Für den Altbestand liegt noch keine neue Prüfbegründung vor.")}</p>
+          <p class="decision-rationale">${escapeHtml(decisionExplanation)}</p>
         </div>
         ${reasons.length ? `<div class="decision-block"><span class="decision-label">Ausschlussregeln</span><div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></div>` : ""}
         <div class="decision-block">
@@ -1485,6 +1555,11 @@ async function loadLastRun() {
 }
 
 function bindUi() {
+  els.appNav.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-app-view]");
+    if (button) switchAppView(button.dataset.appView);
+  });
+  els.archiveStatusFilter.addEventListener("change", renderArchive);
   const updateSignalView = () => {
     signalViewState.status = els.signalStatusFilter.value;
     signalViewState.company = els.signalCompanyFilter.value;
@@ -1500,7 +1575,7 @@ function bindUi() {
     const card = event.target.closest("[data-article-id]");
     if (card) void openArticleDetail(card.dataset.articleId);
   };
-  [els.findingsListMarketing, els.findingsListSales].forEach((container) => {
+  [els.findingsListMarketing, els.findingsListSales, els.archiveList].forEach((container) => {
     container?.addEventListener("click", openCardDetail);
     container?.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") openCardDetail(event);
@@ -1706,4 +1781,5 @@ export function initApp(client) {
   void loadLastRun();
   void loadFindings("marketing");
   void loadFindings("sales");
+  void loadDashboardSummary();
 }

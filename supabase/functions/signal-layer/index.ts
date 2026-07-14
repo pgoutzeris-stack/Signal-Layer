@@ -2452,6 +2452,20 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { articles: data || [] });
       }
 
+      case "list_archive_articles": {
+        const { limit, status } = body as { limit?: number; status?: string };
+        const archiveStatuses = ["legacy", "pending", "rejected", "error"];
+        const selectedStatuses = status && archiveStatuses.includes(status) ? [status] : archiveStatuses;
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("articles")
+          .select("id, title, title_de, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, source:sources(company, url, category)")
+          .in("classification_status", selectedStatuses)
+          .order("published_at", { ascending: false, nullsFirst: false })
+          .limit(Math.min(Math.max(limit || 100, 1), 200));
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { articles: data || [] });
+      }
+
       case "list_classification_tests": {
         const { limit } = body as { limit?: number };
         const admin = getAdminClient();

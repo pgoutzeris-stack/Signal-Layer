@@ -126,6 +126,8 @@
     font-size: 1.2rem; cursor: pointer; transition: all .15s;
   }
   .sidebar-icon-btn:hover { background: var(--surface); color: var(--ink); }
+  .sidebar-nav { display: grid; gap: 8px; }
+  .sidebar-icon-btn.active { color: var(--brand); background: var(--brand-light); }
 
   main#main-content {
     flex: 1; overflow-y: auto; padding: 2rem 1.5rem;
@@ -136,6 +138,23 @@
   .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
   .dashboard-title { font-size: 1.4rem; font-weight: 700; margin-bottom: .3rem; }
   .dashboard-subtitle { font-size: .9rem; color: var(--muted); }
+  .app-view { display: none; }
+  .app-view.show { display: block; }
+  .overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .overview-card { min-height: 126px; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: var(--shadow-dash); }
+  .overview-card i { display: grid; width: 32px; height: 32px; place-items: center; margin-bottom: 13px; border-radius: 9px; color: var(--brand); background: var(--brand-light); font-size: .95rem; }
+  .overview-card span { display: block; color: var(--muted); font-size: .68rem; }
+  .overview-card b { display: block; margin-top: 4px; color: var(--ink); font-size: 1.35rem; }
+  .overview-card--archive i { color: var(--warning-text); background: var(--warning-bg); }
+  .view-header { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin: 0 0 1rem; }
+  .view-header h2 { font-size: 1.05rem; }
+  .view-header p { margin-top: 3px; color: var(--muted); font-size: .72rem; }
+  .archive-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .archive-item { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+  .archive-item:hover { border-color: #cbd5e1; box-shadow: 0 6px 18px rgba(15, 23, 42, .06); }
+  .archive-reason { display: flex; gap: 6px; margin: .45rem 0 .7rem; color: var(--muted); font-size: .72rem; line-height: 1.4; }
+  .archive-reason i { flex: 0 0 auto; margin-top: 1px; color: var(--brand); }
+  @media (max-width: 720px) { .overview-grid, .archive-list { grid-template-columns: 1fr; } }
 
   .crawl-trigger-wrap { position: relative; }
   .status-pill { min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--bg); color: var(--ink); box-shadow: 0 3px 12px rgba(15, 23, 42, .08); display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: .76rem; font-weight: 750; cursor: pointer; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
@@ -1352,6 +1371,11 @@
   <div id="app-container">
     <aside class="app-sidebar">
       <div class="logo-mark"><i class="ri-broadcast-line"></i></div>
+      <nav class="sidebar-nav" id="app-nav" aria-label="Bereiche">
+        <button type="button" class="sidebar-icon-btn active" data-app-view="dashboard" title="Dashboard"><i class="ri-dashboard-line"></i></button>
+        <button type="button" class="sidebar-icon-btn" data-app-view="results" title="Ergebnisse"><i class="ri-layout-grid-line"></i></button>
+        <button type="button" class="sidebar-icon-btn" data-app-view="archive" title="Archiv"><i class="ri-archive-line"></i></button>
+      </nav>
       <div class="sidebar-spacer"></div>
       <button type="button" class="sidebar-icon-btn" id="btn-settings" title="Einstellungen">
         <i class="ri-settings-3-line"></i>
@@ -1404,6 +1428,17 @@
           </div>
         </div>
 
+        <section class="app-view show" id="view-dashboard">
+          <div class="view-header"><div><h2>Dashboard</h2><p>Überblick über die aktuelle Signalverarbeitung.</p></div></div>
+          <div class="overview-grid">
+            <article class="overview-card"><i class="ri-shield-check-line"></i><span>Zuverlässige Signale</span><b id="dashboard-reliable-count">–</b></article>
+            <article class="overview-card"><i class="ri-user-search-line"></i><span>Manuelle Prüfung</span><b id="dashboard-review-count">–</b></article>
+            <article class="overview-card overview-card--archive"><i class="ri-archive-line"></i><span>Archivierte Artikel</span><b id="dashboard-archive-count">–</b></article>
+          </div>
+        </section>
+
+        <section class="app-view" id="view-results">
+        <div class="view-header"><div><h2>Ergebnisse</h2><p>Belastbare Marketing- und Sales-Signale.</p></div></div>
         <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
           <span class="signal-toolbar-label"><i class="ri-equalizer-2-line"></i> Ansicht</span>
           <div class="signal-toolbar-controls">
@@ -1442,6 +1477,12 @@
             </div>
           </div>
         </div>
+        </section>
+
+        <section class="app-view" id="view-archive">
+          <div class="view-header"><div><h2>Archiv <span class="track-count" id="archive-count">0</span></h2><p>Altbestand, noch nicht analysierte, abgelehnte und technisch fehlgeschlagene Artikel.</p></div><select class="signal-toolbar-select" id="archive-status-filter" aria-label="Archivstatus filtern"><option value="all">Alle</option><option value="legacy">Altbestand</option><option value="pending">Nicht analysiert</option><option value="rejected">Abgelehnt</option><option value="error">Technischer Fehler</option></select></div>
+          <div class="archive-list" id="archive-list"><div class="track-card-empty">Archiv wird geladen…</div></div>
+        </section>
 
       </div>
     </main>
