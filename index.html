@@ -74,6 +74,7 @@
     justify-content: center;
     padding: 20px;
   }
+  html.in-iframe #screen-login { display: none !important; }
   .login-card {
     background: var(--bg);
     border: 1px solid var(--line);
@@ -1373,17 +1374,11 @@
   <!-- Login -->
   <div id="screen-login">
     <div class="login-card">
-      <div class="login-title">Signal <span>Layer</span></div>
-      <div class="login-error" id="login-error"><span id="login-error-text"></span></div>
-      <form id="form-login">
-        <label class="modern-label">E-Mail</label>
-        <input class="modern-input" type="email" id="login-email" required>
-        <label class="modern-label">Passwort</label>
-        <input class="modern-input" type="password" id="login-password" required>
-        <button type="submit" class="btn-primary" id="btn-login" style="width:100%;justify-content:center">
-          <i class="ri-login-box-line"></i> Anmelden
-        </button>
-      </form>
+      <div class="login-title">ROOTS <span>Intranet</span></div>
+      <p style="margin:0 0 1.25rem;color:var(--muted);font-size:.84rem;line-height:1.5;text-align:center">Bitte melde dich im ROOTS Intranet an und öffne Signal Layer dort erneut.</p>
+      <a class="btn-primary" href="https://pgoutzeris-stack.github.io/ROOTS_Intranet/#signal-layer" style="width:100%;justify-content:center;text-decoration:none">
+        <i class="ri-arrow-right-line"></i> Zum ROOTS Intranet
+      </a>
     </div>
   </div>
 
@@ -1674,8 +1669,9 @@
 window.RootsUser = window.RootsUser || {
   _p:null,_sb:null,_uid:null,
   _initials(n){if(!n)return'?';return n.trim().split(/\s+/).map(w=>w[0]||'').join('').slice(0,2).toUpperCase();},
-  async _loadAndMount(sb){
-    this._sb=sb;const{data:{session}}=await sb.auth.getSession();
+  async _loadAndMount(sb,sessionHint){
+    this._sb=sb;let session=sessionHint||null;
+    if(!session){const{data:{session:stored}}=await sb.auth.getSession();session=stored;}
     if(!session){this._uid=null;this._p=null;return;}
     this._uid=session.user.id;
     const{data}=await sb.schema('users').from('profiles').select('id,email,full_name,position,avatar_url,linkedin_url,app_role,app_settings,kuerzel').eq('id',this._uid).single();
@@ -1684,64 +1680,52 @@ window.RootsUser = window.RootsUser || {
   openSettings(){},
   isAdmin(){return this._p?.app_role==='admin'},
 };
+try {
+  if (window.self !== window.top) document.documentElement.classList.add('in-iframe');
+} catch {
+  document.documentElement.classList.add('in-iframe');
+}
 </script>
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260714-1635';
+import { initApp } from './app.js?v=20260714-1645';
 
 const { createClient } = window.supabase;
-const sb = createClient(SB_URL, SB_ANON);
+const sb = createClient(SB_URL, SB_ANON, {
+  auth: { persistSession: true, autoRefreshToken: false, detectSessionInUrl: false, storage: window.localStorage },
+});
 window.__rootsSupabaseClient = sb;
-const LOGIN_HTML = '<i class="ri-login-box-line"></i> Anmelden';
-
-function resetLoginBtn() {
-  const btn = document.getElementById('btn-login');
-  if (btn) { btn.disabled = false; btn.innerHTML = LOGIN_HTML; }
+const signalLayerInIframe = document.documentElement.classList.contains('in-iframe');
+let appStarted = false;
+if (signalLayerInIframe && window.RootsUserBridge?.syncAuthFromParentStorage) {
+  void window.RootsUserBridge.syncAuthFromParentStorage();
 }
 
 function showLogin() {
-  document.getElementById('screen-login').style.display = 'flex';
+  document.getElementById('screen-login').style.display = signalLayerInIframe ? 'none' : 'flex';
   document.body.classList.remove('body-dashboard');
-  resetLoginBtn();
 }
 
 async function onSession(session) {
   if (!session) { showLogin(); if (window.RootsUser) { window.RootsUser._uid = null; window.RootsUser._p = null; } return; }
-  await window.RootsUser._loadAndMount(sb);
+  await window.RootsUser._loadAndMount(sb, session);
   document.getElementById('screen-login').style.display = 'none';
   document.body.classList.add('body-dashboard');
   document.dispatchEvent(new CustomEvent('roots-profile-ready'));
-  initApp(sb);
+  if (!appStarted) { appStarted = true; initApp(sb); }
 }
 
-sb.auth.getSession().then(({ data: { session } }) => onSession(session));
-sb.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_OUT') { showLogin(); return; }
-  if (session) onSession(session);
-});
 window.addEventListener('roots-auth-ready', (e) => {
-  if (e.detail?.session) onSession(e.detail.session);
+  if (e.detail?.session) void onSession(e.detail.session);
 });
-
-document.getElementById('form-login').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const btn = document.getElementById('btn-login');
-  const err = document.getElementById('login-error');
-  const errT = document.getElementById('login-error-text');
-  btn.disabled = true;
-  btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Anmelden…';
-  err.classList.remove('visible');
-  const { error } = await sb.auth.signInWithPassword({
-    email: document.getElementById('login-email').value.trim(),
-    password: document.getElementById('login-password').value,
-  });
-  if (error) {
-    errT.textContent = 'Ungültige E-Mail oder falsches Passwort.';
-    err.classList.add('visible');
-    resetLoginBtn();
-  }
+window.addEventListener('roots-auth-signed-out', () => {
+  appStarted = false;
+  showLogin();
 });
+if (!signalLayerInIframe) {
+  sb.auth.getSession().then(({ data: { session } }) => void onSession(session));
+}
 </script>
 </body>
 </html>
