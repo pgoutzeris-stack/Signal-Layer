@@ -23,6 +23,7 @@ const state = {
 };
 
 const signalViewState = { status: "all", company: "all", source: "all", sort: "recommended" };
+const archiveViewState = { company: "all", source: "all", sort: "recommended" };
 const findingsByTrack = { marketing: [], sales: [] };
 
 const els = {};
@@ -236,6 +237,9 @@ function cacheEls() {
   els.marketingCount = document.getElementById("marketing-count");
   els.salesCount = document.getElementById("sales-count");
   els.archiveStatusFilter = document.getElementById("archive-status-filter");
+  els.archiveCompanyFilter = document.getElementById("archive-company-filter");
+  els.archiveSourceFilter = document.getElementById("archive-source-filter");
+  els.archiveSort = document.getElementById("archive-sort");
   els.archiveCount = document.getElementById("archive-count");
   els.archiveSummary = document.getElementById("archive-summary");
   els.archiveList = document.getElementById("archive-list");
@@ -1051,14 +1055,50 @@ function archiveExplanation(article) {
   return "Kein ausreichendes Signal für eine Freigabe gefunden.";
 }
 
+function archiveSourceName(article) {
+  const source = Array.isArray(article.source) ? article.source[0] : article.source;
+  return String(source?.company || "").trim();
+}
+
+function refreshArchiveSourceOptions() {
+  const selected = archiveViewState.source;
+  const sourceNames = [...new Set(archiveArticles.map(archiveSourceName).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "de"));
+  els.archiveSourceFilter.innerHTML = `<option value="all">Alle Quellen</option>${sourceNames
+    .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")}`;
+  els.archiveSourceFilter.value = sourceNames.includes(selected) ? selected : "all";
+  archiveViewState.source = els.archiveSourceFilter.value;
+}
+
+function visibleArchiveArticles() {
+  const filtered = archiveArticles.filter((article) => {
+    const companyMatches = archiveViewState.company === "all" || articleCompanies(article).length > 0;
+    const sourceMatches = archiveViewState.source === "all" || archiveSourceName(article) === archiveViewState.source;
+    return companyMatches && sourceMatches;
+  });
+  return [...filtered].sort((a, b) => {
+    const dateA = new Date(a.published_at || 0).getTime() || 0;
+    const dateB = new Date(b.published_at || 0).getTime() || 0;
+    const confidenceA = Number(a.relevance_confidence || 0);
+    const confidenceB = Number(b.relevance_confidence || 0);
+    if (archiveViewState.sort === "newest") return dateB - dateA || confidenceB - confidenceA;
+    if (archiveViewState.sort === "confidence") return confidenceB - confidenceA || dateB - dateA;
+    const newA = isToday(a.classified_at) ? 1 : 0;
+    const newB = isToday(b.classified_at) ? 1 : 0;
+    return newB - newA || confidenceB - confidenceA || dateB - dateA;
+  });
+}
+
 function renderArchive() {
   if (!els.archiveList) return;
-  const articles = archiveArticles;
+  const articles = visibleArchiveArticles();
   els.archiveCount.textContent = archiveTotalCount.toLocaleString("de-DE");
-  els.archiveSummary.textContent = archiveTotalCount > articles.length
-    ? `${articles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} Artikeln geladen`
-    : `${archiveTotalCount.toLocaleString("de-DE")} Artikel`;
-  els.archiveLoadMore.hidden = articles.length >= archiveTotalCount;
+  const hasLocalFilter = archiveViewState.company !== "all" || archiveViewState.source !== "all";
+  els.archiveSummary.textContent = archiveTotalCount > archiveArticles.length
+    ? `${articles.length.toLocaleString("de-DE")} sichtbar · ${archiveArticles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} geladen`
+    : hasLocalFilter ? `${articles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} sichtbar`
+      : `${archiveTotalCount.toLocaleString("de-DE")} Artikel`;
+  els.archiveLoadMore.hidden = archiveArticles.length >= archiveTotalCount;
   if (!articles.length) {
     els.archiveList.innerHTML = `<div class="track-card-empty">Keine Artikel für diesen Archivstatus.</div>`;
     return;
@@ -1084,6 +1124,7 @@ async function loadArchive(append = false) {
     const { articles, total } = await callApi("list_archive_articles", { limit: 100, offset, status: status === "all" ? undefined : status });
     archiveArticles = append ? [...archiveArticles, ...(articles || [])] : (articles || []);
     archiveTotalCount = Number(total || 0);
+    refreshArchiveSourceOptions();
     renderArchive();
   } catch (err) {
     els.archiveList.innerHTML = `<div class="track-card-empty">Archiv konnte nicht geladen werden: ${escapeHtml(err.message)}</div>`;
@@ -1753,6 +1794,15 @@ function bindUi() {
     if (button) switchAppView(button.dataset.appView);
   });
   els.archiveStatusFilter.addEventListener("change", () => void loadArchive());
+  const updateArchiveView = () => {
+    archiveViewState.company = els.archiveCompanyFilter.value;
+    archiveViewState.source = els.archiveSourceFilter.value;
+    archiveViewState.sort = els.archiveSort.value;
+    renderArchive();
+  };
+  [els.archiveCompanyFilter, els.archiveSourceFilter, els.archiveSort].forEach((control) =>
+    control.addEventListener("change", updateArchiveView)
+  );
   els.archiveLoadMore.addEventListener("click", () => void loadArchive(true));
   const updateSignalView = () => {
     signalViewState.status = els.signalStatusFilter.value;
