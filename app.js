@@ -1105,6 +1105,72 @@ function switchAppView(view) {
   if (view === "archive" && !archiveArticles.length) void loadArchive();
 }
 
+function mountResultsHeader() {
+  const toolbar = document.querySelector(".signal-toolbar");
+  const crawlTrigger = document.querySelector(".crawl-trigger-wrap");
+  const intro = document.querySelector(".dashboard-header");
+  if (toolbar && crawlTrigger) toolbar.appendChild(crawlTrigger);
+  intro?.remove();
+}
+
+function enhanceHeaderSelects() {
+  document.querySelectorAll(".signal-toolbar-select").forEach((select) => {
+    if (select.dataset.enhanced === "true") return;
+    select.dataset.enhanced = "true";
+    const wrapper = document.createElement("div");
+    wrapper.className = "roots-select";
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "roots-select-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    const label = document.createElement("span");
+    const icon = document.createElement("i");
+    icon.className = "ri-arrow-down-s-line";
+    trigger.append(label, icon);
+    const menu = document.createElement("div");
+    menu.className = "roots-select-menu";
+    menu.setAttribute("role", "listbox");
+    select.parentNode.insertBefore(wrapper, select);
+    wrapper.append(select, trigger, menu);
+
+    const close = () => {
+      wrapper.classList.remove("open");
+      trigger.setAttribute("aria-expanded", "false");
+    };
+    const render = () => {
+      label.textContent = select.selectedOptions[0]?.textContent || "Auswählen";
+      menu.replaceChildren(...[...select.options].map((option) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `roots-select-option${option.selected ? " selected" : ""}`;
+        button.textContent = option.textContent;
+        button.dataset.value = option.value;
+        button.setAttribute("role", "option");
+        button.setAttribute("aria-selected", String(option.selected));
+        button.addEventListener("click", () => {
+          select.value = option.value;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          render();
+          close();
+        });
+        return button;
+      }));
+    };
+    trigger.addEventListener("click", (event) => {
+      event.stopPropagation();
+      document.querySelectorAll(".roots-select.open").forEach((item) => item !== wrapper && item.classList.remove("open"));
+      const open = wrapper.classList.toggle("open");
+      trigger.setAttribute("aria-expanded", String(open));
+    });
+    select.addEventListener("change", render);
+    new MutationObserver(render).observe(select, { childList: true, subtree: true });
+    wrapper.addEventListener("keydown", (event) => { if (event.key === "Escape") close(); });
+    document.addEventListener("click", close);
+    render();
+  });
+}
+
 async function loadTaggingStats() {
   try {
     const stats = await callApi("get_tagging_stats");
@@ -1912,6 +1978,8 @@ export function initApp(client) {
     appInitialized = true;
     cacheEls();
     bindUi();
+    mountResultsHeader();
+    enhanceHeaderSelects();
   }
   void loadLastRun();
   void loadFindings("marketing");
