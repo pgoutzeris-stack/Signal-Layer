@@ -126,6 +126,50 @@ type GeminiModelOption = {
 let geminiModelsCache: { models: GeminiModelOption[]; at: number } = { models: [], at: 0 };
 const GEMINI_MODELS_CACHE_TTL = 10 * 60 * 1000;
 
+// Gemini returns exact token counts, but no per-request invoice amount. Keep the
+// USD/EUR conversion rate short-lived and store the rate used with each article.
+let usdEurRateCache: { rate: number | null; at: number } = { rate: null, at: 0 };
+const USD_EUR_RATE_CACHE_TTL = 60 * 60 * 1000;
+
+async function getUsdEurRate(): Promise<number | null> {
+  const now = Date.now();
+  if (usdEurRateCache.rate !== null && now - usdEurRateCache.at < USD_EUR_RATE_CACHE_TTL) {
+    return usdEurRateCache.rate;
+  }
+  try {
+    const response = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR", {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) throw new Error(`FX API returned ${response.status}`);
+    const payload = await response.json();
+    const rate = Number(payload?.rates?.EUR);
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error("FX API returned an invalid USD/EUR rate");
+    usdEurRateCache = { rate, at: now };
+    return rate;
+  } catch (error) {
+    console.warn("Could not fetch USD/EUR rate; token and USD totals will still be saved", error);
+    return usdEurRateCache.rate;
+  }
+}
+
+async function recordArticleGeminiUsage(
+  articleId: string | undefined,
+  usage: { inputTokens: number; outputTokens: number; thinkingTokens: number; totalTokens: number; estimatedCostUsd: number },
+): Promise<void> {
+  if (!articleId) return;
+  const usdEurRate = await getUsdEurRate();
+  const { error } = await getAdminClient().schema("signal_layer").rpc("record_article_gemini_usage", {
+    p_article_id: articleId,
+    p_input_tokens: usage.inputTokens,
+    p_output_tokens: usage.outputTokens,
+    p_thinking_tokens: usage.thinkingTokens,
+    p_total_tokens: usage.totalTokens,
+    p_cost_usd: usage.estimatedCostUsd,
+    p_usd_eur_rate: usdEurRate,
+  });
+  if (error) console.error("Could not persist Gemini usage on article", error);
+}
+
 async function getAvailableGeminiModels(force = false): Promise<GeminiModelOption[]> {
   const now = Date.now();
   if (!force && geminiModelsCache.models.length && now - geminiModelsCache.at < GEMINI_MODELS_CACHE_TTL) {
@@ -1296,6 +1340,7 @@ async function callGeminiClassifier(
   const inputRate = rates.input;
   const outputRate = rates.output;
   const estimatedCost = (inputTokens * inputRate + (outputTokens + thinkingTokens) * outputRate) / 1_000_000;
+  const articleUsage = { inputTokens, outputTokens, thinkingTokens, totalTokens, estimatedCostUsd: estimatedCost };
   const text = payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("");
   let classification: AiClassification;
   try {
@@ -1310,6 +1355,7 @@ async function callGeminiClassifier(
       total_tokens: totalTokens, estimated_cost_usd: estimatedCost, duration_ms: Date.now() - startedAt,
       error_code: "invalid_response", error_message: message.slice(0, 1000),
     });
+    await recordArticleGeminiUsage(telemetry.articleId, articleUsage);
     throw new Error(`Gemini ${model} returned no valid classification`);
   }
   await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
@@ -1318,6 +1364,7 @@ async function callGeminiClassifier(
     input_tokens: inputTokens, output_tokens: outputTokens, thinking_tokens: thinkingTokens,
     total_tokens: totalTokens, estimated_cost_usd: estimatedCost, duration_ms: Date.now() - startedAt,
   });
+  await recordArticleGeminiUsage(telemetry.articleId, articleUsage);
   return classification;
 }
 
@@ -2487,7 +2534,7 @@ Deno.serve(async (req: Request) => {
         if (!articleId) return errorResponse(origin, "article_id is required");
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, content, cleaned_content, excerpt, published_at, crawled_at, article_type, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classified_at, tag_confidence, tag_evidence, event_cluster_key, source:sources(company, url, category)")
+          .select("id, title, title_de, url, content, cleaned_content, excerpt, published_at, crawled_at, article_type, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
           .eq("id", articleId).single();
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
         return corsResponse(origin, { article: data });
