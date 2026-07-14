@@ -664,9 +664,22 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date, policy: C
           return !eventMode || editorialPaths.some((part) => value.includes(part));
         } catch { return false; }
       };
+      // Markenartikel-magazin.de is an older PHP CMS. Its canonical articles
+      // have no JSON-LD or og:type metadata, but their detail URL is stable.
+      // Keep this exception domain-specific so generic listing pages remain
+      // protected by the standard metadata detection on every other source.
+      const isMarkenartikelDetail = (() => {
+        try {
+          const url = new URL(request.url);
+          return /(^|\\.)markenartikel-magazin\\.de$/i.test(url.hostname)
+            && url.pathname === '/_rubric/detail.php'
+            && /^\\d+$/.test(url.searchParams.get('nr') || '');
+        } catch { return false; }
+      })();
       const isArticle = !!(
         $('script[type="application/ld+json"]').filter((_, el) => /"@type"\\s*:\\s*"(NewsArticle|Article|BlogPosting)"/i.test($(el).html() || '')).length ||
-        $('meta[property="og:type"]').attr('content') === 'article'
+        $('meta[property="og:type"]').attr('content') === 'article' ||
+        isMarkenartikelDetail
       );
       if (request.userData.label === 'ARTICLE' || isArticle) {
         const title = $('meta[property="og:title"]').attr('content') || $('title').text() || '';
