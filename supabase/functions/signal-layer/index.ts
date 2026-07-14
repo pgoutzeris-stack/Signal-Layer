@@ -1194,56 +1194,6 @@ function validateRouteDecision(raw: AiRouteDecision | undefined, articleText: st
   };
 }
 
-// USD->EUR rate for cost reporting. Frankfurter (ECB reference rates) needs
-// no API key, so this doesn't require another vault secret. Cached for a few
-// hours since the rate only needs to be "current", not real-time.
-let eurRateCache: { value: number; at: number } | null = null;
-const EUR_RATE_CACHE_TTL = 6 * 60 * 60 * 1000; // 6h
-const FALLBACK_USD_EUR_RATE = 0.92;
-
-async function getUsdToEurRate(): Promise<number> {
-  if (eurRateCache && Date.now() - eurRateCache.at < EUR_RATE_CACHE_TTL) return eurRateCache.value;
-  try {
-    const res = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR", {
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) throw new Error(`frankfurter ${res.status}`);
-    const json = await res.json();
-    const rate = Number(json?.rates?.EUR);
-    if (!rate || Number.isNaN(rate)) throw new Error("invalid rate payload");
-    eurRateCache = { value: rate, at: Date.now() };
-    return rate;
-  } catch (error) {
-    console.error("Failed to fetch USD/EUR rate, using fallback:", error);
-    return eurRateCache?.value || FALLBACK_USD_EUR_RATE;
-  }
-}
-
-// Aggregates the real per-call token/cost telemetry callGeminiClassifier
-// already logs to ai_usage_events (actual usageMetadata from the Gemini API
-// response, not an estimate) into a single per-article total, converted to
-// EUR, so it can be stored directly on the article row alongside its other
-// classification fields instead of requiring a join into a separate table.
-async function sumArticleGeminiUsage(
-  admin: ReturnType<typeof createClient>,
-  articleId: string,
-): Promise<{
-  inputTokens: number; outputTokens: number; thinkingTokens: number; totalTokens: number;
-  callCount: number; costUsd: number; costEur: number; rate: number;
-}> {
-  const { data: events } = await admin.schema("signal_layer").from("ai_usage_events")
-    .select("input_tokens, output_tokens, thinking_tokens, total_tokens, estimated_cost_usd")
-    .eq("article_id", articleId).eq("status", "success");
-  const rows = events || [];
-  const inputTokens = rows.reduce((sum, r) => sum + (r.input_tokens || 0), 0);
-  const outputTokens = rows.reduce((sum, r) => sum + (r.output_tokens || 0), 0);
-  const thinkingTokens = rows.reduce((sum, r) => sum + (r.thinking_tokens || 0), 0);
-  const totalTokens = rows.reduce((sum, r) => sum + (r.total_tokens || 0), 0);
-  const costUsd = rows.reduce((sum, r) => sum + Number(r.estimated_cost_usd || 0), 0);
-  const rate = await getUsdToEurRate();
-  return { inputTokens, outputTokens, thinkingTokens, totalTokens, callCount: rows.length, costUsd, costEur: costUsd * rate, rate };
-}
-
 async function callGeminiClassifier(
   model: string,
   prompt: string,
@@ -1599,10 +1549,6 @@ async function tagArticle(
     }
   } catch (error) {
     console.error(`Classification failed for article ${articleId}:`, error);
-    // A failed call can still have burned tokens (e.g. review succeeded,
-    // then something else threw) — aggregate whatever ai_usage_events
-    // logged for this article so cost isn't lost on the error path either.
-    const failedUsage = await sumArticleGeminiUsage(admin, articleId);
     await admin.schema("signal_layer").from("articles").update({
       cleaned_content: cleanedContent,
       classification_status: "error",
@@ -1614,14 +1560,6 @@ async function tagArticle(
       classified_at: new Date().toISOString(),
       content_hash: contentHash,
       tag_status: "untagged",
-      gemini_input_tokens: failedUsage.inputTokens,
-      gemini_output_tokens: failedUsage.outputTokens,
-      gemini_thinking_tokens: failedUsage.thinkingTokens,
-      gemini_total_tokens: failedUsage.totalTokens,
-      gemini_call_count: failedUsage.callCount,
-      gemini_cost_usd: failedUsage.costUsd,
-      gemini_cost_eur: failedUsage.costEur,
-      gemini_cost_rate_usd_eur: failedUsage.rate,
     }).eq("id", articleId);
     return;
   }
@@ -1665,11 +1603,6 @@ async function tagArticle(
     ...(salesEligible ? [["routing:sales", classification.routing_decisions.sales.evidence]] : []),
   ]);
 
-  // Real tokens/cost as returned by the Gemini API for every call made for
-  // this article (primary + review, if triggered) — not an estimate — summed
-  // and converted to EUR, stored directly on the article row per request.
-  const usage = await sumArticleGeminiUsage(admin, articleId);
-
   await admin.schema("signal_layer").from("articles").update({
     cleaned_content: cleanedContent,
     article_type: classification.article_type,
@@ -1691,14 +1624,6 @@ async function tagArticle(
     classified_at: new Date().toISOString(),
     content_hash: contentHash,
     event_cluster_key: eventClusterKey,
-    gemini_input_tokens: usage.inputTokens,
-    gemini_output_tokens: usage.outputTokens,
-    gemini_thinking_tokens: usage.thinkingTokens,
-    gemini_total_tokens: usage.totalTokens,
-    gemini_call_count: usage.callCount,
-    gemini_cost_usd: usage.costUsd,
-    gemini_cost_eur: usage.costEur,
-    gemini_cost_rate_usd_eur: usage.rate,
     classification_payload: classification,
     sales_triggers: classification.sales_triggers.map((trigger) => trigger.id),
     routing_evidence: classification.routing_decisions,
