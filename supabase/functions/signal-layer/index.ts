@@ -1281,12 +1281,22 @@ async function callGeminiClassifier(
   const outputTokens = Number(usage.candidatesTokenCount || 0);
   const thinkingTokens = Number(usage.thoughtsTokenCount || 0);
   const totalTokens = Number(usage.totalTokenCount || inputTokens + outputTokens + thinkingTokens);
+  // Prices are USD per million text tokens. We always select rates by the
+  // actual model returned in the request telemetry, not by the current UI
+  // setting, so a model change cannot rewrite the cost of older analyses.
   const modelRates: Record<string, { input: number; output: number }> = {
     "gemini-3.5-flash": { input: 0.75, output: 4.5 },
-    "gemini-3.1-pro-preview": { input: 2, output: 12 },
     "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
+    "gemini-3.1-pro-preview": { input: 2, output: 12 },
+    "gemini-3-flash-preview": { input: 0.5, output: 3 },
+    "gemini-2.5-flash": { input: 0.3, output: 2.5 },
+    "gemini-2.5-pro": { input: 1.25, output: 10 },
   };
-  const rates = modelRates[model] || modelRates["gemini-3.5-flash"];
+  const rates = modelRates[model] || (model.includes("flash-lite")
+    ? modelRates["gemini-3.1-flash-lite"]
+    : model.includes("pro")
+      ? modelRates["gemini-3.1-pro-preview"]
+      : modelRates["gemini-3-flash-preview"]);
   const inputRate = rates.input;
   const outputRate = rates.output;
   const estimatedCost = (inputTokens * inputRate + (outputTokens + thinkingTokens) * outputRate) / 1_000_000;
@@ -2535,10 +2545,18 @@ Deno.serve(async (req: Request) => {
           if (row.feed_type === "apify" && row.status === "error") summary.apify_errors += 1;
           return summary;
         }, { attempts: 0, successful: 0, empty: 0, errors: 0, candidates: 0, inserted: 0, apify_attempts: 0, apify_errors: 0 });
+        const usdEurRate = await getUsdEurRate();
         return corsResponse(origin, {
           crawl_run: crawl || null,
           backfill_run: backfill ? { ...backfill, error_count: backfillErrorCount, error_breakdown: errorBreakdown } : null,
-          cost_summary: { ...costSummary, warning: costSummary.month_usd >= pipelineConfig.ai.monthly_warning_usd, warning_threshold_usd: pipelineConfig.ai.monthly_warning_usd },
+          cost_summary: {
+            ...costSummary,
+            month_eur: usdEurRate === null ? null : costSummary.month_usd * usdEurRate,
+            today_eur: usdEurRate === null ? null : costSummary.today_usd * usdEurRate,
+            usd_eur_rate: usdEurRate,
+            warning: costSummary.month_usd >= pipelineConfig.ai.monthly_warning_usd,
+            warning_threshold_usd: pipelineConfig.ai.monthly_warning_usd,
+          },
           source_health: sourceHealth,
         });
       }

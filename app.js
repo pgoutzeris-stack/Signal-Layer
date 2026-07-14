@@ -11,6 +11,7 @@ let geminiModelCatalogState = { status: "idle", validatedAt: null, error: null }
 let pipelineOperationsTelemetry = null;
 let pipelineStageDefinitions = [];
 const pipelineDrilldownState = { stageId: null, editorOpen: false };
+let statusPollTimer = null;
 
 const state = {
   search: "",
@@ -186,6 +187,7 @@ function cacheEls() {
   els.crawlCategoryList = document.getElementById("crawl-category-list");
   els.btnCrawlConfirm = document.getElementById("btn-crawl-confirm");
   els.lastRunText = document.getElementById("last-run-text");
+  els.crawlLiveState = document.getElementById("crawl-live-state");
   els.backfillProgressText = document.getElementById("backfill-progress-text");
   els.backfillProgressBar = document.getElementById("backfill-progress-bar");
   els.backfillProgressDetail = document.getElementById("backfill-progress-detail");
@@ -756,7 +758,8 @@ function renderBusinessPipelineStudio() {
   const operations = document.getElementById("operations-content");
   if (operations) {
     const telemetry = pipelineOperationsTelemetry;
-    const telemetryHtml = telemetry ? `<div class="telemetry-grid" style="margin-bottom:12px"><div class="telemetry-stat"><span>Gemini heute</span><b>${Number(telemetry.costs?.today_usd || 0).toFixed(2)} USD</b></div><div class="telemetry-stat ${telemetry.costs?.warning ? "telemetry-stat--warning" : ""}"><span>Gemini im Monat</span><b>${Number(telemetry.costs?.month_usd || 0).toFixed(2)} USD</b></div><div class="telemetry-stat"><span>Quellenläufe</span><b>${Number(telemetry.health?.attempts || 0).toLocaleString("de-DE")}</b></div><div class="telemetry-stat"><span>Crawl-Fehler</span><b>${Number(telemetry.health?.errors || 0).toLocaleString("de-DE")}</b></div></div>` : "";
+    const euro = (value) => value === null || value === undefined ? "Kurs wird geladen" : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+    const telemetryHtml = telemetry ? `<div class="telemetry-grid" style="margin-bottom:12px"><div class="telemetry-stat"><span>Gemini heute</span><b>${euro(telemetry.costs?.today_eur)}</b></div><div class="telemetry-stat ${telemetry.costs?.warning ? "telemetry-stat--warning" : ""}"><span>Gemini im Monat</span><b>${euro(telemetry.costs?.month_eur)}</b></div><div class="telemetry-stat"><span>Quellenläufe</span><b>${Number(telemetry.health?.attempts || 0).toLocaleString("de-DE")}</b></div><div class="telemetry-stat"><span>Crawl-Fehler</span><b>${Number(telemetry.health?.errors || 0).toLocaleString("de-DE")}</b></div></div>` : "";
     operations.innerHTML = `${telemetryHtml}${renderGeminiModelManager()}${pipelineEditHead("Betriebsgrenzen", "Diese Limits schützen Laufzeit und Kosten, verändern aber keine fachliche Relevanzentscheidung.")}${pipelineFields(["ai.daily_request_limit", "ai.daily_review_limit", "ai.monthly_warning_usd"])}<div class="pipeline-savebar"><span>Modellwechsel und Limits werden erst nach dem Speichern für neue Analysen aktiv.</span><button class="btn-primary" type="button" data-pipeline-save><i class="ri-save-line"></i> Änderungen speichern</button></div>`;
   }
 
@@ -888,6 +891,16 @@ function formatFindingDate(iso) {
   return `<span class="finding-date-tag">${dateStr}</span>`;
 }
 
+function isToday(iso) {
+  if (!iso) return false;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+}
+
 function articleCompanies(article) {
   const candidates = [...(article.matched_companies || []), article.primary_company].filter(Boolean);
   return candidates.filter((company, index) =>
@@ -956,11 +969,13 @@ function renderFindings(track) {
       const confidence = formatConfidence(f.confidence ?? article.relevance_confidence);
       const status = article.classification_status || "legacy";
       const isLegacy = status === "legacy";
+      const isNew = isToday(article.published_at);
       return `
         <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
           <div class="finding-item-top">
             <span class="finding-dimension">${escapeHtml(dimLabel)}</span>
             <div class="finding-top-tags">
+              ${isNew ? `<span class="finding-new-badge">NEU</span>` : ""}
               <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "reliable" ? "shield-check-line" : status === "legacy" ? "history-line" : "error-warning-line"}"></i> ${escapeHtml(STATUS_LABELS[status] || status)}${confidence && !isLegacy ? ` · ${confidence}` : ""}</span>
               ${formatFindingDate(article.published_at)}
             </div>
@@ -1336,9 +1351,11 @@ async function openCrawlDropdown() {
   }
   renderCrawlCategoryOptions();
   els.crawlDropdown.classList.add("show");
+  els.btnCrawlTrigger.setAttribute("aria-expanded", "true");
 }
 function closeCrawlDropdown() {
   els.crawlDropdown.classList.remove("show");
+  els.btnCrawlTrigger.setAttribute("aria-expanded", "false");
 }
 
 async function confirmCrawl() {
@@ -1374,22 +1391,62 @@ function formatRelativeTime(iso) {
 
 const STATUS_LABEL = { queued: "eingereiht", running: "läuft", done: "abgeschlossen", error: "fehlgeschlagen" };
 
+function formatCrawlTime(iso) {
+  if (!iso) return "--:--";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "--:--" : date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
+
+function getLiveStatus(last, backfill) {
+  if (last?.status === "running" || last?.status === "queued") {
+    return { tone: "working", label: "Crawl läuft", hint: "Quellen werden gerade geprüft." };
+  }
+  if (["running", "queued"].includes(backfill?.status)) {
+    return { tone: "working", label: "Analyse läuft", hint: "Neue Artikel werden mit Gemini analysiert." };
+  }
+  if (last?.status === "error" || backfill?.status === "error") {
+    return { tone: "error", label: "Aufmerksamkeit nötig", hint: "Ein Lauf wurde mit Fehler beendet." };
+  }
+  return { tone: "ready", label: "Bereit", hint: "Klicken, um einen Crawl zu starten." };
+}
+
+function setLiveStatus(last, backfill) {
+  const liveStatus = getLiveStatus(last, backfill);
+  els.btnCrawlTrigger.classList.remove("status-pill--ready", "status-pill--working", "status-pill--error");
+  els.btnCrawlTrigger.classList.add(`status-pill--${liveStatus.tone}`);
+  els.btnCrawlTrigger.setAttribute("aria-label", `Status: ${liveStatus.label}`);
+  els.crawlLiveState.textContent = liveStatus.label;
+  const hint = document.getElementById("crawl-status-hint");
+  if (hint) hint.textContent = liveStatus.hint;
+  return liveStatus.tone === "working";
+}
+
+function scheduleStatusRefresh(isActive) {
+  clearTimeout(statusPollTimer);
+  statusPollTimer = setTimeout(() => void loadLastRun(), isActive ? 8_000 : 60_000);
+}
+
 async function loadLastRun() {
   try {
     const { crawl_run: last, backfill_run: backfill, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
-    const formatUsd = (value) => `${Number(value || 0).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
-    els.geminiCostMonth.textContent = formatUsd(costs?.month_usd);
-    els.geminiCostToday.textContent = formatUsd(costs?.today_usd);
+    const formatEur = (value) => value === null || value === undefined
+      ? "Kurs wird geladen"
+      : `${Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    els.geminiCostMonth.textContent = formatEur(costs?.month_eur);
+    els.geminiCostToday.textContent = formatEur(costs?.today_eur);
     els.geminiRequestCount.textContent = Number(costs?.requests || 0).toLocaleString("de-DE");
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
     els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
     els.sourceHealthNote.textContent = health
       ? `${Number(health.successful || 0).toLocaleString("de-DE")} erfolgreich · ${Number(health.empty || 0).toLocaleString("de-DE")} leer · ${Number(health.errors || 0).toLocaleString("de-DE")} Fehler · Apify ${Number(health.apify_errors || 0).toLocaleString("de-DE")} Fehler`
       : "Noch keine detaillierte Crawl-Telemetrie vorhanden.";
-    if (!last) { els.lastRunText.textContent = "Noch kein Crawl-Lauf."; return; }
-    const trigger = last.trigger_type === "scheduled" ? "automatisch (6 Uhr)" : "manuell";
-    els.lastRunText.textContent =
-      `${formatRelativeTime(last.started_at)} · ${trigger} · ${STATUS_LABEL[last.status] || last.status}`;
+    const isActive = setLiveStatus(last, backfill);
+    if (!last) {
+      els.lastRunText.textContent = "--:--";
+      scheduleStatusRefresh(isActive);
+      return;
+    }
+    els.lastRunText.textContent = formatCrawlTime(last.started_at);
     if (backfill) {
       const total = Number(backfill.total_count || 0);
       const processed = Number(backfill.processed_count || 0);
@@ -1412,8 +1469,11 @@ async function loadLastRun() {
       els.backfillProgressDetail.textContent = "Aktuell werden keine Altartikel geprüft.";
       els.apiErrorList.innerHTML = "";
     }
+    scheduleStatusRefresh(isActive);
   } catch {
     els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
+    setLiveStatus(null, null);
+    scheduleStatusRefresh(false);
   }
 }
 
