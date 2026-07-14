@@ -203,6 +203,11 @@ function cacheEls() {
   els.btnCrawlConfirm = document.getElementById("btn-crawl-confirm");
   els.lastRunText = document.getElementById("last-run-text");
   els.crawlLiveState = document.getElementById("crawl-live-state");
+  els.crawlSourceProgress = document.getElementById("crawl-source-progress");
+  els.crawlSourceProgressText = document.getElementById("crawl-source-progress-text");
+  els.crawlSourceProgressBar = document.getElementById("crawl-source-progress-bar");
+  els.crawlCurrentSource = document.getElementById("crawl-current-source");
+  els.crawlCurrentSourceUrl = document.getElementById("crawl-current-source-url");
   els.backfillProgressText = document.getElementById("backfill-progress-text");
   els.backfillProgressBar = document.getElementById("backfill-progress-bar");
   els.backfillProgressDetail = document.getElementById("backfill-progress-detail");
@@ -1600,6 +1605,24 @@ async function loadLastRun() {
       return;
     }
     els.lastRunText.textContent = formatCrawlTime(last.started_at);
+    const sourceProgress = last.source_progress;
+    if (sourceProgress && Number(sourceProgress.total || 0) > 0) {
+      const totalSources = Number(sourceProgress.total || 0);
+      const completedSources = Math.min(totalSources, Number(sourceProgress.completed || 0));
+      const visiblePosition = Number(sourceProgress.current_position || completedSources);
+      const sourcePercent = Math.round((visiblePosition / totalSources) * 100);
+      els.crawlSourceProgress.hidden = false;
+      els.crawlSourceProgressText.textContent = `${visiblePosition.toLocaleString("de-DE")} / ${totalSources.toLocaleString("de-DE")}`;
+      els.crawlSourceProgressBar.style.width = `${sourcePercent}%`;
+      els.crawlCurrentSource.textContent = sourceProgress.current_source?.company
+        || (last.status === "done" ? "Alle Quellen abgeschlossen" : "Quelle wird geladen");
+      const currentUrl = sourceProgress.current_source?.url || "";
+      els.crawlCurrentSourceUrl.hidden = !currentUrl;
+      els.crawlCurrentSourceUrl.textContent = currentUrl;
+      els.crawlCurrentSourceUrl.href = currentUrl || "#";
+    } else {
+      els.crawlSourceProgress.hidden = true;
+    }
     if (backfill) {
       const total = Number(backfill.total_count || 0);
       const processed = Number(backfill.processed_count || 0);

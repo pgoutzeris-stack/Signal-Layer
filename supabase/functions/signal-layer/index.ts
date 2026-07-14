@@ -2650,9 +2650,36 @@ Deno.serve(async (req: Request) => {
           if (row.feed_type === "apify" && row.status === "error") summary.apify_errors += 1;
           return summary;
         }, { attempts: 0, successful: 0, empty: 0, errors: 0, candidates: 0, inserted: 0, apify_attempts: 0, apify_errors: 0 });
+        let crawlWithProgress = crawl || null;
+        if (crawl) {
+          const sourceIds = Array.isArray(crawl.source_ids) ? crawl.source_ids as string[] : [];
+          const totalSources = sourceIds.length;
+          const currentIndex = Math.max(0, Number(crawl.current_index || 0));
+          const completedSources = crawl.status === "done"
+            ? totalSources
+            : Math.min(totalSources, currentIndex);
+          const currentSourceId = ["queued", "running"].includes(crawl.status)
+            ? sourceIds[currentIndex] || null
+            : null;
+          let currentSource: { id: string; company: string; url: string } | null = null;
+          if (currentSourceId) {
+            const { data } = await admin.schema("signal_layer").from("sources")
+              .select("id, company, url").eq("id", currentSourceId).maybeSingle();
+            currentSource = data || null;
+          }
+          crawlWithProgress = {
+            ...crawl,
+            source_progress: {
+              completed: completedSources,
+              total: totalSources,
+              current_position: currentSourceId ? Math.min(totalSources, currentIndex + 1) : null,
+              current_source: currentSource,
+            },
+          };
+        }
         const usdEurRate = await getUsdEurRate();
         return corsResponse(origin, {
-          crawl_run: crawl || null,
+          crawl_run: crawlWithProgress,
           backfill_run: backfill ? { ...backfill, error_count: backfillErrorCount, error_breakdown: errorBreakdown } : null,
           cost_summary: {
             ...costSummary,
