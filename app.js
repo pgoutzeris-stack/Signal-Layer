@@ -1170,11 +1170,13 @@ function renderArchive() {
   if (!els.archiveList) return;
   const articles = visibleArchiveArticles();
   els.archiveCount.textContent = archiveTotalCount.toLocaleString("de-DE");
-  const hasLocalFilter = archiveViewState.articleType !== "all" || archiveViewState.source !== "all";
-  els.archiveSummary.textContent = archiveTotalCount > archiveArticles.length
-    ? `${articles.length.toLocaleString("de-DE")} sichtbar · ${archiveArticles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} geladen`
-    : hasLocalFilter ? `${articles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} sichtbar`
-      : `${archiveTotalCount.toLocaleString("de-DE")} Artikel`;
+  if (els.archiveSummary) {
+    const hasLocalFilter = archiveViewState.articleType !== "all" || archiveViewState.source !== "all";
+    els.archiveSummary.textContent = archiveTotalCount > archiveArticles.length
+      ? `${articles.length.toLocaleString("de-DE")} sichtbar · ${archiveArticles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} geladen`
+      : hasLocalFilter ? `${articles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} sichtbar`
+        : `${archiveTotalCount.toLocaleString("de-DE")} Artikel`;
+  }
   els.archiveLoadMore.hidden = archiveArticles.length >= archiveTotalCount;
   if (!articles.length) {
     els.archiveList.innerHTML = `<div class="track-card-empty">Keine Artikel für diesen Archivstatus.</div>`;

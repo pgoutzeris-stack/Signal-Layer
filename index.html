@@ -107,28 +107,38 @@
   body.body-dashboard #app-container { display: flex; }
 
   .app-sidebar {
-    width: 76px;
+    width: 72px;
     background: var(--bg);
     border-right: 1px solid var(--line);
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding: 1.2rem 0;
+    padding: 1.2rem 14px;
+    overflow: hidden;
+    white-space: nowrap;
+    flex-shrink: 0;
+    z-index: 30;
+    transition: width .22s cubic-bezier(.4, 0, .2, 1);
   }
+  .app-sidebar:hover { width: 236px; box-shadow: var(--shadow-dash); }
+  .sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; padding: 0 2px; }
   .logo-mark {
-    width: 36px; height: 36px; border-radius: 10px; background: var(--brand);
+    width: 40px; height: 40px; border-radius: 10px; background: var(--brand);
     display: flex; align-items: center; justify-content: center; color: #fff;
-    font-size: 1.1rem; margin-bottom: 2rem; flex-shrink: 0;
+    font-size: 1.15rem; flex-shrink: 0;
   }
   .sidebar-spacer { flex: 1; }
+  .sidebar-nav { display: grid; gap: 6px; }
   .sidebar-icon-btn {
-    width: 44px; height: 44px; border-radius: 10px; border: none; background: transparent;
-    color: var(--muted); display: flex; align-items: center; justify-content: center;
-    font-size: 1.2rem; cursor: pointer; transition: all .15s;
+    width: 100%; height: 44px; border-radius: 10px; border: none; background: transparent;
+    color: var(--muted); display: flex; align-items: center; gap: 12px; justify-content: flex-start;
+    padding: 0 11px; cursor: pointer; font-family: inherit; transition: background .15s, color .15s;
   }
+  .sidebar-icon-btn i { flex: 0 0 22px; width: 22px; text-align: center; font-size: 1.25rem; }
   .sidebar-icon-btn:hover { background: var(--surface); color: var(--ink); }
-  .sidebar-nav { display: grid; gap: 8px; }
   .sidebar-icon-btn.active { color: var(--brand); background: var(--brand-light); }
+  .sidebar-label { font-size: .92rem; font-weight: 500; opacity: 0; transition: opacity .18s; }
+  .app-sidebar:hover .sidebar-label { opacity: 1; }
+  .sidebar-brand .sidebar-label { font-weight: 700; color: var(--ink); font-size: 1rem; }
 
   main#main-content {
     flex: 1; overflow-y: auto; padding: 2rem 1.5rem;
@@ -1404,16 +1414,14 @@
   <!-- App -->
   <div id="app-container">
     <aside class="app-sidebar">
-      <div class="logo-mark"><i class="ri-broadcast-line"></i></div>
+      <div class="sidebar-brand"><div class="logo-mark"><i class="ri-broadcast-line"></i></div><span class="sidebar-label">Signal Layer</span></div>
       <nav class="sidebar-nav" id="app-nav" aria-label="Bereiche">
-        <button type="button" class="sidebar-icon-btn active" data-app-view="dashboard" title="Dashboard"><i class="ri-dashboard-line"></i></button>
-        <button type="button" class="sidebar-icon-btn" data-app-view="results" title="Ergebnisse"><i class="ri-layout-grid-line"></i></button>
-        <button type="button" class="sidebar-icon-btn" data-app-view="archive" title="Archiv"><i class="ri-archive-line"></i></button>
+        <button type="button" class="sidebar-icon-btn active" data-app-view="dashboard" title="Dashboard"><i class="ri-dashboard-line"></i><span class="sidebar-label">Dashboard</span></button>
+        <button type="button" class="sidebar-icon-btn" data-app-view="results" title="Ergebnisse"><i class="ri-layout-grid-line"></i><span class="sidebar-label">Ergebnisse</span></button>
+        <button type="button" class="sidebar-icon-btn" data-app-view="archive" title="Archiv"><i class="ri-archive-line"></i><span class="sidebar-label">Archiv</span></button>
       </nav>
       <div class="sidebar-spacer"></div>
-      <button type="button" class="sidebar-icon-btn" id="btn-settings" title="Einstellungen">
-        <i class="ri-settings-3-line"></i>
-      </button>
+      <button type="button" class="sidebar-icon-btn" id="btn-settings" title="Einstellungen"><i class="ri-settings-3-line"></i><span class="sidebar-label">Einstellungen</span></button>
     </aside>
 
     <main id="main-content">
@@ -1421,7 +1429,6 @@
         <div class="dashboard-header">
           <div>
             <div class="dashboard-title">Signal Layer</div>
-            <div class="dashboard-subtitle">Marketing &amp; Sales Insights — Inhalt folgt, sobald Auswertung &amp; Empfehlungen gebaut sind.</div>
           </div>
           <div class="crawl-trigger-wrap">
             <button type="button" class="status-pill status-pill--ready" id="btn-crawl-trigger" aria-expanded="false">
@@ -1471,7 +1478,7 @@
         </div>
 
         <section class="app-view show" id="view-dashboard">
-          <div class="view-header"><div><h2>Dashboard</h2><p>Überblick über die aktuelle Signalverarbeitung.</p></div></div>
+          <div class="view-header"><div><h2>Dashboard</h2></div></div>
           <div class="overview-grid">
             <article class="overview-card"><i class="ri-shield-check-line"></i><span>Zuverlässige Signale</span><b id="dashboard-reliable-count">–</b></article>
             <article class="overview-card"><i class="ri-user-search-line"></i><span>Manuelle Prüfung</span><b id="dashboard-review-count">–</b></article>
@@ -1515,7 +1522,7 @@
         </section>
 
         <section class="app-view" id="view-archive">
-          <div class="view-header"><div><h2>Archiv <span class="track-count" id="archive-count">0</span></h2><p>Abgelehnte, fehlerhafte, ältere oder noch nicht analysierte Artikel.</p><small class="archive-summary" id="archive-summary"></small></div></div>
+          <div class="view-header"><div><h2>Archiv <span class="track-count" id="archive-count">0</span></h2></div></div>
           <nav class="signal-toolbar" aria-label="Archiv sortieren und filtern">
             <span class="signal-toolbar-label"><i class="ri-equalizer-2-line"></i> Ansicht</span>
             <div class="signal-toolbar-controls">
@@ -1709,7 +1716,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260714-1735';
+import { initApp } from './app.js?v=20260714-2320';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {
