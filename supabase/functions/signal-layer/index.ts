@@ -2002,15 +2002,36 @@ Deno.serve(async (req: Request) => {
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
         ]);
         let backfillErrorCount = 0;
+        let errorBreakdown: Array<{ code: string; label: string; explanation: string; count: number }> = [];
         if (backfill?.started_at) {
-          const { count } = await admin.schema("signal_layer").from("articles")
-            .select("id", { count: "exact", head: true })
-            .eq("classification_status", "error").gte("classified_at", backfill.started_at);
+          const { data: errors, count } = await admin.schema("signal_layer").from("articles")
+            .select("rejection_reasons", { count: "exact" })
+            .eq("classification_status", "error").gte("classified_at", backfill.started_at).limit(5000);
           backfillErrorCount = count || 0;
+          const definitions = {
+            spending_cap: { label: "Gemini-Ausgabenlimit", explanation: "Das monatliche Ausgabenlimit des Gemini-Projekts wurde erreicht." },
+            rate_limit: { label: "Gemini-Quota / Rate Limit", explanation: "Gemini hat zu viele Anfragen oder ein Modellkontingent abgelehnt." },
+            timeout: { label: "Zeitüberschreitung", explanation: "Die Modellantwort dauerte länger als das technische Zeitlimit." },
+            invalid_response: { label: "Ungültige Modellantwort", explanation: "Gemini lieferte kein vollständig lesbares Klassifikations-JSON." },
+            other: { label: "Sonstiger API-Fehler", explanation: "Ein nicht separat klassifizierter Verarbeitungsfehler ist aufgetreten." },
+          };
+          const counts: Record<keyof typeof definitions, number> = { spending_cap: 0, rate_limit: 0, timeout: 0, invalid_response: 0, other: 0 };
+          for (const row of errors || []) {
+            const message = String(row.rejection_reasons?.[0] || "").toLowerCase();
+            if (message.includes("spending cap")) counts.spending_cap += 1;
+            else if (message.includes("429") || message.includes("quota") || message.includes("rate limit")) counts.rate_limit += 1;
+            else if (message.includes("timed out") || message.includes("timeout")) counts.timeout += 1;
+            else if (message.includes("json") || message.includes("no classification")) counts.invalid_response += 1;
+            else counts.other += 1;
+          }
+          errorBreakdown = Object.entries(counts)
+            .filter(([, categoryCount]) => categoryCount > 0)
+            .map(([code, categoryCount]) => ({ code, ...definitions[code as keyof typeof definitions], count: categoryCount }))
+            .sort((a, b) => b.count - a.count);
         }
         return corsResponse(origin, {
           crawl_run: crawl || null,
-          backfill_run: backfill ? { ...backfill, error_count: backfillErrorCount } : null,
+          backfill_run: backfill ? { ...backfill, error_count: backfillErrorCount, error_breakdown: errorBreakdown } : null,
         });
       }
 

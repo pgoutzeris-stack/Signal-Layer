@@ -11,7 +11,7 @@ const state = {
   sort: "company_asc",
 };
 
-const signalViewState = { status: "all", company: "all", sort: "recommended" };
+const signalViewState = { status: "all", company: "all", source: "all", sort: "recommended" };
 const findingsByTrack = { marketing: [], sales: [] };
 
 const els = {};
@@ -188,12 +188,16 @@ function cacheEls() {
   els.backfillProgressText = document.getElementById("backfill-progress-text");
   els.backfillProgressBar = document.getElementById("backfill-progress-bar");
   els.backfillProgressDetail = document.getElementById("backfill-progress-detail");
+  els.apiErrorList = document.getElementById("api-error-list");
 
   els.findingsListMarketing = document.getElementById("findings-list-marketing");
   els.findingsListSales = document.getElementById("findings-list-sales");
   els.signalStatusFilter = document.getElementById("signal-status-filter");
   els.signalCompanyFilter = document.getElementById("signal-company-filter");
+  els.signalSourceFilter = document.getElementById("signal-source-filter");
   els.signalSort = document.getElementById("signal-sort");
+  els.marketingCount = document.getElementById("marketing-count");
+  els.salesCount = document.getElementById("sales-count");
   els.articleDetailModal = document.getElementById("article-detail-modal");
   els.articleDetailContent = document.getElementById("article-detail-content");
 }
@@ -274,12 +278,29 @@ function findingDate(finding) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function findingSourceName(finding) {
+  const source = finding.article?.source;
+  const resolved = Array.isArray(source) ? source[0] : source;
+  return String(resolved?.company || "").trim();
+}
+
+function refreshSignalSourceOptions() {
+  const selected = signalViewState.source;
+  const sourceNames = [...new Set([...findingsByTrack.marketing, ...findingsByTrack.sales]
+    .map(findingSourceName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "de"));
+  els.signalSourceFilter.innerHTML = `<option value="all">Alle Quellen</option>${sourceNames
+    .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")}`;
+  els.signalSourceFilter.value = sourceNames.includes(selected) ? selected : "all";
+  signalViewState.source = els.signalSourceFilter.value;
+}
+
 function visibleFindings(track) {
   const filtered = findingsByTrack[track].filter((finding) => {
     const article = finding.article || {};
     const statusMatches = signalViewState.status === "all" || article.classification_status === signalViewState.status;
     const companyMatches = signalViewState.company === "all" || articleCompanies(article).length > 0;
-    return statusMatches && companyMatches;
+    const sourceMatches = signalViewState.source === "all" || findingSourceName(finding) === signalViewState.source;
+    return statusMatches && companyMatches && sourceMatches;
   });
   return [...filtered].sort((a, b) => {
     if (signalViewState.sort === "newest") return findingDate(b) - findingDate(a) || findingConfidence(b) - findingConfidence(a);
@@ -294,6 +315,8 @@ function visibleFindings(track) {
 function renderFindings(track) {
   const listEl = track === "marketing" ? els.findingsListMarketing : els.findingsListSales;
   const findings = visibleFindings(track);
+  const countEl = track === "marketing" ? els.marketingCount : els.salesCount;
+  countEl.textContent = findings.length.toLocaleString("de-DE");
     if (!findings || findings.length === 0) {
       listEl.innerHTML = `<div class="track-card-empty">Keine Signale entsprechen den gewählten Filtern.</div>`;
       return;
@@ -331,6 +354,8 @@ async function loadFindings(track) {
   try {
     const { findings } = await callApi("list_findings", { track, limit: 50 });
     findingsByTrack[track] = findings || [];
+    refreshSignalSourceOptions();
+    renderFindings(track === "marketing" ? "sales" : "marketing");
     renderFindings(track);
   } catch (err) {
     listEl.innerHTML = `<div class="track-card-empty">Fehler beim Laden: ${escapeHtml(err.message)}</div>`;
@@ -799,7 +824,7 @@ async function loadLastRun() {
     if (!last) { els.lastRunText.textContent = "Noch kein Crawl-Lauf."; return; }
     const trigger = last.trigger_type === "scheduled" ? "automatisch (6 Uhr)" : "manuell";
     els.lastRunText.textContent =
-      `Letzter Crawl: ${formatRelativeTime(last.started_at)} · ${trigger} · Status: ${STATUS_LABEL[last.status] || last.status}`;
+      `${formatRelativeTime(last.started_at)} · ${trigger} · ${STATUS_LABEL[last.status] || last.status}`;
     if (backfill) {
       const total = Number(backfill.total_count || 0);
       const processed = Number(backfill.processed_count || 0);
@@ -811,9 +836,16 @@ async function loadLastRun() {
       els.backfillProgressDetail.textContent = errors > 0
         ? `${status} · ${errors.toLocaleString("de-DE")} API-Fehler · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`
         : `${status} · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`;
+      els.apiErrorList.innerHTML = (backfill.error_breakdown || []).map((error) => `
+        <div class="api-error-row">
+          <i class="ri-alert-line"></i>
+          <div class="api-error-copy"><b>${escapeHtml(error.label)}</b><span>${escapeHtml(error.explanation)}</span></div>
+          <span class="api-error-count">${Number(error.count || 0).toLocaleString("de-DE")}</span>
+        </div>`).join("");
     } else {
       els.backfillProgressText.textContent = "Kein Lauf";
       els.backfillProgressDetail.textContent = "Aktuell werden keine Altartikel geprüft.";
+      els.apiErrorList.innerHTML = "";
     }
   } catch {
     els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
@@ -824,11 +856,12 @@ function bindUi() {
   const updateSignalView = () => {
     signalViewState.status = els.signalStatusFilter.value;
     signalViewState.company = els.signalCompanyFilter.value;
+    signalViewState.source = els.signalSourceFilter.value;
     signalViewState.sort = els.signalSort.value;
     renderFindings("marketing");
     renderFindings("sales");
   };
-  [els.signalStatusFilter, els.signalCompanyFilter, els.signalSort].forEach((control) =>
+  [els.signalStatusFilter, els.signalCompanyFilter, els.signalSourceFilter, els.signalSort].forEach((control) =>
     control.addEventListener("change", updateSignalView)
   );
   const openCardDetail = (event) => {
