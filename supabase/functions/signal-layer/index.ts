@@ -3160,7 +3160,10 @@ Deno.serve(async (req: Request) => {
       }
 
       case "list_archive_articles": {
-        const { limit, status, offset } = body as { limit?: number; status?: string; offset?: number };
+        const { limit, article_type: articleType, offset } = body as { limit?: number; article_type?: string; offset?: number };
+        if (articleType && !ARTICLE_TYPES.includes(articleType as typeof ARTICLE_TYPES[number])) {
+          return errorResponse(origin, "invalid article_type");
+        }
         const admin = getAdminClient();
         const safeLimit = Math.min(Math.max(limit || 100, 1), 200);
         const safeOffset = Math.max(Number(offset || 0), 0);
@@ -3171,11 +3174,8 @@ Deno.serve(async (req: Request) => {
           .order("classified_at", { ascending: false, nullsFirst: false })
           .order("published_at", { ascending: false, nullsFirst: false })
           .range(safeOffset, safeOffset + safeLimit - 1);
-        if (status === "legacy") query = query.in("classification_status", ["legacy", "pending"]);
-        else if (status === "rejected") query = query.eq("classification_status", "rejected");
-        else if (status === "error") query = query.eq("classification_status", "error");
-        else if (status === "older") query = query.lt("published_at", archiveCutoff.toISOString());
-        else query = query.or(`classification_status.in.(legacy,pending,rejected,error),published_at.lt.${archiveCutoff.toISOString()}`);
+        query = query.or(`classification_status.in.(legacy,pending,rejected,error),published_at.lt.${archiveCutoff.toISOString()}`);
+        if (articleType) query = query.eq("article_type", articleType);
         const { data, error, count } = await query;
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { articles: data || [], total: count || 0 });

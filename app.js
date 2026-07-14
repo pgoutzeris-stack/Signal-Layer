@@ -23,7 +23,7 @@ const state = {
 };
 
 const signalViewState = { articleType: "all", source: "all", sort: "recommended" };
-const archiveViewState = { company: "all", source: "all", sort: "recommended" };
+const archiveViewState = { articleType: "all", source: "all", sort: "recommended" };
 const findingsByTrack = { marketing: [], sales: [] };
 
 const els = {};
@@ -235,8 +235,7 @@ function cacheEls() {
   els.signalSort = document.getElementById("signal-sort");
   els.marketingCount = document.getElementById("marketing-count");
   els.salesCount = document.getElementById("sales-count");
-  els.archiveStatusFilter = document.getElementById("archive-status-filter");
-  els.archiveCompanyFilter = document.getElementById("archive-company-filter");
+  els.archiveArticleTypeFilter = document.getElementById("archive-article-type-filter");
   els.archiveSourceFilter = document.getElementById("archive-source-filter");
   els.archiveSort = document.getElementById("archive-sort");
   els.archiveCount = document.getElementById("archive-count");
@@ -1035,7 +1034,7 @@ function renderFindings(track) {
     }
     listEl.innerHTML = findings.map((f) => {
       const article = f.article || {};
-      const dimLabel = TOPIC_LABELS[f.dimension] || f.dimension || "";
+      const articleTypeLabel = ARTICLE_TYPE_LABELS[article.article_type] || article.article_type || "Sonstiger Inhalt";
       const companies = articleCompanies(article);
       const source = Array.isArray(article.source) ? article.source[0] : article.source;
       const confidence = formatConfidence(f.confidence ?? article.relevance_confidence);
@@ -1047,7 +1046,7 @@ function renderFindings(track) {
       return `
         <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
           <div class="finding-item-top">
-            <span class="finding-dimension">${escapeHtml(dimLabel)}</span>
+            <span class="finding-dimension">${escapeHtml(articleTypeLabel)}</span>
             <div class="finding-top-tags">
               ${isNew ? `<span class="finding-new-badge">NEU</span>` : ""}
               <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "reliable" ? "shield-check-line" : status === "legacy" ? "history-line" : "error-warning-line"}"></i> ${escapeHtml(STATUS_LABELS[status] || status)}${confidence && !isLegacy ? ` · ${confidence}` : ""}</span>
@@ -1103,11 +1102,20 @@ function refreshArchiveSourceOptions() {
   archiveViewState.source = els.archiveSourceFilter.value;
 }
 
+function refreshArchiveArticleTypeOptions() {
+  const selected = archiveViewState.articleType;
+  const types = Object.keys(ARTICLE_TYPE_LABELS)
+    .sort((a, b) => ARTICLE_TYPE_LABELS[a].localeCompare(ARTICLE_TYPE_LABELS[b], "de"));
+  els.archiveArticleTypeFilter.innerHTML = `<option value="all">Alle Artikeltypen</option>${types
+    .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(ARTICLE_TYPE_LABELS[type])}</option>`).join("")}`;
+  els.archiveArticleTypeFilter.value = types.includes(selected) ? selected : "all";
+  archiveViewState.articleType = els.archiveArticleTypeFilter.value;
+}
+
 function visibleArchiveArticles() {
   const filtered = archiveArticles.filter((article) => {
-    const companyMatches = archiveViewState.company === "all" || articleCompanies(article).length > 0;
     const sourceMatches = archiveViewState.source === "all" || archiveSourceName(article) === archiveViewState.source;
-    return companyMatches && sourceMatches;
+    return sourceMatches;
   });
   return [...filtered].sort((a, b) => {
     const dateA = new Date(a.published_at || 0).getTime() || 0;
@@ -1126,7 +1134,7 @@ function renderArchive() {
   if (!els.archiveList) return;
   const articles = visibleArchiveArticles();
   els.archiveCount.textContent = archiveTotalCount.toLocaleString("de-DE");
-  const hasLocalFilter = archiveViewState.company !== "all" || archiveViewState.source !== "all";
+  const hasLocalFilter = archiveViewState.articleType !== "all" || archiveViewState.source !== "all";
   els.archiveSummary.textContent = archiveTotalCount > archiveArticles.length
     ? `${articles.length.toLocaleString("de-DE")} sichtbar · ${archiveArticles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} geladen`
     : hasLocalFilter ? `${articles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} sichtbar`
@@ -1141,10 +1149,10 @@ function renderArchive() {
     const source = Array.isArray(article.source) ? article.source[0] : article.source;
     const isNew = isToday(article.classified_at);
     return `<article class="archive-item" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
-      <div class="finding-item-top"><span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="ri-${status === "rejected" ? "filter-off-line" : status === "legacy" ? "history-line" : status === "pending" ? "time-line" : "error-warning-line"}"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span><div class="finding-top-tags">${isNew ? '<span class="finding-new-badge">NEU</span>' : ""}${formatFindingDate(article.published_at)}</div></div>
+      <div class="finding-item-top"><span class="finding-dimension">${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type || "Sonstiger Inhalt")}</span><div class="finding-top-tags">${isNew ? '<span class="finding-new-badge">NEU</span>' : ""}${formatFindingDate(article.published_at)}</div></div>
       <span class="finding-title">${escapeText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
       <p class="archive-reason"><i class="ri-information-line"></i><span>${escapeHtml(archiveExplanation(article))}</span></p>
-      <div class="finding-meta">${source?.company ? `<span class="tag tag--source"><i class="ri-newspaper-line"></i>${escapeHtml(source.company)}</span>` : ""}${article.article_type ? `<span class="tag">${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}</div>
+      <div class="finding-meta">${source?.company ? `<span class="tag tag--source"><i class="ri-newspaper-line"></i>${escapeHtml(source.company)}</span>` : ""}<span class="tag"><i class="ri-information-line"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span></div>
     </article>`;
   }).join("");
 }
@@ -1152,11 +1160,12 @@ function renderArchive() {
 async function loadArchive(append = false) {
   if (!els.archiveList) return;
   try {
-    const status = els.archiveStatusFilter.value;
+    const articleType = els.archiveArticleTypeFilter.value;
     const offset = append ? archiveArticles.length : 0;
-    const { articles, total } = await callApi("list_archive_articles", { limit: 100, offset, status: status === "all" ? undefined : status });
+    const { articles, total } = await callApi("list_archive_articles", { limit: 100, offset, article_type: articleType === "all" ? undefined : articleType });
     archiveArticles = append ? [...archiveArticles, ...(articles || [])] : (articles || []);
     archiveTotalCount = Number(total || 0);
+    refreshArchiveArticleTypeOptions();
     refreshArchiveSourceOptions();
     renderArchive();
   } catch (err) {
@@ -1826,14 +1835,16 @@ function bindUi() {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);
   });
-  els.archiveStatusFilter.addEventListener("change", () => void loadArchive());
+  els.archiveArticleTypeFilter.addEventListener("change", () => {
+    archiveViewState.articleType = els.archiveArticleTypeFilter.value;
+    void loadArchive();
+  });
   const updateArchiveView = () => {
-    archiveViewState.company = els.archiveCompanyFilter.value;
     archiveViewState.source = els.archiveSourceFilter.value;
     archiveViewState.sort = els.archiveSort.value;
     renderArchive();
   };
-  [els.archiveCompanyFilter, els.archiveSourceFilter, els.archiveSort].forEach((control) =>
+  [els.archiveSourceFilter, els.archiveSort].forEach((control) =>
     control.addEventListener("change", updateArchiveView)
   );
   els.archiveLoadMore.addEventListener("click", () => void loadArchive(true));
