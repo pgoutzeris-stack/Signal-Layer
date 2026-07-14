@@ -640,9 +640,21 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
       .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
       .replace(/<header[\s\S]*?<\/header>/gi, " ")
       .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+      // Preserve structure as lightweight Markdown BEFORE the generic tag
+      // strip below collapses everything into one flat blob — otherwise
+      // headings/bold/lists are indistinguishable from body text once the
+      // tags are gone, and that structure can't be reconstructed afterwards.
+      .replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi, "\n\n## $1\n\n")
+      .replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, "**$2**")
+      .replace(/<(em|i)[^>]*>([\s\S]*?)<\/\1>/gi, "*$2*")
+      .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "\n- $1")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|tr|blockquote)>/gi, "\n\n")
       .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ")
-      .replace(/\s+/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .split("\n").map((line) => line.trim()).join("\n")
+      .replace(/\n{3,}/g, "\n\n")
       .trim();
 
     return { title, content: text.slice(0, 8000), excerpt, publishedAt };

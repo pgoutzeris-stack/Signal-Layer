@@ -125,6 +125,42 @@ function renderEvidenceLinkedText(value, evidence) {
   }).join("");
 }
 
+// Converts the lightweight Markdown the crawler now preserves (## headings,
+// **bold**, - list items, blank-line paragraph breaks) into real HTML.
+// Runs on the already-escaped+evidence-marked HTML string from
+// renderEvidenceLinkedText, not raw text — the markers (#, *, -) survive
+// escapeHtml untouched, and evidence quotes essentially never straddle a
+// paragraph/heading boundary, so splitting by "\n" here is safe.
+function formatArticleBody(html) {
+  const lines = html.split("\n");
+  const blocks = [];
+  let listBuffer = [];
+  let paraBuffer = [];
+  const flushList = () => {
+    if (listBuffer.length) blocks.push(`<ul>${listBuffer.map((item) => `<li>${item}</li>`).join("")}</ul>`);
+    listBuffer = [];
+  };
+  const flushPara = () => {
+    if (paraBuffer.length) blocks.push(`<p>${paraBuffer.join("<br>")}</p>`);
+    paraBuffer = [];
+  };
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) { flushList(); flushPara(); continue; }
+    const headingMatch = line.match(/^#{2,3}\s+(.*)$/);
+    if (headingMatch) { flushList(); flushPara(); blocks.push(`<h3>${headingMatch[1]}</h3>`); continue; }
+    const listMatch = line.match(/^-\s+(.*)$/);
+    if (listMatch) { flushPara(); listBuffer.push(listMatch[1]); continue; }
+    flushList();
+    paraBuffer.push(line);
+  }
+  flushList();
+  flushPara();
+  return blocks.join("")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+}
+
 function bindEvidenceHover() {
   const items = els.articleDetailContent.querySelectorAll(".evidence-item[data-evidence-index]");
   const passages = els.articleDetailContent.querySelectorAll(".evidence-passage");
@@ -1365,7 +1401,7 @@ async function openArticleDetail(articleId) {
           ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}"><i class="ri-external-link-line"></i> Originalquelle</a>` : ""}
         </div>
         ${article.ai_summary ? `<p class="article-detail-summary">${escapeText(article.ai_summary)}</p>` : ""}
-        <div class="article-fulltext">${renderEvidenceLinkedText(fulltext, evidence)}</div>
+        <div class="article-fulltext">${formatArticleBody(renderEvidenceLinkedText(fulltext, evidence))}</div>
       </main>
       <aside class="article-detail-aside">
         <h3>Warum diese Entscheidung?</h3>
