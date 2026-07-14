@@ -353,6 +353,120 @@
   .diagnostic-row code { color: var(--ink); text-align: right; overflow-wrap: anywhere; }
   @media (max-width: 900px) { .policy-card-head, .decision-map, .quality-choice, .diagnostic-grid { grid-template-columns: 1fr; } .decision-step { border-right: 0; border-bottom: 1px solid var(--line); } }
 
+  /* ---------- Explainable pipeline studio ---------- */
+  .pipeline-scroll--studio { background: linear-gradient(180deg, #f6f8f7 0, var(--bg) 320px); }
+  .pipeline-hero--studio { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 28px; }
+  .pipeline-hero-status { min-width: 190px; padding: .8rem .9rem; border: 1px solid rgba(255,255,255,.22); border-radius: 12px; background: rgba(255,255,255,.1); backdrop-filter: blur(8px); }
+  .pipeline-hero-status i { float: left; margin: 2px 8px 18px 0; font-size: 1.15rem; }
+  .pipeline-hero-status strong, .pipeline-hero-status small { display: block; }
+  .pipeline-hero-status strong { font-size: .72rem; }
+  .pipeline-hero-status small { margin-top: 3px; font-size: .6rem; opacity: .72; }
+  .pipeline-studio-toolbar { position: sticky; top: -1.5rem; z-index: 20; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; margin: 1rem 0 12px; padding: .7rem; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.94); box-shadow: 0 9px 24px rgba(25,45,38,.08); backdrop-filter: blur(12px); }
+  .pipeline-stage-nav { display: flex; align-items: center; gap: 5px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .pipeline-stage-nav::-webkit-scrollbar { display: none; }
+  .pipeline-stage-jump { display: inline-flex; align-items: center; gap: 6px; min-width: max-content; padding: 7px 9px; border: 0; border-radius: 9px; color: var(--muted); background: transparent; font-size: .63rem; font-weight: 700; cursor: pointer; transition: .16s ease; }
+  .pipeline-stage-jump:hover, .pipeline-stage-jump:focus-visible { outline: 0; color: var(--brand); background: var(--brand-light); }
+  .pipeline-stage-jump b { display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; color: var(--brand); background: #e5eee9; font-size: .57rem; }
+  .pipeline-owner-legend { display: flex; align-items: center; gap: 5px; }
+  .logic-owner { position: relative; display: inline-flex; align-items: center; gap: 4px; width: max-content; padding: 4px 7px; border: 1px solid transparent; border-radius: 999px; font-size: .55rem; font-weight: 800; letter-spacing: .02em; white-space: nowrap; cursor: help; }
+  .logic-owner--code { color: #285446; background: #eaf3ef; border-color: #cfe3da; }
+  .logic-owner--prompt { color: #735b18; background: #fff8dd; border-color: #f0df9f; }
+  .logic-owner--ai { color: #35558a; background: #edf3ff; border-color: #d3e0f7; }
+  .logic-owner--server { color: #6c4937; background: #f8eee8; border-color: #ead7cb; }
+  .logic-owner::after { content: attr(data-tooltip); position: absolute; right: 0; bottom: calc(100% + 9px); z-index: 50; width: 250px; padding: .65rem .7rem; border: 1px solid #2d4a40; border-radius: 9px; color: #fff; background: #17382e; box-shadow: 0 12px 30px rgba(17,37,31,.22); font-size: .62rem; font-weight: 500; line-height: 1.45; white-space: normal; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(4px); transition: .15s ease; }
+  .logic-owner:hover::after, .logic-owner:focus-visible::after { opacity: 1; visibility: visible; transform: translateY(0); }
+  .pipeline-studio { display: grid; gap: 10px; min-width: 0; }
+  .pipeline-stage { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: 0 4px 14px rgba(28,50,42,.045); overflow: clip; transition: border-color .2s, box-shadow .2s; }
+  .pipeline-stage[open] { border-color: #bed3ca; box-shadow: 0 14px 34px rgba(28,50,42,.09); }
+  .pipeline-stage-summary { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto 26px; align-items: center; gap: 13px; min-height: 82px; padding: .9rem 1rem; list-style: none; cursor: pointer; }
+  .pipeline-stage-summary::-webkit-details-marker { display: none; }
+  .pipeline-stage-number { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 13px; color: #fff; background: linear-gradient(145deg, #173d31, #2d6952); font-size: .72rem; font-weight: 800; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+  .pipeline-stage-title h4 { margin: 0; font-size: .9rem; }
+  .pipeline-stage-title p { margin: 4px 0 0; max-width: 670px; color: var(--muted); font-size: .66rem; line-height: 1.45; }
+  .pipeline-stage-owners { display: flex; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+  .pipeline-stage-chevron { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: var(--muted); background: var(--surface); transition: transform .18s; }
+  .pipeline-stage[open] .pipeline-stage-chevron { color: var(--brand); transform: rotate(180deg); }
+  .pipeline-stage-body { min-width: 0; border-top: 1px solid var(--line); background: #fbfcfb; }
+  .pipeline-stage-tabs { display: flex; gap: 4px; padding: .65rem 1rem 0; overflow-x: auto; }
+  .pipeline-stage-tab { display: inline-flex; align-items: center; gap: 6px; min-width: max-content; padding: 7px 10px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: .64rem; font-weight: 700; cursor: pointer; }
+  .pipeline-stage-tab:hover, .pipeline-stage-tab:focus-visible { outline: 0; color: var(--brand); background: var(--brand-light); }
+  .pipeline-stage-tab.active { color: #fff; background: var(--brand); }
+  .pipeline-stage-panel { display: none; min-width: 0; padding: 1rem; }
+  .pipeline-stage-panel.active { display: block; animation: pipeline-panel-in .18s ease both; }
+  @keyframes pipeline-panel-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  .logic-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .logic-card { min-width: 0; padding: .85rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .logic-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .logic-card h5 { margin: 0; font-size: .74rem; }
+  .logic-card p { margin: 6px 0 0; color: var(--muted); font-size: .63rem; line-height: 1.5; }
+  .logic-card code, .pipeline-code { display: block; margin-top: .65rem; padding: .6rem .7rem; border: 1px solid #d9e2de; border-radius: 9px; color: #2b4a40; background: #f2f6f4; font: 600 .58rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .pipeline-explainer { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 10px; }
+  .pipeline-checklist { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+  .pipeline-checklist li { display: grid; grid-template-columns: 25px minmax(0, 1fr); gap: 9px; align-items: start; padding: .7rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .pipeline-checklist i { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; color: var(--brand); background: var(--brand-light); font-size: .78rem; }
+  .pipeline-checklist b { display: block; font-size: .68rem; }
+  .pipeline-checklist span { display: block; margin-top: 2px; color: var(--muted); font-size: .61rem; line-height: 1.45; }
+  .pipeline-note { padding: .8rem; border: 1px solid #e9dba5; border-radius: 11px; color: #6b5a22; background: #fffaf0; font-size: .63rem; line-height: 1.5; }
+  .pipeline-note strong { display: block; margin-bottom: 4px; color: #4e431d; }
+  .signal-family-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .signal-family { padding: .8rem; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); }
+  .signal-family h5 { margin: 0 0 7px; font-size: .7rem; }
+  .signal-family-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+  .signal-family-tags span { padding: 4px 6px; border-radius: 6px; color: var(--status-text); background: var(--surface); font-size: .57rem; }
+  .pipeline-edit-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: .8rem; padding: .75rem .85rem; border-radius: 11px; color: #fff; background: #183d31; }
+  .pipeline-edit-head strong, .pipeline-edit-head small { display: block; }
+  .pipeline-edit-head strong { font-size: .74rem; }
+  .pipeline-edit-head small { margin-top: 3px; font-size: .59rem; opacity: .74; }
+  .pipeline-edit-head span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 999px; background: rgba(255,255,255,.12); font-size: .58rem; font-weight: 700; white-space: nowrap; }
+  .pipeline-locked-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 9px; }
+  .pipeline-locked-rule { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: .72rem; border: 1px solid #cfe3da; border-radius: 10px; background: #f3f8f5; }
+  .pipeline-locked-rule b, .pipeline-locked-rule small { display: block; }
+  .pipeline-locked-rule b { font-size: .65rem; }
+  .pipeline-locked-rule small { margin-top: 3px; color: var(--muted); font-size: .58rem; line-height: 1.4; }
+  .pipeline-locked-rule i { color: var(--success); }
+  .relevance-editor { display: grid; gap: 8px; }
+  .relevance-editor-card { display: grid; grid-template-columns: 42px minmax(0, 1fr) 190px; align-items: center; gap: 11px; padding: .75rem; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); }
+  .relevance-editor-card .policy-card-icon { width: 38px; height: 38px; }
+  .relevance-editor-card h5 { margin: 0; font-size: .7rem; }
+  .relevance-editor-card p { margin: 3px 0 0; color: var(--muted); font-size: .59rem; line-height: 1.4; }
+  .threshold-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+  .threshold-card { padding: .75rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .threshold-card span, .threshold-card small { display: block; color: var(--muted); }
+  .threshold-card span { font-size: .58rem; }
+  .threshold-card b { display: block; margin: 5px 0 2px; color: var(--brand); font-size: 1rem; }
+  .threshold-card small { font-size: .54rem; line-height: 1.35; }
+  .route-grid, .status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .route-card, .status-card { padding: .9rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .route-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .route-card h5, .status-card h5 { margin: 0; font-size: .73rem; }
+  .route-card p, .status-card p { margin: 6px 0 0; color: var(--muted); font-size: .61rem; line-height: 1.5; }
+  .route-formula { display: grid; gap: 4px; margin-top: .7rem; }
+  .route-formula span { display: flex; align-items: center; gap: 6px; padding: 5px 7px; border-radius: 7px; color: #2d5044; background: #eef5f2; font-size: .57rem; font-weight: 700; }
+  .route-formula span::before { content: '+'; display: grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; color: #fff; background: var(--brand); font-size: .55rem; }
+  .status-card--reliable { border-top: 3px solid var(--success); }
+  .status-card--uncertain { border-top: 3px solid #d39f22; }
+  .status-card--rejected { border-top: 3px solid #b96656; }
+  .status-card--error { border-top: 3px solid #87918d; }
+  .pipeline-action-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: .8rem; }
+  @media (max-width: 1050px) {
+    .pipeline-studio-toolbar { grid-template-columns: 1fr; }
+    .pipeline-owner-legend { justify-content: flex-start; }
+    .logic-grid, .threshold-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 760px) {
+    .pipeline-hero--studio, .pipeline-explainer { grid-template-columns: 1fr; }
+    .pipeline-hero-status { min-width: 0; }
+    .pipeline-stage-summary { grid-template-columns: 42px minmax(0, 1fr) 24px; }
+    .pipeline-stage-number { width: 40px; height: 40px; }
+    .pipeline-stage-owners { display: none; }
+    .logic-grid, .signal-family-grid, .pipeline-locked-grid, .threshold-grid, .route-grid, .status-grid { grid-template-columns: 1fr; }
+    .relevance-editor-card { grid-template-columns: 38px minmax(0, 1fr); }
+    .relevance-editor-card .pipeline-control { grid-column: 1 / -1; width: 100%; }
+    .pipeline-owner-legend { overflow-x: auto; padding-bottom: 2px; }
+    .pipeline-savebar { flex-direction: column; align-items: stretch; }
+    .pipeline-savebar .btn-primary, .pipeline-savebar .btn-secondary { justify-content: center; width: 100%; }
+  }
+
   /* ---------- Settings modal ---------- */
   .modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, .6);
@@ -361,7 +475,7 @@
   .modal-overlay.show { display: flex; }
   .modal-box.large {
     background: var(--bg); border-radius: 16px; box-shadow: var(--shadow-modal);
-    width: 100%; max-width: 1100px; height: 82vh; display: flex; overflow: hidden;
+    width: 100%; max-width: 1240px; height: 90vh; display: flex; overflow: hidden;
   }
   .settings-nav {
     width: 220px; border-right: 1px solid var(--line); background: var(--surface);
@@ -496,8 +610,18 @@
   .toast.success { border-color: var(--success); }
 
   @media (max-width: 720px) {
-    .modal-box.large { flex-direction: column; height: 90vh; }
-    .settings-nav { width: 100%; flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--line); }
+    .modal-overlay { padding: 0; }
+    .modal-box.large { flex-direction: column; height: 100vh; border-radius: 0; }
+    .settings-nav { width: 100%; flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--line); padding: .55rem; }
+    .settings-nav-title { display: none; }
+    .settings-nav-item { min-width: max-content; }
+    .settings-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: .8rem 1rem; }
+    .settings-header .toolbar-spacer { display: none; }
+    .settings-header h2 { grid-column: 1; grid-row: 1; }
+    .settings-header .close-fs-btn { grid-column: 2; grid-row: 1; }
+    .settings-header > .btn-secondary { grid-column: 1; grid-row: 2; justify-content: center; }
+    .settings-header > .btn-primary { grid-column: 2; grid-row: 2; justify-content: center; }
+    .pipeline-scroll { padding: 1rem; }
   }
 </style>
 </head>
@@ -632,12 +756,6 @@
         <div class="settings-nav-item" data-panel="pipeline-overview">
           <i class="ri-route-line"></i> Pipeline
         </div>
-        <div class="settings-nav-item" data-panel="relevance-profile">
-          <i class="ri-focus-3-line"></i> Relevanzprofil
-        </div>
-        <div class="settings-nav-item" data-panel="decision-rules">
-          <i class="ri-git-branch-line"></i> Entscheidungsregeln
-        </div>
         <div class="settings-nav-item" data-panel="manual-review">
           <i class="ri-user-search-line"></i> Manuelle Prüfung
         </div>
@@ -705,26 +823,24 @@
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-pipeline-overview">
-          <div class="pipeline-scroll">
-            <div class="pipeline-hero"><span>ROOTS Signal Layer</span><h3>Vom Crawl zur belastbaren Entscheidung</h3><p>Jeder Schritt reduziert Rauschen. Änderungen gelten für zukünftige Prüfungen; bestehende Artikel werden nicht automatisch neu bewertet.</p></div>
-            <div class="pipeline-flow">
-              <article><b>01</b><i class="ri-global-line"></i><h4>Quellen</h4><p>RSS, Sitemap oder Apify liefern Kandidaten.</p></article>
-              <article><b>02</b><i class="ri-filter-3-line"></i><h4>Vorfilter</h4><p>Datum, Duplikate, Karriere, FAQ und Fachsignale.</p></article>
-              <article><b>03</b><i class="ri-sparkling-line"></i><h4>KI-Prüfung</h4><p>Gemini klassifiziert mit wörtlicher Evidenz.</p></article>
-              <article><b>04</b><i class="ri-shield-check-line"></i><h4>Validierung</h4><p>Server prüft Evidenz und Konfidenzen erneut.</p></article>
-              <article><b>05</b><i class="ri-git-branch-line"></i><h4>Routing</h4><p>Marketing, Sales und Buying Center werden getrennt vergeben.</p></article>
+          <div class="pipeline-scroll pipeline-scroll--studio">
+            <div class="pipeline-hero pipeline-hero--studio">
+              <div><span>ROOTS Signal Layer</span><h3>Jede Entscheidung, Regel für Regel</h3><p>Öffne eine Station, um exakt zu sehen, was Code, System-Prompt, Gemini und Server prüfen. Änderbare Stellschrauben liegen direkt an der Stelle, an der sie wirken.</p></div>
+              <div class="pipeline-hero-status"><i class="ri-shield-check-line"></i><strong>Guardrails aktiv</strong><small>Änderungen gelten für zukünftige Analysen.</small></div>
             </div>
+            <div class="pipeline-studio-toolbar">
+              <nav class="pipeline-stage-nav" id="pipeline-stage-nav" aria-label="Pipeline-Stationen"></nav>
+              <div class="pipeline-owner-legend" aria-label="Entscheidungsquellen">
+                <span class="logic-owner logic-owner--code" tabindex="0" data-tooltip="Feste TypeScript-Regel: schnell, deterministisch und ohne KI-Kosten."><i class="ri-code-line"></i> Code</span>
+                <span class="logic-owner logic-owner--prompt" tabindex="0" data-tooltip="Verbindliche Arbeitsanweisung, die Geminis inhaltliche Bewertung steuert."><i class="ri-file-text-line"></i> Prompt</span>
+                <span class="logic-owner logic-owner--ai" tabindex="0" data-tooltip="Semantische Bewertung des Artikelzusammenhangs durch Gemini."><i class="ri-sparkling-line"></i> Gemini</span>
+                <span class="logic-owner logic-owner--server" tabindex="0" data-tooltip="Finale technische Kontrolle von Evidenz, Schwellenwerten und Routing."><i class="ri-shield-check-line"></i> Server</span>
+              </div>
+            </div>
+            <div class="pipeline-studio" id="pipeline-studio"><div class="keyword-empty">Pipeline wird geladen…</div></div>
             <div class="pipeline-impact" id="pipeline-impact-result" hidden></div>
             <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><button class="btn-primary" id="btn-save-pipeline"><i class="ri-save-line"></i> Änderungen speichern</button></div>
           </div>
-        </div>
-
-        <div class="settings-panel pipeline-panel" id="settings-panel-relevance-profile">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Was ist für ROOTS relevant?</span><h3>Relevanzprofil</h3><p>Fachliche Themen statt Keywords. Jede Karte zeigt, was Code, System-Prompt, Gemini und Servervalidierung beitragen und welches Ergebnis entstehen kann.</p></div><div class="relevance-grid" id="relevance-profile-grid"></div></div>
-        </div>
-
-        <div class="settings-panel pipeline-panel" id="settings-panel-decision-rules">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Wie entsteht das Ergebnis?</span><h3>Entscheidungsregeln</h3><p>Marketing, Sales und Buying Center werden getrennt entschieden. Unveränderliche Schutzregeln sind klar als System-Guardrail markiert.</p></div><div id="decision-rules-content"></div></div>
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-manual-review">
