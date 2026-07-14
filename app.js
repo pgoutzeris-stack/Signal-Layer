@@ -10,7 +10,7 @@ let geminiModelCatalog = [];
 let geminiModelCatalogState = { status: "idle", validatedAt: null, error: null };
 let pipelineOperationsTelemetry = null;
 let pipelineStageDefinitions = [];
-const pipelineDrilldownState = { stageId: null, tabId: "flow" };
+const pipelineDrilldownState = { stageId: null, editorOpen: false };
 
 const state = {
   search: "",
@@ -215,15 +215,15 @@ function cacheEls() {
 
 const PIPELINE_FIELDS = {
   crawl: [
-    ["crawl.freshness_days", "number", "Rückblick in Tagen", "Beim ersten Crawl werden nur Artikel aus diesem Zeitraum berücksichtigt.", 1, 365],
-    ["crawl.future_tolerance_hours", "number", "Toleranz für Zukunftsdaten", "Zeitverschiebungen bis zu dieser Stundenzahl werden akzeptiert.", 0, 72],
-    ["crawl.default_max_depth", "number", "Normale Crawl-Tiefe", "Maximale Linktiefe für redaktionelle Quellen und Newsrooms.", 1, 4],
-    ["crawl.default_max_pages", "number", "Seiten je normaler Quelle", "Begrenzt die pro Lauf geöffneten Seiten.", 1, 250],
-    ["crawl.event_max_depth", "number", "Event-Crawl-Tiefe", "Eventseiten bleiben bewusst flacher als Newsrooms.", 0, 3],
-    ["crawl.event_max_pages", "number", "Seiten je Eventquelle", "Schützt vor Agenda-, Aussteller- und Navigationsmassen.", 1, 100],
+    ["crawl.freshness_days", "number", "Wie weit zurück suchen?", "Zeitraum beim ersten Lauf einer Quelle.", 1, 365],
+    ["crawl.future_tolerance_hours", "number", "Toleranz bei Datumsfehlern", "Erlaubte Stunden bei falscher Zeitzone.", 0, 72],
+    ["crawl.default_max_depth", "number", "Link-Ebenen pro Quelle", "Wie tief Apify Links verfolgen darf.", 1, 4],
+    ["crawl.default_max_pages", "number", "Seiten pro Quelle", "Maximale Seitenzahl je Lauf.", 1, 250],
+    ["crawl.event_max_depth", "number", "Link-Ebenen bei Events", "Events werden bewusst flacher durchsucht.", 0, 3],
+    ["crawl.event_max_pages", "number", "Seiten pro Eventquelle", "Begrenzt große Messe- und Eventseiten.", 1, 100],
   ],
   filters: [
-    ["filters.minimum_text_length", "number", "Mindestlänge Artikeltext", "Kürzere Inhalte werden vor Gemini abgelehnt.", 100, 5000],
+    ["filters.minimum_text_length", "number", "Mindestlänge des Artikels", "Kürzere Seiten gelten nicht als vollständiger Artikel.", 100, 5000],
     ["filters.require_professional_signal", "boolean", "Fachsignal erforderlich", "Fordert Marketing, Customer, Retail, Innovation oder Strategie auf Deutsch oder Englisch."],
     ["filters.reject_career_pages", "boolean", "Karriereseiten ablehnen", "Filtert Jobs, Ausbildung, Bewerbung und Praktika."],
     ["filters.reject_faq_pages", "boolean", "FAQ- und Hilfeseiten ablehnen", "Entfernt allgemeine Fragen, Support und Serviceinhalte."],
@@ -232,13 +232,13 @@ const PIPELINE_FIELDS = {
     ["filters.deduplicate", "boolean", "Duplikate erkennen", "Identischer normalisierter Inhalt wird nur einmal ausgewertet."],
   ],
   ai: [
-    ["ai.primary_model", "model", "Primary-Modell", "Analysiert alle Kandidaten nach dem deterministischen Vorfilter."],
-    ["ai.review_model", "model", "Review-Modell", "Prüft nur die unten definierten Grenzfälle erneut."],
-    ["ai.review_enabled", "boolean", "Zweite KI-Prüfung aktiv", "Schaltet die unabhängige Reviewer-Stufe ein oder aus."],
-    ["ai.review_confidence_below", "decimal", "Review unter Konfidenz", "Plausible Ergebnisse unter diesem Wert erhalten eine zweite Prüfung.", .5, 1],
-    ["ai.review_rejected_articles", "boolean", "Abgelehnte Artikel reviewen", "Normalerweise aus Kostengründen deaktiviert."],
-    ["ai.thinking_level", "thinking", "Thinking-Level", "Mehr Thinking kann Qualität und Kosten erhöhen."],
-    ["ai.max_output_tokens", "number", "Maximale Output-Tokens", "Obergrenze für Klassifikation, Übersetzung und Begründung.", 512, 8192],
+    ["ai.primary_model", "model", "Modell für die erste Prüfung", "Prüft jeden Artikel, der den Vorfilter besteht."],
+    ["ai.review_model", "model", "Modell für die zweite Prüfung", "Prüft nur unsichere Ergebnisse erneut."],
+    ["ai.review_enabled", "boolean", "Zweite Prüfung bei Unsicherheit", "Erhöht Sicherheit, verursacht aber zusätzliche Kosten."],
+    ["ai.review_confidence_below", "decimal", "Zweite Prüfung unter", "Unter diesem Sicherheitswert wird erneut geprüft.", .5, 1],
+    ["ai.review_rejected_articles", "boolean", "Auch klare Ablehnungen erneut prüfen", "Normalerweise aus Kostengründen ausgeschaltet."],
+    ["ai.thinking_level", "thinking", "Prüftiefe", "Mehr Tiefe kann Qualität und Kosten erhöhen."],
+    ["ai.max_output_tokens", "number", "Maximale Antwortlänge", "Begrenzt Analyse, Übersetzung und Begründung.", 512, 8192],
     ["ai.daily_request_limit", "number", "Tägliches KI-Limit", "Technische Sicherheitsgrenze unabhängig vom AI-Studio-Budget.", 1, 10000],
     ["ai.daily_review_limit", "number", "Tägliches Pro-Review-Limit", "Separate Grenze für das teurere Review-Modell.", 0, 5000],
     ["ai.monthly_warning_usd", "number", "Kostenwarnung in USD", "Zeigt eine Warnung, stoppt die Pipeline aber nicht.", 0, 10000],
@@ -268,10 +268,6 @@ function setConfigValue(path, value) {
   const keys = path.split("."); let target = pipelineSettings.config;
   keys.slice(0, -1).forEach((key) => { target = target[key]; });
   target[keys.at(-1)] = value;
-}
-
-function defaultPipelineTab(stage) {
-  return stage?.tabs?.some((tab) => tab.id === "edit") ? "edit" : stage?.tabs?.[0]?.id || "flow";
 }
 
 async function loadPipelineSettings() {
@@ -353,12 +349,20 @@ function pipelineField(path) {
       return `<option value="${escapeHtml(model)}" ${model === value ? "selected" : ""}>${escapeHtml(label)}</option>`;
     }).join("")}</select>`;
   }
-  if (type === "thinking") control = `<select class="pipeline-control" data-pipeline-path="${path}">${["minimal", "low", "medium", "high"].map((level) => `<option ${level === value ? "selected" : ""}>${level}</option>`).join("")}</select>`;
+  if (type === "thinking") {
+    const levels = [["minimal", "Minimal"], ["low", "Niedrig"], ["medium", "Mittel"], ["high", "Hoch"]];
+    control = `<select class="pipeline-control" data-pipeline-path="${path}">${levels.map(([level, label]) => `<option value="${level}" ${level === value ? "selected" : ""}>${label}</option>`).join("")}</select>`;
+  }
   return `<div class="pipeline-field"><div class="pipeline-field-copy"><label>${escapeHtml(label)}</label><small>${escapeHtml(description)}</small></div>${control}</div>`;
 }
 
 function pipelineFields(paths) {
   return `<div class="pipeline-form-grid">${paths.map(pipelineField).join("")}</div>`;
+}
+
+function simpleToggle(path, label, description) {
+  const checked = Boolean(getConfigValue(path));
+  return `<label class="stage-toggle"><span><b>${escapeHtml(label)}</b><small>${escapeHtml(description)}</small></span><span class="source-toggle"><input data-pipeline-path="${path}" type="checkbox" ${checked ? "checked" : ""}><span class="source-toggle-slider"></span></span></label>`;
 }
 
 function pipelineEditHead(title, description) {
@@ -443,40 +447,156 @@ function pipelineStageStat(stageId) {
   return ["Routing-Basis", Number(pipelineStats.reliable || 0).toLocaleString("de-DE")];
 }
 
+const STAGE_PAGE_META = {
+  crawl: { title: "Quellen", summary: "Findet neue Artikel und begrenzt, welche Seiten überhaupt geladen werden.", input: "Aktive Quellen", check: "Links und Datum", output: "Neue Artikel-URLs", edit: "Crawl-Grenzen" },
+  prefilter: { title: "Vorfilter", summary: "Entfernt ungeeignete Inhalte, bevor eine KI-Prüfung Geld kostet.", input: "Geladener Artikel", check: "Text und Thema", output: "Weiter oder Stopp", edit: "Vorfilter-Regeln" },
+  gemini: { title: "KI-Prüfung", summary: "Liest den Artikel, ordnet ihn ein und liefert Belege für jede Aussage.", input: "Vorgeprüfter Artikel", check: "Bedeutung und Belege", output: "Strukturierter Vorschlag", edit: "KI-Prüfung" },
+  validation: { title: "Validierung", summary: "Kontrolliert den KI-Vorschlag mit festen technischen Regeln.", input: "KI-Vorschlag", check: "Sicherheit und Zitate", output: "Finaler Status", edit: "Prüfstrenge" },
+  routing: { title: "Routing", summary: "Entscheidet getrennt, ob der Artikel für Marketing, Sales oder Buying Center zählt.", input: "Bestätigtes Signal", check: "Zweck und Zielkunde", output: "Passende Bereiche", edit: "Routing-Regeln" },
+  output: { title: "Ergebnis", summary: "Zeigt nur den Status und die Informationen, die alle vorherigen Prüfungen bestanden haben.", input: "Finale Bewertung", check: "Darstellung", output: "Kachel oder Prüfstatus", edit: null },
+};
+
+function stageSystem(kind, label) {
+  const icons = { source: "ri-links-line", apify: "ri-spider-line", server: "ri-shield-check-line", ai: "ri-sparkling-line", result: "ri-checkbox-circle-line" };
+  return `<span class="stage-system stage-system--${kind}"><i class="${icons[kind] || "ri-settings-3-line"}"></i>${escapeHtml(label)}</span>`;
+}
+
+function stageCard(icon, title, copy, systemKind, systemLabel, tooltip = "") {
+  const tip = tooltip ? ` tabindex="0" data-stage-tip="${escapeHtml(tooltip)}"` : "";
+  return `<article class="stage-card"${tip}><span class="stage-card-icon"><i class="${icon}"></i></span><div><b>${escapeHtml(title)}</b><p>${escapeHtml(copy)}</p></div>${systemKind ? stageSystem(systemKind, systemLabel) : ""}</article>`;
+}
+
+function stageSection(title, copy, content, editLabel = "") {
+  return `<section class="stage-section"><header><div><h5>${escapeHtml(title)}</h5>${copy ? `<p>${escapeHtml(copy)}</p>` : ""}</div>${editLabel ? `<button type="button" class="stage-edit-button" data-pipeline-open-editor><i class="ri-edit-line"></i>${escapeHtml(editLabel)}</button>` : ""}</header>${content}</section>`;
+}
+
+function renderStageOverview(stage) {
+  const meta = STAGE_PAGE_META[stage.id];
+  const summary = `<div class="stage-io-grid">
+    <article><span>Kommt hinein</span><b>${escapeHtml(meta.input)}</b></article>
+    <i class="ri-arrow-right-line"></i>
+    <article><span>Hier passiert</span><b>${escapeHtml(meta.check)}</b></article>
+    <i class="ri-arrow-right-line"></i>
+    <article class="stage-io-result"><span>Kommt heraus</span><b>${escapeHtml(meta.output)}</b></article>
+  </div>`;
+  let content = "";
+
+  if (stage.id === "crawl") {
+    content = stageSection("So werden Artikel gefunden", "Die Reihenfolge spart Kosten und vermeidet unnötige Seiten.", `<div class="stage-card-grid stage-card-grid--4">
+      ${stageCard("ri-rss-line", "RSS", "Direkte Artikelliste, wenn die Quelle einen Feed anbietet.", "source", "Quelle", "RSS liefert meist Titel, URL und Veröffentlichungsdatum.")}
+      ${stageCard("ri-node-tree", "Sitemap", "Ergänzt Artikel-URLs, wenn kein passender Feed vorhanden ist.", "source", "Quelle", "Das Änderungsdatum einer Sitemap ist nicht automatisch das Artikeldatum.")}
+      ${stageCard("ri-spider-line", "Apify", "Folgt Links nur innerhalb der erlaubten Domain und Grenzen.", "apify", "Apify", "Apify wird nur genutzt, wenn RSS und Sitemap nicht ausreichen.")}
+      ${stageCard("ri-shield-check-line", "Sicherheitscheck", "Supabase prüft URL und Datum ein zweites Mal.", "server", "Supabase", "Die doppelte Prüfung verhindert ungeeignete oder veraltete Kandidaten.")}
+    </div>`) + stageSection("Was wird früh ausgeschlossen?", "Diese Regeln greifen vor der inhaltlichen Bewertung.", `<div class="stage-card-grid stage-card-grid--4">
+      ${stageCard("ri-briefcase-line", "Keine Karriere", "Jobs, Bewerbung und Ausbildung werden nicht geöffnet.", "server", "URL-Regel")}
+      ${stageCard("ri-question-line", "Keine Hilfe-Seiten", "FAQ, Login, Kontakt und Service werden übersprungen.", "server", "URL-Regel")}
+      ${stageCard("ri-calendar-close-line", "Keine alten Artikel", `Beim ersten Lauf gilt ein Rückblick von ${Number(getConfigValue("crawl.freshness_days"))} Tagen.`, "server", "Datumsregel")}
+      ${stageCard("ri-calendar-event-line", "Events bleiben klein", "Agenda, Tickets und Speakerlisten werden begrenzt.", "apify", "Crawl-Regel")}
+    </div>`, "Grenzen ändern") + stageSection("Welche Systeme arbeiten hier?", "", `<div class="stage-system-row">${stageSystem("source", "RSS / Sitemap")}${stageSystem("apify", "Apify bei Bedarf")}${stageSystem("server", "Supabase prüft nach")}</div>`);
+  }
+
+  if (stage.id === "prefilter") {
+    content = stageSection("Was prüft der Vorfilter?", "Alle Prüfungen laufen automatisch in Supabase. Apify ist hier bereits fertig.", `<div class="stage-card-grid stage-card-grid--3">
+      ${stageCard("ri-eraser-line", "Text aufräumen", "Menüs, Newsletter, Datenschutz und doppelte Zeilen entfernen.", "server", "Supabase", "Der eigentliche Artikel bleibt erhalten; Seitennavigation wird entfernt.")}
+      ${stageCard("ri-file-text-line", "Vollständiger Artikel", `Mindestens ${Number(getConfigValue("filters.minimum_text_length"))} Zeichen Artikeltext.`, "server", "Feste Regel")}
+      ${stageCard("ri-forbid-line", "Passende Seitenart", "Karriere, FAQ und reine Eventprogramme stoppen.", "server", "Feste Regel")}
+      ${stageCard("ri-focus-3-line", "Passendes Fachthema", "Mindestens ein relevantes Thema muss erkennbar sein.", "server", "DE + EN")}
+      ${stageCard("ri-user-unfollow-line", "Keine reine Personalie", "Ein neuer CEO allein ist noch kein Signal.", "server", "Feste Regel")}
+      ${stageCard("ri-file-copy-2-line", "Kein Duplikat", "Identischer Inhalt wird nur einmal bewertet.", "server", "Inhaltsvergleich")}
+    </div>`, "Regeln ändern") + stageSection("Welche Themen dürfen weiter?", "Ein Treffer erlaubt nur die KI-Prüfung. Er erzeugt noch keine Kachel.", `<div class="stage-topic-grid">
+      ${stageCard("ri-megaphone-line", "Marketing & Marke", "Kampagnen, Positionierung, Medien und Markenführung.", null, null)}
+      ${stageCard("ri-user-heart-line", "Kunden", "Verhalten, Bedürfnisse, Zielgruppen und Kundenerlebnis.", null, null)}
+      ${stageCard("ri-store-2-line", "Handel & FMCG", "Sortiment, Preise, Eigenmarken, Stores und Retail Media.", null, null)}
+      ${stageCard("ri-lightbulb-flash-line", "KI & Innovation", "Konkrete Anwendungen, Automatisierung und Wirkung.", null, null)}
+      ${stageCard("ri-line-chart-line", "Strategie", "Wachstum, Markteintritt, Geschäftsmodell und Wandel.", null, null)}
+    </div>`) + stageSection("Welche Systeme arbeiten hier?", "", `<div class="stage-system-row">${stageSystem("apify", "Apify: abgeschlossen")}${stageSystem("server", "Supabase: entscheidet")}${stageSystem("ai", "Gemini: erst im nächsten Schritt")}</div><div class="stage-outcome"><span><i class="ri-close-circle-line"></i><b>Stopp</b> Ablehnungsgrund wird gespeichert.</span><span><i class="ri-arrow-right-circle-line"></i><b>Weiter</b> Artikel geht zur KI-Prüfung.</span></div>`);
+  }
+
+  if (stage.id === "gemini") {
+    content = stageSection("Was liest Gemini aus dem Artikel?", "Jede Antwort muss mit einer Textstelle belegt werden.", `<div class="stage-card-grid stage-card-grid--3">
+      ${stageCard("ri-price-tag-3-line", "Fachthemen", "Marketing, Kunden, Handel, Innovation oder Strategie.", "ai", "Gemini")}
+      ${stageCard("ri-compass-3-line", "ROOTS-Bereich", "Ordnet das Signal einem ROOTS-Territory zu.", "ai", "Gemini")}
+      ${stageCard("ri-building-4-line", "Unternehmen", "Erkennt Tier-1-Unternehmen und ihre Rolle im Artikel.", "ai", "Gemini")}
+      ${stageCard("ri-team-line", "Personen & Rollen", "Findet relevante Verantwortliche für einen Anlass.", "ai", "Gemini")}
+      ${stageCard("ri-flashlight-line", "Sales-Anlass", "Erkennt zum Beispiel Wandel, Investition oder Kampagnenstart.", "ai", "Gemini")}
+      ${stageCard("ri-double-quotes-l", "Textbelege", "Liefert das genaue Zitat zu jeder wichtigen Aussage.", "ai", "Pflicht")}
+    </div>`, "Modelle & Prüfung") + stageSection("Welche Systeme arbeiten hier?", "", `<div class="stage-system-row">${stageSystem("server", "Supabase sendet den Artikel")}${stageSystem("ai", getConfigValue("ai.primary_model"))}${getConfigValue("ai.review_enabled") ? stageSystem("ai", "Zweite Prüfung bei Unsicherheit") : stageSystem("source", "Zweite Prüfung aus")}</div><div class="stage-outcome stage-outcome--single"><span><i class="ri-information-line"></i>Gemini macht einen Vorschlag. Freigegeben wird erst in der Validierung.</span></div>`);
+  }
+
+  if (stage.id === "validation") {
+    content = stageSection("Was muss jede Aussage bestehen?", "Der Server kontrolliert den KI-Vorschlag unabhängig.", `<div class="stage-card-grid stage-card-grid--4">
+      ${stageCard("ri-checkbox-circle-line", "Klare Ja-Aussage", "Gemini muss das Merkmal ausdrücklich bestätigen.", "server", "Supabase")}
+      ${stageCard("ri-speed-line", "Genug Sicherheit", "Der Wert muss zur gewählten Prüfstrenge passen.", "server", "Grenzwert")}
+      ${stageCard("ri-double-quotes-l", "Zitat vorhanden", "Der angegebene Beleg muss im Artikel stehen.", "server", "Textvergleich")}
+      ${stageCard("ri-forbid-line", "Kein Ausschluss", "Ungeeignete Seitenarten bleiben abgelehnt.", "server", "Feste Regel")}
+    </div>`, "Prüfstrenge ändern") + stageSection("Mögliche Ergebnisse", "", `<div class="stage-status-grid">
+      <article class="is-good"><i class="ri-shield-check-line"></i><b>Zuverlässig</b><span>Alles belegt und sicher.</span></article>
+      <article class="is-review"><i class="ri-user-search-line"></i><b>Manuelle Prüfung</b><span>Plausibel, aber noch unsicher.</span></article>
+      <article class="is-stop"><i class="ri-close-circle-line"></i><b>Abgelehnt</b><span>Regel oder Beleg fehlt.</span></article>
+      <article><i class="ri-error-warning-line"></i><b>Technischer Fehler</b><span>Noch nicht fachlich entschieden.</span></article>
+    </div>`) + stageSection("Welche Systeme arbeiten hier?", "", `<div class="stage-system-row">${stageSystem("ai", "Gemini: Vorschlag")}${stageSystem("server", "Supabase: letzte Entscheidung")}</div>`);
+  }
+
+  if (stage.id === "routing") {
+    content = stageSection("Wohin wird ein zuverlässiges Signal geleitet?", "Die drei Entscheidungen werden getrennt getroffen.", `<div class="stage-route-grid">
+      <article><span class="stage-route-icon"><i class="ri-megaphone-line"></i></span><b>Marketing</b><p>Direkter Bezug zu Kunden, Marke, Handel oder angewandter KI.</p><div><span>Zuverlässig</span><span>Fachbeleg</span></div></article>
+      <article><span class="stage-route-icon"><i class="ri-hand-coin-line"></i></span><b>Sales</b><p>Tier-1-Unternehmen plus konkreter strategischer Anlass.</p><div><span>Zuverlässig</span><span>Tier-1</span><span>Anlass</span></div></article>
+      <article><span class="stage-route-icon"><i class="ri-team-line"></i></span><b>Buying Center</b><p>Sales-Signal plus passende Person oder konkrete Rolle.</p><div><span>Sales</span><span>Person / Rolle</span></div></article>
+    </div>`, "Routing ändern") + stageSection("Was reicht ausdrücklich nicht?", "", `<div class="stage-card-grid stage-card-grid--3">
+      ${stageCard("ri-building-line", "Nur ein Firmenname", "Eine beiläufige Nennung erzeugt kein Sales-Signal.", "server", "Schutzregel")}
+      ${stageCard("ri-user-star-line", "Nur ein neuer CEO", "Eine Personalie braucht einen konkreten strategischen Anlass.", "server", "Schutzregel")}
+      ${stageCard("ri-shopping-bag-line", "Nur ein neues Produkt", "Ohne Marketing- oder Strategiebezug entsteht keine Marketing-Kachel.", "server", "Schutzregel")}
+    </div>`) + stageSection("Welche Systeme arbeiten hier?", "", `<div class="stage-system-row">${stageSystem("server", "Supabase entscheidet")}${stageSystem("result", "Frontend zeigt das Ergebnis")}</div>`);
+  }
+
+  if (stage.id === "output") {
+    content = stageSection("Was erscheint im Frontend?", "Die Darstellung folgt ausschließlich dem gespeicherten Status.", `<div class="stage-card-grid stage-card-grid--3">
+      ${stageCard("ri-layout-grid-line", "Signalkachel", "Deutscher Titel, kurze Zusammenfassung und bestätigte Tags.", "result", "Zuverlässig")}
+      ${stageCard("ri-file-search-line", "Detailansicht", "Volltext, Unternehmen, Personen, Anlässe und Belege.", "result", "Nachvollziehbar")}
+      ${stageCard("ri-user-search-line", "Prüfliste", "Unsichere Fälle bleiben getrennt und werden nicht automatisch geroutet.", "result", "Manuell")}
+    </div>`) + stageSection("Fünf sichtbare Zustände", "", `<div class="stage-status-grid stage-status-grid--5">
+      <article class="is-good"><i class="ri-shield-check-line"></i><b>Zuverlässig</b></article><article class="is-review"><i class="ri-user-search-line"></i><b>Prüfung</b></article><article class="is-stop"><i class="ri-close-circle-line"></i><b>Abgelehnt</b></article><article><i class="ri-error-warning-line"></i><b>Fehler</b></article><article><i class="ri-archive-line"></i><b>Altbestand</b></article>
+    </div>`);
+  }
+
+  return `<div class="stage-page">${summary}${content}</div>`;
+}
+
+function renderStageEditor(stage) {
+  const meta = STAGE_PAGE_META[stage.id];
+  const qualityProfiles = [["strict", "Streng", "Weniger Treffer, höchste Sicherheit."], ["balanced", "Ausgewogen", "Gute Balance aus Menge und Sicherheit."], ["discovery", "Offen", "Mehr Grenzfälle für die manuelle Prüfung."]].map(([value, label, copy]) => `<label class="quality-option"><input type="radio" name="quality-profile" data-pipeline-path="experience.quality_profile" value="${value}" ${getConfigValue("experience.quality_profile") === value ? "checked" : ""}><b>${label}</b><small>${copy}</small></label>`).join("");
+  let content = "";
+  if (stage.id === "crawl") content = `${pipelineFields(["crawl.freshness_days", "crawl.future_tolerance_hours", "crawl.default_max_depth", "crawl.default_max_pages", "crawl.event_max_depth", "crawl.event_max_pages"])}<button type="button" class="btn-secondary" data-open-settings-panel="apify"><i class="ri-links-line"></i> Quellenliste öffnen</button>`;
+  if (stage.id === "prefilter") content = `${pipelineFields(["filters.minimum_text_length"])}<div class="stage-toggle-list">${simpleToggle("relevance.allow_product_launch_without_strategy", "Neue Produkte ohne Marketingbezug trotzdem prüfen", "Wenn eingeschaltet, prüft Gemini auch Meldungen ohne Kampagne, Zielgruppe oder Markenentscheidung.")}</div><div class="stage-fixed-note"><i class="ri-lock-line"></i><span>Karriere, FAQ, Eventprogramme, Duplikate und reine Personalernennungen werden immer aussortiert.</span></div>`;
+  if (stage.id === "gemini") {
+    const status = geminiModelCatalogState.status === "ready" ? `${geminiModelCatalog.length} Modelle geprüft` : geminiModelCatalogState.status === "loading" ? "Modelle werden geprüft" : geminiModelCatalogState.status === "error" ? "Prüfung fehlgeschlagen" : "Noch nicht geprüft";
+    const topicCopies = { customer_insights: "Kundenverhalten und Bedürfnisse", marketing_insights: "Marke, Kampagnen und Medien", fmcg_retail_signale: "Handel, Sortiment und Preise", ki_performance: "Angewandte KI und Wirkung", sub_branchen_insight: "Übertragbare Marktveränderungen" };
+    const topicEditors = RELEVANCE_CARDS.map((card) => { const value = getConfigValue(`relevance.${card.id}`); return `<label class="stage-topic-editor"><span><b>${escapeHtml(card.title)}</b><small>${escapeHtml(topicCopies[card.id])}</small></span><select class="pipeline-control" data-pipeline-path="relevance.${card.id}"><option value="relevant" ${value === "relevant" ? "selected" : ""}>Berücksichtigen</option><option value="impact_required" ${value === "impact_required" ? "selected" : ""}>Nur mit konkreter Wirkung</option><option value="not_relevant" ${value === "not_relevant" ? "selected" : ""}>Ausschließen</option></select></label>`; }).join("");
+    content = `<div class="stage-model-status"><span class="model-validation ${geminiModelCatalogState.status === "ready" ? "model-validation--ready" : geminiModelCatalogState.status === "error" ? "model-validation--error" : "model-validation--loading"}"><i class="ri-shield-check-line"></i>${escapeHtml(status)}</span><button type="button" class="btn-secondary" data-refresh-gemini-models><i class="ri-refresh-line"></i> Neu prüfen</button></div>${pipelineFields(["ai.primary_model", "ai.review_model", "ai.review_enabled", "ai.review_confidence_below", "ai.thinking_level", "ai.max_output_tokens"])}<h6 class="stage-editor-subtitle">Welche Themen soll Gemini beachten?</h6><div class="stage-topic-editor-grid">${topicEditors}</div>`;
+  }
+  if (stage.id === "validation") content = `<div class="quality-choice">${qualityProfiles}</div><div class="stage-toggle-list">${simpleToggle("relevance.require_ai_application", "KI nur bei echter Anwendung", "Allgemeine KI-Meinungen reichen nicht.")}${simpleToggle("relevance.allow_ai_pilot", "Konkrete KI-Piloten zulassen", "Ein belegter Pilot kann bereits zählen.")}${simpleToggle("relevance.require_subsector_transferability", "Markttrend muss übertragbar sein", "Ein einzelnes Unternehmensereignis reicht nicht.")}${simpleToggle("relevance.allow_campaign_without_results", "Kampagnen ohne Ergebnisse zulassen", "Ein konkreter Start kann vor ersten Messwerten zählen.")}</div>`;
+  if (stage.id === "routing") content = `<div class="stage-toggle-list">${simpleToggle("routing.marketing_enabled", "Marketing-Kacheln aktiv", "Zeigt bestätigte Marketing-Signale.")}${simpleToggle("routing.sales_enabled", "Sales-Kacheln aktiv", "Zeigt bestätigte Sales-Signale.")}${simpleToggle("routing.sales_requires_tier1", "Sales nur mit Tier-1-Unternehmen", "Verhindert Sales-Signale ohne Zielkunde.")}${simpleToggle("routing.sales_requires_trigger", "Sales nur mit konkretem Anlass", "Ein Firmenname allein reicht nicht.")}${simpleToggle("routing.buying_center_enabled", "Buying Center aktiv", "Ergänzt passende Personen und Rollen.")}${simpleToggle("routing.buying_center_requires_person", "Person oder Rolle erforderlich", "Verhindert allgemeine Ansprechpartner.")}</div>`;
+  if (!content) return "";
+  return `<div class="stage-editor-overlay"><section class="stage-editor-card" role="dialog" aria-modal="true" aria-labelledby="stage-editor-title"><header><div><span>Ändern</span><h5 id="stage-editor-title">${escapeHtml(meta.edit)}</h5></div><button type="button" class="pipeline-icon-btn" data-pipeline-editor-close aria-label="Bearbeitung schließen"><i class="ri-close-line"></i></button></header><main><div class="stage-editor-state"><i class="ri-information-line"></i>Gespeicherte Änderungen gelten für neue Prüfungen.</div>${content}</main><footer>${PIPELINE_STAGE_RESET_PATHS[stage.id] ? `<button type="button" class="btn-text" data-pipeline-reset-stage="${stage.id}"><i class="ri-restart-line"></i> Zurücksetzen</button>` : ""}<div><button type="button" class="btn-secondary" data-pipeline-editor-close>Abbrechen</button><button type="button" class="btn-primary" data-pipeline-save><i class="ri-save-line"></i> Speichern</button></div></footer></section></div>`;
+}
+
 function renderPipelineDrilldown() {
   const target = document.getElementById("pipeline-drilldown");
   if (!target) return;
   const stage = pipelineStageDefinitions.find((candidate) => candidate.id === pipelineDrilldownState.stageId);
-  if (!stage) {
-    target.hidden = true;
-    target.innerHTML = "";
-    return;
-  }
+  if (!stage) { target.hidden = true; target.innerHTML = ""; return; }
   const stageIndex = pipelineStageDefinitions.indexOf(stage);
-  const editTab = stage.tabs.find((tab) => tab.id === "edit");
-  const orderedTabs = editTab ? [editTab, ...stage.tabs.filter((tab) => tab.id !== "edit")] : stage.tabs;
-  const activeTab = orderedTabs.find((tab) => tab.id === pipelineDrilldownState.tabId) || editTab || orderedTabs[0];
-  pipelineDrilldownState.tabId = activeTab.id;
   const previousStage = pipelineStageDefinitions[stageIndex - 1];
   const nextStage = pipelineStageDefinitions[stageIndex + 1];
-  const depthDescriptions = {
-    flow: "Verstehe den Ablauf und was diese Station an die nächste übergibt.",
-    rules: "Sieh exakt, welche Regeln, Belege und Bedingungen geprüft werden.",
-    edit: "Passe hier direkt die Stellschrauben an, die in dieser Station tatsächlich wirken.",
-  };
+  const meta = STAGE_PAGE_META[stage.id];
   target.hidden = false;
-  target.innerHTML = `<div class="pipeline-drilldown-card" role="dialog" aria-modal="true" aria-labelledby="pipeline-detail-title">
-    <header class="pipeline-drilldown-head">
-      <div><div class="pipeline-breadcrumb"><button type="button" data-pipeline-detail-close>Pipeline</button><i class="ri-arrow-right-s-line"></i><b>${stage.number} ${escapeHtml(PIPELINE_OVERVIEW_META[stage.id]?.label || "Ergebnis")}</b><i class="ri-arrow-right-s-line"></i><span>${escapeHtml(activeTab.label)}</span></div><div class="pipeline-drilldown-title"><span><i class="${stage.icon}"></i></span><div><h4 id="pipeline-detail-title" tabindex="-1">${escapeHtml(stage.title)}</h4><p>${escapeHtml(stage.description)}</p></div></div></div>
-      <div class="pipeline-drilldown-head-actions"><button type="button" class="pipeline-icon-btn" data-pipeline-stage-prev title="Vorherige Station" ${previousStage ? "" : "disabled"}><i class="ri-arrow-left-line"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-stage-next title="Nächste Station" ${nextStage ? "" : "disabled"}><i class="ri-arrow-right-line"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-detail-close title="Schließen"><i class="ri-close-line"></i></button></div>
-    </header>
-    <nav class="pipeline-inline-tabs" aria-label="Bereiche dieser Pipeline-Station">${orderedTabs.map((tab) => `<button type="button" class="${tab.id === activeTab.id ? "active" : ""}" data-pipeline-detail-tab="${tab.id}" aria-current="${tab.id === activeTab.id ? "page" : "false"}"><i class="${tab.icon}"></i>${escapeHtml(tab.id === "edit" ? "Direkt bearbeiten" : tab.label)}</button>`).join("")}</nav>
-    <div class="pipeline-drilldown-body pipeline-drilldown-body--direct">
-      <main class="pipeline-depth-content"><div class="pipeline-depth-intro"><div><span>${activeTab.id === "edit" ? "Direkte Einstellungen" : "Hintergrund und Logik"}</span><h5>${escapeHtml(activeTab.id === "edit" ? "Sinnvolle Stellschrauben" : activeTab.label)}</h5><p>${escapeHtml(depthDescriptions[activeTab.id] || "Nachvollziehbare Details dieser Pipeline-Station.")}</p></div><div>${stage.owners.map(pipelineOwner).join("")}</div></div>${activeTab.content}${activeTab.id === "edit" ? `<div class="pipeline-edit-safety"><i class="ri-information-line"></i><span><b>Änderungen sind noch nicht aktiv.</b> Prüfe zuerst die Auswirkung auf bestehende Artikel. Speichern erzeugt anschließend eine neue Version.</span><button type="button" class="btn-secondary" data-pipeline-preview>Auswirkung prüfen</button></div>` : ""}</main>
-    </div>
-    <footer class="pipeline-drilldown-footer"><div class="pipeline-footer-start"><button type="button" class="btn-secondary" data-pipeline-detail-close><i class="ri-arrow-left-line"></i>Zur Pipeline</button>${activeTab.id === "edit" && PIPELINE_STAGE_RESET_PATHS[stage.id] ? `<button type="button" class="btn-text" data-pipeline-reset-stage="${stage.id}"><i class="ri-restart-line"></i> Station zurücksetzen</button>` : ""}</div><span class="pipeline-depth-progress">${stageIndex < 5 ? `Station ${stageIndex + 1} von 5` : "Ergebnis"}</span>${nextStage ? `<button type="button" class="btn-primary" data-pipeline-stage-next>Nächste Station<i class="ri-arrow-right-line"></i></button>` : `<button type="button" class="btn-primary" data-pipeline-detail-close>Schließen<i class="ri-close-line"></i></button>`}</footer>
+  target.innerHTML = `<div class="pipeline-drilldown-card pipeline-drilldown-card--single" role="dialog" aria-modal="true" aria-labelledby="pipeline-detail-title">
+    <header class="pipeline-drilldown-head"><div><div class="pipeline-breadcrumb"><button type="button" data-pipeline-detail-close>Pipeline</button><i class="ri-arrow-right-s-line"></i><b>${stage.number} ${escapeHtml(meta.title)}</b></div><div class="pipeline-drilldown-title"><span><i class="${stage.icon}"></i></span><div><h4 id="pipeline-detail-title" tabindex="-1">${escapeHtml(meta.title)}</h4><p>${escapeHtml(meta.summary)}</p></div></div></div><div class="pipeline-drilldown-head-actions"><button type="button" class="pipeline-icon-btn" data-pipeline-stage-prev title="Vorherige Station" ${previousStage ? "" : "disabled"}><i class="ri-arrow-left-line"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-stage-next title="Nächste Station" ${nextStage ? "" : "disabled"}><i class="ri-arrow-right-line"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-detail-close title="Schließen"><i class="ri-close-line"></i></button></div></header>
+    <main class="stage-page-scroll">${renderStageOverview(stage)}</main>
+    <footer class="pipeline-drilldown-footer"><button type="button" class="btn-secondary" data-pipeline-detail-close><i class="ri-arrow-left-line"></i>Zur Pipeline</button><span class="pipeline-depth-progress">${stageIndex < 5 ? `Station ${stageIndex + 1} von 5` : "Ergebnis"}</span>${nextStage ? `<button type="button" class="btn-primary" data-pipeline-stage-next>Nächste Station<i class="ri-arrow-right-line"></i></button>` : `<button type="button" class="btn-primary" data-pipeline-detail-close>Schließen<i class="ri-close-line"></i></button>`}</footer>
+    ${pipelineDrilldownState.editorOpen ? renderStageEditor(stage) : ""}
   </div>`;
-  requestAnimationFrame(() => document.getElementById("pipeline-detail-title")?.focus({ preventScroll: true }));
+  requestAnimationFrame(() => document.getElementById(pipelineDrilldownState.editorOpen ? "stage-editor-title" : "pipeline-detail-title")?.focus({ preventScroll: true }));
 }
 
 function renderPipelineStudio() {
@@ -543,7 +663,7 @@ function renderPipelineStudio() {
           <section class="signal-family"><h5>KI und Innovation</h5><div class="signal-family-tags"><span>KI-Anwendung</span><span>KI-Plattform</span><span>Automatisierung</span><span>generative AI</span><span>AI initiative</span></div></section>
           <section class="signal-family"><h5>Strategie und Wachstum</h5><div class="signal-family-tags"><span>Markteintritt</span><span>Expansion</span><span>Geschäftsmodell</span><span>Restrukturierung</span><span>acquisition</span><span>agency change</span></div></section>
         </div><div class="pipeline-locked-grid">${lockedRule("Karriere und FAQ ablehnen", "Fest im Code; nicht über die Oberfläche deaktivierbar.")}${lockedRule("Duplikate entfernen", "Fest im Code; normalisierter Inhalts-Hash.")}${lockedRule("Fachsignal verlangen", "Fest im Code; DE/EN-Muster als kostensparendes Gate.")}${lockedRule("Reine Personalernennungen ablehnen", "Fest im Code; Ausnahme nur bei strategischem Trigger.")}${lockedRule("Legacy-Keywords sind inaktiv", "Alte Listen bleiben nur für Audit-Zwecke erhalten und entscheiden nicht mit.")}</div>` },
-        { id: "edit", icon: "ri-edit-line", label: "Bearbeiten", content: `<div class="pipeline-responsibility-note pipeline-responsibility-note--content"><i class="ri-filter-3-line"></i><div><b>Dieser Schritt läuft in Supabase, nicht in Apify.</b><span>Er bewertet den bereits geladenen Artikelinhalt und entscheidet, ob ein Gemini-Aufruf sinnvoll ist.</span></div></div>${pipelineEditHead("Vorfilter-Stellschrauben", "Nur sinnvolle Business-Parameter sind editierbar; Schutzfilter bleiben gesperrt.")}${pipelineFields(["filters.minimum_text_length"])}${policyToggle("relevance.allow_product_launch_without_strategy", "Produktlaunch ohne Strategie zulassen", "Standardmäßig aus: Ohne Positionierung, Zielgruppe oder Kampagne bleibt ein Launch irrelevant.", "Vorfilter + Policy")}<div class="pipeline-locked-grid">${lockedRule("Fachsignal erforderlich", "Server setzt diese Regel bei jedem Speichern wieder auf aktiv.")}${lockedRule("Karriere, FAQ und Eventprogramme", "Diese Schutzfilter sind nicht abschaltbar.")}</div>` },
+        { id: "edit", icon: "ri-edit-line", label: "Bearbeiten", content: `<div class="pipeline-responsibility-note pipeline-responsibility-note--content"><i class="ri-filter-3-line"></i><div><b>Dieser Schritt läuft in Supabase, nicht in Apify.</b><span>Er bewertet den bereits geladenen Artikelinhalt und entscheidet, ob ein Gemini-Aufruf sinnvoll ist.</span></div></div>${pipelineEditHead("Vorfilter", "Hier wird festgelegt, welche Artikel Gemini prüfen darf.")}${pipelineFields(["filters.minimum_text_length"])}${policyToggle("relevance.allow_product_launch_without_strategy", "Neue Produkte ohne Marketingbezug trotzdem prüfen", "Wenn eingeschaltet, prüft Gemini auch Meldungen ohne Kampagne, Zielgruppe oder Markenentscheidung.", "Vorfilter + Policy")}<div class="pipeline-locked-grid">${lockedRule("Fachsignal erforderlich", "Server setzt diese Regel bei jedem Speichern wieder auf aktiv.")}${lockedRule("Karriere, FAQ und Eventprogramme", "Diese Schutzfilter sind nicht abschaltbar.")}</div>` },
       ],
     },
     {
@@ -616,7 +736,7 @@ function renderPipelineStudio() {
   studio.innerHTML = stages.slice(0, 5).map((stage) => {
     const overview = PIPELINE_OVERVIEW_META[stage.id];
     const [statLabel, statValue] = pipelineStageStat(stage.id);
-    return `<button type="button" class="pipeline-overview-card" data-pipeline-open-stage="${stage.id}" aria-label="${escapeHtml(overview.label)} bearbeiten"><span class="pipeline-overview-card-number">${stage.number}</span><span class="pipeline-overview-card-icon"><i class="${stage.icon}"></i></span><h4>${escapeHtml(overview.label)}</h4><p>${escapeHtml(overview.summary)}</p><span class="pipeline-overview-stat"><small>${escapeHtml(statLabel)}</small><b>${escapeHtml(statValue)}</b></span><span class="pipeline-overview-card-action">Einstellungen öffnen <i class="ri-arrow-right-line"></i></span><span class="pipeline-card-popover" aria-hidden="true"><strong>Direkt bearbeiten</strong><ul>${overview.hover.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></span></button>`;
+    return `<button type="button" class="pipeline-overview-card" data-pipeline-open-stage="${stage.id}" aria-label="${escapeHtml(overview.label)} im Ablauf öffnen"><span class="pipeline-overview-card-number">${stage.number}</span><span class="pipeline-overview-card-icon"><i class="${stage.icon}"></i></span><h4>${escapeHtml(overview.label)}</h4><p>${escapeHtml(overview.summary)}</p><span class="pipeline-overview-stat"><small>${escapeHtml(statLabel)}</small><b>${escapeHtml(statValue)}</b></span><span class="pipeline-overview-card-action">Ablauf ansehen <i class="ri-arrow-right-line"></i></span><span class="pipeline-card-popover" aria-hidden="true"><strong>Auf einen Blick</strong><ul>${overview.hover.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></span></button>`;
   }).join("");
   const statsTarget = document.getElementById("pipeline-funnel-stats");
   if (statsTarget) {
@@ -671,6 +791,7 @@ async function savePipelineSettings() {
   const history = readPipelineHistory();
   history.unshift({ version: settings.version, at: settings.updated_at || new Date().toISOString(), changes: changes.length });
   localStorage.setItem("roots-pipeline-history", JSON.stringify(history.slice(0, 10)));
+  pipelineDrilldownState.editorOpen = false;
   renderBusinessPipelineStudio();
   els.pipelineVersion.textContent = `Version ${settings.version} · gerade gespeichert`;
   toast("Pipeline-Konfiguration gespeichert");
@@ -678,6 +799,7 @@ async function savePipelineSettings() {
 
 function collectPipelineDraft() {
   document.querySelectorAll("[data-pipeline-path]").forEach((control) => {
+    if (control.offsetParent === null) return;
     if (control.type === "radio" && !control.checked) return;
     const value = control.type === "checkbox" ? control.checked : control.type === "number" ? Number(control.value) : control.value;
     setConfigValue(control.dataset.pipelinePath, value);
@@ -1045,7 +1167,7 @@ function closeSettings() {
   if (pipelineDrilldownState.stageId && pipelineSettings) {
     collectPipelineDraft();
     pipelineDrilldownState.stageId = null;
-    pipelineDrilldownState.tabId = "flow";
+    pipelineDrilldownState.editorOpen = false;
     renderPipelineStudio();
   }
   els.settingsModal.classList.remove("show");
@@ -1335,7 +1457,7 @@ function bindUi() {
       if (panel !== "pipeline-overview" && pipelineDrilldownState.stageId) {
         collectPipelineDraft();
         pipelineDrilldownState.stageId = null;
-        pipelineDrilldownState.tabId = "flow";
+        pipelineDrilldownState.editorOpen = false;
         renderPipelineStudio();
       }
       els.btnSavePipelineHeader.hidden = !["pipeline-overview", "operations"].includes(panel);
@@ -1379,21 +1501,26 @@ function bindUi() {
     if (openStage) {
       syncDraft();
       pipelineDrilldownState.stageId = openStage.dataset.pipelineOpenStage;
-      pipelineDrilldownState.tabId = defaultPipelineTab(pipelineStageDefinitions.find((stage) => stage.id === pipelineDrilldownState.stageId));
+      pipelineDrilldownState.editorOpen = false;
       renderPipelineStudio();
       return;
     }
-    const detailTab = event.target.closest("[data-pipeline-detail-tab]");
-    if (detailTab) {
+    if (event.target.closest("[data-pipeline-open-editor]")) {
       syncDraft();
-      pipelineDrilldownState.tabId = detailTab.dataset.pipelineDetailTab;
+      pipelineDrilldownState.editorOpen = true;
+      renderPipelineStudio();
+      return;
+    }
+    if (event.target.closest("[data-pipeline-editor-close]")) {
+      syncDraft();
+      pipelineDrilldownState.editorOpen = false;
       renderPipelineStudio();
       return;
     }
     if (event.target.closest("[data-pipeline-detail-close]")) {
       syncDraft();
       pipelineDrilldownState.stageId = null;
-      pipelineDrilldownState.tabId = "flow";
+      pipelineDrilldownState.editorOpen = false;
       renderPipelineStudio();
       return;
     }
@@ -1403,7 +1530,7 @@ function bindUi() {
       syncDraft();
       const targetStage = pipelineStageDefinitions[activeStageIndex - 1];
       pipelineDrilldownState.stageId = targetStage.id;
-      pipelineDrilldownState.tabId = defaultPipelineTab(targetStage);
+      pipelineDrilldownState.editorOpen = false;
       renderPipelineStudio();
       return;
     }
@@ -1411,7 +1538,7 @@ function bindUi() {
       syncDraft();
       const targetStage = pipelineStageDefinitions[activeStageIndex + 1];
       pipelineDrilldownState.stageId = targetStage.id;
-      pipelineDrilldownState.tabId = defaultPipelineTab(targetStage);
+      pipelineDrilldownState.editorOpen = false;
       renderPipelineStudio();
       return;
     }
@@ -1419,6 +1546,7 @@ function bindUi() {
     if (panelLink) {
       syncDraft();
       pipelineDrilldownState.stageId = null;
+      pipelineDrilldownState.editorOpen = false;
       renderPipelineStudio();
       els.settingsNav.querySelector(`[data-panel="${panelLink.dataset.openSettingsPanel}"]`)?.click();
     }
@@ -1493,8 +1621,8 @@ function bindUi() {
     else if (els.addSourceModal.classList.contains("show")) closeAddSource();
     else if (pipelineDrilldownState.stageId) {
       collectPipelineDraft();
-      pipelineDrilldownState.stageId = null;
-      pipelineDrilldownState.tabId = "flow";
+      if (pipelineDrilldownState.editorOpen) pipelineDrilldownState.editorOpen = false;
+      else pipelineDrilldownState.stageId = null;
       renderPipelineStudio();
     }
     else if (els.settingsModal.classList.contains("show")) closeSettings();
