@@ -1437,9 +1437,16 @@ async function loadLastRun() {
     els.geminiRequestCount.textContent = Number(costs?.requests || 0).toLocaleString("de-DE");
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
     els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
-    els.sourceHealthNote.textContent = health
-      ? `${Number(health.successful || 0).toLocaleString("de-DE")} erfolgreich · ${Number(health.empty || 0).toLocaleString("de-DE")} leer · ${Number(health.errors || 0).toLocaleString("de-DE")} Fehler · Apify ${Number(health.apify_errors || 0).toLocaleString("de-DE")} Fehler`
-      : "Noch keine detaillierte Crawl-Telemetrie vorhanden.";
+    const crawlResults = health ? [
+      { value: Number(health.successful || 0), label: "erfolgreich", tone: "success", icon: "ri-checkbox-circle-line" },
+      { value: Number(health.empty || 0), label: "leer", tone: "muted", icon: "ri-file-search-line" },
+      { value: Number(health.errors || 0), label: "Fehler", tone: "error", icon: "ri-error-warning-line" },
+      { value: Number(health.apify_errors || 0), label: "Apify-Fehler", tone: "error", icon: "ri-links-line" },
+    ].filter((result) => result.value > 0) : [];
+    els.sourceHealthNote.hidden = crawlResults.length === 0;
+    els.sourceHealthNote.innerHTML = crawlResults.map((result) =>
+      `<span class="crawl-result-pill crawl-result-pill--${result.tone}"><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
+    ).join("");
     const isActive = setLiveStatus(last, backfill);
     if (!last) {
       els.lastRunText.textContent = "--:--";
