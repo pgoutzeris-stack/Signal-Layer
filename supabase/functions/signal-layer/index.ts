@@ -743,7 +743,7 @@ async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Prom
   `.trim();
 
   const runRes = await fetchWithTimeout(
-    `https://api.apify.com/v2/acts/apify~web-scraper/run-sync-get-dataset-items?token=${apifyKey}&timeout=180`,
+    `https://api.apify.com/v2/acts/apify~web-scraper/run-sync-get-dataset-items?token=${apifyKey}&timeout=110`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -756,7 +756,7 @@ async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Prom
         proxyConfiguration: { useApifyProxy: true },
       }),
     },
-    185_000,
+    115_000,
   );
   if (!runRes.ok) {
     // Surface this instead of silently returning [] — a misconfigured/
