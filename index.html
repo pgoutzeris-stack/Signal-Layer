@@ -140,14 +140,11 @@
   .crawl-trigger-wrap { position: relative; }
   .status-pill { min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--bg); color: var(--ink); box-shadow: 0 3px 12px rgba(15, 23, 42, .08); display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: .76rem; font-weight: 750; cursor: pointer; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
   .status-pill:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(15, 23, 42, .12); }
-  .status-pill i { font-size: .95rem; }
-  .status-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .status-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .status-pill--ready { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
   .status-pill--working { color: var(--brand-dark); border-color: #bfdbfe; background: var(--brand-light); }
   .status-pill--working .status-pill-dot { animation: statusPulse 1.25s ease-in-out infinite; }
-  .status-pill--working i { animation: statusSpin 1.1s linear infinite; }
   .status-pill--error { color: var(--danger); border-color: #fecaca; background: #fef2f2; }
-  @keyframes statusSpin { to { transform: rotate(360deg); } }
   @keyframes statusPulse { 50% { transform: scale(1.75); opacity: .35; } }
   .crawl-status-popover { position: absolute; right: 0; top: calc(100% + 9px); width: 330px; z-index: 45; padding: .85rem; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; transform: translateY(-5px); pointer-events: none; transition: opacity .16s, transform .16s, visibility .16s; }
   .crawl-trigger-wrap:hover .crawl-status-popover, .crawl-trigger-wrap:focus-within .crawl-status-popover { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
@@ -1367,7 +1364,7 @@
           </div>
           <div class="crawl-trigger-wrap">
             <button type="button" class="status-pill status-pill--ready" id="btn-crawl-trigger" aria-expanded="false">
-              <i class="ri-checkbox-circle-line"></i><span>Status</span><span class="status-pill-dot"></span>
+              <span class="status-pill-dot"></span><span>Status</span>
             </button>
             <div class="crawl-status-popover" role="status">
               <div class="crawl-status-head"><div><span class="crawl-status-kicker">Letzter Crawl</span><strong id="last-run-text">--:--</strong></div><span class="crawl-live-state" id="crawl-live-state">Wird geladen</span></div>
