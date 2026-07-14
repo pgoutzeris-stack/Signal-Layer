@@ -226,6 +226,9 @@ const ARTICLE_TYPE_LABELS = {
   product_news: "Produktmeldung",
   campaign_news: "Kampagnenmeldung",
   financial_news: "Finanzmeldung",
+  acquisition_news: "M&A-Meldung",
+  operations_news: "Operations-/Logistikmeldung",
+  personnel_news: "Personalnachricht",
   event_report: "Event-Bericht",
   event_program: "Event-Programm",
   career: "Karriere",
@@ -233,6 +236,14 @@ const ARTICLE_TYPE_LABELS = {
   overview: "Übersichtsseite",
   advertisement: "Anzeige",
   other: "Sonstiger Inhalt",
+};
+
+const SALES_TRIGGER_LABELS = {
+  acquisition: "Übernahme", merger: "Fusion", market_entry: "Markteintritt",
+  market_expansion: "Marktexpansion", investment: "Investition", restructuring: "Restrukturierung",
+  portfolio_change: "Portfolioveränderung", transformation: "Transformation", rebranding: "Rebranding",
+  campaign_launch: "Kampagnenstart", agency_change: "Agenturwechsel", ai_initiative: "KI-Initiative",
+  retail_strategy: "Retail-Strategie", new_business_model: "Neues Geschäftsmodell",
 };
 
 function formatConfidence(value) {
@@ -390,11 +401,13 @@ function renderDetailTags(article) {
   const topics = article.topics || [];
   const companies = article.matched_companies || [];
   const people = article.matched_persons || [];
+  const salesTriggers = article.sales_triggers || [];
   return [
     ...topics.map((topic) => `<span class="tag">${escapeHtml(TOPIC_LABELS[topic] || topic)}</span>`),
     article.territory ? `<span class="tag">${escapeHtml(TERRITORY_LABELS[article.territory] || article.territory)}</span>` : "",
     ...companies.map((company) => `<span class="tag tag--kunde"><i class="ri-building-line"></i> ${escapeHtml(company)}</span>`),
     ...people.map((person) => `<span class="tag tag--person"><i class="ri-user-line"></i> ${escapeHtml(person)}</span>`),
+    ...salesTriggers.map((trigger) => `<span class="tag"><i class="ri-flashlight-line"></i> ${escapeHtml(SALES_TRIGGER_LABELS[trigger] || trigger)}</span>`),
   ].join("");
 }
 
