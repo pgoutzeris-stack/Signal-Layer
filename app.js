@@ -989,7 +989,9 @@ function renderFindings(track) {
       const confidence = formatConfidence(f.confidence ?? article.relevance_confidence);
       const status = article.classification_status || "legacy";
       const isLegacy = status === "legacy";
-      const isNew = isToday(article.published_at);
+      // "NEU" refers to when the Signal Layer approved the card, not when
+      // the source originally published the article.
+      const isNew = isToday(article.classified_at);
       return `
         <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
           <div class="finding-item-top">
