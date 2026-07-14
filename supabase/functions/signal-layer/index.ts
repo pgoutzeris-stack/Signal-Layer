@@ -956,7 +956,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-3.5-flash";
 const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.6";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.7";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -1945,6 +1945,29 @@ async function tagArticle(
   const eventClusterKey = classification.event_key
     ? `${normalizeMatchText(primaryCompany || "general")}::${classification.event_key}`.slice(0, 240)
     : null;
+  let eventDuplicateId: string | null = null;
+  if (config.filters.deduplicate && eventClusterKey) {
+    const { data: currentMeta } = await admin.schema("signal_layer").from("articles")
+      .select("published_at").eq("id", articleId).maybeSingle();
+    if (currentMeta?.published_at) {
+      const publishedAt = new Date(currentMeta.published_at);
+      const from = new Date(publishedAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const to = new Date(publishedAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: eventCandidates } = await admin.schema("signal_layer").from("articles")
+        .select("id,event_cluster_key").neq("id", articleId).is("duplicate_of", null)
+        .not("event_cluster_key", "is", null).gte("published_at", from).lte("published_at", to)
+        .limit(150);
+      const currentCompanyKey = eventClusterKey.split("::", 1)[0];
+      const eventMatch = (eventCandidates || []).find((candidate: { id: string; event_cluster_key?: string }) => {
+        const candidateKey = normalizeMatchText(candidate.event_cluster_key || "");
+        if (!candidateKey || candidateKey === eventClusterKey) return candidateKey === eventClusterKey;
+        if ((candidate.event_cluster_key || "").split("::", 1)[0] !== currentCompanyKey) return false;
+        const similarity = tokenSimilarity(eventClusterKey, candidate.event_cluster_key || "");
+        return similarity.shared >= 3 && similarity.score >= 0.42;
+      });
+      eventDuplicateId = eventMatch?.id || null;
+    }
+  }
   const tagConfidence = Object.fromEntries([
     ...classification.topics.map((topic) => [`topic:${topic.id}`, topic.confidence]),
     ...(classification.territory.id !== "none" ? [[`territory:${classification.territory.id}`, classification.territory.confidence]] : []),
@@ -1994,6 +2017,16 @@ async function tagArticle(
     routing,
     tag_status: classification.relevance_status === "reliable" ? "tagged" : "untagged",
   }).eq("id", articleId);
+
+  if (eventDuplicateId) {
+    await admin.schema("signal_layer").from("articles").update({
+      classification_status: "rejected",
+      rejection_reasons: ["Redaktionelle Dublette desselben Unternehmensereignisses"],
+      duplicate_of: eventDuplicateId,
+      routing: [], buying_center_candidate: false, tag_status: "untagged",
+    }).eq("id", articleId);
+    return;
+  }
 
   if (classification.relevance_status !== "reliable") return;
   for (const topic of marketingEligible ? directMarketingTopics : []) {
