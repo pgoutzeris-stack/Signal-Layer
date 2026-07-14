@@ -694,7 +694,7 @@ async function runApifySourceCrawl(sourceUrl: string, sinceDate: Date, policy: C
         const preferred = $('article, main, [role="main"], .article-content, .article__content, .post-content, .entry-content, .content-body, .news-detail').first();
         const contentRoot = (preferred.length ? preferred : $('body')).clone();
         contentRoot.find('script, style, nav, header, footer, form, aside, noscript, svg').remove();
-        const content = contentRoot.text().replace(/\s+/g, ' ').trim().slice(0, 12000);
+        const content = contentRoot.text().replace(/\\s+/g, ' ').trim().slice(0, 12000);
         return { url: request.url, title: title.trim(), excerpt: excerpt.trim(), content, publishedAt: published, isArticle: true };
       }
       // Listing/homepage: enqueue same-domain links as candidate articles.
