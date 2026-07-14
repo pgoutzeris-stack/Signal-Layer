@@ -174,13 +174,6 @@ function cacheEls() {
   els.fCategory = document.getElementById("f-category");
   els.fDescription = document.getElementById("f-description");
 
-  els.keywordListMarketing = document.getElementById("keyword-list-marketing");
-  els.keywordListSales = document.getElementById("keyword-list-sales");
-  els.keywordInputMarketing = document.getElementById("keyword-input-marketing");
-  els.keywordInputSales = document.getElementById("keyword-input-sales");
-  els.btnAddKeywordMarketing = document.getElementById("btn-add-keyword-marketing");
-  els.btnAddKeywordSales = document.getElementById("btn-add-keyword-sales");
-
   els.btnCrawlTrigger = document.getElementById("btn-crawl-trigger");
   els.crawlDropdown = document.getElementById("crawl-dropdown");
   els.crawlCategoryList = document.getElementById("crawl-category-list");
@@ -193,6 +186,7 @@ function cacheEls() {
   els.pipelineVersion = document.getElementById("pipeline-version");
   els.btnSavePipeline = document.getElementById("btn-save-pipeline");
   els.btnSavePipelineHeader = document.getElementById("btn-save-pipeline-header");
+  els.btnPreviewPipeline = document.getElementById("btn-preview-pipeline");
   els.geminiCostStat = document.getElementById("gemini-cost-stat");
   els.geminiCostMonth = document.getElementById("gemini-cost-month");
   els.geminiCostToday = document.getElementById("gemini-cost-today");
@@ -287,19 +281,99 @@ async function loadPipelineSettings() {
   const { settings } = await callApi("get_pipeline_settings");
   pipelineSettings = settings;
   ["crawl", "filters", "ai", "quality", "routing"].forEach(renderPipelineFields);
+  renderBusinessPipelineStudio();
   els.pipelineVersion.textContent = `Version ${settings.version} · zuletzt ${new Date(settings.updated_at).toLocaleString("de-DE")}`;
+}
+
+const RELEVANCE_CARDS = [
+  { id: "customer_insights", icon: "ri-user-heart-line", title: "Customer Insights", description: "Kaufverhalten, Bedürfnisse, Zielgruppen, Experience, Loyalität und Shopper-Verhalten.", code: "DE/EN-Signalfamilien erkennen einen plausiblen Customer-Kontext, geben aber nicht frei.", prompt: "Fordert eine echte Kundenerkenntnis und eine wörtliche Belegstelle statt allgemeiner Aussagen.", ai: "Bewertet Bedeutung, Übertragbarkeit und konkreten Nutzen für Marketingentscheidungen.", server: "Prüft Evidenz im Originaltext und erlaubt Customer-Routing nur nach der aktiven Policy." },
+  { id: "marketing_insights", icon: "ri-megaphone-line", title: "Marketing & Markenstrategie", description: "Positionierung, Rebranding, Kampagnen, Aktivierung, Kommunikation und Media.", code: "Erkennt fachliche Marken- und Kampagnenmuster; einzelne Wörter reichen nicht.", prompt: "Untersagt Marketing aus bloßen Marken-, Produkt-, Finanz- oder Personalnennungen.", ai: "Unterscheidet echte Strategie von einer allgemeinen Unternehmensmeldung.", server: "Verlangt separate Marketing-Evidenz und ein zulässiges Thema für das Routing." },
+  { id: "fmcg_retail_signale", icon: "ri-store-2-line", title: "FMCG & Retail", description: "Sortiment, Handelsmarke, Pricing, Promotion, Category Management, Stores und Retail Media.", code: "Erkennt konkrete Retail-Kontexte und entfernt Navigation, Karriere oder Service.", prompt: "Verlangt eine konkrete Retail-Entscheidung statt reiner Filial-, Logistik- oder Produktmeldung.", ai: "Bewertet strategische Bedeutung für Shopper, Marke oder Handelssteuerung.", server: "Retail darf nur nach aktivierter Policy und belegter Routing-Evidenz zu Marketing werden." },
+  { id: "ki_performance", icon: "ri-sparkling-line", title: "KI, Innovation & Wirkung", description: "Konkrete Anwendungen, Automatisierung, Analytics und messbarer geschäftlicher Effekt.", code: "Fordert KI oder Innovation zusammen mit einem fachlichen Anwendungskontext.", prompt: "Fragt nach tatsächlichem Einsatz, Pilotstatus und konkreter oder messbarer Wirkung.", ai: "Trennt allgemeine KI-Meinung von einer relevanten Anwendung.", server: "Bei ‚Wirkung erforderlich‘ bleibt das Tag ohne belegte Umsetzung oder Wirkung gesperrt." },
+  { id: "sub_branchen_insight", icon: "ri-line-chart-line", title: "Sub-Branchen-Insights", description: "Übertragbare Nachfrage-, Kategorie- oder Marktveränderungen über einen Einzelfall hinaus.", code: "Lässt plausible Markt- und Wachstumsentwicklungen zur KI-Prüfung zu.", prompt: "Ein Launch, eine Übernahme oder Expansion allein gilt nicht als Markt-Insight.", ai: "Muss erklären, warum die Beobachtung über das einzelne Unternehmen hinaus übertragbar ist.", server: "Prüft das Übertragbarkeitsfeld; allein entsteht standardmäßig keine Marketing-Kachel." },
+];
+
+function policyToggle(path, label, description, owner = "Policy + Servercode") {
+  const checked = Boolean(getConfigValue(path));
+  return `<div class="rule-row"><div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small><span class="rule-owner"><i class="ri-settings-3-line"></i>${owner}</span></div><label class="source-toggle"><input data-pipeline-path="${path}" type="checkbox" ${checked ? "checked" : ""}><span class="source-toggle-slider"></span></label></div>`;
+}
+
+function renderBusinessPipelineStudio() {
+  if (!pipelineSettings) return;
+  const relevance = document.getElementById("relevance-profile-grid");
+  if (relevance) relevance.innerHTML = RELEVANCE_CARDS.map((card) => `<article class="policy-card"><div class="policy-card-head"><span class="policy-card-icon"><i class="${card.icon}"></i></span><div class="policy-card-title"><h4>${card.title}</h4><p>${card.description}</p></div><select class="pipeline-control policy-mode" data-pipeline-path="relevance.${card.id}"><option value="relevant" ${getConfigValue(`relevance.${card.id}`) === "relevant" ? "selected" : ""}>Relevant</option><option value="impact_required" ${getConfigValue(`relevance.${card.id}`) === "impact_required" ? "selected" : ""}>Nur mit konkreter Wirkung</option><option value="not_relevant" ${getConfigValue(`relevance.${card.id}`) === "not_relevant" ? "selected" : ""}>Nicht relevant</option></select></div><div class="decision-map"><div class="decision-step"><b>Code-Vorfilter</b><span>${card.code}</span></div><div class="decision-step"><b>System-Prompt</b><span>${card.prompt}</span></div><div class="decision-step"><b>Gemini</b><span>${card.ai}</span></div><div class="decision-step"><b>Server & Ergebnis</b><span>${card.server}</span></div></div></article>`).join("");
+
+  const decisions = document.getElementById("decision-rules-content");
+  if (decisions) decisions.innerHTML = `
+    <section class="rule-group"><div class="rule-group-head"><i class="ri-megaphone-line"></i><h4>Marketing-Routing</h4></div><div class="rule-list">
+      ${policyToggle("decisions.customer_signal_qualifies_marketing", "Customer-Signal darf Marketing qualifizieren", "Nur mit wörtlicher Customer-Evidenz und bestandener Qualitätsprüfung.")}
+      ${policyToggle("decisions.retail_signal_qualifies_marketing", "Retail-Signal darf Marketing qualifizieren", "Sortiment, Pricing, Promotion oder Store-Strategie können Marketing-Routing auslösen.")}
+      ${policyToggle("relevance.allow_campaign_without_results", "Kampagnen vor Ergebnissen berücksichtigen", "Ein konkreter Kampagnenstart kann relevant sein, auch wenn noch keine Wirkung gemessen wurde.")}
+      ${policyToggle("relevance.allow_product_launch_without_strategy", "Reine Produktlaunches zulassen", "Standardmäßig aus: Ohne Positionierung, Zielgruppe oder Kampagne bleibt ein Launch irrelevant.")}
+      <div class="rule-row"><div><strong>Separate Marketing-Evidenz</strong><small>Gemini muss eine eigene Belegstelle für Marketing liefern; eine Unternehmensnennung reicht nie.</small><span class="rule-owner"><i class="ri-code-line"></i>System-Prompt + Servercode</span></div><span class="guardrail-lock"><i class="ri-lock-line"></i>Immer aktiv</span></div>
+    </div></section>
+    <section class="rule-group"><div class="rule-group-head"><i class="ri-line-chart-line"></i><h4>Sales-Routing</h4></div><div class="rule-list">
+      ${policyToggle("routing.sales_requires_tier1", "Tier-1-Unternehmen erforderlich", "Sales entsteht nur für ein belastbar erkanntes Zielunternehmen.")}
+      ${policyToggle("routing.sales_requires_trigger", "Strategischer Trigger erforderlich", "Expansion, Transformation, Investition, Portfolio, Agenturwechsel oder vergleichbarer Trigger.")}
+      ${policyToggle("decisions.sales_requires_implementation", "Umsetzung statt Absicht verlangen", "Wenn aktiv, reichen vage Pläne oder unverbindliche Aussagen nicht.")}
+      ${policyToggle("decisions.sales_allow_risks", "Strategische Risiken berücksichtigen", "Auch belastbare Risiken können eine relevante Ansprache begründen.")}
+      <div class="rule-row"><div><strong>Reine Unternehmensnennung reicht nicht</strong><small>Sales benötigt immer einen eigenen, belegten strategischen Anlass.</small><span class="rule-owner"><i class="ri-code-line"></i>System-Prompt + Servercode</span></div><span class="guardrail-lock"><i class="ri-lock-line"></i>Immer aktiv</span></div>
+    </div></section>
+    <section class="rule-group"><div class="rule-group-head"><i class="ri-team-line"></i><h4>Buying Center</h4></div><div class="rule-list">
+      ${policyToggle("routing.buying_center_enabled", "Buying-Center-Kandidaten anzeigen", "Wird erst nach erfolgreichem Sales-Routing geprüft.")}
+      ${policyToggle("decisions.buying_center_allow_role_without_name", "Konkrete Rolle ohne Namen zulassen", "Beispiel: Head of Customer Experience, auch wenn keine Person genannt wird.")}
+      <div class="rule-row"><div><strong>Reine CEO-/CMO-Ernennung ablehnen</strong><small>Eine Personalie ohne strategischen Trigger ist kein Buying-Center-Signal.</small><span class="rule-owner"><i class="ri-code-line"></i>Code-Guardrail</span></div><span class="guardrail-lock"><i class="ri-lock-line"></i>Immer aktiv</span></div>
+    </div></section>
+    <section class="rule-group"><div class="rule-group-head"><i class="ri-shield-check-line"></i><h4>Unveränderliche Schutzfilter</h4></div><div class="rule-list">${["Karriere, Bewerbung und Ausbildung", "FAQ, Hilfe und Support", "Navigation, Datenschutz und Impressum", "Eventagenda, Tickets und reine Speakerlisten", "Duplikate und inhaltsleere Seiten", "Alte oder offensichtlich falsche Zukunftsdaten"].map((label) => `<div class="rule-row"><div><strong>${label}</strong><small>Wird vor der KI regelbasiert entfernt und mit Ablehnungsgrund protokolliert.</small><span class="rule-owner"><i class="ri-code-line"></i>Code-Vorfilter</span></div><span class="guardrail-lock"><i class="ri-lock-line"></i>Immer aktiv</span></div>`).join("")}</div></section>`;
+
+  const operations = document.getElementById("operations-content");
+  if (operations) operations.innerHTML = `<div class="quality-choice">${[["strict","Streng","Weniger Artikel, höchste Zuverlässigkeit."],["balanced","Ausgewogen","Mehr Abdeckung bei weiterhin strenger Evidenz."],["discovery","Entdeckend","Mehr Grenzfälle für die manuelle Prüfung."]].map(([value,label,copy]) => `<label class="quality-option"><input type="radio" name="quality-profile" data-pipeline-path="experience.quality_profile" value="${value}" ${getConfigValue("experience.quality_profile") === value ? "checked" : ""}><b>${label}</b><small>${copy}</small></label>`).join("")}</div><div class="pipeline-form-grid">${policyToggle("ai.review_enabled", "Zweite Qualitätsprüfung", "Plausible Grenzfälle werden unabhängig durch das Review-Modell geprüft.", "KI-Orchestrierung")}${policyToggle("ai.review_rejected_articles", "Klare Ablehnungen erneut prüfen", "Normalerweise deaktiviert, um Kosten zu sparen.", "KI-Orchestrierung")}</div><div class="pipeline-savebar"><span>Änderungen gelten nur für zukünftige Analysen.</span><button class="btn-primary" type="button" onclick="document.getElementById('btn-save-pipeline-header').click()"><i class="ri-save-line"></i> Änderungen speichern</button></div>`;
+
+  const diagnostics = document.getElementById("diagnostics-content");
+  const q = pipelineSettings.config.quality;
+  if (diagnostics) diagnostics.innerHTML = `<div class="diagnostic-grid"><section class="diagnostic-card"><h4>KI-Orchestrierung</h4><div class="diagnostic-row"><span>Primary</span><code>${escapeHtml(getConfigValue("ai.primary_model"))}</code></div><div class="diagnostic-row"><span>Reviewer</span><code>${escapeHtml(getConfigValue("ai.review_model"))}</code></div><div class="diagnostic-row"><span>Prompt-Version</span><code>roots-signal-v1.2.0</code></div><div class="diagnostic-row"><span>Thinking</span><code>${escapeHtml(getConfigValue("ai.thinking_level"))}</code></div></section><section class="diagnostic-card"><h4>Schwellen aus Profil „${escapeHtml(getConfigValue("experience.quality_profile"))}“</h4>${Object.entries(q).map(([key,value]) => `<div class="diagnostic-row"><span>${escapeHtml(key)}</span><code>${Number(value).toFixed(2)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>Aktive Entscheidungsquellen</h4><div class="diagnostic-row"><span>Vorfilter</span><code>TypeScript-Regeln</code></div><div class="diagnostic-row"><span>Semantik</span><code>System-Prompt + Gemini</code></div><div class="diagnostic-row"><span>Evidenz</span><code>Servervalidierung</code></div><div class="diagnostic-row"><span>Routing</span><code>Servercode</code></div></section><section class="diagnostic-card"><h4>Guardrails</h4><div class="diagnostic-row"><span>Prompt Injection</span><code>Artikel ist untrusted data</code></div><div class="diagnostic-row"><span>Evidenz</span><code>Originaltext-Match</code></div><div class="diagnostic-row"><span>Duplikate</span><code>SHA-256 Content Hash</code></div><div class="diagnostic-row"><span>Keywords</span><code>nicht aktiv</code></div></section></div>`;
+}
+
+async function loadPipelineReview() {
+  const target = document.getElementById("pipeline-review-list");
+  if (!target) return;
+  const { articles } = await callApi("list_review_articles");
+  target.innerHTML = (articles || []).map((article) => `<article class="review-item" data-article-id="${article.id}"><div class="review-item-main"><span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span><strong class="test-result-title">${escapeText(article.title)}</strong><p class="test-result-reason">${escapeText(article.ai_rationale || article.rejection_reasons?.[0] || "Unsichere Evidenz oder Einordnung")}</p></div></article>`).join("") || `<div class="keyword-empty">Aktuell sind keine Artikel in der manuellen Prüfung.</div>`;
+}
+
+async function loadPipelineOperations() {
+  const target = document.getElementById("operations-content");
+  if (!target || !pipelineSettings) return;
+  renderBusinessPipelineStudio();
+  const { cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
+  target.insertAdjacentHTML("afterbegin", `<div class="telemetry-grid" style="margin-bottom:12px"><div class="telemetry-stat"><span>Gemini heute</span><b>${Number(costs?.today_usd || 0).toFixed(2)} USD</b></div><div class="telemetry-stat ${costs?.warning ? "telemetry-stat--warning" : ""}"><span>Gemini im Monat</span><b>${Number(costs?.month_usd || 0).toFixed(2)} USD</b></div><div class="telemetry-stat"><span>Quellenläufe</span><b>${Number(health?.attempts || 0).toLocaleString("de-DE")}</b></div><div class="telemetry-stat"><span>Crawl-Fehler</span><b>${Number(health?.errors || 0).toLocaleString("de-DE")}</b></div></div>`);
 }
 
 async function savePipelineSettings() {
   if (!pipelineSettings) return;
+  collectPipelineDraft();
+  const { settings } = await callApi("update_pipeline_settings", { config: pipelineSettings.config });
+  pipelineSettings = settings;
+  renderBusinessPipelineStudio();
+  els.pipelineVersion.textContent = `Version ${settings.version} · gerade gespeichert`;
+  toast("Pipeline-Konfiguration gespeichert");
+}
+
+function collectPipelineDraft() {
   document.querySelectorAll("[data-pipeline-path]").forEach((control) => {
+    if (control.type === "radio" && !control.checked) return;
     const value = control.type === "checkbox" ? control.checked : control.type === "number" ? Number(control.value) : control.value;
     setConfigValue(control.dataset.pipelinePath, value);
   });
-  const { settings } = await callApi("update_pipeline_settings", { config: pipelineSettings.config });
-  pipelineSettings = settings;
-  els.pipelineVersion.textContent = `Version ${settings.version} · gerade gespeichert`;
-  toast("Pipeline-Konfiguration gespeichert");
+}
+
+async function previewPipelineImpact() {
+  if (!pipelineSettings) await loadPipelineSettings();
+  collectPipelineDraft();
+  const { impact } = await callApi("preview_pipeline_impact", { config: pipelineSettings.config });
+  const target = document.getElementById("pipeline-impact-result");
+  target.hidden = false;
+  target.innerHTML = `<b>Regelbasierte Vorschau mit ${Number(impact.sample_size).toLocaleString("de-DE")} bestehenden Artikeln:</b> aktuell ${impact.current_visible} sichtbare Signale, mit dem Entwurf ${impact.projected_visible}. Veränderung: ${impact.delta > 0 ? "+" : ""}${impact.delta}. Die Vorschau verwendet vorhandene Klassifikationen und startet keine KI; neue Treffer durch eine spätere Neuanalyse kann sie deshalb nicht vorhersagen.`;
 }
 
 // Thema (topic) — the 5 canonical dimensions, multi-select per article.
@@ -784,89 +858,6 @@ async function submitAddSource(e) {
 }
 
 // ---------------------------------------------------------------------------
-// Keywords (per track: marketing / sales)
-// ---------------------------------------------------------------------------
-const keywordsByTrack = { marketing: null, sales: null };
-
-function keywordListEl(track) {
-  return track === "marketing" ? els.keywordListMarketing : els.keywordListSales;
-}
-function keywordInputEl(track) {
-  return track === "marketing" ? els.keywordInputMarketing : els.keywordInputSales;
-}
-
-async function loadKeywords(track) {
-  const listEl = keywordListEl(track);
-  listEl.innerHTML = `<div class="keyword-empty"><i class="ri-loader-4-line ri-spin"></i> Lädt…</div>`;
-  try {
-    const { keywords } = await callApi("list_keywords", { track });
-    keywordsByTrack[track] = keywords || [];
-    renderKeywords(track);
-  } catch (err) {
-    listEl.innerHTML = `<div class="keyword-empty">Fehler: ${escapeHtml(err.message)}</div>`;
-  }
-}
-
-function renderKeywords(track) {
-  const listEl = keywordListEl(track);
-  const list = keywordsByTrack[track] || [];
-  if (list.length === 0) {
-    listEl.innerHTML = `<div class="keyword-empty">Noch keine Keywords für diesen Track.</div>`;
-    return;
-  }
-  listEl.innerHTML = list.map((k) => `
-    <div class="keyword-row ${k.active ? "" : "keyword-row--inactive"}" data-id="${k.id}">
-      <span class="keyword-row-text">${escapeHtml(k.keyword)}</span>
-      <label class="source-toggle">
-        <input type="checkbox" class="keyword-active-toggle" data-track="${track}" data-id="${k.id}" ${k.active ? "checked" : ""}>
-        <span class="source-toggle-slider"></span>
-      </label>
-      <button type="button" class="icon-btn keyword-delete-btn" data-track="${track}" data-id="${k.id}" title="Löschen">
-        <i class="ri-delete-bin-line"></i>
-      </button>
-    </div>
-  `).join("");
-}
-
-async function addKeyword(track) {
-  const input = keywordInputEl(track);
-  const keyword = input.value.trim();
-  if (!keyword) return;
-  try {
-    const { keyword: created } = await callApi("add_keyword", { track, keyword });
-    keywordsByTrack[track] = [...(keywordsByTrack[track] || []), created];
-    renderKeywords(track);
-    input.value = "";
-  } catch (err) {
-    toast(err.message, "err");
-  }
-}
-
-async function toggleKeywordActive(track, id, active) {
-  const row = (keywordsByTrack[track] || []).find((k) => k.id === id);
-  if (row) row.active = active;
-  renderKeywords(track);
-  try {
-    await callApi("update_keyword", { id, active });
-  } catch (err) {
-    if (row) row.active = !active;
-    renderKeywords(track);
-    toast(err.message, "err");
-  }
-}
-
-async function deleteKeyword(track, id) {
-  try {
-    await callApi("delete_keyword", { id });
-    keywordsByTrack[track] = (keywordsByTrack[track] || []).filter((k) => k.id !== id);
-    renderKeywords(track);
-    toast("Keyword gelöscht");
-  } catch (err) {
-    toast(err.message, "err");
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Crawl trigger
 // ---------------------------------------------------------------------------
 function renderCrawlCategoryOptions() {
@@ -1004,39 +995,23 @@ function bindUi() {
       els.settingsNav.querySelectorAll(".settings-nav-item").forEach((i) => i.classList.remove("active"));
       item.classList.add("active");
       const panel = item.dataset.panel;
+      els.btnSavePipelineHeader.hidden = !["pipeline-overview", "relevance-profile", "decision-rules", "operations"].includes(panel);
+      els.btnPreviewPipeline.hidden = !["pipeline-overview", "relevance-profile", "decision-rules", "operations"].includes(panel);
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
       document.getElementById(`settings-panel-${panel}`)?.classList.add("show");
-      if (panel.startsWith("pipeline-")) void loadPipelineSettings().catch((error) => toast(error.message, "err"));
-      if (panel === "pipeline-filters") {
-        if (!keywordsByTrack.marketing) void loadKeywords("marketing");
-        if (!keywordsByTrack.sales) void loadKeywords("sales");
-      }
+      if (panel !== "apify") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
+      if (panel === "manual-review") void loadPipelineReview().catch((error) => toast(error.message, "err"));
+      if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
     });
   });
 
   els.btnSavePipeline.addEventListener("click", () => void savePipelineSettings().catch((error) => toast(error.message, "err")));
   els.btnSavePipelineHeader.addEventListener("click", () => void savePipelineSettings().catch((error) => toast(error.message, "err")));
+  els.btnPreviewPipeline.addEventListener("click", () => void previewPipelineImpact().catch((error) => toast(error.message, "err")));
 
-  els.btnAddKeywordMarketing.addEventListener("click", () => void addKeyword("marketing"));
-  els.btnAddKeywordSales.addEventListener("click", () => void addKeyword("sales"));
-  els.keywordInputMarketing.addEventListener("keydown", (e) => { if (e.key === "Enter") void addKeyword("marketing"); });
-  els.keywordInputSales.addEventListener("keydown", (e) => { if (e.key === "Enter") void addKeyword("sales"); });
-
-  els.keywordListMarketing.addEventListener("change", (e) => {
-    const t = e.target.closest(".keyword-active-toggle");
-    if (t) void toggleKeywordActive("marketing", t.dataset.id, t.checked);
-  });
-  els.keywordListSales.addEventListener("change", (e) => {
-    const t = e.target.closest(".keyword-active-toggle");
-    if (t) void toggleKeywordActive("sales", t.dataset.id, t.checked);
-  });
-  els.keywordListMarketing.addEventListener("click", (e) => {
-    const b = e.target.closest(".keyword-delete-btn");
-    if (b) void deleteKeyword("marketing", b.dataset.id);
-  });
-  els.keywordListSales.addEventListener("click", (e) => {
-    const b = e.target.closest(".keyword-delete-btn");
-    if (b) void deleteKeyword("sales", b.dataset.id);
+  document.getElementById("pipeline-review-list")?.addEventListener("click", (event) => {
+    const article = event.target.closest("[data-article-id]");
+    if (article) void openArticleDetail(article.dataset.articleId);
   });
 
   els.btnCrawlTrigger.addEventListener("click", (e) => {

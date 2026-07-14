@@ -764,6 +764,21 @@ const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.2.0";
 const MAX_DAILY_AI_REQUESTS = 1000;
 const MAX_DAILY_PRO_REVIEWS = 250;
 type PipelineConfig = {
+  experience: { quality_profile: "strict" | "balanced" | "discovery" };
+  relevance: {
+    customer_insights: "relevant" | "impact_required" | "not_relevant";
+    marketing_insights: "relevant" | "impact_required" | "not_relevant";
+    fmcg_retail_signale: "relevant" | "impact_required" | "not_relevant";
+    ki_performance: "relevant" | "impact_required" | "not_relevant";
+    sub_branchen_insight: "relevant" | "impact_required" | "not_relevant";
+    allow_product_launch_without_strategy: boolean; allow_campaign_without_results: boolean;
+    allow_ai_pilot: boolean; require_ai_application: boolean; require_subsector_transferability: boolean;
+  };
+  decisions: {
+    marketing_requires_direct_evidence: boolean; customer_signal_qualifies_marketing: boolean;
+    retail_signal_qualifies_marketing: boolean; sales_requires_implementation: boolean;
+    sales_allow_risks: boolean; buying_center_allow_role_without_name: boolean; reject_pure_appointments: boolean;
+  };
   crawl: { freshness_days: number; future_tolerance_hours: number; article_batch_size: number; default_max_depth: number; default_max_pages: number; event_max_depth: number; event_max_pages: number };
   filters: { minimum_text_length: number; require_professional_signal: boolean; reject_career_pages: boolean; reject_faq_pages: boolean; reject_event_programs: boolean; reject_future_dates: boolean; deduplicate: boolean };
   ai: { primary_model: string; review_model: string; review_enabled: boolean; review_confidence_below: number; review_rejected_articles: boolean; thinking_level: "minimal" | "low" | "medium" | "high"; max_output_tokens: number; daily_request_limit: number; daily_review_limit: number; monthly_warning_usd: number };
@@ -771,6 +786,18 @@ type PipelineConfig = {
   routing: { marketing_enabled: boolean; sales_enabled: boolean; buying_center_enabled: boolean; sales_requires_tier1: boolean; sales_requires_trigger: boolean; buying_center_requires_person: boolean; subsector_alone_is_marketing: boolean };
 };
 const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
+  experience: { quality_profile: "strict" },
+  relevance: {
+    customer_insights: "relevant", marketing_insights: "relevant", fmcg_retail_signale: "relevant",
+    ki_performance: "impact_required", sub_branchen_insight: "impact_required",
+    allow_product_launch_without_strategy: false, allow_campaign_without_results: true,
+    allow_ai_pilot: true, require_ai_application: true, require_subsector_transferability: true,
+  },
+  decisions: {
+    marketing_requires_direct_evidence: true, customer_signal_qualifies_marketing: true,
+    retail_signal_qualifies_marketing: true, sales_requires_implementation: false,
+    sales_allow_risks: true, buying_center_allow_role_without_name: true, reject_pure_appointments: true,
+  },
   crawl: { freshness_days: 183, future_tolerance_hours: 24, article_batch_size: 10, default_max_depth: 2, default_max_pages: 40, event_max_depth: 1, event_max_pages: 24 },
   filters: { minimum_text_length: 240, require_professional_signal: true, reject_career_pages: true, reject_faq_pages: true, reject_event_programs: true, reject_future_dates: true, deduplicate: true },
   ai: { primary_model: GEMINI_PRIMARY_MODEL, review_model: GEMINI_REVIEW_MODEL, review_enabled: true, review_confidence_below: 0.94, review_rejected_articles: false, thinking_level: "low", max_output_tokens: 4096, daily_request_limit: MAX_DAILY_AI_REQUESTS, daily_review_limit: MAX_DAILY_PRO_REVIEWS, monthly_warning_usd: 10 },
@@ -780,13 +807,33 @@ const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
 let pipelineConfigCache: { value: PipelineConfig; at: number } | null = null;
 
 function mergePipelineConfig(raw: Partial<PipelineConfig> | null | undefined): PipelineConfig {
-  return {
+  const merged: PipelineConfig = {
+    experience: { ...DEFAULT_PIPELINE_CONFIG.experience, ...(raw?.experience || {}) },
+    relevance: { ...DEFAULT_PIPELINE_CONFIG.relevance, ...(raw?.relevance || {}) },
+    decisions: { ...DEFAULT_PIPELINE_CONFIG.decisions, ...(raw?.decisions || {}) },
     crawl: { ...DEFAULT_PIPELINE_CONFIG.crawl, ...(raw?.crawl || {}) },
     filters: { ...DEFAULT_PIPELINE_CONFIG.filters, ...(raw?.filters || {}) },
     ai: { ...DEFAULT_PIPELINE_CONFIG.ai, ...(raw?.ai || {}) },
     quality: { ...DEFAULT_PIPELINE_CONFIG.quality, ...(raw?.quality || {}) },
     routing: { ...DEFAULT_PIPELINE_CONFIG.routing, ...(raw?.routing || {}) },
   };
+  const profiles: Record<PipelineConfig["experience"]["quality_profile"], PipelineConfig["quality"]> = {
+    strict: { topic_confidence: 0.82, territory_confidence: 0.84, company_confidence: 0.86, person_confidence: 0.86, sales_trigger_confidence: 0.86, routing_confidence: 0.88, reliable_confidence: 0.9 },
+    balanced: { topic_confidence: 0.77, territory_confidence: 0.79, company_confidence: 0.82, person_confidence: 0.82, sales_trigger_confidence: 0.82, routing_confidence: 0.84, reliable_confidence: 0.86 },
+    discovery: { topic_confidence: 0.7, territory_confidence: 0.72, company_confidence: 0.76, person_confidence: 0.76, sales_trigger_confidence: 0.76, routing_confidence: 0.78, reliable_confidence: 0.82 },
+  };
+  merged.quality = profiles[merged.experience.quality_profile] || profiles.strict;
+  // Non-negotiable safety and quality guardrails are visible in the UI but
+  // cannot be disabled through stale clients or direct API payloads.
+  merged.filters.reject_career_pages = true;
+  merged.filters.reject_faq_pages = true;
+  merged.filters.reject_event_programs = true;
+  merged.filters.reject_future_dates = true;
+  merged.filters.deduplicate = true;
+  merged.filters.require_professional_signal = true;
+  merged.decisions.marketing_requires_direct_evidence = true;
+  merged.decisions.reject_pure_appointments = true;
+  return merged;
 }
 
 async function getPipelineConfig(force = false): Promise<PipelineConfig> {
@@ -1006,6 +1053,16 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
   if (config.filters.require_professional_signal && !professionalSignalPatterns.some((pattern) => pattern.test(normalized))) {
     reasons.push("Kein fachliches Marketing-, Retail-, Customer-, Innovations- oder Strategiesignal");
   }
+  if (config.decisions.reject_pure_appointments
+      && /\b(appoint\w*|named|ernenn\w*|beruf\w*|neue?r? (?:ceo|cmo|geschaftsfuhrer|marketingleiter))\b/i.test(normalized)
+      && !/\b(strateg\w*|transform\w*|kampagn\w*|campaign\w*|rebrand\w*|market entr\w*|markteintritt)\b/i.test(normalized)) {
+    reasons.push("Reine Personalernennung ohne strategischen Trigger");
+  }
+  if (!config.relevance.allow_product_launch_without_strategy
+      && /\b(product launch|produkteinfuhr\w*|produktneuheit\w*)\b/i.test(normalized)
+      && !/\b(strateg\w*|position\w*|kampagn\w*|campaign\w*|target audience|zielgrupp\w*)\b/i.test(normalized)) {
+    reasons.push("Reiner Produktlaunch ohne Marketing- oder Strategiesignal");
+  }
   return [...new Set(reasons)];
 }
 
@@ -1193,6 +1250,7 @@ function buildClassifierPrompt(
   cleanedContent: string,
   source: { company?: string; category?: string },
   companies: Array<{ name: string; aliases: string[] }>,
+  config: PipelineConfig = DEFAULT_PIPELINE_CONFIG,
 ): string {
   const modelContent = cleanedContent.slice(0, 12_000);
   return `<taxonomy>
@@ -1209,6 +1267,7 @@ Territories:
 - operational_excellence: efficiency, organization, process, restructuring or cost optimization
 - empowered_marketers: marketing operating model, capabilities, teams, leadership or technology enablement
 </taxonomy>
+<active_business_policy>${JSON.stringify({ relevance: config.relevance, decisions: config.decisions, routing: config.routing })}</active_business_policy>
 <routing_rules>
 Marketing requires its own exact evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, or AI with a concrete marketing/customer/retail/brand application. sub_branchen_insight alone NEVER qualifies Marketing. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing evidence exists.
 sub_branchen_insight is valid only for a transferable market observation that remains useful beyond the reported company event. A single acquisition, product, expansion, financial result or facility is not transferable.
@@ -1230,11 +1289,17 @@ function validateClassification(
 ): AiClassification {
   const canonicalCompanies = new Map(tier1Companies.map((company) => [normalizeMatchText(company.name), company.name]));
   const marketInsightTransferable = Boolean(raw.market_insight_transferable);
+  const relevanceMode = (topicId: string) => config.relevance[topicId as keyof PipelineConfig["relevance"]];
+  const hasRequiredImpact = (tag: AiTag) => /\b(measur\w*|impact|result\w*|uplift|roi|increase\w*|improv\w*|wirkung|ergebnis\w*|steiger\w*|strategie|strategy|implemented|eingefuhrt|pilot)\b/i
+    .test(normalizeMatchText(tag.evidence));
   const topics = (Array.isArray(raw.topics) ? raw.topics : [])
     .filter((tag) => TOPIC_IDS.includes(tag.id as typeof TOPIC_IDS[number]))
     .map((tag) => ({ ...tag, confidence: clampConfidence(tag.confidence) }))
     .filter((tag) => tag.confidence >= config.quality.topic_confidence && evidenceExists(tag.evidence, articleText))
-    .filter((tag) => tag.id !== "sub_branchen_insight" || marketInsightTransferable);
+    .filter((tag) => relevanceMode(tag.id) !== "not_relevant")
+    .filter((tag) => relevanceMode(tag.id) !== "impact_required" || hasRequiredImpact(tag))
+    .filter((tag) => tag.id !== "sub_branchen_insight" || !config.relevance.require_subsector_transferability || marketInsightTransferable)
+    .filter((tag) => tag.id !== "ki_performance" || config.relevance.allow_ai_pilot || !/\bpilot\b/i.test(normalizeMatchText(tag.evidence)));
   const territory = raw.territory && TERRITORY_IDS.includes(raw.territory.id as typeof TERRITORY_IDS[number])
       && clampConfidence(raw.territory.confidence) >= config.quality.territory_confidence && evidenceExists(raw.territory.evidence, articleText)
     ? { ...raw.territory, confidence: clampConfidence(raw.territory.confidence) }
@@ -1247,12 +1312,18 @@ function validateClassification(
     }))
     .filter((company) => company.name && company.confidence >= config.quality.company_confidence && evidenceExists(company.evidence, articleText));
   const people = (Array.isArray(raw.people) ? raw.people : [])
-    .map((person) => ({ ...person, name: String(person.name || "").trim(), role: String(person.role || "").trim(), confidence: clampConfidence(person.confidence) }))
+    .map((person) => {
+      const role = String(person.role || "").trim();
+      const name = String(person.name || "").trim() || (config.decisions.buying_center_allow_role_without_name && role ? `Rolle: ${role}` : "");
+      return { ...person, name, role, confidence: clampConfidence(person.confidence) };
+    })
     .filter((person) => person.name && person.role && person.confidence >= config.quality.person_confidence && evidenceExists(person.evidence, articleText));
   const salesTriggers = (Array.isArray(raw.sales_triggers) ? raw.sales_triggers : [])
     .filter((trigger) => SALES_TRIGGER_IDS.includes(trigger.id as typeof SALES_TRIGGER_IDS[number]))
     .map((trigger) => ({ ...trigger, confidence: clampConfidence(trigger.confidence) }))
-    .filter((trigger) => trigger.confidence >= config.quality.sales_trigger_confidence && evidenceExists(trigger.evidence, articleText));
+    .filter((trigger) => trigger.confidence >= config.quality.sales_trigger_confidence && evidenceExists(trigger.evidence, articleText))
+    .filter((trigger) => !config.decisions.sales_requires_implementation
+      || /\b(launch\w*|implement\w*|invest\w*|acquir\w*|expand\w*|start\w*|einfuhr\w*|investier\w*|ubernomm\w*|expandier\w*|gestartet|umgesetzt)\b/i.test(normalizeMatchText(trigger.evidence)));
   const routingDecisions = {
     marketing: validateRouteDecision(raw.routing_decisions?.marketing, articleText, config.quality.routing_confidence),
     sales: validateRouteDecision(raw.routing_decisions?.sales, articleText, config.quality.routing_confidence),
@@ -1261,7 +1332,11 @@ function validateClassification(
   const articleType = ARTICLE_TYPES.includes(raw.article_type as typeof ARTICLE_TYPES[number]) ? raw.article_type : "other";
   const titleDe = String(raw.title_de || "").trim().slice(0, 500);
   const rejectionReasons = Array.isArray(raw.rejection_reasons) ? raw.rejection_reasons.filter(Boolean).slice(0, 8) : [];
-  const directMarketingTopics = topics.filter(hasDirectMarketingContext);
+  const directMarketingTopics = topics.filter(hasDirectMarketingContext).filter((topic) => {
+    if (topic.id === "customer_insights") return config.decisions.customer_signal_qualifies_marketing;
+    if (topic.id === "fmcg_retail_signale") return config.decisions.retail_signal_qualifies_marketing;
+    return true;
+  });
   const hasSalesSignal = companies.some((company) => company.role !== "incidental_mention") && salesTriggers.length > 0;
   const hasSignal = directMarketingTopics.length > 0 || topics.some((topic) => topic.id === "sub_branchen_insight") || hasSalesSignal;
   const expectedTopics = (raw.topics || []).filter((topic) => topic.id !== "sub_branchen_insight" || marketInsightTransferable);
@@ -1315,17 +1390,12 @@ async function tagArticle(
   source: { company?: string; category?: string },
 ): Promise<void> {
   const config = await getPipelineConfig();
+  void allKeywords; // Legacy data is retained for audit but no longer drives decisions.
   const cleanedContent = cleanArticleText(content);
   const articleText = `${title}\n${cleanedContent}`;
   const contentHash = await sha256(normalizeMatchText(articleText));
   const language = detectLanguage(articleText);
   const hardReasons = hardRejectionReasons(title, cleanedContent, config);
-  const hasConfiguredSignal = allKeywords.some((keyword) => keyword.active
-    && variantsForKeyword(keyword.keyword).some((variant) => containsMatchTerm(normalizeMatchText(articleText), variant)));
-  if (hasConfiguredSignal) {
-    const noSignalIndex = hardReasons.indexOf("Kein fachliches Marketing-, Retail-, Customer-, Innovations- oder Strategiesignal");
-    if (noSignalIndex >= 0) hardReasons.splice(noSignalIndex, 1);
-  }
   const { data: exactDuplicate } = config.filters.deduplicate
     ? await admin.schema("signal_layer").from("articles").select("id")
       .eq("content_hash", contentHash).neq("id", articleId).limit(1).maybeSingle()
@@ -1355,7 +1425,7 @@ async function tagArticle(
   }
 
   const companyCandidates = selectCompanyCandidates(articleText, tier1Companies);
-  const prompt = buildClassifierPrompt(title, cleanedContent, source, companyCandidates);
+  const prompt = buildClassifierPrompt(title, cleanedContent, source, companyCandidates, config);
   let primary: AiClassification;
   let classification: AiClassification;
   let reviewerModel: string | null = null;
@@ -1398,7 +1468,11 @@ async function tagArticle(
   const activeCompanies = classification.companies.filter((company) => company.role !== "incidental_mention");
   const primaryCompany = classification.companies.find((company) => company.role === "primary_subject")?.name
     || activeCompanies[0]?.name || null;
-  const directMarketingTopics = classification.topics.filter(hasDirectMarketingContext);
+  const directMarketingTopics = classification.topics.filter(hasDirectMarketingContext).filter((topic) => {
+    if (topic.id === "customer_insights") return config.decisions.customer_signal_qualifies_marketing;
+    if (topic.id === "fmcg_retail_signale") return config.decisions.retail_signal_qualifies_marketing;
+    return true;
+  });
   const marketingEligible = config.routing.marketing_enabled && classification.relevance_status === "reliable"
     && (directMarketingTopics.length > 0 || config.routing.subsector_alone_is_marketing && classification.topics.some((topic) => topic.id === "sub_branchen_insight"))
     && classification.routing_decisions.marketing.eligible;
@@ -1579,7 +1653,7 @@ Deno.serve(async (req: Request) => {
         const companyCandidates = selectCompanyCandidates(articleText, companies || []);
         const prompt = buildClassifierPrompt(title, cleanedContent, {
           company: source_company, category: source_category,
-        }, companyCandidates);
+        }, companyCandidates, config);
         const primary = validateClassification(
           await callGeminiClassifier(config.ai.primary_model, prompt, undefined, { operation: "preview" }), articleText, companyCandidates, config,
         );
@@ -1609,14 +1683,12 @@ Deno.serve(async (req: Request) => {
         if (article.classification_status !== "legacy") {
           return errorResponse(origin, "Only legacy articles can be used for this test", 409);
         }
-        const [{ data: keywords }, { data: companies }] = await Promise.all([
-          admin.schema("signal_layer").from("keywords").select("track, dimension, keyword, kind, active").eq("active", true),
-          admin.schema("signal_layer").from("tier1_companies").select("name, aliases").eq("active", true),
-        ]);
+        const { data: companies } = await admin.schema("signal_layer").from("tier1_companies")
+          .select("name, aliases").eq("active", true);
         const source = Array.isArray(article.source) ? article.source[0] : article.source;
         await tagArticle(
           admin, article.id, null, article.title || "", article.content || "",
-          keywords || [], companies || [], source || {},
+          [], companies || [], source || {},
         );
         const { data: result, error: resultError } = await admin.schema("signal_layer").from("articles")
           .select("id, title, classification_status, relevance_confidence, article_type, topics, territory, ai_summary, ai_rationale, rejection_reasons, classified_at")
@@ -1635,6 +1707,12 @@ Deno.serve(async (req: Request) => {
 
       case "update_pipeline_settings": {
         const requested = mergePipelineConfig(body.config as Partial<PipelineConfig> | undefined);
+        const profiles = new Set(["strict", "balanced", "discovery"]);
+        const relevanceModes = new Set(["relevant", "impact_required", "not_relevant"]);
+        if (!profiles.has(requested.experience.quality_profile)
+            || !TOPIC_IDS.every((topic) => relevanceModes.has(String(requested.relevance[topic])))) {
+          return errorResponse(origin, "Ungültiges Relevanz- oder Qualitätsprofil");
+        }
         const allowedModels = new Set(["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite"]);
         if (!allowedModels.has(requested.ai.primary_model) || !allowedModels.has(requested.ai.review_model)) {
           return errorResponse(origin, "Nicht unterstütztes Gemini-Modell");
@@ -1661,6 +1739,29 @@ Deno.serve(async (req: Request) => {
         if (error) return errorResponse(origin, error.message, 500);
         pipelineConfigCache = { value: requested, at: Date.now() };
         return corsResponse(origin, { settings: data });
+      }
+
+      case "preview_pipeline_impact": {
+        const requested = mergePipelineConfig(body.config as Partial<PipelineConfig> | undefined);
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("articles")
+          .select("classification_status, relevance_confidence, topics, routing")
+          .in("classification_status", ["reliable", "uncertain", "rejected"])
+          .order("classified_at", { ascending: false, nullsFirst: false }).limit(100);
+        if (error) return errorResponse(origin, error.message, 500);
+        const rows = data || [];
+        const currentVisible = rows.filter((row) => (row.routing || []).length > 0).length;
+        const projectedVisible = rows.filter((row) => {
+          if (row.classification_status !== "reliable" || Number(row.relevance_confidence || 0) < requested.quality.reliable_confidence) return false;
+          const topics = (row.topics || []).filter((topic: string) => requested.relevance[topic as keyof PipelineConfig["relevance"]] !== "not_relevant");
+          const marketing = requested.routing.marketing_enabled && topics.some((topic: string) => ["customer_insights", "marketing_insights", "fmcg_retail_signale", "ki_performance"].includes(topic));
+          const sales = requested.routing.sales_enabled && (row.routing || []).includes("sales");
+          return marketing || sales;
+        }).length;
+        return corsResponse(origin, { impact: {
+          sample_size: rows.length, current_visible: currentVisible,
+          projected_visible: projectedVisible, delta: projectedVisible - currentVisible,
+        } });
       }
 
       case "start_classification_backfill": {
@@ -1737,14 +1838,12 @@ Deno.serve(async (req: Request) => {
           return corsResponse(origin, { ok: true, done: true });
         }
 
-        const [{ data: keywords }, { data: companies }] = await Promise.all([
-          admin.schema("signal_layer").from("keywords").select("track, dimension, keyword, kind, active").eq("active", true),
-          admin.schema("signal_layer").from("tier1_companies").select("name, aliases").eq("active", true),
-        ]);
+        const { data: companies } = await admin.schema("signal_layer").from("tier1_companies")
+          .select("name, aliases").eq("active", true);
         const source = Array.isArray(article.source) ? article.source[0] : article.source;
         await tagArticle(
           admin, article.id, null, article.title || "", article.cleaned_content || article.content || "",
-          keywords || [], companies || [], source || {},
+          [], companies || [], source || {},
         );
         await admin.schema("signal_layer").from("classification_backfill_runs")
           .update({ processed_count: Number(run.processed_count || 0) + 1, last_progress_at: new Date().toISOString() })
@@ -1963,8 +2062,6 @@ Deno.serve(async (req: Request) => {
             .select("*").eq("id", sourceId).single();
           if (sourceErr || !source) throw new Error(sourceErr?.message || "source not found");
 
-          const { data: allKeywords } = await admin.schema("signal_layer").from("keywords")
-            .select("track, dimension, keyword, kind, active").eq("active", true);
           const { data: tier1Companies } = await admin.schema("signal_layer").from("tier1_companies")
             .select("name, aliases").eq("active", true);
           const crawlPolicy = getCrawlPolicy(source);
@@ -2077,7 +2174,7 @@ Deno.serve(async (req: Request) => {
 
             await tagArticle(
               admin, inserted.id, crawl_run_id, inserted.title || "", inserted.content || "",
-              allKeywords || [], tier1Companies || [],
+              [], tier1Companies || [],
               { company: source.company, category: source.category },
             );
           }

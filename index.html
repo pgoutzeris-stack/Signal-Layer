@@ -283,16 +283,6 @@
     .article-detail-aside { border-left: 0; border-top: 1px solid var(--line); }
   }
 
-  /* ---------- Keywords panel ---------- */
-  .keyword-toolbar { display: flex; gap: 10px; padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); }
-  .keyword-input { margin-bottom: 0 !important; flex: 1; }
-  .keyword-list { flex: 1; overflow-y: auto; padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: 8px; }
-  .keyword-row {
-    display: flex; align-items: center; gap: 12px; padding: .6rem .9rem; border: 1px solid var(--line);
-    border-radius: 10px; background: var(--bg);
-  }
-  .keyword-row.keyword-row--inactive { opacity: .45; }
-  .keyword-row-text { flex: 1; font-size: .9rem; }
   .keyword-empty { text-align: center; color: var(--muted); padding: 2rem 0; font-size: .88rem; }
   .pipeline-scroll { flex: 1; overflow-y: auto; padding: 1.5rem; }
   .pipeline-hero { padding: 1.5rem; border-radius: 16px; color: #fff; background: radial-gradient(circle at 85% 15%, rgba(255,255,255,.2), transparent 28%), linear-gradient(135deg, #153a2f, #28624c); }
@@ -309,6 +299,8 @@
   .pipeline-flow p { margin: 0; color: var(--muted); font-size: .68rem; line-height: 1.45; }
   .pipeline-savebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 1rem; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
   .pipeline-savebar span { color: var(--muted); font-size: .72rem; }
+  .pipeline-impact { margin-top: 1rem; padding: 1rem; border: 1px solid #f2cd5c; border-radius: 12px; background: #fffdf4; color: var(--status-text); font-size: .72rem; line-height: 1.5; }
+  .pipeline-impact b { color: var(--brand); }
   .pipeline-section-head { margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
   .pipeline-section-head > span { color: var(--brand); }
   .pipeline-section-head p { color: var(--muted); opacity: 1; }
@@ -326,6 +318,40 @@
   .dictionary-head .keyword-toolbar { padding: 0; border: 0; }
   .signal-dictionaries .keyword-list { max-height: 280px; padding: .75rem; }
   @media (max-width: 900px) { .pipeline-flow { grid-template-columns: 1fr; } .pipeline-flow article::after { display: none; } .pipeline-form-grid, .signal-dictionaries { grid-template-columns: 1fr; } }
+  .relevance-grid { display: grid; gap: 12px; }
+  .policy-card { border: 1px solid var(--line); border-radius: 14px; background: var(--bg); overflow: hidden; }
+  .policy-card-head { display: grid; grid-template-columns: 42px minmax(0, 1fr) 190px; align-items: center; gap: 12px; padding: 1rem; }
+  .policy-card-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 11px; color: var(--brand); background: var(--brand-light); font-size: 1.1rem; }
+  .policy-card-title h4 { margin: 0; font-size: .88rem; }
+  .policy-card-title p { margin: 3px 0 0; color: var(--muted); font-size: .68rem; line-height: 1.45; }
+  .policy-mode { width: 100%; }
+  .decision-map { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); background: var(--surface); }
+  .decision-step { padding: .85rem; border-right: 1px solid var(--line); }
+  .decision-step:last-child { border-right: 0; }
+  .decision-step b { display: block; margin-bottom: 4px; color: var(--brand); font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; }
+  .decision-step span { display: block; color: var(--status-text); font-size: .65rem; line-height: 1.45; }
+  .rule-group { margin-bottom: 14px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .rule-group-head { display: flex; align-items: center; gap: 10px; padding: 1rem; color: #fff; background: #183d31; }
+  .rule-group-head h4 { margin: 0; font-size: .88rem; }
+  .rule-list { display: grid; }
+  .rule-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; min-height: 66px; padding: .8rem 1rem; border-top: 1px solid var(--line); }
+  .rule-row:first-child { border-top: 0; }
+  .rule-row strong { display: block; font-size: .75rem; }
+  .rule-row small { display: block; margin-top: 3px; color: var(--muted); font-size: .63rem; line-height: 1.4; }
+  .rule-owner { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; padding: 3px 6px; border-radius: 5px; color: var(--muted); background: var(--surface); font-size: .56rem; font-weight: 700; text-transform: uppercase; }
+  .guardrail-lock { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 8px; color: var(--success); background: #ecfdf5; font-size: .62rem; font-weight: 700; }
+  .quality-choice { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 1rem; }
+  .quality-option { position: relative; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+  .quality-option:has(input:checked) { border-color: var(--brand); background: var(--brand-light); box-shadow: inset 0 0 0 1px var(--brand); }
+  .quality-option input { position: absolute; opacity: 0; }
+  .quality-option b { display: block; font-size: .78rem; }
+  .quality-option small { display: block; margin-top: 4px; color: var(--muted); font-size: .62rem; line-height: 1.4; }
+  .diagnostic-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .diagnostic-card { padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .diagnostic-card h4 { margin: 0 0 .6rem; font-size: .75rem; }
+  .diagnostic-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; color: var(--muted); font-size: .64rem; border-top: 1px solid var(--line); }
+  .diagnostic-row code { color: var(--ink); text-align: right; overflow-wrap: anywhere; }
+  @media (max-width: 900px) { .policy-card-head, .decision-map, .quality-choice, .diagnostic-grid { grid-template-columns: 1fr; } .decision-step { border-right: 0; border-bottom: 1px solid var(--line); } }
 
   /* ---------- Settings modal ---------- */
   .modal-overlay {
@@ -601,22 +627,25 @@
       <nav class="settings-nav" id="settings-nav">
         <div class="settings-nav-title">Einstellungen</div>
         <div class="settings-nav-item active" data-panel="apify">
-          <i class="ri-global-line"></i> Apify
+          <i class="ri-global-line"></i> Quellen
         </div>
         <div class="settings-nav-item" data-panel="pipeline-overview">
           <i class="ri-route-line"></i> Pipeline
         </div>
-        <div class="settings-nav-item" data-panel="pipeline-crawl">
-          <i class="ri-radar-line"></i> Crawling
+        <div class="settings-nav-item" data-panel="relevance-profile">
+          <i class="ri-focus-3-line"></i> Relevanzprofil
         </div>
-        <div class="settings-nav-item" data-panel="pipeline-filters">
-          <i class="ri-filter-3-line"></i> Filter &amp; Signale
+        <div class="settings-nav-item" data-panel="decision-rules">
+          <i class="ri-git-branch-line"></i> Entscheidungsregeln
         </div>
-        <div class="settings-nav-item" data-panel="pipeline-ai">
-          <i class="ri-sparkling-line"></i> KI &amp; Kosten
+        <div class="settings-nav-item" data-panel="manual-review">
+          <i class="ri-user-search-line"></i> Manuelle Prüfung
         </div>
-        <div class="settings-nav-item" data-panel="pipeline-routing">
-          <i class="ri-git-branch-line"></i> Routing &amp; Qualität
+        <div class="settings-nav-item" data-panel="operations">
+          <i class="ri-pulse-line"></i> Kosten &amp; Betrieb
+        </div>
+        <div class="settings-nav-item" data-panel="diagnostics">
+          <i class="ri-code-box-line"></i> Systemdiagnose
         </div>
       </nav>
 
@@ -624,7 +653,8 @@
         <div class="settings-header">
           <h2>Einstellungen</h2>
           <div class="toolbar-spacer"></div>
-          <button type="button" class="btn-primary" id="btn-save-pipeline-header"><i class="ri-save-line"></i> Speichern</button>
+          <button type="button" class="btn-secondary" id="btn-preview-pipeline" hidden><i class="ri-flask-line"></i> Auswirkungen prüfen</button>
+          <button type="button" class="btn-primary" id="btn-save-pipeline-header" hidden><i class="ri-save-line"></i> Speichern</button>
           <button type="button" class="close-fs-btn" id="btn-settings-close"><i class="ri-close-line"></i></button>
         </div>
 
@@ -684,31 +714,29 @@
               <article><b>04</b><i class="ri-shield-check-line"></i><h4>Validierung</h4><p>Server prüft Evidenz und Konfidenzen erneut.</p></article>
               <article><b>05</b><i class="ri-git-branch-line"></i><h4>Routing</h4><p>Marketing, Sales und Buying Center werden getrennt vergeben.</p></article>
             </div>
+            <div class="pipeline-impact" id="pipeline-impact-result" hidden></div>
             <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><button class="btn-primary" id="btn-save-pipeline"><i class="ri-save-line"></i> Änderungen speichern</button></div>
           </div>
         </div>
 
-        <div class="settings-panel pipeline-panel" id="settings-panel-pipeline-crawl">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Schritt 1</span><h3>Crawling &amp; Aktualität</h3><p>Steuert, wie tief Quellen gelesen und welche Datumswerte akzeptiert werden.</p></div><div class="pipeline-form-grid" id="pipeline-form-crawl"></div></div>
+        <div class="settings-panel pipeline-panel" id="settings-panel-relevance-profile">
+          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Was ist für ROOTS relevant?</span><h3>Relevanzprofil</h3><p>Fachliche Themen statt Keywords. Jede Karte zeigt, was Code, System-Prompt, Gemini und Servervalidierung beitragen und welches Ergebnis entstehen kann.</p></div><div class="relevance-grid" id="relevance-profile-grid"></div></div>
         </div>
 
-        <div class="settings-panel pipeline-panel" id="settings-panel-pipeline-filters">
-          <div class="pipeline-scroll">
-            <div class="pipeline-section-head"><span>Schritt 2</span><h3>Deterministische Filter &amp; Signale</h3><p>Diese Regeln laufen vor Gemini und sparen Kosten. Aktive Keywords ergänzen die fest kuratierten deutschen und englischen Signalfamilien, geben einen Artikel aber niemals allein frei.</p></div>
-            <div class="pipeline-form-grid" id="pipeline-form-filters"></div>
-            <div class="signal-dictionaries">
-              <section><div class="dictionary-head"><div><h4>Marketing-Signale</h4><p>Ergänzen den fachlichen Vorfilter.</p></div><div class="keyword-toolbar"><input type="text" class="modern-input keyword-input" id="keyword-input-marketing" placeholder="Neues Signal…"><button type="button" class="btn-primary" id="btn-add-keyword-marketing"><i class="ri-add-line"></i></button></div></div><div class="keyword-list" id="keyword-list-marketing"></div></section>
-              <section><div class="dictionary-head"><div><h4>Sales-Signale</h4><p>Ergänzen strategische Trigger.</p></div><div class="keyword-toolbar"><input type="text" class="modern-input keyword-input" id="keyword-input-sales" placeholder="Neues Signal…"><button type="button" class="btn-primary" id="btn-add-keyword-sales"><i class="ri-add-line"></i></button></div></div><div class="keyword-list" id="keyword-list-sales"></div></section>
-            </div>
-          </div>
+        <div class="settings-panel pipeline-panel" id="settings-panel-decision-rules">
+          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Wie entsteht das Ergebnis?</span><h3>Entscheidungsregeln</h3><p>Marketing, Sales und Buying Center werden getrennt entschieden. Unveränderliche Schutzregeln sind klar als System-Guardrail markiert.</p></div><div id="decision-rules-content"></div></div>
         </div>
 
-        <div class="settings-panel pipeline-panel" id="settings-panel-pipeline-ai">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Schritt 3</span><h3>KI-Modelle, Review &amp; Kosten</h3><p>Das Primary-Modell prüft Kandidaten. Das Review-Modell wird nur nach den gewählten Grenzregeln zugeschaltet.</p></div><div class="pipeline-form-grid" id="pipeline-form-ai"></div></div>
+        <div class="settings-panel pipeline-panel" id="settings-panel-manual-review">
+          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Unsichere Entscheidungen</span><h3>Manuelle Prüfung</h3><p>Hier erscheinen Grenzfälle mit Begründung und Evidenz. Eine Freigabe ändert niemals still die Systemregeln.</p></div><div class="review-list" id="pipeline-review-list"><div class="keyword-empty">Wird geladen…</div></div></div>
         </div>
 
-        <div class="settings-panel pipeline-panel" id="settings-panel-pipeline-routing">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Schritt 4–5</span><h3>Evidenz, Qualität &amp; Routing</h3><p>Konfidenzwerte werden serverseitig geprüft. Niedrigere Werte erhöhen Treffer, aber auch Fehlzuordnungen.</p></div><div class="pipeline-form-grid" id="pipeline-form-quality"></div><div class="pipeline-form-grid" id="pipeline-form-routing"></div></div>
+        <div class="settings-panel pipeline-panel" id="settings-panel-operations">
+          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Laufender Betrieb</span><h3>Kosten &amp; Betrieb</h3><p>Verständliche Qualitätswahl, Reviewer-Einsatz und Kostenkontrolle. Technische Modellnamen stehen in der Systemdiagnose.</p></div><div id="operations-content"></div></div>
+        </div>
+
+        <div class="settings-panel pipeline-panel" id="settings-panel-diagnostics">
+          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Nur zur Nachvollziehbarkeit</span><h3>Systemdiagnose</h3><p>Read-only-Ansicht der Modelle, Prompt-Policy, technischen Schwellenwerte und aktiven Code-Guardrails.</p></div><div id="diagnostics-content"></div></div>
         </div>
       </div>
     </div>
