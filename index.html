@@ -535,6 +535,229 @@
     .pipeline-drilldown-footer .btn-secondary, .pipeline-drilldown-footer .btn-primary { width: 100%; justify-content: center; }
   }
 
+  /* ---------- Explainable pipeline experience ---------- */
+  .pipeline-overview-actions, .pipeline-learning-toolbar, .pipeline-help-actions, .pipeline-start-end,
+  .pipeline-scenario-switch, .pipeline-savebar > div, .pipeline-footer-start { display: flex; align-items: center; gap: 8px; }
+  .pipeline-overview-actions { justify-content: flex-end; flex-wrap: wrap; }
+  .pipeline-mode-switch, .pipeline-scenario-switch { padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); }
+  .pipeline-mode-switch button, .pipeline-scenario-switch button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 0; border-radius: var(--radius-pill); color: var(--muted); background: transparent; font: 600 .62rem/1 CircularStd, sans-serif; cursor: pointer; transition: .18s ease; }
+  .pipeline-mode-switch button:hover, .pipeline-mode-switch button:focus-visible,
+  .pipeline-scenario-switch button:hover, .pipeline-scenario-switch button:focus-visible { outline: none; color: var(--brand); background: var(--brand-light); }
+  .pipeline-mode-switch button.active, .pipeline-scenario-switch button.active { color: #fff; background: var(--brand); box-shadow: 0 4px 10px rgba(32,110,251,.2); }
+  .pipeline-learning-toolbar { justify-content: space-between; flex-wrap: wrap; margin-top: 10px; padding: .65rem .8rem; border: 1px solid var(--line); border-radius: 13px; background: var(--bg); }
+  .pipeline-start-end > span { display: grid; grid-template-columns: 24px auto; column-gap: 6px; align-items: center; }
+  .pipeline-start-end > span > i { grid-row: 1 / 3; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; color: var(--brand); background: var(--brand-light); }
+  .pipeline-start-end small, .pipeline-start-end b { display: block; }
+  .pipeline-start-end small { color: var(--muted); font-size: .48rem; font-weight: 700; text-transform: uppercase; }
+  .pipeline-start-end b { font-size: .62rem; }
+  .pipeline-start-end > i { color: #9fb4d5; }
+  .btn-text { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font: 600 .62rem/1 CircularStd, sans-serif; cursor: pointer; }
+  .btn-text:hover, .btn-text:focus-visible { outline: none; color: var(--brand); background: var(--brand-light); }
+  .btn-text b { display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; color: #fff; background: var(--brand); font-size: .52rem; }
+  .pipeline-example-switcher { display: grid; grid-template-columns: minmax(210px, .8fr) auto minmax(260px, 1.15fr); align-items: center; gap: 14px; margin-top: 10px; padding: .8rem; border: 1px solid #d9e6fb; border-radius: 14px; background: linear-gradient(135deg, #f7faff, #fff); }
+  .pipeline-example-switcher > div:first-child > span { color: var(--ink); font-size: .7rem; font-weight: 700; }
+  .pipeline-example-switcher > div:first-child > p { margin: 3px 0 0; color: var(--muted); font-size: .57rem; line-height: 1.4; }
+  .pipeline-example-switcher .pipeline-sample { margin: 0; }
+  .pipeline-example-switcher .pipeline-sample-head, .pipeline-example-switcher .pipeline-sample > small { display: none; }
+  .pipeline-overview-card { min-height: 208px; }
+  .pipeline-overview-stat { position: absolute; left: 1rem; bottom: 2.25rem; display: flex; align-items: baseline; gap: 5px; }
+  .pipeline-overview-stat small { color: var(--muted); font-size: .5rem; }
+  .pipeline-overview-stat b { position: static; color: var(--ink); font-size: .62rem; }
+  .pipeline-example-dot { position: absolute; right: 12px; bottom: 2.42rem; width: 8px; height: 8px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px var(--line); }
+  .pipeline-example-dot--pass { background: #22a06b; }
+  .pipeline-example-dot--fail { background: #df5b5b; }
+  .pipeline-example-dot--blocked { background: #94a3b8; }
+  .pipeline-overview-card.is-current { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(32,110,251,.12); }
+  .pipeline-card-popover em { display: block; margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line); color: var(--brand); font-size: .55rem; font-style: normal; font-weight: 700; }
+  .pipeline-funnel { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 16px; align-items: center; margin-top: 10px; padding: .75rem .85rem; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+  .pipeline-funnel > div:first-child span { font-size: .65rem; font-weight: 700; }
+  .pipeline-funnel > div:first-child p { margin: 2px 0 0; color: var(--muted); font-size: .53rem; }
+  #pipeline-funnel-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+  #pipeline-funnel-stats > span { min-width: 0; padding: .5rem .55rem; border-radius: 9px; background: var(--bg); text-align: center; }
+  #pipeline-funnel-stats small, #pipeline-funnel-stats b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #pipeline-funnel-stats small { color: var(--muted); font-size: .48rem; }
+  #pipeline-funnel-stats b { margin-top: 2px; font-size: .65rem; }
+  #pipeline-funnel-stats .pipeline-stats-loading, #pipeline-funnel-stats .pipeline-stats-error { grid-column: 1 / -1; color: var(--muted); font-size: .6rem; }
+  .pipeline-savebar > div { justify-content: flex-end; }
+
+  .pipeline-tour-progress { display: grid; grid-template-columns: auto minmax(100px, 1fr) auto; align-items: center; gap: 12px; padding: .5rem 1.1rem; color: #fff; background: var(--brand); }
+  .pipeline-tour-progress > span, .pipeline-tour-progress > b { font-size: .56rem; }
+  .pipeline-tour-progress > div { display: flex; gap: 4px; }
+  .pipeline-tour-progress i { flex: 1; height: 3px; border-radius: 99px; background: rgba(255,255,255,.25); }
+  .pipeline-tour-progress i.active { background: #fff; }
+  .pipeline-drilldown-card:has(.pipeline-tour-progress) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  .pipeline-breadcrumb button { padding: 0; border: 0; color: var(--muted); background: transparent; font: inherit; cursor: pointer; }
+  .pipeline-breadcrumb button:hover { color: var(--brand); }
+  #pipeline-detail-title:focus { outline: none; }
+  .pipeline-learning { display: grid; gap: 9px; margin-bottom: 10px; }
+  .pipeline-purpose { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: .8rem; border-radius: 12px; color: #153f7c; background: var(--brand-light); }
+  .pipeline-purpose span, .pipeline-purpose strong { display: block; }
+  .pipeline-purpose span { margin-bottom: 3px; font-size: .52rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; opacity: .72; }
+  .pipeline-purpose strong { font-size: .68rem; line-height: 1.45; }
+  .pipeline-friendly-confidence { flex: 0 0 auto; display: grid; grid-template-columns: 20px auto; column-gap: 6px; align-items: center; padding: .45rem .6rem; border-radius: 10px; color: #136246; background: #e9f8f1; }
+  .pipeline-friendly-confidence > i { grid-row: 1 / 3; font-size: .9rem; }
+  .pipeline-friendly-confidence b, .pipeline-friendly-confidence small { display: block; }
+  .pipeline-friendly-confidence b { font-size: .58rem; }
+  .pipeline-friendly-confidence small { margin: 0; font-size: .48rem; }
+  .pipeline-anatomy { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .pipeline-anatomy article { position: relative; min-height: 108px; padding: .7rem; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); }
+  .pipeline-anatomy article::after { content: ''; position: absolute; top: 21px; right: -7px; z-index: 2; width: 7px; border-top: 1px solid #9fc0ff; }
+  .pipeline-anatomy article:last-child::after { display: none; }
+  .pipeline-anatomy span { color: var(--brand); font-size: .5rem; font-weight: 800; text-transform: uppercase; }
+  .pipeline-anatomy i { display: block; margin: .45rem 0 .35rem; color: var(--brand); font-size: .9rem; }
+  .pipeline-anatomy p { margin: 0; color: var(--muted); font-size: .56rem; line-height: 1.4; }
+  .pipeline-if-then { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: .55rem .65rem; border: 1px dashed #b9cdef; border-radius: 10px; background: #fafcff; }
+  .pipeline-if-then > span { color: var(--brand); font-size: .52rem; font-weight: 800; text-transform: uppercase; }
+  .pipeline-if-then p { margin: 0; color: var(--ink); font-size: .58rem; line-height: 1.4; }
+  .pipeline-if-then > i { color: #9fb4d5; }
+  .pipeline-branch { padding: 4px 7px; border-radius: 999px; font-size: .5rem; }
+  .pipeline-branch--pass { color: #136246; background: #e9f8f1; }
+  .pipeline-branch--fail { color: #9c2f2f; background: #fff0f0; }
+  .pipeline-branch--blocked { color: #526174; background: #edf1f5; }
+  .pipeline-context-terms { display: flex; gap: 5px; flex-wrap: wrap; }
+  .pipeline-context-terms:empty { display: none; }
+  .pipeline-term { position: relative; display: inline-flex; align-items: center; gap: 4px; min-height: 25px; padding: 0 8px; border: 1px solid #d7e4fb; border-radius: 999px; color: #174b83; background: #f4f8ff; font: 600 .53rem/1 CircularStd, sans-serif; cursor: help; }
+  .pipeline-term:hover, .pipeline-term:focus-visible { outline: none; border-color: var(--brand); background: var(--brand-light); }
+  .pipeline-term::after { content: attr(data-tooltip); position: absolute; left: 0; bottom: calc(100% + 7px); z-index: 15; width: 220px; padding: .55rem .65rem; border-radius: 9px; color: #fff; background: #172554; box-shadow: var(--shadow); font-size: .53rem; line-height: 1.4; opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(3px); transition: .15s ease; }
+  .pipeline-term:hover::after, .pipeline-term:focus-visible::after { opacity: 1; visibility: visible; transform: none; }
+  .pipeline-sample { margin-top: 1px; padding: .75rem; border: 1px solid #cfe0ff; border-radius: 12px; background: #fff; box-shadow: 0 4px 14px rgba(32,110,251,.05); }
+  .pipeline-sample--fail { border-color: #f1c9c9; background: #fffafa; }
+  .pipeline-sample--blocked { border-color: #dce3eb; background: #f8fafc; }
+  .pipeline-sample-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .pipeline-sample-head > span:first-child { color: var(--brand); font-size: .52rem; font-weight: 800; text-transform: uppercase; }
+  .pipeline-sample-status { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 999px; color: #136246; background: #e9f8f1; font-size: .5rem; font-weight: 700; }
+  .pipeline-sample--fail .pipeline-sample-status { color: #9c2f2f; background: #fff0f0; }
+  .pipeline-sample--blocked .pipeline-sample-status { color: #526174; background: #edf1f5; }
+  .pipeline-sample h5 { margin: 0; font-size: .68rem; line-height: 1.35; }
+  .pipeline-sample > small { display: block; margin-top: 2px; color: var(--muted); font-size: .5rem; }
+  .pipeline-sample-text { margin: .55rem 0; color: var(--muted); font-size: .58rem; line-height: 1.55; }
+  .pipeline-sample-text mark { border-radius: 3px; color: inherit; background: transparent; transition: .16s ease; }
+  .pipeline-sample-text mark.is-highlighted { color: #6c5000; background: #ffe995; box-shadow: 0 0 0 2px #ffe995; }
+  .pipeline-sample-decision { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding-top: .55rem; border-top: 1px solid var(--line); cursor: default; }
+  .pipeline-sample-decision:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 4px; }
+  .pipeline-sample-decision span { color: var(--muted); font-size: .54rem; line-height: 1.4; }
+  .pipeline-sample-decision b { color: var(--brand); font-size: .54rem; text-align: right; }
+  .pipeline-sample--compact { padding: .6rem .7rem; }
+  .pipeline-sample--compact h5 { font-size: .61rem; }
+  .pipeline-sample--compact .pipeline-sample-decision { padding-top: .4rem; margin-top: .4rem; }
+  .pipeline-technical-details { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+  .pipeline-technical-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: .75rem .8rem; cursor: pointer; list-style: none; }
+  .pipeline-technical-details > summary::-webkit-details-marker { display: none; }
+  .pipeline-technical-details > summary span { display: inline-flex; align-items: center; gap: 6px; color: var(--brand); font-size: .62rem; font-weight: 700; }
+  .pipeline-technical-details > summary small { color: var(--muted); font-size: .52rem; }
+  .pipeline-technical-details[open] > summary { border-bottom: 1px solid var(--line); background: var(--surface); }
+  .pipeline-technical-details > div { padding: .8rem; }
+  .pipeline-uncertainty { display: flex; gap: 10px; padding: .7rem; border: 1px solid #eadca6; border-radius: 11px; color: #67561e; background: #fffbec; }
+  .pipeline-uncertainty > i { font-size: 1rem; }
+  .pipeline-uncertainty b { font-size: .61rem; }
+  .pipeline-uncertainty p { margin: 3px 0 0; font-size: .55rem; line-height: 1.45; }
+  .pipeline-routing-visual { display: grid; gap: 5px; }
+  .pipeline-routing-visual article { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: .6rem .7rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .pipeline-routing-visual b { min-width: 90px; font-size: .6rem; }
+  .pipeline-routing-visual span, .pipeline-routing-visual em { padding: 4px 7px; border-radius: 999px; font-size: .51rem; font-style: normal; }
+  .pipeline-routing-visual span { color: #174b83; background: #edf5ff; }
+  .pipeline-routing-visual em { margin-left: auto; color: #136246; background: #e9f8f1; font-weight: 700; }
+  .pipeline-routing-visual i { color: var(--muted); font-size: .56rem; font-style: normal; }
+  .pipeline-before-after { display: grid; grid-template-columns: minmax(0, .85fr) auto minmax(0, 1.15fr); align-items: center; gap: 10px; }
+  .pipeline-before-after > article { min-height: 125px; padding: .75rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .pipeline-before-after > article > span { color: var(--muted); font-size: .5rem; font-weight: 800; text-transform: uppercase; }
+  .pipeline-before-after h5 { margin: .5rem 0 .35rem; font-size: .68rem; line-height: 1.35; }
+  .pipeline-before-after p { margin: 0; color: var(--muted); font-size: .55rem; line-height: 1.45; }
+  .pipeline-final-card { background: #fff !important; box-shadow: 0 8px 24px rgba(32,110,251,.09); }
+  .pipeline-final-card > div { display: flex; gap: 4px; flex-wrap: wrap; }
+  .pipeline-final-card > div span { padding: 3px 6px; border-radius: 999px; color: var(--brand); background: var(--brand-light); font-size: .48rem; font-weight: 700; }
+  .pipeline-final-card > small { display: inline-flex; align-items: center; gap: 4px; margin-top: .6rem; color: #136246; font-size: .5rem; font-weight: 700; }
+  .pipeline-edit-safety { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: 10px; padding: .7rem; border: 1px solid #d4e2f8; border-radius: 11px; background: #f6f9ff; }
+  .pipeline-edit-safety > i { color: var(--brand); font-size: 1rem; }
+  .pipeline-edit-safety b, .pipeline-edit-safety span { font-size: .56rem; line-height: 1.4; }
+  .pipeline-edit-safety b { display: block; }
+  .pipeline-footer-start { justify-self: start; flex-wrap: wrap; }
+  .pipeline-footer-start .btn-text { font-size: .56rem; }
+
+  .pipeline-support-panel[hidden] { display: none; }
+  .pipeline-support-panel { position: absolute; inset: 0; z-index: 95; display: grid; place-items: center; padding: 18px; background: rgba(15,23,42,.48); backdrop-filter: blur(6px); }
+  .pipeline-support-card { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(720px, 100%); max-height: min(700px, calc(100% - 12px)); border: 1px solid #d8e4f7; border-radius: 18px; background: var(--bg); box-shadow: var(--shadow-modal); overflow: hidden; animation: pipeline-dialog-in .2s ease both; }
+  .pipeline-support-card > header { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 1rem 1.1rem; border-bottom: 1px solid var(--line); background: linear-gradient(135deg, var(--brand-light), var(--bg)); }
+  .pipeline-support-card > header span { color: var(--brand); font-size: .54rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .pipeline-support-card > header h4 { margin: 4px 0 0; font-size: .92rem; }
+  .pipeline-support-card > main { overflow-y: auto; padding: 1rem; }
+  .pipeline-support-card > footer { display: flex; justify-content: flex-end; gap: 8px; padding: .8rem 1rem; border-top: 1px solid var(--line); }
+  .pipeline-glossary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .pipeline-glossary-grid article { padding: .8rem; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); scroll-margin: 20px; }
+  .pipeline-glossary-grid article:target { border-color: var(--brand); }
+  .pipeline-glossary-grid b { color: var(--brand); font-size: .66rem; }
+  .pipeline-glossary-grid p { margin: 4px 0 0; color: var(--muted); font-size: .56rem; line-height: 1.5; }
+  .pipeline-change-summary { display: grid; gap: 7px; }
+  .pipeline-change-state { display: flex; align-items: center; gap: 10px; padding: .8rem; border-radius: 11px; color: #136246; background: #e9f8f1; }
+  .pipeline-change-state.has-changes { color: #174b83; background: var(--brand-light); }
+  .pipeline-change-state > i { font-size: 1.05rem; }
+  .pipeline-change-state b { font-size: .66rem; }
+  .pipeline-change-state p { margin: 2px 0 0; font-size: .55rem; line-height: 1.4; }
+  .pipeline-change-summary > article { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(70px, auto) auto minmax(70px, auto); align-items: center; gap: 8px; padding: .65rem .7rem; border: 1px solid var(--line); border-radius: 10px; }
+  .pipeline-change-summary > article span { font-size: .58rem; font-weight: 700; }
+  .pipeline-change-summary del, .pipeline-change-summary ins { padding: 3px 6px; border-radius: 6px; font-size: .53rem; text-decoration: none; overflow-wrap: anywhere; }
+  .pipeline-change-summary del { color: #9c2f2f; background: #fff0f0; }
+  .pipeline-change-summary ins { color: #136246; background: #e9f8f1; }
+  .pipeline-change-summary > h5 { margin: .8rem 0 0; font-size: .66rem; }
+  .pipeline-history-row { display: flex; justify-content: space-between; gap: 10px; padding: .6rem .7rem; border-radius: 9px; background: var(--surface); }
+  .pipeline-history-row span { font-size: .57rem; font-weight: 700; }
+  .pipeline-history-row small { color: var(--muted); font-size: .52rem; }
+  [data-pipeline-mode="guided"] .pipeline-expert-only { display: none !important; }
+  [data-pipeline-mode="expert"] .pipeline-example-switcher { padding-block: .6rem; }
+  [data-pipeline-mode="expert"] .pipeline-learning-toolbar { border-color: #c7d9f7; }
+  :where(.pipeline-panel button, .pipeline-panel input, .pipeline-panel select, .pipeline-panel summary):focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .pipeline-drilldown-card, .pipeline-support-card { animation: none; }
+    .pipeline-overview-card, .pipeline-term::after, .pipeline-sample-text mark { transition: none; }
+  }
+  @media (max-width: 1040px) {
+    .pipeline-example-switcher { grid-template-columns: 1fr auto; }
+    .pipeline-example-switcher > div:last-child { grid-column: 1 / -1; }
+    #pipeline-funnel-stats { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 900px) {
+    .pipeline-overview-actions { justify-content: flex-start; }
+    .pipeline-learning-toolbar { align-items: flex-start; }
+    .pipeline-anatomy { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pipeline-anatomy article::after { display: none; }
+    .pipeline-funnel { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 700px) {
+    .pipeline-overview-actions, .pipeline-overview-actions .btn-primary { width: 100%; }
+    .pipeline-overview-actions .btn-primary { justify-content: center; }
+    .pipeline-mode-switch { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+    .pipeline-mode-switch button { justify-content: center; }
+    .pipeline-learning-toolbar { display: grid; grid-template-columns: 1fr auto; }
+    .pipeline-start-end { grid-column: 1 / -1; }
+    .pipeline-overview-legend { display: none; }
+    .pipeline-example-switcher { grid-template-columns: 1fr; }
+    .pipeline-example-switcher > div:last-child { grid-column: auto; }
+    .pipeline-scenario-switch { display: grid; grid-template-columns: 1fr 1fr; }
+    .pipeline-scenario-switch button { justify-content: center; min-height: 40px; padding: 6px 8px; font-size: .55rem; line-height: 1.25; }
+    #pipeline-funnel-stats { grid-template-columns: repeat(2, 1fr); }
+    .pipeline-tour-progress { padding-inline: .8rem; }
+    .pipeline-purpose { align-items: flex-start; }
+    .pipeline-anatomy { grid-template-columns: 1fr; }
+    .pipeline-if-then { grid-template-columns: auto minmax(0, 1fr) auto; }
+    .pipeline-if-then > i { display: none; }
+    .pipeline-sample-decision { grid-template-columns: 1fr; }
+    .pipeline-sample-decision b { text-align: left; }
+    .pipeline-before-after { grid-template-columns: 1fr; }
+    .pipeline-before-after > i { justify-self: center; transform: rotate(90deg); }
+    .pipeline-routing-visual em { width: 100%; margin-left: 0; text-align: center; }
+    .pipeline-edit-safety { grid-template-columns: auto minmax(0, 1fr); }
+    .pipeline-edit-safety .btn-secondary { grid-column: 1 / -1; width: 100%; justify-content: center; }
+    .pipeline-footer-start { display: contents; }
+    .pipeline-footer-start .btn-text { display: none; }
+    .pipeline-support-panel { padding: 0; }
+    .pipeline-support-card { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; }
+    .pipeline-glossary-grid { grid-template-columns: 1fr; }
+    .pipeline-change-summary > article { grid-template-columns: 1fr auto; }
+    .pipeline-change-summary > article span { grid-column: 1 / -1; }
+    .pipeline-change-summary > article i { transform: rotate(90deg); }
+    .pipeline-savebar > div { display: grid; width: 100%; }
+  }
+
   /* ---------- Settings modal ---------- */
   .modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, .6);
@@ -893,9 +1116,22 @@
         <div class="settings-panel pipeline-panel" id="settings-panel-pipeline-overview">
           <div class="pipeline-scroll pipeline-scroll--overview">
             <header class="pipeline-overview-head">
-              <div><span>ROOTS Signal Layer</span><h3>Vom Artikel zur belastbaren Entscheidung</h3><p>Die fünf Stationen zeigen den Gesamtprozess. Fahre über eine Station für eine Kurzvorschau oder öffne sie, um Schritt für Schritt tiefer einzusteigen.</p></div>
-              <div class="pipeline-overview-legend" aria-label="Entscheidungsquellen"><span><i class="ri-code-line"></i> Regeln</span><span><i class="ri-sparkling-line"></i> Gemini</span><span><i class="ri-shield-check-line"></i> Kontrolle</span></div>
+              <div><span>ROOTS Signal Layer</span><h3>Vom Artikel zur belastbaren Entscheidung</h3><p>Die fünf Stationen zeigen, wie aus einer Quelle ein erklärbares Marketing- oder Sales-Signal wird. Öffne eine Station oder starte die geführte Erklärung.</p></div>
+              <div class="pipeline-overview-actions">
+                <div class="pipeline-mode-switch" role="group" aria-label="Erklärungstiefe"><button type="button" data-pipeline-mode="guided"><i class="ri-graduation-cap-line"></i> Einfach</button><button type="button" data-pipeline-mode="expert"><i class="ri-code-box-line"></i> Experte</button></div>
+                <button type="button" class="btn-primary" data-pipeline-tour-start><i class="ri-play-circle-line"></i> In 2 Minuten verstehen</button>
+              </div>
             </header>
+            <div class="pipeline-learning-toolbar">
+              <div class="pipeline-start-end" aria-label="Start und Ziel der Pipeline"><span><i class="ri-article-line"></i><small>Start</small><b>Rohartikel</b></span><i class="ri-arrow-right-line"></i><span><i class="ri-layout-grid-line"></i><small>Ziel</small><b>Erklärte Kachel</b></span></div>
+              <div class="pipeline-overview-legend" aria-label="Entscheidungsquellen"><span><i class="ri-code-line"></i> Regeln</span><span><i class="ri-sparkling-line"></i> Gemini</span><span><i class="ri-shield-check-line"></i> Server</span></div>
+              <div class="pipeline-help-actions"><button type="button" class="btn-text" data-pipeline-support="glossary"><i class="ri-book-open-line"></i> Glossar</button><button type="button" class="btn-text" data-pipeline-support="changes"><i class="ri-history-line"></i> Änderungen</button></div>
+            </div>
+            <section class="pipeline-example-switcher" aria-label="Beispiel auswählen">
+              <div><span>Beispielartikel durch die Pipeline verfolgen</span><p>Wechsle zwischen einem passenden Signal und einer bewusst aussortierten Meldung.</p></div>
+              <div class="pipeline-scenario-switch" role="group" aria-label="Beispieltyp"><button type="button" data-pipeline-scenario="pass"><i class="ri-checkbox-circle-line"></i> Passendes Signal</button><button type="button" data-pipeline-scenario="reject"><i class="ri-close-circle-line"></i> Unpassende Personalie</button></div>
+              <div id="pipeline-guide-sample"></div>
+            </section>
             <div class="pipeline-flow-shell">
               <div class="pipeline-flow" id="pipeline-studio" aria-label="High-Level-Pipeline"><div class="keyword-empty">Pipeline wird geladen…</div></div>
             </div>
@@ -905,10 +1141,12 @@
               <span class="pipeline-result-statuses"><b>Zuverlässig</b><b>Prüfung</b><b>Abgelehnt</b></span>
               <i class="ri-arrow-right-line"></i>
             </button>
+            <section class="pipeline-funnel" aria-label="Aktueller Artikelbestand"><div><span>Aktueller Bestand</span><p>Echte gespeicherte Statuszahlen, keine Simulation.</p></div><div id="pipeline-funnel-stats"><span class="pipeline-stats-loading"><i class="ri-loader-4-line ri-spin"></i> Bestandszahlen werden geladen</span></div></section>
             <div class="pipeline-impact" id="pipeline-impact-result" hidden></div>
-            <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><button class="btn-primary" id="btn-save-pipeline"><i class="ri-save-line"></i> Änderungen speichern</button></div>
+            <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><div><button type="button" class="btn-secondary" data-pipeline-preview><i class="ri-flask-line"></i> Auswirkungen prüfen</button><button class="btn-primary" id="btn-save-pipeline"><i class="ri-save-line"></i> Änderungen speichern</button></div></div>
           </div>
           <section class="pipeline-drilldown" id="pipeline-drilldown" aria-modal="true" aria-label="Pipeline-Details" hidden></section>
+          <section class="pipeline-support-panel" id="pipeline-support-panel" hidden></section>
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-manual-review">
