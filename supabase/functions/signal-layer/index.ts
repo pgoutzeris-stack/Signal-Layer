@@ -799,6 +799,9 @@ const ROLE_TERMS = [
   "cmo", "chief marketing officer", "ceo", "chief executive officer",
   "marketingleiter", "marketingleiterin", "marketingdirektor", "head of marketing",
   "brand manager", "brand director", "geschäftsführer marketing", "neuer cmo", "new cmo",
+  "geschäftsführer", "geschäftsführerin", "managing director", "commercial director",
+  "sales director", "head of sales", "vertriebsleiter", "vertriebsleiterin",
+  "category manager", "head of category", "innovation director", "head of innovation",
 ];
 
 function normalizeMatchText(value: string): string {
@@ -859,6 +862,38 @@ function extractPersonCandidates(rawText: string): string[] {
   return [...candidates];
 }
 
+function hasEventTier1PersonLink(
+  articleText: string,
+  companies: Array<{ name: string; aliases: string[] }>,
+): boolean {
+  const personName = "[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?\\s+[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?";
+  const courtesyPerson = new RegExp(`\\b(?:Herr|Frau|Mr\\.?|Mrs\\.?|Ms\\.?)\\s+${personName}\\b`);
+  const normalizedRoles = ROLE_TERMS.map(normalizeMatchText);
+  const lowerText = articleText.toLocaleLowerCase("de-DE");
+
+  return companies.some((company) => [company.name, ...(company.aliases || [])].some((term) => {
+    const lowerTerm = term.toLocaleLowerCase("de-DE").trim();
+    if (lowerTerm.length < 3) return false;
+    let offset = lowerText.indexOf(lowerTerm);
+    while (offset >= 0) {
+      // A local window prevents an unrelated name elsewhere on a long event
+      // page from being paired with the Tier-1 company.
+      const window = articleText.slice(Math.max(0, offset - 240), Math.min(articleText.length, offset + lowerTerm.length + 240));
+      const normalizedWindow = normalizeMatchText(window);
+      const hasSpecificRole = normalizedRoles.some((role) => containsMatchTerm(normalizedWindow, role));
+      const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const directPersonCompany = new RegExp(
+        `\\b${personName}\\s+(?:von|bei|für|from|at|of|representing)\\s+(?:der\\s+|the\\s+)?${escapedTerm}\\b`,
+        "i",
+      ).test(window);
+      const namedRole = extractPersonCandidates(window).length > 0;
+      if (directPersonCompany || courtesyPerson.test(window) || namedRole || hasSpecificRole) return true;
+      offset = lowerText.indexOf(lowerTerm, offset + lowerTerm.length);
+    }
+    return false;
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Hybrid ingest classification: deterministic hygiene and entity candidates,
 // Gemini structured classification, then strict server-side validation.
@@ -866,7 +901,7 @@ function extractPersonCandidates(rawText: string): string[] {
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-3.5-flash";
 const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.2.0";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.3.0";
 const MAX_DAILY_AI_REQUESTS = 1000;
 const MAX_DAILY_PRO_REVIEWS = 250;
 type PipelineConfig = {
@@ -979,7 +1014,7 @@ const SALES_TRIGGER_IDS = [
   "acquisition", "merger", "market_entry", "market_expansion", "investment",
   "restructuring", "portfolio_change", "transformation", "rebranding",
   "campaign_launch", "agency_change", "ai_initiative", "retail_strategy",
-  "new_business_model",
+  "new_business_model", "event_participation",
 ] as const;
 type AiSalesTrigger = { id: string; confidence: number; evidence: string };
 type AiRouteDecision = { eligible: boolean; confidence: number; evidence: string; reason: string };
@@ -1359,9 +1394,12 @@ function passesEventPreClassificationGate(
   policy: CrawlPolicy,
 ): boolean {
   if (policy.sourceType !== "event") return true;
-  const hasTier1 = selectCompanyCandidates(articleText, tier1Companies).length > 0;
+  const matchedCompanies = selectCompanyCandidates(articleText, tier1Companies);
+  const hasTier1 = matchedCompanies.length > 0;
   const hasTopicSignal = findEventSignalFamilies(articleText).length > 0;
-  return (!policy.requireTier1 || hasTier1) && (!policy.requireTopicSignal || hasTopicSignal);
+  const hasTier1PersonLink = hasTier1 && hasEventTier1PersonLink(articleText, matchedCompanies);
+  return (!policy.requireTier1 || hasTier1)
+    && (!policy.requireTopicSignal || hasTopicSignal || hasTier1PersonLink);
 }
 
 function buildClassifierPrompt(
@@ -1390,7 +1428,7 @@ Territories:
 <routing_rules>
 Marketing requires its own exact evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, or AI with a concrete marketing/customer/retail/brand application. sub_branchen_insight alone NEVER qualifies Marketing. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing evidence exists.
 sub_branchen_insight is valid only for a transferable market observation that remains useful beyond the reported company event. A single acquisition, product, expansion, financial result or facility is not transferable.
-Sales requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger. A company mention alone is insufficient. Buying Center additionally requires a named person or specific role linked to that trigger. A pure CEO/CMO appointment is insufficient.
+Sales requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger. A company mention alone is insufficient. For sources in category "Events & Messen", event_participation is a valid sales_trigger when a named person or specific business role is explicitly linked to a Tier-1 company as speaker, representative, exhibitor contact or substantive event participant. It does not require a separate topic signal. Attendee lists, speaker directories, schedules, navigation and a name merely appearing somewhere on the same page are insufficient. Buying Center additionally requires the linked named person or specific role. A pure CEO/CMO appointment is insufficient.
 For each routing_decision, provide separate verbatim evidence. If routing is not eligible, use an empty evidence string and explain why in German.
 </routing_rules>
 <tier1_companies>${JSON.stringify(companies.map((company) => ({ name: company.name, aliases: company.aliases })))}</tier1_companies>
