@@ -176,6 +176,7 @@
   .crawl-live-state { display: inline-flex; align-items: center; gap: 5px; color: var(--brand-dark); font-size: .65rem; font-weight: 750; white-space: nowrap; }
   .crawl-live-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .backfill-status { margin-top: 3px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .article-live-progress[hidden] { display: none; }
   .backfill-status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .68rem; }
   .backfill-status-row b { color: var(--ink); font-size: .68rem; }
   .backfill-progress-track { height: 5px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: var(--status-bg); }
@@ -1417,11 +1418,13 @@
                 <div class="crawl-source-current"><span class="backfill-current-article live-shimmer" id="crawl-current-source">–</span><a class="live-shimmer" id="crawl-current-source-url" href="#" target="_blank" rel="noopener noreferrer"></a></div>
               </div>
               <div class="backfill-status" id="backfill-status">
-                <div class="backfill-status-row"><span>Artikelprüfung</span><b id="backfill-progress-text">Wird geladen…</b></div>
-                <div class="backfill-progress-track"><span id="backfill-progress-bar"></span></div>
-                <span class="backfill-current-article live-shimmer" id="backfill-current-article" hidden></span>
-                <small id="backfill-progress-detail"></small>
-                <div class="api-error-list" id="api-error-list"></div>
+                <div class="article-live-progress" id="article-live-progress" hidden>
+                  <div class="backfill-status-row"><span>Artikelprüfung</span><b id="backfill-progress-text">Wird geladen…</b></div>
+                  <div class="backfill-progress-track"><span id="backfill-progress-bar"></span></div>
+                  <span class="backfill-current-article live-shimmer" id="backfill-current-article" hidden></span>
+                  <small id="backfill-progress-detail"></small>
+                  <div class="api-error-list" id="api-error-list"></div>
+                </div>
                 <div class="telemetry-grid">
                   <div class="telemetry-stat" id="gemini-cost-stat"><span>Gemini im Monat</span><b id="gemini-cost-month">–</b></div>
                   <div class="telemetry-stat"><span>Heute</span><b id="gemini-cost-today">–</b></div>

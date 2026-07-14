@@ -209,6 +209,7 @@ function cacheEls() {
   els.crawlCurrentSource = document.getElementById("crawl-current-source");
   els.crawlCurrentSourceUrl = document.getElementById("crawl-current-source-url");
   els.backfillProgressText = document.getElementById("backfill-progress-text");
+  els.articleLiveProgress = document.getElementById("article-live-progress");
   els.backfillProgressBar = document.getElementById("backfill-progress-bar");
   els.backfillCurrentArticle = document.getElementById("backfill-current-article");
   els.backfillProgressDetail = document.getElementById("backfill-progress-detail");
@@ -1606,13 +1607,14 @@ async function loadLastRun() {
     }
     els.lastRunText.textContent = formatCrawlTime(last.started_at);
     const sourceProgress = last.source_progress;
-    if (sourceProgress && Number(sourceProgress.total || 0) > 0) {
+    const sourceCrawlActive = ["queued", "running"].includes(last.status);
+    if (sourceCrawlActive && sourceProgress && Number(sourceProgress.total || 0) > 0) {
       const totalSources = Number(sourceProgress.total || 0);
       const completedSources = Math.min(totalSources, Number(sourceProgress.completed || 0));
       const visiblePosition = Number(sourceProgress.current_position || completedSources);
       const sourcePercent = Math.round((visiblePosition / totalSources) * 100);
       els.crawlSourceProgress.hidden = false;
-      els.crawlSourceProgress.classList.toggle("is-live", ["queued", "running"].includes(last.status));
+      els.crawlSourceProgress.classList.add("is-live");
       els.crawlSourceProgressText.textContent = `${visiblePosition.toLocaleString("de-DE")} / ${totalSources.toLocaleString("de-DE")}`;
       els.crawlSourceProgressBar.style.width = `${sourcePercent}%`;
       els.crawlCurrentSource.textContent = sourceProgress.current_source?.company
@@ -1625,7 +1627,9 @@ async function loadLastRun() {
       els.crawlSourceProgress.hidden = true;
       els.crawlSourceProgress.classList.remove("is-live");
     }
-    if (backfill) {
+    const articleAnalysisActive = Boolean(backfill && ["queued", "running"].includes(backfill.status));
+    els.articleLiveProgress.hidden = !articleAnalysisActive;
+    if (articleAnalysisActive) {
       const total = Number(backfill.total_count || 0);
       const processed = Number(backfill.processed_count || 0);
       const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 100;
@@ -1634,7 +1638,7 @@ async function loadLastRun() {
       const currentArticleTitle = backfill.current_article?.title || "";
       els.backfillCurrentArticle.hidden = !currentArticleTitle;
       els.backfillCurrentArticle.textContent = currentArticleTitle;
-      document.getElementById("backfill-status")?.classList.toggle("is-live", ["queued", "running"].includes(backfill.status));
+      document.getElementById("backfill-status")?.classList.add("is-live");
       const status = backfill.status === "done" ? "Abgeschlossen" : backfill.status === "error" ? "Fehler" : "Läuft";
       const errors = Number(backfill.error_count || 0);
       els.backfillProgressDetail.textContent = errors > 0
