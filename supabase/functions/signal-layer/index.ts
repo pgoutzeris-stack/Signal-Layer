@@ -1304,6 +1304,15 @@ function cleanArticleText(raw: string): string {
     const isListItem = /^-\s+/.test(line);
     const body = line.replace(/^#{2,3}\s+/, "").replace(/^-\s+/, "");
     if (boilerplate.test(body)) continue;
+    // Generic nav/share/meta-fragment filter: real article sentences run long
+    // or end in punctuation, while "Copy url", "Load More", "Skip to main
+    // content" or a byline are short fragments without sentence punctuation.
+    // Headings and list items are exempt so structure survives.
+    if (!isHeading && !isListItem) {
+      const words = body.split(/\s+/).filter(Boolean).length;
+      const endsSentence = /[.!?:”»")]$/.test(body);
+      if (!endsSentence && (words <= 4 || body.length < 30)) continue;
+    }
     const key = normalizeMatchText(body);
     if (!key) continue;
     // Dedup body text, but never let a real heading/list marker survive as a
@@ -1312,7 +1321,6 @@ function cleanArticleText(raw: string): string {
     seen.add(key);
     out.push(line);
     lastBlank = false;
-    void isHeading; void isListItem;
   }
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 45_000);
 }
