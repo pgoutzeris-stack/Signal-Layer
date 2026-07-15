@@ -162,7 +162,9 @@ function formatArticleBody(html) {
   flushPara();
   return blocks.join("")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    // Kill any leftover unbalanced asterisks so a stray ** never shows as text.
+    .replace(/\*+/g, "");
 }
 
 function bindEvidenceHover() {

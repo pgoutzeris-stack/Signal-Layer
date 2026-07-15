@@ -1278,7 +1278,7 @@ function decodeArticleText(value: string): string {
 }
 
 function cleanArticleText(raw: string): string {
-  const boilerplate = /^(menu|menü|navigation|newsletter|jetzt anmelden|jetzt bewerben|mehr erfahren|zur startseite|kontakt|impressum|datenschutz|privacy|cookie|social media|facebook|instagram|linkedin|youtube|copyright|\(c\)|©|weitere artikel|mehr zum thema|lesen sie auch|related articles|sign up|subscribe|book tickets|apply now|anzeige|advertisement|werbung|zum inhalt springen|skip to content|nachrichten|startseite|home|teilen|share|drucken|print|newsletter abonnieren|cookies akzeptieren|mehr dazu|alle akzeptieren)$/i;
+  const boilerplate = /^(menu|menü|menü schließen|schließen|navigation|newsletter|jetzt anmelden|jetzt bewerben|mehr erfahren|zur startseite|weiter zum inhalt|kontakt|impressum|datenschutz|privacy|cookie|social media|facebook|instagram|linkedin|youtube|copyright|\(c\)|©|weitere artikel|mehr zum thema|lesen sie auch|related articles|sign up|subscribe|book tickets|apply now|anzeige|advertisement|werbung|zum inhalt springen|skip to content|nachrichten|startseite|home|teilen|share|drucken|print|newsletter abonnieren|cookies akzeptieren|mehr dazu|alle akzeptieren|suche|suchen|suchanfrage|suche anzeigen|suche öffnen|e-mailen|e-mail|kopieren|story-link in zwischenablage kopiert|merken|folgen|abonnieren|anmelden|registrieren|login|drucken|weiterlesen|zurück|vor|weiter)$/i;
   const seen = new Set<string>();
   const out: string[] = [];
   let lastBlank = true; // suppress a leading blank line
