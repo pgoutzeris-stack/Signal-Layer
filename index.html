@@ -275,7 +275,28 @@
   .track-card-empty { font-size: .85rem; color: var(--muted); padding: 1.5rem 0; text-align: center; }
   @media (max-width: 720px) { .track-grid { grid-template-columns: 1fr; } }
 
-  .track-findings-list { display: flex; flex-direction: column; gap: 8px; max-height: 520px; overflow-y: auto; }
+  /* Modern centered loading spinner (ROOTS blue) */
+  .roots-loader { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 180px; padding: 2.5rem 0; }
+  .roots-loader::after {
+    content: ""; width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid var(--brand-light); border-top-color: var(--brand);
+    animation: roots-spin .7s linear infinite;
+  }
+  @keyframes roots-spin { to { transform: rotate(360deg); } }
+
+  /* Filigree ROOTS-blue scrollbar for the scrollable list containers */
+  .track-findings-list, .review-list, main#main-content {
+    scrollbar-width: thin;
+    scrollbar-color: var(--brand) transparent;
+  }
+  .track-findings-list::-webkit-scrollbar, .review-list::-webkit-scrollbar, main#main-content::-webkit-scrollbar { width: 6px; height: 6px; }
+  .track-findings-list::-webkit-scrollbar-track, .review-list::-webkit-scrollbar-track, main#main-content::-webkit-scrollbar-track { background: transparent; }
+  .track-findings-list::-webkit-scrollbar-thumb, .review-list::-webkit-scrollbar-thumb, main#main-content::-webkit-scrollbar-thumb {
+    background: var(--brand); border-radius: 999px; border: 1px solid transparent; background-clip: padding-box;
+  }
+  .track-findings-list::-webkit-scrollbar-thumb:hover, .review-list::-webkit-scrollbar-thumb:hover, main#main-content::-webkit-scrollbar-thumb:hover { background: var(--brand-dark, var(--brand)); }
+
+  .track-findings-list { display: flex; flex-direction: column; gap: 8px; max-height: 520px; overflow-y: auto; padding-right: 6px; }
   .finding-item { border: 1px solid var(--line); border-radius: 12px; padding: 1rem; cursor: pointer; background: var(--bg); transition: border-color .15s, box-shadow .15s; }
   .finding-item:hover { border-color: #cbd5e1; box-shadow: 0 6px 18px rgba(15, 23, 42, .06); }
   .finding-item--legacy { border-style: dashed; }
@@ -1510,17 +1531,17 @@
           <div class="track-card">
             <div class="track-card-header"><i class="fa-solid fa-bullhorn"></i> Marketing <span class="track-count" id="marketing-count">0</span></div>
             <div class="track-findings-list" id="findings-list-marketing">
-              <div class="track-card-empty">Lädt…</div>
+              <div class="roots-loader"></div>
             </div>
           </div>
           <div class="track-card">
             <div class="track-card-header"><i class="fa-solid fa-chart-line"></i> Sales <span class="track-count" id="sales-count">0</span></div>
             <div class="track-findings-list" id="findings-list-sales">
-              <div class="track-card-empty">Lädt…</div>
+              <div class="roots-loader"></div>
             </div>
           </div>
         </div>
-        <section class="track-card results-review-section"><div class="track-card-header"><i class="fa-solid fa-user-check"></i> Manuelle Prüfung <span class="track-count" id="review-count">0</span></div><div class="review-list" id="results-review-list"><div class="track-card-empty">Lädt…</div></div></section>
+        <section class="track-card results-review-section"><div class="track-card-header"><i class="fa-solid fa-user-check"></i> Manuelle Prüfung <span class="track-count" id="review-count">0</span></div><div class="review-list" id="results-review-list"><div class="roots-loader"></div></div></section>
         </section>
 
         <section class="app-view" id="view-archive">
@@ -1533,7 +1554,7 @@
               <select class="signal-toolbar-select" id="archive-sort" aria-label="Archiv sortieren"><option value="recommended">Empfohlen</option><option value="newest">Neueste zuerst</option><option value="confidence">Höchste Zuverlässigkeit</option></select>
             </div>
           </nav>
-          <div class="archive-list" id="archive-list"><div class="track-card-empty">Archiv wird geladen…</div></div>
+          <div class="archive-list" id="archive-list"><div class="roots-loader"></div></div>
           <button type="button" class="btn-secondary archive-load-more" id="archive-load-more" hidden><i class="fa-solid fa-plus"></i> Weitere Artikel laden</button>
         </section>
 
@@ -1718,7 +1739,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260715-0130';
+import { initApp } from './app.js?v=20260715-0215';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {

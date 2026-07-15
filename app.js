@@ -1106,8 +1106,11 @@ function renderFindings(track) {
     }).join("");
 }
 
+const LOADER_HTML = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
+
 async function loadFindings(track) {
   const listEl = track === "marketing" ? els.findingsListMarketing : els.findingsListSales;
+  if (listEl) listEl.innerHTML = LOADER_HTML;
   try {
     const { findings } = await callApi("list_findings", { track, limit: 250 });
     findingsByTrack[track] = findings || [];
@@ -1203,6 +1206,7 @@ function renderArchive() {
 
 async function loadArchive(append = false) {
   if (!els.archiveList) return;
+  if (!append) els.archiveList.innerHTML = LOADER_HTML;
   try {
     const articleType = els.archiveArticleTypeFilter.value;
     const offset = append ? archiveArticles.length : 0;
@@ -1318,6 +1322,7 @@ async function loadTaggingStats() {
 
 async function loadReviewArticles() {
   if (!els.reviewList) return;
+  els.reviewList.innerHTML = LOADER_HTML;
   const countEl = document.getElementById("review-count");
   try {
     const { articles } = await callApi("list_review_articles", { limit: 20 });
@@ -1335,7 +1340,7 @@ async function loadReviewArticles() {
       return `
         <article class="finding-item" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
           <div class="finding-item-top">
-            <span class="finding-dimension">Prüffall</span>
+            <span class="finding-dimension">${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type || "Sonstiger Inhalt")}</span>
             <div class="finding-top-tags">
               ${isNew ? `<span class="finding-new-badge">NEU</span>` : ""}
               <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="${status === "error" ? "fa-solid fa-triangle-exclamation" : status === "pending" ? "fa-solid fa-clock" : "fa-solid fa-circle-exclamation"}"></i> ${status === "uncertain" ? "Manuelle Prüfung" : status === "pending" ? "Ausstehend" : "Klassifikationsfehler"}${confidence ? ` · ${confidence}` : ""}</span>
