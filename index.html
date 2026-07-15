@@ -1462,7 +1462,7 @@
               <div class="crawl-source-progress" id="crawl-source-progress" hidden>
                 <div class="backfill-status-row"><span>Quellen-Crawl</span><b id="crawl-source-progress-text">0 / 0</b></div>
                 <div class="backfill-progress-track"><span id="crawl-source-progress-bar"></span></div>
-                <div class="crawl-source-current"><span class="backfill-current-article live-shimmer" id="crawl-current-source">–</span><a class="live-shimmer" id="crawl-current-source-url" href="#" target="_blank" rel="noopener noreferrer"></a></div>
+                <div class="crawl-source-current"><span class="backfill-current-article live-shimmer" id="crawl-current-source">–</span><a class="live-shimmer" id="crawl-current-source-url" href="#" data-external target="_blank" rel="noopener noreferrer"></a></div>
               </div>
               <div class="backfill-status" id="backfill-status">
                 <div class="article-live-progress" id="article-live-progress" hidden>
@@ -1739,7 +1739,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260715-0215';
+import { initApp } from './app.js?v=20260715-0300';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {

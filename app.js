@@ -1108,6 +1108,21 @@ function renderFindings(track) {
 
 const LOADER_HTML = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
 
+// Open an external URL from inside the tool. Inside the ROOTS Intranet iframe
+// (browser or native Tauri app) a plain <a> navigation is blocked / would
+// replace the tool, so we delegate to the parent's roots-open-url handler,
+// which opens the system browser. Standalone we fall back to a new tab.
+function openExternalUrl(url) {
+  if (!url || !/^(https?:\/\/|mailto:|tel:)/i.test(url)) return;
+  if (document.documentElement.classList.contains("in-iframe")) {
+    try {
+      window.parent.postMessage({ type: "roots-open-url", url }, "https://pgoutzeris-stack.github.io");
+      return;
+    } catch (_) { /* fall through to direct open */ }
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 async function loadFindings(track) {
   const listEl = track === "marketing" ? els.findingsListMarketing : els.findingsListSales;
   if (listEl) listEl.innerHTML = LOADER_HTML;
@@ -1411,7 +1426,7 @@ async function openArticleDetail(articleId) {
           ${article.published_at ? `<span class="tag"><i class="fa-solid fa-calendar"></i> ${escapeHtml(new Date(article.published_at).toLocaleDateString("de-DE"))}</span>` : ""}
           ${article.article_type ? `<span class="tag"><i class="fa-solid fa-file-lines"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
           ${article.language ? `<span class="tag tag--language">${escapeHtml(article.language.toUpperCase())}</span>` : ""}
-          ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}"><i class="fa-solid fa-arrow-up-right-from-square"></i> Originalquelle</a>` : ""}
+          ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> Originalquelle</a>` : ""}
         </div>
         ${article.ai_summary ? `<p class="article-detail-summary">${escapeText(article.ai_summary)}</p>` : ""}
         <div class="article-fulltext">${formatArticleBody(renderEvidenceLinkedText(fulltext, evidence))}</div>
@@ -1614,7 +1629,7 @@ function renderSources() {
         <div class="source-company">${escapeHtml(s.company)}</div>
         ${s.description ? `<div class="source-desc">${escapeHtml(s.description)}</div>` : ""}
       </td>
-      <td><a href="${escapeHtml(s.url)}" class="source-url"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
+      <td><a href="${escapeHtml(s.url)}" class="source-url" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
       <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}${loginRequired ? `<span class="source-login-badge ${loginConfigured ? "source-login-badge--configured" : ""}"><i class="fa-solid fa-lock"></i> Login nötig</span>` : ""}</td>
       <td title="${escapeHtml(s.last_error || "")}">
         <span class="quality-tag ${s.last_error ? "quality-tag--error" : crawlHealthClass}">
@@ -1919,6 +1934,19 @@ function bindUi() {
   });
   els.articleDetailModal.addEventListener("click", (event) => {
     if (event.target === els.articleDetailModal || event.target.closest(".article-detail-close")) closeArticleDetail();
+  });
+
+  // External links (e.g. "Originalquelle") must not navigate the iframe. When
+  // embedded in the ROOTS Intranet — including the native Tauri desktop app —
+  // we hand the URL to the parent, which opens it in the system browser via
+  // its roots-open-url handler. Standalone (not iframed) we open a new tab.
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("a[data-external]");
+    if (!link) return;
+    const url = link.getAttribute("href");
+    if (!url || url === "#" || !/^https?:\/\//i.test(url)) return;
+    event.preventDefault();
+    openExternalUrl(url);
   });
 
   els.btnSettings.addEventListener("click", openSettings);
