@@ -616,6 +616,51 @@ function extractPublishedDate(html: string, url: string): string | null {
   return null;
 }
 
+// Remove non-article page chrome (menus, headers, footers, sidebars, forms,
+// cookie/consent widgets) BEFORE text extraction. Many sites put their huge
+// navigation in plain <div>/<ul> menus that are not semantic <nav>, so we also
+// drop elements whose id/class marks them as navigation/menu/footer/etc.
+function stripPageChrome(html: string): string {
+  let out = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<header[\s\S]*?<\/header>/gi, " ")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
+    .replace(/<form[\s\S]*?<\/form>/gi, " ")
+    .replace(/<select[\s\S]*?<\/select>/gi, " ")
+    .replace(/<menu[\s\S]*?<\/menu>/gi, " ");
+  // Drop role=navigation/banner/contentinfo/search/dialog regions.
+  out = out.replace(/<([a-z0-9]+)\b[^>]*\brole=["'](?:navigation|banner|contentinfo|search|dialog|menu|menubar)["'][\s\S]*?<\/\1>/gi, " ");
+  return out;
+}
+
+// Best-effort main-content isolation. Prefers a semantic <article>/<main> or a
+// content-flagged container and returns the richest one; returns null when
+// nothing substantial is found so the caller can fall back to the whole body.
+function extractMainContentHtml(html: string): string | null {
+  const candidates: string[] = [];
+  const patterns = [
+    /<article\b[^>]*>[\s\S]*?<\/article>/gi,
+    /<main\b[^>]*>[\s\S]*?<\/main>/gi,
+    /<[a-z0-9]+\b[^>]*\b(?:id|class)=["'][^"']*(?:article-?body|articlebody|article-?content|post-?content|entry-?content|story-?body|story-?content|content-?body|rich-?text|main-?content|c-article|news-detail)[^"']*["'][\s\S]*?<\/[a-z0-9]+>/gi,
+  ];
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) candidates.push(m[0]);
+  }
+  let best: string | null = null;
+  let bestLen = 0;
+  for (const c of candidates) {
+    const len = c.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
+    if (len > bestLen) { bestLen = len; best = c; }
+  }
+  return bestLen >= 400 ? best : null;
+}
+
 async function fetchArticleContent(url: string): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
   if (isLikelyNonEditorialUrl(url)) return null;
   try {
@@ -633,13 +678,10 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
     const publishedAt = extractPublishedDate(html, url);
 
     const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
-    let text = bodyMatch ? bodyMatch[0] : html;
+    const cleanedBody = stripPageChrome(bodyMatch ? bodyMatch[0] : html);
+    // Prefer the isolated main article; fall back to the chrome-stripped body.
+    let text = extractMainContentHtml(cleanedBody) || cleanedBody;
     text = text
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
-      .replace(/<header[\s\S]*?<\/header>/gi, " ")
-      .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
       // Preserve structure as lightweight Markdown BEFORE the generic tag
       // strip below collapses everything into one flat blob — otherwise
       // headings/bold/lists are indistinguishable from body text once the
@@ -3219,9 +3261,14 @@ Deno.serve(async (req: Request) => {
       case "list_review_articles": {
         const { limit, status } = body as { limit?: number; status?: string };
         const admin = getAdminClient();
+        // Only surface reviewable items from the active window (last 3 months)
+        // or undated ones; stale 2017/2018 articles must not clutter the queue.
+        const reviewCutoff = new Date();
+        reviewCutoff.setUTCMonth(reviewCutoff.getUTCMonth() - 3);
         let reviewQuery = admin.schema("signal_layer").from("articles")
           .select("id, title, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, source:sources(company, url, category)")
           .in("classification_status", ["uncertain", "error", "pending"])
+          .or(`published_at.is.null,published_at.gte.${reviewCutoff.toISOString()}`)
           .order("classified_at", { ascending: false, nullsFirst: false })
           .limit(limit || 20);
         if (status && ["uncertain", "error", "pending"].includes(status)) reviewQuery = reviewQuery.eq("classification_status", status);
