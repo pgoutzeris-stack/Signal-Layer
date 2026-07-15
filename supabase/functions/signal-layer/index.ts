@@ -1278,23 +1278,43 @@ function decodeArticleText(value: string): string {
 }
 
 function cleanArticleText(raw: string): string {
-  const boilerplate = /^(menu|menü|navigation|newsletter|jetzt anmelden|jetzt bewerben|mehr erfahren|zur startseite|kontakt|impressum|datenschutz|privacy|cookie|social media|facebook|instagram|linkedin|youtube|copyright|\(c\)|©|weitere artikel|mehr zum thema|lesen sie auch|related articles|sign up|subscribe|book tickets|apply now)$/i;
+  const boilerplate = /^(menu|menü|navigation|newsletter|jetzt anmelden|jetzt bewerben|mehr erfahren|zur startseite|kontakt|impressum|datenschutz|privacy|cookie|social media|facebook|instagram|linkedin|youtube|copyright|\(c\)|©|weitere artikel|mehr zum thema|lesen sie auch|related articles|sign up|subscribe|book tickets|apply now|anzeige|advertisement|werbung|zum inhalt springen|skip to content|nachrichten|startseite|home|teilen|share|drucken|print|newsletter abonnieren|cookies akzeptieren|mehr dazu|alle akzeptieren)$/i;
   const seen = new Set<string>();
-  return decodeArticleText(raw)
+  const out: string[] = [];
+  let lastBlank = true; // suppress a leading blank line
+  const lines = decodeArticleText(raw)
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, "\n")
-    .split(/\n+/)
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length > 2 && !boilerplate.test(line))
-    .filter((line) => {
-      const key = normalizeMatchText(line);
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .join("\n")
-    .slice(0, 45_000);
+    // Keep the paragraph/heading/list structure by splitting on single
+    // newlines instead of collapsing runs — blank lines become real
+    // paragraph separators so the reader (and formatArticleBody) can rebuild
+    // headings, lists and paragraphs instead of one undifferentiated block.
+    .split("\n");
+  for (const rawLine of lines) {
+    let line = rawLine.replace(/[ \t]+/g, " ").trim();
+    if (!line) { if (!lastBlank) { out.push(""); lastBlank = true; } continue; }
+    // Drop orphaned emphasis markers and empty heading/list markers left over
+    // from image-only or empty source elements.
+    line = line.replace(/\*\*\s*\*\*/g, "").replace(/(^|\s)\*{1,2}(\s|$)/g, "$1$2").replace(/\s+/g, " ").trim();
+    if (/^#{1,6}\s*$/.test(line) || line === "-") continue;
+    // A marker-only or single-glyph line (e.g. a stray "*", "-", "©") is noise.
+    if (line.replace(/[*#\-•·➟>\s]/g, "").length < 2) continue;
+    const isHeading = /^#{2,3}\s+/.test(line);
+    const isListItem = /^-\s+/.test(line);
+    const body = line.replace(/^#{2,3}\s+/, "").replace(/^-\s+/, "");
+    if (boilerplate.test(body)) continue;
+    const key = normalizeMatchText(body);
+    if (!key) continue;
+    // Dedup body text, but never let a real heading/list marker survive as a
+    // duplicate of earlier body text either.
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(line);
+    lastBlank = false;
+    void isHeading; void isListItem;
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 45_000);
 }
 
 function detectLanguage(text: string): "de" | "en" | "other" {
@@ -3438,7 +3458,7 @@ Deno.serve(async (req: Request) => {
         const cutoff = new Date();
         cutoff.setUTCMonth(cutoff.getUTCMonth() - 3);
         const { data: articles, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, url")
+          .select("id, url, content")
           .eq("classification_status", "reliable")
           .or("routing.cs.{marketing},routing.cs.{sales}")
           .not("published_at", "is", null)
@@ -3454,19 +3474,15 @@ Deno.serve(async (req: Request) => {
           const now = new Date().toISOString();
           try {
             const fetched = await fetchArticleContent(article.url);
-            if (fetched && (fetched.content || "").trim().length >= 80) {
-              const cleaned = cleanArticleText(fetched.content);
-              await admin.schema("signal_layer").from("articles").update({
-                content: fetched.content,
-                cleaned_content: cleaned,
-                content_reformatted_at: now,
-              }).eq("id", article.id);
-              updated += 1;
-            } else {
-              // Re-fetch failed or too thin (paywall / moved) — mark attempted
-              // so the batch loop terminates instead of retrying forever.
-              await admin.schema("signal_layer").from("articles").update({ content_reformatted_at: now }).eq("id", article.id);
-            }
+            const freshContent = fetched && (fetched.content || "").trim().length >= 80 ? fetched.content : null;
+            // Prefer a fresh re-fetch (also refreshes raw content), but always
+            // fall back to re-cleaning the already-stored content so paywalled
+            // or moved articles still gain proper paragraphs/headings.
+            const source = freshContent || (String(article.content || "").trim().length >= 80 ? String(article.content) : null);
+            const update: Record<string, unknown> = { content_reformatted_at: now };
+            if (freshContent) update.content = freshContent;
+            if (source) { update.cleaned_content = cleanArticleText(source); updated += 1; }
+            await admin.schema("signal_layer").from("articles").update(update).eq("id", article.id);
           } catch {
             await admin.schema("signal_layer").from("articles").update({ content_reformatted_at: new Date().toISOString() }).eq("id", article.id);
           }

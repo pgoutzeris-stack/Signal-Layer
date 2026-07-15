@@ -145,8 +145,12 @@ function formatArticleBody(html) {
     paraBuffer = [];
   };
   for (const rawLine of lines) {
-    const line = rawLine.trim();
+    let line = rawLine.trim();
     if (!line) { flushList(); flushPara(); continue; }
+    // Defensive cleanup for articles stored before the backend fix: drop
+    // orphaned emphasis markers and skip lines that are only markup glyphs.
+    line = line.replace(/\*\*\s*\*\*/g, "").replace(/(^|\s)\*{1,2}(\s|$)/g, "$1$2").replace(/\s+/g, " ").trim();
+    if (!line || /^[*#\-•·>\s]+$/.test(line)) { continue; }
     const headingMatch = line.match(/^#{2,3}\s+(.*)$/);
     if (headingMatch) { flushList(); flushPara(); blocks.push(`<h3>${headingMatch[1]}</h3>`); continue; }
     const listMatch = line.match(/^-\s+(.*)$/);
