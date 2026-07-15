@@ -1336,6 +1336,9 @@ function cleanArticleText(raw: string): string {
   for (const rawLine of lines) {
     let line = rawLine.replace(/[ \t]+/g, " ").trim();
     if (!line) { if (!lastBlank) { out.push(""); lastBlank = true; } continue; }
+    // Drop unrendered client-side templating that leaked into the HTML
+    // (e.g. "${content}", "${intro}", "{{title}}") — never real article text.
+    if (/^\s*(\$\{[^}]*\}|\{\{[^}]*\}\})\s*$/.test(line)) continue;
     // Drop orphaned emphasis markers and empty heading/list markers left over
     // from image-only or empty source elements.
     line = line.replace(/\*\*\s*\*\*/g, "").replace(/(^|\s)\*{1,2}(\s|$)/g, "$1$2").replace(/\s+/g, " ").trim();
@@ -3512,10 +3515,12 @@ Deno.serve(async (req: Request) => {
         const REFORMAT_BATCH = 5;
         const cutoff = new Date();
         cutoff.setUTCMonth(cutoff.getUTCMonth() - 3);
+        // Cover everything a user can actually open in the last 3 months:
+        // routed signals (reliable) AND the manual-review queue
+        // (uncertain/error/pending). All of them display full article text.
         const { data: articles, error } = await admin.schema("signal_layer").from("articles")
           .select("id, url, content")
-          .eq("classification_status", "reliable")
-          .or("routing.cs.{marketing},routing.cs.{sales}")
+          .in("classification_status", ["reliable", "uncertain", "error", "pending"])
           .not("published_at", "is", null)
           .gte("published_at", cutoff.toISOString())
           .is("content_reformatted_at", null)

@@ -1402,7 +1402,7 @@ async function openArticleDetail(articleId) {
   if (!articleId) return;
   els.articleDetailModal.classList.add("show");
   document.body.style.overflow = "hidden";
-  els.articleDetailContent.innerHTML = `<div class="detail-loading">Artikel wird geladen…</div>`;
+  els.articleDetailContent.innerHTML = LOADER_HTML;
   try {
     const { article } = await callApi("get_article_detail", { article_id: articleId });
     const source = Array.isArray(article.source) ? article.source[0] : article.source;
