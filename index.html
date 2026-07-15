@@ -108,37 +108,38 @@
   body.body-dashboard #app-container { display: flex; }
 
   .app-sidebar {
-    width: 72px;
+    width: 64px;
     background: var(--bg);
     border-right: 1px solid var(--line);
     display: flex;
     flex-direction: column;
-    padding: 1.2rem 14px;
+    padding: 1rem .75rem;
     overflow: hidden;
     white-space: nowrap;
     flex-shrink: 0;
     z-index: 30;
-    transition: width .22s cubic-bezier(.4, 0, .2, 1);
+    transition: width .22s ease, box-shadow .22s ease;
   }
-  .app-sidebar:hover { width: 236px; box-shadow: var(--shadow-dash); }
-  .sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; padding: 0 2px; }
+  .app-sidebar:hover, .app-sidebar:focus-within { width: 260px; box-shadow: 12px 0 28px rgba(15, 23, 42, .08); }
+  .sidebar-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 1.5rem; padding: .35rem .85rem; }
   .logo-mark {
-    width: 40px; height: 40px; border-radius: 10px; background: var(--brand);
+    width: 36px; height: 36px; border-radius: 10px; background: var(--brand);
     display: flex; align-items: center; justify-content: center; color: #fff;
-    font-size: 1.15rem; flex-shrink: 0;
+    font-size: 1rem; flex-shrink: 0;
   }
   .sidebar-spacer { flex: 1; }
-  .sidebar-nav { display: grid; gap: 6px; }
+  .sidebar-nav { display: grid; gap: 2px; }
   .sidebar-icon-btn {
-    width: 100%; height: 44px; border-radius: 10px; border: none; background: transparent;
-    color: var(--muted); display: flex; align-items: center; gap: 12px; justify-content: flex-start;
-    padding: 0 11px; cursor: pointer; font-family: inherit; transition: background .15s, color .15s;
+    width: 100%; border-radius: 10px; border: none; background: transparent;
+    color: var(--muted); display: flex; align-items: center; gap: 10px; justify-content: flex-start;
+    padding: .65rem .85rem; cursor: pointer; font-family: inherit; font-size: .92rem; font-weight: 500;
+    margin-bottom: 2px; transition: background .15s, color .15s;
   }
-  .sidebar-icon-btn i { flex: 0 0 22px; width: 22px; text-align: center; font-size: 1.25rem; }
-  .sidebar-icon-btn:hover { background: var(--surface); color: var(--ink); }
-  .sidebar-icon-btn.active { color: var(--brand); background: var(--brand-light); }
-  .sidebar-label { font-size: .92rem; font-weight: 500; opacity: 0; transition: opacity .18s; }
-  .app-sidebar:hover .sidebar-label { opacity: 1; }
+  .sidebar-icon-btn i { width: 18px; font-size: 1rem; text-align: center; flex-shrink: 0; }
+  .sidebar-icon-btn:hover { background: var(--brand-light); color: var(--brand); }
+  .sidebar-icon-btn.active { color: var(--brand); background: var(--brand-light); font-weight: 600; }
+  .sidebar-label { opacity: 0; transition: opacity .18s; }
+  .app-sidebar:hover .sidebar-label, .app-sidebar:focus-within .sidebar-label { opacity: 1; }
   .sidebar-brand .sidebar-label { font-weight: 700; color: var(--ink); font-size: 1rem; }
 
   main#main-content {
@@ -1407,7 +1408,7 @@
       <div class="login-title">ROOTS <span>Intranet</span></div>
       <p style="margin:0 0 1.25rem;color:var(--muted);font-size:.84rem;line-height:1.5;text-align:center">Bitte melde dich im ROOTS Intranet an und öffne Signal Layer dort erneut.</p>
       <a class="btn-primary" href="https://pgoutzeris-stack.github.io/ROOTS_Intranet/#signal-layer" style="width:100%;justify-content:center;text-decoration:none">
-        <i class="ri-arrow-right-line"></i> Zum ROOTS Intranet
+        <i class="fa-solid fa-arrow-right"></i> Zum ROOTS Intranet
       </a>
     </div>
   </div>
@@ -1472,7 +1473,7 @@
               </label>
               <div class="crawl-category-list" id="crawl-category-list"></div>
               <button type="button" class="btn-primary crawl-dropdown-confirm" id="btn-crawl-confirm">
-                <i class="ri-play-line"></i> Crawl starten
+                <i class="fa-solid fa-play"></i> Crawl starten
               </button>
             </div>
           </div>
@@ -1481,15 +1482,15 @@
         <section class="app-view show" id="view-dashboard">
           <div class="view-header"><div><h2>Dashboard</h2></div></div>
           <div class="overview-grid">
-            <article class="overview-card"><i class="ri-shield-check-line"></i><span>Zuverlässige Signale</span><b id="dashboard-reliable-count">–</b></article>
-            <article class="overview-card"><i class="ri-user-search-line"></i><span>Manuelle Prüfung</span><b id="dashboard-review-count">–</b></article>
-            <article class="overview-card overview-card--archive"><i class="ri-archive-line"></i><span>Archivierte Artikel</span><b id="dashboard-archive-count">–</b></article>
+            <article class="overview-card"><i class="fa-solid fa-shield-halved"></i><span>Zuverlässige Signale</span><b id="dashboard-reliable-count">–</b></article>
+            <article class="overview-card"><i class="fa-solid fa-user-check"></i><span>Manuelle Prüfung</span><b id="dashboard-review-count">–</b></article>
+            <article class="overview-card overview-card--archive"><i class="fa-solid fa-box-archive"></i><span>Archivierte Artikel</span><b id="dashboard-archive-count">–</b></article>
           </div>
         </section>
 
         <section class="app-view" id="view-results">
         <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
-          <span class="signal-toolbar-label"><i class="ri-equalizer-2-line"></i> Ansicht</span>
+          <span class="signal-toolbar-label"><i class="fa-solid fa-sliders"></i> Ansicht</span>
           <div class="signal-toolbar-controls">
             <select class="signal-toolbar-select" id="signal-article-type-filter" aria-label="Artikeltyp filtern">
               <option value="all">Alle Artikeltypen</option>
@@ -1507,25 +1508,25 @@
 
         <div class="track-grid">
           <div class="track-card">
-            <div class="track-card-header"><i class="ri-megaphone-line"></i> Marketing <span class="track-count" id="marketing-count">0</span></div>
+            <div class="track-card-header"><i class="fa-solid fa-bullhorn"></i> Marketing <span class="track-count" id="marketing-count">0</span></div>
             <div class="track-findings-list" id="findings-list-marketing">
               <div class="track-card-empty">Lädt…</div>
             </div>
           </div>
           <div class="track-card">
-            <div class="track-card-header"><i class="ri-line-chart-line"></i> Sales <span class="track-count" id="sales-count">0</span></div>
+            <div class="track-card-header"><i class="fa-solid fa-chart-line"></i> Sales <span class="track-count" id="sales-count">0</span></div>
             <div class="track-findings-list" id="findings-list-sales">
               <div class="track-card-empty">Lädt…</div>
             </div>
           </div>
         </div>
-        <section class="track-card results-review-section"><div class="track-card-header"><i class="ri-user-search-line"></i> Manuelle Prüfung <span class="track-count" id="review-count">0</span></div><div class="review-list" id="results-review-list"><div class="track-card-empty">Lädt…</div></div></section>
+        <section class="track-card results-review-section"><div class="track-card-header"><i class="fa-solid fa-user-check"></i> Manuelle Prüfung <span class="track-count" id="review-count">0</span></div><div class="review-list" id="results-review-list"><div class="track-card-empty">Lädt…</div></div></section>
         </section>
 
         <section class="app-view" id="view-archive">
           <div class="view-header"><div><h2>Archiv <span class="track-count" id="archive-count">0</span></h2></div></div>
           <nav class="signal-toolbar" aria-label="Archiv sortieren und filtern">
-            <span class="signal-toolbar-label"><i class="ri-equalizer-2-line"></i> Ansicht</span>
+            <span class="signal-toolbar-label"><i class="fa-solid fa-sliders"></i> Ansicht</span>
             <div class="signal-toolbar-controls">
               <select class="signal-toolbar-select" id="archive-article-type-filter" aria-label="Artikeltyp filtern"><option value="all">Alle Artikeltypen</option></select>
               <select class="signal-toolbar-select" id="archive-source-filter" aria-label="Quelle filtern"><option value="all">Alle Quellen</option></select>
@@ -1533,7 +1534,7 @@
             </div>
           </nav>
           <div class="archive-list" id="archive-list"><div class="track-card-empty">Archiv wird geladen…</div></div>
-          <button type="button" class="btn-secondary archive-load-more" id="archive-load-more" hidden><i class="ri-add-line"></i> Weitere Artikel laden</button>
+          <button type="button" class="btn-secondary archive-load-more" id="archive-load-more" hidden><i class="fa-solid fa-plus"></i> Weitere Artikel laden</button>
         </section>
 
       </div>
@@ -1546,19 +1547,19 @@
       <nav class="settings-nav" id="settings-nav">
         <div class="settings-nav-title">Einstellungen</div>
         <div class="settings-nav-item active" data-panel="apify">
-          <i class="ri-global-line"></i> Quellen
+          <i class="fa-solid fa-globe"></i> Quellen
         </div>
         <div class="settings-nav-item" data-panel="pipeline-overview">
-          <i class="ri-route-line"></i> Pipeline
+          <i class="fa-solid fa-route"></i> Pipeline
         </div>
         <div class="settings-nav-item" data-panel="manual-review">
-          <i class="ri-user-search-line"></i> Manuelle Prüfung
+          <i class="fa-solid fa-user-check"></i> Manuelle Prüfung
         </div>
         <div class="settings-nav-item" data-panel="operations">
-          <i class="ri-pulse-line"></i> Kosten &amp; Betrieb
+          <i class="fa-solid fa-wave-square"></i> Kosten &amp; Betrieb
         </div>
         <div class="settings-nav-item" data-panel="diagnostics">
-          <i class="ri-code-box-line"></i> Systemdiagnose
+          <i class="fa-solid fa-file-code"></i> Systemdiagnose
         </div>
       </nav>
 
@@ -1566,15 +1567,15 @@
         <div class="settings-header">
           <h2>Einstellungen</h2>
           <div class="toolbar-spacer"></div>
-          <button type="button" class="btn-secondary" id="btn-preview-pipeline" hidden><i class="ri-flask-line"></i> Auswirkungen prüfen</button>
-          <button type="button" class="btn-primary" id="btn-save-pipeline-header" hidden><i class="ri-save-line"></i> Speichern</button>
-          <button type="button" class="close-fs-btn" id="btn-settings-close"><i class="ri-close-line"></i></button>
+          <button type="button" class="btn-secondary" id="btn-preview-pipeline" hidden><i class="fa-solid fa-flask"></i> Auswirkungen prüfen</button>
+          <button type="button" class="btn-primary" id="btn-save-pipeline-header" hidden><i class="fa-solid fa-floppy-disk"></i> Speichern</button>
+          <button type="button" class="close-fs-btn" id="btn-settings-close"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
         <div class="settings-panel show" id="settings-panel-apify">
           <div class="source-toolbar">
             <div class="search-wrap">
-              <i class="ri-search-line"></i>
+              <i class="fa-solid fa-magnifying-glass"></i>
               <input type="text" class="search-bar" id="source-search" placeholder="Suchen…">
             </div>
             <select class="toolbar-select" id="source-category-filter">
@@ -1596,7 +1597,7 @@
             <div class="toolbar-spacer"></div>
             <span class="source-count" id="source-count"></span>
             <button type="button" class="btn-primary" id="btn-add-source">
-              <i class="ri-add-line"></i> URL hinzufügen
+              <i class="fa-solid fa-plus"></i> URL hinzufügen
             </button>
           </div>
 
@@ -1623,14 +1624,14 @@
               <div class="pipeline-flow" id="pipeline-studio" aria-label="High-Level-Pipeline"><div class="keyword-empty">Pipeline wird geladen…</div></div>
             </div>
             <button type="button" class="pipeline-result-strip" id="pipeline-result-strip" data-pipeline-open-stage="output">
-              <span class="pipeline-result-icon"><i class="ri-layout-grid-line"></i></span>
+              <span class="pipeline-result-icon"><i class="fa-solid fa-table-cells-large"></i></span>
               <span><strong>Was kommt am Ende heraus?</strong><small>Zuverlässige Kacheln, manuelle Prüfung, Ablehnungen, Fehler und Altbestand.</small></span>
               <span class="pipeline-result-statuses"><b>Zuverlässig</b><b>Prüfung</b><b>Abgelehnt</b></span>
-              <i class="ri-arrow-right-line"></i>
+              <i class="fa-solid fa-arrow-right"></i>
             </button>
-            <section class="pipeline-funnel" aria-label="Aktueller Artikelbestand"><div><span>Aktueller Bestand</span><p>Echte gespeicherte Statuszahlen, keine Simulation.</p></div><div id="pipeline-funnel-stats"><span class="pipeline-stats-loading"><i class="ri-loader-4-line ri-spin"></i> Bestandszahlen werden geladen</span></div></section>
+            <section class="pipeline-funnel" aria-label="Aktueller Artikelbestand"><div><span>Aktueller Bestand</span><p>Echte gespeicherte Statuszahlen, keine Simulation.</p></div><div id="pipeline-funnel-stats"><span class="pipeline-stats-loading"><i class="fa-solid fa-spinner fa-spin"></i> Bestandszahlen werden geladen</span></div></section>
             <div class="pipeline-impact" id="pipeline-impact-result" hidden></div>
-            <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><div><button type="button" class="btn-secondary" data-pipeline-preview><i class="ri-flask-line"></i> Auswirkungen prüfen</button><button class="btn-primary" id="btn-save-pipeline"><i class="ri-save-line"></i> Änderungen speichern</button></div></div>
+            <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><div><button type="button" class="btn-secondary" data-pipeline-preview><i class="fa-solid fa-flask"></i> Auswirkungen prüfen</button><button class="btn-primary" id="btn-save-pipeline"><i class="fa-solid fa-floppy-disk"></i> Änderungen speichern</button></div></div>
           </div>
           <section class="pipeline-drilldown" id="pipeline-drilldown" aria-modal="true" aria-label="Pipeline-Details" hidden></section>
         </div>
@@ -1665,7 +1666,7 @@
         <input class="modern-input" id="f-description" placeholder="Optional">
         <div class="modal-btns">
           <button type="button" class="btn-secondary" id="btn-add-source-cancel">Abbrechen</button>
-          <button type="submit" class="btn-primary"><i class="ri-add-line"></i> Hinzufügen</button>
+          <button type="submit" class="btn-primary"><i class="fa-solid fa-plus"></i> Hinzufügen</button>
         </div>
       </form>
     </div>
@@ -1682,7 +1683,7 @@
         <input class="modern-input" id="source-login-username" autocomplete="username">
         <label class="modern-label">Passwort</label>
         <input class="modern-input" type="password" id="source-login-password" autocomplete="current-password">
-        <div class="modal-btns"><button type="button" class="btn-secondary" id="btn-source-login-cancel">Abbrechen</button><button type="submit" class="btn-primary"><i class="ri-shield-keyhole-line"></i> Geschützt speichern</button></div>
+        <div class="modal-btns"><button type="button" class="btn-secondary" id="btn-source-login-cancel">Abbrechen</button><button type="submit" class="btn-primary"><i class="fa-solid fa-shield-halved"></i> Geschützt speichern</button></div>
       </form>
     </div>
   </div>
@@ -1717,7 +1718,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260715-0030';
+import { initApp } from './app.js?v=20260715-0130';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {
