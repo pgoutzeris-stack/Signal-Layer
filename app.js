@@ -1509,7 +1509,9 @@ async function openArticleDetail(articleId) {
     const reasons = article.rejection_reasons || [];
     const evidence = Object.entries(article.tag_evidence || {});
     const confidence = formatConfidence(article.relevance_confidence);
-    const fulltext = article.cleaned_content || article.content || article.excerpt || "Kein Artikeltext gespeichert.";
+    // Prefer the German translation for foreign-language articles.
+    const isTranslated = Boolean(article.content_de) && article.language && article.language !== "de";
+    const fulltext = (isTranslated ? article.content_de : null) || article.cleaned_content || article.content || article.excerpt || "Kein Artikeltext gespeichert.";
     const decisionExplanation = article.ai_rationale || reasons[0]
       || (status === "legacy" ? "Altbestand: Dieser Artikel wurde noch nicht durch die aktuelle Pipeline analysiert."
         : status === "pending" ? "Noch nicht analysiert: Der Artikel wartet auf die nächste Verarbeitung."
@@ -1528,6 +1530,7 @@ async function openArticleDetail(articleId) {
           ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> Originalquelle</a>` : ""}
         </div>
         ${article.ai_summary ? `<p class="article-detail-summary">${escapeText(article.ai_summary)}</p>` : ""}
+        ${isTranslated ? `<p class="article-translated-note"><i class="fa-solid fa-language"></i> Automatisch aus dem ${escapeHtml((article.language || "").toUpperCase())} übersetzt</p>` : ""}
         <div class="article-fulltext">${formatArticleBody(renderEvidenceLinkedText(fulltext, evidence))}</div>
       </main>
       <aside class="article-detail-aside">

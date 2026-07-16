@@ -371,6 +371,8 @@
   .article-original-title span { margin-right: 6px; color: var(--brand); font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
   .article-detail-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 1.4rem; }
   .article-detail-summary { margin: 0 0 1.4rem; padding: 1rem 1.1rem; border-radius: 11px; background: var(--brand-light); color: var(--status-text); line-height: 1.55; }
+  .article-translated-note { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 1rem; padding: 4px 10px; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: .68rem; font-weight: 600; }
+  .article-translated-note i { color: var(--brand); }
   .article-fulltext { font-size: .9rem; line-height: 1.7; color: var(--status-text); }
   .article-fulltext p { margin: 0 0 1rem; }
   .article-fulltext p:last-child { margin-bottom: 0; }
@@ -1755,7 +1757,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260715-0900';
+import { initApp } from './app.js?v=20260715-1130';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {

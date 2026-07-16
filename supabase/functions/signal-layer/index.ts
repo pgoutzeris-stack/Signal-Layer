@@ -1703,6 +1703,66 @@ async function callGeminiClassifier(
   return classification;
 }
 
+// Full-text translation of a non-German article body into German, preserving
+// the lightweight Markdown structure. Separate, plain-text Gemini call (no
+// response schema) so it stays cheap and is only ever run for foreign articles.
+async function translateArticleToGerman(
+  text: string,
+  telemetry: { articleId?: string; crawlRunId?: string } = {},
+): Promise<string | null> {
+  const source = (text || "").trim();
+  if (source.length < 40) return null;
+  const key = await getGeminiKey();
+  if (!key) return null;
+  const config = await getPipelineConfig();
+  const model = config.ai.primary_model;
+  const startedAt = Date.now();
+  const prompt = `Übersetze den folgenden Artikeltext vollständig, natürlich und fachlich präzise ins Deutsche. Behalte die Markdown-Struktur exakt bei: "## Überschrift" bleibt Überschrift, "- " bleibt Listenpunkt, Absätze (Leerzeilen) und **fett** bleiben erhalten. Übersetze ausschließlich — füge nichts hinzu, lasse nichts weg, keine Einleitung, keine Kommentare. Eigennamen, Marken und Zahlen unverändert lassen. Falls der Text bereits Deutsch ist, gib ihn unverändert zurück.\n\n<artikel>\n${source.slice(0, 7000)}\n</artikel>`;
+  try {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 4096, temperature: 0.2, thinkingConfig: { thinkingLevel: "minimal" } },
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) {
+      console.error(`Translation failed: ${response.status} ${(await response.text()).slice(0, 300)}`);
+      return null;
+    }
+    const payload = await response.json();
+    const usage = payload?.usageMetadata || {};
+    const inputTokens = Number(usage.promptTokenCount || 0);
+    const outputTokens = Number(usage.candidatesTokenCount || 0);
+    const thinkingTokens = Number(usage.thoughtsTokenCount || 0);
+    const rates: Record<string, { input: number; output: number }> = {
+      "gemini-3.5-flash": { input: 0.75, output: 4.5 }, "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
+      "gemini-3.1-pro-preview": { input: 2, output: 12 }, "gemini-3-flash-preview": { input: 0.5, output: 3 },
+    };
+    const rate = rates[model] || (model.includes("flash-lite") ? rates["gemini-3.1-flash-lite"] : rates["gemini-3-flash-preview"]);
+    const estimatedCost = (inputTokens * rate.input + (outputTokens + thinkingTokens) * rate.output) / 1_000_000;
+    await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+      article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
+      operation: "translation", model, status: "success", prompt_version: CLASSIFIER_PROMPT_VERSION,
+      input_tokens: inputTokens, output_tokens: outputTokens, thinking_tokens: thinkingTokens,
+      total_tokens: Number(usage.totalTokenCount || inputTokens + outputTokens + thinkingTokens),
+      estimated_cost_usd: estimatedCost, duration_ms: Date.now() - startedAt,
+    }).select().maybeSingle();
+    await recordArticleGeminiUsage(telemetry.articleId, {
+      inputTokens, outputTokens, thinkingTokens,
+      totalTokens: Number(usage.totalTokenCount || inputTokens + outputTokens + thinkingTokens), estimatedCostUsd: estimatedCost,
+    });
+    const out = payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("").trim();
+    return out && out.length >= 20 ? out.slice(0, 8000) : null;
+  } catch (error) {
+    console.error("Translation error:", error);
+    return null;
+  }
+}
+
 function selectCompanyCandidates(
   articleText: string,
   companies: Array<{ name: string; aliases: string[] }>,
@@ -2196,7 +2256,15 @@ async function tagArticle(
     ...(salesEligible ? [["routing:sales", classification.routing_decisions.sales.evidence]] : []),
   ]);
 
+  // Foreign-language articles get a full German translation of the body so the
+  // detail view reads in German (title + summary are already translated).
+  const finalLanguage = classification.language || language;
+  const contentDe = finalLanguage !== "de"
+    ? await translateArticleToGerman(cleanedContent, { articleId, crawlRunId: crawlRunId || undefined })
+    : null;
+
   await admin.schema("signal_layer").from("articles").update({
+    content_de: contentDe,
     cleaned_content: cleanedContent,
     article_type: classification.article_type,
     classification_status: classification.relevance_status,
@@ -3331,7 +3399,7 @@ Deno.serve(async (req: Request) => {
         if (!articleId) return errorResponse(origin, "article_id is required");
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, content, cleaned_content, excerpt, published_at, crawled_at, article_type, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
+          .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
           .eq("id", articleId).single();
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
         return corsResponse(origin, { article: data });
@@ -3531,7 +3599,7 @@ Deno.serve(async (req: Request) => {
         // routed signals (reliable) AND the manual-review queue
         // (uncertain/error/pending). All of them display full article text.
         const { data: articles, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, url, content")
+          .select("id, url, content, language, content_de")
           .in("classification_status", ["reliable", "uncertain", "error", "pending"])
           .not("published_at", "is", null)
           .gte("published_at", cutoff.toISOString())
@@ -3553,7 +3621,16 @@ Deno.serve(async (req: Request) => {
             const source = freshContent || (String(article.content || "").trim().length >= 80 ? String(article.content) : null);
             const update: Record<string, unknown> = { content_reformatted_at: now };
             if (freshContent) update.content = freshContent;
-            if (source) { update.cleaned_content = cleanArticleText(source); updated += 1; }
+            if (source) {
+              const cleaned = cleanArticleText(source);
+              update.cleaned_content = cleaned;
+              updated += 1;
+              // Backfill German full-text for foreign articles missing it.
+              if (article.language && article.language !== "de" && !article.content_de) {
+                const de = await translateArticleToGerman(cleaned, { articleId: article.id });
+                if (de) update.content_de = de;
+              }
+            }
             await admin.schema("signal_layer").from("articles").update(update).eq("id", article.id);
           } catch {
             await admin.schema("signal_layer").from("articles").update({ content_reformatted_at: new Date().toISOString() }).eq("id", article.id);
