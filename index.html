@@ -419,7 +419,7 @@
   .pipeline-flow i { display: block; margin-bottom: 1.2rem; color: var(--brand); font-size: 1.25rem; }
   .pipeline-flow h4 { margin: 0 0 .35rem; font-size: .82rem; }
   .pipeline-flow p { margin: 0; color: var(--muted); font-size: .68rem; line-height: 1.45; }
-  .pipeline-savebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 1rem; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .pipeline-savebar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 1rem; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: 0 -6px 18px rgba(15, 23, 42, .06); }
   .pipeline-savebar span { color: var(--muted); font-size: .72rem; }
   .pipeline-impact { margin-top: 1rem; padding: 1rem; border: 1px solid #f2cd5c; border-radius: 12px; background: #fffdf4; color: var(--status-text); font-size: .72rem; line-height: 1.5; }
   .pipeline-impact b { color: var(--brand); }
@@ -1359,6 +1359,12 @@
   }
   table.source-table tbody td { padding: .7rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
   table.source-table tbody tr.source-row--inactive { opacity: .45; }
+  .source-health[data-error-tip] { cursor: help; outline: none; }
+  .source-error-tip { position: fixed; z-index: 3000; max-width: 340px; padding: 11px 13px; border-radius: 11px; background: var(--ink); color: #fff; box-shadow: var(--shadow-lg); font-size: .72rem; line-height: 1.45; pointer-events: none; }
+  .source-error-tip-head { display: flex; align-items: center; gap: 6px; font-weight: 700; margin-bottom: 5px; }
+  .source-error-tip-head i { color: #ff9c9c; }
+  .source-error-tip-body { color: rgba(255, 255, 255, .88); }
+  .source-error-tip-raw { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(255, 255, 255, .16); color: rgba(255, 255, 255, .62); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .64rem; word-break: break-word; }
   .source-company { font-weight: 600; color: var(--ink); }
   .source-desc { font-size: .78rem; color: var(--muted); margin-top: 2px; max-width: 320px; }
   .source-url {
@@ -1758,7 +1764,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260715-1130';
+import { initApp } from './app.js?v=20260715-1500';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {

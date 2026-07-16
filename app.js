@@ -1603,7 +1603,10 @@ function formatUrlDisplay(urlStr) {
 
 function openSettings() {
   els.settingsModal.classList.add("show");
+  // `sources` may already be populated at app start (for the filter menus), so
+  // always render the table; only hit the network when we have nothing yet.
   if (sources.length === 0) void loadSources();
+  else { populateCategoryFilter(); renderSources(); }
 }
 function closeSettings() {
   if (pipelineDrilldownState.stageId && pipelineSettings) {
@@ -1707,6 +1710,58 @@ function getFilteredSorted() {
   return list;
 }
 
+// Turn a raw crawl error into a meaningful category label + plain explanation.
+function describeSourceError(raw) {
+  const e = String(raw || "").toLowerCase();
+  if (/\b403\b|forbidden/.test(e)) return { label: "Bot-Schutz (403)", explanation: "Die Quelle blockiert automatische Zugriffe (HTTP 403). Ein Standard-Crawl ist hier nicht möglich – meist braucht es einen echten Browser/Proxy." };
+  if (/\b404\b|not found/.test(e)) return { label: "Seite nicht gefunden", explanation: "Die hinterlegte URL liefert 404. Vermutlich hat sich der Pfad der Quelle geändert – URL prüfen und aktualisieren." };
+  if (/\b(429|rate ?limit|quota)\b/.test(e)) return { label: "Rate-Limit / Quota", explanation: "Die Quelle oder eine API hat wegen zu vieler Anfragen abgelehnt (429/Quota). Später erneut versuchen." };
+  if (/timeout|timed out|abort/.test(e)) return { label: "Zeitüberschreitung", explanation: "Die Quelle hat nicht rechtzeitig geantwortet (Timeout). Oft langsame Seiten oder eine stille Blockade." };
+  if (/certificate|ssl|tls/.test(e)) return { label: "Zertifikatsfehler", explanation: "Das TLS-/SSL-Zertifikat der Quelle ist ungültig oder passt nicht zur Domain." };
+  if (/redirect/.test(e)) return { label: "Weiterleitungs-Schleife", explanation: "Die Quelle leitet endlos weiter; der Inhalt konnte nicht geladen werden." };
+  if (/apify/.test(e)) return { label: "Apify-Fehler", explanation: "Der Apify-Crawler konnte die Quelle nicht verarbeiten (kein RSS/Sitemap, Actor-Problem o.ä.). Details unten." };
+  if (/\b(500|502|503|504)\b|server error|internal error/.test(e)) return { label: "Server-Fehler (5xx)", explanation: "Die Quelle liefert einen Serverfehler und ist momentan nicht erreichbar." };
+  return { label: "Crawl-Fehler", explanation: "Beim Laden dieser Quelle ist ein Fehler aufgetreten. Die technische Rohmeldung steht unten." };
+}
+
+let sourceErrorTipBound = false;
+function bindSourceErrorTooltip() {
+  if (sourceErrorTipBound) return;
+  sourceErrorTipBound = true;
+  const tip = document.createElement("div");
+  tip.className = "source-error-tip";
+  tip.hidden = true;
+  document.body.appendChild(tip);
+  const show = (el) => {
+    tip.innerHTML = `<div class="source-error-tip-head"><i class="fa-solid fa-triangle-exclamation"></i> ${escapeHtml(el.dataset.errorLabel || "Fehler")}</div>`
+      + `<div class="source-error-tip-body">${escapeHtml(el.dataset.errorExplain || "")}</div>`
+      + (el.dataset.errorRaw ? `<div class="source-error-tip-raw">${escapeHtml(el.dataset.errorRaw)}</div>` : "");
+    tip.hidden = false;
+    const r = el.getBoundingClientRect();
+    const t = tip.getBoundingClientRect();
+    let left = Math.min(r.left, window.innerWidth - t.width - 12);
+    let top = r.bottom + 8;
+    if (top + t.height > window.innerHeight - 12) top = r.top - t.height - 8;
+    tip.style.left = `${Math.max(12, left)}px`;
+    tip.style.top = `${Math.max(12, top)}px`;
+  };
+  const hide = () => { tip.hidden = true; };
+  document.addEventListener("mouseover", (event) => {
+    const el = event.target.closest("[data-error-tip]");
+    if (el) show(el);
+  });
+  document.addEventListener("mouseout", (event) => {
+    const el = event.target.closest("[data-error-tip]");
+    if (el && !el.contains(event.relatedTarget)) hide();
+  });
+  document.addEventListener("focusin", (event) => {
+    const el = event.target.closest("[data-error-tip]");
+    if (el) show(el);
+  });
+  document.addEventListener("focusout", hide);
+  window.addEventListener("scroll", hide, true);
+}
+
 function renderSources() {
   const list = getFilteredSorted();
   els.sourceCount.textContent = `${list.length} von ${sources.length}`;
@@ -1725,6 +1780,7 @@ function renderSources() {
       : `${storedArticles.toLocaleString("de-DE")} gespeichert`;
     const crawlHealthClass = s.last_attempted_at === null ? "quality-tag--pending"
       : storedArticles === 0 ? "quality-tag--error" : "quality-tag--reliable";
+    const errInfo = s.last_error ? describeSourceError(s.last_error) : null;
     return `
     <tr data-id="${s.id}" class="${s.active ? "" : "source-row--inactive"}">
       <td>
@@ -1733,10 +1789,12 @@ function renderSources() {
       </td>
       <td><a href="${escapeHtml(s.url)}" class="source-url" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
       <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}${loginRequired ? `<span class="source-login-badge ${loginConfigured ? "source-login-badge--configured" : ""}"><i class="fa-solid fa-lock"></i> Login nötig</span>` : ""}</td>
-      <td title="${escapeHtml(s.last_error || "")}">
-        <span class="quality-tag ${s.last_error ? "quality-tag--error" : crawlHealthClass}">
-          <i class="${s.last_error ? "fa-solid fa-triangle-exclamation" : storedArticles === 0 ? "fa-solid fa-magnifying-glass" : "fa-solid fa-check"}"></i>
-          ${s.last_error ? "Fehler" : crawlHealth}
+      <td>
+        <span class="source-health"${errInfo ? ` data-error-tip="1" data-error-label="${escapeHtml(errInfo.label)}" data-error-explain="${escapeHtml(errInfo.explanation)}" data-error-raw="${escapeHtml(s.last_error || "")}" tabindex="0"` : ""}>
+          <span class="quality-tag ${errInfo ? "quality-tag--error" : crawlHealthClass}">
+            <i class="${errInfo ? "fa-solid fa-triangle-exclamation" : storedArticles === 0 ? "fa-solid fa-magnifying-glass" : "fa-solid fa-check"}"></i>
+            ${errInfo ? escapeHtml(errInfo.label) : escapeHtml(crawlHealth)}
+          </span>
         </span>
       </td>
       <td>
@@ -2066,8 +2124,10 @@ function bindUi() {
         pipelineDrilldownState.editorOpen = false;
         renderPipelineStudio();
       }
-      els.btnSavePipelineHeader.hidden = !["pipeline-overview", "operations"].includes(panel);
-      els.btnPreviewPipeline.hidden = panel !== "pipeline-overview";
+      // Save/preview live in the pinned bottom savebar of each panel, not the
+      // header — keep the header actions hidden everywhere.
+      els.btnSavePipelineHeader.hidden = true;
+      els.btnPreviewPipeline.hidden = true;
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
       document.getElementById(`settings-panel-${panel}`)?.classList.add("show");
       if (panel !== "apify") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
@@ -2250,6 +2310,7 @@ export function initApp(client) {
     bindUi();
     mountResultsHeader();
     enhanceHeaderSelects();
+    bindSourceErrorTooltip();
   }
   void loadLastRun();
   void loadFindings("marketing");
