@@ -3281,8 +3281,13 @@ Deno.serve(async (req: Request) => {
       }
 
       case "list_archive_articles": {
-        const { limit, article_type: articleType, offset } = body as { limit?: number; article_type?: string; offset?: number };
-        if (articleType && !ARTICLE_TYPES.includes(articleType as typeof ARTICLE_TYPES[number])) {
+        const { limit, article_type: articleType, article_types: articleTypes, offset } = body as { limit?: number; article_type?: string; article_types?: string[]; offset?: number };
+        // Accept a single type (legacy) or an array (multi-select). Validate all.
+        const requestedTypes = [
+          ...(Array.isArray(articleTypes) ? articleTypes : []),
+          ...(articleType ? [articleType] : []),
+        ].filter((t, i, a) => t && a.indexOf(t) === i);
+        if (requestedTypes.some((t) => !ARTICLE_TYPES.includes(t as typeof ARTICLE_TYPES[number]))) {
           return errorResponse(origin, "invalid article_type");
         }
         const admin = getAdminClient();
@@ -3296,7 +3301,8 @@ Deno.serve(async (req: Request) => {
           .order("published_at", { ascending: false, nullsFirst: false })
           .range(safeOffset, safeOffset + safeLimit - 1);
         query = query.or(`classification_status.in.(legacy,pending,rejected,error),published_at.lt.${archiveCutoff.toISOString()}`);
-        if (articleType) query = query.eq("article_type", articleType);
+        if (requestedTypes.length === 1) query = query.eq("article_type", requestedTypes[0]);
+        else if (requestedTypes.length > 1) query = query.in("article_type", requestedTypes);
         const { data, error, count } = await query;
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { articles: data || [], total: count || 0 });

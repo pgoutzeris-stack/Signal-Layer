@@ -245,7 +245,7 @@
     border-radius: 10px; padding: .8rem 1.1rem; font-size: .85rem; color: var(--muted); margin-bottom: 1.5rem;
   }
 
-  .signal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 1rem; padding: .6rem; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 92%, var(--surface)); box-shadow: var(--shadow-dash); }
+  .signal-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 1rem; padding: .6rem; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 92%, var(--surface)); box-shadow: var(--shadow-dash); }
   .signal-toolbar-label { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-size: .78rem; font-weight: 700; white-space: nowrap; }
   .signal-toolbar-label i { color: var(--brand); }
   .signal-toolbar-controls { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
@@ -257,21 +257,24 @@
   .roots-select.open .roots-select-trigger i { transform: rotate(180deg); }
   .roots-select-menu { position: absolute; z-index: 70; top: calc(100% + 7px); right: 0; min-width: 100%; width: max-content; max-width: 260px; padding: 5px; border: 1px solid var(--line); border-radius: 13px; background: var(--bg); box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; transform: translateY(-4px) scale(.98); transform-origin: top right; transition: opacity .14s, transform .14s, visibility .14s; }
   .roots-select.open .roots-select-menu { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
-  .roots-select-option { width: 100%; min-height: 34px; padding: 7px 10px; border: 0; border-radius: 9px; background: transparent; color: var(--status-text); display: flex; align-items: center; justify-content: space-between; gap: 16px; font: inherit; font-size: .72rem; text-align: left; white-space: nowrap; cursor: pointer; }
+  .roots-select-option { width: 100%; min-height: 28px; padding: 5px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--status-text); display: flex; align-items: center; justify-content: space-between; gap: 12px; font: inherit; font-size: .68rem; text-align: left; white-space: nowrap; cursor: pointer; }
   .roots-select-option:hover { color: var(--ink); background: var(--surface); }
   .roots-select-option.selected { color: var(--brand-dark); background: var(--brand-light); font-weight: 700; }
-  .roots-select-option.selected::after { content: "✓"; color: var(--brand); font-size: .75rem; }
-  /* Wide fly-out grid menu for the many-option filters (source / article type) */
-  .roots-select-menu--grid { width: min(560px, 92vw); max-width: 92vw; padding: 8px; }
-  .roots-select-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; max-height: 340px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--brand) transparent; }
-  @media (min-width: 860px) { .roots-select-menu--grid { width: min(720px, 92vw); } .roots-select-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  .roots-select-grid .roots-select-option { justify-content: flex-start; white-space: normal; gap: 8px; line-height: 1.25; }
+  .roots-select-option.selected::after { content: "✓"; color: var(--brand); font-size: .7rem; }
+  /* Wide fly-out grid menu (source / article type) — spans the toolbar width */
+  .roots-select--grid { position: static; }
+  .roots-select--grid .roots-select-menu { left: 0; right: 0; width: auto; max-width: none; transform-origin: top center; }
+  .roots-select-menu--grid { padding: 7px; }
+  .roots-select-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; max-height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--brand) transparent; }
+  @media (min-width: 720px) { .roots-select-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1000px) { .roots-select-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .roots-select-grid .roots-select-option { justify-content: flex-start; white-space: normal; gap: 7px; line-height: 1.2; }
   .roots-select-grid .roots-select-option.selected::after { margin-left: auto; }
-  .roots-select-option--full { width: 100%; justify-content: flex-start; font-weight: 700; margin-bottom: 4px; }
-  .roots-select-subhead { padding: 9px 10px 5px; margin-top: 5px; border-top: 1px solid var(--line); font-size: .6rem; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  .roots-select-option--full { width: 100%; justify-content: flex-start; font-weight: 700; margin-bottom: 3px; }
+  .roots-select-subhead { padding: 7px 8px 4px; margin-top: 4px; border-top: 1px solid var(--line); font-size: .56rem; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
   .roots-select-option--empty { color: var(--muted); opacity: .65; cursor: default; }
   .roots-select-option--empty:hover { background: transparent; color: var(--muted); }
-  .roots-select-option--empty::before { content: "\f111"; font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: .4rem; color: var(--muted); opacity: .6; }
+  .roots-select-option--empty::before { content: "\f111"; font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: .36rem; color: var(--muted); opacity: .6; }
   .signal-toolbar > .crawl-trigger-wrap { margin-left: 2px; }
   .signal-toolbar > .crawl-trigger-wrap .status-pill { min-height: 34px; box-shadow: none; }
   @media (max-width: 720px) { .signal-toolbar { align-items: flex-start; flex-direction: column; } .signal-toolbar-controls { width: 100%; justify-content: flex-start; } .roots-select { flex: 1; min-width: 130px; } .signal-toolbar > .crawl-trigger-wrap { position: absolute; right: 2.1rem; top: 2rem; } }
@@ -1752,7 +1755,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260715-0700';
+import { initApp } from './app.js?v=20260715-0900';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {

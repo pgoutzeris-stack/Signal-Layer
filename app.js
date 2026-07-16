@@ -22,8 +22,26 @@ const state = {
   sort: "company_asc",
 };
 
-const signalViewState = { articleType: "all", source: "all", sort: "recommended" };
-const archiveViewState = { articleType: "all", source: "all", sort: "recommended" };
+// Filter selections are multi-select: empty array = "all". Sort stays single.
+const signalViewState = { articleTypes: [], sources: [], sort: "recommended" };
+const archiveViewState = { articleTypes: [], sources: [], sort: "recommended" };
+
+// Maps a filter <select> id to its persistent selection array (mutated in
+// place so closures never hold a stale reference).
+function filterSelectionFor(selectId) {
+  switch (selectId) {
+    case "signal-source-filter": return signalViewState.sources;
+    case "signal-article-type-filter": return signalViewState.articleTypes;
+    case "archive-source-filter": return archiveViewState.sources;
+    case "archive-article-type-filter": return archiveViewState.articleTypes;
+    default: return null;
+  }
+}
+
+function pruneSelection(arr, allowed) {
+  const ok = new Set(allowed);
+  for (let i = arr.length - 1; i >= 0; i -= 1) if (!ok.has(arr[i])) arr.splice(i, 1);
+}
 const findingsByTrack = { marketing: [], sales: [] };
 
 const els = {};
@@ -1043,31 +1061,29 @@ function emptySourceOptionsHtml(exclude) {
 }
 
 function refreshSignalSourceOptions() {
-  const selected = signalViewState.source;
   const sourceNames = [...new Set([...findingsByTrack.marketing, ...findingsByTrack.sales]
     .map(findingSourceName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "de"));
   els.signalSourceFilter.innerHTML = `<option value="all">Alle Quellen</option>${sourceNames
     .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")}${emptySourceOptionsHtml(sourceNames)}`;
-  els.signalSourceFilter.value = sourceNames.includes(selected) ? selected : "all";
-  signalViewState.source = els.signalSourceFilter.value;
+  pruneSelection(signalViewState.sources, sourceNames);
 }
 
 function refreshSignalArticleTypeOptions() {
-  const selected = signalViewState.articleType;
   const types = [...new Set([...findingsByTrack.marketing, ...findingsByTrack.sales]
     .map((finding) => finding.article?.article_type).filter(Boolean))]
     .sort((a, b) => (ARTICLE_TYPE_LABELS[a] || a).localeCompare(ARTICLE_TYPE_LABELS[b] || b, "de"));
   els.signalArticleTypeFilter.innerHTML = `<option value="all">Alle Artikeltypen</option>${types
     .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(ARTICLE_TYPE_LABELS[type] || type)}</option>`).join("")}`;
-  els.signalArticleTypeFilter.value = types.includes(selected) ? selected : "all";
-  signalViewState.articleType = els.signalArticleTypeFilter.value;
+  pruneSelection(signalViewState.articleTypes, types);
 }
 
 function visibleFindings(track) {
+  const typeSel = signalViewState.articleTypes;
+  const sourceSel = signalViewState.sources;
   const filtered = findingsByTrack[track].filter((finding) => {
     const article = finding.article || {};
-    const articleTypeMatches = signalViewState.articleType === "all" || article.article_type === signalViewState.articleType;
-    const sourceMatches = signalViewState.source === "all" || findingSourceName(finding) === signalViewState.source;
+    const articleTypeMatches = typeSel.length === 0 || typeSel.includes(article.article_type);
+    const sourceMatches = sourceSel.length === 0 || sourceSel.includes(findingSourceName(finding));
     return articleTypeMatches && sourceMatches;
   });
   return [...filtered].sort((a, b) => {
@@ -1172,28 +1188,25 @@ function archiveSourceName(article) {
 }
 
 function refreshArchiveSourceOptions() {
-  const selected = archiveViewState.source;
   const sourceNames = [...new Set(archiveArticles.map(archiveSourceName).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "de"));
   els.archiveSourceFilter.innerHTML = `<option value="all">Alle Quellen</option>${sourceNames
     .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")}${emptySourceOptionsHtml(sourceNames)}`;
-  els.archiveSourceFilter.value = sourceNames.includes(selected) ? selected : "all";
-  archiveViewState.source = els.archiveSourceFilter.value;
+  pruneSelection(archiveViewState.sources, sourceNames);
 }
 
 function refreshArchiveArticleTypeOptions() {
-  const selected = archiveViewState.articleType;
   const types = Object.keys(ARTICLE_TYPE_LABELS)
     .sort((a, b) => ARTICLE_TYPE_LABELS[a].localeCompare(ARTICLE_TYPE_LABELS[b], "de"));
   els.archiveArticleTypeFilter.innerHTML = `<option value="all">Alle Artikeltypen</option>${types
     .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(ARTICLE_TYPE_LABELS[type])}</option>`).join("")}`;
-  els.archiveArticleTypeFilter.value = types.includes(selected) ? selected : "all";
-  archiveViewState.articleType = els.archiveArticleTypeFilter.value;
+  pruneSelection(archiveViewState.articleTypes, types);
 }
 
 function visibleArchiveArticles() {
+  const sourceSel = archiveViewState.sources;
   const filtered = archiveArticles.filter((article) => {
-    const sourceMatches = archiveViewState.source === "all" || archiveSourceName(article) === archiveViewState.source;
+    const sourceMatches = sourceSel.length === 0 || sourceSel.includes(archiveSourceName(article));
     return sourceMatches;
   });
   return [...filtered].sort((a, b) => {
@@ -1214,7 +1227,7 @@ function renderArchive() {
   const articles = visibleArchiveArticles();
   els.archiveCount.textContent = archiveTotalCount.toLocaleString("de-DE");
   if (els.archiveSummary) {
-    const hasLocalFilter = archiveViewState.articleType !== "all" || archiveViewState.source !== "all";
+    const hasLocalFilter = archiveViewState.articleTypes.length > 0 || archiveViewState.sources.length > 0;
     els.archiveSummary.textContent = archiveTotalCount > archiveArticles.length
       ? `${articles.length.toLocaleString("de-DE")} sichtbar · ${archiveArticles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} geladen`
       : hasLocalFilter ? `${articles.length.toLocaleString("de-DE")} von ${archiveTotalCount.toLocaleString("de-DE")} sichtbar`
@@ -1242,9 +1255,9 @@ async function loadArchive(append = false) {
   if (!els.archiveList) return;
   if (!append) els.archiveList.innerHTML = LOADER_HTML;
   try {
-    const articleType = els.archiveArticleTypeFilter.value;
+    const types = archiveViewState.articleTypes;
     const offset = append ? archiveArticles.length : 0;
-    const { articles, total } = await callApi("list_archive_articles", { limit: 100, offset, article_type: articleType === "all" ? undefined : articleType });
+    const { articles, total } = await callApi("list_archive_articles", { limit: 100, offset, article_types: types.length ? types : undefined });
     archiveArticles = append ? [...archiveArticles, ...(articles || [])] : (articles || []);
     archiveTotalCount = Number(total || 0);
     refreshArchiveArticleTypeOptions();
@@ -1303,34 +1316,65 @@ function enhanceHeaderSelects() {
       wrapper.classList.remove("open");
       trigger.setAttribute("aria-expanded", "false");
     };
-    // Filters with many options (source / article type) get a wide grid
-    // fly-out; the sort dropdown stays a simple single column.
+    // Filters with many options (source / article type) get a wide, toolbar-
+    // width grid fly-out AND multi-select; the sort dropdown stays a simple
+    // single-select column.
     const isGrid = /source|article-type/.test(select.id);
+    const selection = isGrid ? filterSelectionFor(select.id) : null;
     menu.classList.toggle("roots-select-menu--grid", isGrid);
+    wrapper.classList.toggle("roots-select--grid", isGrid);
+
+    const summaryLabel = () => {
+      const values = selection || [];
+      const allText = [...select.options].find((o) => o.value === "all")?.textContent || "Alle";
+      if (values.length === 0) return allText;
+      if (values.length === 1) {
+        return [...select.options].find((o) => o.value === values[0])?.textContent || values[0];
+      }
+      const noun = /source/.test(select.id) ? "Quellen" : "Typen";
+      return `${values.length} ${noun}`;
+    };
+
     const makeOption = (option) => {
       const button = document.createElement("button");
       button.type = "button";
       const empty = option.dataset.empty === "1";
-      button.className = `roots-select-option${option.selected ? " selected" : ""}${empty ? " roots-select-option--empty" : ""}`;
+      const isAll = option.value === "all";
+      const active = isGrid
+        ? (isAll ? selection.length === 0 : selection.includes(option.value))
+        : option.selected;
+      button.className = `roots-select-option${active ? " selected" : ""}${empty ? " roots-select-option--empty" : ""}`;
       button.textContent = option.textContent;
       button.dataset.value = option.value;
       button.setAttribute("role", "option");
-      button.setAttribute("aria-selected", String(option.selected));
+      button.setAttribute("aria-selected", String(active));
       if (empty) {
         button.disabled = true;
         button.title = "In den Einstellungen konfiguriert und gecrawlt, aber (noch) keine Artikel vorhanden";
-      } else {
-        button.addEventListener("click", () => {
+        return button;
+      }
+      button.addEventListener("click", () => {
+        if (!isGrid) {
           select.value = option.value;
           select.dispatchEvent(new Event("change", { bubbles: true }));
           render();
           close();
-        });
-      }
+          return;
+        }
+        // Multi-select: "Alle" clears; others toggle. Menu stays open.
+        if (isAll) {
+          selection.length = 0;
+        } else {
+          const idx = selection.indexOf(option.value);
+          if (idx >= 0) selection.splice(idx, 1); else selection.push(option.value);
+        }
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        render();
+      });
       return button;
     };
     const render = () => {
-      label.textContent = select.selectedOptions[0]?.textContent || "Auswählen";
+      label.textContent = isGrid ? summaryLabel() : (select.selectedOptions[0]?.textContent || "Auswählen");
       const options = [...select.options];
       if (!isGrid) { menu.replaceChildren(...options.map(makeOption)); return; }
       menu.replaceChildren();
@@ -1954,12 +1998,12 @@ function bindUi() {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);
   });
+  // Article-type filter is server-side (full archive), so re-fetch on change.
+  // The multi-select toggles already updated archiveViewState.articleTypes.
   els.archiveArticleTypeFilter.addEventListener("change", () => {
-    archiveViewState.articleType = els.archiveArticleTypeFilter.value;
     void loadArchive();
   });
   const updateArchiveView = () => {
-    archiveViewState.source = els.archiveSourceFilter.value;
     archiveViewState.sort = els.archiveSort.value;
     renderArchive();
   };
@@ -1968,8 +2012,6 @@ function bindUi() {
   );
   els.archiveLoadMore.addEventListener("click", () => void loadArchive(true));
   const updateSignalView = () => {
-    signalViewState.articleType = els.signalArticleTypeFilter.value;
-    signalViewState.source = els.signalSourceFilter.value;
     signalViewState.sort = els.signalSort.value;
     renderFindings("marketing");
     renderFindings("sales");
