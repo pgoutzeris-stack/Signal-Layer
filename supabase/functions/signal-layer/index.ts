@@ -1345,6 +1345,12 @@ function cleanArticleText(raw: string): string {
     if (/^#{1,6}\s*$/.test(line) || line === "-") continue;
     // A marker-only or single-glyph line (e.g. a stray "*", "-", "©") is noise.
     if (line.replace(/[*#\-•·➟>\s]/g, "").length < 2) continue;
+    // Breadcrumb trails ("Home » News » ...", "Start › Presse › ...") are pure
+    // navigation; the real headline is captured separately.
+    if (/[»›]|›/.test(line) && line.length < 160 && (line.match(/[»›]/g) || []).length >= 1) continue;
+    // No-JS / outdated-browser interstitials and consent walls are not article
+    // text — they appear when the source needs JS the fetcher can't run.
+    if (/\b(browser is out of date|enable javascript|javascript aktivieren|bitte aktivieren sie javascript|to get the best experience|activez javascript)\b/i.test(line)) continue;
     const isHeading = /^#{2,3}\s+/.test(line);
     const isListItem = /^-\s+/.test(line);
     const body = line.replace(/^#{2,3}\s+/, "").replace(/^-\s+/, "");
