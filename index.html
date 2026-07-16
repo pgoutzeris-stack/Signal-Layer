@@ -276,13 +276,15 @@
   @media (max-width: 720px) { .track-grid { grid-template-columns: 1fr; } }
 
   /* Modern centered loading spinner (ROOTS blue) */
-  .roots-loader { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 180px; padding: 2.5rem 0; }
+  .roots-loader { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 180px; padding: 2.5rem 0; grid-column: 1 / -1; }
   .roots-loader::after {
     content: ""; width: 34px; height: 34px; border-radius: 50%;
     border: 3px solid var(--brand-light); border-top-color: var(--brand);
     animation: roots-spin .7s linear infinite;
   }
   @keyframes roots-spin { to { transform: rotate(360deg); } }
+  /* Center the spinner in the tall article-detail modal (fills its height). */
+  #article-detail-content > .roots-loader { min-height: 100%; }
 
   /* Filigree ROOTS-blue scrollbar for the scrollable list containers */
   .track-findings-list, .review-list, main#main-content {
