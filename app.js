@@ -1023,12 +1023,31 @@ function findingSourceName(finding) {
   return String(resolved?.company || "").trim();
 }
 
+// Sources configured in Settings that were crawled but hold no articles.
+// Shown greyed (informational) in the source filters so it's transparent
+// which active sources produced nothing. `exclude` drops names already listed
+// as sources that DO have articles in the current view.
+function crawledEmptySourceNames(exclude) {
+  const seen = new Set(exclude);
+  return sources
+    .filter((s) => s.active && s.last_crawled_at && Number(s.stored_article_count || 0) === 0)
+    .map((s) => s.company)
+    .filter((name) => name && !seen.has(name))
+    .sort((a, b) => a.localeCompare(b, "de"));
+}
+
+function emptySourceOptionsHtml(exclude) {
+  return crawledEmptySourceNames(exclude)
+    .map((name) => `<option value="__empty__${escapeHtml(name)}" disabled data-empty="1">${escapeHtml(name)}</option>`)
+    .join("");
+}
+
 function refreshSignalSourceOptions() {
   const selected = signalViewState.source;
   const sourceNames = [...new Set([...findingsByTrack.marketing, ...findingsByTrack.sales]
     .map(findingSourceName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "de"));
   els.signalSourceFilter.innerHTML = `<option value="all">Alle Quellen</option>${sourceNames
-    .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")}`;
+    .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")}${emptySourceOptionsHtml(sourceNames)}`;
   els.signalSourceFilter.value = sourceNames.includes(selected) ? selected : "all";
   signalViewState.source = els.signalSourceFilter.value;
 }
@@ -1157,7 +1176,7 @@ function refreshArchiveSourceOptions() {
   const sourceNames = [...new Set(archiveArticles.map(archiveSourceName).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "de"));
   els.archiveSourceFilter.innerHTML = `<option value="all">Alle Quellen</option>${sourceNames
-    .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")}`;
+    .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`).join("")}${emptySourceOptionsHtml(sourceNames)}`;
   els.archiveSourceFilter.value = sourceNames.includes(selected) ? selected : "all";
   archiveViewState.source = els.archiveSourceFilter.value;
 }
@@ -1284,24 +1303,60 @@ function enhanceHeaderSelects() {
       wrapper.classList.remove("open");
       trigger.setAttribute("aria-expanded", "false");
     };
-    const render = () => {
-      label.textContent = select.selectedOptions[0]?.textContent || "Auswählen";
-      menu.replaceChildren(...[...select.options].map((option) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `roots-select-option${option.selected ? " selected" : ""}`;
-        button.textContent = option.textContent;
-        button.dataset.value = option.value;
-        button.setAttribute("role", "option");
-        button.setAttribute("aria-selected", String(option.selected));
+    // Filters with many options (source / article type) get a wide grid
+    // fly-out; the sort dropdown stays a simple single column.
+    const isGrid = /source|article-type/.test(select.id);
+    menu.classList.toggle("roots-select-menu--grid", isGrid);
+    const makeOption = (option) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      const empty = option.dataset.empty === "1";
+      button.className = `roots-select-option${option.selected ? " selected" : ""}${empty ? " roots-select-option--empty" : ""}`;
+      button.textContent = option.textContent;
+      button.dataset.value = option.value;
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", String(option.selected));
+      if (empty) {
+        button.disabled = true;
+        button.title = "In den Einstellungen konfiguriert und gecrawlt, aber (noch) keine Artikel vorhanden";
+      } else {
         button.addEventListener("click", () => {
           select.value = option.value;
           select.dispatchEvent(new Event("change", { bubbles: true }));
           render();
           close();
         });
-        return button;
-      }));
+      }
+      return button;
+    };
+    const render = () => {
+      label.textContent = select.selectedOptions[0]?.textContent || "Auswählen";
+      const options = [...select.options];
+      if (!isGrid) { menu.replaceChildren(...options.map(makeOption)); return; }
+      menu.replaceChildren();
+      const allOption = options.find((option) => option.value === "all");
+      const selectable = options.filter((option) => option.value !== "all" && option.dataset.empty !== "1");
+      const emptyOptions = options.filter((option) => option.dataset.empty === "1");
+      if (allOption) {
+        const button = makeOption(allOption);
+        button.classList.add("roots-select-option--full");
+        menu.append(button);
+      }
+      if (selectable.length) {
+        const grid = document.createElement("div");
+        grid.className = "roots-select-grid";
+        grid.append(...selectable.map(makeOption));
+        menu.append(grid);
+      }
+      if (emptyOptions.length) {
+        const head = document.createElement("div");
+        head.className = "roots-select-subhead";
+        head.textContent = "Gecrawlt · noch keine Artikel";
+        const grid = document.createElement("div");
+        grid.className = "roots-select-grid";
+        grid.append(...emptyOptions.map(makeOption));
+        menu.append(head, grid);
+      }
     };
     trigger.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -2156,4 +2211,11 @@ export function initApp(client) {
   void loadFindings("sales");
   void loadReviewArticles();
   void loadDashboardSummary();
+  // Load the configured source list up front so the filter dropdowns can show
+  // crawled-but-empty sources; refresh the source filters once it arrives.
+  void callApi("list_sources").then(({ sources: data }) => {
+    sources = data || [];
+    refreshSignalSourceOptions();
+    refreshArchiveSourceOptions();
+  }).catch(() => { /* filters still work without the empty-source hints */ });
 }

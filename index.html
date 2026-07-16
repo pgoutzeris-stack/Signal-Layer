@@ -261,6 +261,17 @@
   .roots-select-option:hover { color: var(--ink); background: var(--surface); }
   .roots-select-option.selected { color: var(--brand-dark); background: var(--brand-light); font-weight: 700; }
   .roots-select-option.selected::after { content: "✓"; color: var(--brand); font-size: .75rem; }
+  /* Wide fly-out grid menu for the many-option filters (source / article type) */
+  .roots-select-menu--grid { width: min(560px, 92vw); max-width: 92vw; padding: 8px; }
+  .roots-select-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; max-height: 340px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--brand) transparent; }
+  @media (min-width: 860px) { .roots-select-menu--grid { width: min(720px, 92vw); } .roots-select-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .roots-select-grid .roots-select-option { justify-content: flex-start; white-space: normal; gap: 8px; line-height: 1.25; }
+  .roots-select-grid .roots-select-option.selected::after { margin-left: auto; }
+  .roots-select-option--full { width: 100%; justify-content: flex-start; font-weight: 700; margin-bottom: 4px; }
+  .roots-select-subhead { padding: 9px 10px 5px; margin-top: 5px; border-top: 1px solid var(--line); font-size: .6rem; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  .roots-select-option--empty { color: var(--muted); opacity: .65; cursor: default; }
+  .roots-select-option--empty:hover { background: transparent; color: var(--muted); }
+  .roots-select-option--empty::before { content: "\f111"; font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: .4rem; color: var(--muted); opacity: .6; }
   .signal-toolbar > .crawl-trigger-wrap { margin-left: 2px; }
   .signal-toolbar > .crawl-trigger-wrap .status-pill { min-height: 34px; box-shadow: none; }
   @media (max-width: 720px) { .signal-toolbar { align-items: flex-start; flex-direction: column; } .signal-toolbar-controls { width: 100%; justify-content: flex-start; } .roots-select { flex: 1; min-width: 130px; } .signal-toolbar > .crawl-trigger-wrap { position: absolute; right: 2.1rem; top: 2rem; } }
@@ -1741,7 +1752,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260715-0430';
+import { initApp } from './app.js?v=20260715-0700';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {
