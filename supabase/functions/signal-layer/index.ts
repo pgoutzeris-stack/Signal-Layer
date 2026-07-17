@@ -1934,27 +1934,54 @@ function passesEventPreClassificationGate(
     && (!policy.requireTopicSignal || hasTopicSignal || hasTier1PersonLink);
 }
 
-function buildClassifierPrompt(
+// Topics/territories text is DB-backed (signal_layer.topics/territories) so
+// label/description edits in Settings actually change what future
+// classifications see — cached like pipelineConfig to avoid a DB round-trip
+// per article. IDs stay fixed (schema enum unaffected); only the wording sent
+// to Gemini is dynamic. Falls back to the last-known static text if the DB
+// read fails or returns nothing, so classification never breaks on this.
+let taxonomyTextCache: { topics: string; territories: string; at: number } | null = null;
+const TAXONOMY_TEXT_CACHE_TTL = 60_000;
+const FALLBACK_TOPICS_TEXT = `- customer_insights: customer behavior, needs, trust, loyalty, experience or target groups
+- marketing_insights: brand strategy, positioning, campaigns, communication or media
+- fmcg_retail_signale: retail, assortment, private label, pricing, promotion, stores or category management
+- sub_branchen_insight: concrete development in a relevant FMCG, retail or consumer sub-sector
+- ki_performance: demonstrated AI, automation, analytics or measurable business/marketing impact`;
+const FALLBACK_TERRITORIES_TEXT = `- wachstumstreiber: growth, market entry, expansion, innovation or new revenue
+- markenaktivierung: campaign, activation, sponsorship, promotion or customer engagement
+- marke_im_wandel: rebranding, repositioning, portfolio or brand transformation
+- operational_excellence: efficiency, organization, process, restructuring or cost optimization
+- empowered_marketers: marketing operating model, capabilities, teams, leadership or technology enablement`;
+
+async function getTaxonomyText(): Promise<{ topics: string; territories: string }> {
+  const now = Date.now();
+  if (taxonomyTextCache && now - taxonomyTextCache.at < TAXONOMY_TEXT_CACHE_TTL) return taxonomyTextCache;
+  const admin = getAdminClient();
+  const [{ data: topics }, { data: territories }] = await Promise.all([
+    admin.schema("signal_layer").from("topics").select("id, description").eq("active", true),
+    admin.schema("signal_layer").from("territories").select("id, description").eq("active", true),
+  ]);
+  const topicsText = topics?.length ? topics.map((t) => `- ${t.id}: ${t.description}`).join("\n") : FALLBACK_TOPICS_TEXT;
+  const territoriesText = territories?.length ? territories.map((t) => `- ${t.id}: ${t.description}`).join("\n") : FALLBACK_TERRITORIES_TEXT;
+  const value = { topics: topicsText, territories: territoriesText, at: now };
+  taxonomyTextCache = value;
+  return value;
+}
+
+async function buildClassifierPrompt(
   title: string,
   cleanedContent: string,
   source: { company?: string; category?: string },
   companies: Array<{ name: string; aliases: string[] }>,
   config: PipelineConfig = DEFAULT_PIPELINE_CONFIG,
-): string {
+): Promise<string> {
   const modelContent = cleanedContent.slice(0, 12_000);
+  const taxonomyText = await getTaxonomyText();
   return `<taxonomy>
 Topics:
-- customer_insights: customer behavior, needs, trust, loyalty, experience or target groups
-- marketing_insights: brand strategy, positioning, campaigns, communication or media
-- fmcg_retail_signale: retail, assortment, private label, pricing, promotion, stores or category management
-- sub_branchen_insight: concrete development in a relevant FMCG, retail or consumer sub-sector
-- ki_performance: demonstrated AI, automation, analytics or measurable business/marketing impact
+${taxonomyText.topics}
 Territories:
-- wachstumstreiber: growth, market entry, expansion, innovation or new revenue
-- markenaktivierung: campaign, activation, sponsorship, promotion or customer engagement
-- marke_im_wandel: rebranding, repositioning, portfolio or brand transformation
-- operational_excellence: efficiency, organization, process, restructuring or cost optimization
-- empowered_marketers: marketing operating model, capabilities, teams, leadership or technology enablement
+${taxonomyText.territories}
 Article types:
 - editorial_news/commentary/interview/analysis/background_report: editorial formats
 - trend_report/market_report/study/survey/whitepaper/benchmark/forecast/case_study: evidence and research formats; use the most specific type instead of analysis
@@ -2276,7 +2303,7 @@ async function tagArticle(
   }
 
   const companyCandidates = selectCompanyCandidates(articleText, tier1Companies);
-  const prompt = buildClassifierPrompt(title, cleanedContent, source, companyCandidates, config);
+  const prompt = await buildClassifierPrompt(title, cleanedContent, source, companyCandidates, config);
   let primary: AiClassification;
   let classification: AiClassification;
   let reviewerModel: string | null = null;
@@ -2591,7 +2618,7 @@ Deno.serve(async (req: Request) => {
           });
         }
         const companyCandidates = selectCompanyCandidates(articleText, companies || []);
-        const prompt = buildClassifierPrompt(title, cleanedContent, {
+        const prompt = await buildClassifierPrompt(title, cleanedContent, {
           company: source_company, category: source_category,
         }, companyCandidates, config);
         const primary = validateClassification(

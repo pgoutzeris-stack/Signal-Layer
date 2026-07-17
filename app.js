@@ -361,8 +361,19 @@ function setConfigValue(path, value) {
   target[keys.at(-1)] = value;
 }
 
+async function syncRelevanceCardsFromTaxonomy() {
+  try {
+    const { items } = await callApi("list_taxonomy", { kind: "topics" });
+    items.forEach((item) => {
+      const card = RELEVANCE_CARDS.find((c) => c.id === item.id);
+      if (card) { card.title = item.label || card.title; card.description = item.description || card.description; }
+    });
+  } catch { /* Settings-editable text only — keep static defaults on failure */ }
+}
+
 async function loadPipelineSettings() {
   if (pipelineSettings) return;
+  await syncRelevanceCardsFromTaxonomy();
   const { settings } = await callApi("get_pipeline_settings");
   pipelineSettings = settings;
   pipelineBaselineConfig = structuredClone(settings.config);
