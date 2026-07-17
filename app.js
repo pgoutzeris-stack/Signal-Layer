@@ -315,7 +315,7 @@ const PIPELINE_FIELDS = {
   crawl: [
     ["crawl.freshness_days", "number", "Wie weit zurück suchen?", "Zeitraum beim ersten Lauf einer Quelle.", 1, 365],
     ["crawl.future_tolerance_hours", "number", "Toleranz bei Datumsfehlern", "Erlaubte Stunden bei falscher Zeitzone.", 0, 72],
-    ["crawl.default_max_depth", "number", "Link-Ebenen pro Quelle", "Wie tief Apify Links verfolgen darf.", 1, 4],
+    ["crawl.default_max_depth", "number", "Link-Ebenen pro Quelle", "Wie tief der native Crawler Links verfolgen darf.", 1, 4],
     ["crawl.default_max_pages", "number", "Seiten pro Quelle", "Maximale Seitenzahl je Lauf.", 1, 250],
     ["crawl.event_max_depth", "number", "Link-Ebenen bei Events", "Events werden bewusst flacher durchsucht.", 0, 3],
     ["crawl.event_max_pages", "number", "Seiten pro Eventquelle", "Begrenzt große Messe- und Eventseiten.", 1, 100],
@@ -553,7 +553,7 @@ function lockedRule(title, description) {
 }
 
 const PIPELINE_OVERVIEW_META = {
-  crawl: { label: "Quellen", summary: "RSS, Sitemap und Apify liefern neue Artikel.", hover: ["Quellen-URL begrenzt den Suchraum", "Apify filtert Links, Tiefe und Seitenzahl", "Supabase wiederholt URL- und Datumschecks"] },
+  crawl: { label: "Quellen", summary: "RSS, Sitemap und der native Crawler liefern neue Artikel.", hover: ["Quellen-URL begrenzt den Suchraum", "Der native Crawler folgt Links, Tiefe und Seitenzahl", "Supabase wiederholt URL- und Datumschecks"] },
   prefilter: { label: "Vorfilter", summary: "Inhaltsregeln stoppen Rauschen vor Gemini.", hover: ["Läuft nach dem Crawling in Supabase", "Prüft Text, Fachsignal und Artikeltyp", "Stoppt Duplikate und spart KI-Kosten"] },
   gemini: { label: "KI-Prüfung", summary: "Gemini bewertet Bedeutung, Themen und Belege.", hover: ["Versteht den inhaltlichen Zusammenhang", "Liefert Themen, Trigger und Textbelege", "Unsichere Fälle können ein Review erhalten"] },
   validation: { label: "Validierung", summary: "Der Server kontrolliert Evidenz und Sicherheit.", hover: ["Prüft Belege im Originaltext", "Kontrolliert alle Schwellenwerte", "Vergibt zuverlässig, unsicher oder abgelehnt"] },
@@ -649,14 +649,14 @@ function renderStageOverview(stage) {
     content = stageSection("So werden Artikel gefunden", "Die Reihenfolge spart Kosten und vermeidet unnötige Seiten.", `<div class="stage-card-grid stage-card-grid--4">
       ${stageCard("fa-solid fa-rss", "RSS", "Direkte Artikelliste, wenn die Quelle einen Feed anbietet.", "source", "Quelle", "RSS liefert meist Titel, URL und Veröffentlichungsdatum.")}
       ${stageCard("fa-solid fa-sitemap", "Sitemap", "Ergänzt Artikel-URLs, wenn kein passender Feed vorhanden ist.", "source", "Quelle", "Das Änderungsdatum einer Sitemap ist nicht automatisch das Artikeldatum.")}
-      ${stageCard("fa-solid fa-spider", "Apify", "Folgt Links nur innerhalb der erlaubten Domain und Grenzen.", "apify", "Apify", "Apify wird nur genutzt, wenn RSS und Sitemap nicht ausreichen.")}
+      ${stageCard("fa-solid fa-spider", "Nativer Crawler", "Folgt Links nur innerhalb der erlaubten Domain und Grenzen.", "apify", "Crawler", "Wird genutzt, wenn RSS und Sitemap nicht ausreichen.")}
       ${stageCard("fa-solid fa-shield-halved", "Sicherheitscheck", "Supabase prüft URL und Datum ein zweites Mal.", "server", "Supabase", "Die doppelte Prüfung verhindert ungeeignete oder veraltete Kandidaten.")}
     </div>`) + stageSection("Was wird früh ausgeschlossen?", "Diese Regeln greifen vor der inhaltlichen Bewertung.", `<div class="stage-card-grid stage-card-grid--4">
       ${stageCard("fa-solid fa-briefcase", "Keine Karriere", "Jobs, Bewerbung und Ausbildung werden nicht geöffnet.", "server", "URL-Regel")}
       ${stageCard("fa-solid fa-circle-question", "Keine Hilfe-Seiten", "FAQ, Login, Kontakt und Service werden übersprungen.", "server", "URL-Regel")}
       ${stageCard("fa-solid fa-calendar-xmark", "Keine alten Artikel", `Beim ersten Lauf gilt ein Rückblick von ${Number(getConfigValue("crawl.freshness_days"))} Tagen.`, "server", "Datumsregel")}
       ${stageCard("fa-solid fa-calendar-day", "Events bleiben klein", "Agenda, Tickets und Speakerlisten werden begrenzt.", "apify", "Crawl-Regel")}
-    </div>`, "Grenzen ändern") + stageSection("Welche Systeme arbeiten hier?", "", `<div class="stage-system-row">${stageSystem("source", "RSS / Sitemap")}${stageSystem("apify", "Apify bei Bedarf")}${stageSystem("server", "Supabase prüft nach")}</div>`);
+    </div>`, "Grenzen ändern") + stageSection("Welche Systeme arbeiten hier?", "", `<div class="stage-system-row">${stageSystem("source", "RSS / Sitemap")}${stageSystem("apify", "Nativer Crawler")}${stageSystem("server", "Supabase prüft nach")}</div>`);
   }
 
   if (stage.id === "prefilter") {
@@ -798,7 +798,7 @@ function renderPipelineStudio() {
   const stages = [
     {
       id: "crawl", number: "01", icon: "fa-solid fa-globe", title: "Quellen und Artikelkandidaten",
-      description: "RSS, Sitemap und Apify liefern URLs. Datum, Tiefe und Seitenzahl begrenzen den Suchraum.", owners: ["code", "server"], open: false,
+      description: "RSS, Sitemap und der native Crawler liefern URLs. Datum, Tiefe und Seitenzahl begrenzen den Suchraum.", owners: ["code", "server"], open: false,
       tabs: [
         { id: "flow", icon: "fa-solid fa-route", label: "So funktioniert es", content: `<div class="pipeline-layer-map" aria-label="Verantwortung von Quelle, Apify, Supabase und Vorfilter">
           <article><i class="fa-solid fa-link"></i><span>01 · Einstieg</span><b>Präzise Quellen-URL</b><small>News, Blog oder Presse begrenzt den Suchraum.</small></article>
@@ -1892,7 +1892,7 @@ function describeSourceError(raw) {
   if (/timeout|timed out|abort/.test(e)) return { label: "Zeitüberschreitung", explanation: "Die Quelle hat nicht rechtzeitig geantwortet (Timeout). Oft langsame Seiten oder eine stille Blockade." };
   if (/certificate|ssl|tls/.test(e)) return { label: "Zertifikatsfehler", explanation: "Das TLS-/SSL-Zertifikat der Quelle ist ungültig oder passt nicht zur Domain." };
   if (/redirect/.test(e)) return { label: "Weiterleitungs-Schleife", explanation: "Die Quelle leitet endlos weiter; der Inhalt konnte nicht geladen werden." };
-  if (/apify/.test(e)) return { label: "Apify-Fehler", explanation: "Der Apify-Crawler konnte die Quelle nicht verarbeiten (kein RSS/Sitemap, Actor-Problem o.ä.). Details unten." };
+  if (/paywall|abo|abonnement|subscription|premium/.test(e)) return { label: "Paywall erkannt", explanation: "Die Quelle liefert statt des Artikeltexts einen Bezahlschranken- oder Login-Hinweis." };
   if (/\b(500|502|503|504)\b|server error|internal error/.test(e)) return { label: "Server-Fehler (5xx)", explanation: "Die Quelle liefert einen Serverfehler und ist momentan nicht erreichbar." };
   return { label: "Crawl-Fehler", explanation: "Beim Laden dieser Quelle ist ein Fehler aufgetreten. Die technische Rohmeldung steht unten." };
 }
@@ -1947,6 +1947,7 @@ function renderSources() {
   els.sourceTableBody.innerHTML = list.map((s) => {
     const loginRequired = Boolean(s.crawl_config?.login_required);
     const loginConfigured = Boolean(s.crawl_config?.login_configured_at);
+    const paywallDetected = Boolean(s.crawl_config?.paywall_detected);
     const storedArticles = Number(s.stored_article_count || 0);
     const crawlHealth = s.last_attempted_at === null ? "Noch nie gecrawlt"
       : storedArticles === 0 ? "Keine Artikel gespeichert"
@@ -1968,6 +1969,7 @@ function renderSources() {
             <i class="${errInfo ? "fa-solid fa-triangle-exclamation" : storedArticles === 0 ? "fa-solid fa-magnifying-glass" : "fa-solid fa-check"}"></i>
             ${errInfo ? escapeHtml(errInfo.label) : escapeHtml(crawlHealth)}
           </span>
+          ${paywallDetected ? `<span class="quality-tag quality-tag--paywall" data-error-tip="1" data-error-label="Paywall erkannt" data-error-explain="Der direkte Abruf liefert keinen vollständigen Artikeltext. Betroffene Artikel werden nicht künstlich analysiert." data-error-raw="${escapeHtml(s.crawl_config?.paywall_evidence || "Paywall-/Login-Hinweis im Abruf")}" tabindex="0"><i class="fa-solid fa-lock"></i> Paywall</span>` : ""}
         </span>
       </td>
       <td>
@@ -2159,9 +2161,14 @@ async function loadLastRun() {
     const crawlResults = foundArticles > 0
       ? [{ value: foundArticles, label: "Artikel gefunden", tone: "success", icon: "fa-solid fa-newspaper" }]
       : [];
+    const paywallSources = Number(health?.paywall_sources || 0);
+    if (paywallSources) {
+      const names = (health?.paywall_source_names || []).join(" · ");
+      crawlResults.push({ value: paywallSources, label: "Quellen mit Paywall", tone: "warning", icon: "fa-solid fa-lock", detail: names });
+    }
     els.sourceHealthNote.hidden = crawlResults.length === 0;
     els.sourceHealthNote.innerHTML = crawlResults.map((result) =>
-      `<span class="crawl-result-pill crawl-result-pill--${result.tone}"><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
+      `<span class="crawl-result-pill crawl-result-pill--${result.tone}"${result.detail ? ` data-error-tip="1" data-error-label="Paywall-Quellen" data-error-explain="Diese Quellen blockieren den vollständigen Direktabruf. Der native Crawler bleibt aktiv; Artikel ohne Volltext werden nicht künstlich analysiert." data-error-raw="${escapeHtml(result.detail)}" tabindex="0"` : ""}><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
     ).join("");
     const isActive = setLiveStatus(last, backfill);
     const sourceCrawlActive = ["queued", "running"].includes(last?.status);

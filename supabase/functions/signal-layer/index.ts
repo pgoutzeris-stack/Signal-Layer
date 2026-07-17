@@ -207,7 +207,7 @@ async function getAvailableGeminiModels(force = false): Promise<GeminiModelOptio
 }
 
 // ===========================================================================
-// Crawl pipeline — RSS/sitemap first (cheap, reliable), Apify as fallback.
+// Crawl pipeline — RSS/sitemap first, then the native bounded HTTP crawler.
 // ===========================================================================
 
 interface CrawlCandidate {
@@ -433,9 +433,9 @@ function resolveUrl(maybeRelative: string, baseUrl: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Feed discovery — try RSS link tag / common paths, then sitemap, else Apify.
+// Feed discovery — try RSS link tag / common paths, then sitemap, else crawler.
 // ---------------------------------------------------------------------------
-async function discoverFeed(sourceUrl: string): Promise<{ type: "rss" | "sitemap" | "apify"; url: string | null }> {
+async function discoverFeed(sourceUrl: string): Promise<{ type: "rss" | "sitemap" | "crawler"; url: string | null }> {
   const origin = new URL(sourceUrl).origin;
 
   try {
@@ -473,7 +473,7 @@ async function discoverFeed(sourceUrl: string): Promise<{ type: "rss" | "sitemap
     }
   } catch { /* no sitemap */ }
 
-  return { type: "apify", url: null };
+  return { type: "crawler", url: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -840,6 +840,23 @@ function looksLikePaywallTeaser(content: string): boolean {
     && /\b(nutzungsrechte|lizenz|abonnent|abo|subscription|subscribe|premium|login|anmelden)\b/i.test(normalized));
 }
 
+async function recordSourcePaywallStatus(
+  source: { id: string; crawl_config?: Record<string, unknown> },
+  detected: boolean,
+  evidence = "",
+): Promise<void> {
+  const current = source.crawl_config || {};
+  if (Boolean(current.paywall_detected) === detected && (!detected || current.paywall_evidence === evidence)) return;
+  await getAdminClient().schema("signal_layer").from("sources").update({
+    crawl_config: {
+      ...current,
+      paywall_detected: detected,
+      paywall_detected_at: detected ? new Date().toISOString() : null,
+      paywall_evidence: detected ? evidence.slice(0, 220) : null,
+    },
+  }).eq("id", source.id);
+}
+
 // RSS and provider candidates often contain an editorial synopsis even when
 // the article page itself is paywalled. That synopsis is a valid, attributable
 // crawl fallback for classification; prefer it over login/paywall chrome.
@@ -938,8 +955,13 @@ async function fetchArticleForSource(
   const loginRequired = Boolean(source?.crawl_config?.login_required);
   const cookie = loginRequired && source ? await getOrRefreshLoginCookie(source).catch(() => null) : null;
   const direct = await fetchArticleContent(url, cookie);
-  if (!loginRequired || !source || !direct || !looksLikePaywallTeaser(direct.content)) return direct;
-  return await fetchAuthenticatedArticleViaApify(url, source) || direct;
+  if (source && direct) {
+    const paywall = looksLikePaywallTeaser(direct.content);
+    await recordSourcePaywallStatus(source, paywall, paywall ? direct.content.replace(/\s+/g, " ").slice(0, 220) : "").catch(() => {});
+  }
+  // Native authenticated requests are the final fetch stage. We deliberately
+  // do not hand credentials or URLs to an external browser-crawling service.
+  return direct;
 }
 
 async function fetchArticleContent(url: string, cookieHeader?: string | null): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
@@ -1026,6 +1048,9 @@ async function runFreeLinkCrawl(sourceUrl: string, policy: CrawlPolicy): Promise
     const res = await fetchWithTimeout(sourceUrl, { headers: browserHeaders });
     if (!res.ok) return { candidates: [], discoveredCount: 0, httpStatus: res.status, providerRunId: null, errorCode: `http_${res.status}`, errorMessage: `Homepage fetch failed: ${res.status}` };
     const html = await res.text();
+    if (looksLikePaywallTeaser(html)) {
+      return { candidates: [], discoveredCount: 0, httpStatus: res.status, providerRunId: null, errorCode: "paywall_detected", errorMessage: html.replace(/\s+/g, " ").slice(0, 220) };
+    }
     const hrefs = [...html.matchAll(/<a\b[^>]*\bhref=["']([^"'#]+)["']/gi)].map((m) => m[1]);
     const seen = new Set<string>();
     const links: string[] = [];
@@ -3640,23 +3665,18 @@ Deno.serve(async (req: Request) => {
           if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl);
           else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl);
           else {
-            // Free homepage-link crawl first (no cost, no proxy) — only pay
-            // for Apify when the free pass genuinely finds nothing (JS-only
-            // or bot-blocked site).
+            // Native bounded crawler is the only fallback after feeds. It
+            // never sends a source URL or credentials to an external crawler.
             const recoveryEntryUrl = String(source.crawl_config?.recommended_entry_url || source.url);
             const freeResult = await runFreeLinkCrawl(recoveryEntryUrl, crawlPolicy);
-            if (freeResult.candidates.length > 0) {
-              candidates = freeResult.candidates;
-              discoveredCount = freeResult.discoveredCount;
-              providerHttpStatus = freeResult.httpStatus;
-            } else {
-              const apifyResult = await runApifySourceCrawl(recoveryEntryUrl, crawlPolicy);
-              candidates = apifyResult.candidates;
-              discoveredCount = apifyResult.discoveredCount;
-              providerHttpStatus = apifyResult.httpStatus;
-              providerRunId = apifyResult.providerRunId;
-              if (apifyResult.errorCode) throw new Error(`Apify ${apifyResult.errorCode}: ${apifyResult.errorMessage || "unknown error"}`);
+            if (freeResult.errorCode === "paywall_detected") {
+              await recordSourcePaywallStatus(source, true, freeResult.errorMessage || "Paywall im Quellenabruf erkannt");
+            } else if (freeResult.candidates.length > 0) {
+              await recordSourcePaywallStatus(source, false);
             }
+            candidates = freeResult.candidates;
+            discoveredCount = freeResult.discoveredCount;
+            providerHttpStatus = freeResult.httpStatus;
           }
           if (!discoveredCount) discoveredCount = candidates.length;
           candidates = candidates
@@ -3671,7 +3691,7 @@ Deno.serve(async (req: Request) => {
           // every hop and silently skips candidates.
           const candidatePool = candidates.filter((c) => !isLikelyNonEditorialUrl(c.url));
           const freshCandidateCount = candidatePool.filter((c) => !knownUrls.has(c.url)).length;
-          const effectiveBatchSize = feedType === "apify" ? 3 : ARTICLE_BATCH_SIZE;
+          const effectiveBatchSize = ARTICLE_BATCH_SIZE;
           const batch = candidatePool
             .slice(candidate_offset, candidate_offset + effectiveBatchSize)
             .filter((c) => !knownUrls.has(c.url));
@@ -4074,7 +4094,7 @@ Deno.serve(async (req: Request) => {
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
-        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { data: analysisFailures }] = await Promise.all([
+        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { data: analysisFailures }, { data: sourceConfigs }] = await Promise.all([
           admin.schema("signal_layer").from("crawl_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("crawl_runs").select("id, finished_at, current_index, source_ids")
@@ -4095,6 +4115,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("articles")
             .select("rejection_reasons,source:sources(company)")
             .eq("classification_status", "error").order("classified_at", { ascending: false }).limit(2000),
+          admin.schema("signal_layer").from("sources").select("company,crawl_config").eq("active", true),
         ]);
         let backfillErrorCount = 0;
         let errorBreakdown: Array<{ code: string; label: string; explanation: string; count: number }> = [];
@@ -4155,6 +4176,9 @@ Deno.serve(async (req: Request) => {
           if (row.feed_type === "apify" && row.status === "error") summary.apify_errors += 1;
           return summary;
         }, { attempts: 0, successful: 0, empty: 0, errors: 0, candidates: 0, inserted: 0, apify_attempts: 0, apify_errors: 0 });
+        const paywallSources = (sourceConfigs || []).filter((source) => Boolean(source.crawl_config?.paywall_detected));
+        sourceHealth.paywall_sources = paywallSources.length;
+        sourceHealth.paywall_source_names = paywallSources.map((source) => source.company).slice(0, 12);
         let crawlWithProgress = crawl || null;
         if (crawl) {
           const sourceIds = Array.isArray(crawl.source_ids) ? crawl.source_ids as string[] : [];
