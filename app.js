@@ -1262,7 +1262,11 @@ function openExternalUrl(url) {
   if (!url || !/^(https?:\/\/|mailto:|tel:)/i.test(url)) return;
   if (document.documentElement.classList.contains("in-iframe")) {
     try {
-      window.parent.postMessage({ type: "roots-open-url", url }, "https://pgoutzeris-stack.github.io");
+      // The parent is github.io in a normal browser but a tauri:// or
+      // https://tauri.localhost origin in the desktop wrapper. A fixed target
+      // origin silently drops the message in Tauri. The parent still validates
+      // this iframe's github.io event.origin and validates the URL scheme.
+      window.parent.postMessage({ type: "roots-open-url", url }, "*");
       return;
     } catch (_) { /* fall through to direct open */ }
   }
