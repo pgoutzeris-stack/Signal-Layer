@@ -1022,7 +1022,8 @@ async function fetchArticleContent(url: string, cookieHeader?: string | null): P
 // sites still need Apify (tried next if this returns nothing).
 async function runFreeLinkCrawl(sourceUrl: string, policy: CrawlPolicy): Promise<CrawlProviderResult> {
   try {
-    const res = await fetchWithTimeout(sourceUrl);
+    const browserHeaders = { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36", Accept: "text/html,application/xhtml+xml", "Accept-Language": "de-DE,de;q=0.9,en;q=0.8" };
+    const res = await fetchWithTimeout(sourceUrl, { headers: browserHeaders });
     if (!res.ok) return { candidates: [], discoveredCount: 0, httpStatus: res.status, providerRunId: null, errorCode: `http_${res.status}`, errorMessage: `Homepage fetch failed: ${res.status}` };
     const html = await res.text();
     const hrefs = [...html.matchAll(/<a\b[^>]*\bhref=["']([^"'#]+)["']/gi)].map((m) => m[1]);
@@ -1036,7 +1037,40 @@ async function runFreeLinkCrawl(sourceUrl: string, policy: CrawlPolicy): Promise
       seen.add(abs);
       if (isAllowedBySourcePolicy(abs, policy) && !isLikelyNonEditorialUrl(abs)) links.push(abs);
     }
-    const candidates = links.slice(0, policy.maxCandidates).map((url) => ({ url, hasConfirmedPublishDate: false }));
+    const looksLikeDetail = (rawUrl: string) => {
+      try {
+        const parsed = new URL(rawUrl);
+        const parts = parsed.pathname.split("/").filter(Boolean);
+        const last = (parts.at(-1) || "").toLowerCase();
+        const generic = /^(news|newsroom|blog|presse|press|insights|artikel|articles|stories|meldungen|press-releases)$/i;
+        return !generic.test(last) && (parts.length >= 3 || last.length >= 16 || /\/20\d{2}\//.test(parsed.pathname)
+          || [...parsed.searchParams.keys()].some((key) => /^(id|nr|article|story|newsid)$/i.test(key)));
+      } catch { return false; }
+    };
+    const detailLinks = links.filter(looksLikeDetail);
+    // Many modern newsrooms expose category/listing links on the landing page
+    // and concrete article links only one level deeper. Follow a small bounded
+    // set with ordinary HTTP before spending anything on a browser crawler.
+    if (detailLinks.length < 5 && policy.maxDepth > 1) {
+      const listingLinks = links.filter((url) => !looksLikeDetail(url)).slice(0, Math.min(8, policy.maxPages));
+      for (const listingUrl of listingLinks) {
+        try {
+          const listingResponse = await fetchWithTimeout(listingUrl, { headers: browserHeaders });
+          if (!listingResponse.ok) continue;
+          const listingHtml = await listingResponse.text();
+          for (const match of listingHtml.matchAll(/<a\b[^>]*\bhref=["']([^"'#]+)["']/gi)) {
+            let absolute: string;
+            try { absolute = new URL(match[1], listingUrl).toString(); } catch { continue; }
+            if (new URL(absolute).hostname !== new URL(sourceUrl).hostname || seen.has(absolute)) continue;
+            seen.add(absolute);
+            if (isAllowedBySourcePolicy(absolute, policy) && looksLikeDetail(absolute)) detailLinks.push(absolute);
+          }
+          if (detailLinks.length >= policy.maxCandidates) break;
+        } catch { /* keep the fallback bounded and continue */ }
+      }
+    }
+    const selected = (detailLinks.length ? detailLinks : links).slice(0, policy.maxCandidates);
+    const candidates = selected.map((url) => ({ url, hasConfirmedPublishDate: false }));
     return { candidates, discoveredCount: hrefs.length, httpStatus: res.status, providerRunId: null, errorCode: null, errorMessage: null };
   } catch (error) {
     return { candidates: [], discoveredCount: 0, httpStatus: null, providerRunId: null, errorCode: "fetch_failed", errorMessage: error instanceof Error ? error.message : String(error) };
@@ -3609,13 +3643,14 @@ Deno.serve(async (req: Request) => {
             // Free homepage-link crawl first (no cost, no proxy) — only pay
             // for Apify when the free pass genuinely finds nothing (JS-only
             // or bot-blocked site).
-            const freeResult = await runFreeLinkCrawl(source.url, crawlPolicy);
+            const recoveryEntryUrl = String(source.crawl_config?.recommended_entry_url || source.url);
+            const freeResult = await runFreeLinkCrawl(recoveryEntryUrl, crawlPolicy);
             if (freeResult.candidates.length > 0) {
               candidates = freeResult.candidates;
               discoveredCount = freeResult.discoveredCount;
               providerHttpStatus = freeResult.httpStatus;
             } else {
-              const apifyResult = await runApifySourceCrawl(source.url, crawlPolicy);
+              const apifyResult = await runApifySourceCrawl(recoveryEntryUrl, crawlPolicy);
               candidates = apifyResult.candidates;
               discoveredCount = apifyResult.discoveredCount;
               providerHttpStatus = apifyResult.httpStatus;
