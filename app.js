@@ -1143,10 +1143,16 @@ function renderFindings(track) {
 
 const LOADER_HTML = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
 
-// Open an external URL from inside the tool. Inside the ROOTS Intranet iframe
-// (browser or native Tauri app) a plain <a> navigation is blocked / would
-// replace the tool, so we delegate to the parent's roots-open-url handler,
-// which opens the system browser. Standalone we fall back to a new tab.
+// Open an external URL. Three environments, three strategies:
+// 1. Embedded in the ROOTS Intranet iframe (browser or native Tauri app) - a
+//    plain <a>/window.open is blocked or would replace the tool, so we
+//    delegate to the parent's roots-open-url postMessage handler.
+// 2. Running as the native Tauri app's TOP-LEVEL window (not iframed - e.g.
+//    the macOS app opening Signal Layer directly instead of via the
+//    Intranet wrapper) - window.open() does nothing in a bare WKWebView, so
+//    invoke the Tauri opener plugin directly, with the same fallback chain
+//    the Intranet uses (plugin variants can differ by Tauri version/config).
+// 3. Plain browser tab/standalone - regular window.open.
 function openExternalUrl(url) {
   if (!url || !/^(https?:\/\/|mailto:|tel:)/i.test(url)) return;
   if (document.documentElement.classList.contains("in-iframe")) {
@@ -1154,6 +1160,15 @@ function openExternalUrl(url) {
       window.parent.postMessage({ type: "roots-open-url", url }, "https://pgoutzeris-stack.github.io");
       return;
     } catch (_) { /* fall through to direct open */ }
+  }
+  const T = window.__TAURI_INTERNALS__;
+  if (T && typeof T.invoke === "function") {
+    Promise.resolve()
+      .then(() => T.invoke("plugin:opener|open_url", { url }))
+      .catch(() => T.invoke("plugin:shell|open", { path: url }))
+      .catch(() => T.invoke("plugin:opener|open_url", { path: url }))
+      .catch(() => { try { window.open(url, "_blank", "noopener,noreferrer"); } catch (_) {} });
+    return;
   }
   window.open(url, "_blank", "noopener,noreferrer");
 }
