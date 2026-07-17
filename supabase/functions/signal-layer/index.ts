@@ -828,6 +828,104 @@ async function getOrRefreshLoginCookie(source: { id: string; url: string; crawl_
   return fresh;
 }
 
+function looksLikePaywallTeaser(content: string): boolean {
+  const normalized = normalizeMatchText(content);
+  return content.trim().length < 900
+    && /\b(nutzungsrechte|lizenz|abonnent|abo|subscription|subscribe|premium|login|anmelden)\b/i.test(normalized);
+}
+
+// Some publishers accept the same credentials in a human browser but reject
+// direct datacenter POSTs. For those login-required sources, use the already
+// configured Apify browser only after the cheap cookie fetch still returns a
+// recognisable paywall teaser. Credentials stay server-side and are never
+// returned, logged or stored in the article payload.
+async function fetchAuthenticatedArticleViaApify(
+  url: string,
+  source: { id: string; url: string },
+): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
+  let domain: string;
+  try { domain = new URL(source.url).hostname; } catch { return null; }
+  const handler = LOGIN_HANDLERS[domain];
+  if (!handler) return null;
+  const [creds, apifyKey] = await Promise.all([getVaultSourceLoginCreds(source.id), getApifyKey()]);
+  const recordDiagnostic = async (message: string | null) => {
+    await getAdminClient().schema("signal_layer").from("sources")
+      .update({ last_error: message ? `Authenticated fetch: ${message}`.slice(0, 900) : null })
+      .eq("id", source.id);
+  };
+  if (!creds || !apifyKey) {
+    await recordDiagnostic(!creds ? "missing source credentials" : "missing Apify API key");
+    return null;
+  }
+  const pageFunction = `async function pageFunction(context) {
+    const { request } = context;
+    const loginHtml = await fetch(${JSON.stringify(handler.loginUrl)}, { credentials: 'include' }).then((r) => r.text());
+    const loginDoc = new DOMParser().parseFromString(loginHtml, 'text/html');
+    const csrf = loginDoc.querySelector(${JSON.stringify(`[name="${handler.csrfFieldName || ""}"]`)})?.value || '';
+    const form = new URLSearchParams();
+    form.set(${JSON.stringify(handler.emailField)}, ${JSON.stringify(creds.username)});
+    form.set(${JSON.stringify(handler.passwordField)}, ${JSON.stringify(creds.password)});
+    ${handler.csrfFieldName ? `form.set(${JSON.stringify(handler.csrfFieldName)}, csrf);` : ""}
+    ${Object.entries(handler.extraFields || {}).map(([key, value]) => `form.set(${JSON.stringify(key)}, ${JSON.stringify(value)});`).join("\n    ")}
+    await fetch(${JSON.stringify(handler.loginUrl)}, {
+      method: 'POST', credentials: 'include', redirect: 'follow',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
+    });
+    const html = await fetch(request.url, { credentials: 'include', cache: 'no-store' }).then((r) => r.text());
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const title = doc.querySelector('meta[property="og:title"]')?.content || doc.querySelector('h1')?.textContent || doc.title || '';
+    const excerpt = doc.querySelector('meta[property="og:description"]')?.content || doc.querySelector('meta[name="description"]')?.content || '';
+    const publishedAt = doc.querySelector('meta[property="article:published_time"]')?.content || doc.querySelector('time[datetime]')?.getAttribute('datetime') || null;
+    const root = (doc.querySelector('article, main, [role="main"], .article-content, .article__content, .post-content, .entry-content, .content-body') || doc.body).cloneNode(true);
+      root.querySelectorAll('script,style,nav,header,footer,form,aside,noscript,svg').forEach((el) => el.remove());
+    return { title: title.trim(), excerpt: excerpt.trim(), content: (root.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 12000), publishedAt };
+  }`;
+  try {
+    const response = await fetchWithTimeout(
+      `https://api.apify.com/v2/acts/apify~web-scraper/run-sync-get-dataset-items?token=${apifyKey}&timeout=110`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        startUrls: [{ url }], pageFunction, injectJQuery: false, maxPagesPerCrawl: 1,
+        proxyConfiguration: { useApifyProxy: true },
+      }) },
+      115_000,
+    );
+    if (!response.ok) {
+      const message = (await response.text()).replace(/\s+/g, " ").slice(0, 500);
+      await recordDiagnostic(`Apify HTTP ${response.status}: ${message}`);
+      return null;
+    }
+    const items = await response.json().catch(() => []) as Array<{ title?: string; content?: string; excerpt?: string; publishedAt?: string | null }>;
+    const item = items[0];
+    if (!item?.content) {
+      await recordDiagnostic(`Apify returned no content (${items.length} items)`);
+      return null;
+    }
+    if (looksLikePaywallTeaser(item.content)) {
+      await recordDiagnostic(`browser login still returned a paywall teaser (${item.content.length} chars)`);
+      return null;
+    }
+    await recordDiagnostic(null);
+    return {
+      title: decodeArticleText(item.title || ""), content: decodeArticleText(item.content).slice(0, 8000),
+      excerpt: decodeArticleText(item.excerpt || ""), publishedAt: item.publishedAt || null,
+    };
+  } catch (error) {
+    console.error(`Authenticated browser fetch failed for ${domain}:`, error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+async function fetchArticleForSource(
+  url: string,
+  source?: { id: string; url: string; crawl_config?: Record<string, unknown> } | null,
+): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
+  const loginRequired = Boolean(source?.crawl_config?.login_required);
+  const cookie = loginRequired && source ? await getOrRefreshLoginCookie(source).catch(() => null) : null;
+  const direct = await fetchArticleContent(url, cookie);
+  if (!loginRequired || !source || !direct || !looksLikePaywallTeaser(direct.content)) return direct;
+  return await fetchAuthenticatedArticleViaApify(url, source) || direct;
+}
+
 async function fetchArticleContent(url: string, cookieHeader?: string | null): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
   if (isLikelyNonEditorialUrl(url)) return null;
   // Editorial sites intermittently return consent/interstitial pages or time
@@ -1608,7 +1706,7 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
       && !/\b(report|rückblick|results|ergebnisse|launch|kampagne|strategy|strategie)\b/i.test(title)) {
     reasons.push("Event-, Teilnehmer- oder Programmseite ohne strategisches Signal");
   }
-  const contentUnavailable = text.trim().length < config.filters.minimum_text_length;
+  const contentUnavailable = text.trim().length < config.filters.minimum_text_length || looksLikePaywallTeaser(text);
   if (contentUnavailable) reasons.push("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
   const titleYear = title.match(/\b(20\d{2})\b/)?.[1];
   if (titleYear && Number(titleYear) <= new Date().getUTCFullYear() - 2
@@ -3336,14 +3434,14 @@ Deno.serve(async (req: Request) => {
         try {
           const source = Array.isArray(article?.source) ? article.source[0] : article?.source;
           let analysisContent = String(article.content || "");
-          if (analysisContent.trim().length < 400 && article.url) {
-            let loginCookie: string | null = null;
+          if ((analysisContent.trim().length < 400 || looksLikePaywallTeaser(analysisContent)) && article.url) {
+            let sourceWithAuth: { id: string; url: string; crawl_config?: Record<string, unknown> } | null = null;
             if (article.source_id) {
               const { data: src } = await admin.schema("signal_layer").from("sources")
                 .select("id, url, crawl_config").eq("id", article.source_id).maybeSingle();
-              if (src?.crawl_config?.login_required) loginCookie = await getOrRefreshLoginCookie(src).catch(() => null);
+              sourceWithAuth = src || null;
             }
-            const retried = await fetchArticleContent(article.url, loginCookie);
+            const retried = await fetchArticleForSource(article.url, sourceWithAuth);
             if ((retried?.content || "").length > analysisContent.length) {
               analysisContent = retried!.content;
               await admin.schema("signal_layer").from("articles").update({ content: analysisContent }).eq("id", article.id);
@@ -3504,13 +3602,11 @@ Deno.serve(async (req: Request) => {
             .filter((c) => !knownUrls.has(c.url));
           let insertedCount = 0;
           const rejected: Record<string, number> = {};
-          const loginCookie = source.crawl_config?.login_required
-            ? await getOrRefreshLoginCookie(source).catch(() => null)
-            : null;
-
           for (const candidate of batch) {
             const suppliedContent = String(candidate.content || "").trim();
-            const pageContent = suppliedContent.length < 800 ? await fetchArticleContent(candidate.url, loginCookie) : null;
+            const pageContent = suppliedContent.length < 800 || looksLikePaywallTeaser(suppliedContent)
+              ? await fetchArticleForSource(candidate.url, source)
+              : null;
             const fetched = pageContent && pageContent.content.length > suppliedContent.length
               ? pageContent
               : suppliedContent.length >= 240 ? {
@@ -4092,13 +4188,13 @@ Deno.serve(async (req: Request) => {
         for (const article of articles) {
           const now = new Date().toISOString();
           try {
-            let loginCookie: string | null = null;
+            let sourceWithAuth: { id: string; url: string; crawl_config?: Record<string, unknown> } | null = null;
             if (article.source_id) {
               const { data: src } = await admin.schema("signal_layer").from("sources")
                 .select("id, url, crawl_config").eq("id", article.source_id).maybeSingle();
-              if (src?.crawl_config?.login_required) loginCookie = await getOrRefreshLoginCookie(src).catch(() => null);
+              sourceWithAuth = src || null;
             }
-            const fetched = await fetchArticleContent(article.url, loginCookie);
+            const fetched = await fetchArticleForSource(article.url, sourceWithAuth);
             const freshContent = fetched && (fetched.content || "").trim().length >= 80 ? fetched.content : null;
             // Prefer a fresh re-fetch (also refreshes raw content), but always
             // fall back to re-cleaning the already-stored content so paywalled
