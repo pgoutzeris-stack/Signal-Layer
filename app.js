@@ -2141,7 +2141,15 @@ async function loadLastRun() {
       : `${Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     els.geminiCostMonth.textContent = formatEur(costs?.month_eur);
     els.geminiCostToday.textContent = formatEur(costs?.today_eur);
-    els.geminiRequestCount.textContent = Number(costs?.requests || 0).toLocaleString("de-DE");
+    const crawlForecast = costs?.crawl_forecast;
+    els.geminiRequestCount.textContent = crawlForecast?.crawl_run_id ? formatEur(crawlForecast.projected_eur) : "–";
+    const crawlForecastStat = document.getElementById("crawl-cost-forecast-stat");
+    if (crawlForecastStat) {
+      const models = [crawlForecast?.primary_model, crawlForecast?.review_model].filter(Boolean).join(" + ");
+      crawlForecastStat.title = crawlForecast?.crawl_run_id
+        ? `${models} · ${Number(crawlForecast.analyzed_articles || 0).toLocaleString("de-DE")} analysiert · ${Number(crawlForecast.remaining_articles || 0).toLocaleString("de-DE")} offen · Tracking ${Number(crawlForecast.tracking_coverage_percent || 0).toLocaleString("de-DE")} %`
+        : "Kein Crawl aktiv";
+    }
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
     els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
     const forecast = costs?.forecast;

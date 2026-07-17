@@ -167,7 +167,7 @@ async function recordArticleGeminiUsage(
     p_cost_usd: usage.estimatedCostUsd,
     p_usd_eur_rate: usdEurRate,
   });
-  if (error) console.error("Could not persist Gemini usage on article", error);
+  if (error) throw new Error(`Could not persist Gemini usage on article: ${error.message}`);
 }
 
 async function getAvailableGeminiModels(force = false): Promise<GeminiModelOption[]> {
@@ -2054,12 +2054,13 @@ async function callGeminiClassifier(
     const errorCode = /spending cap/i.test(lastError) ? "spending_cap"
       : status === 429 || /quota|rate limit/i.test(lastError) ? "rate_limit"
       : /timeout|timed out|abort/i.test(lastError) ? "timeout" : `http_${status || "network"}`;
-    await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+    const { error: failedUsageEventError } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
       operation, model, status: "error", prompt_version: CLASSIFIER_PROMPT_VERSION,
       attempt: attemptsUsed,
       duration_ms: Date.now() - startedAt, error_code: errorCode, error_message: lastError.slice(0, 1000),
     });
+    if (failedUsageEventError) throw new Error(`Could not persist failed Gemini usage event: ${failedUsageEventError.message}`);
     throw new Error(`Gemini ${model} failed: ${status} ${lastError}`);
   }
   const payload = await response.json();
@@ -2096,22 +2097,24 @@ async function callGeminiClassifier(
     classification = JSON.parse(text) as AiClassification;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+    const { error: invalidUsageError } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
       operation, model, status: "error", attempt: attemptsUsed, prompt_version: CLASSIFIER_PROMPT_VERSION,
       input_tokens: inputTokens, output_tokens: outputTokens, thinking_tokens: thinkingTokens,
       total_tokens: totalTokens, estimated_cost_usd: estimatedCost, duration_ms: Date.now() - startedAt,
       error_code: "invalid_response", error_message: message.slice(0, 1000),
     });
+    if (invalidUsageError) throw new Error(`Could not persist invalid Gemini response usage: ${invalidUsageError.message}`);
     await recordArticleGeminiUsage(telemetry.articleId, articleUsage);
     throw new Error(`Gemini ${model} returned no valid classification`);
   }
-  await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+  const { error: usageEventError } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
     article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
     operation, model, status: "success", attempt: attemptsUsed, prompt_version: CLASSIFIER_PROMPT_VERSION,
     input_tokens: inputTokens, output_tokens: outputTokens, thinking_tokens: thinkingTokens,
     total_tokens: totalTokens, estimated_cost_usd: estimatedCost, duration_ms: Date.now() - startedAt,
   });
+  if (usageEventError) throw new Error(`Could not persist Gemini usage event: ${usageEventError.message}`);
   await recordArticleGeminiUsage(telemetry.articleId, articleUsage);
   return classification;
 }
@@ -2135,12 +2138,13 @@ const ROOTS_OFFERINGS: Array<{ id: string; pillar: string; label: string; descri
 async function matchRootsOffering(
   challenge: string,
   triggerEvidence: string,
-  telemetry: { articleId?: string } = {},
+  telemetry: { articleId?: string; crawlRunId?: string } = {},
 ): Promise<{ id: string; label: string; reasoning: string } | null> {
   if (!challenge?.trim()) return null;
   const key = await getGeminiKey();
   if (!key) return null;
   const config = await getPipelineConfig();
+  const startedAt = Date.now();
   const { data: dbOfferings } = await getAdminClient().schema("signal_layer").from("roots_offerings")
     .select("id, pillar, label, description, sort_order").eq("active", true)
     .order("pillar").order("sort_order").order("label");
@@ -2167,10 +2171,23 @@ async function matchRootsOffering(
     if (!response.ok) return null;
     const payload = await response.json();
     const usage = payload?.usageMetadata || {};
+    const inputTokens = Number(usage.promptTokenCount || 0);
+    const outputTokens = Number(usage.candidatesTokenCount || 0);
+    const thinkingTokens = Number(usage.thoughtsTokenCount || 0);
+    const totalTokens = Number(usage.totalTokenCount || inputTokens + outputTokens + thinkingTokens);
+    const model = config.ai.primary_model;
+    const inputRate = model === "gemini-2.5-flash-lite" ? 0.1 : model.includes("flash-lite") ? 0.25 : 0.5;
+    const outputRate = model === "gemini-2.5-flash-lite" ? 0.4 : model.includes("flash-lite") ? 1.5 : 3;
+    const estimatedCostUsd = (inputTokens * inputRate + (outputTokens + thinkingTokens) * outputRate) / 1_000_000;
+    const { error: offeringUsageError } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+      article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
+      operation: "offering_match", model, status: "success", prompt_version: CLASSIFIER_PROMPT_VERSION,
+      input_tokens: inputTokens, output_tokens: outputTokens, thinking_tokens: thinkingTokens,
+      total_tokens: totalTokens, estimated_cost_usd: estimatedCostUsd, duration_ms: Date.now() - startedAt,
+    });
+    if (offeringUsageError) throw new Error(`Could not persist offering-match usage: ${offeringUsageError.message}`);
     await recordArticleGeminiUsage(telemetry.articleId, {
-      inputTokens: Number(usage.promptTokenCount || 0), outputTokens: Number(usage.candidatesTokenCount || 0),
-      thinkingTokens: Number(usage.thoughtsTokenCount || 0),
-      totalTokens: Number(usage.totalTokenCount || 0), estimatedCostUsd: 0,
+      inputTokens, outputTokens, thinkingTokens, totalTokens, estimatedCostUsd,
     });
     const text = payload?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("");
     const parsed = JSON.parse(text || "{}");
@@ -2224,13 +2241,14 @@ async function translateArticleToGerman(
     };
     const rate = rates[model] || (model.includes("flash-lite") ? rates["gemini-2.5-flash-lite"] : rates["gemini-3-flash-preview"]);
     const estimatedCost = (inputTokens * rate.input + (outputTokens + thinkingTokens) * rate.output) / 1_000_000;
-    await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+    const { error: translationUsageError } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
       operation: "translation", model, status: "success", prompt_version: CLASSIFIER_PROMPT_VERSION,
       input_tokens: inputTokens, output_tokens: outputTokens, thinking_tokens: thinkingTokens,
       total_tokens: Number(usage.totalTokenCount || inputTokens + outputTokens + thinkingTokens),
       estimated_cost_usd: estimatedCost, duration_ms: Date.now() - startedAt,
-    }).select().maybeSingle();
+    });
+    if (translationUsageError) throw new Error(`Could not persist translation usage: ${translationUsageError.message}`);
     await recordArticleGeminiUsage(telemetry.articleId, {
       inputTokens, outputTokens, thinkingTokens,
       totalTokens: Number(usage.totalTokenCount || inputTokens + outputTokens + thinkingTokens), estimatedCostUsd: estimatedCost,
@@ -2754,7 +2772,7 @@ async function tagArticle(
     ? await matchRootsOffering(
         classification.sales_use.company_challenge,
         classification.sales_use.evidence || classification.routing_decisions.sales.evidence,
-        { articleId },
+        { articleId, crawlRunId: crawlRunId || undefined },
       )
     : null;
   const buyingCenterLabels = [
@@ -4103,7 +4121,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("classification_backfill_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("ai_usage_events")
-            .select("model, status, operation, input_tokens, output_tokens, thinking_tokens, estimated_cost_usd, created_at")
+            .select("article_id, crawl_run_id, model, status, operation, input_tokens, output_tokens, thinking_tokens, total_tokens, estimated_cost_usd, created_at")
             .gte("created_at", monthStart.toISOString()).limit(10000),
           admin.schema("signal_layer").from("source_crawl_attempts")
             .select("crawl_run_id, source_id, feed_type, status, discovered_count, candidate_count, inserted_count, error_code, error_message, started_at")
@@ -4304,6 +4322,23 @@ Deno.serve(async (req: Request) => {
           : forecastStatus === "risk"
             ? `Bei aktuellem Verbrauch wird der Warnwert voraussichtlich${projectedLimitDate ? ` am ${new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeZone: "Europe/Berlin" }).format(new Date(projectedLimitDate))}` : " noch in diesem Monat"} erreicht. ${recommendation}`
             : "Der aktuelle Verbrauch bleibt in der Monatsprognose unter dem Warnwert.";
+        const currentCrawlId = crawl?.id || null;
+        const currentCrawlUsage = currentCrawlId ? usageRows.filter((row) => row.crawl_run_id === currentCrawlId) : [];
+        const currentCrawlActualUsd = currentCrawlUsage.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
+        const successfulPrimaryRows = usageRows.filter((row) => row.status === "success" && row.operation === "classification" && row.model === pipelineConfig.ai.primary_model);
+        const successfulReviewRows = usageRows.filter((row) => row.status === "success" && row.operation === "review" && row.model === pipelineConfig.ai.review_model);
+        const primaryArticleCount = new Set(successfulPrimaryRows.map((row) => row.article_id).filter(Boolean)).size;
+        const reviewArticleCount = new Set(successfulReviewRows.map((row) => row.article_id).filter(Boolean)).size;
+        const averagePrimaryUsd = successfulPrimaryRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0) / Math.max(primaryArticleCount, 1);
+        const averageReviewUsd = successfulReviewRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0) / Math.max(reviewArticleCount, 1);
+        const reviewRate = pipelineConfig.ai.review_enabled ? Math.min(1, reviewArticleCount / Math.max(primaryArticleCount, 1)) : 0;
+        const estimatedCostPerArticleUsd = averagePrimaryUsd + averageReviewUsd * reviewRate;
+        const currentCrawlJobs = currentCrawlId ? (analysisJobs || []).filter((job) => job.crawl_run_id === currentCrawlId) : [];
+        const remainingCrawlArticles = currentCrawlJobs.filter((job) => ["queued", "running"].includes(job.status)).length;
+        const analyzedCrawlArticles = new Set(currentCrawlUsage.filter((row) => row.article_id && Number(row.total_tokens || 0) > 0).map((row) => row.article_id)).size;
+        const projectedCrawlUsd = currentCrawlActualUsd + remainingCrawlArticles * estimatedCostPerArticleUsd;
+        const trackedSuccessCalls = usageRows.filter((row) => row.status === "success" && ["classification", "review", "offering_match", "translation"].includes(row.operation));
+        const fullyTrackedSuccessCalls = trackedSuccessCalls.filter((row) => row.article_id && Number(row.total_tokens || 0) > 0 && row.estimated_cost_usd !== null).length;
         return corsResponse(origin, {
           crawl_run: crawlWithProgress,
           last_completed_crawl: completedCrawl || null,
@@ -4317,6 +4352,21 @@ Deno.serve(async (req: Request) => {
             usd_eur_rate: usdEurRate,
             warning: costSummary.month_usd >= pipelineConfig.ai.monthly_warning_usd,
             warning_threshold_usd: pipelineConfig.ai.monthly_warning_usd,
+            crawl_forecast: {
+              crawl_run_id: currentCrawlId,
+              status: crawl?.status || "idle",
+              actual_usd: currentCrawlActualUsd,
+              actual_eur: usdEurRate === null ? null : currentCrawlActualUsd * usdEurRate,
+              projected_usd: projectedCrawlUsd,
+              projected_eur: usdEurRate === null ? null : projectedCrawlUsd * usdEurRate,
+              analyzed_articles: analyzedCrawlArticles,
+              remaining_articles: remainingCrawlArticles,
+              estimated_cost_per_article_usd: estimatedCostPerArticleUsd,
+              primary_model: pipelineConfig.ai.primary_model,
+              review_model: pipelineConfig.ai.review_enabled ? pipelineConfig.ai.review_model : null,
+              review_enabled: pipelineConfig.ai.review_enabled,
+              tracking_coverage_percent: trackedSuccessCalls.length ? Math.round((fullyTrackedSuccessCalls / trackedSuccessCalls.length) * 10000) / 100 : 100,
+            },
             forecast: {
               status: forecastStatus,
               is_estimate: true,
