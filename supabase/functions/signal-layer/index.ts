@@ -760,9 +760,24 @@ async function performSiteLogin(domain: string, username: string, password: stri
   const handler = LOGIN_HANDLERS[domain];
   if (!handler) return null;
   try {
+    // Headers.get("set-cookie") only ever returns the FIRST Set-Cookie header
+    // when a server sends several (login flows commonly split session id and
+    // auth flag into separate cookies) — getSetCookie() returns all of them.
+    const extractCookiePairs = (headers: Headers): Record<string, string> => {
+      const raw = typeof (headers as { getSetCookie?: () => string[] }).getSetCookie === "function"
+        ? (headers as { getSetCookie: () => string[] }).getSetCookie()
+        : (headers.get("set-cookie") ? [headers.get("set-cookie") as string] : []);
+      const pairs: Record<string, string> = {};
+      for (const entry of raw) {
+        const pair = entry.split(";")[0];
+        const eq = pair.indexOf("=");
+        if (eq > 0) pairs[pair.slice(0, eq)] = pair;
+      }
+      return pairs;
+    };
     const getRes = await fetchWithTimeout(handler.loginUrl);
     const getHtml = await getRes.text();
-    const cookie1 = (getRes.headers.get("set-cookie") || "").split(";")[0];
+    const cookieJar = extractCookiePairs(getRes.headers);
     const csrf = handler.csrfFieldName
       ? getHtml.match(new RegExp(`name=["']${handler.csrfFieldName}["']\\s+value=["']([^"']+)["']`))?.[1]
         || getHtml.match(new RegExp(`value=["']([^"']+)["']\\s+name=["']${handler.csrfFieldName}["']`))?.[1]
@@ -774,11 +789,11 @@ async function performSiteLogin(domain: string, username: string, password: stri
     for (const [k, v] of Object.entries(handler.extraFields || {})) form.set(k, v);
     const postRes = await fetchWithTimeout(handler.loginUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", ...(cookie1 ? { Cookie: cookie1 } : {}) },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: Object.values(cookieJar).join("; ") },
       body: form.toString(),
     });
-    const cookie2 = (postRes.headers.get("set-cookie") || "").split(";")[0];
-    const combined = [cookie1, cookie2].filter(Boolean).join("; ");
+    Object.assign(cookieJar, extractCookiePairs(postRes.headers));
+    const combined = Object.values(cookieJar).join("; ");
     return combined || null;
   } catch (error) {
     console.error(`Login failed for ${domain}:`, error);
