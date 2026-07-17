@@ -737,15 +737,84 @@ function extractParagraphCluster(html: string): string | null {
   return len >= 400 ? joined : null;
 }
 
-async function fetchArticleContent(url: string): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
+// Per-domain login form field mapping for paywalled sources with a stored
+// ROOTS subscription (see set_source_login). Form structure varies too much
+// site-to-site to generalize; add a domain here whenever a login is wired.
+const LOGIN_HANDLERS: Record<string, { loginUrl: string; emailField: string; passwordField: string; csrfFieldName?: string; extraFields?: Record<string, string> }> = {
+  "www.lebensmittelzeitung.net": {
+    loginUrl: "https://www.lebensmittelzeitung.net/user/login/",
+    emailField: "i_email", passwordField: "i_password", csrfFieldName: "i_us_csrf",
+    extraFields: { rel: "/", OKuser: "1" },
+  },
+};
+
+async function getVaultSourceLoginCreds(sourceId: string): Promise<{ username: string; password: string } | null> {
+  const { data } = await getAdminClient().schema("shared").rpc("get_api_key", { p_key_name: `signal_layer_source_${sourceId}_login` });
+  if (!data) return null;
+  try { return JSON.parse(String(data)); } catch { return null; }
+}
+
+// Logs into the source's paywall with the stored ROOTS credentials and
+// returns a Cookie header string for subsequent authenticated fetches.
+async function performSiteLogin(domain: string, username: string, password: string): Promise<string | null> {
+  const handler = LOGIN_HANDLERS[domain];
+  if (!handler) return null;
+  try {
+    const getRes = await fetchWithTimeout(handler.loginUrl);
+    const getHtml = await getRes.text();
+    const cookie1 = (getRes.headers.get("set-cookie") || "").split(";")[0];
+    const csrf = handler.csrfFieldName
+      ? getHtml.match(new RegExp(`name=["']${handler.csrfFieldName}["']\\s+value=["']([^"']+)["']`))?.[1]
+        || getHtml.match(new RegExp(`value=["']([^"']+)["']\\s+name=["']${handler.csrfFieldName}["']`))?.[1]
+      : undefined;
+    const form = new URLSearchParams();
+    form.set(handler.emailField, username);
+    form.set(handler.passwordField, password);
+    if (handler.csrfFieldName && csrf) form.set(handler.csrfFieldName, csrf);
+    for (const [k, v] of Object.entries(handler.extraFields || {})) form.set(k, v);
+    const postRes = await fetchWithTimeout(handler.loginUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...(cookie1 ? { Cookie: cookie1 } : {}) },
+      body: form.toString(),
+    });
+    const cookie2 = (postRes.headers.get("set-cookie") || "").split(";")[0];
+    const combined = [cookie1, cookie2].filter(Boolean).join("; ");
+    return combined || null;
+  } catch (error) {
+    console.error(`Login failed for ${domain}:`, error);
+    return null;
+  }
+}
+
+// Reuses a DB-persisted session cookie (survives across the batched,
+// self-refiring crawl invocations) and only re-logs-in when it's missing or
+// stale (>4h), so we don't hit the login form on every single article.
+async function getOrRefreshLoginCookie(source: { id: string; url: string; crawl_config?: Record<string, unknown> }): Promise<string | null> {
+  const cfg = source.crawl_config || {};
+  const cookie = cfg.session_cookie as string | undefined;
+  const cookieAt = cfg.session_cookie_at as string | undefined;
+  if (cookie && cookieAt && Date.now() - new Date(cookieAt).getTime() < 4 * 60 * 60 * 1000) return cookie;
+  const creds = await getVaultSourceLoginCreds(source.id);
+  if (!creds) return null;
+  let domain: string;
+  try { domain = new URL(source.url).hostname; } catch { return null; }
+  const fresh = await performSiteLogin(domain, creds.username, creds.password);
+  if (!fresh) return null;
+  await getAdminClient().schema("signal_layer").from("sources")
+    .update({ crawl_config: { ...cfg, session_cookie: fresh, session_cookie_at: new Date().toISOString() } })
+    .eq("id", source.id);
+  return fresh;
+}
+
+async function fetchArticleContent(url: string, cookieHeader?: string | null): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
   if (isLikelyNonEditorialUrl(url)) return null;
   // Editorial sites intermittently return consent/interstitial pages or time
   // out. Retry once with cache bypass before declaring the body unavailable.
   // This is deliberately bounded: classification must not stall a crawl.
   for (let attempt = 0; attempt < 2; attempt += 1) try {
-    const res = await fetchWithTimeout(url, attempt === 0 ? {} : {
+    const res = await fetchWithTimeout(url, attempt === 0 ? (cookieHeader ? { headers: { Cookie: cookieHeader } } : {}) : {
       cache: "no-store",
-      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...(cookieHeader ? { Cookie: cookieHeader } : {}) },
     });
     if (!res.ok) return null;
     const html = await res.text();
@@ -3407,10 +3476,13 @@ Deno.serve(async (req: Request) => {
             .filter((c) => !knownUrls.has(c.url));
           let insertedCount = 0;
           const rejected: Record<string, number> = {};
+          const loginCookie = source.crawl_config?.login_required
+            ? await getOrRefreshLoginCookie(source).catch(() => null)
+            : null;
 
           for (const candidate of batch) {
             const suppliedContent = String(candidate.content || "").trim();
-            const pageContent = suppliedContent.length < 800 ? await fetchArticleContent(candidate.url) : null;
+            const pageContent = suppliedContent.length < 800 ? await fetchArticleContent(candidate.url, loginCookie) : null;
             const fetched = pageContent && pageContent.content.length > suppliedContent.length
               ? pageContent
               : suppliedContent.length >= 240 ? {
@@ -3978,7 +4050,7 @@ Deno.serve(async (req: Request) => {
         // routed signals (reliable) AND the manual-review queue
         // (uncertain/error/pending). All of them display full article text.
         const { data: articles, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, url, content, language, content_de")
+          .select("id, url, content, language, content_de, source_id")
           .in("classification_status", ["reliable", "uncertain", "error", "pending"])
           .not("published_at", "is", null)
           .gte("published_at", cutoff.toISOString())
@@ -3992,7 +4064,13 @@ Deno.serve(async (req: Request) => {
         for (const article of articles) {
           const now = new Date().toISOString();
           try {
-            const fetched = await fetchArticleContent(article.url);
+            let loginCookie: string | null = null;
+            if (article.source_id) {
+              const { data: src } = await admin.schema("signal_layer").from("sources")
+                .select("id, url, crawl_config").eq("id", article.source_id).maybeSingle();
+              if (src?.crawl_config?.login_required) loginCookie = await getOrRefreshLoginCookie(src).catch(() => null);
+            }
+            const fetched = await fetchArticleContent(article.url, loginCookie);
             const freshContent = fetched && (fetched.content || "").trim().length >= 80 ? fetched.content : null;
             // Prefer a fresh re-fetch (also refreshes raw content), but always
             // fall back to re-cleaning the already-stored content so paywalled
