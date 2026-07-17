@@ -1723,6 +1723,7 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
     reasons.push("Event-, Teilnehmer- oder Programmseite ohne strategisches Signal");
   }
   const directoryOrListing = /\b(media contacts?|kontakt|anbieter|supplier|company profile|unternehmensprofil)\b/i.test(title)
+    || (/^media(?:\s*\||$)/i.test(title.trim()) && /\b(latest news|reports?|publications?|download)\b/i.test(text))
     || (/\b(tel\.?|fax|e-mail|grundungsjahr|mitarbeiter)\b/i.test(text) && /\b(adresse|strasse|straße|internet|www\.)\b/i.test(text))
     || ((text.match(/\b(download file|read more)\b/gi) || []).length >= 6 && /\b(media|downloads?|publications?)\b/i.test(title));
   if (directoryOrListing) reasons.push("Verzeichnis-, Kontakt- oder Übersichtsseite ohne redaktionellen Artikel");
