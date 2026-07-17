@@ -181,8 +181,8 @@
   .status-pill--working .status-pill-dot { animation: statusPulse 1.25s ease-in-out infinite; }
   .status-pill--error { color: var(--danger); border-color: #fecaca; background: #fef2f2; }
   @keyframes statusPulse { 50% { transform: scale(1.75); opacity: .35; } }
-  .crawl-status-popover { position: absolute; right: 0; top: calc(100% + 9px); width: 330px; z-index: 45; padding: .85rem; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; transform: translateY(-5px); pointer-events: none; transition: opacity .16s, transform .16s, visibility .16s; }
-  .crawl-trigger-wrap:hover .crawl-status-popover, .crawl-trigger-wrap:focus-within .crawl-status-popover { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
+  .crawl-status-popover { position: absolute; right: 0; top: 100%; width: min(330px, calc(100vw - 24px)); max-height: min(680px, calc(100vh - 88px)); overflow: auto; overscroll-behavior: contain; z-index: 45; padding: .85rem; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .16s, visibility .16s; }
+  .crawl-trigger-wrap:hover .crawl-status-popover, .crawl-trigger-wrap:focus-within .crawl-status-popover { opacity: 1; visibility: visible; pointer-events: auto; }
   .crawl-trigger-wrap:has(.crawl-dropdown.show) .crawl-status-popover { opacity: 0; visibility: hidden; }
   .crawl-status-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 2px 9px; }
   .crawl-status-kicker { display: block; margin-bottom: 3px; color: var(--muted); font-size: .58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
@@ -211,10 +211,9 @@
   @media (prefers-reduced-motion: reduce) { .is-live .live-shimmer { color: var(--muted) !important; background: none; animation: none; } }
   .api-error-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
   .analysis-error-chip { position: relative; }
-  .analysis-error-chip > .crawl-result-pill { cursor: help; }
-  .analysis-error-popover { position: absolute; right: 0; bottom: calc(100% + 8px); width: 305px; z-index: 70; padding: 12px; border: 1px solid #dce4ef; border-radius: 14px; background: #fff; color: var(--ink); box-shadow: 0 16px 42px rgba(15, 23, 42, .18); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(5px); transition: opacity .16s ease, visibility .16s ease, transform .16s ease; }
+  .analysis-error-chip > .crawl-result-pill { cursor: pointer; }
+  .analysis-error-popover { position: fixed; left: 12px; top: 12px; width: min(305px, calc(100vw - 24px)); max-height: min(390px, calc(100vh - 24px)); overflow: auto; overscroll-behavior: contain; z-index: 200; padding: 12px; border: 1px solid #dce4ef; border-radius: 14px; background: #fff; color: var(--ink); box-shadow: 0 16px 42px rgba(15, 23, 42, .18); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-4px); transition: opacity .16s ease, visibility .16s ease, transform .16s ease; }
   .analysis-error-chip:hover .analysis-error-popover, .analysis-error-chip:focus-within .analysis-error-popover { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
-  .analysis-error-popover::after { content: ""; position: absolute; right: 18px; bottom: -6px; width: 11px; height: 11px; border-right: 1px solid #dce4ef; border-bottom: 1px solid #dce4ef; background: #fff; transform: rotate(45deg); }
   .analysis-error-popover-head { display: flex; align-items: flex-start; gap: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
   .analysis-error-popover-head > i { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 9px; color: var(--danger); background: #fef2f2; }
   .analysis-error-popover-head b, .analysis-error-popover-head small { display: block; }
@@ -231,6 +230,12 @@
   .telemetry-stat span { display: block; color: var(--muted); font-size: .58rem; text-transform: uppercase; letter-spacing: .04em; }
   .telemetry-stat b { display: block; margin-top: 2px; color: var(--ink); font-size: .72rem; }
   .telemetry-stat--warning { border-color: #fbbf24; background: var(--warning-bg); }
+  .spend-forecast { display: flex; gap: 8px; margin-top: 7px; padding: 8px 9px; border: 1px solid #fde68a; border-radius: 10px; color: #854d0e; background: #fffbeb; font-size: .59rem; line-height: 1.4; }
+  .spend-forecast[hidden] { display: none; }
+  .spend-forecast i { margin-top: 2px; }
+  .spend-forecast b, .spend-forecast span { display: block; }
+  .spend-forecast b { font-size: .62rem; }
+  .spend-forecast span { margin-top: 2px; color: #92400e; }
   .source-health-note { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   .crawl-result-pill { min-height: 23px; padding: 0 8px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--muted); font-size: .6rem; font-weight: 700; white-space: nowrap; }
   .crawl-result-pill--success { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
@@ -1607,6 +1612,7 @@
                   <div class="telemetry-stat"><span>KI-Aufrufe</span><b id="gemini-request-count">–</b></div>
                   <div class="telemetry-stat"><span>Quellenläufe</span><b id="source-attempt-count">–</b></div>
                 </div>
+                <div class="spend-forecast" id="spend-forecast" hidden><i class="fa-solid fa-chart-line"></i><div><b id="spend-forecast-title"></b><span id="spend-forecast-copy"></span></div></div>
                 <div class="source-health-note" id="source-health-note"></div>
               </div>
               <span class="crawl-status-hint" id="crawl-status-hint">Klicken, um einen Crawl zu starten.</span>

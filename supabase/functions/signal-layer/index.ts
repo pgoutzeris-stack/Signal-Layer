@@ -1342,8 +1342,8 @@ function hasEventTier1PersonLink(
 // Gemini structured classification, then strict server-side validation.
 // Only reliable results become findings. Everything else remains auditable.
 // ---------------------------------------------------------------------------
-const GEMINI_PRIMARY_MODEL = "gemini-3.5-flash";
-const GEMINI_REVIEW_MODEL = "gemini-3.1-pro-preview";
+const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
+const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
 const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.14";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
@@ -2011,6 +2011,7 @@ async function callGeminiClassifier(
   // actual model returned in the request telemetry, not by the current UI
   // setting, so a model change cannot rewrite the cost of older analyses.
   const modelRates: Record<string, { input: number; output: number }> = {
+    "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
     "gemini-3.5-flash": { input: 0.75, output: 4.5 },
     "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
     "gemini-3.1-pro-preview": { input: 2, output: 12 },
@@ -2019,7 +2020,7 @@ async function callGeminiClassifier(
     "gemini-2.5-pro": { input: 1.25, output: 10 },
   };
   const rates = modelRates[model] || (model.includes("flash-lite")
-    ? modelRates["gemini-3.1-flash-lite"]
+    ? modelRates["gemini-2.5-flash-lite"]
     : model.includes("pro")
       ? modelRates["gemini-3.1-pro-preview"]
       : modelRates["gemini-3-flash-preview"]);
@@ -2156,10 +2157,11 @@ async function translateArticleToGerman(
     const outputTokens = Number(usage.candidatesTokenCount || 0);
     const thinkingTokens = Number(usage.thoughtsTokenCount || 0);
     const rates: Record<string, { input: number; output: number }> = {
+      "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
       "gemini-3.5-flash": { input: 0.75, output: 4.5 }, "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
       "gemini-3.1-pro-preview": { input: 2, output: 12 }, "gemini-3-flash-preview": { input: 0.5, output: 3 },
     };
-    const rate = rates[model] || (model.includes("flash-lite") ? rates["gemini-3.1-flash-lite"] : rates["gemini-3-flash-preview"]);
+    const rate = rates[model] || (model.includes("flash-lite") ? rates["gemini-2.5-flash-lite"] : rates["gemini-3-flash-preview"]);
     const estimatedCost = (inputTokens * rate.input + (outputTokens + thinkingTokens) * rate.output) / 1_000_000;
     await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
@@ -4214,6 +4216,33 @@ Deno.serve(async (req: Request) => {
           sources: [...entry.sources.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([company, count]) => ({ company, count })),
           raw_message: entry.raw.replace(/\s+/g, " ").slice(0, 500),
         })).sort((a, b) => b.count - a.count);
+        // Gemini exposes usage per request but no API endpoint for the billing
+        // project's configured spending cap. Forecast the user-defined warning
+        // threshold from the usage ledger instead and label it as a projection.
+        const now = new Date();
+        const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+        const elapsedDays = Math.max(1, (now.getTime() - monthStart.getTime()) / 86_400_000);
+        const daysInMonth = Math.max(1, (nextMonth.getTime() - monthStart.getTime()) / 86_400_000);
+        const averageDailyUsd = costSummary.month_usd / elapsedDays;
+        const projectedMonthUsd = averageDailyUsd * daysInMonth;
+        const warningThresholdUsd = Number(pipelineConfig.ai.monthly_warning_usd || 0);
+        const remainingUsd = Math.max(0, warningThresholdUsd - costSummary.month_usd);
+        const daysToLimit = averageDailyUsd > 0 && warningThresholdUsd > 0 ? remainingUsd / averageDailyUsd : null;
+        const projectedLimitDate = daysToLimit !== null && daysToLimit <= (nextMonth.getTime() - now.getTime()) / 86_400_000
+          ? new Date(now.getTime() + daysToLimit * 86_400_000).toISOString()
+          : null;
+        const forecastStatus = warningThresholdUsd <= 0 ? "disabled"
+          : costSummary.month_usd >= warningThresholdUsd ? "exceeded"
+          : projectedMonthUsd >= warningThresholdUsd ? "risk"
+          : "ok";
+        const recommendation = pipelineConfig.ai.review_enabled
+          ? "Bei weiter steigendem Verbrauch den zweiten KI-Review pausieren oder Gemini Batch API nutzen."
+          : "Für zeitunkritische Analysen kann Gemini Batch API die Modellkosten weiter reduzieren.";
+        const forecastMessage = forecastStatus === "exceeded"
+          ? `Der interne Warnwert von $${warningThresholdUsd.toFixed(2)} ist erreicht. ${recommendation}`
+          : forecastStatus === "risk"
+            ? `Bei aktuellem Verbrauch wird der Warnwert voraussichtlich${projectedLimitDate ? ` am ${new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeZone: "Europe/Berlin" }).format(new Date(projectedLimitDate))}` : " noch in diesem Monat"} erreicht. ${recommendation}`
+            : "Der aktuelle Verbrauch bleibt in der Monatsprognose unter dem Warnwert.";
         return corsResponse(origin, {
           crawl_run: crawlWithProgress,
           last_completed_crawl: completedCrawl || null,
@@ -4227,6 +4256,18 @@ Deno.serve(async (req: Request) => {
             usd_eur_rate: usdEurRate,
             warning: costSummary.month_usd >= pipelineConfig.ai.monthly_warning_usd,
             warning_threshold_usd: pipelineConfig.ai.monthly_warning_usd,
+            forecast: {
+              status: forecastStatus,
+              is_estimate: true,
+              average_daily_usd: averageDailyUsd,
+              projected_month_usd: projectedMonthUsd,
+              projected_month_eur: usdEurRate === null ? null : projectedMonthUsd * usdEurRate,
+              days_to_warning: daysToLimit,
+              projected_limit_date: projectedLimitDate,
+              recommendation,
+              message: forecastMessage,
+              notification: forecastStatus === "exceeded" ? "KI-Kostenwarnwert erreicht – Empfehlung im Status öffnen." : "KI-Kosten könnten diesen Monat den Warnwert erreichen.",
+            },
           },
           source_health: sourceHealth,
           analysis_queue: (analysisJobs || []).filter((job) => !crawl?.id || job.crawl_run_id === crawl.id).reduce((summary, job) => {

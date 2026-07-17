@@ -13,6 +13,7 @@ let pipelineOperationsTelemetry = null;
 let pipelineStageDefinitions = [];
 const pipelineDrilldownState = { stageId: null, editorOpen: false, routeEditor: null };
 let statusPollTimer = null;
+let lastSpendForecastNotice = "";
 let archiveArticles = [];
 let archiveTotalCount = 0;
 
@@ -284,6 +285,9 @@ function cacheEls() {
   els.geminiCostStat = document.getElementById("gemini-cost-stat");
   els.geminiCostMonth = document.getElementById("gemini-cost-month");
   els.geminiCostToday = document.getElementById("gemini-cost-today");
+  els.spendForecast = document.getElementById("spend-forecast");
+  els.spendForecastTitle = document.getElementById("spend-forecast-title");
+  els.spendForecastCopy = document.getElementById("spend-forecast-copy");
   els.geminiRequestCount = document.getElementById("gemini-request-count");
   els.sourceAttemptCount = document.getElementById("source-attempt-count");
   els.sourceHealthNote = document.getElementById("source-health-note");
@@ -2138,6 +2142,19 @@ async function loadLastRun() {
     els.geminiRequestCount.textContent = Number(costs?.requests || 0).toLocaleString("de-DE");
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
     els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
+    const forecast = costs?.forecast;
+    const forecastRisk = ["risk", "exceeded"].includes(forecast?.status);
+    els.spendForecast.hidden = !forecastRisk;
+    if (forecastRisk) {
+      const projected = formatEur(forecast.projected_month_eur);
+      els.spendForecastTitle.textContent = forecast.status === "exceeded" ? "Kostenwarnung aktiv" : `Monatsprognose ${projected}`;
+      els.spendForecastCopy.textContent = forecast.message || forecast.recommendation;
+      const noticeKey = `${forecast.status}:${forecast.projected_limit_date || "month"}:${forecast.recommendation || ""}`;
+      if (noticeKey !== lastSpendForecastNotice) {
+        lastSpendForecastNotice = noticeKey;
+        toast(forecast.notification || forecast.message || "Die KI-Kostenprognose erreicht den eingestellten Warnwert.", "err");
+      }
+    }
     const foundArticles = Number(health?.candidates || 0);
     const crawlResults = foundArticles > 0
       ? [{ value: foundArticles, label: "Artikel gefunden", tone: "success", icon: "fa-solid fa-newspaper" }]
@@ -2223,6 +2240,27 @@ async function loadLastRun() {
         </span>
       </span>`;
     }).join("");
+    const positionErrorPopover = (chip) => {
+      const popover = chip.querySelector(".analysis-error-popover");
+      if (!popover) return;
+      const trigger = chip.querySelector(".crawl-result-pill");
+      const rect = (trigger || chip).getBoundingClientRect();
+      const margin = 12;
+      const gap = 0;
+      const width = Math.min(305, window.innerWidth - margin * 2);
+      popover.style.width = `${width}px`;
+      const height = Math.min(popover.scrollHeight, window.innerHeight - margin * 2, 390);
+      const left = Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin));
+      const top = window.innerHeight - rect.bottom >= height + gap
+        ? rect.bottom + gap
+        : Math.max(margin, rect.top - height - gap);
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+    };
+    els.apiErrorList.querySelectorAll(".analysis-error-chip").forEach((chip) => {
+      chip.addEventListener("mouseenter", () => positionErrorPopover(chip));
+      chip.addEventListener("focusin", () => positionErrorPopover(chip));
+    });
     scheduleStatusRefresh(isActive);
   } catch {
     els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
