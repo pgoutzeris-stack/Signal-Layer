@@ -486,17 +486,29 @@ function extractTag(block: string, tag: string): string | null {
   return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
 }
 
+// Mirrors fetchArticleContent's markdown-preserving chain. RSS content:encoded
+// / description are full HTML too — flattening them straight to text (old
+// behavior) collapsed every article into one blob with no paragraph breaks,
+// since by the time cleanArticleText ran there were no tags left to split on.
 function rssText(value: string | null): string {
-  return String(value || "")
+  let text = String(value || "")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_m, inner) => inner.trim() ? `\n\n## ${inner}\n\n` : " ")
+    .replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, inner) => inner.trim() ? `**${inner}**` : " ")
+    .replace(/<(em|i)[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, inner) => inner.trim() ? `*${inner}*` : " ")
+    .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_m, inner) => inner.trim() ? `\n- ${inner}` : " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|blockquote)>/gi, "\n\n")
     .replace(/<[^>]+>/g, " ")
+    .replace(/\*\*\s*\*\*/g, " ")
+    .replace(/\*[ \t]+\*/g, " ")
     .replace(/&nbsp;|&#160;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .split("\n").map((line) => line.trim()).join("\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
+  return decodeArticleText(text);
 }
 
 async function fetchRssArticles(feedUrl: string): Promise<CrawlCandidate[]> {
