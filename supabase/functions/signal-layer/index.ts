@@ -647,7 +647,53 @@ function stripPageChrome(html: string): string {
     .replace(/<menu[\s\S]*?<\/menu>/gi, " ");
   // Drop role=navigation/banner/contentinfo/search/dialog regions.
   out = out.replace(/<([a-z0-9]+)\b[^>]*\brole=["'](?:navigation|banner|contentinfo|search|dialog|menu|menubar)["'][\s\S]*?<\/\1>/gi, " ");
+  // Drop chrome by class/id keyword regardless of tag or theme naming
+  // convention (sidebar widgets, related/teaser lists, share bars, comments,
+  // promo/ad slots, breadcrumbs, tag/category lists, newsletter signup).
+  // Tag-agnostic \1 backreference can truncate early on deeply nested same-
+  // tag markup — an accepted tradeoff shared with the role-based strip above,
+  // still net-positive since it removes far more chrome than it wrongly cuts.
+  const CHROME_CLASS_KEYWORDS = "widget|sidebar|related[-_]?posts?|teaser|share[-_]?bar|social[-_]?share|comments?[-_]?(section|area|list)|promo|advert|breadcrumbs?|tag[-_]?list|categor(?:y|ie)[-_]?list|newsletter[-_]?(signup|box)|most[-_]?read|meistgelesen|weiterlesen[-_]?box|empfehlung";
+  out = out.replace(new RegExp(`<([a-z0-9]+)\\b[^>]*\\b(?:class|id)=["'][^"']*(?:${CHROME_CLASS_KEYWORDS})[^"']*["'][\\s\\S]*?<\\/\\1>`, "gi"), " ");
   return out;
+}
+
+// JSON-LD structured data (schema.org Article/NewsArticle) sometimes carries
+// the full plain-text articleBody directly — the single most reliable source
+// when present, since it needs no HTML-structure guessing at all. Markdown
+// structure (headings/lists) is lost here since it's plain text, but the
+// content itself is guaranteed to be the real article, never chrome.
+function extractJsonLdArticleBody(html: string): string | null {
+  const scripts = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
+  for (const block of scripts) {
+    const raw = block.replace(/<script[^>]*>/i, "").replace(/<\/script>/i, "").trim();
+    try {
+      const parsed = JSON.parse(raw);
+      const nodes = Array.isArray(parsed) ? parsed : (parsed["@graph"] || [parsed]);
+      for (const node of nodes) {
+        const body = node?.articleBody;
+        if (typeof body === "string" && body.trim().length >= 400) return body.trim();
+      }
+    } catch { /* malformed/partial JSON-LD — skip, other strategies still apply */ }
+  }
+  return null;
+}
+
+// Density-scored container selection (lightweight Readability-style
+// heuristic). Instead of trusting raw text length — which a nav/teaser block
+// can win by sheer volume — score by paragraph density and penalize link-
+// heavy or chrome-labelled blocks, so real prose wins even under a class name
+// stripPageChrome/extractMainContentHtml's fixed keyword list doesn't know.
+function scoreCandidateBlock(block: string): number {
+  const textLen = block.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
+  if (textLen < 200) return -1;
+  const paragraphCount = (block.match(/<p\b[^>]*>/gi) || []).length;
+  const linkTextLen = (block.match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) || [])
+    .reduce((sum, a) => sum + a.replace(/<[^>]+>/g, " ").trim().length, 0);
+  const linkDensity = textLen > 0 ? linkTextLen / textLen : 1;
+  const chromeHit = /\b(nav|menu|sidebar|widget|footer|header|comment|share|social|promo|advert|related|teaser|breadcrumb)\b/i
+    .test((block.match(/class=["'][^"']*["']/i) || [""])[0]);
+  return textLen + paragraphCount * 80 - linkDensity * textLen * 1.5 - (chromeHit ? 2000 : 0);
 }
 
 // Best-effort main-content isolation. Prefers a semantic <article>/<main> or a
@@ -664,13 +710,16 @@ function extractMainContentHtml(html: string): string | null {
     let m: RegExpExecArray | null;
     while ((m = re.exec(html)) !== null) candidates.push(m[0]);
   }
+  // Score, don't just measure length — a sidebar/teaser block can be longer
+  // than the real article; density scoring picks the block that actually
+  // reads like prose (see scoreCandidateBlock).
   let best: string | null = null;
-  let bestLen = 0;
+  let bestScore = -1;
   for (const c of candidates) {
-    const len = c.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
-    if (len > bestLen) { bestLen = len; best = c; }
+    const score = scoreCandidateBlock(c);
+    if (score > bestScore) { bestScore = score; best = c; }
   }
-  return bestLen >= 400 ? best : null;
+  return bestScore >= 400 ? best : null;
 }
 
 // Generic last resort when no named container matched (unknown/uncommon CMS
@@ -706,8 +755,13 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
 
     const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
     const cleanedBody = stripPageChrome(bodyMatch ? bodyMatch[0] : html);
-    // Prefer the isolated main article; fall back to the chrome-stripped body.
-    let text = extractMainContentHtml(cleanedBody) || extractParagraphCluster(cleanedBody) || cleanedBody;
+    // Extraction palette, most reliable first: (1) JSON-LD articleBody needs
+    // no HTML-structure guessing at all when present; (2) a named/likely
+    // article container scored by paragraph density beats chrome even under
+    // an unknown theme's class name; (3) a generic <p>-block cluster catches
+    // themes matched by neither; (4) the whole chrome-stripped body as the
+    // final fallback so extraction never simply fails.
+    let text = extractJsonLdArticleBody(html) || extractMainContentHtml(cleanedBody) || extractParagraphCluster(cleanedBody) || cleanedBody;
     text = text
       // Preserve structure as lightweight Markdown BEFORE the generic tag
       // strip below collapses everything into one flat blob — otherwise
