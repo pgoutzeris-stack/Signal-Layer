@@ -2848,8 +2848,15 @@ Deno.serve(async (req: Request) => {
   // fire-and-forget self-call, authenticated with the service-role key.
   let auth: { userId: string } | null = null;
   let isScheduled = false;
-  if (["process_crawl", "process_crawl_worker", "process_analysis_worker", "process_classification_backfill"].includes(action)) {
+  if (["process_crawl", "process_crawl_worker", "process_classification_backfill"].includes(action)) {
     if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
+  } else if (action === "process_analysis_worker") {
+    // Queue recovery may be started by the protected pg_cron/watchdog path;
+    // every subsequent hop still self-authenticates with the service role.
+    if (!isInternalCall(req)) {
+      isScheduled = await isScheduledTrigger(req);
+      if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
+    }
   } else if (action === "reformat_recent_articles") {
     // Self-refires via the service-role bearer; a user may also kick it off.
     if (!isInternalCall(req)) {
