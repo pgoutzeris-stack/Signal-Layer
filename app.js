@@ -11,7 +11,7 @@ let geminiModelCatalog = [];
 let geminiModelCatalogState = { status: "idle", validatedAt: null, error: null };
 let pipelineOperationsTelemetry = null;
 let pipelineStageDefinitions = [];
-const pipelineDrilldownState = { stageId: null, editorOpen: false };
+const pipelineDrilldownState = { stageId: null, editorOpen: false, routeEditor: null };
 let statusPollTimer = null;
 let archiveArticles = [];
 let archiveTotalCount = 0;
@@ -652,9 +652,9 @@ function renderStageOverview(stage) {
 
   if (stage.id === "routing") {
     content = stageSection("Wohin wird ein zuverlässiges Signal geleitet?", "Die drei Entscheidungen werden getrennt getroffen.", `<div class="stage-route-grid">
-      <article><span class="stage-route-icon"><i class="fa-solid fa-bullhorn"></i></span><b>Marketing</b><p>Direkter Bezug zu Kunden, Marke, Handel oder angewandter KI.</p><div><span>Zuverlässig</span><span>Fachbeleg</span></div></article>
-      <article><span class="stage-route-icon"><i class="fa-solid fa-hand-holding-dollar"></i></span><b>Sales</b><p>Tier-1-Unternehmen plus konkreter strategischer Anlass.</p><div><span>Zuverlässig</span><span>Tier-1</span><span>Anlass</span></div></article>
-      <article><span class="stage-route-icon"><i class="fa-solid fa-users"></i></span><b>Buying Center</b><p>Sales-Signal plus passende Person oder konkrete Rolle.</p><div><span>Sales</span><span>Person / Rolle</span></div></article>
+      <button type="button" class="stage-route-card" data-routing-editor="marketing"><span class="stage-route-icon"><i class="fa-solid fa-bullhorn"></i></span><b>Marketing</b><p>Direkter Bezug zu Kunden, Marke, Handel oder angewandter KI.</p><div><span>Zuverlässig</span><span>Fachbeleg</span></div><em>Einstellungen öffnen <i class="fa-solid fa-arrow-right"></i></em></button>
+      <button type="button" class="stage-route-card" data-routing-editor="sales"><span class="stage-route-icon"><i class="fa-solid fa-hand-holding-dollar"></i></span><b>Sales</b><p>Tier-1-Unternehmen plus konkreter strategischer Anlass und passende ROOTS-Leistung.</p><div><span>Zuverlässig</span><span>Tier-1</span><span>Anlass</span></div><em>Einstellungen öffnen <i class="fa-solid fa-arrow-right"></i></em></button>
+      <button type="button" class="stage-route-card" data-routing-editor="buying_center"><span class="stage-route-icon"><i class="fa-solid fa-users"></i></span><b>Buying Center</b><p>Sales-Signal plus passende Person oder konkrete Rolle.</p><div><span>Sales</span><span>Person / Rolle</span></div><em>Einstellungen öffnen <i class="fa-solid fa-arrow-right"></i></em></button>
     </div>`, "Routing ändern") + stageSection("Was reicht ausdrücklich nicht?", "", `<div class="stage-card-grid stage-card-grid--3">
       ${stageCard("fa-solid fa-building", "Nur ein Firmenname", "Eine beiläufige Nennung erzeugt kein Sales-Signal.", "server", "Schutzregel")}
       ${stageCard("fa-solid fa-user-tie", "Nur ein neuer CEO", "Eine Personalie braucht einen konkreten strategischen Anlass.", "server", "Schutzregel")}
@@ -688,9 +688,23 @@ function renderStageEditor(stage) {
     content = `<div class="stage-model-status"><span class="model-validation ${geminiModelCatalogState.status === "ready" ? "model-validation--ready" : geminiModelCatalogState.status === "error" ? "model-validation--error" : "model-validation--loading"}"><i class="fa-solid fa-shield-halved"></i>${escapeHtml(status)}</span><button type="button" class="btn-secondary" data-refresh-gemini-models><i class="fa-solid fa-arrows-rotate"></i> Neu prüfen</button></div>${pipelineFields(["ai.primary_model", "ai.review_model", "ai.review_enabled", "ai.review_confidence_below", "ai.thinking_level", "ai.max_output_tokens"])}<h6 class="stage-editor-subtitle">Welche Themen soll Gemini beachten?</h6><div class="stage-topic-editor-grid">${topicEditors}</div>${taxonomyEditor("topics", "Themen-Taxonomie", "Bezeichnung und Beschreibung werden direkt in den Klassifizierungs-Prompt übernommen.")}${taxonomyEditor("territories", "ROOTS-Territories", "Gemini nutzt diese Beschreibungen für die strategische Einordnung des Artikels.")}`;
   }
   if (stage.id === "validation") content = `<div class="quality-choice">${qualityProfiles}</div><div class="stage-toggle-list">${simpleToggle("relevance.require_ai_application", "KI nur bei echter Anwendung", "Allgemeine KI-Meinungen reichen nicht.")}${simpleToggle("relevance.allow_ai_pilot", "Konkrete KI-Piloten zulassen", "Ein belegter Pilot kann bereits zählen.")}${simpleToggle("relevance.require_subsector_transferability", "Markttrend muss übertragbar sein", "Ein einzelnes Unternehmensereignis reicht nicht.")}${simpleToggle("relevance.allow_campaign_without_results", "Kampagnen ohne Ergebnisse zulassen", "Ein konkreter Start kann vor ersten Messwerten zählen.")}</div>`;
-  if (stage.id === "routing") content = `<div class="stage-toggle-list">${simpleToggle("routing.marketing_enabled", "Marketing-Kacheln aktiv", "Zeigt bestätigte Marketing-Signale.")}${simpleToggle("routing.sales_enabled", "Sales-Kacheln aktiv", "Zeigt bestätigte Sales-Signale.")}${simpleToggle("routing.sales_requires_tier1", "Sales nur mit Tier-1-Unternehmen", "Verhindert Sales-Signale ohne Zielkunde.")}${simpleToggle("routing.sales_requires_trigger", "Sales nur mit konkretem Anlass", "Ein Firmenname allein reicht nicht.")}${simpleToggle("routing.buying_center_enabled", "Buying Center aktiv", "Ergänzt passende Personen und Rollen.")}${simpleToggle("routing.buying_center_requires_person", "Person oder Rolle erforderlich", "Verhindert allgemeine Ansprechpartner.")}</div>${taxonomyEditor("sales_triggers", "Sales-Trigger", "Diese Anlässe strukturieren die Sales-Prüfung; Änderungen fließen in neue Klassifizierungen ein.")}${offeringsEditor()}`;
+  if (stage.id === "routing") content = `<div class="routing-editor-picker"><button type="button" data-routing-editor="marketing"><i class="fa-solid fa-bullhorn"></i><span><b>Marketing</b><small>Marketing-Eignung und fachliche Signale</small></span><i class="fa-solid fa-chevron-right"></i></button><button type="button" data-routing-editor="sales"><i class="fa-solid fa-hand-holding-dollar"></i><span><b>Sales</b><small>Tier-1, Trigger und ROOTS-Leistungen</small></span><i class="fa-solid fa-chevron-right"></i></button><button type="button" data-routing-editor="buying_center"><i class="fa-solid fa-users"></i><span><b>Buying Center</b><small>Personen und konkrete Rollen</small></span><i class="fa-solid fa-chevron-right"></i></button></div>`;
   if (!content) return "";
   return `<div class="stage-editor-overlay"><section class="stage-editor-card" role="dialog" aria-modal="true" aria-labelledby="stage-editor-title"><header><div><span>Ändern</span><h5 id="stage-editor-title">${escapeHtml(meta.edit)}</h5></div><button type="button" class="pipeline-icon-btn" data-pipeline-editor-close aria-label="Bearbeitung schließen"><i class="fa-solid fa-xmark"></i></button></header><main><div class="stage-editor-state"><i class="fa-solid fa-circle-info"></i>Gespeicherte Änderungen gelten für neue Prüfungen.</div>${content}</main><footer>${PIPELINE_STAGE_RESET_PATHS[stage.id] ? `<button type="button" class="btn-text" data-pipeline-reset-stage="${stage.id}"><i class="fa-solid fa-rotate-right"></i> Zurücksetzen</button>` : ""}<div><button type="button" class="btn-secondary" data-pipeline-editor-close>Abbrechen</button><button type="button" class="btn-primary" data-pipeline-save><i class="fa-solid fa-floppy-disk"></i> Speichern</button></div></footer></section></div>`;
+}
+
+function renderRoutingEditor(route) {
+  const meta = {
+    marketing: { icon: "fa-solid fa-bullhorn", eyebrow: "Routing · Marketing", title: "Marketing-Eignung", copy: "Steuert, wann ein zuverlässiger Artikel als übertragbarer Marketing-Insight erscheint." },
+    sales: { icon: "fa-solid fa-hand-holding-dollar", eyebrow: "Routing · Sales", title: "Sales-Eignung & ROOTS-Leistung", copy: "Steuert Zielkunde, strategischen Anlass und die Zuordnung zur konkreten ROOTS-Leistung." },
+    buying_center: { icon: "fa-solid fa-users", eyebrow: "Routing · Buying Center", title: "Personen & Rollen", copy: "Steuert, wann zu einem Sales-Signal ein konkreter Ansprechpartner oder eine belastbare Rolle ergänzt wird." },
+  }[route];
+  if (!meta) return "";
+  let content = "";
+  if (route === "marketing") content = `<div class="route-editor-intro"><i class="${meta.icon}"></i><div><b>Was hier angepasst wird</b><p>Marketing wird unabhängig von Sales bewertet. Ein Tier-1-Unternehmen ist dafür nicht erforderlich; direkte, übertragbare Evidenz bleibt Pflicht.</p></div></div><div class="stage-toggle-list">${simpleToggle("routing.marketing_enabled", "Marketing-Routing aktiv", "Zeigt bestätigte Marketing-Signale als Marketing-Kacheln.")}${simpleToggle("decisions.customer_signal_qualifies_marketing", "Customer-Signale berücksichtigen", "Belegte Kundenbedürfnisse, Verhalten oder Customer Experience können Marketing qualifizieren.")}${simpleToggle("decisions.retail_signal_qualifies_marketing", "Retail-Signale berücksichtigen", "Belegte Sortiments-, Pricing-, Promotion- oder Store-Strategien können Marketing qualifizieren.")}${simpleToggle("routing.subsector_alone_is_marketing", "Sub-Branchen-Insight allein zulassen", "Wenn aktiv, kann eine übertragbare Marktbeobachtung ohne weiteres Kernthema Marketing werden.")}</div><div class="stage-fixed-note"><i class="fa-solid fa-lock"></i><span>Direkte Textbelege bleiben immer erforderlich und können hier nicht abgeschaltet werden.</span></div>`;
+  if (route === "sales") content = `<div class="route-editor-intro"><i class="${meta.icon}"></i><div><b>Was hier angepasst wird</b><p>Sales braucht einen belastbaren Unternehmensanlass. Danach wird genau eine konkrete ROOTS-Leistung aus dem 6P-Katalog zugeordnet.</p></div></div><div class="stage-toggle-list">${simpleToggle("routing.sales_enabled", "Sales-Routing aktiv", "Zeigt bestätigte Sales-Signale als Sales-Kacheln.")}${simpleToggle("routing.sales_requires_tier1", "Tier-1-Unternehmen erforderlich", "Verhindert Sales-Routing ohne priorisierten Zielkunden.")}${simpleToggle("routing.sales_requires_trigger", "Strategischer Anlass erforderlich", "Eine Firmen- oder Markennennung allein reicht nicht.")}${simpleToggle("decisions.sales_requires_implementation", "Konkrete Umsetzung verlangen", "Wenn aktiv, reichen unverbindliche Absichten oder vage Pläne nicht.")}${simpleToggle("decisions.sales_allow_risks", "Strategische Risiken berücksichtigen", "Auch belegte aktuelle Risiken können eine relevante Ansprache begründen.")}</div>${taxonomyEditor("sales_triggers", "Sales-Trigger", "Bezeichnungen und Beschreibungen werden für zukünftige Sales-Prüfungen verwendet.")}${offeringsEditor()}`;
+  if (route === "buying_center") content = `<div class="route-editor-intro"><i class="${meta.icon}"></i><div><b>Was hier angepasst wird</b><p>Buying Center wird erst nach erfolgreichem Sales-Routing geprüft und ergänzt passende Verantwortliche für den belegten Anlass.</p></div></div><div class="stage-toggle-list">${simpleToggle("routing.buying_center_enabled", "Buying Center aktiv", "Ergänzt zu geeigneten Sales-Signalen passende Personen oder Rollen.")}${simpleToggle("routing.buying_center_requires_person", "Person oder konkrete Rolle erforderlich", "Verhindert generische Ansprechpartner ohne Bezug zum Anlass.")}${simpleToggle("decisions.buying_center_allow_role_without_name", "Konkrete Rolle ohne Namen zulassen", "Erlaubt zum Beispiel Head of Customer Experience, wenn kein Name belastbar belegt ist.")}</div><div class="stage-fixed-note"><i class="fa-solid fa-lock"></i><span>Reine Ernennungen, Pressesprecher und unpassende C-Level-Rollen bleiben ausgeschlossen.</span></div>`;
+  return `<div class="stage-editor-overlay routing-editor-overlay"><section class="stage-editor-card routing-editor-card" role="dialog" aria-modal="true" aria-labelledby="routing-editor-title"><header><div class="routing-editor-heading"><span class="routing-editor-heading-icon"><i class="${meta.icon}"></i></span><div><span>${escapeHtml(meta.eyebrow)}</span><h5 id="routing-editor-title">${escapeHtml(meta.title)}</h5><p>${escapeHtml(meta.copy)}</p></div></div><button type="button" class="pipeline-icon-btn" data-routing-editor-close aria-label="Routing-Einstellungen schließen"><i class="fa-solid fa-xmark"></i></button></header><main>${content}</main><footer><span class="routing-save-note"><i class="fa-solid fa-circle-info"></i> Gilt für zukünftige Analysen</span><div><button type="button" class="btn-secondary" data-routing-editor-close>Abbrechen</button><button type="button" class="btn-primary" data-pipeline-save><i class="fa-solid fa-floppy-disk"></i> Speichern</button></div></footer></section></div>`;
 }
 
 function renderPipelineDrilldown() {
@@ -707,7 +721,7 @@ function renderPipelineDrilldown() {
     <header class="pipeline-drilldown-head"><div><div class="pipeline-breadcrumb"><button type="button" data-pipeline-detail-close>Pipeline</button><i class="fa-solid fa-chevron-right"></i><b>${stage.number} ${escapeHtml(meta.title)}</b></div><div class="pipeline-drilldown-title"><span><i class="${stage.icon}"></i></span><div><h4 id="pipeline-detail-title" tabindex="-1">${escapeHtml(meta.title)}</h4><p>${escapeHtml(meta.summary)}</p></div></div></div><div class="pipeline-drilldown-head-actions"><button type="button" class="pipeline-icon-btn" data-pipeline-stage-prev title="Vorherige Station" ${previousStage ? "" : "disabled"}><i class="fa-solid fa-arrow-left"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-stage-next title="Nächste Station" ${nextStage ? "" : "disabled"}><i class="fa-solid fa-arrow-right"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-detail-close title="Schließen"><i class="fa-solid fa-xmark"></i></button></div></header>
     <main class="stage-page-scroll">${renderStageOverview(stage)}</main>
     <footer class="pipeline-drilldown-footer"><button type="button" class="btn-secondary" data-pipeline-detail-close><i class="fa-solid fa-arrow-left"></i>Zur Pipeline</button><span class="pipeline-depth-progress">${stageIndex < 5 ? `Station ${stageIndex + 1} von 5` : "Ergebnis"}</span>${nextStage ? `<button type="button" class="btn-primary" data-pipeline-stage-next>Nächste Station<i class="fa-solid fa-arrow-right"></i></button>` : `<button type="button" class="btn-primary" data-pipeline-detail-close>Schließen<i class="fa-solid fa-xmark"></i></button>`}</footer>
-    ${pipelineDrilldownState.editorOpen ? renderStageEditor(stage) : ""}
+    ${pipelineDrilldownState.routeEditor ? renderRoutingEditor(pipelineDrilldownState.routeEditor) : pipelineDrilldownState.editorOpen ? renderStageEditor(stage) : ""}
   </div>`;
   requestAnimationFrame(() => document.getElementById(pipelineDrilldownState.editorOpen ? "stage-editor-title" : "pipeline-detail-title")?.focus({ preventScroll: true }));
 }
@@ -974,6 +988,7 @@ async function savePipelineSettings() {
   history.unshift({ version: settings.version, at: settings.updated_at || new Date().toISOString(), changes: changes.length });
   localStorage.setItem("roots-pipeline-history", JSON.stringify(history.slice(0, 10)));
   pipelineDrilldownState.editorOpen = false;
+  pipelineDrilldownState.routeEditor = null;
   renderBusinessPipelineStudio();
   els.pipelineVersion.textContent = `Version ${settings.version} · gerade gespeichert`;
   toast("Pipeline-Konfiguration gespeichert");
@@ -2228,6 +2243,7 @@ function bindUi() {
         collectPipelineDraft();
         pipelineDrilldownState.stageId = null;
         pipelineDrilldownState.editorOpen = false;
+        pipelineDrilldownState.routeEditor = null;
         renderPipelineStudio();
       }
       // Save/preview live in the pinned bottom savebar of each panel, not the
@@ -2288,6 +2304,19 @@ function bindUi() {
       void savePipelineSettings().catch((error) => toast(error.message, "err"));
       return;
     }
+    const routingEditor = event.target.closest("[data-routing-editor]");
+    if (routingEditor) {
+      syncDraft();
+      pipelineDrilldownState.editorOpen = false;
+      pipelineDrilldownState.routeEditor = routingEditor.dataset.routingEditor;
+      renderPipelineStudio();
+      return;
+    }
+    if (event.target.closest("[data-routing-editor-close]")) {
+      pipelineDrilldownState.routeEditor = null;
+      renderPipelineStudio();
+      return;
+    }
     const resetButton = event.target.closest("[data-pipeline-reset-stage]");
     if (resetButton) {
       syncDraft();
@@ -2299,12 +2328,14 @@ function bindUi() {
       syncDraft();
       pipelineDrilldownState.stageId = openStage.dataset.pipelineOpenStage;
       pipelineDrilldownState.editorOpen = false;
+      pipelineDrilldownState.routeEditor = null;
       renderPipelineStudio();
       return;
     }
     if (event.target.closest("[data-pipeline-open-editor]")) {
       syncDraft();
       pipelineDrilldownState.editorOpen = true;
+      pipelineDrilldownState.routeEditor = null;
       renderPipelineStudio();
       return;
     }
@@ -2318,6 +2349,7 @@ function bindUi() {
       syncDraft();
       pipelineDrilldownState.stageId = null;
       pipelineDrilldownState.editorOpen = false;
+      pipelineDrilldownState.routeEditor = null;
       renderPipelineStudio();
       return;
     }
@@ -2328,6 +2360,7 @@ function bindUi() {
       const targetStage = pipelineStageDefinitions[activeStageIndex - 1];
       pipelineDrilldownState.stageId = targetStage.id;
       pipelineDrilldownState.editorOpen = false;
+      pipelineDrilldownState.routeEditor = null;
       renderPipelineStudio();
       return;
     }
@@ -2336,6 +2369,7 @@ function bindUi() {
       const targetStage = pipelineStageDefinitions[activeStageIndex + 1];
       pipelineDrilldownState.stageId = targetStage.id;
       pipelineDrilldownState.editorOpen = false;
+      pipelineDrilldownState.routeEditor = null;
       renderPipelineStudio();
       return;
     }
@@ -2344,6 +2378,7 @@ function bindUi() {
       syncDraft();
       pipelineDrilldownState.stageId = null;
       pipelineDrilldownState.editorOpen = false;
+      pipelineDrilldownState.routeEditor = null;
       renderPipelineStudio();
       els.settingsNav.querySelector(`[data-panel="${panelLink.dataset.openSettingsPanel}"]`)?.click();
     }

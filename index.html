@@ -1141,20 +1141,51 @@
   .stage-outcome--single { grid-template-columns: 1fr; }
 
   .stage-route-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .stage-route-grid > article {
+  .stage-route-card {
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     min-height: 170px;
     padding: 14px;
     border: 1px solid #dce5f2;
     border-radius: 12px;
+    color: inherit;
     background: #fbfcfe;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
   }
+  .stage-route-card:hover, .stage-route-card:focus-visible { border-color: var(--brand); box-shadow: 0 10px 24px rgba(32,110,251,.12); transform: translateY(-2px); }
   .stage-route-icon { display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 10px; border-radius: 9px; color: #fff; background: var(--brand); }
-  .stage-route-grid > article > b { font-size: .68rem; }
+  .stage-route-card > b { font-size: .68rem; }
   .stage-route-grid p { margin: 5px 0 12px; color: var(--muted); font-size: .57rem; line-height: 1.45; }
-  .stage-route-grid > article > div { display: flex; gap: 5px; flex-wrap: wrap; }
-  .stage-route-grid > article > div span { padding: 4px 7px; border-radius: 999px; color: #1554a0; background: #edf5ff; font-size: .49rem; font-weight: 700; }
+  .stage-route-card > div { display: flex; gap: 5px; flex-wrap: wrap; }
+  .stage-route-card > div span { padding: 4px 7px; border-radius: 999px; color: #1554a0; background: #edf5ff; font-size: .49rem; font-weight: 700; }
+  .stage-route-card > em { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--line); color: var(--brand); font-size: .54rem; font-style: normal; font-weight: 800; }
+
+  .routing-editor-card { width: min(880px, 100%); max-height: min(760px, 100%); }
+  .routing-editor-card > header { padding: 20px 22px; }
+  .routing-editor-card > main { padding: 24px; }
+  .routing-editor-card > footer { padding: 15px 22px; }
+  .routing-editor-heading { display: flex; align-items: flex-start; gap: 14px; }
+  .routing-editor-heading-icon { display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 12px; color: #fff !important; background: var(--brand); font-size: 1rem !important; }
+  .routing-editor-heading h5 { font-size: .94rem !important; }
+  .routing-editor-heading p { max-width: 620px; margin: 5px 0 0; color: var(--muted); font-size: .58rem; line-height: 1.5; }
+  .route-editor-intro { display: flex; gap: 14px; margin-bottom: 20px; padding: 16px; border: 1px solid #cfe0ff; border-radius: 13px; color: #174b83; background: #f1f6ff; }
+  .route-editor-intro > i { margin-top: 2px; font-size: 1.15rem; }
+  .route-editor-intro b { font-size: .68rem; }
+  .route-editor-intro p { margin: 5px 0 0; font-size: .58rem; line-height: 1.55; }
+  .routing-editor-card .stage-toggle-list { gap: 12px; }
+  .routing-editor-card .stage-toggle { min-height: 76px; padding: 14px 16px; }
+  .routing-editor-card .pipeline-taxonomy-editor { margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--line); }
+  .routing-editor-card .offering-group { margin-block: 16px; padding: 16px; }
+  .routing-save-note { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: .55rem; }
+  .routing-editor-picker { display: grid; gap: 12px; }
+  .routing-editor-picker > button { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 13px; min-height: 78px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 13px; color: inherit; background: var(--bg); text-align: left; cursor: pointer; }
+  .routing-editor-picker > button > i:first-child { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: #fff; background: var(--brand); }
+  .routing-editor-picker b, .routing-editor-picker small { display: block; }
+  .routing-editor-picker b { font-size: .68rem; }
+  .routing-editor-picker small { margin-top: 4px; color: var(--muted); font-size: .56rem; }
 
   .stage-status-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .stage-status-grid--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
@@ -1779,7 +1810,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260717-1645';
+import { initApp } from './app.js?v=20260717-1745';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {
