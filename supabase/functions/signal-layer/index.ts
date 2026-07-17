@@ -2905,6 +2905,38 @@ Deno.serve(async (req: Request) => {
       // ---------------------------------------------------------------
       // Keyword management (Settings → Marketing/Sales Keywords)
       // ---------------------------------------------------------------
+      // Topics/Territories/Article-Types/Sales-Triggers: label/description are
+      // DB-editable, but the ID SET stays fixed for now — the classifier's
+      // Gemini response schema + PipelineConfig.relevance/quality are keyed
+      // by these exact IDs at module load. Adding/removing an ID here does
+      // NOT change what the classifier accepts until that schema is refactored
+      // to build dynamically; renaming label/description text is safe today.
+      case "list_taxonomy": {
+        const { kind } = body as { kind: "topics" | "territories" | "article_types" | "sales_triggers" };
+        if (!["topics", "territories", "article_types", "sales_triggers"].includes(kind)) return errorResponse(origin, "invalid kind");
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from(kind).select("*").order("label");
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { items: data || [] });
+      }
+
+      case "update_taxonomy": {
+        const { kind, id, label, description, active } = body as {
+          kind: "topics" | "territories" | "article_types" | "sales_triggers"; id: string;
+          label?: string; description?: string; active?: boolean;
+        };
+        if (!["topics", "territories", "article_types", "sales_triggers"].includes(kind)) return errorResponse(origin, "invalid kind");
+        if (!id) return errorResponse(origin, "id required");
+        const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (label !== undefined) updates.label = label.trim();
+        if (description !== undefined) updates.description = description.trim();
+        if (active !== undefined) updates.active = active;
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from(kind).update(updates).eq("id", id).select().single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { item: data });
+      }
+
       case "list_offerings": {
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("roots_offerings").select("*").order("label");
