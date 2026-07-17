@@ -914,6 +914,44 @@
   .gemini-model-list { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; }
   .gemini-model-list > span { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 6px 8px; border: 1px solid #d8e5fb; border-radius: 9px; color: #174b83; background: #f7faff; font-size: .55rem; font-weight: 700; }
   .gemini-model-list small { padding-left: 5px; border-left: 1px solid #c9d9ef; color: var(--muted); font-size: .48rem; font-weight: 500; }
+  .operations-layout { display: grid; gap: 14px; max-width: 980px; margin: 0 auto; }
+  .operations-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .operations-metrics article { display: flex; align-items: center; gap: 12px; min-height: 88px; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: 0 4px 16px rgba(15, 23, 42, .035); }
+  .operations-metrics small, .operations-metrics b { display: block; }
+  .operations-metrics small { color: var(--muted); font-size: .62rem; font-weight: 600; }
+  .operations-metrics b { margin-top: 4px; color: var(--ink); font-size: 1.05rem; }
+  .operations-metric-icon { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; border-radius: 11px; }
+  .operations-metric-icon--blue { color: #1e63d5; background: #eaf2ff; }
+  .operations-metric-icon--violet { color: #7652c5; background: #f2edff; }
+  .operations-metric-icon--green { color: #16845b; background: #e9f8f1; }
+  .operations-metric--warning { border-color: #f1c85b !important; background: #fffdf4 !important; }
+  .operations-card { padding: 1.15rem; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: 0 5px 20px rgba(15, 23, 42, .04); }
+  .operations-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 1rem; }
+  .operations-card-head span { color: var(--brand); font-size: .56rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .operations-card-head h4 { margin: 4px 0 4px; color: var(--ink); font-size: .92rem; }
+  .operations-card-head p { max-width: 620px; margin: 0; color: var(--muted); font-size: .66rem; line-height: 1.5; }
+  .operations-inline-status { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; padding: 6px 9px; border-radius: 999px; color: var(--muted); background: var(--surface); font-size: .55rem; font-weight: 700; white-space: nowrap; }
+  .operations-inline-status--ready { color: #136246; background: #e9f8f1; }
+  .operations-inline-status--error { color: #9c2f2f; background: #fff0f0; }
+  .operations-model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .operations-model-field { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: start; gap: 11px; padding: .9rem; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); cursor: pointer; }
+  .operations-model-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: var(--brand); background: var(--brand-light); }
+  .operations-model-copy b, .operations-model-copy small { display: block; }
+  .operations-model-copy b { color: var(--ink); font-size: .72rem; }
+  .operations-model-copy small { min-height: 28px; margin: 3px 0 9px; color: var(--muted); font-size: .58rem; line-height: 1.4; }
+  .operations-select-wrap { position: relative; display: block; }
+  .operations-select-wrap .pipeline-control { width: 100%; height: 42px; padding: 0 34px 0 11px; border-color: #cbd8e8; background: var(--bg); font-weight: 650; appearance: none; cursor: pointer; }
+  .operations-select-wrap > i { position: absolute; right: 12px; top: 50%; color: var(--muted); font-size: .6rem; pointer-events: none; transform: translateY(-50%); }
+  .operations-review-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 10px; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 13px; }
+  .operations-review-row b, .operations-review-row small { display: block; }
+  .operations-review-row b { font-size: .7rem; }
+  .operations-review-row small { margin-top: 3px; color: var(--muted); font-size: .58rem; }
+  .operations-refresh { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 5px 0; border: 0; color: var(--brand); background: transparent; font: 700 .58rem/1 CircularStd, sans-serif; cursor: pointer; }
+  .operations-refresh:hover, .operations-refresh:focus-visible { color: var(--brand-dark); outline: none; text-decoration: underline; }
+  .operations-card-symbol { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; border-radius: 11px; color: #7652c5; background: #f2edff; }
+  .operations-card--compact .pipeline-form-grid { grid-template-columns: minmax(0, 480px); margin-bottom: 0; }
+  .operations-card--compact .pipeline-field { min-height: 68px; background: var(--surface); }
+  .operations-savebar { margin-top: 0; }
   .pipeline-layer-map { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 7px; margin-bottom: 10px; }
   .pipeline-layer-map > i { color: #a6b8d2; font-size: .75rem; }
   .pipeline-layer-map article { min-width: 0; min-height: 116px; padding: .75rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
@@ -936,6 +974,10 @@
     .model-manager-head { align-items: stretch; flex-direction: column; }
     .model-manager-head .btn-secondary { justify-content: center; width: 100%; }
     .pipeline-model-select { width: 100%; }
+    .operations-metrics, .operations-model-grid { grid-template-columns: 1fr; }
+    .operations-card-head { flex-direction: column; }
+    .operations-inline-status { align-self: flex-start; }
+    .operations-model-copy small { min-height: 0; }
     .pipeline-layer-map { grid-template-columns: 1fr; }
     .pipeline-layer-map > i { justify-self: center; transform: rotate(90deg); }
     .pipeline-layer-map article { min-height: 0; }
@@ -1733,7 +1775,7 @@
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-operations">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Laufender Betrieb</span><h3>Kosten &amp; Betrieb</h3><p>Gemini-Modelle per API validieren und auswählen sowie Request-, Review- und Kostenlimits steuern.</p></div><div id="operations-content"></div></div>
+          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Laufender Betrieb</span><h3>Kosten &amp; Betrieb</h3><p>Kosten im Blick behalten und festlegen, welche KI-Modelle neue Artikel prüfen.</p></div><div id="operations-content"></div></div>
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-diagnostics">

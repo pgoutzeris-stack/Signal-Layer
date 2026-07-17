@@ -497,6 +497,53 @@ function renderGeminiModelManager() {
   return `${pipelineEditHead("Gemini-Modelle", "Primary analysiert alle Kandidaten; das Review-Modell prüft nur konfigurierte Grenzfälle.")}<div class="model-manager-head"><div>${status}<p>Die Liste kommt live aus der Gemini API. Der API-Key bleibt im Supabase-Secret und wird nie an den Browser übertragen.</p></div><button type="button" class="btn-secondary" data-refresh-gemini-models ${state.status === "loading" ? "disabled" : ""}><i class="fa-solid fa-arrows-rotate"></i> Modelle erneut prüfen</button></div>${pipelineFields(["ai.primary_model", "ai.review_model", "ai.review_enabled"])}${models}`;
 }
 
+function operationsModelSelect(path, label, description, icon) {
+  const value = getConfigValue(path);
+  const modelIds = [...new Set([value, ...geminiModelCatalog.map((model) => model.id)].filter(Boolean))];
+  const options = modelIds.map((modelId) => {
+    const model = geminiModelCatalog.find((item) => item.id === modelId);
+    const optionLabel = model?.display_name || modelId;
+    return `<option value="${escapeHtml(modelId)}" ${modelId === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`;
+  }).join("");
+  return `<label class="operations-model-field"><span class="operations-model-icon"><i class="${icon}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)}</small><span class="operations-select-wrap"><select class="pipeline-control" data-pipeline-path="${path}" ${geminiModelCatalogState.status === "loading" ? "disabled" : ""} aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
+}
+
+function renderOperationsPanel(telemetry) {
+  const euro = (value) => value === null || value === undefined
+    ? "–"
+    : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+  const modelState = geminiModelCatalogState.status === "loading"
+    ? `<span class="operations-inline-status"><i class="fa-solid fa-spinner fa-spin"></i> Modelle werden geladen</span>`
+    : geminiModelCatalogState.status === "error"
+      ? `<span class="operations-inline-status operations-inline-status--error"><i class="fa-solid fa-circle-exclamation"></i> Modellliste nicht verfügbar</span>`
+      : `<span class="operations-inline-status operations-inline-status--ready"><i class="fa-solid fa-circle-check"></i> Modellauswahl aktuell</span>`;
+  const reviewEnabled = Boolean(getConfigValue("ai.review_enabled"));
+  return `<div class="operations-layout">
+    <section class="operations-metrics" aria-label="Betriebskosten im Überblick">
+      <article><span class="operations-metric-icon operations-metric-icon--blue"><i class="fa-solid fa-calendar-day"></i></span><div><small>KI-Kosten heute</small><b>${euro(telemetry?.costs?.today_eur)}</b></div></article>
+      <article class="${telemetry?.costs?.warning ? "operations-metric--warning" : ""}"><span class="operations-metric-icon operations-metric-icon--violet"><i class="fa-solid fa-calendar"></i></span><div><small>KI-Kosten diesen Monat</small><b>${euro(telemetry?.costs?.month_eur)}</b></div></article>
+      <article><span class="operations-metric-icon operations-metric-icon--green"><i class="fa-solid fa-wand-magic-sparkles"></i></span><div><small>KI-Analysen</small><b>${Number(telemetry?.costs?.requests || 0).toLocaleString("de-DE")}</b></div></article>
+    </section>
+
+    <section class="operations-card">
+      <div class="operations-card-head"><div><span>KI-Konfiguration</span><h4>Modelle für neue Artikel</h4><p>Das Hauptmodell prüft jeden geeigneten Artikel. Die zweite Prüfung greift nur bei unsicheren Ergebnissen.</p></div>${modelState}</div>
+      <div class="operations-model-grid">
+        ${operationsModelSelect("ai.primary_model", "Hauptmodell", "Analysiert alle Artikel nach dem Vorfilter.", "fa-solid fa-bolt")}
+        ${operationsModelSelect("ai.review_model", "Modell für zweite Prüfung", "Kontrolliert Ergebnisse unterhalb der Sicherheitsgrenze.", "fa-solid fa-shield-halved")}
+      </div>
+      <div class="operations-review-row"><div><b>Zweite Prüfung bei Unsicherheit</b><small>${reviewEnabled ? "Aktiv – erhöht die Sicherheit bei Grenzfällen." : "Aus – Grenzfälle werden nicht erneut geprüft."}</small></div><label class="source-toggle pipeline-switch"><input data-pipeline-path="ai.review_enabled" type="checkbox" ${reviewEnabled ? "checked" : ""} aria-label="Zweite Prüfung bei Unsicherheit"><span class="source-toggle-slider"></span></label></div>
+      <button type="button" class="operations-refresh" data-refresh-gemini-models ${geminiModelCatalogState.status === "loading" ? "disabled" : ""}><i class="fa-solid fa-arrows-rotate"></i> Modellauswahl aktualisieren</button>
+    </section>
+
+    <section class="operations-card operations-card--compact">
+      <div class="operations-card-head"><div><span>Kostenkontrolle</span><h4>Monatliche Warnung</h4><p>Du erhältst einen Hinweis, sobald die geschätzten KI-Kosten diesen Wert erreichen. Die Pipeline wird nicht gestoppt.</p></div><i class="fa-solid fa-bell operations-card-symbol"></i></div>
+      ${pipelineFields(["ai.monthly_warning_usd"])}
+    </section>
+
+    <div class="pipeline-savebar operations-savebar"><span>Gespeicherte Änderungen gelten automatisch für alle zukünftigen Artikel.</span><button class="btn-primary" type="button" data-pipeline-save><i class="fa-solid fa-floppy-disk"></i> Änderungen speichern</button></div>
+  </div>`;
+}
+
 function lockedRule(title, description) {
   return `<div class="pipeline-locked-rule"><div><b>${escapeHtml(title)}</b><small>${escapeHtml(description)}</small></div><i class="fa-solid fa-lock" title="Fest im Servercode"></i></div>`;
 }
@@ -882,10 +929,7 @@ function renderBusinessPipelineStudio() {
 
   const operations = document.getElementById("operations-content");
   if (operations) {
-    const telemetry = pipelineOperationsTelemetry;
-    const euro = (value) => value === null || value === undefined ? "Kurs wird geladen" : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
-    const telemetryHtml = telemetry ? `<div class="telemetry-grid" style="margin-bottom:12px"><div class="telemetry-stat"><span>Gemini heute</span><b>${euro(telemetry.costs?.today_eur)}</b></div><div class="telemetry-stat ${telemetry.costs?.warning ? "telemetry-stat--warning" : ""}"><span>Gemini im Monat</span><b>${euro(telemetry.costs?.month_eur)}</b></div><div class="telemetry-stat"><span>Quellenläufe</span><b>${Number(telemetry.health?.attempts || 0).toLocaleString("de-DE")}</b></div><div class="telemetry-stat"><span>Crawl-Fehler</span><b>${Number(telemetry.health?.errors || 0).toLocaleString("de-DE")}</b></div></div>` : "";
-    operations.innerHTML = `${telemetryHtml}${renderGeminiModelManager()}${pipelineEditHead("Kostenhinweis", "Die Kostenwarnung ist rein informativ. Ausgabenlimits werden ausschließlich in Google AI Studio verwaltet.")}${pipelineFields(["ai.monthly_warning_usd"])}<div class="pipeline-savebar"><span>Modellwechsel und Kostenhinweise gelten nach dem Speichern für neue Analysen.</span><button class="btn-primary" type="button" data-pipeline-save><i class="fa-solid fa-floppy-disk"></i> Änderungen speichern</button></div>`;
+    operations.innerHTML = renderOperationsPanel(pipelineOperationsTelemetry);
   }
 
   const diagnostics = document.getElementById("diagnostics-content");
