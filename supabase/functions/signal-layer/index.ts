@@ -789,7 +789,14 @@ async function performSiteLogin(domain: string, username: string, password: stri
     for (const [k, v] of Object.entries(handler.extraFields || {})) form.set(k, v);
     const postRes = await fetchWithTimeout(handler.loginUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: Object.values(cookieJar).join("; ") },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: Object.values(cookieJar).join("; "),
+        Origin: `https://${domain}`,
+        Referer: handler.loginUrl,
+        "Accept-Language": "de-DE,de;q=0.9",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      },
       body: form.toString(),
     });
     Object.assign(cookieJar, extractCookiePairs(postRes.headers));
