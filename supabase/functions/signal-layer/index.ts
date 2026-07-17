@@ -746,6 +746,11 @@ const LOGIN_HANDLERS: Record<string, { loginUrl: string; emailField: string; pas
     emailField: "i_email", passwordField: "i_password", csrfFieldName: "i_us_csrf",
     extraFields: { rel: "/", OKuser: "1" },
   },
+  "www.markenartikel-magazin.de": {
+    loginUrl: "https://www.markenartikel-magazin.de/_rubric/member.php",
+    emailField: "username", passwordField: "password", csrfFieldName: "csrfToken",
+    extraFields: { action: "dologin", rubric: "1", stay_logged_in: "1" },
+  },
 };
 
 async function getVaultSourceLoginCreds(sourceId: string): Promise<{ username: string; password: string } | null> {
@@ -830,8 +835,19 @@ async function getOrRefreshLoginCookie(source: { id: string; url: string; crawl_
 
 function looksLikePaywallTeaser(content: string): boolean {
   const normalized = normalizeMatchText(content);
-  return content.trim().length < 900
-    && /\b(nutzungsrechte|lizenz|abonnent|abo|subscription|subscribe|premium|login|anmelden)\b/i.test(normalized);
+  const explicitWall = /jetzt angebot wahlen und weiterlesen|hier anmelden|noch kein .*abonnement|digital.?lizenz/i.test(normalized);
+  return explicitWall || (content.trim().length < 900
+    && /\b(nutzungsrechte|lizenz|abonnent|abo|subscription|subscribe|premium|login|anmelden)\b/i.test(normalized));
+}
+
+// RSS and provider candidates often contain an editorial synopsis even when
+// the article page itself is paywalled. That synopsis is a valid, attributable
+// crawl fallback for classification; prefer it over login/paywall chrome.
+function buildCandidateSynopsis(title: string, excerpt: string, content = ""): string | null {
+  const cleanTitle = decodeArticleText(title).trim();
+  const cleanBody = decodeArticleText(content || excerpt).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const synopsis = [cleanTitle, cleanBody].filter(Boolean).join("\n\n");
+  return synopsis.length >= 180 && !looksLikePaywallTeaser(synopsis) ? synopsis.slice(0, 8000) : null;
 }
 
 // Some publishers accept the same credentials in a human browser but reject
@@ -3429,7 +3445,7 @@ Deno.serve(async (req: Request) => {
         const job = jobs?.[0];
         if (!job) return corsResponse(origin, { ok: true, idle: true });
         const { data: article } = await admin.schema("signal_layer").from("articles")
-          .select("id,title,url,content,source_id,source:sources(company,category)").eq("id", job.article_id).single();
+          .select("id,title,url,content,excerpt,source_id,source:sources(company,category)").eq("id", job.article_id).single();
         const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
         try {
           const source = Array.isArray(article?.source) ? article.source[0] : article?.source;
@@ -3445,6 +3461,13 @@ Deno.serve(async (req: Request) => {
             if ((retried?.content || "").length > analysisContent.length) {
               analysisContent = retried!.content;
               await admin.schema("signal_layer").from("articles").update({ content: analysisContent }).eq("id", article.id);
+            }
+            if (looksLikePaywallTeaser(analysisContent) || analysisContent.trim().length < 400) {
+              const synopsis = buildCandidateSynopsis(article.title || "", article.excerpt || "");
+              if (synopsis) {
+                analysisContent = synopsis;
+                await admin.schema("signal_layer").from("articles").update({ content: synopsis }).eq("id", article.id);
+              }
             }
           }
           await tagArticle(admin, article.id, job.crawl_run_id, article.title || "", analysisContent, [], companies || [], source || {});
@@ -3607,8 +3630,20 @@ Deno.serve(async (req: Request) => {
             const pageContent = suppliedContent.length < 800 || looksLikePaywallTeaser(suppliedContent)
               ? await fetchArticleForSource(candidate.url, source)
               : null;
-            const fetched = pageContent && pageContent.content.length > suppliedContent.length
+            const synopsisFallback = buildCandidateSynopsis(
+              String(candidate.title || pageContent?.title || ""),
+              String(candidate.excerpt || pageContent?.excerpt || ""),
+              suppliedContent,
+            );
+            const fetched = pageContent && !looksLikePaywallTeaser(pageContent.content) && pageContent.content.length > suppliedContent.length
               ? pageContent
+              : pageContent && looksLikePaywallTeaser(pageContent.content) && synopsisFallback
+              ? {
+                title: String(candidate.title || pageContent.title || "").trim(),
+                content: synopsisFallback,
+                excerpt: String(candidate.excerpt || pageContent.excerpt || "").trim(),
+                publishedAt: candidate.publishedAt || pageContent.publishedAt || null,
+              }
               : suppliedContent.length >= 240 ? {
                 title: String(candidate.title || "").trim(),
                 content: suppliedContent.slice(0, 8000),
