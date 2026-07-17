@@ -210,6 +210,22 @@
   @keyframes liveTextShimmer { to { background-position: -220% 0; } }
   @media (prefers-reduced-motion: reduce) { .is-live .live-shimmer { color: var(--muted) !important; background: none; animation: none; } }
   .api-error-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .analysis-error-chip { position: relative; }
+  .analysis-error-chip > .crawl-result-pill { cursor: help; }
+  .analysis-error-popover { position: absolute; right: 0; bottom: calc(100% + 8px); width: 305px; z-index: 70; padding: 12px; border: 1px solid #dce4ef; border-radius: 14px; background: #fff; color: var(--ink); box-shadow: 0 16px 42px rgba(15, 23, 42, .18); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(5px); transition: opacity .16s ease, visibility .16s ease, transform .16s ease; }
+  .analysis-error-chip:hover .analysis-error-popover, .analysis-error-chip:focus-within .analysis-error-popover { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
+  .analysis-error-popover::after { content: ""; position: absolute; right: 18px; bottom: -6px; width: 11px; height: 11px; border-right: 1px solid #dce4ef; border-bottom: 1px solid #dce4ef; background: #fff; transform: rotate(45deg); }
+  .analysis-error-popover-head { display: flex; align-items: flex-start; gap: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+  .analysis-error-popover-head > i { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 9px; color: var(--danger); background: #fef2f2; }
+  .analysis-error-popover-head b, .analysis-error-popover-head small { display: block; }
+  .analysis-error-popover-head b { font-size: .72rem; line-height: 1.25; }
+  .analysis-error-popover-head small { margin-top: 3px; color: var(--muted); font-size: .58rem; line-height: 1.35; }
+  .analysis-error-action { margin: 9px 0; padding: 8px 9px; border-radius: 9px; color: #174b83; background: #f4f8ff; font-size: .59rem; line-height: 1.4; }
+  .analysis-error-action b { display: block; margin-bottom: 2px; font-size: .56rem; text-transform: uppercase; letter-spacing: .05em; }
+  .analysis-error-sources { display: grid; gap: 4px; margin: 8px 0; }
+  .analysis-error-sources span { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .57rem; }
+  .analysis-error-sources b { color: var(--ink); font-size: inherit; }
+  .analysis-error-technical { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: #64748b; font: 500 .52rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
   .telemetry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
   .telemetry-stat { padding: 7px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
   .telemetry-stat span { display: block; color: var(--muted); font-size: .58rem; text-transform: uppercase; letter-spacing: .04em; }

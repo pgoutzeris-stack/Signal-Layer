@@ -2129,7 +2129,7 @@ function scheduleStatusRefresh(isActive) {
 
 async function loadLastRun() {
   try {
-    const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
+    const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, analysis_error_breakdown: analysisErrors = [], cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
     const formatEur = (value) => value === null || value === undefined
       ? "Kurs wird geladen"
       : `${Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -2187,7 +2187,7 @@ async function loadLastRun() {
     const failedAnalyses = Number(analysisQueue.error || 0);
     const queueAnalysisActive = queuedAnalyses + runningAnalyses > 0;
     const articleAnalysisActive = queueAnalysisActive || Boolean(backfill && ["queued", "running"].includes(backfill.status));
-    els.articleLiveProgress.hidden = !articleAnalysisActive;
+    els.articleLiveProgress.hidden = !articleAnalysisActive && analysisErrors.length === 0;
     if (articleAnalysisActive) {
       const total = queueAnalysisActive ? queuedAnalyses + runningAnalyses + completedAnalyses + failedAnalyses : Number(backfill.total_count || 0);
       const processed = queueAnalysisActive ? completedAnalyses + failedAnalyses : Number(backfill.processed_count || 0);
@@ -2203,18 +2203,26 @@ async function loadLastRun() {
       els.backfillProgressDetail.textContent = errors > 0
         ? `${status} · ${errors.toLocaleString("de-DE")} Artikel nicht analysiert · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`
         : queueAnalysisActive ? `${status} · ${queuedAnalyses.toLocaleString("de-DE")} warten · ${runningAnalyses.toLocaleString("de-DE")} aktiv` : `${status} · letzter Fortschritt ${formatRelativeTime(backfill.last_progress_at)}`;
-      els.apiErrorList.innerHTML = (backfill?.error_breakdown || []).map((error) => `
-        <span class="crawl-result-pill crawl-result-pill--error" title="${escapeHtml(error.explanation)}">
-          <i class="fa-solid fa-triangle-exclamation"></i>${Number(error.count || 0).toLocaleString("de-DE")} ${escapeHtml(error.label)}
-        </span>`).join("");
     } else {
       els.backfillProgressText.textContent = "Kein Lauf";
       els.backfillProgressDetail.textContent = "Aktuell werden keine Altartikel geprüft.";
-      els.apiErrorList.innerHTML = "";
       els.backfillCurrentArticle.hidden = true;
       els.backfillCurrentArticle.textContent = "";
       document.getElementById("backfill-status")?.classList.remove("is-live");
     }
+    const visibleErrors = analysisErrors.length ? analysisErrors : (backfill?.error_breakdown || []);
+    els.apiErrorList.innerHTML = visibleErrors.map((error) => {
+      const sources = (error.sources || []).map((source) => `<span><span>${escapeHtml(source.company)}</span><b>${Number(source.count || 0).toLocaleString("de-DE")}</b></span>`).join("");
+      return `<span class="analysis-error-chip" tabindex="0">
+        <span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-triangle-exclamation"></i>${Number(error.count || 0).toLocaleString("de-DE")} ${escapeHtml(error.label)}</span>
+        <span class="analysis-error-popover" role="tooltip">
+          <span class="analysis-error-popover-head"><i class="fa-solid fa-triangle-exclamation"></i><span><b>${escapeHtml(error.label)}</b><small>${escapeHtml(error.explanation || "Technischer Analysefehler")}</small></span></span>
+          ${error.action ? `<span class="analysis-error-action"><b>Automatische Behandlung</b>${escapeHtml(error.action)}</span>` : ""}
+          ${sources ? `<span class="analysis-error-sources"><b>Am häufigsten betroffen</b>${sources}</span>` : ""}
+          <code class="analysis-error-technical">${escapeHtml(error.raw_message || error.technical_message || "Keine technische Meldung gespeichert")}</code>
+        </span>
+      </span>`;
+    }).join("");
     scheduleStatusRefresh(isActive);
   } catch {
     els.lastRunText.textContent = "Noch kein Crawl-Lauf.";

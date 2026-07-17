@@ -1722,6 +1722,10 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
       && !/\b(report|rückblick|results|ergebnisse|launch|kampagne|strategy|strategie)\b/i.test(title)) {
     reasons.push("Event-, Teilnehmer- oder Programmseite ohne strategisches Signal");
   }
+  const directoryOrListing = /\b(media contacts?|kontakt|anbieter|supplier|company profile|unternehmensprofil)\b/i.test(title)
+    || (/\b(tel\.?|fax|e-mail|grundungsjahr|mitarbeiter)\b/i.test(text) && /\b(adresse|strasse|straße|internet|www\.)\b/i.test(text))
+    || ((text.match(/\b(download file|read more)\b/gi) || []).length >= 6 && /\b(media|downloads?|publications?)\b/i.test(title));
+  if (directoryOrListing) reasons.push("Verzeichnis-, Kontakt- oder Übersichtsseite ohne redaktionellen Artikel");
   const contentUnavailable = text.trim().length < config.filters.minimum_text_length || looksLikePaywallTeaser(text);
   if (contentUnavailable) reasons.push("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
   const titleYear = title.match(/\b(20\d{2})\b/)?.[1];
@@ -2581,14 +2585,15 @@ async function tagArticle(
   await admin.schema("signal_layer").from("findings").delete().eq("article_id", articleId);
   if (hardReasons.length > 0) {
     const contentUnavailable = hardReasons.includes("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
+    const recognisedNonArticle = hardReasons.some((reason) => /Verzeichnis-|Kontakt-|Übersichtsseite|Karriere-|FAQ-|Event-/.test(reason));
     await admin.schema("signal_layer").from("articles").update({
       cleaned_content: cleanedContent,
       article_type: hardReasons.some((reason) => reason.includes("Karriere")) ? "career" : "other",
-      classification_status: contentUnavailable ? "error" : "rejected",
+      classification_status: contentUnavailable && !recognisedNonArticle ? "error" : "rejected",
       relevance_confidence: 1,
       rejection_reasons: hardReasons,
       language,
-      ai_model: contentUnavailable ? "content-extraction" : "deterministic-rules",
+      ai_model: contentUnavailable && !recognisedNonArticle ? "content-extraction" : "deterministic-rules",
       prompt_version: CLASSIFIER_PROMPT_VERSION,
       classified_at: new Date().toISOString(),
       content_hash: contentHash,
@@ -4029,7 +4034,7 @@ Deno.serve(async (req: Request) => {
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
-        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }] = await Promise.all([
+        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { data: analysisFailures }] = await Promise.all([
           admin.schema("signal_layer").from("crawl_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("crawl_runs").select("id, finished_at, current_index, source_ids")
@@ -4047,6 +4052,9 @@ Deno.serve(async (req: Request) => {
             .select("crawl_run_id,source_id,position,status,error_code").order("position").limit(1000),
           admin.schema("signal_layer").from("article_analysis_jobs")
             .select("crawl_run_id,status").limit(5000),
+          admin.schema("signal_layer").from("articles")
+            .select("rejection_reasons,source:sources(company)")
+            .eq("classification_status", "error").order("classified_at", { ascending: false }).limit(2000),
         ]);
         let backfillErrorCount = 0;
         let errorBreakdown: Array<{ code: string; label: string; explanation: string; count: number }> = [];
@@ -4152,6 +4160,59 @@ Deno.serve(async (req: Request) => {
           backfillWithProgress = { ...backfill, current_article: currentArticle || null };
         }
         const usdEurRate = await getUsdEurRate();
+        const failureDefinitions = {
+          content_extraction: {
+            label: "Artikeltext nicht verfügbar",
+            explanation: "Die Quelle lieferte keinen ausreichend vollständigen redaktionellen Text.",
+            action: "Der Worker versucht Direktabruf, Login und Feed-Auszug automatisch erneut.",
+            technical_message: "Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen",
+          },
+          spending_cap: {
+            label: "Gemini-Ausgabenlimit erreicht",
+            explanation: "Google hat die Analyse wegen des monatlichen Projektlimits abgelehnt.",
+            action: "Nach Freigabe des Limits können diese Artikel erneut eingereiht werden.",
+            technical_message: "Gemini API 429: monthly spending cap exceeded",
+          },
+          rate_limit: {
+            label: "Gemini-Quota erreicht",
+            explanation: "Das Modellkontingent oder kurzfristige Anfragelimit war ausgeschöpft.",
+            action: "Technische Wiederholung mit Abstand; bei dauerhaftem Fehler Modellkontingent prüfen.",
+            technical_message: "Gemini API 429: quota or rate limit exceeded",
+          },
+          invalid_response: {
+            label: "Modellantwort nicht lesbar",
+            explanation: "Gemini lieferte keine vollständig validierbare Klassifikation.",
+            action: "Der Artikel kann erneut analysiert werden; wiederholte Fälle werden als Modellfehler ausgewiesen.",
+            technical_message: "Gemini returned no valid classification",
+          },
+          other: {
+            label: "Technischer Analysefehler",
+            explanation: "Die Analyse wurde mit einer nicht näher zugeordneten Fehlermeldung beendet.",
+            action: "Konkrete Servermeldung unten prüfen und den Artikel erneut einreihen.",
+            technical_message: "Unklassifizierter Analysefehler",
+          },
+        } as const;
+        const failureMap = new Map<string, { count: number; sources: Map<string, number>; raw: string }>();
+        for (const row of analysisFailures || []) {
+          const raw = String(row.rejection_reasons?.[0] || "Unklassifizierter Analysefehler");
+          const normalized = raw.toLowerCase();
+          const code = normalized.includes("artikelinhalt nicht verfügbar") ? "content_extraction"
+            : normalized.includes("spending cap") ? "spending_cap"
+            : normalized.includes("429") || normalized.includes("quota") || normalized.includes("rate limit") ? "rate_limit"
+            : normalized.includes("no valid classification") || normalized.includes("invalid") ? "invalid_response"
+            : "other";
+          const entry = failureMap.get(code) || { count: 0, sources: new Map<string, number>(), raw };
+          entry.count += 1;
+          const linkedSource = Array.isArray(row.source) ? row.source[0] : row.source;
+          const sourceName = String(linkedSource?.company || "Unbekannte Quelle");
+          entry.sources.set(sourceName, (entry.sources.get(sourceName) || 0) + 1);
+          failureMap.set(code, entry);
+        }
+        const analysisErrorBreakdown = [...failureMap.entries()].map(([code, entry]) => ({
+          code, ...failureDefinitions[code as keyof typeof failureDefinitions], count: entry.count,
+          sources: [...entry.sources.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([company, count]) => ({ company, count })),
+          raw_message: entry.raw.replace(/\s+/g, " ").slice(0, 500),
+        })).sort((a, b) => b.count - a.count);
         return corsResponse(origin, {
           crawl_run: crawlWithProgress,
           last_completed_crawl: completedCrawl || null,
@@ -4171,6 +4232,7 @@ Deno.serve(async (req: Request) => {
             summary[job.status] = (summary[job.status] || 0) + 1;
             return summary;
           }, {} as Record<string, number>),
+          analysis_error_breakdown: analysisErrorBreakdown,
         });
       }
 
