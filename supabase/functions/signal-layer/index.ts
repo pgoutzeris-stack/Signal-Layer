@@ -739,8 +739,14 @@ function extractParagraphCluster(html: string): string | null {
 
 async function fetchArticleContent(url: string): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
   if (isLikelyNonEditorialUrl(url)) return null;
-  try {
-    const res = await fetchWithTimeout(url);
+  // Editorial sites intermittently return consent/interstitial pages or time
+  // out. Retry once with cache bypass before declaring the body unavailable.
+  // This is deliberately bounded: classification must not stall a crawl.
+  for (let attempt = 0; attempt < 2; attempt += 1) try {
+    const res = await fetchWithTimeout(url, attempt === 0 ? {} : {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    });
     if (!res.ok) return null;
     const html = await res.text();
 
@@ -789,10 +795,15 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
       .trim();
     text = decodeArticleText(text);
 
-    return { title: decodeArticleText(title), content: text.slice(0, 8000), excerpt: decodeArticleText(excerpt), publishedAt };
+    const result = { title: decodeArticleText(title), content: text.slice(0, 8000), excerpt: decodeArticleText(excerpt), publishedAt };
+    // A tiny body is commonly a paywall/JS shell. Give the retry a chance to
+    // return the real article; after the second attempt preserve the result so
+    // it can be audited as content_unavailable instead of being mislabelled.
+    if (result.content.length >= 400 || attempt === 1) return result;
   } catch {
-    return null;
+    if (attempt === 1) return null;
   }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1478,7 +1489,8 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
       && !/\b(report|rückblick|results|ergebnisse|launch|kampagne|strategy|strategie)\b/i.test(title)) {
     reasons.push("Event-, Teilnehmer- oder Programmseite ohne strategisches Signal");
   }
-  if (text.trim().length < config.filters.minimum_text_length) reasons.push("Zu wenig redaktioneller Artikeltext");
+  const contentUnavailable = text.trim().length < config.filters.minimum_text_length;
+  if (contentUnavailable) reasons.push("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
   const titleYear = title.match(/\b(20\d{2})\b/)?.[1];
   if (titleYear && Number(titleYear) <= new Date().getUTCFullYear() - 2
       && /\b(event|messe|festival|conference|konferenz|forum|summit|all in)\b/i.test(title)) {
@@ -1498,7 +1510,9 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
     /\b(market entr\w*|market expansion|growth strateg\w*|business model\w*|portfolio (?:change|transformation)|restructur\w*)\b/i,
     /\b(acquisition|merger|ubernahm\w*|fusion\w*|agency change|agenturwechsel|retail strateg\w*)\b/i,
   ];
-  if (config.filters.require_professional_signal && !professionalSignalPatterns.some((pattern) => pattern.test(normalized))) {
+  // Relevance cannot be judged from a teaser/consent shell. Keep extraction
+  // failures diagnostically separate from genuine no-signal rejections.
+  if (!contentUnavailable && config.filters.require_professional_signal && !professionalSignalPatterns.some((pattern) => pattern.test(normalized))) {
     reasons.push("Kein fachliches Marketing-, Retail-, Customer-, Innovations- oder Strategiesignal");
   }
   if (config.decisions.reject_pure_appointments
@@ -1570,6 +1584,24 @@ function inferRecoveredMarketingTopic(evidence: string): typeof TOPIC_IDS[number
     return "ki_performance";
   }
   return "marketing_insights";
+}
+
+function recoverMissingMarketingTopics(articleText: string, existing: AiTag[], minimumConfidence: number): AiTag[] {
+  const sentences = articleText.split(/(?<=[.!?])\s+|\n+/).map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 45 && sentence.length <= 700);
+  const rules: Array<{ id: typeof TOPIC_IDS[number]; pattern: RegExp }> = [
+    { id: "customer_insights", pattern: /\b(customer|consumer|shopper|kund\w*|konsument\w*|verbraucher\w*|kaufverhalten|konsumverhalten|zielgrupp\w*|loyalty)\b/i },
+    { id: "fmcg_retail_signale", pattern: /\b(retail|handel\w*|handler\w*|sortiment\w*|assortment|pricing|preisstrateg\w*|promotion|category management|kategoriemanagement|store concept|filialkonzept)\b/i },
+    { id: "ki_performance", pattern: /(?=.*\b(ai|artificial intelligence|ki|kunstliche intelligenz)\b)(?=.*\b(used|uses|using|deploy\w*|implement\w*|application|eingesetzt|einfuhr\w*|automati\w*|optimier\w*|pricing|preis\w*)\b)/i },
+  ];
+  const recovered: AiTag[] = [];
+  for (const rule of rules) {
+    if (existing.some((topic) => topic.id === rule.id) || recovered.some((topic) => topic.id === rule.id)) continue;
+    const evidence = sentences.find((sentence) => rule.pattern.test(normalizeMatchText(sentence))
+      && MARKETING_RECOVERY_VALUE_PATTERN.test(normalizeMatchText(sentence)));
+    if (evidence) recovered.push({ id: rule.id, confidence: Math.max(minimumConfidence, 0.9), evidence });
+  }
+  return recovered;
 }
 
 function hasTransferableMarketingSubstance(
@@ -1921,6 +1953,13 @@ function selectCompanyCandidates(
   }));
 }
 
+function companyEvidenceMentionsCandidate(
+  evidence: string,
+  company: { name: string; aliases: string[] },
+): boolean {
+  return [company.name, ...(company.aliases || [])].some((label) => containsMatchTerm(evidence, label));
+}
+
 function passesEventPreClassificationGate(
   articleText: string,
   tier1Companies: Array<{ name: string; aliases: string[] }>,
@@ -2008,6 +2047,7 @@ Financial_news is not an article-level rejection reason when it explicitly prove
 Buying Center is downstream of Sales. Recommend one to four specific roles that would genuinely benefit from the proposed asset. A named person from the article is preferred when their responsibility fits; otherwise recommend roles and set research_required=true. A pure CEO/CMO appointment, press contact, testimonial or spokesperson is insufficient.
 Sales is not a synonym for Marketing. A campaign_launch alone is NEVER a Sales signal. General product launches, portfolio news, sponsorships, testimonials and campaign execution remain Marketing unless the article separately proves a concrete strategic change or commercial need relevant to ROOTS. Investment qualifies only when it concerns marketing, brand, customer/consumer insights, retail media, category management, marketing technology, capabilities or an external partner/agency/consulting mandate. Investment in factories, filling, packaging, machinery, production, logistics, buildings or other operational infrastructure is not a ROOTS Sales signal. Require verbatim Sales evidence for the strategic change, buying need, mandate, budget, tender, partner search or ROOTS-relevant capability build. The same strategic passage may support Marketing and Sales only when all additional Sales substance requirements are independently fulfilled.
 Marketing and Sales are evaluated independently. Missing Tier-1 status, a missing Sales trigger or an ineligible Buying Center must NEVER make an otherwise evidence-backed Marketing result uncertain or rejected. Put route-specific failures only into routing_decisions.sales.reason, not into the article-level rejection_reasons array. Article-level rejection_reasons are reserved for reasons that invalidate every route.
+Return EVERY separately evidenced applicable topic, not only the strongest one. Multi-topic classification is expected: consumer/customer behaviour plus retail/pricing should return both customer_insights and fmcg_retail_signale; a concrete AI application in marketing/customer/retail/pricing must additionally return ki_performance; a transferable sector conclusion may additionally return sub_branchen_insight. Each topic needs its own verbatim evidence sentence.
 Pure title sponsorship, logo placement, generic visibility/community claims and tactical discounts/coupons are not Marketing by themselves. They require a concrete activation mechanism plus strategic rationale, customer insight, tested learning or measurable result. A campaign or product launch needs transferable substance beyond the announcement itself.
 For each routing_decision, provide separate verbatim evidence. If routing is not eligible, use an empty evidence string and explain why in German.
 </routing_rules>
@@ -2024,7 +2064,7 @@ function validateClassification(
   tier1Companies: Array<{ name: string; aliases: string[] }>,
   config: PipelineConfig = DEFAULT_PIPELINE_CONFIG,
 ): AiClassification {
-  const canonicalCompanies = new Map(tier1Companies.map((company) => [normalizeMatchText(company.name), company.name]));
+  const canonicalCompanies = new Map(tier1Companies.map((company) => [normalizeMatchText(company.name), company]));
   const marketInsightTransferable = Boolean(raw.market_insight_transferable);
   const relevanceMode = (topicId: string) => config.relevance[topicId as keyof PipelineConfig["relevance"]];
   const hasRequiredImpact = (tag: AiTag) => /\b(measur\w*|impact|result\w*|uplift|roi|increase\w*|improv\w*|wirkung|ergebnis\w*|steiger\w*|strategie|strategy|implemented|eingefuhrt|pilot)\b/i
@@ -2046,12 +2086,22 @@ function validateClassification(
     ? { ...raw.territory, confidence: clampConfidence(raw.territory.confidence) }
     : { id: "none", confidence: 0, evidence: "" };
   const companies = (Array.isArray(raw.companies) ? raw.companies : [])
-    .map((company) => ({
-      ...company,
-      name: canonicalCompanies.get(normalizeMatchText(company.name)) || "",
-      confidence: clampConfidence(company.confidence),
-    }))
-    .filter((company) => company.name && company.confidence >= config.quality.company_confidence && evidenceExists(company.evidence, articleText));
+    .map((company) => {
+      const canonical = canonicalCompanies.get(normalizeMatchText(company.name));
+      return {
+        ...company,
+        name: canonical?.name || "",
+        aliases: canonical?.aliases || [],
+        confidence: clampConfidence(company.confidence),
+      };
+    })
+    // The evidence sentence itself must name the company (or one of its
+    // aliases). This prevents a stray navigation mention such as "Action"
+    // from being attached to evidence about the actual subject, e.g. Asda.
+    .filter((company) => company.name && company.confidence >= config.quality.company_confidence
+      && evidenceExists(company.evidence, articleText)
+      && companyEvidenceMentionsCandidate(company.evidence, company))
+    .map(({ aliases: _aliases, ...company }) => company);
   const people = (Array.isArray(raw.people) ? raw.people : [])
     .map((person) => {
       const role = String(person.role || "").trim();
@@ -2087,6 +2137,12 @@ function validateClassification(
   }
   if (!marketingUse.transferable_value || !marketingUse.sufficient_substance || !marketingUse.evidence) {
     marketingUse.publishable = false;
+  }
+  // Gemini sometimes emits only its strongest topic. Once it has established
+  // transferable Marketing substance, recover other independently evidenced
+  // Customer/Retail/applied-AI dimensions from exact article sentences.
+  if (marketingUse.publishable && marketingUse.sufficient_substance) {
+    topics.push(...recoverMissingMarketingTopics(articleText, topics, config.quality.topic_confidence));
   }
   const salesUse: AiSalesUse = {
     actionable: Boolean(raw.sales_use?.actionable),
@@ -2291,14 +2347,15 @@ async function tagArticle(
 
   await admin.schema("signal_layer").from("findings").delete().eq("article_id", articleId);
   if (hardReasons.length > 0) {
+    const contentUnavailable = hardReasons.includes("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
     await admin.schema("signal_layer").from("articles").update({
       cleaned_content: cleanedContent,
       article_type: hardReasons.some((reason) => reason.includes("Karriere")) ? "career" : "other",
-      classification_status: "rejected",
+      classification_status: contentUnavailable ? "error" : "rejected",
       relevance_confidence: 1,
       rejection_reasons: hardReasons,
       language,
-      ai_model: "deterministic-rules",
+      ai_model: contentUnavailable ? "content-extraction" : "deterministic-rules",
       prompt_version: CLASSIFIER_PROMPT_VERSION,
       classified_at: new Date().toISOString(),
       content_hash: contentHash,
@@ -2618,9 +2675,10 @@ Deno.serve(async (req: Request) => {
         const articleText = `${title}\n${cleanedContent}`;
         const hardReasons = hardRejectionReasons(title, cleanedContent, config);
         if (hardReasons.length) {
+          const contentUnavailable = hardReasons.includes("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
           return corsResponse(origin, {
             model: "deterministic-rules", classification: {
-              relevance_status: "rejected", overall_confidence: 1,
+              relevance_status: contentUnavailable ? "uncertain" : "rejected", overall_confidence: 1,
               article_type: hardReasons.some((reason) => reason.includes("Karriere")) ? "career" : "other",
               language: detectLanguage(articleText), rejection_reasons: hardReasons,
             },
@@ -3154,11 +3212,19 @@ Deno.serve(async (req: Request) => {
         const job = jobs?.[0];
         if (!job) return corsResponse(origin, { ok: true, idle: true });
         const { data: article } = await admin.schema("signal_layer").from("articles")
-          .select("id,title,content,source:sources(company,category)").eq("id", job.article_id).single();
+          .select("id,title,url,content,source:sources(company,category)").eq("id", job.article_id).single();
         const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
         try {
           const source = Array.isArray(article?.source) ? article.source[0] : article?.source;
-          await tagArticle(admin, article.id, job.crawl_run_id, article.title || "", article.content || "", [], companies || [], source || {});
+          let analysisContent = String(article.content || "");
+          if (analysisContent.trim().length < 400 && article.url) {
+            const retried = await fetchArticleContent(article.url);
+            if ((retried?.content || "").length > analysisContent.length) {
+              analysisContent = retried!.content;
+              await admin.schema("signal_layer").from("articles").update({ content: analysisContent }).eq("id", article.id);
+            }
+          }
+          await tagArticle(admin, article.id, job.crawl_run_id, article.title || "", analysisContent, [], companies || [], source || {});
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "done", finished_at: new Date().toISOString() }).eq("id", job.id);
         } catch (workerError) {
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", error_message: String(workerError).slice(0, 1000), finished_at: new Date().toISOString() }).eq("id", job.id);
@@ -3306,14 +3372,16 @@ Deno.serve(async (req: Request) => {
 
           for (const candidate of batch) {
             const suppliedContent = String(candidate.content || "").trim();
-            const fetched = suppliedContent.length >= 240
-              ? {
+            const pageContent = suppliedContent.length < 800 ? await fetchArticleContent(candidate.url) : null;
+            const fetched = pageContent && pageContent.content.length > suppliedContent.length
+              ? pageContent
+              : suppliedContent.length >= 240 ? {
                 title: String(candidate.title || "").trim(),
                 content: suppliedContent.slice(0, 8000),
                 excerpt: String(candidate.excerpt || "").trim(),
                 publishedAt: candidate.publishedAt || null,
               }
-              : await fetchArticleContent(candidate.url);
+              : pageContent;
             if (!fetched) { rejected.fetch_failed = (rejected.fetch_failed || 0) + 1; continue; }
             if (isLikelyNonEditorialPage(fetched)) { rejected.non_editorial = (rejected.non_editorial || 0) + 1; continue; }
             if (!passesEventPreClassificationGate(
