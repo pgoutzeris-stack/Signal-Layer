@@ -1560,6 +1560,7 @@ async function openArticleDetail(articleId) {
           <p class="decision-rationale">${escapeHtml(decisionExplanation)}</p>
         </div>
         ${reasons.length ? `<div class="decision-block"><span class="decision-label">Ausschlussregeln</span><div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></div>` : ""}
+        ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><p class="offering-match-reasoning">${escapeText(article.matched_offering_reasoning || "")}</p></div></div>` : ""}
         <div class="decision-block">
           <span class="decision-label">Tags & Routing</span>
           <div class="decision-tags">${renderDetailTags(article) || `<span class="decision-lead">Keine Tags vergeben</span>`}</div>

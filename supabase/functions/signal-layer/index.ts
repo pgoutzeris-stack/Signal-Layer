@@ -1784,6 +1784,68 @@ async function callGeminiClassifier(
   return classification;
 }
 
+// Fixed ROOTS offering catalog (6P-Model, roots-consultants.com). Sales-track
+// matching must be grounded against a real service list, not free-text LLM
+// invention — otherwise "roots_relevance" sounds plausible for any trigger
+// without actually being something ROOTS sells.
+const ROOTS_OFFERINGS: Array<{ id: string; label: string; description: string }> = [
+  { id: "planning", label: "Planning – Growth Strategy", description: "Wachstumsstrategie: Pfade für nachhaltig profitables Wachstum, Marktanteilsgewinne, Markteintritt/-expansion." },
+  { id: "purpose", label: "Purpose – Brand Positioning", description: "Markenpositionierung: Wertversprechen der Marke für Konsumenten, Mitarbeitende und Stakeholder definieren." },
+  { id: "presence", label: "Presence – Customer Experience", description: "Customer Experience: integrierte CX-Programme über die gesamte Customer Journey für Konsistenz und Attraktivität." },
+  { id: "people", label: "People – Marketing Capabilities", description: "Marketing-Kompetenzaufbau: Team-Fähigkeiten für kontinuierlichen Marktwandel entwickeln." },
+  { id: "productivity", label: "Productivity – Marketing Operations", description: "Marketing Operations: Systeme und Prozesse für höhere Effizienz und Output transformieren." },
+  { id: "performance", label: "Performance – Marketing Analytics", description: "Marketing Analytics: analytische Infrastruktur und Datenkultur als Wettbewerbsvorteil aufbauen." },
+];
+
+// Grounds the Sales trigger against the fixed ROOTS offering catalog instead
+// of trusting free-text roots_relevance — returns null when no offering
+// genuinely fits, rather than forcing a match.
+async function matchRootsOffering(
+  challenge: string,
+  triggerEvidence: string,
+  telemetry: { articleId?: string } = {},
+): Promise<{ id: string; label: string; reasoning: string } | null> {
+  if (!challenge?.trim()) return null;
+  const key = await getGeminiKey();
+  if (!key) return null;
+  const config = await getPipelineConfig();
+  const catalog = ROOTS_OFFERINGS.map((o) => `${o.id}: ${o.label} — ${o.description}`).join("\n");
+  const prompt = `Du bist ein Vertriebsanalyst bei ROOTS, einer Marketingberatung. ROOTS bietet ausschließlich diese sechs Leistungen an:\n${catalog}\n\nUnternehmens-Herausforderung: "${challenge}"\nBeleg: "${triggerEvidence}"\n\nPasst GENAU EINE dieser sechs Leistungen konkret zu dieser Herausforderung? Sei streng — ein vager thematischer Bezug reicht nicht, es muss eine plausible Anfrage/Ansprache mit genau dieser Leistung ableitbar sein. Antworte NUR als JSON: {"offering_id": "<id oder null>", "reasoning": "<1 Satz Deutsch, warum diese Leistung konkret passt, oder warum keine passt>"}`;
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.ai.primary_model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json", maxOutputTokens: 512, temperature: 0.1,
+          thinkingConfig: { thinkingLevel: "minimal" },
+          responseSchema: { type: "OBJECT", required: ["offering_id", "reasoning"], properties: {
+            offering_id: { type: "STRING", enum: [...ROOTS_OFFERINGS.map((o) => o.id), "null"] },
+            reasoning: { type: "STRING" },
+          } },
+        },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const usage = payload?.usageMetadata || {};
+    await recordArticleGeminiUsage(telemetry.articleId, {
+      inputTokens: Number(usage.promptTokenCount || 0), outputTokens: Number(usage.candidatesTokenCount || 0),
+      thinkingTokens: Number(usage.thoughtsTokenCount || 0),
+      totalTokens: Number(usage.totalTokenCount || 0), estimatedCostUsd: 0,
+    });
+    const text = payload?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("");
+    const parsed = JSON.parse(text || "{}");
+    const offering = ROOTS_OFFERINGS.find((o) => o.id === parsed.offering_id);
+    if (!offering) return null;
+    return { id: offering.id, label: offering.label, reasoning: String(parsed.reasoning || "").slice(0, 400) };
+  } catch {
+    return null;
+  }
+}
+
 // Full-text translation of a non-German article body into German, preserving
 // the lightweight Markdown structure. Separate, plain-text Gemini call (no
 // response schema) so it stays cheap and is only ever run for foreign articles.
@@ -2288,6 +2350,15 @@ async function tagArticle(
   const buyingCenterCandidate = config.routing.buying_center_enabled && salesEligible
     && (!config.routing.buying_center_requires_person
       || classification.people.length > 0 || classification.buying_center.recommended_roles.length > 0);
+  // Ground the Sales trigger against ROOTS' actual offering catalog — only
+  // for genuinely sales-eligible articles (cheap, targeted extra call).
+  const matchedOffering = salesEligible
+    ? await matchRootsOffering(
+        classification.sales_use.company_challenge,
+        classification.sales_use.evidence || classification.routing_decisions.sales.evidence,
+        { articleId },
+      )
+    : null;
   const buyingCenterLabels = [
     ...classification.people.map((person) => `${person.name} (${person.role})`),
     ...classification.buying_center.recommended_roles.map((role) => `Zielrolle: ${role}`),
@@ -2378,6 +2449,8 @@ async function tagArticle(
     buying_center_candidate: buyingCenterCandidate,
     routing,
     tag_status: classification.relevance_status === "reliable" ? "tagged" : "untagged",
+    matched_offering: matchedOffering?.label || null,
+    matched_offering_reasoning: matchedOffering?.reasoning || null,
   }).eq("id", articleId);
 
   if (eventDuplicateId) {
@@ -3480,7 +3553,7 @@ Deno.serve(async (req: Request) => {
         if (!articleId) return errorResponse(origin, "article_id is required");
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
+          .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
           .eq("id", articleId).single();
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
         return corsResponse(origin, { article: data });

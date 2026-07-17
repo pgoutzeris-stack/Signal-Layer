@@ -386,6 +386,9 @@
   .article-detail-aside h3 { margin: 0 0 .4rem; font-size: 1rem; color: var(--ink); }
   .decision-lead { margin: 0 0 1rem; font-size: .76rem; line-height: 1.45; color: var(--muted); }
   .decision-block { padding: .85rem 0; border-top: 1px solid var(--line); }
+  .decision-block--offering { border: 1px solid var(--brand); background: var(--brand-light); border-radius: 12px; padding: .75rem .85rem; margin: .3rem 0; }
+  .offering-match-name { font-weight: 700; color: var(--brand-dark, var(--brand)); font-size: .85rem; }
+  .offering-match-reasoning { margin-top: 4px; font-size: .78rem; line-height: 1.4; color: var(--status-text); }
   .decision-label { display: block; margin-bottom: .5rem; font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .decision-rationale { margin: 0; font-size: .8rem; line-height: 1.55; color: var(--status-text); }
   .decision-tags { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -1764,7 +1767,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260717-1130';
+import { initApp } from './app.js?v=20260717-1230';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {
