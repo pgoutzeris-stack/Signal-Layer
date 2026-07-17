@@ -1960,7 +1960,9 @@ async function callGeminiClassifier(
       responseMimeType: "application/json",
       responseSchema: GEMINI_RESPONSE_SCHEMA,
       maxOutputTokens: pipelineConfig.ai.max_output_tokens,
-      thinkingConfig: { thinkingLevel: pipelineConfig.ai.thinking_level },
+      thinkingConfig: model.startsWith("gemini-2.5-")
+        ? { thinkingBudget: pipelineConfig.ai.thinking_level === "minimal" ? 0 : 512 }
+        : { thinkingLevel: pipelineConfig.ai.thinking_level },
     },
   });
   const makeRequestInit = (): RequestInit => ({
@@ -2094,7 +2096,7 @@ async function matchRootsOffering(
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
           responseMimeType: "application/json", maxOutputTokens: 512, temperature: 0.1,
-          thinkingConfig: { thinkingLevel: "minimal" },
+          thinkingConfig: config.ai.primary_model.startsWith("gemini-2.5-") ? { thinkingBudget: 0 } : { thinkingLevel: "minimal" },
           responseSchema: { type: "OBJECT", required: ["offering_id", "reasoning"], properties: {
             offering_id: { type: "STRING", enum: [...offerings.map((o) => o.id), "null"] },
             reasoning: { type: "STRING" },
@@ -2143,7 +2145,7 @@ async function translateArticleToGerman(
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 4096, temperature: 0.2, thinkingConfig: { thinkingLevel: "minimal" } },
+        generationConfig: { maxOutputTokens: 4096, temperature: 0.2, thinkingConfig: model.startsWith("gemini-2.5-") ? { thinkingBudget: 0 } : { thinkingLevel: "minimal" } },
       }),
       signal: AbortSignal.timeout(60_000),
     });
