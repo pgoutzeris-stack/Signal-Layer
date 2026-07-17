@@ -430,10 +430,15 @@
   .taxonomy-section { margin-bottom: 1.5rem; }
   .taxonomy-section h4 { display: flex; align-items: center; justify-content: space-between; font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: .6rem; }
   .taxonomy-row { display: grid; grid-template-columns: 1fr 2fr auto auto; gap: 8px; align-items: center; padding: .5rem 0; border-bottom: 1px solid var(--line); }
+  .offering-row { grid-template-columns: minmax(120px,.65fr) minmax(180px,1fr) minmax(280px,2fr) auto auto; }
+  .offering-pillar { font-weight: 700; color: var(--brand-dark, var(--brand)); }
+  .offering-group { margin: 1rem 0 1.4rem; padding: .75rem; border: 1px solid var(--line); border-radius: 12px; }
+  .offering-group-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .35rem; }
+  .offering-group-head h5 { margin: 0; font-size: .9rem; }
   .taxonomy-input { border: 1px solid var(--line); border-radius: 8px; padding: .4rem .55rem; font-size: .78rem; font-family: inherit; }
   .taxonomy-active { display: flex; align-items: center; gap: 5px; font-size: .72rem; color: var(--muted); white-space: nowrap; }
   .taxonomy-id { font-size: .68rem; color: var(--muted); }
-  @media (max-width: 720px) { .taxonomy-row { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) { .taxonomy-row, .offering-row { grid-template-columns: 1fr; } }
   .pipeline-section-head > span { color: var(--brand); }
   .pipeline-section-head p { color: var(--muted); opacity: 1; }
   .pipeline-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 1rem; }
@@ -1707,7 +1712,7 @@
           <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Nur zur Nachvollziehbarkeit</span><h3>Systemdiagnose</h3><p>Read-only-Ansicht der Modelle, Prompt-Policy, technischen Schwellenwerte und aktiven Code-Guardrails.</p></div><div id="diagnostics-content"></div></div>
         </div>
         <div class="settings-panel pipeline-panel" id="settings-panel-taxonomy">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Bezeichnungen &amp; Leistungen</span><h3>Taxonomie &amp; Leistungen</h3><p>Bezeichnung/Beschreibung bearbeitbar. Themen &amp; Territories: ID-Menge fest (Klassifizierer-Code), nur Text änderbar. Leistungen: voll verwaltbar (hinzufügen/löschen/deaktivieren).</p></div><div id="taxonomy-content"></div></div>
+          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Bezeichnungen &amp; Leistungen</span><h3>Taxonomie &amp; ROOTS-Leistungen</h3><p>Bezeichnungen und Beschreibungen sind bearbeitbar. Die konkreten ROOTS-Leistungen sind nach dem 6P-Modell gruppiert und steuern die Zuordnung künftiger Sales-Artikel. Themen &amp; Territories behalten feste technische IDs.</p></div><div id="taxonomy-content"></div></div>
         </div>
       </div>
     </div>
@@ -1780,7 +1785,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260717-1400';
+import { initApp } from './app.js?v=20260717-1545';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {

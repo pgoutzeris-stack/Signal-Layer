@@ -1788,13 +1788,13 @@ async function callGeminiClassifier(
 // matching must be grounded against a real service list, not free-text LLM
 // invention — otherwise "roots_relevance" sounds plausible for any trigger
 // without actually being something ROOTS sells.
-const ROOTS_OFFERINGS: Array<{ id: string; label: string; description: string }> = [
-  { id: "planning", label: "Planning – Growth Strategy", description: "Wachstumsstrategie: Pfade für nachhaltig profitables Wachstum, Marktanteilsgewinne, Markteintritt/-expansion." },
-  { id: "purpose", label: "Purpose – Brand Positioning", description: "Markenpositionierung: Wertversprechen der Marke für Konsumenten, Mitarbeitende und Stakeholder definieren." },
-  { id: "presence", label: "Presence – Customer Experience", description: "Customer Experience: integrierte CX-Programme über die gesamte Customer Journey für Konsistenz und Attraktivität." },
-  { id: "people", label: "People – Marketing Capabilities", description: "Marketing-Kompetenzaufbau: Team-Fähigkeiten für kontinuierlichen Marktwandel entwickeln." },
-  { id: "productivity", label: "Productivity – Marketing Operations", description: "Marketing Operations: Systeme und Prozesse für höhere Effizienz und Output transformieren." },
-  { id: "performance", label: "Performance – Marketing Analytics", description: "Marketing Analytics: analytische Infrastruktur und Datenkultur als Wettbewerbsvorteil aufbauen." },
+const ROOTS_OFFERINGS: Array<{ id: string; pillar: string; label: string; description: string }> = [
+  { id: "planning", pillar: "planning", label: "Planning – Growth Strategy", description: "Wachstumsstrategie: Pfade für nachhaltig profitables Wachstum, Marktanteilsgewinne, Markteintritt/-expansion." },
+  { id: "purpose", pillar: "purpose", label: "Purpose – Brand Positioning", description: "Markenpositionierung: Wertversprechen der Marke für Konsumenten, Mitarbeitende und Stakeholder definieren." },
+  { id: "presence", pillar: "presence", label: "Presence – Customer Experience", description: "Customer Experience: integrierte CX-Programme über die gesamte Customer Journey für Konsistenz und Attraktivität." },
+  { id: "people", pillar: "people", label: "People – Marketing Capabilities", description: "Marketing-Kompetenzaufbau: Team-Fähigkeiten für kontinuierlichen Marktwandel entwickeln." },
+  { id: "productivity", pillar: "productivity", label: "Productivity – Marketing Operations", description: "Marketing Operations: Systeme und Prozesse für höhere Effizienz und Output transformieren." },
+  { id: "performance", pillar: "performance", label: "Performance – Marketing Analytics", description: "Marketing Analytics: analytische Infrastruktur und Datenkultur als Wettbewerbsvorteil aufbauen." },
 ];
 
 // Grounds the Sales trigger against the fixed ROOTS offering catalog instead
@@ -1810,10 +1810,11 @@ async function matchRootsOffering(
   if (!key) return null;
   const config = await getPipelineConfig();
   const { data: dbOfferings } = await getAdminClient().schema("signal_layer").from("roots_offerings")
-    .select("id, label, description").eq("active", true);
+    .select("id, pillar, label, description, sort_order").eq("active", true)
+    .order("pillar").order("sort_order").order("label");
   const offerings = dbOfferings?.length ? dbOfferings : ROOTS_OFFERINGS;
-  const catalog = offerings.map((o) => `${o.id}: ${o.label} — ${o.description}`).join("\n");
-  const prompt = `Du bist ein Vertriebsanalyst bei ROOTS, einer Marketingberatung. ROOTS bietet ausschließlich diese Leistungen an:\n${catalog}\n\nUnternehmens-Herausforderung: "${challenge}"\nBeleg: "${triggerEvidence}"\n\nPasst GENAU EINE dieser Leistungen konkret zu dieser Herausforderung? Sei streng — ein vager thematischer Bezug reicht nicht, es muss eine plausible Anfrage/Ansprache mit genau dieser Leistung ableitbar sein. Antworte NUR als JSON: {"offering_id": "<id oder null>", "reasoning": "<1 Satz Deutsch, warum diese Leistung konkret passt, oder warum keine passt>"}`;
+  const catalog = offerings.map((o) => `[${o.pillar || "sonstige"}] ${o.id}: ${o.label} — ${o.description}`).join("\n");
+  const prompt = `Du bist ein Vertriebsanalyst bei ROOTS, einer Marketingberatung. ROOTS bietet ausschließlich die folgenden konkreten Leistungen innerhalb seines 6P-Modells an:\n${catalog}\n\nUnternehmens-Herausforderung: "${challenge}"\nBeleg: "${triggerEvidence}"\n\nPasst GENAU EINE konkrete Leistung zu dieser Herausforderung? Wähle die spezifischste passende Unterleistung, nicht nur einen 6P-Dachbereich. Sei streng — ein vager thematischer Bezug reicht nicht, es muss eine plausible Anfrage/Ansprache mit genau dieser Leistung ableitbar sein. Antworte NUR als JSON: {"offering_id": "<id oder null>", "reasoning": "<1 Satz Deutsch, warum diese Leistung konkret passt, oder warum keine passt>"}`;
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.ai.primary_model}:generateContent`, {
       method: "POST",
@@ -2966,29 +2967,36 @@ Deno.serve(async (req: Request) => {
 
       case "list_offerings": {
         const admin = getAdminClient();
-        const { data, error } = await admin.schema("signal_layer").from("roots_offerings").select("*").order("label");
+        const { data, error } = await admin.schema("signal_layer").from("roots_offerings").select("*")
+          .order("pillar").order("sort_order").order("label");
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { offerings: data || [] });
       }
 
       case "add_offering": {
-        const { id, label, description } = body as { id: string; label: string; description: string };
-        if (!id || !label || !description) return errorResponse(origin, "id, label, description required");
+        const { id, pillar, label, description, sort_order } = body as { id: string; pillar: string; label: string; description: string; sort_order?: number };
+        if (!id || !pillar || !label || !description) return errorResponse(origin, "id, pillar, label, description required");
+        if (!["planning", "purpose", "presence", "people", "productivity", "performance"].includes(pillar)) return errorResponse(origin, "invalid pillar");
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("roots_offerings")
-          .insert({ id: id.trim().toLowerCase().replace(/\s+/g, "_"), label: label.trim(), description: description.trim() })
+          .insert({ id: id.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_"), pillar, label: label.trim(), description: description.trim(), sort_order: Number(sort_order || 0) })
           .select().single();
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { offering: data });
       }
 
       case "update_offering": {
-        const { id, label, description, active } = body as { id: string; label?: string; description?: string; active?: boolean };
+        const { id, pillar, label, description, active, sort_order } = body as { id: string; pillar?: string; label?: string; description?: string; active?: boolean; sort_order?: number };
         if (!id) return errorResponse(origin, "id required");
         const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (pillar !== undefined) {
+          if (!["planning", "purpose", "presence", "people", "productivity", "performance"].includes(pillar)) return errorResponse(origin, "invalid pillar");
+          updates.pillar = pillar;
+        }
         if (label !== undefined) updates.label = label.trim();
         if (description !== undefined) updates.description = description.trim();
         if (active !== undefined) updates.active = active;
+        if (sort_order !== undefined) updates.sort_order = Number(sort_order);
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("roots_offerings")
           .update(updates).eq("id", id).select().single();

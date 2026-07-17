@@ -882,6 +882,15 @@ const TAXONOMY_KINDS = [
   { kind: "sales_triggers", label: "Sales-Trigger", fixedIds: true },
 ];
 
+const ROOTS_PILLARS = [
+  ["planning", "Planning – Wachstumsstrategie"],
+  ["purpose", "Purpose – Markenpositionierung"],
+  ["presence", "Presence – Customer Experience"],
+  ["people", "People – Marketing Capability"],
+  ["productivity", "Productivity – Marketing Operations"],
+  ["performance", "Performance – Marketing Analytics"],
+];
+
 function taxonomyRow(kind, item) {
   return `<div class="taxonomy-row" data-kind="${kind}" data-id="${escapeHtml(item.id)}">
     <input class="taxonomy-input taxonomy-label" value="${escapeHtml(item.label || "")}" placeholder="Bezeichnung">
@@ -892,12 +901,23 @@ function taxonomyRow(kind, item) {
 }
 
 function offeringRow(item) {
-  return `<div class="taxonomy-row" data-kind="offering" data-id="${escapeHtml(item.id)}">
+  return `<div class="taxonomy-row offering-row" data-kind="offering" data-id="${escapeHtml(item.id)}">
+    <select class="taxonomy-input taxonomy-pillar offering-pillar" aria-label="6P-Bereich">${ROOTS_PILLARS.map(([id, label]) => `<option value="${id}" ${item.pillar === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select>
     <input class="taxonomy-input taxonomy-label" value="${escapeHtml(item.label || "")}" placeholder="Bezeichnung">
-    <input class="taxonomy-input taxonomy-desc" value="${escapeHtml(item.description || "")}" placeholder="Beschreibung">
+    <textarea class="taxonomy-input taxonomy-desc" rows="2" placeholder="Was ROOTS bei dieser Leistung konkret macht">${escapeHtml(item.description || "")}</textarea>
     <label class="taxonomy-active"><input type="checkbox" ${item.active ? "checked" : ""}> aktiv</label>
     <button type="button" class="icon-btn taxonomy-delete" title="Löschen"><i class="fa-solid fa-trash"></i></button>
   </div>`;
+}
+
+function offeringGroups(items) {
+  return ROOTS_PILLARS.map(([pillar, title]) => {
+    const rows = items.filter((item) => item.pillar === pillar).map(offeringRow).join("");
+    return `<section class="offering-group" data-pillar="${pillar}">
+      <div class="offering-group-head"><h5>#${escapeHtml(title)}</h5><button type="button" class="btn-secondary btn-add-offering" data-pillar="${pillar}"><i class="fa-solid fa-plus"></i> Leistung</button></div>
+      ${rows || '<div class="track-card-empty">Noch keine Leistung in diesem Bereich.</div>'}
+    </section>`;
+  }).join("");
 }
 
 async function loadTaxonomyPanel() {
@@ -920,9 +940,7 @@ async function loadTaxonomyPanel() {
     ].map(([title, kind, items]) => `<div class="taxonomy-section"><h4>${escapeHtml(title)}</h4>${
       items.map((item) => taxonomyRow(kind, item)).join("")
     }</div>`).join("");
-    const offeringsHtml = `<div class="taxonomy-section"><h4>ROOTS-Leistungen <button type="button" class="btn-secondary" id="btn-add-offering"><i class="fa-solid fa-plus"></i> Neu</button></h4>${
-      offerings.offerings.map((item) => offeringRow(item)).join("")
-    }</div>`;
+    const offeringsHtml = `<div class="taxonomy-section"><h4>ROOTS-Leistungskatalog · 6P-Modell</h4>${offeringGroups(offerings.offerings)}</div>`;
     el.innerHTML = sections + offeringsHtml;
 
     el.querySelectorAll(".taxonomy-row").forEach((row) => {
@@ -932,7 +950,10 @@ async function loadTaxonomyPanel() {
         const description = row.querySelector(".taxonomy-desc").value;
         const active = row.querySelector(".taxonomy-active input").checked;
         try {
-          if (kind === "offering") await callApi("update_offering", { id, label, description, active });
+          if (kind === "offering") {
+            const pillar = row.querySelector(".taxonomy-pillar").value;
+            await callApi("update_offering", { id, pillar, label, description, active });
+          }
           else await callApi("update_taxonomy", { kind, id, label, description, active });
         } catch (error) { toast(error.message, "err"); }
       };
@@ -943,15 +964,17 @@ async function loadTaxonomyPanel() {
         try { await callApi("delete_offering", { id }); row.remove(); } catch (error) { toast(error.message, "err"); }
       });
     });
-    document.getElementById("btn-add-offering")?.addEventListener("click", async () => {
-      const label = prompt("Bezeichnung der neuen Leistung:");
+    el.querySelectorAll(".btn-add-offering").forEach((button) => button.addEventListener("click", async () => {
+      const pillar = button.dataset.pillar;
+      const label = prompt(`Neue Leistung unter #${pillar}:`);
       if (!label) return;
-      const description = prompt("Kurzbeschreibung (wofür passt diese Leistung?):") || "";
+      const description = prompt("Was macht ROOTS bei dieser Leistung konkret?") || "";
+      if (!description.trim()) return toast("Bitte eine konkrete Leistungsbeschreibung ergänzen.", "err");
       try {
-        await callApi("add_offering", { id: label, label, description });
+        await callApi("add_offering", { id: `${pillar}_${label}`, pillar, label, description });
         void loadTaxonomyPanel();
       } catch (error) { toast(error.message, "err"); }
-    });
+    }));
   } catch (error) {
     el.innerHTML = `<div class="track-card-empty">Taxonomie konnte nicht geladen werden: ${escapeHtml(error.message)}</div>`;
   }
