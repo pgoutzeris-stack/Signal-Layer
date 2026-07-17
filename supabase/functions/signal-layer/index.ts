@@ -810,6 +810,34 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
 // Apify fallback — only used when a source has neither RSS nor sitemap.
 // Heuristic pageFunction: JSON-LD/og:type Article detection + light pagination.
 // ---------------------------------------------------------------------------
+// Free fallback used BEFORE Apify for sources without RSS/sitemap: fetches
+// the homepage/listing page directly (no proxy, no JS rendering) and
+// extracts same-domain links. Works for ordinary server-rendered sites —
+// covers most cases Apify was paying for; genuinely JS-only or bot-blocked
+// sites still need Apify (tried next if this returns nothing).
+async function runFreeLinkCrawl(sourceUrl: string, policy: CrawlPolicy): Promise<CrawlProviderResult> {
+  try {
+    const res = await fetchWithTimeout(sourceUrl);
+    if (!res.ok) return { candidates: [], discoveredCount: 0, httpStatus: res.status, providerRunId: null, errorCode: `http_${res.status}`, errorMessage: `Homepage fetch failed: ${res.status}` };
+    const html = await res.text();
+    const hrefs = [...html.matchAll(/<a\b[^>]*\bhref=["']([^"'#]+)["']/gi)].map((m) => m[1]);
+    const seen = new Set<string>();
+    const links: string[] = [];
+    for (const href of hrefs) {
+      let abs: string;
+      try { abs = new URL(href, sourceUrl).toString(); } catch { continue; }
+      try { if (new URL(abs).hostname !== new URL(sourceUrl).hostname) continue; } catch { continue; }
+      if (seen.has(abs)) continue;
+      seen.add(abs);
+      if (isAllowedBySourcePolicy(abs, policy) && !isLikelyNonEditorialUrl(abs)) links.push(abs);
+    }
+    const candidates = links.slice(0, policy.maxCandidates).map((url) => ({ url, hasConfirmedPublishDate: false }));
+    return { candidates, discoveredCount: hrefs.length, httpStatus: res.status, providerRunId: null, errorCode: null, errorMessage: null };
+  } catch (error) {
+    return { candidates: [], discoveredCount: 0, httpStatus: null, providerRunId: null, errorCode: "fetch_failed", errorMessage: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Promise<CrawlProviderResult> {
   const apifyKey = await getApifyKey();
   if (!apifyKey) return { candidates: [], discoveredCount: 0, httpStatus: null, providerRunId: null, errorCode: "missing_api_key", errorMessage: "Apify API key is not configured" };
@@ -3343,12 +3371,22 @@ Deno.serve(async (req: Request) => {
           if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl);
           else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl);
           else {
-            const apifyResult = await runApifySourceCrawl(source.url, crawlPolicy);
-            candidates = apifyResult.candidates;
-            discoveredCount = apifyResult.discoveredCount;
-            providerHttpStatus = apifyResult.httpStatus;
-            providerRunId = apifyResult.providerRunId;
-            if (apifyResult.errorCode) throw new Error(`Apify ${apifyResult.errorCode}: ${apifyResult.errorMessage || "unknown error"}`);
+            // Free homepage-link crawl first (no cost, no proxy) — only pay
+            // for Apify when the free pass genuinely finds nothing (JS-only
+            // or bot-blocked site).
+            const freeResult = await runFreeLinkCrawl(source.url, crawlPolicy);
+            if (freeResult.candidates.length > 0) {
+              candidates = freeResult.candidates;
+              discoveredCount = freeResult.discoveredCount;
+              providerHttpStatus = freeResult.httpStatus;
+            } else {
+              const apifyResult = await runApifySourceCrawl(source.url, crawlPolicy);
+              candidates = apifyResult.candidates;
+              discoveredCount = apifyResult.discoveredCount;
+              providerHttpStatus = apifyResult.httpStatus;
+              providerRunId = apifyResult.providerRunId;
+              if (apifyResult.errorCode) throw new Error(`Apify ${apifyResult.errorCode}: ${apifyResult.errorMessage || "unknown error"}`);
+            }
           }
           if (!discoveredCount) discoveredCount = candidates.length;
           candidates = candidates
