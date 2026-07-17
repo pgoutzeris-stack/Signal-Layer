@@ -1622,9 +1622,6 @@
         <div class="settings-nav-item" data-panel="diagnostics">
           <i class="fa-solid fa-file-code"></i> Systemdiagnose
         </div>
-        <div class="settings-nav-item" data-panel="taxonomy">
-          <i class="fa-solid fa-tags"></i> Taxonomie &amp; Leistungen
-        </div>
       </nav>
 
       <div class="settings-content">
@@ -1711,9 +1708,6 @@
         <div class="settings-panel pipeline-panel" id="settings-panel-diagnostics">
           <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Nur zur Nachvollziehbarkeit</span><h3>Systemdiagnose</h3><p>Read-only-Ansicht der Modelle, Prompt-Policy, technischen Schwellenwerte und aktiven Code-Guardrails.</p></div><div id="diagnostics-content"></div></div>
         </div>
-        <div class="settings-panel pipeline-panel" id="settings-panel-taxonomy">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Bezeichnungen &amp; Leistungen</span><h3>Taxonomie &amp; ROOTS-Leistungen</h3><p>Bezeichnungen und Beschreibungen sind bearbeitbar. Die konkreten ROOTS-Leistungen sind nach dem 6P-Modell gruppiert und steuern die Zuordnung künftiger Sales-Artikel. Themen &amp; Territories behalten feste technische IDs.</p></div><div id="taxonomy-content"></div></div>
-        </div>
       </div>
     </div>
   </div>
@@ -1785,7 +1779,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260717-1545';
+import { initApp } from './app.js?v=20260717-1645';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {

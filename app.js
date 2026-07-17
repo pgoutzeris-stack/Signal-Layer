@@ -5,6 +5,7 @@ let sources = [];
 let appInitialized = false;
 let pipelineSettings = null;
 let pipelineBaselineConfig = null;
+let pipelineTaxonomy = { topics: [], territories: [], article_types: [], sales_triggers: [], offerings: [] };
 let pipelineStats = null;
 let geminiModelCatalog = [];
 let geminiModelCatalogState = { status: "idle", validatedAt: null, error: null };
@@ -361,19 +362,29 @@ function setConfigValue(path, value) {
   target[keys.at(-1)] = value;
 }
 
-async function syncRelevanceCardsFromTaxonomy() {
+async function loadPipelineTaxonomy() {
   try {
-    const { items } = await callApi("list_taxonomy", { kind: "topics" });
-    items.forEach((item) => {
+    const [topics, territories, articleTypes, salesTriggers, offerings] = await Promise.all([
+      callApi("list_taxonomy", { kind: "topics" }),
+      callApi("list_taxonomy", { kind: "territories" }),
+      callApi("list_taxonomy", { kind: "article_types" }),
+      callApi("list_taxonomy", { kind: "sales_triggers" }),
+      callApi("list_offerings"),
+    ]);
+    pipelineTaxonomy = {
+      topics: topics.items || [], territories: territories.items || [], article_types: articleTypes.items || [],
+      sales_triggers: salesTriggers.items || [], offerings: offerings.offerings || [],
+    };
+    pipelineTaxonomy.topics.forEach((item) => {
       const card = RELEVANCE_CARDS.find((c) => c.id === item.id);
       if (card) { card.title = item.label || card.title; card.description = item.description || card.description; }
     });
-  } catch { /* Settings-editable text only — keep static defaults on failure */ }
+  } catch { /* Pipeline remains usable with static defaults on API failure. */ }
 }
 
 async function loadPipelineSettings() {
   if (pipelineSettings) return;
-  await syncRelevanceCardsFromTaxonomy();
+  await loadPipelineTaxonomy();
   const { settings } = await callApi("get_pipeline_settings");
   pipelineSettings = settings;
   pipelineBaselineConfig = structuredClone(settings.config);
@@ -669,15 +680,15 @@ function renderStageEditor(stage) {
   const qualityProfiles = [["strict", "Streng", "Weniger Treffer, höchste Sicherheit."], ["balanced", "Ausgewogen", "Gute Balance aus Menge und Sicherheit."], ["discovery", "Offen", "Mehr Grenzfälle für die manuelle Prüfung."]].map(([value, label, copy]) => `<label class="quality-option"><input type="radio" name="quality-profile" data-pipeline-path="experience.quality_profile" value="${value}" ${getConfigValue("experience.quality_profile") === value ? "checked" : ""}><b>${label}</b><small>${copy}</small></label>`).join("");
   let content = "";
   if (stage.id === "crawl") content = `${pipelineFields(["crawl.freshness_days", "crawl.future_tolerance_hours", "crawl.default_max_depth", "crawl.default_max_pages", "crawl.event_max_depth", "crawl.event_max_pages"])}<button type="button" class="btn-secondary" data-open-settings-panel="apify"><i class="fa-solid fa-link"></i> Quellenliste öffnen</button>`;
-  if (stage.id === "prefilter") content = `${pipelineFields(["filters.minimum_text_length"])}<div class="stage-toggle-list">${simpleToggle("relevance.allow_product_launch_without_strategy", "Neue Produkte ohne Marketingbezug trotzdem prüfen", "Wenn eingeschaltet, prüft Gemini auch Meldungen ohne Kampagne, Zielgruppe oder Markenentscheidung.")}</div><div class="stage-fixed-note"><i class="fa-solid fa-lock"></i><span>Karriere, FAQ, Eventprogramme, Duplikate und reine Personalernennungen werden immer aussortiert.</span></div>`;
+  if (stage.id === "prefilter") content = `${pipelineFields(["filters.minimum_text_length"])}<div class="stage-toggle-list">${simpleToggle("relevance.allow_product_launch_without_strategy", "Neue Produkte ohne Marketingbezug trotzdem prüfen", "Wenn eingeschaltet, prüft Gemini auch Meldungen ohne Kampagne, Zielgruppe oder Markenentscheidung.")}</div><div class="stage-fixed-note"><i class="fa-solid fa-lock"></i><span>Karriere, FAQ, Eventprogramme, Duplikate und reine Personalernennungen werden immer aussortiert.</span></div>${taxonomyEditor("article_types", "Artikeltypen", "Beschreibt, wie redaktionelle, Studien-, Unternehmens-, Event- und Ausschlussformate erkannt werden.")}`;
   if (stage.id === "gemini") {
     const status = geminiModelCatalogState.status === "ready" ? `${geminiModelCatalog.length} Modelle geprüft` : geminiModelCatalogState.status === "loading" ? "Modelle werden geprüft" : geminiModelCatalogState.status === "error" ? "Prüfung fehlgeschlagen" : "Noch nicht geprüft";
     const topicCopies = { customer_insights: "Kundenverhalten und Bedürfnisse", marketing_insights: "Marke, Kampagnen und Medien", fmcg_retail_signale: "Handel, Sortiment und Preise", ki_performance: "Angewandte KI und Wirkung", sub_branchen_insight: "Übertragbare Marktveränderungen" };
     const topicEditors = RELEVANCE_CARDS.map((card) => { const value = getConfigValue(`relevance.${card.id}`); return `<label class="stage-topic-editor"><span><b>${escapeHtml(card.title)}</b><small>${escapeHtml(topicCopies[card.id])}</small></span><select class="pipeline-control" data-pipeline-path="relevance.${card.id}"><option value="relevant" ${value === "relevant" ? "selected" : ""}>Berücksichtigen</option><option value="impact_required" ${value === "impact_required" ? "selected" : ""}>Nur mit konkreter Wirkung</option><option value="not_relevant" ${value === "not_relevant" ? "selected" : ""}>Ausschließen</option></select></label>`; }).join("");
-    content = `<div class="stage-model-status"><span class="model-validation ${geminiModelCatalogState.status === "ready" ? "model-validation--ready" : geminiModelCatalogState.status === "error" ? "model-validation--error" : "model-validation--loading"}"><i class="fa-solid fa-shield-halved"></i>${escapeHtml(status)}</span><button type="button" class="btn-secondary" data-refresh-gemini-models><i class="fa-solid fa-arrows-rotate"></i> Neu prüfen</button></div>${pipelineFields(["ai.primary_model", "ai.review_model", "ai.review_enabled", "ai.review_confidence_below", "ai.thinking_level", "ai.max_output_tokens"])}<h6 class="stage-editor-subtitle">Welche Themen soll Gemini beachten?</h6><div class="stage-topic-editor-grid">${topicEditors}</div>`;
+    content = `<div class="stage-model-status"><span class="model-validation ${geminiModelCatalogState.status === "ready" ? "model-validation--ready" : geminiModelCatalogState.status === "error" ? "model-validation--error" : "model-validation--loading"}"><i class="fa-solid fa-shield-halved"></i>${escapeHtml(status)}</span><button type="button" class="btn-secondary" data-refresh-gemini-models><i class="fa-solid fa-arrows-rotate"></i> Neu prüfen</button></div>${pipelineFields(["ai.primary_model", "ai.review_model", "ai.review_enabled", "ai.review_confidence_below", "ai.thinking_level", "ai.max_output_tokens"])}<h6 class="stage-editor-subtitle">Welche Themen soll Gemini beachten?</h6><div class="stage-topic-editor-grid">${topicEditors}</div>${taxonomyEditor("topics", "Themen-Taxonomie", "Bezeichnung und Beschreibung werden direkt in den Klassifizierungs-Prompt übernommen.")}${taxonomyEditor("territories", "ROOTS-Territories", "Gemini nutzt diese Beschreibungen für die strategische Einordnung des Artikels.")}`;
   }
   if (stage.id === "validation") content = `<div class="quality-choice">${qualityProfiles}</div><div class="stage-toggle-list">${simpleToggle("relevance.require_ai_application", "KI nur bei echter Anwendung", "Allgemeine KI-Meinungen reichen nicht.")}${simpleToggle("relevance.allow_ai_pilot", "Konkrete KI-Piloten zulassen", "Ein belegter Pilot kann bereits zählen.")}${simpleToggle("relevance.require_subsector_transferability", "Markttrend muss übertragbar sein", "Ein einzelnes Unternehmensereignis reicht nicht.")}${simpleToggle("relevance.allow_campaign_without_results", "Kampagnen ohne Ergebnisse zulassen", "Ein konkreter Start kann vor ersten Messwerten zählen.")}</div>`;
-  if (stage.id === "routing") content = `<div class="stage-toggle-list">${simpleToggle("routing.marketing_enabled", "Marketing-Kacheln aktiv", "Zeigt bestätigte Marketing-Signale.")}${simpleToggle("routing.sales_enabled", "Sales-Kacheln aktiv", "Zeigt bestätigte Sales-Signale.")}${simpleToggle("routing.sales_requires_tier1", "Sales nur mit Tier-1-Unternehmen", "Verhindert Sales-Signale ohne Zielkunde.")}${simpleToggle("routing.sales_requires_trigger", "Sales nur mit konkretem Anlass", "Ein Firmenname allein reicht nicht.")}${simpleToggle("routing.buying_center_enabled", "Buying Center aktiv", "Ergänzt passende Personen und Rollen.")}${simpleToggle("routing.buying_center_requires_person", "Person oder Rolle erforderlich", "Verhindert allgemeine Ansprechpartner.")}</div>`;
+  if (stage.id === "routing") content = `<div class="stage-toggle-list">${simpleToggle("routing.marketing_enabled", "Marketing-Kacheln aktiv", "Zeigt bestätigte Marketing-Signale.")}${simpleToggle("routing.sales_enabled", "Sales-Kacheln aktiv", "Zeigt bestätigte Sales-Signale.")}${simpleToggle("routing.sales_requires_tier1", "Sales nur mit Tier-1-Unternehmen", "Verhindert Sales-Signale ohne Zielkunde.")}${simpleToggle("routing.sales_requires_trigger", "Sales nur mit konkretem Anlass", "Ein Firmenname allein reicht nicht.")}${simpleToggle("routing.buying_center_enabled", "Buying Center aktiv", "Ergänzt passende Personen und Rollen.")}${simpleToggle("routing.buying_center_requires_person", "Person oder Rolle erforderlich", "Verhindert allgemeine Ansprechpartner.")}</div>${taxonomyEditor("sales_triggers", "Sales-Trigger", "Diese Anlässe strukturieren die Sales-Prüfung; Änderungen fließen in neue Klassifizierungen ein.")}${offeringsEditor()}`;
   if (!content) return "";
   return `<div class="stage-editor-overlay"><section class="stage-editor-card" role="dialog" aria-modal="true" aria-labelledby="stage-editor-title"><header><div><span>Ändern</span><h5 id="stage-editor-title">${escapeHtml(meta.edit)}</h5></div><button type="button" class="pipeline-icon-btn" data-pipeline-editor-close aria-label="Bearbeitung schließen"><i class="fa-solid fa-xmark"></i></button></header><main><div class="stage-editor-state"><i class="fa-solid fa-circle-info"></i>Gespeicherte Änderungen gelten für neue Prüfungen.</div>${content}</main><footer>${PIPELINE_STAGE_RESET_PATHS[stage.id] ? `<button type="button" class="btn-text" data-pipeline-reset-stage="${stage.id}"><i class="fa-solid fa-rotate-right"></i> Zurücksetzen</button>` : ""}<div><button type="button" class="btn-secondary" data-pipeline-editor-close>Abbrechen</button><button type="button" class="btn-primary" data-pipeline-save><i class="fa-solid fa-floppy-disk"></i> Speichern</button></div></footer></section></div>`;
 }
@@ -920,64 +931,27 @@ function offeringGroups(items) {
   }).join("");
 }
 
-async function loadTaxonomyPanel() {
-  const el = document.getElementById("taxonomy-content");
-  if (!el) return;
-  el.innerHTML = LOADER_HTML;
-  try {
-    const [topics, territories, articleTypes, salesTriggers, offerings] = await Promise.all([
-      callApi("list_taxonomy", { kind: "topics" }),
-      callApi("list_taxonomy", { kind: "territories" }),
-      callApi("list_taxonomy", { kind: "article_types" }),
-      callApi("list_taxonomy", { kind: "sales_triggers" }),
-      callApi("list_offerings"),
-    ]);
-    const sections = [
-      ["Themen", "topics", topics.items],
-      ["Territories", "territories", territories.items],
-      ["Artikeltypen", "article_types", articleTypes.items],
-      ["Sales-Trigger", "sales_triggers", salesTriggers.items],
-    ].map(([title, kind, items]) => `<div class="taxonomy-section"><h4>${escapeHtml(title)}</h4>${
-      items.map((item) => taxonomyRow(kind, item)).join("")
-    }</div>`).join("");
-    const offeringsHtml = `<div class="taxonomy-section"><h4>ROOTS-Leistungskatalog · 6P-Modell</h4>${offeringGroups(offerings.offerings)}</div>`;
-    el.innerHTML = sections + offeringsHtml;
+function taxonomyEditor(kind, title, description) {
+  const rows = (pipelineTaxonomy[kind] || []).map((item) => taxonomyRow(kind, item)).join("");
+  return `<section class="pipeline-taxonomy-editor"><div class="pipeline-edit-head"><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></div><span><i class="fa-solid fa-pen"></i> Wirkt auf neue Analysen</span></div>${rows || '<div class="track-card-empty">Keine Einträge geladen.</div>'}</section>`;
+}
 
-    el.querySelectorAll(".taxonomy-row").forEach((row) => {
-      const kind = row.dataset.kind, id = row.dataset.id;
-      const save = async () => {
-        const label = row.querySelector(".taxonomy-label").value;
-        const description = row.querySelector(".taxonomy-desc").value;
-        const active = row.querySelector(".taxonomy-active input").checked;
-        try {
-          if (kind === "offering") {
-            const pillar = row.querySelector(".taxonomy-pillar").value;
-            await callApi("update_offering", { id, pillar, label, description, active });
-          }
-          else await callApi("update_taxonomy", { kind, id, label, description, active });
-        } catch (error) { toast(error.message, "err"); }
-      };
-      row.querySelectorAll(".taxonomy-input").forEach((input) => input.addEventListener("change", save));
-      row.querySelector(".taxonomy-active input").addEventListener("change", save);
-      row.querySelector(".taxonomy-delete")?.addEventListener("click", async () => {
-        if (!confirm(`Leistung "${id}" wirklich löschen?`)) return;
-        try { await callApi("delete_offering", { id }); row.remove(); } catch (error) { toast(error.message, "err"); }
-      });
-    });
-    el.querySelectorAll(".btn-add-offering").forEach((button) => button.addEventListener("click", async () => {
-      const pillar = button.dataset.pillar;
-      const label = prompt(`Neue Leistung unter #${pillar}:`);
-      if (!label) return;
-      const description = prompt("Was macht ROOTS bei dieser Leistung konkret?") || "";
-      if (!description.trim()) return toast("Bitte eine konkrete Leistungsbeschreibung ergänzen.", "err");
-      try {
-        await callApi("add_offering", { id: `${pillar}_${label}`, pillar, label, description });
-        void loadTaxonomyPanel();
-      } catch (error) { toast(error.message, "err"); }
-    }));
-  } catch (error) {
-    el.innerHTML = `<div class="track-card-empty">Taxonomie konnte nicht geladen werden: ${escapeHtml(error.message)}</div>`;
+function offeringsEditor() {
+  return `<section class="pipeline-taxonomy-editor"><div class="pipeline-edit-head"><div><strong>ROOTS-Leistungskatalog · 6P</strong><small>Nach einem bestätigten Sales-Anlass wählt Gemini die spezifischste passende ROOTS-Leistung.</small></div><span><i class="fa-solid fa-pen"></i> Wirkt auf neue Sales-Analysen</span></div>${offeringGroups(pipelineTaxonomy.offerings)}</section>`;
+}
+
+async function savePipelineTaxonomyRow(row) {
+  const kind = row.dataset.kind, id = row.dataset.id;
+  const label = row.querySelector(".taxonomy-label").value;
+  const description = row.querySelector(".taxonomy-desc").value;
+  const active = row.querySelector(".taxonomy-active input").checked;
+  if (kind === "offering") {
+    const pillar = row.querySelector(".taxonomy-pillar").value;
+    await callApi("update_offering", { id, pillar, label, description, active });
+  } else {
+    await callApi("update_taxonomy", { kind, id, label, description, active });
   }
+  await loadPipelineTaxonomy();
 }
 
 async function loadPipelineOperations() {
@@ -2265,7 +2239,6 @@ function bindUi() {
       if (panel !== "apify") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
       if (panel === "manual-review") void loadPipelineReview().catch((error) => toast(error.message, "err"));
       if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
-      if (panel === "taxonomy") void loadTaxonomyPanel().catch((error) => toast(error.message, "err"));
     });
   });
 
@@ -2275,6 +2248,31 @@ function bindUi() {
 
   els.settingsModal.addEventListener("click", (event) => {
     const syncDraft = () => { if (pipelineSettings) collectPipelineDraft(); };
+    const deleteOffering = event.target.closest(".taxonomy-delete");
+    if (deleteOffering) {
+      const row = deleteOffering.closest(".taxonomy-row");
+      if (!confirm(`Leistung "${row.dataset.id}" wirklich löschen?`)) return;
+      void callApi("delete_offering", { id: row.dataset.id }).then(async () => {
+        await loadPipelineTaxonomy();
+        renderPipelineStudio();
+        toast("Leistung gelöscht");
+      }).catch((error) => toast(error.message, "err"));
+      return;
+    }
+    const addOffering = event.target.closest(".btn-add-offering");
+    if (addOffering) {
+      const pillar = addOffering.dataset.pillar;
+      const label = prompt(`Neue Leistung unter #${pillar}:`);
+      if (!label) return;
+      const description = prompt("Was macht ROOTS bei dieser Leistung konkret?") || "";
+      if (!description.trim()) return toast("Bitte eine konkrete Leistungsbeschreibung ergänzen.", "err");
+      void callApi("add_offering", { id: `${pillar}_${label}`, pillar, label, description }).then(async () => {
+        await loadPipelineTaxonomy();
+        renderPipelineStudio();
+        toast("Leistung hinzugefügt");
+      }).catch((error) => toast(error.message, "err"));
+      return;
+    }
     if (event.target.closest("[data-refresh-gemini-models]")) {
       syncDraft();
       void loadGeminiModels(true).then(() => toast("Gemini-Modelle erfolgreich validiert")).catch((error) => toast(error.message, "err"));
@@ -2352,11 +2350,20 @@ function bindUi() {
   });
 
   const markPipelineDraft = (event) => {
+    if (event.target.closest(".taxonomy-row")) return;
     if (!event.target.matches("[data-pipeline-path]")) return;
     els.pipelineVersion.textContent = "Ungespeicherte Änderungen · erst nach Speichern für neue Analysen aktiv";
   };
   els.settingsModal.addEventListener("input", markPipelineDraft);
   els.settingsModal.addEventListener("change", markPipelineDraft);
+  els.settingsModal.addEventListener("change", (event) => {
+    const row = event.target.closest(".taxonomy-row");
+    if (!row) return;
+    void savePipelineTaxonomyRow(row).then(() => {
+      renderPipelineStudio();
+      toast("Taxonomie für neue Analysen gespeichert");
+    }).catch((error) => toast(error.message, "err"));
+  });
 
   document.getElementById("pipeline-review-list")?.addEventListener("click", (event) => {
     const article = event.target.closest("[data-article-id]");

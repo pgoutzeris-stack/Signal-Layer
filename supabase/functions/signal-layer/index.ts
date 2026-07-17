@@ -1941,7 +1941,7 @@ function passesEventPreClassificationGate(
 // per article. IDs stay fixed (schema enum unaffected); only the wording sent
 // to Gemini is dynamic. Falls back to the last-known static text if the DB
 // read fails or returns nothing, so classification never breaks on this.
-let taxonomyTextCache: { topics: string; territories: string; at: number } | null = null;
+let taxonomyTextCache: { topics: string; territories: string; articleTypes: string; salesTriggers: string; at: number } | null = null;
 const TAXONOMY_TEXT_CACHE_TTL = 60_000;
 const FALLBACK_TOPICS_TEXT = `- customer_insights: customer behavior, needs, trust, loyalty, experience or target groups
 - marketing_insights: brand strategy, positioning, campaigns, communication or media
@@ -1953,18 +1953,28 @@ const FALLBACK_TERRITORIES_TEXT = `- wachstumstreiber: growth, market entry, exp
 - marke_im_wandel: rebranding, repositioning, portfolio or brand transformation
 - operational_excellence: efficiency, organization, process, restructuring or cost optimization
 - empowered_marketers: marketing operating model, capabilities, teams, leadership or technology enablement`;
+const FALLBACK_ARTICLE_TYPES_TEXT = `- editorial_news/commentary/interview/analysis/background_report: editorial formats
+- trend_report/market_report/study/survey/whitepaper/benchmark/forecast/case_study: evidence and research formats
+- press_release/strategy_update/campaign_news/product_news/financial_news/acquisition_news/partnership_news/investment_news/expansion_news/restructuring_news/operations_news/personnel_news: company formats
+- event_announcement/event_report/panel_summary/exhibitor_news/event_program/speaker_page: event formats
+- career/faq/overview/navigation_page/product_catalog/download_landing/advertisement/aggregation/other: non-editorial or fallback formats`;
+const FALLBACK_SALES_TRIGGERS_TEXT = `Use only evidence-backed strategic triggers accepted by the response schema. Generic company mentions, launches or personnel news are not triggers by themselves.`;
 
-async function getTaxonomyText(): Promise<{ topics: string; territories: string }> {
+async function getTaxonomyText(): Promise<{ topics: string; territories: string; articleTypes: string; salesTriggers: string }> {
   const now = Date.now();
   if (taxonomyTextCache && now - taxonomyTextCache.at < TAXONOMY_TEXT_CACHE_TTL) return taxonomyTextCache;
   const admin = getAdminClient();
-  const [{ data: topics }, { data: territories }] = await Promise.all([
+  const [{ data: topics }, { data: territories }, { data: articleTypes }, { data: salesTriggers }] = await Promise.all([
     admin.schema("signal_layer").from("topics").select("id, description").eq("active", true),
     admin.schema("signal_layer").from("territories").select("id, description").eq("active", true),
+    admin.schema("signal_layer").from("article_types").select("id, description").eq("active", true),
+    admin.schema("signal_layer").from("sales_triggers").select("id, description").eq("active", true),
   ]);
   const topicsText = topics?.length ? topics.map((t) => `- ${t.id}: ${t.description}`).join("\n") : FALLBACK_TOPICS_TEXT;
   const territoriesText = territories?.length ? territories.map((t) => `- ${t.id}: ${t.description}`).join("\n") : FALLBACK_TERRITORIES_TEXT;
-  const value = { topics: topicsText, territories: territoriesText, at: now };
+  const articleTypesText = articleTypes?.length ? articleTypes.map((t) => `- ${t.id}: ${t.description}`).join("\n") : FALLBACK_ARTICLE_TYPES_TEXT;
+  const salesTriggersText = salesTriggers?.length ? salesTriggers.map((t) => `- ${t.id}: ${t.description}`).join("\n") : FALLBACK_SALES_TRIGGERS_TEXT;
+  const value = { topics: topicsText, territories: territoriesText, articleTypes: articleTypesText, salesTriggers: salesTriggersText, at: now };
   taxonomyTextCache = value;
   return value;
 }
@@ -1984,11 +1994,9 @@ ${taxonomyText.topics}
 Territories:
 ${taxonomyText.territories}
 Article types:
-- editorial_news/commentary/interview/analysis/background_report: editorial formats
-- trend_report/market_report/study/survey/whitepaper/benchmark/forecast/case_study: evidence and research formats; use the most specific type instead of analysis
-- press_release/strategy_update/campaign_news/product_news/financial_news/acquisition_news/partnership_news/investment_news/expansion_news/restructuring_news/operations_news/personnel_news: company formats
-- event_announcement/event_report/panel_summary/exhibitor_news/event_program/speaker_page: event formats; distinguish substantive panel coverage from a schedule or directory
-- career/faq/overview/navigation_page/product_catalog/download_landing/advertisement/aggregation/other: non-editorial or fallback formats
+${taxonomyText.articleTypes}
+Sales triggers:
+${taxonomyText.salesTriggers}
 </taxonomy>
 <active_business_policy>${JSON.stringify({ relevance: config.relevance, decisions: config.decisions, routing: config.routing })}</active_business_policy>
 <routing_rules>
