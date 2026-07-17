@@ -3309,13 +3309,19 @@ Deno.serve(async (req: Request) => {
         const job = jobs?.[0];
         if (!job) return corsResponse(origin, { ok: true, idle: true });
         const { data: article } = await admin.schema("signal_layer").from("articles")
-          .select("id,title,url,content,source:sources(company,category)").eq("id", job.article_id).single();
+          .select("id,title,url,content,source_id,source:sources(company,category)").eq("id", job.article_id).single();
         const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
         try {
           const source = Array.isArray(article?.source) ? article.source[0] : article?.source;
           let analysisContent = String(article.content || "");
           if (analysisContent.trim().length < 400 && article.url) {
-            const retried = await fetchArticleContent(article.url);
+            let loginCookie: string | null = null;
+            if (article.source_id) {
+              const { data: src } = await admin.schema("signal_layer").from("sources")
+                .select("id, url, crawl_config").eq("id", article.source_id).maybeSingle();
+              if (src?.crawl_config?.login_required) loginCookie = await getOrRefreshLoginCookie(src).catch(() => null);
+            }
+            const retried = await fetchArticleContent(article.url, loginCookie);
             if ((retried?.content || "").length > analysisContent.length) {
               analysisContent = retried!.content;
               await admin.schema("signal_layer").from("articles").update({ content: analysisContent }).eq("id", article.id);
