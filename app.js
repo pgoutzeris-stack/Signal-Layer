@@ -864,6 +864,88 @@ async function loadPipelineReview() {
   target.innerHTML = (articles || []).map((article) => `<article class="review-item" data-article-id="${article.id}"><div class="review-item-main"><span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span><strong class="test-result-title">${escapeText(article.title)}</strong><p class="test-result-reason">${escapeText(article.ai_rationale || article.rejection_reasons?.[0] || "Unsichere Evidenz oder Einordnung")}</p></div></article>`).join("") || `<div class="keyword-empty">Aktuell sind keine Artikel in der manuellen Prüfung.</div>`;
 }
 
+const TAXONOMY_KINDS = [
+  { kind: "topics", label: "Themen", fixedIds: true },
+  { kind: "territories", label: "Territories", fixedIds: true },
+  { kind: "article_types", label: "Artikeltypen", fixedIds: true },
+  { kind: "sales_triggers", label: "Sales-Trigger", fixedIds: true },
+];
+
+function taxonomyRow(kind, item) {
+  return `<div class="taxonomy-row" data-kind="${kind}" data-id="${escapeHtml(item.id)}">
+    <input class="taxonomy-input taxonomy-label" value="${escapeHtml(item.label || "")}" placeholder="Bezeichnung">
+    <input class="taxonomy-input taxonomy-desc" value="${escapeHtml(item.description || "")}" placeholder="Beschreibung">
+    <label class="taxonomy-active"><input type="checkbox" ${item.active ? "checked" : ""}> aktiv</label>
+    <code class="taxonomy-id">${escapeHtml(item.id)}</code>
+  </div>`;
+}
+
+function offeringRow(item) {
+  return `<div class="taxonomy-row" data-kind="offering" data-id="${escapeHtml(item.id)}">
+    <input class="taxonomy-input taxonomy-label" value="${escapeHtml(item.label || "")}" placeholder="Bezeichnung">
+    <input class="taxonomy-input taxonomy-desc" value="${escapeHtml(item.description || "")}" placeholder="Beschreibung">
+    <label class="taxonomy-active"><input type="checkbox" ${item.active ? "checked" : ""}> aktiv</label>
+    <button type="button" class="icon-btn taxonomy-delete" title="Löschen"><i class="fa-solid fa-trash"></i></button>
+  </div>`;
+}
+
+async function loadTaxonomyPanel() {
+  const el = document.getElementById("taxonomy-content");
+  if (!el) return;
+  el.innerHTML = LOADER_HTML;
+  try {
+    const [topics, territories, articleTypes, salesTriggers, offerings] = await Promise.all([
+      callApi("list_taxonomy", { kind: "topics" }),
+      callApi("list_taxonomy", { kind: "territories" }),
+      callApi("list_taxonomy", { kind: "article_types" }),
+      callApi("list_taxonomy", { kind: "sales_triggers" }),
+      callApi("list_offerings"),
+    ]);
+    const sections = [
+      ["Themen", "topics", topics.items],
+      ["Territories", "territories", territories.items],
+      ["Artikeltypen", "article_types", articleTypes.items],
+      ["Sales-Trigger", "sales_triggers", salesTriggers.items],
+    ].map(([title, kind, items]) => `<div class="taxonomy-section"><h4>${escapeHtml(title)}</h4>${
+      items.map((item) => taxonomyRow(kind, item)).join("")
+    }</div>`).join("");
+    const offeringsHtml = `<div class="taxonomy-section"><h4>ROOTS-Leistungen <button type="button" class="btn-secondary" id="btn-add-offering"><i class="fa-solid fa-plus"></i> Neu</button></h4>${
+      offerings.offerings.map((item) => offeringRow(item)).join("")
+    }</div>`;
+    el.innerHTML = sections + offeringsHtml;
+
+    el.querySelectorAll(".taxonomy-row").forEach((row) => {
+      const kind = row.dataset.kind, id = row.dataset.id;
+      const save = async () => {
+        const label = row.querySelector(".taxonomy-label").value;
+        const description = row.querySelector(".taxonomy-desc").value;
+        const active = row.querySelector(".taxonomy-active input").checked;
+        try {
+          if (kind === "offering") await callApi("update_offering", { id, label, description, active });
+          else await callApi("update_taxonomy", { kind, id, label, description, active });
+        } catch (error) { toast(error.message, "err"); }
+      };
+      row.querySelectorAll(".taxonomy-input").forEach((input) => input.addEventListener("change", save));
+      row.querySelector(".taxonomy-active input").addEventListener("change", save);
+      row.querySelector(".taxonomy-delete")?.addEventListener("click", async () => {
+        if (!confirm(`Leistung "${id}" wirklich löschen?`)) return;
+        try { await callApi("delete_offering", { id }); row.remove(); } catch (error) { toast(error.message, "err"); }
+      });
+    });
+    document.getElementById("btn-add-offering")?.addEventListener("click", async () => {
+      const label = prompt("Bezeichnung der neuen Leistung:");
+      if (!label) return;
+      const description = prompt("Kurzbeschreibung (wofür passt diese Leistung?):") || "";
+      try {
+        await callApi("add_offering", { id: label, label, description });
+        void loadTaxonomyPanel();
+      } catch (error) { toast(error.message, "err"); }
+    });
+  } catch (error) {
+    el.innerHTML = `<div class="track-card-empty">Taxonomie konnte nicht geladen werden: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
 async function loadPipelineOperations() {
   const target = document.getElementById("operations-content");
   if (!target || !pipelineSettings) return;
@@ -2149,6 +2231,7 @@ function bindUi() {
       if (panel !== "apify") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
       if (panel === "manual-review") void loadPipelineReview().catch((error) => toast(error.message, "err"));
       if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
+      if (panel === "taxonomy") void loadTaxonomyPanel().catch((error) => toast(error.message, "err"));
     });
   });
 
