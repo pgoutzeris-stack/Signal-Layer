@@ -658,7 +658,7 @@ function extractMainContentHtml(html: string): string | null {
   const patterns = [
     /<article\b[^>]*>[\s\S]*?<\/article>/gi,
     /<main\b[^>]*>[\s\S]*?<\/main>/gi,
-    /<[a-z0-9]+\b[^>]*\b(?:id|class)=["'][^"']*(?:article-?body|articlebody|article-?content|post-?content|entry-?content|story-?body|story-?content|content-?body|rich-?text|main-?content|c-article|news-detail)[^"']*["'][\s\S]*?<\/[a-z0-9]+>/gi,
+    /<[a-z0-9]+\b[^>]*\b(?:id|class)=["'][^"']*(?:article-?body|articlebody|article-?content|post-?content|entry-?content|story-?body|story-?content|content-?body|rich-?text|main-?content|c-article|news-detail|jeg_content|post_content_elementor|td-post-content|single-content|artikel-content|beitragstext)[^"']*["'][\s\S]*?<\/[a-z0-9]+>/gi,
   ];
   for (const re of patterns) {
     let m: RegExpExecArray | null;
@@ -671,6 +671,21 @@ function extractMainContentHtml(html: string): string | null {
     if (len > bestLen) { bestLen = len; best = c; }
   }
   return bestLen >= 400 ? best : null;
+}
+
+// Generic last resort when no named container matched (unknown/uncommon CMS
+// themes — e.g. WordPress "Jnews"/Elementor sites that wrap content in
+// theme-specific classes we don't know). Real article prose lives in <p>
+// tags; site chrome (menus, teaser lists, sidebars) is built from <a>/<li>
+// without paragraph text, so collecting substantial <p> blocks reliably
+// skips navigation even when we can't name the surrounding container.
+function extractParagraphCluster(html: string): string | null {
+  const paragraphs = html.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [];
+  const substantial = paragraphs.filter((p) => p.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length >= 40);
+  if (!substantial.length) return null;
+  const joined = substantial.join("\n");
+  const len = joined.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
+  return len >= 400 ? joined : null;
 }
 
 async function fetchArticleContent(url: string): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
@@ -692,7 +707,7 @@ async function fetchArticleContent(url: string): Promise<{ title: string; conten
     const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
     const cleanedBody = stripPageChrome(bodyMatch ? bodyMatch[0] : html);
     // Prefer the isolated main article; fall back to the chrome-stripped body.
-    let text = extractMainContentHtml(cleanedBody) || cleanedBody;
+    let text = extractMainContentHtml(cleanedBody) || extractParagraphCluster(cleanedBody) || cleanedBody;
     text = text
       // Preserve structure as lightweight Markdown BEFORE the generic tag
       // strip below collapses everything into one flat blob — otherwise
