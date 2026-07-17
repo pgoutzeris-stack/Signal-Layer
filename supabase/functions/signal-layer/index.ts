@@ -1809,8 +1809,11 @@ async function matchRootsOffering(
   const key = await getGeminiKey();
   if (!key) return null;
   const config = await getPipelineConfig();
-  const catalog = ROOTS_OFFERINGS.map((o) => `${o.id}: ${o.label} — ${o.description}`).join("\n");
-  const prompt = `Du bist ein Vertriebsanalyst bei ROOTS, einer Marketingberatung. ROOTS bietet ausschließlich diese sechs Leistungen an:\n${catalog}\n\nUnternehmens-Herausforderung: "${challenge}"\nBeleg: "${triggerEvidence}"\n\nPasst GENAU EINE dieser sechs Leistungen konkret zu dieser Herausforderung? Sei streng — ein vager thematischer Bezug reicht nicht, es muss eine plausible Anfrage/Ansprache mit genau dieser Leistung ableitbar sein. Antworte NUR als JSON: {"offering_id": "<id oder null>", "reasoning": "<1 Satz Deutsch, warum diese Leistung konkret passt, oder warum keine passt>"}`;
+  const { data: dbOfferings } = await getAdminClient().schema("signal_layer").from("roots_offerings")
+    .select("id, label, description").eq("active", true);
+  const offerings = dbOfferings?.length ? dbOfferings : ROOTS_OFFERINGS;
+  const catalog = offerings.map((o) => `${o.id}: ${o.label} — ${o.description}`).join("\n");
+  const prompt = `Du bist ein Vertriebsanalyst bei ROOTS, einer Marketingberatung. ROOTS bietet ausschließlich diese Leistungen an:\n${catalog}\n\nUnternehmens-Herausforderung: "${challenge}"\nBeleg: "${triggerEvidence}"\n\nPasst GENAU EINE dieser Leistungen konkret zu dieser Herausforderung? Sei streng — ein vager thematischer Bezug reicht nicht, es muss eine plausible Anfrage/Ansprache mit genau dieser Leistung ableitbar sein. Antworte NUR als JSON: {"offering_id": "<id oder null>", "reasoning": "<1 Satz Deutsch, warum diese Leistung konkret passt, oder warum keine passt>"}`;
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.ai.primary_model}:generateContent`, {
       method: "POST",
@@ -1821,7 +1824,7 @@ async function matchRootsOffering(
           responseMimeType: "application/json", maxOutputTokens: 512, temperature: 0.1,
           thinkingConfig: { thinkingLevel: "minimal" },
           responseSchema: { type: "OBJECT", required: ["offering_id", "reasoning"], properties: {
-            offering_id: { type: "STRING", enum: [...ROOTS_OFFERINGS.map((o) => o.id), "null"] },
+            offering_id: { type: "STRING", enum: [...offerings.map((o) => o.id), "null"] },
             reasoning: { type: "STRING" },
           } },
         },
@@ -1838,7 +1841,7 @@ async function matchRootsOffering(
     });
     const text = payload?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("");
     const parsed = JSON.parse(text || "{}");
-    const offering = ROOTS_OFFERINGS.find((o) => o.id === parsed.offering_id);
+    const offering = offerings.find((o) => o.id === parsed.offering_id);
     if (!offering) return null;
     return { id: offering.id, label: offering.label, reasoning: String(parsed.reasoning || "").slice(0, 400) };
   } catch {
@@ -2902,6 +2905,47 @@ Deno.serve(async (req: Request) => {
       // ---------------------------------------------------------------
       // Keyword management (Settings → Marketing/Sales Keywords)
       // ---------------------------------------------------------------
+      case "list_offerings": {
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("roots_offerings").select("*").order("label");
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { offerings: data || [] });
+      }
+
+      case "add_offering": {
+        const { id, label, description } = body as { id: string; label: string; description: string };
+        if (!id || !label || !description) return errorResponse(origin, "id, label, description required");
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("roots_offerings")
+          .insert({ id: id.trim().toLowerCase().replace(/\s+/g, "_"), label: label.trim(), description: description.trim() })
+          .select().single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { offering: data });
+      }
+
+      case "update_offering": {
+        const { id, label, description, active } = body as { id: string; label?: string; description?: string; active?: boolean };
+        if (!id) return errorResponse(origin, "id required");
+        const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (label !== undefined) updates.label = label.trim();
+        if (description !== undefined) updates.description = description.trim();
+        if (active !== undefined) updates.active = active;
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("roots_offerings")
+          .update(updates).eq("id", id).select().single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { offering: data });
+      }
+
+      case "delete_offering": {
+        const { id } = body as { id: string };
+        if (!id) return errorResponse(origin, "id required");
+        const admin = getAdminClient();
+        const { error } = await admin.schema("signal_layer").from("roots_offerings").delete().eq("id", id);
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { deleted: id });
+      }
+
       case "list_keywords": {
         const { track } = body as { track?: string };
         const admin = getAdminClient();
