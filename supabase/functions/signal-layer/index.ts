@@ -1646,7 +1646,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.14";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.15";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -3018,29 +3018,39 @@ async function tagArticle(
       reason: "Kein eigenständiger ROOTS-relevanter Kauf-, Veränderungs- oder Partnerbedarf belegt; reine Kampagnen und operative Investitionen werden nicht als Sales geroutet.",
     };
   }
-  const salesEligible = config.routing.sales_enabled && classification.relevance_status === "reliable"
+  const salesCandidate = config.routing.sales_enabled && classification.relevance_status === "reliable"
     && (!config.routing.sales_requires_tier1 || activeCompanies.length > 0)
     && (!config.routing.sales_requires_trigger || classification.sales_triggers.length > 0)
     && rootsSalesOpportunity
     && classification.routing_decisions.sales.eligible;
-  const buyingCenterCandidate = config.routing.buying_center_enabled && salesEligible
-    && (!config.routing.buying_center_requires_person
-      || classification.people.length > 0 || classification.buying_center.recommended_roles.length > 0);
   // Ground the Sales trigger against ROOTS' actual offering catalog — only
   // for genuinely sales-eligible articles (cheap, targeted extra call).
-  const matchedOffering = salesEligible
+  const matchedOffering = salesCandidate
     ? await matchRootsOffering(
         classification.sales_use.company_challenge,
         classification.sales_use.evidence || classification.routing_decisions.sales.evidence,
         { articleId, crawlRunId: crawlRunId || undefined },
       )
     : null;
+  // A concrete ROOTS service is now a hard Sales gate. Ambiguous candidates
+  // go to manual review instead of appearing as generic Sales opportunities.
+  if (salesCandidate && !matchedOffering) {
+    classification.relevance_status = "uncertain";
+    classification.rejection_reasons = [
+      "Kein belastbarer Match mit einer konkreten ROOTS-Leistung – manuelle Prüfung erforderlich.",
+      ...classification.rejection_reasons,
+    ];
+  }
+  const salesEligible = salesCandidate && Boolean(matchedOffering);
+  const buyingCenterCandidate = config.routing.buying_center_enabled && salesEligible
+    && (!config.routing.buying_center_requires_person
+      || classification.people.length > 0 || classification.buying_center.recommended_roles.length > 0);
   const buyingCenterLabels = [
     ...classification.people.map((person) => `${person.name} (${person.role})`),
     ...classification.buying_center.recommended_roles.map((role) => `Zielrolle: ${role}`),
   ];
   const routing: string[] = [];
-  if (marketingEligible) routing.push("marketing");
+  if (marketingEligible && classification.relevance_status === "reliable") routing.push("marketing");
   if (salesEligible) routing.push("sales");
   if (buyingCenterCandidate) routing.push("buying_center");
   const eventClusterKey = classification.event_key
@@ -3129,6 +3139,11 @@ async function tagArticle(
     matched_offering_reasoning: matchedOffering?.reasoning || null,
     extraction_diagnostic: extractionDiagnostic?.recovered ? extractionDiagnostic : null,
   }).eq("id", articleId);
+
+  if (!salesEligible) {
+    await admin.schema("signal_layer").from("findings")
+      .delete().eq("article_id", articleId).in("track", ["sales", "buying_center"]);
+  }
 
   if (eventDuplicateId) {
     await admin.schema("signal_layer").from("articles").update({
