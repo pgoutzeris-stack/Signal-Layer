@@ -4443,8 +4443,15 @@ Deno.serve(async (req: Request) => {
           if (row.feed_type === "apify" && row.status === "error") summary.apify_errors += 1;
           return summary;
         }, { attempts: 0, successful: 0, empty: 0, errors: 0, candidates: 0, inserted: 0, apify_attempts: 0, apify_errors: 0 });
-        const paywallSources = (sourceConfigs || []).filter((source) => Boolean(source.crawl_config?.paywall_detected));
-        const paywallSourcesMissingCredentials = paywallSources.filter((source) => !source.crawl_config?.login_configured_at);
+        // Only aggregate paywalls confirmed by the current extractor. Older
+        // `paywall_detected` flags used a broader heuristic and can contain
+        // ordinary login/navigation copy rather than a blocked article.
+        const paywallSources = (sourceConfigs || []).filter((source) =>
+          ["credentials_required", "credentials_configured"].includes(String(source.crawl_config?.paywall_access_status || ""))
+        );
+        const paywallSourcesMissingCredentials = paywallSources.filter((source) =>
+          source.crawl_config?.paywall_access_status === "credentials_required"
+        );
         sourceHealth.paywall_sources = paywallSources.length;
         sourceHealth.paywall_source_names = paywallSources.map((source) => source.company).slice(0, 12);
         sourceHealth.paywall_missing_credentials = paywallSourcesMissingCredentials.length;

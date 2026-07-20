@@ -1946,9 +1946,15 @@ function renderSources() {
 
   els.sourceTableBody.innerHTML = list.map((s) => {
     const loginRequired = Boolean(s.crawl_config?.login_required);
-    const loginConfigured = Boolean(s.crawl_config?.login_configured_at);
-    const paywallDetected = Boolean(s.crawl_config?.paywall_detected);
-    const paywallCredentialsMissing = paywallDetected && !loginConfigured;
+    const paywallAccessStatus = s.crawl_config?.paywall_access_status;
+    const loginConfigured = Boolean(s.crawl_config?.login_configured_at)
+      || paywallAccessStatus === "credentials_configured";
+    // Only show a paywall state after the current extractor has explicitly
+    // classified access. Historical broad paywall flags are intentionally
+    // ignored because they also matched ordinary login/navigation copy.
+    const paywallDetected = paywallAccessStatus === "credentials_required"
+      || paywallAccessStatus === "credentials_configured";
+    const paywallCredentialsMissing = paywallAccessStatus === "credentials_required";
     const storedArticles = Number(s.stored_article_count || 0);
     const crawlHealth = s.last_attempted_at === null ? "Noch nie gecrawlt"
       : storedArticles === 0 ? "Keine Artikel gespeichert"
