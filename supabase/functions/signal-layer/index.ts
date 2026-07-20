@@ -3329,7 +3329,11 @@ Deno.serve(async (req: Request) => {
         const policy = getCrawlPolicy(source);
         const rawCandidates = Array.isArray((body.discovery as Record<string, unknown>)?.candidates)
           ? (body.discovery as { candidates: Array<{ url?: string; title?: string }> }).candidates : [];
-        const candidates = rawCandidates.filter((candidate) => candidate.url && isAllowedBySourcePolicy(candidate.url, policy)).slice(0, policy.maxCandidates);
+        // Chromium already limits discovery to same-origin public links and
+        // removes obvious navigation/download URLs. Do not reapply the native
+        // entry-path policy here: that policy is exactly what browser discovery
+        // is meant to recover from on JS and bot-protected sites.
+        const candidates = rawCandidates.filter((candidate) => candidate.url && !isLikelyNonEditorialUrl(candidate.url)).slice(0, policy.maxCandidates);
         let queuedArticles = 0;
         for (const candidate of candidates) {
           const { data: existing } = await admin.schema("signal_layer").from("articles").select("id").eq("url", candidate.url).maybeSingle();

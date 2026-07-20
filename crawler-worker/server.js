@@ -152,8 +152,8 @@ export async function discoverArticles({ url }) {
         if (/\.(pdf|jpg|jpeg|png|svg|zip)$/i.test(path) || /\/(jobs?|career|karriere|kontakt|contact|privacy|datenschutz|impressum)(\/|$)/i.test(path)) return false;
         const parts = path.split("/").filter(Boolean);
         const last = parts.at(-1) || "";
-        return /\/20\d{2}\//.test(path) || /\/(news|press|presse|story|stories|article|articles|meldung|meldungen)\//i.test(path)
-          || (parts.length >= 2 && last.length >= 22 && last.includes("-"));
+        const genericLast = /^(news|newsroom|press|presse|stories|articles|meldungen|insights|media|index\.php)$/i.test(last);
+        return item.title.length >= 10 && parts.length >= 2 && !genericLast;
       } catch { return false; }
     }).slice(0, 60);
     return { httpStatus: response?.status() || null, finalUrl: page.url(), candidates };
