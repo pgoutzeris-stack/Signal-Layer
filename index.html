@@ -224,6 +224,14 @@
   .analysis-error-sources { display: grid; gap: 4px; margin: 8px 0; }
   .analysis-error-sources span { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .57rem; }
   .analysis-error-sources b { color: var(--ink); font-size: inherit; }
+  .analysis-error-causes { display: grid; gap: 5px; margin: 9px 0; }
+  .analysis-error-causes > b { font-size: .57rem; color: var(--ink); }
+  .analysis-error-cause { display: grid; grid-template-columns: 23px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 7px; border: 1px solid #e5ebf3; border-radius: 9px; background: #fbfdff; }
+  .analysis-error-cause > i { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; color: #2563eb; background: #eff6ff; font-size: .52rem; }
+  .analysis-error-cause span, .analysis-error-cause b, .analysis-error-cause small { display: block; min-width: 0; }
+  .analysis-error-cause b { color: var(--ink); font-size: .56rem; }
+  .analysis-error-cause small { margin-top: 2px; color: var(--muted); font-size: .5rem; line-height: 1.3; }
+  .analysis-error-cause strong { color: #1d4ed8; font-size: .6rem; }
   .analysis-error-technical { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: #64748b; font: 500 .52rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
   .telemetry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
   .telemetry-stat { padding: 7px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }

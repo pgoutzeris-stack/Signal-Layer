@@ -979,24 +979,68 @@ async function fetchAuthenticatedArticleViaApify(
   }
 }
 
+type ExtractionDiagnostic = {
+  code: "unsupported_url" | "access_denied" | "not_found" | "rate_limited" | "upstream_error"
+    | "bot_protection" | "javascript_required" | "empty_html" | "too_short" | "paywall_no_session"
+    | "paywall_after_login" | "login_failed" | "timeout" | "network_error" | "feed_fallback_used";
+  message: string;
+  http_status?: number;
+  content_length?: number;
+  login_required?: boolean;
+  session_used?: boolean;
+  recovered?: boolean;
+  checked_at: string;
+};
+
+type ExtractionDiagnosticCapture = { value?: ExtractionDiagnostic };
+
+function captureExtractionDiagnostic(
+  capture: ExtractionDiagnosticCapture | undefined,
+  diagnostic: Omit<ExtractionDiagnostic, "checked_at">,
+): void {
+  if (capture) capture.value = { ...diagnostic, checked_at: new Date().toISOString() };
+}
+
 async function fetchArticleForSource(
   url: string,
   source?: { id: string; url: string; crawl_config?: Record<string, unknown> } | null,
+  diagnosticCapture?: ExtractionDiagnosticCapture,
 ): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
   const loginRequired = Boolean(source?.crawl_config?.login_required);
   const cookie = loginRequired && source ? await getOrRefreshLoginCookie(source, url).catch(() => null) : null;
-  const direct = await fetchArticleContent(url, cookie);
+  if (loginRequired && !cookie) captureExtractionDiagnostic(diagnosticCapture, {
+    code: "login_failed", message: "Für die geschützte Quelle konnte keine verifizierte Login-Session aufgebaut werden.",
+    login_required: true, session_used: false,
+  });
+  const direct = await fetchArticleContent(url, cookie, diagnosticCapture);
   if (source && direct) {
     const paywall = looksLikePaywallTeaser(direct.content);
     await recordSourcePaywallStatus(source, paywall, paywall ? direct.content.replace(/\s+/g, " ").slice(0, 220) : "").catch(() => {});
+    if (paywall) captureExtractionDiagnostic(diagnosticCapture, {
+      code: cookie ? "paywall_after_login" : "paywall_no_session",
+      message: cookie
+        ? "Der Artikel zeigt trotz verifizierter Login-Session weiterhin nur die Paywall bzw. einen Teaser."
+        : "Der Artikel ist paywallgeschützt und es stand keine gültige Login-Session zur Verfügung.",
+      content_length: direct.content.length, login_required: loginRequired, session_used: Boolean(cookie),
+    });
   }
   // Native authenticated requests are the final fetch stage. We deliberately
   // do not hand credentials or URLs to an external browser-crawling service.
   return direct;
 }
 
-async function fetchArticleContent(url: string, cookieHeader?: string | null): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
-  if (isLikelyNonEditorialUrl(url)) return null;
+async function fetchArticleContent(
+  url: string,
+  cookieHeader?: string | null,
+  diagnosticCapture?: ExtractionDiagnosticCapture,
+): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
+  if (isLikelyNonEditorialUrl(url)) {
+    captureExtractionDiagnostic(diagnosticCapture, {
+      code: "unsupported_url", message: "Die URL verweist auf eine PDF-, Datei-, Übersichts- oder andere nicht-redaktionelle Seite.",
+      session_used: Boolean(cookieHeader),
+    });
+    return null;
+  }
   // Editorial sites intermittently return consent/interstitial pages or time
   // out. Retry once with cache bypass before declaring the body unavailable.
   // This is deliberately bounded: classification must not stall a crawl.
@@ -1005,8 +1049,23 @@ async function fetchArticleContent(url: string, cookieHeader?: string | null): P
       cache: "no-store",
       headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...(cookieHeader ? { Cookie: cookieHeader } : {}) },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const code = [401, 403].includes(res.status) ? "access_denied" : res.status === 404 ? "not_found"
+        : res.status === 429 ? "rate_limited" : res.status >= 500 ? "upstream_error" : "network_error";
+      captureExtractionDiagnostic(diagnosticCapture, {
+        code, message: `Die Quelle antwortete mit HTTP ${res.status}.`, http_status: res.status,
+        session_used: Boolean(cookieHeader),
+      });
+      return null;
+    }
     const html = await res.text();
+    if (/cf-chl-|checking your browser|just a moment|cloudflare ray id|captcha/i.test(html)) {
+      captureExtractionDiagnostic(diagnosticCapture, {
+        code: "bot_protection", message: "Die Quelle lieferte eine Bot-/Cloudflare-Prüfseite statt des Artikels.",
+        http_status: res.status, content_length: html.length, session_used: Boolean(cookieHeader),
+      });
+      return null;
+    }
 
     const titleMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
       || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
@@ -1057,8 +1116,27 @@ async function fetchArticleContent(url: string, cookieHeader?: string | null): P
     // A tiny body is commonly a paywall/JS shell. Give the retry a chance to
     // return the real article; after the second attempt preserve the result so
     // it can be audited as content_unavailable instead of being mislabelled.
-    if (result.content.length >= 400 || attempt === 1) return result;
-  } catch {
+    if (result.content.length >= 400) return result;
+    const scriptCount = (html.match(/<script\b/gi) || []).length;
+    const code = result.content.length === 0 ? "empty_html" : scriptCount >= 8 ? "javascript_required" : "too_short";
+    captureExtractionDiagnostic(diagnosticCapture, {
+      code,
+      message: code === "javascript_required"
+        ? "Die Seite enthält überwiegend JavaScript, aber keinen serverseitig auslesbaren Artikeltext."
+        : code === "empty_html" ? "Die Quelle lieferte HTML ohne extrahierbaren redaktionellen Text."
+        : `Nach der Bereinigung blieben nur ${result.content.length} Zeichen Artikeltext übrig.`,
+      http_status: res.status, content_length: result.content.length, session_used: Boolean(cookieHeader),
+    });
+    if (attempt === 1) return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    captureExtractionDiagnostic(diagnosticCapture, {
+      code: /abort|timeout|timed out/i.test(message) ? "timeout" : "network_error",
+      message: /abort|timeout|timed out/i.test(message)
+        ? "Der Artikelabruf überschritt das technische Zeitlimit."
+        : `Netzwerkfehler beim Artikelabruf: ${message.slice(0, 180)}`,
+      session_used: Boolean(cookieHeader),
+    });
     if (attempt === 1) return null;
   }
   return null;
@@ -2665,6 +2743,7 @@ async function tagArticle(
   allKeywords: Array<{ track: string; dimension: string | null; keyword: string; kind: string; active: boolean }>,
   tier1Companies: Array<{ name: string; aliases: string[] }>,
   source: { company?: string; category?: string },
+  extractionDiagnostic: ExtractionDiagnostic | null = null,
 ): Promise<void> {
   const config = await getPipelineConfig();
   void allKeywords; // Legacy data is retained for audit but no longer drives decisions.
@@ -2727,6 +2806,7 @@ async function tagArticle(
       topics: [], territory: null, matched_companies: [], matched_persons: [],
       buying_center_candidate: false, routing: [], sales_triggers: [], routing_evidence: {},
       market_insight_transferable: null, market_insight_explanation: null,
+      extraction_diagnostic: contentUnavailable ? extractionDiagnostic : null,
     }).eq("id", articleId);
     return;
   }
@@ -2910,6 +2990,7 @@ async function tagArticle(
     tag_status: classification.relevance_status === "reliable" ? "tagged" : "untagged",
     matched_offering: matchedOffering?.label || null,
     matched_offering_reasoning: matchedOffering?.reasoning || null,
+    extraction_diagnostic: extractionDiagnostic?.recovered ? extractionDiagnostic : null,
   }).eq("id", articleId);
 
   if (eventDuplicateId) {
@@ -3588,6 +3669,7 @@ Deno.serve(async (req: Request) => {
           const source = Array.isArray(article?.source) ? article.source[0] : article?.source;
           let analysisTitle = String(article.title || "");
           let analysisContent = String(article.content || "");
+          const extractionCapture: ExtractionDiagnosticCapture = {};
           const malformedListing = analysisTitle.length > 300;
           if ((analysisContent.trim().length < 400 || looksLikePaywallTeaser(analysisContent) || malformedListing) && article.url) {
             let sourceWithAuth: { id: string; url: string; crawl_config?: Record<string, unknown> } | null = null;
@@ -3596,7 +3678,7 @@ Deno.serve(async (req: Request) => {
                 .select("id, url, crawl_config").eq("id", article.source_id).maybeSingle();
               sourceWithAuth = src || null;
             }
-            const retried = await fetchArticleForSource(article.url, sourceWithAuth);
+            const retried = await fetchArticleForSource(article.url, sourceWithAuth, extractionCapture);
             if (retried && ((retried.content || "").length > analysisContent.length || malformedListing)) {
               analysisContent = retried.content;
               if (retried.title && retried.title.length < 300) analysisTitle = retried.title;
@@ -3608,11 +3690,27 @@ Deno.serve(async (req: Request) => {
               const synopsis = buildCandidateSynopsis(analysisTitle, article.excerpt || "");
               if (synopsis) {
                 analysisContent = synopsis;
+                extractionCapture.value = {
+                  ...(extractionCapture.value || {
+                    code: "feed_fallback_used", message: "Der Direktabruf lieferte keinen Volltext; ein redaktioneller Feed-Auszug wurde verwendet.",
+                    checked_at: new Date().toISOString(),
+                  }),
+                  code: "feed_fallback_used", recovered: true,
+                  message: "Der Direktabruf lieferte keinen Volltext; die Analyse konnte mit einem redaktionellen Feed-Auszug fortgesetzt werden.",
+                };
                 await admin.schema("signal_layer").from("articles").update({ content: synopsis }).eq("id", article.id);
               }
             }
           }
-          await tagArticle(admin, article.id, job.crawl_run_id, analysisTitle, analysisContent, [], companies || [], source || {});
+          const diagnosticTextLength = cleanArticleText(analysisContent).length;
+          if (!extractionCapture.value && diagnosticTextLength < 240) {
+            captureExtractionDiagnostic(extractionCapture, {
+              code: "too_short",
+              message: `Nach Entfernen von Navigation und Seitenelementen blieben nur ${diagnosticTextLength} Zeichen redaktioneller Text übrig.`,
+              content_length: diagnosticTextLength,
+            });
+          }
+          await tagArticle(admin, article.id, job.crawl_run_id, analysisTitle, analysisContent, [], companies || [], source || {}, extractionCapture.value || null);
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "done", finished_at: new Date().toISOString() }).eq("id", job.id);
         } catch (workerError) {
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", error_message: String(workerError).slice(0, 1000), finished_at: new Date().toISOString() }).eq("id", job.id);
@@ -4179,7 +4277,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("article_analysis_jobs")
             .select("crawl_run_id,status").in("status", ["queued", "running"]).limit(5000),
           admin.schema("signal_layer").from("articles")
-            .select("rejection_reasons,source:sources(company)")
+            .select("rejection_reasons,extraction_diagnostic,source:sources(company)")
             .eq("classification_status", "error").order("classified_at", { ascending: false }).limit(2000),
           admin.schema("signal_layer").from("sources").select("company,crawl_config").eq("active", true),
         ]);
@@ -4328,7 +4426,24 @@ Deno.serve(async (req: Request) => {
             technical_message: "Unklassifizierter Analysefehler",
           },
         } as const;
-        const failureMap = new Map<string, { count: number; sources: Map<string, number>; raw: string }>();
+        const extractionDiagnosticLabels: Record<string, string> = {
+          unsupported_url: "Keine redaktionelle Artikel-URL",
+          access_denied: "HTTP-Zugriff verweigert",
+          not_found: "Artikel nicht mehr erreichbar",
+          rate_limited: "Quelle begrenzt Abrufe",
+          upstream_error: "Quellserver nicht verfügbar",
+          bot_protection: "Bot-/Cloudflare-Schutz",
+          javascript_required: "Artikel benötigt JavaScript",
+          empty_html: "HTML ohne Artikeltext",
+          too_short: "Extrahierter Text zu kurz",
+          paywall_no_session: "Paywall ohne gültige Session",
+          paywall_after_login: "Paywall trotz Login",
+          login_failed: "Credential-Login fehlgeschlagen",
+          timeout: "Zeitüberschreitung beim Abruf",
+          network_error: "Netzwerk-/Protokollfehler",
+          unknown: "Noch keine Detaildiagnose",
+        };
+        const failureMap = new Map<string, { count: number; sources: Map<string, number>; diagnostics: Map<string, { count: number; message: string }>; raw: string }>();
         for (const row of analysisFailures || []) {
           const raw = String(row.rejection_reasons?.[0] || "Unklassifizierter Analysefehler");
           const normalized = raw.toLowerCase();
@@ -4338,16 +4453,27 @@ Deno.serve(async (req: Request) => {
             : normalized.includes("503") || normalized.includes("high demand") || normalized.includes("temporarily unavailable") ? "model_busy"
             : normalized.includes("no valid classification") || normalized.includes("invalid") ? "invalid_response"
             : "other";
-          const entry = failureMap.get(code) || { count: 0, sources: new Map<string, number>(), raw };
+          const entry = failureMap.get(code) || { count: 0, sources: new Map<string, number>(), diagnostics: new Map<string, { count: number; message: string }>(), raw };
           entry.count += 1;
           const linkedSource = Array.isArray(row.source) ? row.source[0] : row.source;
           const sourceName = String(linkedSource?.company || "Unbekannte Quelle");
           entry.sources.set(sourceName, (entry.sources.get(sourceName) || 0) + 1);
+          if (code === "content_extraction") {
+            const diagnosticCode = String(row.extraction_diagnostic?.code || "unknown");
+            const diagnosticMessage = String(row.extraction_diagnostic?.message || "Dieser ältere Fehler wurde noch nicht mit der neuen Detaildiagnose erneut geprüft.");
+            const diagnostic = entry.diagnostics.get(diagnosticCode) || { count: 0, message: diagnosticMessage };
+            diagnostic.count += 1;
+            entry.diagnostics.set(diagnosticCode, diagnostic);
+          }
           failureMap.set(code, entry);
         }
         const analysisErrorBreakdown = [...failureMap.entries()].map(([code, entry]) => ({
           code, ...failureDefinitions[code as keyof typeof failureDefinitions], count: entry.count,
           sources: [...entry.sources.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([company, count]) => ({ company, count })),
+          diagnostics: [...entry.diagnostics.entries()].sort((a, b) => b[1].count - a[1].count).map(([diagnosticCode, diagnostic]) => ({
+            code: diagnosticCode, label: extractionDiagnosticLabels[diagnosticCode] || diagnosticCode,
+            count: diagnostic.count, message: diagnostic.message,
+          })),
           raw_message: entry.raw.replace(/\s+/g, " ").slice(0, 500),
         })).sort((a, b) => b.count - a.count);
         // Gemini exposes usage per request but no API endpoint for the billing

@@ -2245,11 +2245,13 @@ async function loadLastRun() {
     const visibleErrors = analysisErrors.length ? analysisErrors : (backfill?.error_breakdown || []);
     els.apiErrorList.innerHTML = visibleErrors.map((error) => {
       const sources = (error.sources || []).map((source) => `<span><span>${escapeHtml(source.company)}</span><b>${Number(source.count || 0).toLocaleString("de-DE")}</b></span>`).join("");
+      const diagnostics = (error.diagnostics || []).map((diagnostic) => `<span class="analysis-error-cause" title="${escapeHtml(diagnostic.message || "")}"><i class="fa-solid fa-magnifying-glass"></i><span><b>${escapeHtml(diagnostic.label)}</b><small>${escapeHtml(diagnostic.message || "")}</small></span><strong>${Number(diagnostic.count || 0).toLocaleString("de-DE")}</strong></span>`).join("");
       return `<span class="analysis-error-chip" tabindex="0">
         <span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-triangle-exclamation"></i>${Number(error.count || 0).toLocaleString("de-DE")} ${escapeHtml(error.label)}</span>
         <span class="analysis-error-popover" role="tooltip">
           <span class="analysis-error-popover-head"><i class="fa-solid fa-triangle-exclamation"></i><span><b>${escapeHtml(error.label)}</b><small>${escapeHtml(error.explanation || "Technischer Analysefehler")}</small></span></span>
           ${error.action ? `<span class="analysis-error-action"><b>Automatische Behandlung</b>${escapeHtml(error.action)}</span>` : ""}
+          ${diagnostics ? `<span class="analysis-error-causes"><b>Erkannte Ursachen</b>${diagnostics}</span>` : ""}
           ${sources ? `<span class="analysis-error-sources"><b>Am häufigsten betroffen</b>${sources}</span>` : ""}
           <code class="analysis-error-technical">${escapeHtml(error.raw_message || error.technical_message || "Keine technische Meldung gespeichert")}</code>
         </span>
