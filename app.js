@@ -2189,6 +2189,22 @@ async function loadLastRun() {
       crawlResults.push({ value: configuredPaywallSources, label: "Paywalls mit Zugang", tone: "warning", icon: "fa-solid fa-lock-open", detail: names,
         detailLabel: "Paywall-Zugänge konfiguriert", detailExplain: "Für diese Paywall-Quellen sind Credentials hinterlegt. Der Worker prüft Login und Session bei jedem geschützten Abruf." });
     }
+    const browserPending = Number(health?.browser_queued || 0) + Number(health?.browser_running || 0);
+    if (browserPending) {
+      crawlResults.push({ value: browserPending, label: "im Browser-Fallback", tone: "warning", icon: "fa-solid fa-globe",
+        detail: "GitHub Actions · Playwright · automatische Neuanalyse",
+        detailLabel: "Browser-Aufbereitung läuft", detailExplain: "Diese Artikel benötigen JavaScript oder umgehen den nativen Abruf nicht. Der kostenlose GitHub-Worker rendert sie automatisch und reicht erfolgreiche Volltexte erneut zur Analyse ein." });
+    }
+    const browserRecovered = Number(health?.browser_recovered || 0);
+    if (browserRecovered) {
+      crawlResults.push({ value: browserRecovered, label: "Volltexte wiederhergestellt", tone: "success", icon: "fa-solid fa-file-circle-check" });
+    }
+    const browserFailed = Number(health?.browser_failed || 0);
+    if (browserFailed) {
+      crawlResults.push({ value: browserFailed, label: "Browser-Abrufe ohne Volltext", tone: "error", icon: "fa-solid fa-triangle-exclamation",
+        detail: "Vollständig gerendert, aber weiterhin Paywall, zu wenig redaktioneller Text oder technischer Browserfehler",
+        detailLabel: "Browser-Fallback abgeschlossen", detailExplain: "Chromium konnte diese Seiten nicht als vollständige redaktionelle Artikel bestätigen. Echte Paywalls ohne Zugang bleiben separat gekennzeichnet." });
+    }
     els.sourceHealthNote.hidden = crawlResults.length === 0;
     els.sourceHealthNote.innerHTML = crawlResults.map((result) =>
       `<span class="crawl-result-pill crawl-result-pill--${result.tone}"${result.detail ? ` data-error-tip="1" data-error-label="${escapeHtml(result.detailLabel || "Paywall-Quellen")}" data-error-explain="${escapeHtml(result.detailExplain || "Diese Quellen blockieren den vollständigen Direktabruf. Artikel ohne Volltext werden nicht künstlich analysiert.")}" data-error-raw="${escapeHtml(result.detail)}" tabindex="0"` : ""}><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`

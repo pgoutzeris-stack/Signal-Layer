@@ -4518,7 +4518,7 @@ Deno.serve(async (req: Request) => {
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
-        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { data: analysisFailures }, { data: sourceConfigs }] = await Promise.all([
+        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { data: analysisFailures }, { data: sourceConfigs }, { data: browserJobs }] = await Promise.all([
           admin.schema("signal_layer").from("crawl_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("crawl_runs").select("id, finished_at, current_index, source_ids")
@@ -4540,6 +4540,7 @@ Deno.serve(async (req: Request) => {
             .select("rejection_reasons,extraction_diagnostic,source:sources(company)")
             .eq("classification_status", "error").order("classified_at", { ascending: false }).limit(2000),
           admin.schema("signal_layer").from("sources").select("company,crawl_config").eq("active", true),
+          admin.schema("signal_layer").from("browser_render_jobs").select("status,last_error").limit(5000),
         ]);
         let backfillErrorCount = 0;
         let errorBreakdown: Array<{ code: string; label: string; explanation: string; count: number }> = [];
@@ -4613,6 +4614,12 @@ Deno.serve(async (req: Request) => {
         sourceHealth.paywall_source_names = paywallSources.map((source) => source.company).slice(0, 12);
         sourceHealth.paywall_missing_credentials = paywallSourcesMissingCredentials.length;
         sourceHealth.paywall_missing_credential_names = paywallSourcesMissingCredentials.map((source) => source.company).slice(0, 20);
+        sourceHealth.browser_queued = (browserJobs || []).filter((job) => job.status === "queued").length;
+        sourceHealth.browser_running = (browserJobs || []).filter((job) => job.status === "running").length;
+        sourceHealth.browser_recovered = (browserJobs || []).filter((job) => job.status === "done").length;
+        sourceHealth.browser_failed = (browserJobs || []).filter((job) =>
+          job.status === "error" && job.last_error !== "non_editorial_url"
+        ).length;
         let crawlWithProgress = crawl || null;
         if (crawl) {
           const sourceIds = Array.isArray(crawl.source_ids) ? crawl.source_ids as string[] : [];
