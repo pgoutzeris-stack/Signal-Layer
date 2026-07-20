@@ -3211,7 +3211,7 @@ Deno.serve(async (req: Request) => {
   // fire-and-forget self-call, authenticated with the service-role key.
   let auth: { userId: string } | null = null;
   let isScheduled = false;
-  if (["browser_queue_status", "browser_claim_jobs", "browser_submit_job"].includes(action)) {
+  if (["browser_queue_status", "browser_claim_jobs", "browser_submit_job", "browser_submit_source_job"].includes(action)) {
     const workerSecret = await getBrowserBatchSecret();
     const authorization = req.headers.get("authorization") || "";
     if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return errorResponse(origin, "Unauthorized", 401);
@@ -3253,21 +3253,38 @@ Deno.serve(async (req: Request) => {
   try {
     switch (action) {
       case "browser_queue_status": {
-        const { count, error } = await getAdminClient().schema("signal_layer").from("browser_render_jobs")
+        const admin = getAdminClient();
+        const { count, error } = await admin.schema("signal_layer").from("browser_render_jobs")
           .select("id", { count: "exact", head: true }).eq("status", "queued").lt("attempts", 3);
         if (error) return errorResponse(origin, error.message, 500);
-        return corsResponse(origin, { ok: true, queued: count || 0, has_jobs: Boolean(count) });
+        const { count: sourceCount, error: sourceError } = await admin.schema("signal_layer").from("browser_source_discovery_jobs")
+          .select("id", { count: "exact", head: true }).eq("status", "queued").lt("attempts", 3);
+        if (sourceError) return errorResponse(origin, sourceError.message, 500);
+        const queued = Number(count || 0) + Number(sourceCount || 0);
+        return corsResponse(origin, { ok: true, queued, has_jobs: queued > 0 });
       }
 
       case "browser_claim_jobs": {
         const requestedLimit = Math.max(1, Math.min(25, Number(body.limit || 12)));
         const admin = getAdminClient();
-        const { data: claimedJobs, error } = await admin.schema("signal_layer").rpc("claim_browser_render_jobs", {
-          p_limit: requestedLimit,
-        });
-        if (error) return errorResponse(origin, error.message, 500);
         const jobs = [];
-        for (const job of claimedJobs || []) {
+        const sourceLimit = Math.min(4, requestedLimit);
+        const { data: sourceJobs, error: sourceJobError } = await admin.schema("signal_layer")
+          .rpc("claim_browser_source_discovery_jobs", { p_limit: sourceLimit });
+        if (sourceJobError) return errorResponse(origin, sourceJobError.message, 500);
+        for (const job of sourceJobs || []) {
+          const { data: source } = await admin.schema("signal_layer").from("sources")
+            .select("id,url,crawl_config").eq("id", job.source_id).maybeSingle();
+          if (!source?.url) continue;
+          jobs.push({ id: job.id, kind: "source_discovery", url: String(source.crawl_config?.recommended_entry_url || source.url), attempts: job.attempts });
+        }
+        const remainingLimit = Math.max(0, requestedLimit - jobs.length);
+        if (!remainingLimit) return corsResponse(origin, { ok: true, jobs });
+        const { data: articleJobs, error: articleJobError } = await admin.schema("signal_layer").rpc("claim_browser_render_jobs", {
+          p_limit: remainingLimit,
+        });
+        if (articleJobError) return errorResponse(origin, articleJobError.message, 500);
+        for (const job of articleJobs || []) {
           const { data: article } = await admin.schema("signal_layer").from("articles")
             .select("id,url,source_id,source:sources(id,url,crawl_config)").eq("id", job.article_id).maybeSingle();
           if (!article?.url) {
@@ -3289,6 +3306,48 @@ Deno.serve(async (req: Request) => {
           });
         }
         return corsResponse(origin, { ok: true, jobs });
+      }
+
+      case "browser_submit_source_job": {
+        const admin = getAdminClient();
+        const jobId = String(body.job_id || "");
+        const { data: job } = await admin.schema("signal_layer").from("browser_source_discovery_jobs")
+          .select("id,source_id,status,attempts").eq("id", jobId).maybeSingle();
+        if (!job || job.status !== "running") return errorResponse(origin, "Browser source job is not running", 409);
+        const now = new Date().toISOString();
+        if (!body.success) {
+          const finalFailure = Number(job.attempts || 0) >= 3;
+          await admin.schema("signal_layer").from("browser_source_discovery_jobs").update({
+            status: finalFailure ? "error" : "queued", last_error: String(body.error || "browser_source_discovery_failed").slice(0, 500),
+            finished_at: finalFailure ? now : null, updated_at: now,
+          }).eq("id", job.id);
+          return corsResponse(origin, { ok: true, retry: !finalFailure });
+        }
+        const { data: source } = await admin.schema("signal_layer").from("sources")
+          .select("id,url,source_type,category,crawl_config").eq("id", job.source_id).maybeSingle();
+        if (!source) return errorResponse(origin, "Source missing", 404);
+        const policy = getCrawlPolicy(source);
+        const rawCandidates = Array.isArray((body.discovery as Record<string, unknown>)?.candidates)
+          ? (body.discovery as { candidates: Array<{ url?: string; title?: string }> }).candidates : [];
+        const candidates = rawCandidates.filter((candidate) => candidate.url && isAllowedBySourcePolicy(candidate.url, policy)).slice(0, policy.maxCandidates);
+        let queuedArticles = 0;
+        for (const candidate of candidates) {
+          const { data: existing } = await admin.schema("signal_layer").from("articles").select("id").eq("url", candidate.url).maybeSingle();
+          if (existing) continue;
+          const { data: inserted, error: insertError } = await admin.schema("signal_layer").from("articles").insert({
+            source_id: source.id, url: candidate.url, title: candidate.title || candidate.url,
+            content: candidate.title || "Browser-Discovery: Volltext wird nachgeladen.", classification_status: "pending",
+          }).select("id").single();
+          if (insertError || !inserted) continue;
+          await admin.schema("signal_layer").from("browser_render_jobs").upsert({ article_id: inserted.id, status: "queued" }, { onConflict: "article_id" });
+          queuedArticles += 1;
+        }
+        await admin.schema("signal_layer").from("browser_source_discovery_jobs").update({ status: "done", finished_at: now, updated_at: now }).eq("id", job.id);
+        await admin.schema("signal_layer").from("sources").update({
+          last_error: queuedArticles ? null : "Browser-Discovery fand keine neuen redaktionellen Artikellinks.",
+          last_candidate_count: candidates.length,
+        }).eq("id", source.id);
+        return corsResponse(origin, { ok: true, queued_articles: queuedArticles, discovered: candidates.length });
       }
 
       case "browser_submit_job": {
@@ -4125,6 +4184,8 @@ Deno.serve(async (req: Request) => {
           let discoveredCount = 0;
           let providerHttpStatus: number | null = null;
           let providerRunId: string | null = null;
+          let providerErrorCode: string | null = null;
+          let providerErrorMessage: string | null = null;
           if (feedType === "rss" && feedUrl) candidates = await fetchRssArticles(feedUrl);
           else if (feedType === "sitemap" && feedUrl) candidates = await fetchSitemapArticles(feedUrl);
           else {
@@ -4140,6 +4201,14 @@ Deno.serve(async (req: Request) => {
             candidates = freeResult.candidates;
             discoveredCount = freeResult.discoveredCount;
             providerHttpStatus = freeResult.httpStatus;
+            providerErrorCode = freeResult.errorCode;
+            providerErrorMessage = freeResult.errorMessage;
+            if (candidates.length === 0) {
+              await admin.schema("signal_layer").from("browser_source_discovery_jobs").upsert({
+                source_id: source.id, status: "queued", attempts: 0, last_error: null,
+                started_at: null, finished_at: null, updated_at: new Date().toISOString(),
+              }, { onConflict: "source_id" });
+            }
           }
           if (!discoveredCount) discoveredCount = candidates.length;
           candidates = candidates
@@ -4188,10 +4257,9 @@ Deno.serve(async (req: Request) => {
               : pageContent;
             if (!fetched) { rejected.fetch_failed = (rejected.fetch_failed || 0) + 1; continue; }
             if (isLikelyNonEditorialPage(fetched)) { rejected.non_editorial = (rejected.non_editorial || 0) + 1; continue; }
-            if (!passesEventPreClassificationGate(
-              `${fetched.title}\n${fetched.excerpt}\n${fetched.content}`,
-              tier1Companies || [], crawlPolicy,
-            )) { rejected.event_gate = (rejected.event_gate || 0) + 1; continue; }
+            // Let the evidence-aware classifier verify Tier-1 exhibitors and
+            // named company speakers. The former keyword gate discarded valid
+            // event articles before the AI could inspect their context.
 
             // Publication dates are retained for sorting and display only.
             // Scheduled and manual crawls deliberately apply no date gate;
@@ -4236,6 +4304,7 @@ Deno.serve(async (req: Request) => {
           if (attemptId) await admin.schema("signal_layer").from("source_crawl_attempts").update({
             status: candidates.length ? "success" : "empty", provider_run_id: providerRunId,
             http_status: providerHttpStatus, discovered_count: discoveredCount,
+            error_code: providerErrorCode, error_message: providerErrorMessage,
             candidate_count: freshCandidateCount, rejected_count: Object.values(rejected).reduce((sum, value) => sum + value, 0),
             inserted_count: insertedCount, rejection_breakdown: rejected,
             finished_at: new Date().toISOString(), duration_ms: Date.now() - attemptStartedAt,

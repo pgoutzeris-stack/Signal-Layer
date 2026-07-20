@@ -1,4 +1,4 @@
-import { closeBrowser, extractArticle } from "./server.js";
+import { closeBrowser, discoverArticles, extractArticle } from "./server.js";
 
 const endpoint = String(process.env.SIGNAL_LAYER_ENDPOINT || "").replace(/\/$/, "");
 const secret = String(process.env.CRAWLER_WORKER_SECRET || "");
@@ -19,12 +19,20 @@ async function edgeCall(payload) {
 
 async function processJob(job) {
   try {
+    if (job.kind === "source_discovery") {
+      const discovery = await discoverArticles({ url: job.url });
+      const submitted = await edgeCall({ action: "browser_submit_source_job", job_id: job.id, success: true, discovery });
+      return { ok: Number(submitted.queued_articles || 0) > 0 };
+    }
     const article = await extractArticle({ url: job.url, cookie: job.cookie });
     const submitted = await edgeCall({ action: "browser_submit_job", job_id: job.id, success: true, article });
     return { ok: Boolean(submitted.queued_for_analysis) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await edgeCall({ action: "browser_submit_job", job_id: job.id, success: false, error: message.slice(0, 500) });
+    await edgeCall({
+      action: job.kind === "source_discovery" ? "browser_submit_source_job" : "browser_submit_job",
+      job_id: job.id, success: false, error: message.slice(0, 500),
+    });
     return { ok: false };
   }
 }

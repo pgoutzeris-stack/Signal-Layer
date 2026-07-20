@@ -125,6 +125,44 @@ export async function extractArticle({ url, cookie }) {
   }
 }
 
+export async function discoverArticles({ url }) {
+  const parsed = await assertPublicUrl(url);
+  await acquireSlot();
+  let context;
+  try {
+    const browser = await getBrowser();
+    context = await browser.newContext({
+      locale: "de-DE",
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      viewport: { width: 1365, height: 900 },
+    });
+    const page = await context.newPage();
+    const response = await page.goto(parsed.toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.waitForTimeout(2500);
+    const links = await page.evaluate(() => Array.from(document.querySelectorAll("a[href]")).map((anchor) => ({
+      url: anchor.href, title: (anchor.textContent || "").replace(/\s+/g, " ").trim(),
+    })));
+    const seen = new Set();
+    const candidates = links.filter((item) => {
+      try {
+        const candidate = new URL(item.url);
+        if (candidate.hostname !== location.hostname || seen.has(candidate.href)) return false;
+        seen.add(candidate.href);
+        const path = candidate.pathname.toLowerCase();
+        if (/\.(pdf|jpg|jpeg|png|svg|zip)$/i.test(path) || /\/(jobs?|career|karriere|kontakt|contact|privacy|datenschutz|impressum)(\/|$)/i.test(path)) return false;
+        const parts = path.split("/").filter(Boolean);
+        const last = parts.at(-1) || "";
+        return /\/20\d{2}\//.test(path) || /\/(news|press|presse|story|stories|article|articles|meldung|meldungen)\//i.test(path)
+          || (parts.length >= 2 && last.length >= 22 && last.includes("-"));
+      } catch { return false; }
+    }).slice(0, 60);
+    return { httpStatus: response?.status() || null, finalUrl: page.url(), candidates };
+  } finally {
+    await context?.close().catch(() => {});
+    releaseSlot();
+  }
+}
+
 if (process.env.BATCH_MODE !== "1") {
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true, activePages });
