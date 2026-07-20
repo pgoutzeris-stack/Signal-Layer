@@ -3852,13 +3852,22 @@ Deno.serve(async (req: Request) => {
         const { data, error } = await admin.schema("signal_layer").from("sources")
           .select("*").order("category", { ascending: true }).order("company", { ascending: true });
         if (error) return errorResponse(origin, error.message, 500);
-        const { data: articleSources, error: articleSourcesError } = await admin.schema("signal_layer").from("articles")
-          .select("source_id").not("source_id", "is", null);
-        if (articleSourcesError) return errorResponse(origin, articleSourcesError.message, 500);
-        const articleCountBySource = (articleSources || []).reduce((counts: Record<string, number>, row: { source_id: string | null }) => {
-          if (row.source_id) counts[row.source_id] = (counts[row.source_id] || 0) + 1;
-          return counts;
-        }, {});
+        // Data API responses are capped (typically at 1,000 rows). Reading the
+        // relation in one request made every source whose articles fell beyond
+        // page one look empty in the header filter. Page through all rows so
+        // stored_article_count reflects the complete database.
+        const articleCountBySource: Record<string, number> = {};
+        const pageSize = 1000;
+        for (let offset = 0; ; offset += pageSize) {
+          const { data: articleSources, error: articleSourcesError } = await admin.schema("signal_layer").from("articles")
+            .select("source_id").not("source_id", "is", null)
+            .range(offset, offset + pageSize - 1);
+          if (articleSourcesError) return errorResponse(origin, articleSourcesError.message, 500);
+          for (const row of articleSources || []) {
+            if (row.source_id) articleCountBySource[row.source_id] = (articleCountBySource[row.source_id] || 0) + 1;
+          }
+          if (!articleSources || articleSources.length < pageSize) break;
+        }
         const sources = (data || []).map((source: Record<string, unknown>) => ({
           ...source,
           stored_article_count: articleCountBySource[String(source.id)] || 0,
