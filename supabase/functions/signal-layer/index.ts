@@ -862,7 +862,14 @@ async function recordSourcePaywallStatus(
 // crawl fallback for classification; prefer it over login/paywall chrome.
 function buildCandidateSynopsis(title: string, excerpt: string, content = ""): string | null {
   const cleanTitle = decodeArticleText(title).trim();
-  const cleanBody = decodeArticleText(content || excerpt).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const cleanExcerpt = decodeArticleText(excerpt).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const cleanContent = decodeArticleText(content).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  // A provider/feed excerpt is preferable to a page body that only contains
+  // login or paywall chrome. Otherwise retain the richer editorial variant.
+  const candidates = [cleanContent, cleanExcerpt]
+    .filter((value) => value && !looksLikePaywallTeaser(value))
+    .sort((a, b) => b.length - a.length);
+  const cleanBody = candidates[0] || "";
   const synopsis = [cleanTitle, cleanBody].filter(Boolean).join("\n\n");
   return synopsis.length >= 180 && !looksLikePaywallTeaser(synopsis) ? synopsis.slice(0, 8000) : null;
 }
@@ -1786,7 +1793,17 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
     || (/\b(tel\.?|fax|e-mail|grundungsjahr|mitarbeiter)\b/i.test(text) && /\b(adresse|strasse|straße|internet|www\.)\b/i.test(text))
     || ((text.match(/\b(download file|read more)\b/gi) || []).length >= 6 && /\b(media|downloads?|publications?)\b/i.test(title));
   if (directoryOrListing) reasons.push("Verzeichnis-, Kontakt- oder Übersichtsseite ohne redaktionellen Artikel");
-  const contentUnavailable = text.trim().length < config.filters.minimum_text_length || looksLikePaywallTeaser(text);
+  const normalizedTitle = normalizeMatchText(title);
+  const normalizedText = normalizeMatchText(text);
+  // Feed fallbacks deliberately combine the exact headline and an attributed
+  // editorial synopsis. Accept those from 180 characters; applying the full
+  // article threshold here made the valid fallback impossible for 180–239
+  // character publisher summaries.
+  const attributedSynopsis = text.trim().length >= 180
+    && normalizedTitle.length >= 12
+    && normalizedText.startsWith(normalizedTitle);
+  const contentUnavailable = (text.trim().length < config.filters.minimum_text_length && !attributedSynopsis)
+    || looksLikePaywallTeaser(text);
   if (contentUnavailable) reasons.push("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
   const titleYear = title.match(/\b(20\d{2})\b/)?.[1];
   if (titleYear && Number(titleYear) <= new Date().getUTCFullYear() - 2
@@ -2040,19 +2057,21 @@ async function callGeminiClassifier(
       if (response.ok) break;
       lastError = await response.text();
       const spendingCap = /spending cap/i.test(lastError);
-      const retryable = response.status === 429 && !spendingCap && attempt < 3;
+      const retryable = ((response.status === 429 && !spendingCap) || [502, 503, 504].includes(response.status))
+        && attempt < 3;
       if (!retryable) break;
-      await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** (attempt - 1))));
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (2 ** (attempt - 1))));
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
       if (attempt === 3) break;
-      await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** (attempt - 1))));
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (2 ** (attempt - 1))));
     }
   }
   if (!response?.ok) {
     const status = response?.status || 0;
     const errorCode = /spending cap/i.test(lastError) ? "spending_cap"
       : status === 429 || /quota|rate limit/i.test(lastError) ? "rate_limit"
+      : status === 503 || /high demand|temporarily unavailable/i.test(lastError) ? "model_busy"
       : /timeout|timed out|abort/i.test(lastError) ? "timeout" : `http_${status || "network"}`;
     const { error: failedUsageEventError } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
@@ -4267,6 +4286,12 @@ Deno.serve(async (req: Request) => {
             action: "Der Artikel kann erneut analysiert werden; wiederholte Fälle werden als Modellfehler ausgewiesen.",
             technical_message: "Gemini returned no valid classification",
           },
+          model_busy: {
+            label: "KI-Modell vorübergehend ausgelastet",
+            explanation: "Google konnte das gewählte Modell wegen kurzfristig hoher Nachfrage nicht bedienen.",
+            action: "Der Worker wiederholt diese Antwort automatisch mit wachsendem Abstand.",
+            technical_message: "Gemini API 503: model temporarily unavailable due to high demand",
+          },
           other: {
             label: "Technischer Analysefehler",
             explanation: "Die Analyse wurde mit einer nicht näher zugeordneten Fehlermeldung beendet.",
@@ -4281,6 +4306,7 @@ Deno.serve(async (req: Request) => {
           const code = normalized.includes("artikelinhalt nicht verfügbar") ? "content_extraction"
             : normalized.includes("spending cap") ? "spending_cap"
             : normalized.includes("429") || normalized.includes("quota") || normalized.includes("rate limit") ? "rate_limit"
+            : normalized.includes("503") || normalized.includes("high demand") || normalized.includes("temporarily unavailable") ? "model_busy"
             : normalized.includes("no valid classification") || normalized.includes("invalid") ? "invalid_response"
             : "other";
           const entry = failureMap.get(code) || { count: 0, sources: new Map<string, number>(), raw };
