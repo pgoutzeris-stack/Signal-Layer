@@ -1294,7 +1294,7 @@ function renderFindings(track) {
           ${track === "sales" && article.matched_offering ? `<div class="finding-offering">
             <div class="finding-offering-head"><span><i class="fa-solid fa-puzzle-piece"></i> Passende ROOTS-Leistung</span>${pillarLabel ? `<small>${escapeHtml(pillarLabel)}</small>` : ""}</div>
             <strong>${escapeHtml(article.matched_offering)}</strong>
-            ${article.matched_offering_reasoning ? `<p>${escapeText(article.matched_offering_reasoning)}</p>` : ""}
+            ${article.matched_offering_reasoning ? `<p><b>Andockpunkt:</b> ${escapeText(article.matched_offering_reasoning)}</p>` : ""}
           </div>` : ""}
           <div class="finding-meta">
             ${companies.map((c) => `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
@@ -1728,7 +1728,7 @@ async function openArticleDetail(articleId) {
           <p class="decision-rationale">${escapeHtml(decisionExplanation)}</p>
         </div>
         ${reasons.length ? `<div class="decision-block"><span class="decision-label">Ausschlussregeln</span><div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></div>` : ""}
-        ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Passende ROOTS-Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><p class="offering-match-reasoning">${escapeText(article.matched_offering_reasoning || "")}</p></div></div>` : ""}
+        ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Passende ROOTS-Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><p class="offering-match-reasoning"><b>Andockpunkt:</b> ${escapeText(article.matched_offering_reasoning || "")}</p></div></div>` : ""}
         <div class="decision-block">
           <span class="decision-label">Tags & Routing</span>
           <div class="decision-tags">${renderDetailTags(article) || `<span class="decision-lead">Keine Tags vergeben</span>`}</div>
