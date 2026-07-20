@@ -1646,7 +1646,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.18";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.19";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -2014,6 +2014,27 @@ function detectLanguage(text: string): "de" | "en" | "other" {
   return "other";
 }
 
+function isVendorSalesPitch(title: string, text: string): boolean {
+  const normalized = normalizeMatchText(`${title} ${text.slice(0, 9000)}`);
+  const vendorOffer = /\b(software|saas|tool\w*|plattform\w*|platform\w*|losung\w*|solution\w*|system\w*|dienstleistung\w*|service\w*|beratung\w*|consulting|agentur\w*|agency|anbieter\w*|provider\w*)\b/i.test(normalized);
+  const selfPromotional = /\b(unsere? (?:software|plattform|losung|tool\w*|service\w*|dienstleistung\w*)|our (?:software|platform|solution|tool\w*|service\w*)|wir (?:bieten|helfen|unterstutzen|entwickeln|ermoglichen|analysieren)|we (?:offer|help|support|provide|enable|develop|analyse|analyze)|ist spezialist fur|spezialist fur|anbieter von|provider of|unsere kunden|our customers|kontaktieren sie uns|contact us|demo (?:anfordern|buchen)|request a demo)\b/i.test(normalized);
+  const profileOrPitchPage = /\b(anbieterprofil|unternehmensprofil|company profile|supplier profile|produktmeldung|product announcement)\b/i.test(normalized)
+    || /\b(gmbh|ag|ltd|inc|llc)\b/i.test(normalizeMatchText(title)) && selfPromotional;
+
+  // Other consultancies/agencies remain valuable when they expose an actual
+  // knowledge asset with evidence, not merely when a pitch calls its output
+  // an "analysis" or "insight".
+  const explicitKnowledgeAsset = /\b(studie|study|studies|whitepaper|white paper|research paper|forschungspapier|playbook|benchmark(?:ing)? report|marktbericht|market report|trendbericht|trend report)\b/i.test(normalized);
+  const knowledgeSignals = [
+    /\b(methodik|methodology|stichprobe|sample size|befragt\w*|respondent\w*|teilnehm\w*|participants?)\b/i,
+    /\b(ergebnis\w*|findings?|untersuchung\w*|survey|umfrage|benchmark\w*)\b/i,
+    /\b\d+(?:[.,]\d+)? (?:prozent|percent)|\d+(?:[.,]\d+)?%\b/i,
+    /\b(trend\w*|branchenentwicklung\w*|market development|consumer behavior|konsumverhalten|customer insight\w*)\b/i,
+  ].filter((pattern) => pattern.test(normalized)).length;
+  const substantiveKnowledgeAsset = explicitKnowledgeAsset && knowledgeSignals >= 2;
+  return vendorOffer && (selfPromotional || profileOrPitchPage) && !substantiveKnowledgeAsset;
+}
+
 function hardRejectionReasons(title: string, text: string, config: PipelineConfig = DEFAULT_PIPELINE_CONFIG): string[] {
   const normalized = normalizeMatchText(`${title} ${text.slice(0, 5000)}`);
   const reasons: string[] = [];
@@ -2029,6 +2050,9 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
     || (/\b(tel\.?|fax|e-mail|grundungsjahr|mitarbeiter)\b/i.test(text) && /\b(adresse|strasse|straße|internet|www\.)\b/i.test(text))
     || ((text.match(/\b(download file|read more)\b/gi) || []).length >= 6 && /\b(media|downloads?|publications?)\b/i.test(title));
   if (directoryOrListing) reasons.push("Verzeichnis-, Kontakt- oder Übersichtsseite ohne redaktionellen Artikel");
+  if (isVendorSalesPitch(title, text)) {
+    reasons.push("Anbieter-, Tool- oder Dienstleister-Sales-Pitch ohne belastbare Studie, Paper, Playbook oder unabhängige Branchenerkenntnis");
+  }
   const normalizedTitle = normalizeMatchText(title);
   const normalizedText = normalizeMatchText(text);
   // Feed fallbacks deliberately combine the exact headline and an attributed
@@ -2685,6 +2709,7 @@ ${taxonomyText.salesTriggers}
 <active_business_policy>${JSON.stringify({ relevance: config.relevance, decisions: config.decisions, routing: config.routing })}</active_business_policy>
 <routing_rules>
 Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item, whitepaper or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Marketing NEVER requires a Tier-1 company or any named company. Missing Tier-1 status is exclusively a Sales limitation and must never appear in article-level rejection_reasons or make Marketing uncertain. General analyses, interviews, studies and market observations qualify when they teach a broader audience something concrete and evidence-backed about a ROOTS topic; a company case study is useful but not required. Company news that cannot teach a broader audience anything is not Marketing. It still needs direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, or AI with a concrete marketing/customer/retail/brand application. sub_branchen_insight alone NEVER qualifies Marketing. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing evidence exists. A study, research paper, whitepaper, benchmark or original survey from a consultancy, institute, association or company qualifies Marketing when it addresses a ROOTS topic and the article contains concrete methodology, findings, data or transferable conclusions. A download announcement, gated landing page or self-promotional claim without an exposed finding does not qualify. If marketing_use.sufficient_substance is true or routing_decisions.marketing.reason describes transferable value, you MUST copy a verbatim supporting sentence into marketing_use.evidence and evaluate publishable independently of Sales.
+Software-, Tool-, Plattform-, Agentur-, Beratungs- and other service-provider pages that primarily present or sell their own offering are NOT Marketing signals. Vendor claims that their product creates insights, improves customer experience or raises performance are still sales pitches, not independent insights. This also applies to provider profiles, directories, product descriptions, demos and promotional case examples without independently useful evidence. Exception: substantive studies, research papers, whitepapers, benchmarks, playbooks or trend reports from consultancies/agencies/providers remain eligible when the article itself exposes concrete methodology plus findings, data or transferable customer/industry trends beyond promoting the provider.
 sub_branchen_insight is valid only for a transferable market observation that remains useful beyond the reported company event. A single acquisition, product, expansion, financial result or facility is not transferable.
 Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge or evidenced ROOTS-relevant opportunity, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. The Sales evidence, company_challenge or personalization facts MUST explicitly connect the named Tier-1 company to that challenge or trigger; generic statements about "companies", "brands" or an anonymous case study are Marketing only. A company mention or generic strategic change alone is insufficient. For sources in category "Events & Messen", a named person with a credible role at a Tier-1 company who substantively speaks, presents, discusses or is quoted about a ROOTS marketing, brand, customer, retail, category, innovation or applied-AI topic qualifies event_participation as a Sales trigger. The person's contribution and company affiliation must both be evidenced locally in the article. Attendee lists, speaker directories, schedules, navigation, a session title without described contribution, and a name merely appearing somewhere on the same page are insufficient.
 marketing_problem is a valid Sales trigger when the article explicitly proves an unresolved or currently material marketing, brand, customer, consumer, loyalty, media, retail-media, category, positioning or customer-journey problem of a Tier-1 company. The evidenced problem itself supplies the trigger; a separate pitch, investment or transformation announcement is not required. Still require company-specific facts, a credible ROOTS contribution and personalization substance. Generic competitive pressure, sector-wide commentary, speculative criticism, weak performance without a marketing/customer connection, and problems described as fully resolved are not marketing_problem.
