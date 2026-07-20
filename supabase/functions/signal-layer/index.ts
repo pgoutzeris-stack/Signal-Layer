@@ -2283,9 +2283,9 @@ function selectClassifierContent(cleanedContent: string, maxChars = 12_000): str
     if (selected.has(index) || used + block.length + 2 > maxChars) return;
     selected.set(index, block); used += block.length + 2;
   };
-  for (const item of blocks.slice(0, 8)) add(item);
+  for (const item of blocks.slice(0, 4)) add(item);
+  for (const item of blocks.slice(-4)) add(item);
   for (const item of [...blocks].sort((a, b) => score(b.block) - score(a.block) || a.index - b.index)) add(item);
-  for (const item of blocks.slice(-5)) add(item);
   return [...selected.entries()].sort((a, b) => a[0] - b[0]).map(([, block]) => block).join("\n\n").slice(0, maxChars);
 }
 
