@@ -20,8 +20,8 @@ async function edgeCall(payload) {
 async function processJob(job) {
   try {
     const article = await extractArticle({ url: job.url, cookie: job.cookie });
-    await edgeCall({ action: "browser_submit_job", job_id: job.id, success: true, article });
-    return { ok: true };
+    const submitted = await edgeCall({ action: "browser_submit_job", job_id: job.id, success: true, article });
+    return { ok: Boolean(submitted.queued_for_analysis) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await edgeCall({ action: "browser_submit_job", job_id: job.id, success: false, error: message.slice(0, 500) });
