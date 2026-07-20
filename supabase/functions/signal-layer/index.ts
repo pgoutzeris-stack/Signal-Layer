@@ -2438,6 +2438,7 @@ function matchRootsOfferingDeterministically(
 async function matchRootsOffering(
   challenge: string,
   triggerEvidence: string,
+  articleContext = "",
   telemetry: { articleId?: string; crawlRunId?: string } = {},
 ): Promise<{ id: string; label: string; reasoning: string } | null> {
   if (!challenge?.trim()) return null;
@@ -2447,7 +2448,7 @@ async function matchRootsOffering(
     .select("id, pillar, label, description, sort_order").eq("active", true)
     .order("pillar").order("sort_order").order("label");
   const offerings = dbOfferings?.length ? dbOfferings : ROOTS_OFFERINGS;
-  const deterministicMatch = matchRootsOfferingDeterministically(challenge, triggerEvidence, offerings);
+  const deterministicMatch = matchRootsOfferingDeterministically(`${challenge} ${articleContext}`, triggerEvidence, offerings);
   if (deterministicMatch) return deterministicMatch;
   const key = await getGeminiKey();
   if (!key) return null;
@@ -3099,6 +3100,7 @@ async function tagArticle(
     ? await matchRootsOffering(
         classification.sales_use.company_challenge,
         classification.sales_use.evidence || classification.routing_decisions.sales.evidence,
+        articleText,
         { articleId, crawlRunId: crawlRunId || undefined },
       )
     : null;
