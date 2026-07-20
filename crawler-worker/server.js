@@ -58,7 +58,13 @@ function releaseSlot() {
 }
 
 async function getBrowser() {
-  browserPromise ||= chromium.launch({ headless: true, args: ["--disable-dev-shm-usage"] });
+  // A few enterprise CDNs (notably McKinsey) intermittently terminate
+  // Chromium's HTTP/2 session before any response body is delivered. Force
+  // HTTP/1.1 so both source discovery and article rendering still work.
+  browserPromise ||= chromium.launch({
+    headless: true,
+    args: ["--disable-dev-shm-usage", "--disable-http2"],
+  });
   return browserPromise;
 }
 
