@@ -3297,14 +3297,16 @@ Deno.serve(async (req: Request) => {
         const rendered = body.article as Record<string, unknown> | undefined;
         const renderedContent = decodeArticleText(String(rendered?.content || "")).trim().slice(0, 20_000);
         if (Boolean(rendered?.paywall) || cleanArticleText(renderedContent).length < 400) {
-          const finalFailure = Number(job.attempts || 0) >= 3;
+          // A successfully rendered paywall/short page is deterministic. A
+          // second identical browser run cannot reveal more text, so reserve
+          // retries for real navigation/network failures only.
           await admin.schema("signal_layer").from("browser_render_jobs").update({
-            status: finalFailure ? "error" : "queued",
+            status: "error",
             last_error: Boolean(rendered?.paywall) ? "paywall_after_browser_render" : "browser_text_too_short",
-            finished_at: finalFailure ? now : null,
+            finished_at: now,
             updated_at: now,
           }).eq("id", job.id);
-          return corsResponse(origin, { ok: true, retry: !finalFailure });
+          return corsResponse(origin, { ok: true, retry: false });
         }
         const articleUpdate: Record<string, unknown> = {
           content: renderedContent,
