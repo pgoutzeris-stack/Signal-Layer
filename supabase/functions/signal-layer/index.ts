@@ -267,7 +267,7 @@ const EDITORIAL_PATH_PARTS = [
   "/blog", "/stories", "/story", "/insights", "/trends", "/innovation",
   "/daily",
   "/firmennews", "/company-news", "/exhibitor-news", "/press-releases",
-  "/pressreleases", "/pressinformation", "/presseinformationen",
+  "/press-release/", "/pressreleases", "/pressinformation", "/presseinformationen",
   "/pressemeldungen", "/newsticker",
 ];
 
