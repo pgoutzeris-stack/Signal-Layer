@@ -4215,8 +4215,10 @@ Deno.serve(async (req: Request) => {
             }
           }
           if (!discoveredCount) discoveredCount = candidates.length;
+          const includeUrlPattern = String(source.crawl_config?.include_url_pattern || "").trim().toLowerCase();
           candidates = candidates
             .filter((candidate) => isAllowedBySourcePolicy(candidate.url, crawlPolicy))
+            .filter((candidate) => !includeUrlPattern || candidate.url.toLowerCase().includes(includeUrlPattern))
             .slice(0, crawlPolicy.maxCandidates);
 
           const { data: existingArticles } = await admin.schema("signal_layer").from("articles")
