@@ -4259,7 +4259,30 @@ Deno.serve(async (req: Request) => {
                 publishedAt: candidate.publishedAt || null,
               }
               : pageContent;
-            if (!fetched) { rejected.fetch_failed = (rejected.fetch_failed || 0) + 1; continue; }
+            if (!fetched) {
+              // Preserve a valid discovered article URL and let the free
+              // GitHub Actions Chromium worker render it. Previously these
+              // event/403/JS candidates disappeared before reaching the AI.
+              const { data: placeholder, error: placeholderError } = await admin.schema("signal_layer").from("articles")
+                .insert({
+                  source_id: source.id, url: candidate.url,
+                  title: candidate.title || candidate.url,
+                  content: candidate.title || "Browser-Fallback: Volltext wird nachgeladen.",
+                  excerpt: candidate.excerpt || null,
+                  published_at: candidate.hasConfirmedPublishDate ? candidate.publishedAt || null : null,
+                  classification_status: "pending",
+                }).select("id").single();
+              if (!placeholderError && placeholder) {
+                await admin.schema("signal_layer").from("browser_render_jobs").upsert({
+                  article_id: placeholder.id, status: "queued", attempts: 0,
+                  started_at: null, finished_at: null, last_error: null, updated_at: new Date().toISOString(),
+                }, { onConflict: "article_id" });
+                insertedCount += 1;
+              } else {
+                rejected.fetch_failed = (rejected.fetch_failed || 0) + 1;
+              }
+              continue;
+            }
             if (isLikelyNonEditorialPage(fetched)) { rejected.non_editorial = (rejected.non_editorial || 0) + 1; continue; }
             // Let the evidence-aware classifier verify Tier-1 exhibitors and
             // named company speakers. The former keyword gate discarded valid
