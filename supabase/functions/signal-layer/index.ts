@@ -1647,7 +1647,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.24";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.25";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -1738,20 +1738,10 @@ const TERRITORY_IDS = [
   "operational_excellence", "empowered_marketers",
 ] as const;
 const ARTICLE_TYPES = [
-  "editorial_news", "commentary", "interview", "analysis", "background_report",
-  "trend_report", "market_report", "study", "survey", "whitepaper", "benchmark",
-  "forecast", "case_study", "press_release", "strategy_update", "campaign_news",
-  "product_news", "financial_news", "acquisition_news", "partnership_news",
-  "investment_news", "expansion_news", "restructuring_news", "operations_news",
-  "personnel_news", "event_announcement", "event_report", "panel_summary",
-  "exhibitor_news", "event_program", "speaker_page", "career", "faq", "overview",
-  "navigation_page", "product_catalog", "download_landing", "advertisement",
-  "aggregation", "other",
+  "news", "analysis", "interview", "opinion", "study", "whitepaper", "report",
+  "case_study", "press_release", "company_update", "event_report", "other",
 ] as const;
-const NON_RELEVANT_ARTICLE_TYPES = new Set([
-  "event_program", "speaker_page", "career", "faq", "overview", "navigation_page",
-  "product_catalog", "download_landing", "advertisement", "aggregation",
-]);
+const NON_RELEVANT_ARTICLE_TYPES = new Set(["other"]);
 
 type AiTag = { id: string; confidence: number; evidence: string };
 type AiCompany = {
@@ -2031,6 +2021,22 @@ function looksLikeEditorialCollection(title: string, text: string): boolean {
     || assetMarkers >= 4 && headlineLike.length >= 4 && headlineLike.length > proseLines.length * 2;
 }
 
+function hasConsecutiveAllCapsSentences(text: string): boolean {
+  let consecutive = 0;
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.replace(/^#{1,6}\s+|^-\s+|\*+/g, "").trim();
+    if (!line) continue;
+    const letters = line.match(/[A-Za-zÄÖÜäöüß]/g) || [];
+    const upper = line.match(/[A-ZÄÖÜ]/g) || [];
+    const words = line.split(/\s+/).filter(Boolean).length;
+    const sentenceLike = line.length >= 35 && words >= 6;
+    const allCaps = sentenceLike && letters.length >= 20 && upper.length / letters.length >= 0.78;
+    consecutive = allCaps ? consecutive + 1 : 0;
+    if (consecutive >= 3) return true;
+  }
+  return false;
+}
+
 function detectLanguage(text: string): "de" | "en" | "other" {
   const normalized = ` ${normalizeMatchText(text)} `;
   const de = [" der ", " die ", " und ", " mit ", " für ", " von ", " wird ", " unternehmen "]
@@ -2055,12 +2061,12 @@ function isVendorSalesPitch(title: string, text: string): boolean {
   const empiricalKnowledgeAsset = /\b(studie|study|studies|survey|umfrage|befragung|benchmark(?:ing)? report)\b/i.test(normalized);
   const analyticalKnowledgeAsset = /\b(whitepaper|white paper|research paper|forschungspapier|playbook|marktbericht|market report|trendbericht|trend report)\b/i.test(normalized);
   const knowledgeSignals = [
-    /\b(methodik|methodology|stichprobe|sample size|befragt\w*|respondent\w*|teilnehm\w*|participants?)\b/i,
+    /\b(methodik|methodology|stichprobe|sample size|befrag\w*|interviews?|erheb\w*|respondent\w*|teilnehm\w*|participants?)\b/i,
     /\b(ergebnis\w*|findings?|untersuchung\w*|survey|umfrage|benchmark\w*)\b/i,
     /\b\d+(?:[.,]\d+)? (?:prozent|percent)|\d+(?:[.,]\d+)?%\b/i,
     /\b(trend\w*|branchenentwicklung\w*|market development|consumer behavior|konsumverhalten|customer insight\w*)\b/i,
   ].filter((pattern) => pattern.test(normalized)).length;
-  const hasMethod = /\b(methodik|methodology|stichprobe|sample size|befragt\w*|respondent\w*|teilnehm\w*|participants?)\b/i.test(normalized);
+  const hasMethod = /\b(methodik|methodology|stichprobe|sample size|befrag\w*|interviews?|erheb\w*|respondent\w*|teilnehm\w*|participants?)\b/i.test(normalized);
   const hasFinding = /\b(ergebnis\w*|findings?|zeigt|found|reveals?|conclusion\w*|schlussfolger\w*|handlungsfeld\w*)\b/i.test(normalized);
   const substantiveKnowledgeAsset = empiricalKnowledgeAsset
     ? hasMethod && (hasFinding || knowledgeSignals >= 2)
@@ -2085,6 +2091,9 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
   if (directoryOrListing) reasons.push("Verzeichnis-, Kontakt- oder Übersichtsseite ohne redaktionellen Artikel");
   if (looksLikeEditorialCollection(title, text)) {
     reasons.push("Pressemappe, Download- oder Meldungssammlung ohne eigenständigen redaktionellen Artikel");
+  }
+  if (hasConsecutiveAllCapsSentences(text)) {
+    reasons.push("Mehrere aufeinanderfolgende Versalzeilen statt eines redaktionell formatierten Artikeltexts");
   }
   if (isVendorSalesPitch(title, text)) {
     reasons.push("Anbieter-, Tool- oder Dienstleister-Sales-Pitch ohne belastbare Studie, Paper, Playbook oder unabhängige Branchenerkenntnis");
@@ -2168,7 +2177,7 @@ const TACTICAL_PRICE_PROMOTION_PATTERN = /\b(tankrabatt|preisnachlass|discount|r
 const MARKETING_DEPTH_PATTERN = /\b(strateg\w*|position\w*|target audience|zielgrupp\w*|customer (?:need|behavio|journey|experience)|consumer (?:need|behavio|insight)|kundenbedurf\w*|kaufverhalten|konsumverhalten|customer insight|consumer insight|shopper insight|brand architecture|markenarchitektur|operating model|organisationsmodell|measur\w*|messbar\w*|uplift|conversion|roi|pilot|testet|learning\w*|erkenntnis\w*|plattform|platform|ecosystem|okosystem|innovation\w*|format\w*|digital\w*|omnichannel|customer experience|kundenerlebnis|loyalty|treueprogramm|experience space|eventspace|shop in shop)\b/i;
 const CONCRETE_ACTIVATION_PATTERN = /\b(sampling|verkost\w*|service\w*|finisher|workshop|make it lab|personalis\w*|interactive|interaktiv|receipt scan|belegscan|app|shop in shop|experience space|eventspace|point of sale|\bpos\b)\b/i;
 const RESEARCH_CONTENT_PATTERN = /\b(stud(?:y|ies|ie|ien)|research|white ?paper|survey|poll|report|benchmark|analysis|analyse|forschung|untersuchung|umfrage|befragung|marktstudie|verbraucherstudie|consumer study|consumer research|shopper study|market research)\b/i;
-const RESEARCH_SUBSTANCE_PATTERN = /\b(method(?:ology)?|methodik|sample|stichprobe|respondent\w*|befragt\w*|participants?|teilnehm\w*|findings?|results?|ergebnis\w*|percent|prozent|data|daten|benchmark|trend\w*|zeigt|found|reveals?|according to)\b/i;
+const RESEARCH_SUBSTANCE_PATTERN = /\b(method(?:ology)?|methodik|sample|stichprobe|respondent\w*|befrag\w*|interviews?|erheb\w*|participants?|teilnehm\w*|findings?|results?|ergebnis\w*|percent|prozent|data|daten|benchmark|trend\w*|zeigt|found|reveals?|according to)\b/i;
 const MARKETING_RECOVERY_TOPIC_PATTERN = /\b(marketing|brand|marke\w*|customer|kund\w*|consumer|konsument\w*|shopper|retail media|category management|kategoriemanagement|campaign|kampagn\w*|media|werbung|loyalty|omnichannel|d2c|e-?commerce|customer experience|customer journey|ki|kunstliche intelligenz|artificial intelligence)\b/i;
 const MARKETING_RECOVERY_VALUE_PATTERN = /\b(strateg\w*|insight\w*|erkenntnis\w*|learning\w*|trend\w*|method\w*|modell\w*|framework|result\w*|ergebnis\w*|percent|prozent|impact|wirkung|roi|uplift|conversion|wachstum|ruckgang|verander\w*|transform\w*|optimier\w*|zielgrupp\w*|verhalten|bedurf\w*|expectation\w*|erwartung\w*)\b/i;
 
@@ -2234,7 +2243,7 @@ function hasTransferableMarketingSubstance(
     && RESEARCH_SUBSTANCE_PATTERN.test(normalizeMatchText(`${articleText} ${combined}`));
   const hasTransferableSubsectorDepth = subsectorTopics.length > 0
     && /\b(trend\w*|markt\w*|kategorie\w*|branche\w*|segment\w*|konsum\w*|kunden\w*|wettbewerb\w*|wachstum\w*|ruckgang\w*|entwicklung\w*|benchmark\w*|anteil\w*|prozent|percent|framework|modell\w*|methode\w*)\b/i.test(combined);
-  const companyEventOnly = ["acquisition_news", "financial_news", "investment_news", "expansion_news", "operations_news", "personnel_news"].includes(articleType)
+  const companyEventOnly = articleType === "company_update"
     && !hasSubstantiveResearch && !hasTransferableSubsectorDepth;
   if (!directTopics.length && (!hasTransferableSubsectorDepth || companyEventOnly)) return false;
 
@@ -2250,7 +2259,8 @@ function hasTransferableMarketingSubstance(
       && !hasCustomerInsight && !hasDepth) return false;
 
   // Campaign and product news need more than the fact that something launched.
-  if (["campaign_news", "product_news"].includes(articleType)
+  if (articleType === "company_update"
+      && /\b(campaign|kampagn\w*|product launch|produktlaunch|produkteinfuhr\w*|sponsoring|sponsorship)\b/i.test(article)
       && !hasCustomerInsight && !hasDepth) return false;
   // A consultancy, institute or trade body study is useful Marketing content
   // only when the article exposes an actual method, finding or data point.
@@ -2270,7 +2280,7 @@ function selectClassifierContent(cleanedContent: string, maxChars = 12_000): str
   const score = (value: string): number => {
     const normalized = normalizeMatchText(value);
     return [
-      /\b(methodik|methodology|stichprobe|sample|befragt\w*|respondent\w*)\b/i,
+      /\b(methodik|methodology|stichprobe|sample|befrag\w*|interviews?|erheb\w*|respondent\w*)\b/i,
       /\b(ergebnis\w*|findings?|zeigt|found|reveals?|fazit|conclusion\w*)\b/i,
       /\b\d+(?:[.,]\d+)?\s*(?:%|prozent|percent|mio|million|mrd|billion)\b/i,
       /\b(customer|consumer|shopper|kund\w*|konsum\w*|marketing|marke\w*|brand|retail|handel\w*)\b/i,
@@ -2314,6 +2324,26 @@ function validateRouteDecision(raw: AiRouteDecision | undefined, articleText: st
     evidence: eligible ? evidence : "",
     reason: String(raw?.reason || "").trim().slice(0, 700),
   };
+}
+
+function normalizeArticleType(rawType: string, articleText: string): typeof ARTICLE_TYPES[number] {
+  const normalized = normalizeMatchText(articleText.slice(0, 20_000));
+  const empiricalAsset = /\b(studie|study|survey|umfrage|befragung|untersuchung)\b/i.test(normalized)
+    && /\b(methodik|methodology|stichprobe|sample|befrag\w*|interviews?|erheb\w*|respondent\w*|teilnehm\w*|participants?)\b/i.test(normalized)
+    && /\b(ergebnis\w*|findings?|zeigt|found|reveals?|prozent|percent|\d+(?:[.,]\d+)?\s*%)\b/i.test(normalized);
+  if (empiricalAsset) return "study";
+  const whitepaperAsset = /\b(whitepaper|white paper|research paper|forschungspapier|playbook)\b/i.test(normalized)
+    && /\b(findings?|ergebnis\w*|framework|modell\w*|handlungsfeld\w*|schlussfolger\w*|daten|data|benchmark\w*)\b/i.test(normalized);
+  if (whitepaperAsset) return "whitepaper";
+  if (ARTICLE_TYPES.includes(rawType as typeof ARTICLE_TYPES[number]) && rawType !== "other") {
+    return rawType as typeof ARTICLE_TYPES[number];
+  }
+  const proseSentences = articleText.split(/(?<=[.!?])\s+|\n+/)
+    .filter((sentence) => sentence.trim().length >= 60 && /[.!?][”»\"]?$/.test(sentence.trim())).length;
+  // `other` is reserved for genuinely unclassifiable/non-article material.
+  // If the extractor delivered sustained prose, use the neutral news type
+  // rather than allowing a model omission to create a large miscellaneous bin.
+  return proseSentences >= 3 ? "news" : "other";
 }
 
 function hasRootsRelevantSalesOpportunity(classification: AiClassification): boolean {
@@ -2793,11 +2823,18 @@ const FALLBACK_TERRITORIES_TEXT = `- wachstumstreiber: growth, market entry, exp
 - marke_im_wandel: rebranding, repositioning, portfolio or brand transformation
 - operational_excellence: efficiency, organization, process, restructuring or cost optimization
 - empowered_marketers: marketing operating model, capabilities, teams, leadership or technology enablement`;
-const FALLBACK_ARTICLE_TYPES_TEXT = `- editorial_news/commentary/interview/analysis/background_report: editorial formats
-- trend_report/market_report/study/survey/whitepaper/benchmark/forecast/case_study: evidence and research formats
-- press_release/strategy_update/campaign_news/product_news/financial_news/acquisition_news/partnership_news/investment_news/expansion_news/restructuring_news/operations_news/personnel_news: company formats
-- event_announcement/event_report/panel_summary/exhibitor_news/event_program/speaker_page: event formats
-- career/faq/overview/navigation_page/product_catalog/download_landing/advertisement/aggregation/other: non-editorial or fallback formats`;
+const FALLBACK_ARTICLE_TYPES_TEXT = `- news: redaktionelle Nachricht oder Meldung
+- analysis: fachliche Analyse oder Hintergrundstück
+- interview: redaktionelles Frage-Antwort- oder Gesprächsformat
+- opinion: Kommentar, Kolumne oder klar gekennzeichnete Meinung
+- study: empirische Studie, Survey oder Untersuchung mit Methode/Stichprobe und Ergebnissen
+- whitepaper: substanzielles Whitepaper, Research Paper oder Playbook
+- report: Markt-, Trend-, Benchmark- oder Prognosebericht
+- case_study: dokumentierter Praxisfall mit Vorgehen und Ergebnissen
+- press_release: eigenständige Pressemitteilung mit zusammenhängendem Artikeltext
+- company_update: Strategie-, Produkt-, Kampagnen-, Finanz-, M&A-, Investitions-, Expansions-, Operations- oder Personalupdate
+- event_report: redaktioneller Messe-, Event-, Panel- oder Vortragsbericht mit inhaltlicher Substanz
+- other: sonstiger Inhalt; nur verwenden, wenn kein anderer Typ belastbar passt`;
 const FALLBACK_SALES_TRIGGERS_TEXT = `Use only evidence-backed strategic triggers accepted by the response schema. Generic company mentions, launches or personnel news are not triggers by themselves.`;
 
 async function getTaxonomyText(): Promise<{ topics: string; territories: string; articleTypes: string; salesTriggers: string }> {
@@ -2857,7 +2894,7 @@ For each routing_decision, provide separate verbatim evidence. If routing is not
 <source name="${source.company || "unknown"}" category="${source.category || "unknown"}" />
 <article_title>${title}</article_title>
 <article_text>${modelContent}</article_text>
-<task>Return a conservative final classification. Evidence must be copied verbatim from article_title or article_text. Classify acquisition, financial, operations and personnel article types explicitly. title_de must be a faithful, fluent German translation of article_title without adding or omitting facts; preserve names, brands, numbers and claims exactly. Use German for title_de, summary, rationale, route reasons and market_insight_explanation. event_key must describe the underlying event, not the publication.</task>`;
+<task>Return a conservative final classification. Evidence must be copied verbatim from article_title or article_text. Determine article_type from the actual format, not merely words in the headline. Use study only for an empirical study/survey with exposed method or sample and findings; whitepaper only for a substantive whitepaper, research paper or playbook; report for a market, trend, benchmark or forecast report; case_study only for a documented practice case with approach and outcome. Use press_release for a complete standalone press release and company_update for ordinary company announcements. Use other only when none of the eleven meaningful types fits; other can never be reliable. Acquisition, finance, operations, product, campaign, expansion and personnel announcements are company_update. title_de must be a faithful, fluent German translation of article_title without adding or omitting facts; preserve names, brands, numbers and claims exactly. Use German for title_de, summary, rationale, route reasons and market_insight_explanation. event_key must describe the underlying event, not the publication.</task>`;
 }
 
 function validateClassification(
@@ -3011,7 +3048,7 @@ function validateClassification(
     };
   }
   const overallConfidence = clampConfidence(raw.overall_confidence);
-  const articleType = ARTICLE_TYPES.includes(raw.article_type as typeof ARTICLE_TYPES[number]) ? raw.article_type : "other";
+  const articleType = normalizeArticleType(String(raw.article_type || "other"), articleText);
   const titleDe = String(raw.title_de || "").trim().slice(0, 500);
   let rejectionReasons = Array.isArray(raw.rejection_reasons) ? raw.rejection_reasons.filter(Boolean).slice(0, 8) : [];
   const directMarketingTopics = topics.filter(hasDirectMarketingContext).filter((topic) => {

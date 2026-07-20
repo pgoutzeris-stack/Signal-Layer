@@ -1095,6 +1095,10 @@ const TERRITORY_LABELS = {
 };
 
 const ARTICLE_TYPE_LABELS = {
+  news: "Nachricht",
+  opinion: "Meinung / Kommentar",
+  report: "Report",
+  company_update: "Unternehmens-Update",
   editorial_news: "Redaktionelle Nachricht",
   commentary: "Kommentar / Meinung",
   interview: "Interview",
