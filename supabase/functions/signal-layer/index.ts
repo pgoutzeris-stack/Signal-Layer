@@ -426,7 +426,7 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs =
 
 function resolveUrl(maybeRelative: string, baseUrl: string): string {
   try {
-    return new URL(maybeRelative, baseUrl).toString();
+    return new URL(decodeArticleText(maybeRelative), baseUrl).toString();
   } catch {
     return maybeRelative;
   }
@@ -1087,7 +1087,7 @@ async function runFreeLinkCrawl(sourceUrl: string, policy: CrawlPolicy): Promise
     const links: string[] = [];
     for (const href of hrefs) {
       let abs: string;
-      try { abs = new URL(href, sourceUrl).toString(); } catch { continue; }
+      try { abs = new URL(decodeArticleText(href), sourceUrl).toString(); } catch { continue; }
       try { if (new URL(abs).hostname !== new URL(sourceUrl).hostname) continue; } catch { continue; }
       if (seen.has(abs)) continue;
       seen.add(abs);
@@ -1116,7 +1116,7 @@ async function runFreeLinkCrawl(sourceUrl: string, policy: CrawlPolicy): Promise
           const listingHtml = await listingResponse.text();
           for (const match of listingHtml.matchAll(/<a\b[^>]*\bhref=["']([^"'#]+)["']/gi)) {
             let absolute: string;
-            try { absolute = new URL(match[1], listingUrl).toString(); } catch { continue; }
+            try { absolute = new URL(decodeArticleText(match[1]), listingUrl).toString(); } catch { continue; }
             if (new URL(absolute).hostname !== new URL(sourceUrl).hostname || seen.has(absolute)) continue;
             seen.add(absolute);
             if (isAllowedBySourcePolicy(absolute, policy) && looksLikeDetail(absolute)) detailLinks.push(absolute);
