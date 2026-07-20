@@ -1294,7 +1294,7 @@ function renderFindings(track) {
           ${track === "sales" && article.matched_offering ? `<div class="finding-offering">
             <div class="finding-offering-head"><span><i class="fa-solid fa-puzzle-piece"></i> Passende ROOTS-Leistung</span>${pillarLabel ? `<small>${escapeHtml(pillarLabel)}</small>` : ""}</div>
             <strong>${escapeHtml(article.matched_offering)}</strong>
-            ${article.matched_offering_reasoning ? `<p><b>Andockpunkt:</b> ${escapeText(article.matched_offering_reasoning)}</p>` : ""}
+            ${article.matched_offering_reasoning ? `<div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escapeText(article.matched_offering_reasoning)}</p></div>` : ""}
           </div>` : ""}
           <div class="finding-meta">
             ${companies.map((c) => `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
@@ -1705,7 +1705,7 @@ async function openArticleDetail(articleId) {
       <main class="article-detail-main">
         <span class="article-detail-kicker">${escapeHtml(source?.company || "Signal Layer")}</span>
         <h2 class="article-detail-title" id="article-detail-title">${escapeText(article.title_de || article.title || "Ohne Titel")}</h2>
-        ${article.title_de && article.title_de !== article.title ? `<p class="article-original-title"><span>Originaltitel</span>${renderEvidenceLinkedText(article.title || "", evidence)}</p>` : ""}
+        ${article.title_de && article.title_de !== article.title ? `<p class="article-original-title"><span>Originaltitel</span> ${renderEvidenceLinkedText(article.title || "", evidence)}</p>` : ""}
         <div class="article-detail-meta">
           ${article.published_at ? `<span class="tag"><i class="fa-solid fa-calendar"></i> ${escapeHtml(new Date(article.published_at).toLocaleDateString("de-DE"))}</span>` : ""}
           ${article.article_type ? `<span class="tag"><i class="fa-solid fa-file-lines"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
@@ -1728,7 +1728,7 @@ async function openArticleDetail(articleId) {
           <p class="decision-rationale">${escapeHtml(decisionExplanation)}</p>
         </div>
         ${reasons.length ? `<div class="decision-block"><span class="decision-label">Ausschlussregeln</span><div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></div>` : ""}
-        ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Passende ROOTS-Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><p class="offering-match-reasoning"><b>Andockpunkt:</b> ${escapeText(article.matched_offering_reasoning || "")}</p></div></div>` : ""}
+        ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Passende ROOTS-Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><div class="offering-match-dock"><span>So kann ROOTS andocken</span><p class="offering-match-reasoning">${escapeText(article.matched_offering_reasoning || "")}</p></div></div></div>` : ""}
         <div class="decision-block">
           <span class="decision-label">Tags & Routing</span>
           <div class="decision-tags">${renderDetailTags(article) || `<span class="decision-lead">Keine Tags vergeben</span>`}</div>

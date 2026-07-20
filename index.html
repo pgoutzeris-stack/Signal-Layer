@@ -366,6 +366,8 @@
   .finding-offering-head small { padding: 3px 6px; border-radius: 6px; background: #fff; color: var(--muted); font-size: .6rem; font-weight: 700; text-transform: none; }
   .finding-offering strong { display: block; color: var(--ink); font-size: .8rem; line-height: 1.35; }
   .finding-offering p { margin: .3rem 0 0; color: var(--status-text); font-size: .72rem; line-height: 1.45; }
+  .finding-offering-dock { margin-top: .5rem; padding-top: .48rem; border-top: 1px solid rgba(30, 64, 175, .14); }
+  .finding-offering-dock > span, .offering-match-dock > span { display: block; margin-bottom: .18rem; color: var(--brand); font-size: .62rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
   .finding-rationale { margin: .45rem 0; padding: .5rem .6rem; border-radius: 8px; background: var(--surface); display: flex; gap: 7px; font-size: .74rem; line-height: 1.4; color: var(--muted); }
   .finding-rationale i { color: var(--brand); margin-top: 1px; }
   .finding-meta { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; padding-top: .65rem; border-top: 1px solid var(--line); }
@@ -426,6 +428,8 @@
   .decision-block--offering { border: 1px solid var(--brand); background: var(--brand-light); border-radius: 12px; padding: .75rem .85rem; margin: .3rem 0; }
   .offering-match-name { font-weight: 700; color: var(--brand-dark, var(--brand)); font-size: .85rem; }
   .offering-match-reasoning { margin-top: 4px; font-size: .78rem; line-height: 1.4; color: var(--status-text); }
+  .offering-match-dock { margin-top: .65rem; padding-top: .6rem; border-top: 1px solid rgba(30, 64, 175, .16); }
+  .offering-match-dock .offering-match-reasoning { margin: 0; }
   .decision-label { display: block; margin-bottom: .5rem; font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .decision-rationale { margin: 0; font-size: .8rem; line-height: 1.55; color: var(--status-text); }
   .decision-tags { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -1890,7 +1894,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260720-1645';
+import { initApp } from './app.js?v=20260720-1745';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {

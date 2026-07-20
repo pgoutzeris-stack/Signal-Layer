@@ -1646,7 +1646,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.17";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.18";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -2580,7 +2580,21 @@ function selectCompanyCandidates(
   const normalizedText = ` ${normalizeMatchText(articleText)} `;
   return companies.filter((company) => [company.name, ...(company.aliases || [])].some((term) => {
     const normalizedTerm = normalizeMatchText(term);
-    return normalizedTerm.length >= 3 && normalizedText.includes(` ${normalizedTerm} `);
+    if (normalizedTerm.length < 3 || !normalizedText.includes(` ${normalizedTerm} `)) return false;
+    // Some valid company names are also ordinary words. Require the original
+    // casing plus local company/action context so footer/UI phrases such as
+    // "To complete this action" cannot become a Tier-1 match.
+    if (normalizedTerm === "action") {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const mention = new RegExp(`(?:^|[^A-Za-z])${escaped}(?:[^A-Za-z]|$)`, "g");
+      let match: RegExpExecArray | null;
+      while ((match = mention.exec(articleText)) !== null) {
+        const window = normalizeMatchText(articleText.slice(Math.max(0, match.index - 100), match.index + term.length + 140));
+        if (/\b(discount\w*|discounter\w*|retailer\w*|handler\w*|einzelhandel\w*|filial\w*|store\w*|unternehmen\w*|company|konzern\w*|group|ceo|umsatz\w*|eroffn\w*|expand\w*|invest\w*|launch\w*|announc\w*|plan\w*|partner\w*)\b/i.test(window)) return true;
+      }
+      return false;
+    }
+    return true;
   }));
 }
 
@@ -2588,7 +2602,7 @@ function companyEvidenceMentionsCandidate(
   evidence: string,
   company: { name: string; aliases: string[] },
 ): boolean {
-  return [company.name, ...(company.aliases || [])].some((label) => containsMatchTerm(evidence, label));
+  return selectCompanyCandidates(evidence, [company]).length > 0;
 }
 
 function passesEventPreClassificationGate(
@@ -2672,7 +2686,7 @@ ${taxonomyText.salesTriggers}
 <routing_rules>
 Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item, whitepaper or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Marketing NEVER requires a Tier-1 company or any named company. Missing Tier-1 status is exclusively a Sales limitation and must never appear in article-level rejection_reasons or make Marketing uncertain. General analyses, interviews, studies and market observations qualify when they teach a broader audience something concrete and evidence-backed about a ROOTS topic; a company case study is useful but not required. Company news that cannot teach a broader audience anything is not Marketing. It still needs direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, or AI with a concrete marketing/customer/retail/brand application. sub_branchen_insight alone NEVER qualifies Marketing. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing evidence exists. A study, research paper, whitepaper, benchmark or original survey from a consultancy, institute, association or company qualifies Marketing when it addresses a ROOTS topic and the article contains concrete methodology, findings, data or transferable conclusions. A download announcement, gated landing page or self-promotional claim without an exposed finding does not qualify. If marketing_use.sufficient_substance is true or routing_decisions.marketing.reason describes transferable value, you MUST copy a verbatim supporting sentence into marketing_use.evidence and evaluate publishable independently of Sales.
 sub_branchen_insight is valid only for a transferable market observation that remains useful beyond the reported company event. A single acquisition, product, expansion, financial result or facility is not transferable.
-Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge or evidenced ROOTS-relevant opportunity, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. A company mention or generic strategic change alone is insufficient. For sources in category "Events & Messen", a named person with a credible role at a Tier-1 company who substantively speaks, presents, discusses or is quoted about a ROOTS marketing, brand, customer, retail, category, innovation or applied-AI topic qualifies event_participation as a Sales trigger. The person's contribution and company affiliation must both be evidenced locally in the article. Attendee lists, speaker directories, schedules, navigation, a session title without described contribution, and a name merely appearing somewhere on the same page are insufficient.
+Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge or evidenced ROOTS-relevant opportunity, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. The Sales evidence, company_challenge or personalization facts MUST explicitly connect the named Tier-1 company to that challenge or trigger; generic statements about "companies", "brands" or an anonymous case study are Marketing only. A company mention or generic strategic change alone is insufficient. For sources in category "Events & Messen", a named person with a credible role at a Tier-1 company who substantively speaks, presents, discusses or is quoted about a ROOTS marketing, brand, customer, retail, category, innovation or applied-AI topic qualifies event_participation as a Sales trigger. The person's contribution and company affiliation must both be evidenced locally in the article. Attendee lists, speaker directories, schedules, navigation, a session title without described contribution, and a name merely appearing somewhere on the same page are insufficient.
 marketing_problem is a valid Sales trigger when the article explicitly proves an unresolved or currently material marketing, brand, customer, consumer, loyalty, media, retail-media, category, positioning or customer-journey problem of a Tier-1 company. The evidenced problem itself supplies the trigger; a separate pitch, investment or transformation announcement is not required. Still require company-specific facts, a credible ROOTS contribution and personalization substance. Generic competitive pressure, sector-wide commentary, speculative criticism, weak performance without a marketing/customer connection, and problems described as fully resolved are not marketing_problem.
 Financial_news is not an article-level rejection reason when it explicitly proves such an unresolved Tier-1 marketing_problem. Ignore the surrounding earnings figures for routing, but evaluate evidenced brand weakness, consumer/customer pressure, sell-through difficulty, marketplace relevance or a stated need to strengthen how the company serves consumers as a possible Sales signal. Pure financial performance without that direct ROOTS connection remains irrelevant.
 Buying Center is downstream of Sales. Recommend one to four specific roles that would genuinely benefit from the proposed asset. A named person from the article is preferred when their responsibility fits; otherwise recommend roles and set research_required=true. A pure CEO/CMO appointment, press contact, testimonial or spokesperson is insufficient.
@@ -3098,10 +3112,30 @@ async function tagArticle(
       reason: "Kein eigenständiger ROOTS-relevanter Kauf-, Veränderungs- oder Partnerbedarf belegt; reine Kampagnen und operative Investitionen werden nicht als Sales geroutet.",
     };
   }
+  const salesAccountText = [
+    classification.routing_decisions.sales.evidence,
+    classification.sales_use.evidence,
+    classification.sales_use.company_challenge,
+    ...classification.sales_use.personalization_facts,
+    ...classification.sales_triggers.map((trigger) => trigger.evidence),
+  ].join(" ");
+  const hasAccountSpecificSalesEvidence = activeCompanies.some((activeCompany) => {
+    const canonical = tier1Companies.find((company) => normalizeMatchText(company.name) === normalizeMatchText(activeCompany.name));
+    return canonical ? selectCompanyCandidates(salesAccountText, [canonical]).length > 0 : false;
+  });
+  if (classification.routing_decisions.sales.eligible && activeCompanies.length > 0 && !hasAccountSpecificSalesEvidence) {
+    classification.routing_decisions.sales = {
+      eligible: false,
+      confidence: classification.routing_decisions.sales.confidence,
+      evidence: "",
+      reason: "Der Artikel enthält nur allgemeine Fach- oder Fallbeispielaussagen; kein belegter Sales-Anlass ist konkret mit dem erkannten Tier-1-Unternehmen verknüpft.",
+    };
+  }
   const salesCandidate = config.routing.sales_enabled && classification.relevance_status === "reliable"
     && (!config.routing.sales_requires_tier1 || activeCompanies.length > 0)
     && (!config.routing.sales_requires_trigger || classification.sales_triggers.length > 0)
     && rootsSalesOpportunity
+    && hasAccountSpecificSalesEvidence
     && classification.routing_decisions.sales.eligible;
   // Ground the Sales trigger against ROOTS' actual offering catalog — only
   // for genuinely sales-eligible articles (cheap, targeted extra call).
