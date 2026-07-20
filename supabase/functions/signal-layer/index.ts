@@ -749,7 +749,7 @@ const LOGIN_HANDLERS: Record<string, { loginUrl: string; emailField: string; pas
   "www.markenartikel-magazin.de": {
     loginUrl: "https://www.markenartikel-magazin.de/_rubric/member.php",
     emailField: "username", passwordField: "password", csrfFieldName: "csrfToken",
-    extraFields: { action: "dologin", rubric: "1", stay_logged_in: "1" },
+    extraFields: { action: "dologin", stay_logged_in: "1" },
   },
 };
 
@@ -761,7 +761,7 @@ async function getVaultSourceLoginCreds(sourceId: string): Promise<{ username: s
 
 // Logs into the source's paywall with the stored ROOTS credentials and
 // returns a Cookie header string for subsequent authenticated fetches.
-async function performSiteLogin(domain: string, username: string, password: string): Promise<string | null> {
+async function performSiteLogin(domain: string, username: string, password: string, articleUrl?: string): Promise<string | null> {
   const handler = LOGIN_HANDLERS[domain];
   if (!handler) return null;
   try {
@@ -780,25 +780,38 @@ async function performSiteLogin(domain: string, username: string, password: stri
       }
       return pairs;
     };
-    const getRes = await fetchWithTimeout(handler.loginUrl);
+    // Metered publishers such as Markenartikel render the only valid login
+    // form inside the blocked article. Its CSRF token, article number and
+    // rubric are request-specific, so discover and submit that real form
+    // instead of assuming a standalone login page.
+    const loginPageUrl = articleUrl || handler.loginUrl;
+    const getRes = await fetchWithTimeout(loginPageUrl);
     const getHtml = await getRes.text();
     const cookieJar = extractCookiePairs(getRes.headers);
-    const csrf = handler.csrfFieldName
-      ? getHtml.match(new RegExp(`name=["']${handler.csrfFieldName}["']\\s+value=["']([^"']+)["']`))?.[1]
-        || getHtml.match(new RegExp(`value=["']([^"']+)["']\\s+name=["']${handler.csrfFieldName}["']`))?.[1]
-      : undefined;
+    const formMatch = [...getHtml.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/gi)]
+      .find((match) => new RegExp(`name=["']${handler.passwordField}["']`, "i").test(match[2]));
+    const formAttributes = formMatch?.[1] || "";
+    const formHtml = formMatch?.[2] || getHtml;
+    const actionAttribute = formAttributes.match(/\baction=["']([^"']+)["']/i)?.[1];
+    const postUrl = actionAttribute ? new URL(actionAttribute, loginPageUrl).toString() : handler.loginUrl;
     const form = new URLSearchParams();
+    for (const input of formHtml.match(/<input\b[^>]*>/gi) || []) {
+      const type = input.match(/\btype=["']([^"']+)["']/i)?.[1]?.toLowerCase();
+      if (type !== "hidden") continue;
+      const name = input.match(/\bname=["']([^"']+)["']/i)?.[1];
+      const value = input.match(/\bvalue=["']([^"']*)["']/i)?.[1] || "";
+      if (name) form.set(name, decodeArticleText(value));
+    }
     form.set(handler.emailField, username);
     form.set(handler.passwordField, password);
-    if (handler.csrfFieldName && csrf) form.set(handler.csrfFieldName, csrf);
     for (const [k, v] of Object.entries(handler.extraFields || {})) form.set(k, v);
-    const postRes = await fetchWithTimeout(handler.loginUrl, {
+    const postRes = await fetchWithTimeout(postUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Cookie: Object.values(cookieJar).join("; "),
-        Origin: `https://${domain}`,
-        Referer: handler.loginUrl,
+        Origin: new URL(postUrl).origin,
+        Referer: loginPageUrl,
         "Accept-Language": "de-DE,de;q=0.9",
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       },
@@ -806,7 +819,18 @@ async function performSiteLogin(domain: string, username: string, password: stri
     });
     Object.assign(cookieJar, extractCookiePairs(postRes.headers));
     const combined = Object.values(cookieJar).join("; ");
-    return combined || null;
+    if (!combined) return null;
+    if (articleUrl) {
+      const verifyRes = await fetchWithTimeout(articleUrl, {
+        cache: "no-store",
+        headers: { Cookie: combined, Referer: loginPageUrl },
+      });
+      const verifyHtml = await verifyRes.text();
+      const stillBlocked = new RegExp(`name=["']${handler.passwordField}["']`, "i").test(verifyHtml)
+        && /jetzt angebot w[aä]hlen und weiterlesen|noch kein .*abonnement/i.test(verifyHtml);
+      if (!verifyRes.ok || stillBlocked) return null;
+    }
+    return combined;
   } catch (error) {
     console.error(`Login failed for ${domain}:`, error);
     return null;
@@ -816,7 +840,7 @@ async function performSiteLogin(domain: string, username: string, password: stri
 // Reuses a DB-persisted session cookie (survives across the batched,
 // self-refiring crawl invocations) and only re-logs-in when it's missing or
 // stale (>4h), so we don't hit the login form on every single article.
-async function getOrRefreshLoginCookie(source: { id: string; url: string; crawl_config?: Record<string, unknown> }): Promise<string | null> {
+async function getOrRefreshLoginCookie(source: { id: string; url: string; crawl_config?: Record<string, unknown> }, articleUrl?: string): Promise<string | null> {
   const cfg = source.crawl_config || {};
   const cookie = cfg.session_cookie as string | undefined;
   const cookieAt = cfg.session_cookie_at as string | undefined;
@@ -825,7 +849,7 @@ async function getOrRefreshLoginCookie(source: { id: string; url: string; crawl_
   if (!creds) return null;
   let domain: string;
   try { domain = new URL(source.url).hostname; } catch { return null; }
-  const fresh = await performSiteLogin(domain, creds.username, creds.password);
+  const fresh = await performSiteLogin(domain, creds.username, creds.password, articleUrl);
   if (!fresh) return null;
   await getAdminClient().schema("signal_layer").from("sources")
     .update({ crawl_config: { ...cfg, session_cookie: fresh, session_cookie_at: new Date().toISOString() } })
@@ -960,7 +984,7 @@ async function fetchArticleForSource(
   source?: { id: string; url: string; crawl_config?: Record<string, unknown> } | null,
 ): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
   const loginRequired = Boolean(source?.crawl_config?.login_required);
-  const cookie = loginRequired && source ? await getOrRefreshLoginCookie(source).catch(() => null) : null;
+  const cookie = loginRequired && source ? await getOrRefreshLoginCookie(source, url).catch(() => null) : null;
   const direct = await fetchArticleContent(url, cookie);
   if (source && direct) {
     const paywall = looksLikePaywallTeaser(direct.content);
