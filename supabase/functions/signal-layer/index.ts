@@ -2790,6 +2790,9 @@ async function tagArticle(
   if (hardReasons.length > 0) {
     const contentUnavailable = hardReasons.includes("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
     const recognisedNonArticle = hardReasons.some((reason) => /Verzeichnis-|Kontakt-|Übersichtsseite|Karriere-|FAQ-|Event-/.test(reason));
+    const diagnosticForFailure = extractionDiagnostic?.code === "feed_fallback_used"
+      ? { ...extractionDiagnostic, recovered: false, message: "Ein Feed-Auszug war verfügbar, blieb nach der Bereinigung aber unter der erforderlichen Mindestlänge." }
+      : extractionDiagnostic;
     await admin.schema("signal_layer").from("articles").update({
       cleaned_content: cleanedContent,
       article_type: hardReasons.some((reason) => reason.includes("Karriere")) ? "career" : "other",
@@ -2806,7 +2809,7 @@ async function tagArticle(
       topics: [], territory: null, matched_companies: [], matched_persons: [],
       buying_center_candidate: false, routing: [], sales_triggers: [], routing_evidence: {},
       market_insight_transferable: null, market_insight_explanation: null,
-      extraction_diagnostic: contentUnavailable ? extractionDiagnostic : null,
+      extraction_diagnostic: contentUnavailable ? diagnosticForFailure : null,
     }).eq("id", articleId);
     return;
   }
@@ -4441,6 +4444,7 @@ Deno.serve(async (req: Request) => {
           login_failed: "Credential-Login fehlgeschlagen",
           timeout: "Zeitüberschreitung beim Abruf",
           network_error: "Netzwerk-/Protokollfehler",
+          feed_fallback_used: "Feed-Auszug weiterhin unzureichend",
           unknown: "Noch keine Detaildiagnose",
         };
         const failureMap = new Map<string, { count: number; sources: Map<string, number>; diagnostics: Map<string, { count: number; message: string }>; raw: string }>();
