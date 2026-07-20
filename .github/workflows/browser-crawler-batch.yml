@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check browser queue
         id: queue
         env:
@@ -31,7 +31,7 @@ jobs:
             "${SIGNAL_LAYER_ENDPOINT}")
           has_jobs=$(node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(value.has_jobs ? "true" : "false")' "$response")
           echo "has_jobs=${has_jobs}" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.queue.outputs.has_jobs == 'true'
         with:
           node-version: 22
