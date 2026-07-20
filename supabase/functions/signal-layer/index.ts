@@ -1646,7 +1646,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.20";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.21";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -3182,6 +3182,10 @@ async function tagArticle(
     ];
   }
   const salesEligible = salesCandidate && Boolean(matchedOffering);
+  // Final feeds are mutually exclusive. Marketing is still evaluated first
+  // so Sales failures cannot suppress a valid editorial signal, but a fully
+  // qualified Sales opportunity takes precedence in the visible routing.
+  const marketingRouted = marketingEligible && !salesEligible;
   const buyingCenterCandidate = config.routing.buying_center_enabled && salesEligible
     && (!config.routing.buying_center_requires_person
       || classification.people.length > 0 || classification.buying_center.recommended_roles.length > 0);
@@ -3190,7 +3194,7 @@ async function tagArticle(
     ...classification.buying_center.recommended_roles.map((role) => `Zielrolle: ${role}`),
   ];
   const routing: string[] = [];
-  if (marketingEligible && classification.relevance_status === "reliable") routing.push("marketing");
+  if (marketingRouted && classification.relevance_status === "reliable") routing.push("marketing");
   if (salesEligible) routing.push("sales");
   if (buyingCenterCandidate) routing.push("buying_center");
   const eventClusterKey = classification.event_key
@@ -3280,7 +3284,10 @@ async function tagArticle(
     extraction_diagnostic: extractionDiagnostic?.recovered ? extractionDiagnostic : null,
   }).eq("id", articleId);
 
-  if (!salesEligible) {
+  if (salesEligible) {
+    await admin.schema("signal_layer").from("findings")
+      .delete().eq("article_id", articleId).eq("track", "marketing");
+  } else {
     await admin.schema("signal_layer").from("findings")
       .delete().eq("article_id", articleId).in("track", ["sales", "buying_center"]);
   }
@@ -3296,7 +3303,7 @@ async function tagArticle(
   }
 
   if (classification.relevance_status !== "reliable") return;
-  for (const topic of marketingEligible ? directMarketingTopics : []) {
+  for (const topic of marketingRouted ? directMarketingTopics : []) {
     await admin.schema("signal_layer").from("findings").upsert({
       article_id: articleId, crawl_run_id: crawlRunId, track: "marketing", dimension: topic.id,
       matched_keywords: [topic.id], confidence: topic.confidence, evidence: [topic.evidence],
