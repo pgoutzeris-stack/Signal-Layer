@@ -113,7 +113,11 @@ export async function extractArticle({ url, cookie }) {
       return { title: title.trim(), excerpt: excerpt.trim(), publishedAt, content: (candidates[0] || "").slice(0, 20_000) };
     });
     const normalized = `${result.title} ${result.content}`.toLowerCase();
-    const paywall = /jetzt angebot w[aä]hlen und weiterlesen|subscribe to (?:continue|read)|sign in to continue|noch kein .*abonnement/.test(normalized);
+    const explicitPaywall = /jetzt angebot w[aä]hlen und weiterlesen|subscribe to (?:continue|read)|sign in to continue|noch kein .*abonnement|only available to subscribers|subscriber-only/.test(normalized);
+    const pairedPaywall = result.content.length < 1400
+      && /\b(abonnent|abonnement|subscription|subscribe|subscriber|premium|membership)\b/.test(normalized)
+      && /\b(weiterlesen|vollst[aä]ndigen artikel|continue reading|read more|sign in|log in|login|anmelden|register)\b/.test(normalized);
+    const paywall = explicitPaywall || pairedPaywall;
     return { ...result, httpStatus: response?.status() || null, paywall, finalUrl: page.url() };
   } finally {
     await context?.close().catch(() => {});

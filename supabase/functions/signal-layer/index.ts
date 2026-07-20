@@ -3306,6 +3306,30 @@ Deno.serve(async (req: Request) => {
             finished_at: now,
             updated_at: now,
           }).eq("id", job.id);
+          const { data: failedArticle } = await admin.schema("signal_layer").from("articles")
+            .select("source_id,source:sources(id,url,crawl_config)").eq("id", job.article_id).maybeSingle();
+          const failedSource = Array.isArray(failedArticle?.source) ? failedArticle.source[0] : failedArticle?.source;
+          if (Boolean(rendered?.paywall) && failedSource) {
+            await recordSourcePaywallStatus(failedSource, true, renderedContent.replace(/\s+/g, " ").slice(0, 220)).catch(() => {});
+          }
+          const loginConfigured = Boolean(failedSource?.crawl_config?.login_configured_at);
+          await admin.schema("signal_layer").from("articles").update({
+            extraction_diagnostic: Boolean(rendered?.paywall) ? {
+              code: loginConfigured ? "paywall_after_login" : "paywall_no_session",
+              message: loginConfigured
+                ? "Chromium zeigt trotz hinterlegtem Zugang weiterhin nur die Paywall bzw. den Teaser."
+                : "Chromium hat eine Paywall bestätigt; für diese Quelle sind keine Zugangsdaten hinterlegt.",
+              content_length: renderedContent.length,
+              login_required: Boolean(failedSource?.crawl_config?.login_required),
+              session_used: loginConfigured,
+              checked_at: now,
+            } : {
+              code: "too_short",
+              message: "Auch nach vollständigem Chromium-Rendering blieb der redaktionelle Artikeltext unter 400 Zeichen.",
+              content_length: cleanArticleText(renderedContent).length,
+              checked_at: now,
+            },
+          }).eq("id", job.article_id);
           return corsResponse(origin, { ok: true, retry: false });
         }
         const articleUpdate: Record<string, unknown> = {
