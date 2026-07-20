@@ -1646,7 +1646,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.15";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.16";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -1773,7 +1773,7 @@ const SALES_TRIGGERS_REQUIRING_ROOTS_CONTEXT = new Set([
   "event_participation", "marketing_problem",
 ]);
 
-const ROOTS_SALES_CONTEXT_PATTERN = /\b(agency|agentur|consult\w*|beratung|advis\w*|partner(?:ship)?|partnerschaft|pitch|tender|ausschreibung|mandat|budget|marketing (?:organi[sz]ation|operating model|transformation|strateg\w*|capabilit\w*|technolog\w*)|marketingorgani[sz]ation|marketingtransformation|marketingstrateg\w*|martech|customer insights?|consumer insights?|shopper insights?|retail media|category management|brand (?:strateg\w*|position\w*|transform\w*|architecture)|markenstrateg\w*|markenpositionier\w*|markentransform\w*|markenarchitektur|customer journey|kundenerlebnis|target group|zielgruppe|direct[- ]to[- ]consumer|\bd2c\b|sell[- ]through|marketplace elevation|marketplace strateg\w*|operating model|organisationsmodell|capabilit\w*|kompetenzaufbau)\b/i;
+const ROOTS_SALES_CONTEXT_PATTERN = /\b(agency|agentur|consult\w*|beratung|advis\w*|partner(?:ship)?|partnerschaft|pitch|tender|ausschreibung|mandat|budget|marketing (?:organi[sz]ation|operating model|transformation|strateg\w*|capabilit\w*|technolog\w*)|marketingorgani[sz]ation|marketingtransformation|marketingstrateg\w*|martech|customer insights?|consumer insights?|shopper insights?|retail media|category management|brand (?:strateg\w*|position\w*|transform\w*|architecture)|marke\w* strateg\w*|markenstrateg\w*|markenpositionier\w*|markentransform\w*|markenarchitektur|customer experience|customer journey|kundenerlebnis|target group|zielgruppe|direct[- ]to[- ]consumer|\bd2c\b|sell[- ]through|marketplace elevation|marketplace strateg\w*|operating model|organisationsmodell|capabilit\w*|kompetenzaufbau)\b/i;
 
 const OPERATIONAL_ONLY_PATTERN = /\b(factory|factories|plant|production|manufactur\w*|filling|packaging|warehouse|logistics|machinery|machine|facility|facilities|site|sites|fabrik\w*|werk(?:e|en)?|produktions\w*|herstell\w*|abfull\w*|abfuell\w*|verpackung\w*|lager\w*|logistik\w*|maschine\w*|betriebsstatte\w*|standort\w*)\b/i;
 const EXPLICIT_MARKETING_PROBLEM_PATTERN = /\b(problem\w*|challenge\w*|challenged|headwind\w*|declin\w*|sell[- ]through|herausforderung\w*|ruckgang\w*|verlust\w*|stagn\w*|verfehl\w*|scheiter\w*|ineffiz\w*|fragment\w*|silo\w*|mangel\w*|lucke\w*|risiko\w*|akzeptanzproblem\w*|vertrauensverlust\w*|relevanzverlust\w*|kostendruck\w*|umsatzdruck\w*|absatzproblem\w*|wettbewerbsdruck\w*|konsumzuruckhaltung\w*)\b/i;
@@ -2387,6 +2387,51 @@ const ROOTS_OFFERINGS: Array<{ id: string; pillar: string; label: string; descri
   { id: "performance", pillar: "performance", label: "Performance – Marketing Analytics", description: "Marketing Analytics: analytische Infrastruktur und Datenkultur als Wettbewerbsvorteil aufbauen." },
 ];
 
+type RootsOffering = { id: string; pillar: string; label: string; description: string };
+
+// High-confidence lexical safety net for explicit consulting needs. The LLM
+// remains responsible for ambiguous matches, but a transient API/JSON failure
+// must not send an evidenced strategic transformation to manual review.
+function matchRootsOfferingDeterministically(
+  challenge: string,
+  triggerEvidence: string,
+  offerings: RootsOffering[],
+): { id: string; label: string; reasoning: string } | null {
+  const text = normalizeMatchText(`${challenge} ${triggerEvidence}`);
+  const select = (id: string, reasoning: string) => {
+    const offering = offerings.find((item) => item.id === id);
+    if (offering) return { id: offering.id, label: offering.label, reasoning };
+    // Only used when the DB catalog could not be read and the six-pillar
+    // emergency fallback is active. Production DB settings still control
+    // activation whenever detailed offerings were loaded successfully.
+    if (offerings !== ROOTS_OFFERINGS) return null;
+    const fallbackLabels: Record<string, string> = {
+      purpose_handelsmarkenstrategie: "Handelsmarkenstrategie",
+      planning_markenstrategie: "Markenstrategie",
+      presence_customer_experience_management: "Customer Experience Management",
+      productivity_governance_modell: "Governance-Modell",
+    };
+    return fallbackLabels[id] ? { id, label: fallbackLabels[id], reasoning } : null;
+  };
+  const strategicBrandChange = /\b(marke\w* strategisch|markenstrateg\w*|markenfuhr\w*|markentransform\w*|brand strateg\w*|brand transform\w*|repositionier\w*|neupositionier\w*)\b/i.test(text);
+  const retailContext = /\b(einzelhandel\w*|grosshandel\w*|handler\w*|handelsunternehmen\w*|retail\w*|baumarkt\w*|diy markt\w*|sortiment\w*)\b/i.test(text);
+  const explicitPrivateLabel = /\b(handelsmark\w*|eigenmark\w*|private label\w*|retailer brand\w*)\b/i.test(text);
+  if (explicitPrivateLabel || retailContext && strategicBrandChange) {
+    return select("purpose_handelsmarkenstrategie", "Der belegte strategische Wandel einer Handels-/Retail-Marke betrifft unmittelbar deren Rolle, Positionierung und Wachstumslogik.");
+  }
+  if (strategicBrandChange) {
+    return select("planning_markenstrategie", "Die belegte strategische Neuausrichtung der Marke ist ein direkter Anwendungsfall für die Entwicklung ihrer langfristigen Markenstrategie.");
+  }
+  if (/\b(customer experience|customer journey|kundenerlebnis\w*|touchpoint\w*)\b/i.test(text)
+      && /\b(konsistent\w*|strateg\w*|steuer\w*|transform\w*|optimier\w*|etablier\w*)\b/i.test(text)) {
+    return select("presence_customer_experience_management", "Die belegte, systematische Steuerung des Kundenerlebnisses über Touchpoints hinweg passt direkt zum Customer Experience Management.");
+  }
+  if (/\b(governance|steuerungsrahmen|entscheidungsrecht\w*|verantwortlichkeit\w*|organisationsstruktur\w*)\b/i.test(text)) {
+    return select("productivity_governance_modell", "Der belegte Bedarf an Rollen, Verantwortlichkeiten und einem gemeinsamen Steuerungsrahmen passt direkt zum Governance-Modell.");
+  }
+  return null;
+}
+
 // Grounds the Sales trigger against the fixed ROOTS offering catalog instead
 // of trusting free-text roots_relevance — returns null when no offering
 // genuinely fits, rather than forcing a match.
@@ -2396,14 +2441,16 @@ async function matchRootsOffering(
   telemetry: { articleId?: string; crawlRunId?: string } = {},
 ): Promise<{ id: string; label: string; reasoning: string } | null> {
   if (!challenge?.trim()) return null;
-  const key = await getGeminiKey();
-  if (!key) return null;
   const config = await getPipelineConfig();
   const startedAt = Date.now();
   const { data: dbOfferings } = await getAdminClient().schema("signal_layer").from("roots_offerings")
     .select("id, pillar, label, description, sort_order").eq("active", true)
     .order("pillar").order("sort_order").order("label");
   const offerings = dbOfferings?.length ? dbOfferings : ROOTS_OFFERINGS;
+  const deterministicMatch = matchRootsOfferingDeterministically(challenge, triggerEvidence, offerings);
+  if (deterministicMatch) return deterministicMatch;
+  const key = await getGeminiKey();
+  if (!key) return null;
   const catalog = offerings.map((o) => `[${o.pillar || "sonstige"}] ${o.id}: ${o.label} — ${o.description}`).join("\n");
   const prompt = `Du bist ein Vertriebsanalyst bei ROOTS, einer Marketingberatung. ROOTS bietet ausschließlich die folgenden konkreten Leistungen innerhalb seines 6P-Modells an:\n${catalog}\n\nUnternehmens-Herausforderung: "${challenge}"\nBeleg: "${triggerEvidence}"\n\nPasst GENAU EINE konkrete Leistung zu dieser Herausforderung? Wähle die spezifischste passende Unterleistung, nicht nur einen 6P-Dachbereich. Sei streng — ein vager thematischer Bezug reicht nicht, es muss eine plausible Anfrage/Ansprache mit genau dieser Leistung ableitbar sein. Antworte NUR als JSON: {"offering_id": "<id oder null>", "reasoning": "<1 Satz Deutsch, warum diese Leistung konkret passt, oder warum keine passt>"}`;
   try {
@@ -2992,6 +3039,29 @@ async function tagArticle(
   const activeCompanies = classification.companies.filter((company) => company.role !== "incidental_mention");
   const primaryCompany = classification.companies.find((company) => company.role === "primary_subject")?.name
     || activeCompanies[0]?.name || null;
+  // Recover explicit strategic brand/CX implementations when the structured
+  // model describes the opportunity correctly but omits the trigger or leaves
+  // the Sales evidence field empty. Exact article evidence is still required.
+  const strategicSalesEvidence = articleText.split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .find((sentence) => sentence.length >= 55 && sentence.length <= 700
+      && /\b(marke\w*|brand\w*|marketing\w*|customer experience|customer journey|kundenerlebnis\w*)\b/i.test(normalizeMatchText(sentence))
+      && /\b(strateg\w*|transform\w*|neuausricht\w*|repositionier\w*|entwickelt\w*|bundel\w*|etablier\w*|veranker\w*)\b/i.test(normalizeMatchText(sentence))) || "";
+  if (activeCompanies.length > 0 && strategicSalesEvidence && classification.sales_use.actionable
+      && classification.sales_use.sufficient_substance && classification.sales_use.company_challenge
+      && classification.sales_use.roots_relevance) {
+    if (!classification.sales_triggers.some((trigger) => ["transformation", "rebranding"].includes(trigger.id))) {
+      classification.sales_triggers.push({ id: "transformation", confidence: 0.9, evidence: strategicSalesEvidence });
+    }
+    if (!classification.routing_decisions.sales.eligible) {
+      classification.routing_decisions.sales = {
+        eligible: true,
+        confidence: 0.9,
+        evidence: strategicSalesEvidence,
+        reason: "Direkt belegte strategische Marken-/Customer-Experience-Transformation eines priorisierten Unternehmens.",
+      };
+    }
+  }
   const directMarketingTopics = classification.topics.filter(hasDirectMarketingContext).filter((topic) => {
     if (topic.id === "customer_insights") return config.decisions.customer_signal_qualifies_marketing;
     if (topic.id === "fmcg_retail_signale") return config.decisions.retail_signal_qualifies_marketing;
