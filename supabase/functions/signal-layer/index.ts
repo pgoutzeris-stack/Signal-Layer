@@ -253,6 +253,8 @@ const NON_EDITORIAL_URL_PARTS = [
   "/help", "/support", "/kontakt", "/contact", "/service", "/impressum",
   "/datenschutz", "/privacy", "/cookies", "/terms", "/agb", "/sitemap",
   "/search", "/suche", "/tag/", "/category/", "/kategorie/", "/author/",
+  "/anbieter/", "/anbieterverzeichnis", "/supplier-directory", "/vendor-directory",
+  "/mediathek/", "/einrichtungen/", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip",
 ];
 
 const EVENT_NON_EDITORIAL_URL_PARTS = [
@@ -1073,6 +1075,9 @@ const BROWSER_RENDER_DIAGNOSTICS = new Set([
 
 async function enqueueBrowserRenderJob(articleId: string, diagnostic?: ExtractionDiagnostic | null): Promise<void> {
   if (!diagnostic || diagnostic.recovered || !BROWSER_RENDER_DIAGNOSTICS.has(diagnostic.code)) return;
+  const { data: article } = await getAdminClient().schema("signal_layer").from("articles")
+    .select("url").eq("id", articleId).maybeSingle();
+  if (!article?.url || isLikelyNonEditorialUrl(article.url)) return;
   await getAdminClient().schema("signal_layer").from("browser_render_jobs").upsert({
     article_id: articleId,
     status: "queued",
