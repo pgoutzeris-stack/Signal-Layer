@@ -4566,17 +4566,18 @@ Deno.serve(async (req: Request) => {
         const { track, limit } = body as { track?: string; limit?: number };
         if (track && !["marketing", "sales"].includes(track)) return errorResponse(origin, "invalid track");
         const admin = getAdminClient();
+        const pipelineConfig = await getPipelineConfig();
         const cutoff = new Date();
-        cutoff.setUTCMonth(cutoff.getUTCMonth() - 3);
+        cutoff.setUTCDate(cutoff.getUTCDate() - pipelineConfig.crawl.freshness_days);
+        const nowIso = new Date().toISOString();
+        const activeWindowFilter = `and(published_at.gte.${cutoff.toISOString()},published_at.lte.${nowIso}),and(published_at.is.null,classified_at.gte.${cutoff.toISOString()})`;
         const fetchLimit = Math.min(Math.max((limit || 50) * 5, 50), 250);
         // Routing is the canonical result of the current pipeline. Findings is
         // retained for audit/history, but must not hide newly classified cards.
         let query = admin.schema("signal_layer").from("articles")
           .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "reliable")
-          .not("published_at", "is", null)
-          .gte("published_at", cutoff.toISOString())
-          .lte("published_at", new Date().toISOString())
+          .or(activeWindowFilter)
           .order("classified_at", { ascending: false, nullsFirst: false }).limit(fetchLimit);
         if (track) query = query.contains("routing", [track]);
         const { data, error } = await query;
@@ -4597,9 +4598,7 @@ Deno.serve(async (req: Request) => {
         const { data: uncertain, error: uncertainError } = await admin.schema("signal_layer").from("articles")
           .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "uncertain")
-          .not("published_at", "is", null)
-          .gte("published_at", cutoff.toISOString())
-          .lte("published_at", new Date().toISOString())
+          .or(activeWindowFilter)
           .order("classified_at", { ascending: false, nullsFirst: false })
           .limit(limit || 50);
         if (uncertainError) return errorResponse(origin, uncertainError.message, 500);
@@ -4632,7 +4631,7 @@ Deno.serve(async (req: Request) => {
         const deduplicated = combined.filter((finding: any) => {
           const article = finding.article || {};
           const articleKey = String(article.id || "");
-          const eventKey = normalizeMatchText(String(article.event_cluster_key || ""));
+          const eventKey = normalizeMatchText(String(article.event_cluster_key || article.title_de || article.title || ""));
           const company = normalizeMatchText(String(article.primary_company || ""));
           const publishedAt = new Date(article.published_at || 0).getTime();
           const sameEvent = eventKey && acceptedEvents.some((accepted) => {
