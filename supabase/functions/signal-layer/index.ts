@@ -5090,7 +5090,7 @@ Deno.serve(async (req: Request) => {
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
-        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { data: analysisFailures }, { data: sourceConfigs }, { data: browserJobs }] = await Promise.all([
+        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: costLedger }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { data: analysisFailures }, { data: sourceConfigs }, { data: browserJobs }] = await Promise.all([
           admin.schema("signal_layer").from("crawl_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("crawl_runs").select("id, finished_at, current_index, source_ids")
@@ -5101,6 +5101,9 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("ai_usage_events")
             .select("article_id, crawl_run_id, model, status, operation, input_tokens, output_tokens, thinking_tokens, total_tokens, estimated_cost_usd, created_at")
             .gte("created_at", monthStart.toISOString()).limit(10000),
+          admin.schema("signal_layer").from("ai_cost_ledger_daily")
+            .select("usage_date,request_count,error_count,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd")
+            .gte("usage_date", monthStart.toISOString().slice(0, 10)),
           admin.schema("signal_layer").from("source_crawl_attempts")
             .select("crawl_run_id, source_id, feed_type, status, discovered_count, candidate_count, inserted_count, error_code, error_message, started_at")
             .order("started_at", { ascending: false }).limit(1000),
@@ -5146,15 +5149,19 @@ Deno.serve(async (req: Request) => {
         const completedCrawl = (completedCrawls || []).find((run) =>
           Number(run.current_index || 0) >= (Array.isArray(run.source_ids) ? run.source_ids.length : 0)
         ) || null;
-        const costSummary = usageRows.reduce((summary, row) => {
+        // The daily ledger is incremented atomically by an insert trigger. It
+        // is intentionally used instead of fetching raw events: PostgREST's
+        // row cap previously truncated the month to the newest rows and made
+        // real accumulated spend appear far too low.
+        const costSummary = (costLedger || []).reduce((summary, row) => {
           const cost = Number(row.estimated_cost_usd || 0);
           summary.month_usd += cost;
-          if (new Date(row.created_at) >= dayStart) summary.today_usd += cost;
+          if (String(row.usage_date) === dayStart.toISOString().slice(0, 10)) summary.today_usd += cost;
           summary.input_tokens += Number(row.input_tokens || 0);
           summary.output_tokens += Number(row.output_tokens || 0);
           summary.thinking_tokens += Number(row.thinking_tokens || 0);
-          summary.requests += 1;
-          if (row.status === "error") summary.errors += 1;
+          summary.requests += Number(row.request_count || 0);
+          summary.errors += Number(row.error_count || 0);
           return summary;
         }, { month_usd: 0, today_usd: 0, input_tokens: 0, output_tokens: 0, thinking_tokens: 0, requests: 0, errors: 0 });
         const latestAttemptBySource = new Map<string, Record<string, unknown>>();
@@ -5357,6 +5364,14 @@ Deno.serve(async (req: Request) => {
         const activeBackfill = backfill && ["queued", "running"].includes(backfill.status) ? backfill : null;
         const forecastRunType = activeBackfill ? "backfill" : "crawl";
         const forecastRunId = activeBackfill?.id || currentCrawlId;
+        const activeRunStartedAt = activeBackfill?.started_at || crawl?.started_at || monthStart.toISOString();
+        const { data: exactActiveUsage } = forecastRunId
+          ? await admin.schema("signal_layer").rpc("get_ai_usage_aggregate", {
+              p_since: activeRunStartedAt,
+              p_crawl_run_id: activeBackfill ? null : currentCrawlId,
+              p_uncrawled_only: Boolean(activeBackfill),
+            })
+          : { data: [] };
         const currentCrawlUsage = currentCrawlId ? usageRows.filter((row) => row.crawl_run_id === currentCrawlId) : [];
         const currentCrawlActualUsd = currentCrawlUsage.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
         const successfulPrimaryRows = usageRows.filter((row) => row.status === "success" && row.operation === "classification" && row.model === pipelineConfig.ai.primary_model);
@@ -5376,7 +5391,8 @@ Deno.serve(async (req: Request) => {
         const activeRunUsage = activeBackfill
           ? usageRows.filter((row) => !row.crawl_run_id && new Date(row.created_at) >= new Date(activeBackfill.started_at))
           : currentCrawlUsage;
-        const activeRunActualUsd = activeRunUsage.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
+        const activeAggregateRows = exactActiveUsage || [];
+        const activeRunActualUsd = activeAggregateRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
         const activeRunAnalyzedArticles = activeBackfill
           ? Number(activeBackfill.processed_count || 0)
           : analyzedCrawlArticles;
@@ -5400,8 +5416,10 @@ Deno.serve(async (req: Request) => {
             avgWords = articleLengths.reduce((sum, item) => sum + item.words, 0) / articleLengths.length;
           }
         }
-        const tokenSample = liveSuccessfulUsage.length ? liveSuccessfulUsage : [...successfulPrimaryRows, ...successfulReviewRows];
-        const tokenSampleArticles = Math.max(new Set(tokenSample.map((row) => row.article_id).filter(Boolean)).size, 1);
+        const successfulActiveAggregate = activeAggregateRows.filter((row) => row.status === "success");
+        const exactSampleArticles = Math.max(Number(activeBackfill?.processed_count || Math.max(...successfulActiveAggregate.map((row) => Number(row.article_count || 0)), 0)), 1);
+        const tokenSample = successfulActiveAggregate.length ? successfulActiveAggregate : [...successfulPrimaryRows, ...successfulReviewRows];
+        const tokenSampleArticles = successfulActiveAggregate.length ? exactSampleArticles : Math.max(new Set(tokenSample.map((row) => row.article_id).filter(Boolean)).size, 1);
         const avgInputTokens = tokenSample.reduce((sum, row) => sum + Number(row.input_tokens || 0), 0) / tokenSampleArticles;
         const avgOutputTokens = tokenSample.reduce((sum, row) => sum + Number(row.output_tokens || 0), 0) / tokenSampleArticles;
         const avgThinkingTokens = tokenSample.reduce((sum, row) => sum + Number(row.thinking_tokens || 0), 0) / tokenSampleArticles;
@@ -5413,11 +5431,11 @@ Deno.serve(async (req: Request) => {
           "gemini-2.5-pro": { input: 1.25, output: 10 },
         };
         const modelBreakdownMap = new Map<string, Record<string, number | string>>();
-        for (const row of activeRunUsage) {
+        for (const row of activeAggregateRows) {
           const key = `${row.model}:${row.operation}`;
           const rates = forecastRates[row.model] || (String(row.model).includes("flash-lite") ? forecastRates["gemini-2.5-flash-lite"] : String(row.model).includes("pro") ? forecastRates["gemini-3.1-pro-preview"] : forecastRates["gemini-3-flash-preview"]);
           const entry = modelBreakdownMap.get(key) || { model: row.model, operation: row.operation, operation_label: row.operation === "review" ? "Zweitprüfung" : row.operation === "translation" ? "Übersetzung" : row.operation === "offering_match" ? "ROOTS-Leistungsmatch" : "Klassifizierung", calls: 0, input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cost_usd: 0, input_rate_per_million: rates.input, output_rate_per_million: rates.output };
-          entry.calls = Number(entry.calls) + 1;
+          entry.calls = Number(entry.calls) + Number(row.request_count || 0);
           entry.input_tokens = Number(entry.input_tokens) + Number(row.input_tokens || 0);
           entry.output_tokens = Number(entry.output_tokens) + Number(row.output_tokens || 0);
           entry.thinking_tokens = Number(entry.thinking_tokens) + Number(row.thinking_tokens || 0);
