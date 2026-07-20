@@ -4387,7 +4387,7 @@ Deno.serve(async (req: Request) => {
         // Routing is the canonical result of the current pipeline. Findings is
         // retained for audit/history, but must not hide newly classified cards.
         let query = admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
+          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "reliable")
           .not("published_at", "is", null)
           .gte("published_at", cutoff.toISOString())
@@ -4410,7 +4410,7 @@ Deno.serve(async (req: Request) => {
         // Surface them in the same card structure when validated topic/company
         // evidence already provides a meaningful Marketing or Sales route.
         const { data: uncertain, error: uncertainError } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
+          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "uncertain")
           .not("published_at", "is", null)
           .gte("published_at", cutoff.toISOString())

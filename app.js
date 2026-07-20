@@ -1273,6 +1273,12 @@ function renderFindings(track) {
       // "NEU" refers to when the Signal Layer approved the card, not when
       // the source originally published the article.
       const isNew = isToday(article.classified_at);
+      const offering = track === "sales" && article.matched_offering
+        ? pipelineTaxonomy.offerings.find((item) => item.label === article.matched_offering)
+        : null;
+      const pillarLabel = offering
+        ? ROOTS_PILLARS.find(([id]) => id === offering.pillar)?.[1]
+        : null;
       return `
         <article class="finding-item ${isLegacy ? "finding-item--legacy" : ""}" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
           <div class="finding-item-top">
@@ -1285,6 +1291,11 @@ function renderFindings(track) {
           </div>
           <span class="finding-title">${escapeText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
           ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
+          ${track === "sales" && article.matched_offering ? `<div class="finding-offering">
+            <div class="finding-offering-head"><span><i class="fa-solid fa-puzzle-piece"></i> Passende ROOTS-Leistung</span>${pillarLabel ? `<small>${escapeHtml(pillarLabel)}</small>` : ""}</div>
+            <strong>${escapeHtml(article.matched_offering)}</strong>
+            ${article.matched_offering_reasoning ? `<p>${escapeText(article.matched_offering_reasoning)}</p>` : ""}
+          </div>` : ""}
           <div class="finding-meta">
             ${companies.map((c) => `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
             ${source?.company ? `<span class="tag tag--source" title="Quelle: ${escapeHtml(source.company)}"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
@@ -1717,7 +1728,7 @@ async function openArticleDetail(articleId) {
           <p class="decision-rationale">${escapeHtml(decisionExplanation)}</p>
         </div>
         ${reasons.length ? `<div class="decision-block"><span class="decision-label">Ausschlussregeln</span><div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></div>` : ""}
-        ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><p class="offering-match-reasoning">${escapeText(article.matched_offering_reasoning || "")}</p></div></div>` : ""}
+        ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Passende ROOTS-Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><p class="offering-match-reasoning">${escapeText(article.matched_offering_reasoning || "")}</p></div></div>` : ""}
         <div class="decision-block">
           <span class="decision-label">Tags & Routing</span>
           <div class="decision-tags">${renderDetailTags(article) || `<span class="decision-lead">Keine Tags vergeben</span>`}</div>
