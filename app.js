@@ -2211,22 +2211,38 @@ async function loadLastRun() {
         clearTimeout(closeCostDetailTimer);
         positionCostDetail();
         detail?.classList.add("is-open");
+        document.body.classList.add("cost-detail-open");
+      };
+      const closeCostDetail = () => {
+        detail?.classList.remove("is-open");
+        detail?.removeAttribute("data-pinned");
+        document.body.classList.remove("cost-detail-open");
       };
       const scheduleCostDetailClose = () => {
         clearTimeout(closeCostDetailTimer);
         closeCostDetailTimer = setTimeout(() => {
-          if (!crawlForecastStat.matches(":hover, :focus-within") && !detail?.matches(":hover, :focus-within")) detail?.classList.remove("is-open");
-        }, 140);
+          if (detail?.dataset.pinned === "1") return;
+          if (!crawlForecastStat.matches(":hover, :focus-within") && !detail?.matches(":hover, :focus-within")) closeCostDetail();
+        }, 450);
       };
       crawlForecastStat.onmouseenter = openCostDetail;
       crawlForecastStat.onmouseleave = scheduleCostDetailClose;
       crawlForecastStat.onfocusin = openCostDetail;
       crawlForecastStat.onfocusout = scheduleCostDetailClose;
+      crawlForecastStat.onclick = (event) => {
+        event.stopPropagation();
+        if (detail?.dataset.pinned === "1") closeCostDetail();
+        else {
+          openCostDetail();
+          if (detail) detail.dataset.pinned = "1";
+        }
+      };
       if (detail) {
         detail.onmouseenter = openCostDetail;
         detail.onmouseleave = scheduleCostDetailClose;
         detail.onfocusin = openCostDetail;
         detail.onfocusout = scheduleCostDetailClose;
+        detail.onclick = (event) => event.stopPropagation();
       }
     }
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");

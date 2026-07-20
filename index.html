@@ -183,6 +183,7 @@
   @keyframes statusPulse { 50% { transform: scale(1.75); opacity: .35; } }
   .crawl-status-popover { position: absolute; right: 0; top: 100%; width: min(330px, calc(100vw - 24px)); max-height: min(680px, calc(100vh - 88px)); overflow: auto; overscroll-behavior: contain; z-index: 45; padding: .85rem; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .16s, visibility .16s; }
   .crawl-trigger-wrap:hover .crawl-status-popover, .crawl-trigger-wrap:focus-within .crawl-status-popover { opacity: 1; visibility: visible; pointer-events: auto; }
+  body.cost-detail-open .crawl-status-popover { opacity: 1; visibility: visible; pointer-events: auto; }
   .crawl-trigger-wrap:has(.crawl-dropdown.show) .crawl-status-popover { opacity: 0; visibility: hidden; }
   .crawl-status-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 2px 9px; }
   .crawl-status-kicker { display: block; margin-bottom: 3px; color: var(--muted); font-size: .58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
@@ -240,6 +241,7 @@
   .telemetry-stat--warning { border-color: #fbbf24; background: var(--warning-bg); }
   .telemetry-stat--interactive { position: relative; cursor: pointer; outline: none; }
   .telemetry-stat--interactive:hover, .telemetry-stat--interactive:focus-within { border-color: #bfdbfe; background: #f8fbff; }
+  .telemetry-stat--interactive::after { content: "Details"; position: absolute; right: 7px; top: 6px; color: #2563eb; font-size: .48rem; font-weight: 750; text-transform: none; letter-spacing: 0; }
   .cost-detail-popover { position: fixed; left: 12px; top: 12px; width: min(360px, calc(100vw - 24px)); max-height: min(520px, calc(100vh - 24px)); overflow: auto; z-index: 220; padding: 13px; border: 1px solid #dce4ef; border-radius: 14px; background: #fff; color: var(--ink); box-shadow: 0 18px 46px rgba(15, 23, 42, .2); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-4px); transition: opacity .16s ease, visibility .16s ease, transform .16s ease; text-transform: none; letter-spacing: normal; }
   .cost-detail-popover.is-open { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
   .cost-detail-head { display: flex; gap: 9px; align-items: flex-start; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
