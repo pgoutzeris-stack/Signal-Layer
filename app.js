@@ -1271,7 +1271,8 @@ function renderFindings(track) {
       const articleTypeLabel = ARTICLE_TYPE_LABELS[article.article_type] || article.article_type || "Sonstiger Inhalt";
       const companies = articleCompanies(article);
       const source = Array.isArray(article.source) ? article.source[0] : article.source;
-      const confidence = formatConfidence(f.confidence ?? article.relevance_confidence);
+      const confidence = formatConfidence(f.confidence ?? 0);
+      const relevanceLabel = track === "sales" ? "Sales-Relevanz" : "Marketing-Relevanz";
       const status = article.classification_status || "legacy";
       const isLegacy = status === "legacy";
       // "NEU" refers to when the Signal Layer approved the card, not when
@@ -1289,7 +1290,7 @@ function renderFindings(track) {
             <span class="finding-dimension">${escapeHtml(articleTypeLabel)}</span>
             <div class="finding-top-tags">
               ${isNew ? `<span class="finding-new-badge">NEU</span>` : ""}
-              <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="${status === "reliable" ? "fa-solid fa-shield-halved" : status === "legacy" ? "fa-solid fa-clock-rotate-left" : "fa-solid fa-circle-exclamation"}"></i> ${escapeHtml(STATUS_LABELS[status] || status)}${confidence && !isLegacy ? ` · ${confidence}` : ""}</span>
+              <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="${status === "reliable" ? "fa-solid fa-chart-line" : status === "legacy" ? "fa-solid fa-clock-rotate-left" : "fa-solid fa-circle-exclamation"}"></i> ${isLegacy ? "Altbestand" : `${relevanceLabel} · ${confidence || "0 %"}`}</span>
               ${formatFindingDate(article.published_at)}
             </div>
           </div>
@@ -1696,6 +1697,11 @@ async function openArticleDetail(articleId) {
     const reasons = article.rejection_reasons || [];
     const evidence = Object.entries(article.tag_evidence || {});
     const confidence = formatConfidence(article.relevance_confidence);
+    const routedSales = (article.routing || []).includes("sales");
+    const routedMarketing = (article.routing || []).includes("marketing");
+    const valueScore = routedSales ? Number(article.sales_relevance_score || 0) : Number(article.marketing_relevance_score || 0);
+    const valueLabel = routedSales ? "Sales-Opportunity-Relevanz" : "Marketing-Asset-Relevanz";
+    const valueReason = routedSales ? article.sales_relevance_reason : article.marketing_relevance_reason;
     // Prefer the German translation for foreign-language articles.
     const isTranslated = Boolean(article.content_de) && article.language && article.language !== "de";
     const fulltext = article.content_de || article.cleaned_content || article.content || article.excerpt || "Kein Artikeltext gespeichert.";
@@ -1725,11 +1731,11 @@ async function openArticleDetail(articleId) {
         <p class="decision-lead">Die rechte Prüfleiste zeigt Modellentscheidung, bestandene Regeln und die wörtlichen Belege.</p>
         <div class="decision-block">
           <span class="decision-label">Ergebnis</span>
-          <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="${status === "reliable" ? "fa-solid fa-shield-halved" : status === "rejected" ? "fa-solid fa-filter-circle-xmark" : "fa-solid fa-circle-exclamation"}"></i> ${escapeHtml(STATUS_LABELS[status] || status)}${confidence ? ` · ${confidence}` : ""}</span>
+          <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="${status === "reliable" ? "fa-solid fa-chart-line" : status === "rejected" ? "fa-solid fa-filter-circle-xmark" : "fa-solid fa-circle-exclamation"}"></i> ${routedSales || routedMarketing ? `${escapeHtml(valueLabel)} · ${valueScore} %` : escapeHtml(STATUS_LABELS[status] || status)}</span>
         </div>
         <div class="decision-block">
           <span class="decision-label">Begründung</span>
-          <p class="decision-rationale">${escapeHtml(decisionExplanation)}</p>
+          <p class="decision-rationale">${escapeHtml(valueReason || decisionExplanation)}</p>
         </div>
         ${reasons.length ? `<div class="decision-block"><span class="decision-label">Ausschlussregeln</span><div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></div>` : ""}
         ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Passende ROOTS-Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><div class="offering-match-dock"><span>So kann ROOTS andocken</span><p class="offering-match-reasoning">${escapeText(article.matched_offering_reasoning || "")}</p></div></div></div>` : ""}
@@ -1740,7 +1746,7 @@ async function openArticleDetail(articleId) {
         ${evidence.length ? `<div class="decision-block"><span class="decision-label">Bestandene Evidenzregeln</span><div class="evidence-list">${evidence.map(([key, quote], index) => `<blockquote class="evidence-item" data-evidence-index="${index}" tabindex="0"><strong>${escapeHtml(key)}</strong>${escapeText(quote)}</blockquote>`).join("")}</div></div>` : ""}
         <div class="decision-block">
           <span class="decision-label">Technische Prüfung</span>
-          <p class="decision-rationale">${escapeHtml(article.ai_model || "Regelbasiert")} ${article.reviewer_model ? `+ Review durch ${escapeHtml(article.reviewer_model)}` : ""}<br>Prompt: ${escapeHtml(article.prompt_version || "Legacy")}</p>
+          <p class="decision-rationale">${escapeHtml(article.ai_model || "Regelbasiert")} ${article.reviewer_model ? `+ Review durch ${escapeHtml(article.reviewer_model)}` : ""}<br>Prompt: ${escapeHtml(article.prompt_version || "Legacy")}<br>Scoring: ${escapeHtml(article.relevance_scoring_version || "Legacy")}</p>
         </div>
       </aside>`;
     bindEvidenceHover();

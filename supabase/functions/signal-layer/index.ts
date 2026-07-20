@@ -1647,7 +1647,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.25";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.6.0";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -1781,6 +1781,8 @@ type AiRouteDecision = { eligible: boolean; confidence: number; evidence: string
 type AiMarketingUse = { publishable: boolean; transferable_value: string; sufficient_substance: boolean; evidence: string };
 type AiSalesUse = { actionable: boolean; company_challenge: string; roots_relevance: string; sufficient_substance: boolean; personalization_facts: string[]; evidence: string };
 type AiBuyingCenter = { recommended_roles: string[]; research_required: boolean };
+type AiMarketingScore = { novelty: number; strategic_value: number; transferability: number; evidence_strength: number; reason: string };
+type AiSalesScore = { problem_strength: number; roots_fit: number; buying_intent: number; timing: number; reason: string };
 type AiClassification = {
   relevance_status: "reliable" | "uncertain" | "rejected";
   overall_confidence: number;
@@ -1799,6 +1801,8 @@ type AiClassification = {
   marketing_use: AiMarketingUse;
   sales_use: AiSalesUse;
   buying_center: AiBuyingCenter;
+  marketing_asset_value: AiMarketingScore;
+  sales_opportunity_value: AiSalesScore;
   routing_decisions: { marketing: AiRouteDecision; sales: AiRouteDecision };
   rejection_reasons: string[];
   event_key: string;
@@ -1810,7 +1814,7 @@ const GEMINI_RESPONSE_SCHEMA = {
     "relevance_status", "overall_confidence", "article_type", "language", "title_de", "summary",
     "rationale", "topics", "territory", "companies", "people", "market_insight_transferable",
     "market_insight_explanation", "sales_triggers", "marketing_use", "sales_use", "buying_center",
-    "routing_decisions", "rejection_reasons", "event_key",
+    "routing_decisions", "marketing_asset_value", "sales_opportunity_value", "rejection_reasons", "event_key",
   ],
   properties: {
     relevance_status: { type: "STRING", enum: ["reliable", "uncertain", "rejected"] },
@@ -1920,6 +1924,14 @@ const GEMINI_RESPONSE_SCHEMA = {
         } },
       },
     },
+    marketing_asset_value: { type: "OBJECT", required: ["novelty", "strategic_value", "transferability", "evidence_strength", "reason"], properties: {
+      novelty: { type: "NUMBER", minimum: 0, maximum: 100 }, strategic_value: { type: "NUMBER", minimum: 0, maximum: 100 },
+      transferability: { type: "NUMBER", minimum: 0, maximum: 100 }, evidence_strength: { type: "NUMBER", minimum: 0, maximum: 100 }, reason: { type: "STRING" },
+    } },
+    sales_opportunity_value: { type: "OBJECT", required: ["problem_strength", "roots_fit", "buying_intent", "timing", "reason"], properties: {
+      problem_strength: { type: "NUMBER", minimum: 0, maximum: 100 }, roots_fit: { type: "NUMBER", minimum: 0, maximum: 100 },
+      buying_intent: { type: "NUMBER", minimum: 0, maximum: 100 }, timing: { type: "NUMBER", minimum: 0, maximum: 100 }, reason: { type: "STRING" },
+    } },
     rejection_reasons: { type: "ARRAY", items: { type: "STRING" } },
     event_key: { type: "STRING", description: "Stable short event key without dates or filler words." },
   },
@@ -2680,6 +2692,53 @@ async function matchRootsOffering(
   }
 }
 
+type RouteValueScores = {
+  marketing: { score: number; reason: string; components: AiMarketingScore };
+  sales: { score: number; reason: string; components: AiSalesScore };
+};
+
+function calibrateRouteValueScores(
+  classification: AiClassification,
+  articleText: string,
+  marketingEligible: boolean,
+  salesCandidate: boolean,
+  matchedOffering: { id: string; label: string; reasoning: string } | null,
+): RouteValueScores {
+  const m = classification.marketing_asset_value;
+  const s = classification.sales_opportunity_value;
+  const round = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+  let marketingScore = marketingEligible
+    ? round(m.novelty * 0.25 + m.strategic_value * 0.30 + m.transferability * 0.25 + m.evidence_strength * 0.20) : 0;
+  const normalized = normalizeMatchText(articleText);
+  const recurringTracker = /\b(jahrlich|annual|monatlich|monthly|regelmassig|wiederkehrend|edition|welle|tracker|seit \d{4})\b/i.test(normalized);
+  if (recurringTracker && m.novelty < 70) marketingScore = Math.min(marketingScore, 69);
+  if (!["study", "whitepaper", "report", "analysis", "case_study"].includes(classification.article_type)) {
+    marketingScore = Math.min(marketingScore, 84);
+  }
+  if (marketingScore === 100 && (m.novelty < 95 || m.strategic_value < 95 || m.evidence_strength < 90)) marketingScore = 99;
+
+  let salesScore = salesCandidate && matchedOffering
+    ? round(s.problem_strength * 0.32 + s.roots_fit * 0.30 + s.buying_intent * 0.23 + s.timing * 0.15) : 0;
+  const explicitHelp = /\b(sucht|suchen|seeking|request for proposal|\brfp\b|tender|ausschreibung|partner gesucht|beratung gesucht|consultancy|consulting support|externe unterstutzung|externe hilfe|mandat|pitch|budget freigegeben)\b/i.test(normalized);
+  const explicitProblem = EXPLICIT_MARKETING_PROBLEM_PATTERN.test(normalized)
+    && ROOTS_SALES_CONTEXT_PATTERN.test(normalized) && !RESOLVED_PROBLEM_PATTERN.test(normalized);
+  const broadOnly = classification.sales_triggers.length > 0
+    && classification.sales_triggers.every((trigger) => BROAD_SALES_TRIGGER_IDS.has(trigger.id));
+  const creativeExecutionOnly = /\b(logo design|logogestaltung|packaging design|verpackungsdesign|kampagnenkreation|werbemittelproduktion|media buying|medieneinkauf|filmproduktion|fotoproduktion)\b/i.test(normalized)
+    && !/\b(markenstrateg\w*|marketingstrateg\w*|positionier\w*|customer experience|customer journey|marketingorganisation|marketing transformation)\b/i.test(normalized);
+  if (creativeExecutionOnly) salesScore = Math.min(salesScore, 25);
+  if (broadOnly && !explicitProblem) salesScore = Math.min(salesScore, 59);
+  if (!explicitHelp) salesScore = Math.min(salesScore, explicitProblem && matchedOffering ? 89 : 79);
+  if (salesScore === 100 && (!explicitHelp || !explicitProblem || !matchedOffering)) salesScore = 99;
+  const marketingReason = marketingEligible
+    ? (m.reason || `Der Inhalt bietet mit ${marketingScore} % einen belegten Nutzwert als Grundlage für ein ROOTS-Marketing-Asset.`)
+    : "Kein ausreichend übertragbarer Nutzwert als Grundlage für ein ROOTS-Marketing-Asset belegt.";
+  const salesReason = salesCandidate && matchedOffering
+    ? (s.reason || `Die belegte Opportunity passt mit ${salesScore} % zur ROOTS-Leistung ${matchedOffering.label}.`)
+    : "Keine vollständig belegte Tier-1-Sales-Opportunity mit konkretem ROOTS-Leistungsmatch.";
+  return { marketing: { score: marketingScore, reason: marketingReason, components: m }, sales: { score: salesScore, reason: salesReason, components: s } };
+}
+
 function needsAiDisplayFormatting(text: string): boolean {
   const source = String(text || "").trim();
   if (source.length < 1200) return false;
@@ -2884,6 +2943,8 @@ Sales means sufficient account-specific substance for later personalized outreac
 marketing_problem is a valid Sales trigger when the article explicitly proves an unresolved or currently material marketing, brand, customer, consumer, loyalty, media, retail-media, category, positioning or customer-journey problem of a Tier-1 company. The evidenced problem itself supplies the trigger; a separate pitch, investment or transformation announcement is not required. Still require company-specific facts, a credible ROOTS contribution and personalization substance. Generic competitive pressure, sector-wide commentary, speculative criticism, weak performance without a marketing/customer connection, and problems described as fully resolved are not marketing_problem.
 Financial_news is not an article-level rejection reason when it explicitly proves such an unresolved Tier-1 marketing_problem. Ignore the surrounding earnings figures for routing, but evaluate evidenced brand weakness, consumer/customer pressure, sell-through difficulty, marketplace relevance or a stated need to strengthen how the company serves consumers as a possible Sales signal. Pure financial performance without that direct ROOTS connection remains irrelevant.
 Buying Center is downstream of Sales. Recommend one to four specific roles that would genuinely benefit from the proposed asset. A named person from the article is preferred when their responsibility fits; otherwise recommend roles and set research_required=true. A pure CEO/CMO appointment, press contact, testimonial or spokesperson is insufficient.
+Rate marketing_asset_value independently from classification confidence. Score novelty, strategic_value, transferability and evidence_strength from 0 to 100. 100 means a genuinely field-changing, exceptionally well-evidenced insight that could transform marketing practice for ROOTS clients. New frameworks, original analyses and major studies can score 80–99. A useful but familiar insight scores 50–79. Recurring annual/monthly trackers without a major new shift normally score below 70. Explain the asset value in one concise German sentence.
+Rate sales_opportunity_value independently from classification confidence. Score problem_strength, roots_fit, buying_intent and timing from 0 to 100. 100 requires an explicit current Tier-1 marketing problem, exact fit with strategic marketing consulting and direct evidence that help, a partner, consultancy, pitch, tender, mandate or budget is being sought. An explicit problem plus credible ROOTS fit without buying intent belongs in the upper range but below 90. Revenue decline, merger, partnership, investment or expansion alone is weak. Creative execution needs such as logo design, packaging production, campaign creation or media buying are not strategic ROOTS consulting demand. Explain the opportunity value in one concise German sentence.
 Sales is not a synonym for Marketing. A campaign_launch alone is NEVER a Sales signal. General product launches, portfolio news, sponsorships, testimonials and campaign execution remain Marketing unless the article separately proves a concrete strategic change or commercial need relevant to ROOTS. Investment qualifies only when it concerns marketing, brand, customer/consumer insights, retail media, category management, marketing technology, capabilities or an external partner/agency/consulting mandate. Investment in factories, filling, packaging, machinery, production, logistics, buildings or other operational infrastructure is not a ROOTS Sales signal. Require verbatim Sales evidence for the strategic change, buying need, mandate, budget, tender, partner search or ROOTS-relevant capability build. The same strategic passage may support Marketing and Sales only when all additional Sales substance requirements are independently fulfilled.
 Marketing and Sales are evaluated independently. Missing Tier-1 status, a missing Sales trigger or an ineligible Buying Center must NEVER make an otherwise evidence-backed Marketing result uncertain or rejected. Put route-specific failures only into routing_decisions.sales.reason, not into the article-level rejection_reasons array. Article-level rejection_reasons are reserved for reasons that invalidate every route.
 Return EVERY separately evidenced applicable topic, not only the strongest one. Multi-topic classification is expected: consumer/customer behaviour plus retail/pricing should return both customer_insights and fmcg_retail_signale; a concrete AI application in marketing/customer/retail/pricing must additionally return ki_performance; a transferable sector conclusion may additionally return sub_branchen_insight. Each topic needs its own verbatim evidence sentence.
@@ -3035,6 +3096,17 @@ function validateClassification(
       .map((role) => String(role).trim()).filter(Boolean).slice(0, 4),
     research_required: Boolean(raw.buying_center?.research_required),
   };
+  const scorePart = (value: unknown) => Math.round(Math.max(0, Math.min(100, Number(value) || 0)));
+  const marketingAssetValue: AiMarketingScore = {
+    novelty: scorePart(raw.marketing_asset_value?.novelty), strategic_value: scorePart(raw.marketing_asset_value?.strategic_value),
+    transferability: scorePart(raw.marketing_asset_value?.transferability), evidence_strength: scorePart(raw.marketing_asset_value?.evidence_strength),
+    reason: String(raw.marketing_asset_value?.reason || "").trim().slice(0, 700),
+  };
+  const salesOpportunityValue: AiSalesScore = {
+    problem_strength: scorePart(raw.sales_opportunity_value?.problem_strength), roots_fit: scorePart(raw.sales_opportunity_value?.roots_fit),
+    buying_intent: scorePart(raw.sales_opportunity_value?.buying_intent), timing: scorePart(raw.sales_opportunity_value?.timing),
+    reason: String(raw.sales_opportunity_value?.reason || "").trim().slice(0, 700),
+  };
   const routingDecisions = {
     marketing: validateRouteDecision(raw.routing_decisions?.marketing, articleText, config.quality.routing_confidence),
     sales: validateRouteDecision(raw.routing_decisions?.sales, articleText, config.quality.routing_confidence),
@@ -3129,6 +3201,8 @@ function validateClassification(
     marketing_use: marketingUse,
     sales_use: salesUse,
     buying_center: buyingCenter,
+    marketing_asset_value: marketingAssetValue,
+    sales_opportunity_value: salesOpportunityValue,
     routing_decisions: routingDecisions,
     rejection_reasons: rejectionReasons,
     event_key: normalizeMatchText(String(raw.event_key || "")).slice(0, 180),
@@ -3212,6 +3286,10 @@ async function tagArticle(
       topics: [], territory: null, matched_companies: [], matched_persons: [],
       buying_center_candidate: false, routing: [], sales_triggers: [], routing_evidence: {},
       market_insight_transferable: null, market_insight_explanation: null,
+      marketing_relevance_score: 0, sales_relevance_score: 0,
+      marketing_relevance_reason: "Kein eigenständiger redaktioneller Artikel oder kein belastbarer Marketing-Asset-Nutzen.",
+      sales_relevance_reason: "Kein eigenständiger redaktioneller Artikel oder keine belastbare Tier-1-Sales-Opportunity.",
+      relevance_scoring_version: "roots-value-v1.0", route_score_details: {},
       extraction_diagnostic: contentUnavailable ? diagnosticForFailure : null,
     }).eq("id", articleId);
     return;
@@ -3370,6 +3448,7 @@ async function tagArticle(
     ];
   }
   const salesEligible = salesCandidate && Boolean(matchedOffering);
+  const routeValueScores = calibrateRouteValueScores(classification, articleText, marketingEligible, salesCandidate, matchedOffering);
   const { data: publicationMeta } = await admin.schema("signal_layer").from("articles")
     .select("published_at").eq("id", articleId).maybeSingle();
   const hasPublicationDate = Boolean(publicationMeta?.published_at);
@@ -3474,6 +3553,12 @@ async function tagArticle(
     tag_status: classification.relevance_status === "reliable" ? "tagged" : "untagged",
     matched_offering: matchedOffering?.label || null,
     matched_offering_reasoning: matchedOffering?.reasoning || null,
+    marketing_relevance_score: routeValueScores.marketing.score,
+    marketing_relevance_reason: routeValueScores.marketing.reason,
+    sales_relevance_score: routeValueScores.sales.score,
+    sales_relevance_reason: routeValueScores.sales.reason,
+    relevance_scoring_version: "roots-value-v1.0",
+    route_score_details: routeValueScores,
     extraction_diagnostic: extractionDiagnostic?.recovered ? extractionDiagnostic : null,
   }).eq("id", articleId);
 
@@ -4854,7 +4939,7 @@ Deno.serve(async (req: Request) => {
         // Routing is the canonical result of the current pipeline. Findings is
         // retained for audit/history, but must not hide newly classified cards.
         let query = admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
+          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "reliable")
           .or(activeWindowFilter)
           .order("classified_at", { ascending: false, nullsFirst: false }).limit(fetchLimit);
@@ -4866,7 +4951,7 @@ Deno.serve(async (req: Request) => {
           id: `reliable-${article.id}-${track || "all"}`,
           track: track || "marketing",
           dimension: Array.isArray(article.topics) ? article.topics[0] || null : null,
-          confidence: article.relevance_confidence,
+          confidence: Number(track === "sales" ? article.sales_relevance_score : article.marketing_relevance_score) / 100,
           created_at: article.classified_at,
           article,
         }));
@@ -4875,7 +4960,7 @@ Deno.serve(async (req: Request) => {
         // Surface them in the same card structure when validated topic/company
         // evidence already provides a meaningful Marketing or Sales route.
         const { data: uncertain, error: uncertainError } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
+          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "uncertain")
           .or(activeWindowFilter)
           .order("classified_at", { ascending: false, nullsFirst: false })
@@ -4887,11 +4972,11 @@ Deno.serve(async (req: Request) => {
           const routing = Array.isArray(article.routing) ? article.routing as string[] : [];
           if (track === "marketing" && topics.length > 0 && routing.includes("marketing")) return [{
             id: `review-${article.id}-marketing`, track: "marketing", dimension: topics[0],
-            confidence: article.relevance_confidence, created_at: article.classified_at, article,
+            confidence: Number(article.marketing_relevance_score || 0) / 100, created_at: article.classified_at, article,
           }];
           if (track === "sales" && companies.length > 0 && routing.includes("sales")) return [{
             id: `review-${article.id}-sales`, track: "sales", dimension: "kunde",
-            confidence: article.relevance_confidence, created_at: article.classified_at, article,
+            confidence: Number(article.sales_relevance_score || 0) / 100, created_at: article.classified_at, article,
           }];
           return [];
         });
@@ -4992,7 +5077,7 @@ Deno.serve(async (req: Request) => {
         if (!articleId) return errorResponse(origin, "article_id is required");
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
+          .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, route_score_details, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
           .eq("id", articleId).single();
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
         return corsResponse(origin, { article: data });
