@@ -4148,7 +4148,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("source_crawl_jobs")
             .select("crawl_run_id,source_id,position,status,error_code").order("position").limit(1000),
           admin.schema("signal_layer").from("article_analysis_jobs")
-            .select("crawl_run_id,status").limit(5000),
+            .select("crawl_run_id,status").in("status", ["queued", "running"]).limit(5000),
           admin.schema("signal_layer").from("articles")
             .select("rejection_reasons,source:sources(company)")
             .eq("classification_status", "error").order("classified_at", { ascending: false }).limit(2000),
@@ -4407,7 +4407,10 @@ Deno.serve(async (req: Request) => {
             },
           },
           source_health: sourceHealth,
-          analysis_queue: (analysisJobs || []).filter((job) => !crawl?.id || job.crawl_run_id === crawl.id).reduce((summary, job) => {
+          // The analysis queue is global: recovery/backfill jobs deliberately
+          // have no crawl_run_id. Filtering them by the latest crawl made the
+          // status claim that nothing was running while recovery was active.
+          analysis_queue: (analysisJobs || []).reduce((summary, job) => {
             summary[job.status] = (summary[job.status] || 0) + 1;
             return summary;
           }, {} as Record<string, number>),
