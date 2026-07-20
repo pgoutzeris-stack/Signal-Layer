@@ -238,10 +238,10 @@
   .telemetry-stat span { display: block; color: var(--muted); font-size: .58rem; text-transform: uppercase; letter-spacing: .04em; }
   .telemetry-stat b { display: block; margin-top: 2px; color: var(--ink); font-size: .72rem; }
   .telemetry-stat--warning { border-color: #fbbf24; background: var(--warning-bg); }
-  .telemetry-stat--interactive { position: relative; cursor: help; outline: none; }
+  .telemetry-stat--interactive { position: relative; cursor: pointer; outline: none; }
   .telemetry-stat--interactive:hover, .telemetry-stat--interactive:focus-within { border-color: #bfdbfe; background: #f8fbff; }
   .cost-detail-popover { position: fixed; left: 12px; top: 12px; width: min(360px, calc(100vw - 24px)); max-height: min(520px, calc(100vh - 24px)); overflow: auto; z-index: 220; padding: 13px; border: 1px solid #dce4ef; border-radius: 14px; background: #fff; color: var(--ink); box-shadow: 0 18px 46px rgba(15, 23, 42, .2); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-4px); transition: opacity .16s ease, visibility .16s ease, transform .16s ease; text-transform: none; letter-spacing: normal; }
-  .telemetry-stat--interactive:hover .cost-detail-popover, .telemetry-stat--interactive:focus-within .cost-detail-popover { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
+  .cost-detail-popover.is-open { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
   .cost-detail-head { display: flex; gap: 9px; align-items: flex-start; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
   .cost-detail-head i { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 9px; color: #1d4ed8; background: #eff6ff; }
   .cost-detail-head strong, .cost-detail-head small { display: block; }

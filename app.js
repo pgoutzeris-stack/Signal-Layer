@@ -2180,6 +2180,10 @@ async function loadLastRun() {
       const runLabel = crawlForecast?.run_type === "backfill" ? "Neubewertung" : "Crawl";
       crawlForecastStat.removeAttribute("title");
       const detail = document.getElementById("crawl-cost-detail");
+      // A fixed popover inside the scrollable status panel is clipped by the
+      // panel's overflow boundary in Chromium/Tauri. Portal it to body and
+      // keep hover/focus state explicitly so the user can move into it.
+      if (detail && detail.parentElement !== document.body) document.body.appendChild(detail);
       const tokens = crawlForecast?.token_projection || {};
       const fmtInt = (value) => Math.round(Number(value || 0)).toLocaleString("de-DE");
       const fmtUsd = (value) => Number(value || 0).toLocaleString("de-DE", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 4 });
@@ -2202,8 +2206,28 @@ async function loadLastRun() {
         detail.style.left = `${Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin))}px`;
         detail.style.top = `${window.innerHeight - rect.bottom >= height ? rect.bottom : Math.max(margin, rect.top - height)}px`;
       };
-      crawlForecastStat.onmouseenter = positionCostDetail;
-      crawlForecastStat.onfocusin = positionCostDetail;
+      let closeCostDetailTimer;
+      const openCostDetail = () => {
+        clearTimeout(closeCostDetailTimer);
+        positionCostDetail();
+        detail?.classList.add("is-open");
+      };
+      const scheduleCostDetailClose = () => {
+        clearTimeout(closeCostDetailTimer);
+        closeCostDetailTimer = setTimeout(() => {
+          if (!crawlForecastStat.matches(":hover, :focus-within") && !detail?.matches(":hover, :focus-within")) detail?.classList.remove("is-open");
+        }, 140);
+      };
+      crawlForecastStat.onmouseenter = openCostDetail;
+      crawlForecastStat.onmouseleave = scheduleCostDetailClose;
+      crawlForecastStat.onfocusin = openCostDetail;
+      crawlForecastStat.onfocusout = scheduleCostDetailClose;
+      if (detail) {
+        detail.onmouseenter = openCostDetail;
+        detail.onmouseleave = scheduleCostDetailClose;
+        detail.onfocusin = openCostDetail;
+        detail.onfocusout = scheduleCostDetailClose;
+      }
     }
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
     els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
