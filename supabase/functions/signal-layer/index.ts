@@ -679,6 +679,33 @@ function extractJsonLdArticleBody(html: string): string | null {
   return null;
 }
 
+// Next.js, React and several corporate newsroom platforms hydrate article
+// data from JSON embedded in the initial HTML. Recover likely body fields
+// before requiring a full browser render. This keeps most JS-heavy sources on
+// the free native path while remaining bounded and source-agnostic.
+function extractEmbeddedArticleBody(html: string): string | null {
+  const blocks = html.match(/<script[^>]*(?:id=["']__NEXT_DATA__["']|type=["']application\/json["'])[^>]*>[\s\S]*?<\/script>/gi) || [];
+  const candidates: string[] = [];
+  const visit = (value: unknown, key = "", depth = 0): void => {
+    if (depth > 14 || candidates.length > 300) return;
+    if (typeof value === "string") {
+      if (/^(articlebody|article_body|body|content|storybody|story_body|text|richtext|rich_text|description)$/i.test(key)
+          && value.trim().length >= 400 && value.length <= 100_000) candidates.push(value.trim());
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value.slice(0, 500)) visit(item, key, depth + 1);
+    } else if (value && typeof value === "object") {
+      for (const [childKey, child] of Object.entries(value as Record<string, unknown>)) visit(child, childKey, depth + 1);
+    }
+  };
+  for (const block of blocks) {
+    const raw = block.replace(/<script[^>]*>/i, "").replace(/<\/script>/i, "").trim();
+    try { visit(JSON.parse(raw)); } catch { /* malformed hydration payload */ }
+  }
+  return candidates.sort((a, b) => b.length - a.length)[0] || null;
+}
+
 // Density-scored container selection (lightweight Readability-style
 // heuristic). Instead of trusting raw text length — which a nav/teaser block
 // can win by sheer volume — score by paragraph density and penalize link-
@@ -859,9 +886,11 @@ async function getOrRefreshLoginCookie(source: { id: string; url: string; crawl_
 
 function looksLikePaywallTeaser(content: string): boolean {
   const normalized = normalizeMatchText(content);
-  const explicitWall = /jetzt angebot wahlen und weiterlesen|hier anmelden|noch kein .*abonnement|digital.?lizenz/i.test(normalized);
-  return explicitWall || (content.trim().length < 900
-    && /\b(nutzungsrechte|lizenz|abonnent|abo|subscription|subscribe|premium|login|anmelden)\b/i.test(normalized));
+  const explicitWall = /jetzt angebot wahlen und weiterlesen|noch kein .*abonnement|nur fur abonnenten|artikel ist kostenpflichtig|weiterlesen mit .*abo|subscribe to (?:continue|read)|sign in to continue|already a subscriber|remaining article/i.test(normalized);
+  const pairedWall = content.trim().length < 1200
+    && /\b(abonnent|abonnement|subscription|subscribe|premium)\b/i.test(normalized)
+    && /\b(weiterlesen|vollstandigen artikel|continue reading|read more|sign in|login|anmelden)\b/i.test(normalized);
+  return explicitWall || pairedWall;
 }
 
 async function recordSourcePaywallStatus(
@@ -869,14 +898,24 @@ async function recordSourcePaywallStatus(
   detected: boolean,
   evidence = "",
 ): Promise<void> {
-  const current = source.crawl_config || {};
-  if (Boolean(current.paywall_detected) === detected && (!detected || current.paywall_evidence === evidence)) return;
+  // Login may have refreshed the session after the source row was loaded.
+  // Re-read the config so recording paywall health never overwrites a fresh
+  // session cookie with the stale pre-login object.
+  const { data: latestSource } = await getAdminClient().schema("signal_layer").from("sources")
+    .select("crawl_config").eq("id", source.id).maybeSingle();
+  const current = latestSource?.crawl_config || source.crawl_config || {};
+  const credentialsMissing = detected && !current.login_configured_at;
+  if (Boolean(current.paywall_detected) === detected
+      && Boolean(current.paywall_credentials_missing) === credentialsMissing
+      && (!detected || current.paywall_evidence === evidence)) return;
   await getAdminClient().schema("signal_layer").from("sources").update({
     crawl_config: {
       ...current,
       paywall_detected: detected,
       paywall_detected_at: detected ? new Date().toISOString() : null,
       paywall_evidence: detected ? evidence.slice(0, 220) : null,
+      paywall_credentials_missing: credentialsMissing,
+      paywall_access_status: detected ? (current.login_configured_at ? "credentials_configured" : "credentials_required") : null,
     },
   }).eq("id", source.id);
 }
@@ -982,7 +1021,7 @@ async function fetchAuthenticatedArticleViaApify(
 type ExtractionDiagnostic = {
   code: "unsupported_url" | "access_denied" | "not_found" | "rate_limited" | "upstream_error"
     | "bot_protection" | "javascript_required" | "empty_html" | "too_short" | "paywall_no_session"
-    | "paywall_after_login" | "login_failed" | "timeout" | "network_error" | "feed_fallback_used";
+    | "paywall_after_login" | "login_failed" | "timeout" | "network_error" | "feed_fallback_used" | "browser_fallback_used";
   message: string;
   http_status?: number;
   content_length?: number;
@@ -999,6 +1038,47 @@ function captureExtractionDiagnostic(
   diagnostic: Omit<ExtractionDiagnostic, "checked_at">,
 ): void {
   if (capture) capture.value = { ...diagnostic, checked_at: new Date().toISOString() };
+}
+
+let browserCrawlerConfigCache: { value: { url: string; secret: string } | null; expiresAt: number } | null = null;
+async function getBrowserCrawlerConfig(): Promise<{ url: string; secret: string } | null> {
+  if (browserCrawlerConfigCache && browserCrawlerConfigCache.expiresAt > Date.now()) return browserCrawlerConfigCache.value;
+  const admin = getAdminClient();
+  const [{ data: url }, { data: secret }] = await Promise.all([
+    admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_browser_crawler_url" }),
+    admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_browser_crawler_secret" }),
+  ]);
+  const value = url && secret ? { url: String(url).replace(/\/$/, ""), secret: String(secret) } : null;
+  browserCrawlerConfigCache = { value, expiresAt: Date.now() + 60_000 };
+  return value;
+}
+
+async function fetchArticleViaBrowserWorker(
+  url: string,
+  cookie: string | null,
+): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
+  const config = await getBrowserCrawlerConfig();
+  if (!config) return null;
+  try {
+    const response = await fetchWithTimeout(`${config.url}/extract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.secret}` },
+      body: JSON.stringify({ url, cookie: cookie || undefined }),
+    }, 65_000);
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const article = payload?.article;
+    if (!article || article.paywall || String(article.content || "").trim().length < 400) return null;
+    return {
+      title: decodeArticleText(String(article.title || "")),
+      content: decodeArticleText(String(article.content || "")).slice(0, 8000),
+      excerpt: decodeArticleText(String(article.excerpt || "")),
+      publishedAt: article.publishedAt || null,
+    };
+  } catch (error) {
+    console.error("Browser crawler fallback failed", error instanceof Error ? error.message : String(error));
+    return null;
+  }
 }
 
 async function fetchArticleForSource(
@@ -1023,6 +1103,19 @@ async function fetchArticleForSource(
         : "Der Artikel ist paywallgeschützt und es stand keine gültige Login-Session zur Verfügung.",
       content_length: direct.content.length, login_required: loginRequired, session_used: Boolean(cookie),
     });
+  }
+  const browserEligible = diagnosticCapture?.value
+    && ["access_denied", "bot_protection", "javascript_required", "empty_html", "too_short", "paywall_after_login"].includes(diagnosticCapture.value.code);
+  if (browserEligible) {
+    const rendered = await fetchArticleViaBrowserWorker(url, cookie);
+    if (rendered) {
+      if (source) await recordSourcePaywallStatus(source, false).catch(() => {});
+      captureExtractionDiagnostic(diagnosticCapture, {
+        code: "browser_fallback_used", message: "Der native Abruf war unvollständig; der eigene Browser-Worker lieferte den vollständigen Artikeltext.",
+        content_length: rendered.content.length, login_required: loginRequired, session_used: Boolean(cookie), recovered: true,
+      });
+      return rendered;
+    }
   }
   // Native authenticated requests are the final fetch stage. We deliberately
   // do not hand credentials or URLs to an external browser-crawling service.
@@ -1084,7 +1177,8 @@ async function fetchArticleContent(
     // an unknown theme's class name; (3) a generic <p>-block cluster catches
     // themes matched by neither; (4) the whole chrome-stripped body as the
     // final fallback so extraction never simply fails.
-    let text = extractJsonLdArticleBody(html) || extractMainContentHtml(cleanedBody) || extractParagraphCluster(cleanedBody) || cleanedBody;
+    let text = extractJsonLdArticleBody(html) || extractEmbeddedArticleBody(html)
+      || extractMainContentHtml(cleanedBody) || extractParagraphCluster(cleanedBody) || cleanedBody;
     text = text
       // Preserve structure as lightweight Markdown BEFORE the generic tag
       // strip below collapses everything into one flat blob — otherwise
@@ -1176,9 +1270,13 @@ async function runFreeLinkCrawl(sourceUrl: string, policy: CrawlPolicy): Promise
         const parsed = new URL(rawUrl);
         const parts = parsed.pathname.split("/").filter(Boolean);
         const last = (parts.at(-1) || "").toLowerCase();
-        const generic = /^(news|newsroom|blog|presse|press|insights|artikel|articles|stories|meldungen|press-releases)$/i;
-        return !generic.test(last) && (parts.length >= 3 || last.length >= 16 || /\/20\d{2}\//.test(parsed.pathname)
-          || [...parsed.searchParams.keys()].some((key) => /^(id|nr|article|story|newsid)$/i.test(key)));
+        const generic = /^(news|newsroom|blog|presse|press|insights|artikel|articles|stories|meldungen|press-releases?|media-releases?|corporate-news|publications?|library|archive|default\.aspx)$/i;
+        if (!last || generic.test(last)) return false;
+        const hasArticleId = [...parsed.searchParams.keys()].some((key) => /^(id|nr|article|story|newsid)$/i.test(key));
+        const datedPath = /\/20\d{2}\/(?:0?[1-9]|1[0-2])\//.test(parsed.pathname);
+        const articleParent = parts.slice(0, -1).some((part) => /^(article|articles|story|stories|detail|news|press-release|media-release|meldung|beitrag)$/i.test(part));
+        const descriptiveSlug = last.length >= 24 && last.includes("-") && parts.length >= 2;
+        return hasArticleId || datedPath || articleParent || descriptiveSlug;
       } catch { return false; }
     };
     const detailLinks = links.filter(looksLikeDetail);
@@ -3433,6 +3531,8 @@ Deno.serve(async (req: Request) => {
           });
           if (vaultError) return errorResponse(origin, vaultError.message, 500);
           crawlConfig.login_configured_at = new Date().toISOString();
+          crawlConfig.paywall_credentials_missing = false;
+          if (crawlConfig.paywall_detected) crawlConfig.paywall_access_status = "credentials_configured";
         }
         const { data, error } = await admin.schema("signal_layer").from("sources")
           .update({ crawl_config: crawlConfig, updated_at: new Date().toISOString(), updated_by: auth!.userId })
@@ -4344,8 +4444,11 @@ Deno.serve(async (req: Request) => {
           return summary;
         }, { attempts: 0, successful: 0, empty: 0, errors: 0, candidates: 0, inserted: 0, apify_attempts: 0, apify_errors: 0 });
         const paywallSources = (sourceConfigs || []).filter((source) => Boolean(source.crawl_config?.paywall_detected));
+        const paywallSourcesMissingCredentials = paywallSources.filter((source) => !source.crawl_config?.login_configured_at);
         sourceHealth.paywall_sources = paywallSources.length;
         sourceHealth.paywall_source_names = paywallSources.map((source) => source.company).slice(0, 12);
+        sourceHealth.paywall_missing_credentials = paywallSourcesMissingCredentials.length;
+        sourceHealth.paywall_missing_credential_names = paywallSourcesMissingCredentials.map((source) => source.company).slice(0, 20);
         let crawlWithProgress = crawl || null;
         if (crawl) {
           const sourceIds = Array.isArray(crawl.source_ids) ? crawl.source_ids as string[] : [];

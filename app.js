@@ -819,7 +819,7 @@ function renderPipelineStudio() {
           <li><i class="fa-solid fa-link"></i><div><b>URL-Policy</b><span>Karriere-, FAQ-, Login-, Kontakt- und allgemeine Navigationspfade werden nicht als redaktionelle Kandidaten behandelt.</span></div></li>
           <li><i class="fa-solid fa-calendar-day"></i><div><b>Eventquellen</b><span>Flache Crawl-Tiefe; je Quellen-Policy müssen Tier-1-Unternehmen und fachliches Signal gemeinsam vorkommen.</span></div></li>
         </ul><aside class="pipeline-note"><strong>Was kommt heraus?</strong>Nur eine Kandidatenliste. Zu diesem Zeitpunkt gibt es noch keine Marketing- oder Sales-Bewertung.</aside></div>` },
-        { id: "edit", icon: "fa-solid fa-pen", label: "Bearbeiten", content: `<div class="pipeline-responsibility-note"><i class="fa-solid fa-spider"></i><div><b>Diese Werte werden an Apify übergeben.</b><span>Tiefe und Seitenzahl begrenzen den Crawl. URL-Ausschlüsse und Same-Domain-Regel bleiben als feste Schutzregeln aktiv.</span></div></div>${pipelineEditHead("Crawl-Grenzen", "Wirkt vor dem Download und steuert Aktualität, Tiefe und Menge.")}${pipelineFields(["crawl.freshness_days", "crawl.future_tolerance_hours", "crawl.default_max_depth", "crawl.default_max_pages", "crawl.event_max_depth", "crawl.event_max_pages"])}<div class="pipeline-action-row"><button type="button" class="btn-secondary" data-open-settings-panel="apify"><i class="fa-solid fa-globe"></i> Quellen verwalten</button></div>` },
+        { id: "edit", icon: "fa-solid fa-pen", label: "Bearbeiten", content: `<div class="pipeline-responsibility-note"><i class="fa-solid fa-spider"></i><div><b>Diese Werte steuern den nativen ROOTS-Crawler.</b><span>Tiefe und Seitenzahl begrenzen den Crawl. URL-Ausschlüsse, Same-Domain-Regel und der eigene Browser-Fallback bleiben als feste Schutzregeln aktiv.</span></div></div>${pipelineEditHead("Crawl-Grenzen", "Wirkt vor dem Download und steuert Aktualität, Tiefe und Menge.")}${pipelineFields(["crawl.freshness_days", "crawl.future_tolerance_hours", "crawl.default_max_depth", "crawl.default_max_pages", "crawl.event_max_depth", "crawl.event_max_pages"])}<div class="pipeline-action-row"><button type="button" class="btn-secondary" data-open-settings-panel="apify"><i class="fa-solid fa-globe"></i> Quellen verwalten</button></div>` },
       ],
     },
     {
@@ -1948,6 +1948,7 @@ function renderSources() {
     const loginRequired = Boolean(s.crawl_config?.login_required);
     const loginConfigured = Boolean(s.crawl_config?.login_configured_at);
     const paywallDetected = Boolean(s.crawl_config?.paywall_detected);
+    const paywallCredentialsMissing = paywallDetected && !loginConfigured;
     const storedArticles = Number(s.stored_article_count || 0);
     const crawlHealth = s.last_attempted_at === null ? "Noch nie gecrawlt"
       : storedArticles === 0 ? "Keine Artikel gespeichert"
@@ -1962,14 +1963,14 @@ function renderSources() {
         ${s.description ? `<div class="source-desc">${escapeHtml(s.description)}</div>` : ""}
       </td>
       <td><a href="${escapeHtml(s.url)}" class="source-url" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
-      <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}${loginRequired ? `<span class="source-login-badge ${loginConfigured ? "source-login-badge--configured" : ""}"><i class="fa-solid fa-lock"></i> Login nötig</span>` : ""}</td>
+      <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}${paywallCredentialsMissing ? `<span class="source-login-badge"><i class="fa-solid fa-key"></i> Zugang fehlt</span>` : loginRequired ? `<span class="source-login-badge ${loginConfigured ? "source-login-badge--configured" : ""}"><i class="fa-solid fa-lock"></i> ${loginConfigured ? "Zugang hinterlegt" : "Login nötig"}</span>` : ""}</td>
       <td>
         <span class="source-health"${errInfo ? ` data-error-tip="1" data-error-label="${escapeHtml(errInfo.label)}" data-error-explain="${escapeHtml(errInfo.explanation)}" data-error-raw="${escapeHtml(s.last_error || "")}" tabindex="0"` : ""}>
           <span class="quality-tag ${errInfo ? "quality-tag--error" : crawlHealthClass}">
             <i class="${errInfo ? "fa-solid fa-triangle-exclamation" : storedArticles === 0 ? "fa-solid fa-magnifying-glass" : "fa-solid fa-check"}"></i>
             ${errInfo ? escapeHtml(errInfo.label) : escapeHtml(crawlHealth)}
           </span>
-          ${paywallDetected ? `<span class="quality-tag quality-tag--paywall" data-error-tip="1" data-error-label="Paywall erkannt" data-error-explain="Der direkte Abruf liefert keinen vollständigen Artikeltext. Betroffene Artikel werden nicht künstlich analysiert." data-error-raw="${escapeHtml(s.crawl_config?.paywall_evidence || "Paywall-/Login-Hinweis im Abruf")}" tabindex="0"><i class="fa-solid fa-lock"></i> Paywall</span>` : ""}
+          ${paywallDetected ? `<span class="quality-tag ${paywallCredentialsMissing ? "quality-tag--error" : "quality-tag--paywall"}" data-error-tip="1" data-error-label="${paywallCredentialsMissing ? "Paywall – Zugangsdaten erforderlich" : "Paywall – Zugang hinterlegt"}" data-error-explain="${paywallCredentialsMissing ? "Für diese Quelle wurde eine echte Paywall erkannt, aber es sind keine Credentials hinterlegt. Über das Schlüssel-Symbol kann ein vorhandenes Abo sicher im Vault konfiguriert werden." : "Die Quelle besitzt eine Paywall und gültige Zugangsdaten sind hinterlegt. Der Worker verifiziert die Session beim Artikelabruf."}" data-error-raw="${escapeHtml(s.crawl_config?.paywall_evidence || "Paywall-/Login-Hinweis im Abruf")}" tabindex="0"><i class="fa-solid ${paywallCredentialsMissing ? "fa-key" : "fa-lock-open"}"></i> ${paywallCredentialsMissing ? "Zugang fehlt" : "Paywall"}</span>` : ""}
         </span>
       </td>
       <td>
@@ -2170,13 +2171,21 @@ async function loadLastRun() {
       ? [{ value: foundArticles, label: "Artikel gefunden", tone: "success", icon: "fa-solid fa-newspaper" }]
       : [];
     const paywallSources = Number(health?.paywall_sources || 0);
-    if (paywallSources) {
+    const missingPaywallCredentials = Number(health?.paywall_missing_credentials || 0);
+    if (missingPaywallCredentials) {
+      const names = (health?.paywall_missing_credential_names || []).join(" · ");
+      crawlResults.push({ value: missingPaywallCredentials, label: "Paywall-Zugänge fehlen", tone: "error", icon: "fa-solid fa-key", detail: names,
+        detailLabel: "Zugangsdaten erforderlich", detailExplain: "Diese Quellen haben eine bestätigte Paywall, aber noch keine hinterlegten Zugangsdaten. Volltexte können erst nach Konfiguration eines gültigen Abos abgerufen werden." });
+    }
+    const configuredPaywallSources = Math.max(0, paywallSources - missingPaywallCredentials);
+    if (configuredPaywallSources) {
       const names = (health?.paywall_source_names || []).join(" · ");
-      crawlResults.push({ value: paywallSources, label: "Quellen mit Paywall", tone: "warning", icon: "fa-solid fa-lock", detail: names });
+      crawlResults.push({ value: configuredPaywallSources, label: "Paywalls mit Zugang", tone: "warning", icon: "fa-solid fa-lock-open", detail: names,
+        detailLabel: "Paywall-Zugänge konfiguriert", detailExplain: "Für diese Paywall-Quellen sind Credentials hinterlegt. Der Worker prüft Login und Session bei jedem geschützten Abruf." });
     }
     els.sourceHealthNote.hidden = crawlResults.length === 0;
     els.sourceHealthNote.innerHTML = crawlResults.map((result) =>
-      `<span class="crawl-result-pill crawl-result-pill--${result.tone}"${result.detail ? ` data-error-tip="1" data-error-label="Paywall-Quellen" data-error-explain="Diese Quellen blockieren den vollständigen Direktabruf. Der native Crawler bleibt aktiv; Artikel ohne Volltext werden nicht künstlich analysiert." data-error-raw="${escapeHtml(result.detail)}" tabindex="0"` : ""}><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
+      `<span class="crawl-result-pill crawl-result-pill--${result.tone}"${result.detail ? ` data-error-tip="1" data-error-label="${escapeHtml(result.detailLabel || "Paywall-Quellen")}" data-error-explain="${escapeHtml(result.detailExplain || "Diese Quellen blockieren den vollständigen Direktabruf. Artikel ohne Volltext werden nicht künstlich analysiert.")}" data-error-raw="${escapeHtml(result.detail)}" tabindex="0"` : ""}><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
     ).join("");
     const isActive = setLiveStatus(last, backfill);
     const sourceCrawlActive = ["queued", "running"].includes(last?.status);
