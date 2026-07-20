@@ -2178,9 +2178,32 @@ async function loadLastRun() {
     if (crawlForecastStat) {
       const models = [crawlForecast?.primary_model, crawlForecast?.review_model].filter(Boolean).join(" + ");
       const runLabel = crawlForecast?.run_type === "backfill" ? "Neubewertung" : "Crawl";
-      crawlForecastStat.title = forecastRunId
-        ? `${runLabel} · ${models} · ${Number(crawlForecast.analyzed_articles || 0).toLocaleString("de-DE")} analysiert · ${Number(crawlForecast.remaining_articles || 0).toLocaleString("de-DE")} offen · Tracking ${Number(crawlForecast.tracking_coverage_percent || 0).toLocaleString("de-DE")} %`
-        : "Kein Crawl aktiv";
+      crawlForecastStat.removeAttribute("title");
+      const detail = document.getElementById("crawl-cost-detail");
+      const tokens = crawlForecast?.token_projection || {};
+      const fmtInt = (value) => Math.round(Number(value || 0)).toLocaleString("de-DE");
+      const fmtUsd = (value) => Number(value || 0).toLocaleString("de-DE", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 4 });
+      const modelRows = (crawlForecast?.model_breakdown || []).map((model) => `<div class="cost-detail-model"><b>${escapeHtml(model.model)}</b><small>${escapeHtml(model.operation_label)} · ${fmtInt(model.calls)} Aufrufe</small><small>Input ${fmtInt(model.input_tokens)} × $${Number(model.input_rate_per_million || 0).toLocaleString("de-DE")}/M · Output/Thinking ${fmtInt(Number(model.output_tokens || 0) + Number(model.thinking_tokens || 0))} × $${Number(model.output_rate_per_million || 0).toLocaleString("de-DE")}/M</small><small>Ist-Kosten ${fmtUsd(model.cost_usd)}</small></div>`).join("");
+      if (detail) detail.innerHTML = forecastRunId ? `
+        <div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>${runLabel}-Kostenprognose</strong><small>Live aus Supabase · ${escapeHtml(models)} · Aktualisierung alle 8 Sekunden</small></div></div>
+        <div class="cost-detail-summary"><span>Bereits angefallen<b>${formatEur(crawlForecast.actual_eur)}</b></span><span>Voraussichtlich gesamt<b>${formatEur(crawlForecast.projected_eur)}</b></span><span>Analysiert<b>${fmtInt(crawlForecast.analyzed_articles)}</b></span><span>Noch offen<b>${fmtInt(crawlForecast.remaining_articles)}</b></span></div>
+        <span class="cost-detail-section"><b>Durchschnitt pro Artikel</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${fmtInt(tokens.avg_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${fmtInt(tokens.avg_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${fmtInt(tokens.avg_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Gesamt-Tokens</span><b>${fmtInt(tokens.avg_total_tokens)}</b></span><span class="cost-detail-row"><span>Artikelumfang</span><b>Ø ${fmtInt(tokens.avg_words)} Wörter · ${fmtInt(tokens.avg_characters)} Zeichen</b></span><span class="cost-detail-row"><span>Kosten</span><b>${fmtUsd(crawlForecast.estimated_cost_per_article_usd)}</b></span></span>
+        <span class="cost-detail-section"><b>Hochrechnung Restmenge</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${fmtInt(tokens.projected_remaining_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${fmtInt(tokens.projected_remaining_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${fmtInt(tokens.projected_remaining_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Restkosten</span><b>${fmtUsd(crawlForecast.projected_remaining_usd)}</b></span></span>
+        <span class="cost-detail-section"><b>Modelle & Preise</b>${modelRows || '<span class="cost-detail-row"><span>Noch keine Live-Aufrufe</span><b>Historischer Modellmittelwert</b></span>'}</span>
+        <small class="cost-detail-foot">Formel: bisherige echte Kosten + offene Artikel × gemessene Durchschnittskosten pro Artikel. Input wird zum Inputpreis berechnet; Output und Thinking zum Outputpreis. Tracking-Abdeckung: ${Number(crawlForecast.tracking_coverage_percent || 0).toLocaleString("de-DE")} %.</small>
+      ` : `<div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Keine laufende Prognose</strong><small>Sobald ein Crawl oder eine Neubewertung läuft, erscheint hier die Live-Kalkulation.</small></div></div>`;
+      const positionCostDetail = () => {
+        if (!detail) return;
+        const rect = crawlForecastStat.getBoundingClientRect();
+        const margin = 12;
+        const width = Math.min(360, window.innerWidth - margin * 2);
+        detail.style.width = `${width}px`;
+        const height = Math.min(detail.scrollHeight, window.innerHeight - margin * 2, 520);
+        detail.style.left = `${Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin))}px`;
+        detail.style.top = `${window.innerHeight - rect.bottom >= height ? rect.bottom : Math.max(margin, rect.top - height)}px`;
+      };
+      crawlForecastStat.onmouseenter = positionCostDetail;
+      crawlForecastStat.onfocusin = positionCostDetail;
     }
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
     els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));

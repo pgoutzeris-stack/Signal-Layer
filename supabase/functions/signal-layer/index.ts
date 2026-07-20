@@ -5384,6 +5384,46 @@ Deno.serve(async (req: Request) => {
           ? Math.max(0, Number(activeBackfill.total_count || 0) - Number(activeBackfill.processed_count || 0))
           : remainingCrawlArticles;
         const projectedCrawlUsd = activeRunActualUsd + activeRunRemainingArticles * estimatedCostPerArticleUsd;
+        const liveSuccessfulUsage = activeRunUsage.filter((row) => row.status === "success" && row.article_id && Number(row.total_tokens || 0) > 0);
+        const liveArticleIds = [...new Set(liveSuccessfulUsage.map((row) => row.article_id).filter(Boolean))].slice(0, 1000);
+        let avgCharacters = 0;
+        let avgWords = 0;
+        if (liveArticleIds.length) {
+          const { data: liveArticles } = await admin.schema("signal_layer").from("articles")
+            .select("id,content,cleaned_content").in("id", liveArticleIds);
+          const articleLengths = (liveArticles || []).map((article) => {
+            const text = String(article.cleaned_content || article.content || "").trim();
+            return { characters: text.length, words: text ? text.split(/\s+/).length : 0 };
+          }).filter((length) => length.characters > 0);
+          if (articleLengths.length) {
+            avgCharacters = articleLengths.reduce((sum, item) => sum + item.characters, 0) / articleLengths.length;
+            avgWords = articleLengths.reduce((sum, item) => sum + item.words, 0) / articleLengths.length;
+          }
+        }
+        const tokenSample = liveSuccessfulUsage.length ? liveSuccessfulUsage : [...successfulPrimaryRows, ...successfulReviewRows];
+        const tokenSampleArticles = Math.max(new Set(tokenSample.map((row) => row.article_id).filter(Boolean)).size, 1);
+        const avgInputTokens = tokenSample.reduce((sum, row) => sum + Number(row.input_tokens || 0), 0) / tokenSampleArticles;
+        const avgOutputTokens = tokenSample.reduce((sum, row) => sum + Number(row.output_tokens || 0), 0) / tokenSampleArticles;
+        const avgThinkingTokens = tokenSample.reduce((sum, row) => sum + Number(row.thinking_tokens || 0), 0) / tokenSampleArticles;
+        const avgTotalTokens = tokenSample.reduce((sum, row) => sum + Number(row.total_tokens || 0), 0) / tokenSampleArticles;
+        const forecastRates: Record<string, { input: number; output: number }> = {
+          "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 }, "gemini-3.5-flash": { input: 0.75, output: 4.5 },
+          "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 }, "gemini-3.1-pro-preview": { input: 2, output: 12 },
+          "gemini-3-flash-preview": { input: 0.5, output: 3 }, "gemini-2.5-flash": { input: 0.3, output: 2.5 },
+          "gemini-2.5-pro": { input: 1.25, output: 10 },
+        };
+        const modelBreakdownMap = new Map<string, Record<string, number | string>>();
+        for (const row of activeRunUsage) {
+          const key = `${row.model}:${row.operation}`;
+          const rates = forecastRates[row.model] || (String(row.model).includes("flash-lite") ? forecastRates["gemini-2.5-flash-lite"] : String(row.model).includes("pro") ? forecastRates["gemini-3.1-pro-preview"] : forecastRates["gemini-3-flash-preview"]);
+          const entry = modelBreakdownMap.get(key) || { model: row.model, operation: row.operation, operation_label: row.operation === "review" ? "Zweitprüfung" : row.operation === "translation" ? "Übersetzung" : row.operation === "offering_match" ? "ROOTS-Leistungsmatch" : "Klassifizierung", calls: 0, input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cost_usd: 0, input_rate_per_million: rates.input, output_rate_per_million: rates.output };
+          entry.calls = Number(entry.calls) + 1;
+          entry.input_tokens = Number(entry.input_tokens) + Number(row.input_tokens || 0);
+          entry.output_tokens = Number(entry.output_tokens) + Number(row.output_tokens || 0);
+          entry.thinking_tokens = Number(entry.thinking_tokens) + Number(row.thinking_tokens || 0);
+          entry.cost_usd = Number(entry.cost_usd) + Number(row.estimated_cost_usd || 0);
+          modelBreakdownMap.set(key, entry);
+        }
         const trackedSuccessCalls = usageRows.filter((row) => row.status === "success" && ["classification", "review", "offering_match", "translation"].includes(row.operation));
         const fullyTrackedSuccessCalls = trackedSuccessCalls.filter((row) => row.article_id && Number(row.total_tokens || 0) > 0 && row.estimated_cost_usd !== null).length;
         return corsResponse(origin, {
@@ -5411,6 +5451,16 @@ Deno.serve(async (req: Request) => {
               analyzed_articles: activeRunAnalyzedArticles,
               remaining_articles: activeRunRemainingArticles,
               estimated_cost_per_article_usd: estimatedCostPerArticleUsd,
+              projected_remaining_usd: activeRunRemainingArticles * estimatedCostPerArticleUsd,
+              token_projection: {
+                avg_input_tokens: avgInputTokens, avg_output_tokens: avgOutputTokens,
+                avg_thinking_tokens: avgThinkingTokens, avg_total_tokens: avgTotalTokens,
+                avg_characters: avgCharacters, avg_words: avgWords,
+                projected_remaining_input_tokens: avgInputTokens * activeRunRemainingArticles,
+                projected_remaining_output_tokens: avgOutputTokens * activeRunRemainingArticles,
+                projected_remaining_thinking_tokens: avgThinkingTokens * activeRunRemainingArticles,
+              },
+              model_breakdown: [...modelBreakdownMap.values()],
               primary_model: pipelineConfig.ai.primary_model,
               review_model: pipelineConfig.ai.review_enabled ? pipelineConfig.ai.review_model : null,
               review_enabled: pipelineConfig.ai.review_enabled,

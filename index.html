@@ -238,6 +238,27 @@
   .telemetry-stat span { display: block; color: var(--muted); font-size: .58rem; text-transform: uppercase; letter-spacing: .04em; }
   .telemetry-stat b { display: block; margin-top: 2px; color: var(--ink); font-size: .72rem; }
   .telemetry-stat--warning { border-color: #fbbf24; background: var(--warning-bg); }
+  .telemetry-stat--interactive { position: relative; cursor: help; outline: none; }
+  .telemetry-stat--interactive:hover, .telemetry-stat--interactive:focus-within { border-color: #bfdbfe; background: #f8fbff; }
+  .cost-detail-popover { position: fixed; left: 12px; top: 12px; width: min(360px, calc(100vw - 24px)); max-height: min(520px, calc(100vh - 24px)); overflow: auto; z-index: 220; padding: 13px; border: 1px solid #dce4ef; border-radius: 14px; background: #fff; color: var(--ink); box-shadow: 0 18px 46px rgba(15, 23, 42, .2); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-4px); transition: opacity .16s ease, visibility .16s ease, transform .16s ease; text-transform: none; letter-spacing: normal; }
+  .telemetry-stat--interactive:hover .cost-detail-popover, .telemetry-stat--interactive:focus-within .cost-detail-popover { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
+  .cost-detail-head { display: flex; gap: 9px; align-items: flex-start; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .cost-detail-head i { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 9px; color: #1d4ed8; background: #eff6ff; }
+  .cost-detail-head strong, .cost-detail-head small { display: block; }
+  .cost-detail-head strong { font-size: .72rem; }
+  .cost-detail-head small { margin-top: 3px; color: var(--muted); font-size: .56rem; line-height: 1.35; }
+  .cost-detail-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 10px 0; }
+  .cost-detail-summary span { padding: 7px; border-radius: 8px; background: #f8fafc; color: var(--muted); font-size: .54rem; }
+  .cost-detail-summary b { margin-top: 2px; color: var(--ink); font-size: .65rem; }
+  .cost-detail-section { display: block; margin-top: 10px; }
+  .cost-detail-section > b { display: block; margin-bottom: 5px; font-size: .57rem; text-transform: uppercase; letter-spacing: .05em; }
+  .cost-detail-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 5px 0; border-bottom: 1px solid #eef2f7; color: var(--muted); font-size: .56rem; line-height: 1.3; }
+  .cost-detail-row:last-child { border-bottom: 0; }
+  .cost-detail-row b { margin: 0; color: var(--ink); font-size: inherit; text-align: right; }
+  .cost-detail-model { margin-top: 6px; padding: 8px; border: 1px solid #e5ebf3; border-radius: 9px; background: #fbfdff; }
+  .cost-detail-model > b { font-size: .58rem; overflow-wrap: anywhere; }
+  .cost-detail-model small { display: block; margin-top: 3px; color: var(--muted); font-size: .51rem; line-height: 1.35; }
+  .cost-detail-foot { display: block; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line); color: #64748b; font-size: .51rem; line-height: 1.4; }
   .spend-forecast { display: flex; gap: 8px; margin-top: 7px; padding: 8px 9px; border: 1px solid #fde68a; border-radius: 10px; color: #854d0e; background: #fffbeb; font-size: .59rem; line-height: 1.4; }
   .spend-forecast[hidden] { display: none; }
   .spend-forecast i { margin-top: 2px; }
@@ -1629,7 +1650,7 @@
                 <div class="telemetry-grid">
                   <div class="telemetry-stat" id="gemini-cost-stat"><span>Gemini im Monat</span><b id="gemini-cost-month">–</b></div>
                   <div class="telemetry-stat"><span>Heute</span><b id="gemini-cost-today">–</b></div>
-                  <div class="telemetry-stat" id="crawl-cost-forecast-stat"><span>Crawl-Prognose</span><b id="gemini-request-count">–</b></div>
+                  <div class="telemetry-stat telemetry-stat--interactive" id="crawl-cost-forecast-stat" tabindex="0"><span>Crawl-Prognose</span><b id="gemini-request-count">–</b><div class="cost-detail-popover" id="crawl-cost-detail" role="tooltip"></div></div>
                   <div class="telemetry-stat"><span>Quellenläufe</span><b id="source-attempt-count">–</b></div>
                 </div>
                 <div class="spend-forecast" id="spend-forecast" hidden><i class="fa-solid fa-chart-line"></i><div><b id="spend-forecast-title"></b><span id="spend-forecast-copy"></span></div></div>
