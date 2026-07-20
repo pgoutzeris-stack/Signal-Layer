@@ -1694,7 +1694,7 @@ async function openArticleDetail(articleId) {
     const confidence = formatConfidence(article.relevance_confidence);
     // Prefer the German translation for foreign-language articles.
     const isTranslated = Boolean(article.content_de) && article.language && article.language !== "de";
-    const fulltext = (isTranslated ? article.content_de : null) || article.cleaned_content || article.content || article.excerpt || "Kein Artikeltext gespeichert.";
+    const fulltext = article.content_de || article.cleaned_content || article.content || article.excerpt || "Kein Artikeltext gespeichert.";
     const decisionExplanation = article.ai_rationale || reasons[0]
       || (status === "legacy" ? "Altbestand: Dieser Artikel wurde noch nicht durch die aktuelle Pipeline analysiert."
         : status === "pending" ? "Noch nicht analysiert: Der Artikel wartet auf die nächste Verarbeitung."
