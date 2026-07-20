@@ -1048,9 +1048,40 @@ async function getBrowserCrawlerConfig(): Promise<{ url: string; secret: string 
     admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_browser_crawler_url" }),
     admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_browser_crawler_secret" }),
   ]);
-  const value = url && secret ? { url: String(url).replace(/\/$/, ""), secret: String(secret) } : null;
+  const normalizedUrl = String(url || "").replace(/\/$/, "");
+  const value = /^https:\/\//i.test(normalizedUrl) && secret
+    ? { url: normalizedUrl, secret: String(secret) }
+    : null;
   browserCrawlerConfigCache = { value, expiresAt: Date.now() + 60_000 };
   return value;
+}
+
+let browserBatchSecretCache: { value: string | null; expiresAt: number } | null = null;
+async function getBrowserBatchSecret(): Promise<string | null> {
+  if (browserBatchSecretCache && browserBatchSecretCache.expiresAt > Date.now()) return browserBatchSecretCache.value;
+  const { data } = await getAdminClient().schema("shared").rpc("get_api_key", {
+    p_key_name: "signal_layer_browser_crawler_secret",
+  });
+  const value = data ? String(data) : null;
+  browserBatchSecretCache = { value, expiresAt: Date.now() + 60_000 };
+  return value;
+}
+
+const BROWSER_RENDER_DIAGNOSTICS = new Set([
+  "access_denied", "bot_protection", "javascript_required", "empty_html", "too_short", "paywall_after_login",
+]);
+
+async function enqueueBrowserRenderJob(articleId: string, diagnostic?: ExtractionDiagnostic | null): Promise<void> {
+  if (!diagnostic || diagnostic.recovered || !BROWSER_RENDER_DIAGNOSTICS.has(diagnostic.code)) return;
+  await getAdminClient().schema("signal_layer").from("browser_render_jobs").upsert({
+    article_id: articleId,
+    status: "queued",
+    attempts: 0,
+    started_at: null,
+    finished_at: null,
+    updated_at: new Date().toISOString(),
+    last_error: null,
+  }, { onConflict: "article_id" });
 }
 
 async function fetchArticleViaBrowserWorker(
@@ -3160,7 +3191,11 @@ Deno.serve(async (req: Request) => {
   // fire-and-forget self-call, authenticated with the service-role key.
   let auth: { userId: string } | null = null;
   let isScheduled = false;
-  if (["process_crawl", "process_crawl_worker", "process_classification_backfill"].includes(action)) {
+  if (["browser_queue_status", "browser_claim_jobs", "browser_submit_job"].includes(action)) {
+    const workerSecret = await getBrowserBatchSecret();
+    const authorization = req.headers.get("authorization") || "";
+    if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return errorResponse(origin, "Unauthorized", 401);
+  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill"].includes(action)) {
     if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
   } else if (action === "process_analysis_worker") {
     // Queue recovery may be started by the protected pg_cron/watchdog path;
@@ -3197,6 +3232,114 @@ Deno.serve(async (req: Request) => {
 
   try {
     switch (action) {
+      case "browser_queue_status": {
+        const { count, error } = await getAdminClient().schema("signal_layer").from("browser_render_jobs")
+          .select("id", { count: "exact", head: true }).eq("status", "queued").lt("attempts", 3);
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { ok: true, queued: count || 0, has_jobs: Boolean(count) });
+      }
+
+      case "browser_claim_jobs": {
+        const requestedLimit = Math.max(1, Math.min(25, Number(body.limit || 12)));
+        const admin = getAdminClient();
+        const { data: claimedJobs, error } = await admin.schema("signal_layer").rpc("claim_browser_render_jobs", {
+          p_limit: requestedLimit,
+        });
+        if (error) return errorResponse(origin, error.message, 500);
+        const jobs = [];
+        for (const job of claimedJobs || []) {
+          const { data: article } = await admin.schema("signal_layer").from("articles")
+            .select("id,url,source_id,source:sources(id,url,crawl_config)").eq("id", job.article_id).maybeSingle();
+          if (!article?.url) {
+            await admin.schema("signal_layer").from("browser_render_jobs").update({
+              status: "error", last_error: "article_url_missing", finished_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            }).eq("id", job.id);
+            continue;
+          }
+          const linkedSource = Array.isArray(article.source) ? article.source[0] : article.source;
+          const cookie = linkedSource?.crawl_config?.login_required
+            ? await getOrRefreshLoginCookie(linkedSource, article.url).catch(() => null)
+            : null;
+          jobs.push({
+            id: job.id,
+            article_id: article.id,
+            url: article.url,
+            attempts: job.attempts,
+            cookie: cookie || undefined,
+          });
+        }
+        return corsResponse(origin, { ok: true, jobs });
+      }
+
+      case "browser_submit_job": {
+        const admin = getAdminClient();
+        const jobId = String(body.job_id || "");
+        if (!jobId) return errorResponse(origin, "job_id is required");
+        const { data: job } = await admin.schema("signal_layer").from("browser_render_jobs")
+          .select("id,article_id,status,attempts").eq("id", jobId).maybeSingle();
+        if (!job || job.status !== "running") return errorResponse(origin, "Browser render job is not running", 409);
+        const now = new Date().toISOString();
+        if (!body.success) {
+          const finalFailure = Number(job.attempts || 0) >= 3;
+          await admin.schema("signal_layer").from("browser_render_jobs").update({
+            status: finalFailure ? "error" : "queued",
+            last_error: String(body.error || "browser_render_failed").slice(0, 500),
+            finished_at: finalFailure ? now : null,
+            updated_at: now,
+          }).eq("id", job.id);
+          return corsResponse(origin, { ok: true, retry: !finalFailure });
+        }
+        const rendered = body.article as Record<string, unknown> | undefined;
+        const renderedContent = decodeArticleText(String(rendered?.content || "")).trim().slice(0, 20_000);
+        if (Boolean(rendered?.paywall) || cleanArticleText(renderedContent).length < 400) {
+          const finalFailure = Number(job.attempts || 0) >= 3;
+          await admin.schema("signal_layer").from("browser_render_jobs").update({
+            status: finalFailure ? "error" : "queued",
+            last_error: Boolean(rendered?.paywall) ? "paywall_after_browser_render" : "browser_text_too_short",
+            finished_at: finalFailure ? now : null,
+            updated_at: now,
+          }).eq("id", job.id);
+          return corsResponse(origin, { ok: true, retry: !finalFailure });
+        }
+        const articleUpdate: Record<string, unknown> = {
+          content: renderedContent,
+          classification_status: "pending",
+          rejection_reasons: [],
+          extraction_diagnostic: {
+            code: "browser_fallback_used",
+            message: "GitHub Actions hat den Artikel mit Playwright vollständig gerendert.",
+            http_status: Number(rendered?.httpStatus || 0) || undefined,
+            content_length: renderedContent.length,
+            recovered: true,
+            checked_at: now,
+          },
+        };
+        const renderedTitle = decodeArticleText(String(rendered?.title || "")).trim();
+        if (renderedTitle && renderedTitle.length < 300) articleUpdate.title = renderedTitle;
+        const renderedExcerpt = decodeArticleText(String(rendered?.excerpt || "")).trim();
+        if (renderedExcerpt) articleUpdate.excerpt = renderedExcerpt.slice(0, 1200);
+        if (rendered?.publishedAt) articleUpdate.published_at = String(rendered.publishedAt);
+        await admin.schema("signal_layer").from("articles").update(articleUpdate).eq("id", job.article_id);
+        await admin.schema("signal_layer").from("browser_render_jobs").update({
+          status: "done", last_error: null, finished_at: now, updated_at: now,
+        }).eq("id", job.id);
+        await admin.schema("signal_layer").from("article_analysis_jobs").upsert({
+          article_id: job.article_id,
+          status: "queued",
+          attempts: 0,
+          started_at: null,
+          finished_at: null,
+          error_message: null,
+        }, { onConflict: "article_id" });
+        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
+        fetch(selfUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+          body: JSON.stringify({ action: "process_analysis_worker" }),
+        }).catch(() => {});
+        return corsResponse(origin, { ok: true, queued_for_analysis: true });
+      }
+
       // Simple reachability check — confirms the Apify key is set and valid,
       // without exposing it. Replace/extend with real Signal Layer actions
       // once the feature spec is defined.
@@ -3768,6 +3911,12 @@ Deno.serve(async (req: Request) => {
         const { data: article } = await admin.schema("signal_layer").from("articles")
           .select("id,title,url,content,excerpt,source_id,source:sources(company,category)").eq("id", job.article_id).single();
         const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
+        if (!article) {
+          await admin.schema("signal_layer").from("article_analysis_jobs").update({
+            status: "error", error_message: "article_not_found", finished_at: new Date().toISOString(),
+          }).eq("id", job.id);
+          return corsResponse(origin, { ok: false, error: "article_not_found" });
+        }
         try {
           const source = Array.isArray(article?.source) ? article.source[0] : article?.source;
           let analysisTitle = String(article.title || "");
@@ -3814,6 +3963,7 @@ Deno.serve(async (req: Request) => {
             });
           }
           await tagArticle(admin, article.id, job.crawl_run_id, analysisTitle, analysisContent, [], companies || [], source || {}, extractionCapture.value || null);
+          await enqueueBrowserRenderJob(article.id, extractionCapture.value || null);
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "done", finished_at: new Date().toISOString() }).eq("id", job.id);
         } catch (workerError) {
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", error_message: String(workerError).slice(0, 1000), finished_at: new Date().toISOString() }).eq("id", job.id);

@@ -62,6 +62,12 @@ async function getBrowser() {
   return browserPromise;
 }
 
+export async function closeBrowser() {
+  if (!browserPromise) return;
+  await (await browserPromise).close().catch(() => {});
+  browserPromise = undefined;
+}
+
 function parseCookieHeader(cookieHeader, domain) {
   return String(cookieHeader || "").split(";").map((part) => part.trim()).filter(Boolean).flatMap((part) => {
     const separator = part.indexOf("=");
@@ -70,7 +76,7 @@ function parseCookieHeader(cookieHeader, domain) {
   });
 }
 
-async function extractArticle({ url, cookie }) {
+export async function extractArticle({ url, cookie }) {
   const parsed = await assertPublicUrl(url);
   await acquireSlot();
   let context;
@@ -115,25 +121,27 @@ async function extractArticle({ url, cookie }) {
   }
 }
 
-const server = http.createServer(async (req, res) => {
-  if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true, activePages });
-  if (req.method !== "POST" || req.url !== "/extract") return send(res, 404, { error: "not_found" });
-  if (!workerSecret || req.headers.authorization !== `Bearer ${workerSecret}`) return send(res, 401, { error: "unauthorized" });
-  try {
-    const body = await readJson(req);
-    if (!body.url) return send(res, 400, { error: "url_required" });
-    const article = await extractArticle({ url: body.url, cookie: body.cookie });
-    return send(res, 200, { article });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return send(res, /unsupported|private|payload/.test(message) ? 400 : 502, { error: message.slice(0, 300) });
-  }
-});
+if (process.env.BATCH_MODE !== "1") {
+  const server = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/health") return send(res, 200, { ok: true, activePages });
+    if (req.method !== "POST" || req.url !== "/extract") return send(res, 404, { error: "not_found" });
+    if (!workerSecret || req.headers.authorization !== `Bearer ${workerSecret}`) return send(res, 401, { error: "unauthorized" });
+    try {
+      const body = await readJson(req);
+      if (!body.url) return send(res, 400, { error: "url_required" });
+      const article = await extractArticle({ url: body.url, cookie: body.cookie });
+      return send(res, 200, { article });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return send(res, /unsupported|private|payload/.test(message) ? 400 : 502, { error: message.slice(0, 300) });
+    }
+  });
 
-server.listen(port, "0.0.0.0", () => console.log(`ROOTS browser worker listening on ${port}`));
+  server.listen(port, "0.0.0.0", () => console.log(`ROOTS browser worker listening on ${port}`));
 
-for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, async () => {
-  server.close();
-  if (browserPromise) await (await browserPromise).close().catch(() => {});
-  process.exit(0);
-});
+  for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, async () => {
+    server.close();
+    await closeBrowser();
+    process.exit(0);
+  });
+}

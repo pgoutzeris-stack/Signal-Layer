@@ -1,0 +1,56 @@
+name: browser crawler batch
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signal-layer-browser-crawler
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check browser queue
+        id: queue
+        env:
+          SIGNAL_LAYER_ENDPOINT: ${{ secrets.SIGNAL_LAYER_ENDPOINT }}
+          CRAWLER_WORKER_SECRET: ${{ secrets.CRAWLER_WORKER_SECRET }}
+        run: |
+          response=$(curl --fail --silent --show-error \
+            -H "content-type: application/json" \
+            -H "authorization: Bearer ${CRAWLER_WORKER_SECRET}" \
+            --data '{"action":"browser_queue_status"}' \
+            "${SIGNAL_LAYER_ENDPOINT}")
+          has_jobs=$(node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(value.has_jobs ? "true" : "false")' "$response")
+          echo "has_jobs=${has_jobs}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        if: steps.queue.outputs.has_jobs == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crawler-worker/package-lock.json
+      - name: Install pinned worker dependencies
+        if: steps.queue.outputs.has_jobs == 'true'
+        working-directory: crawler-worker
+        run: npm ci
+      - name: Install Playwright Chromium
+        if: steps.queue.outputs.has_jobs == 'true'
+        working-directory: crawler-worker
+        run: npx playwright install --with-deps chromium
+      - name: Render queued articles
+        if: steps.queue.outputs.has_jobs == 'true'
+        working-directory: crawler-worker
+        run: npm run batch
+        env:
+          SIGNAL_LAYER_ENDPOINT: ${{ secrets.SIGNAL_LAYER_ENDPOINT }}
+          CRAWLER_WORKER_SECRET: ${{ secrets.CRAWLER_WORKER_SECRET }}
+          BROWSER_BATCH_SIZE: "12"
+          BROWSER_MAX_BATCHES: "8"

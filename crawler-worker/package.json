@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "batch": "BATCH_MODE=1 node batch-worker.js"
   },
   "dependencies": {
     "playwright": "1.61.0"
