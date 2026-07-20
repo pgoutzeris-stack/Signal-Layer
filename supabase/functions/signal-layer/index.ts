@@ -3586,8 +3586,10 @@ Deno.serve(async (req: Request) => {
         const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
         try {
           const source = Array.isArray(article?.source) ? article.source[0] : article?.source;
+          let analysisTitle = String(article.title || "");
           let analysisContent = String(article.content || "");
-          if ((analysisContent.trim().length < 400 || looksLikePaywallTeaser(analysisContent)) && article.url) {
+          const malformedListing = analysisTitle.length > 300;
+          if ((analysisContent.trim().length < 400 || looksLikePaywallTeaser(analysisContent) || malformedListing) && article.url) {
             let sourceWithAuth: { id: string; url: string; crawl_config?: Record<string, unknown> } | null = null;
             if (article.source_id) {
               const { data: src } = await admin.schema("signal_layer").from("sources")
@@ -3595,19 +3597,22 @@ Deno.serve(async (req: Request) => {
               sourceWithAuth = src || null;
             }
             const retried = await fetchArticleForSource(article.url, sourceWithAuth);
-            if ((retried?.content || "").length > analysisContent.length) {
-              analysisContent = retried!.content;
-              await admin.schema("signal_layer").from("articles").update({ content: analysisContent }).eq("id", article.id);
+            if (retried && ((retried.content || "").length > analysisContent.length || malformedListing)) {
+              analysisContent = retried.content;
+              if (retried.title && retried.title.length < 300) analysisTitle = retried.title;
+              await admin.schema("signal_layer").from("articles").update({
+                title: analysisTitle, content: analysisContent, excerpt: retried.excerpt || article.excerpt,
+              }).eq("id", article.id);
             }
             if (looksLikePaywallTeaser(analysisContent) || analysisContent.trim().length < 400) {
-              const synopsis = buildCandidateSynopsis(article.title || "", article.excerpt || "");
+              const synopsis = buildCandidateSynopsis(analysisTitle, article.excerpt || "");
               if (synopsis) {
                 analysisContent = synopsis;
                 await admin.schema("signal_layer").from("articles").update({ content: synopsis }).eq("id", article.id);
               }
             }
           }
-          await tagArticle(admin, article.id, job.crawl_run_id, article.title || "", analysisContent, [], companies || [], source || {});
+          await tagArticle(admin, article.id, job.crawl_run_id, analysisTitle, analysisContent, [], companies || [], source || {});
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "done", finished_at: new Date().toISOString() }).eq("id", job.id);
         } catch (workerError) {
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", error_message: String(workerError).slice(0, 1000), finished_at: new Date().toISOString() }).eq("id", job.id);
