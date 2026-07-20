@@ -2172,12 +2172,14 @@ async function loadLastRun() {
     els.geminiCostMonth.textContent = formatEur(costs?.month_eur);
     els.geminiCostToday.textContent = formatEur(costs?.today_eur);
     const crawlForecast = costs?.crawl_forecast;
-    els.geminiRequestCount.textContent = crawlForecast?.crawl_run_id ? formatEur(crawlForecast.projected_eur) : "–";
+    const forecastRunId = crawlForecast?.run_id || crawlForecast?.crawl_run_id;
+    els.geminiRequestCount.textContent = forecastRunId ? formatEur(crawlForecast.projected_eur) : "–";
     const crawlForecastStat = document.getElementById("crawl-cost-forecast-stat");
     if (crawlForecastStat) {
       const models = [crawlForecast?.primary_model, crawlForecast?.review_model].filter(Boolean).join(" + ");
-      crawlForecastStat.title = crawlForecast?.crawl_run_id
-        ? `${models} · ${Number(crawlForecast.analyzed_articles || 0).toLocaleString("de-DE")} analysiert · ${Number(crawlForecast.remaining_articles || 0).toLocaleString("de-DE")} offen · Tracking ${Number(crawlForecast.tracking_coverage_percent || 0).toLocaleString("de-DE")} %`
+      const runLabel = crawlForecast?.run_type === "backfill" ? "Neubewertung" : "Crawl";
+      crawlForecastStat.title = forecastRunId
+        ? `${runLabel} · ${models} · ${Number(crawlForecast.analyzed_articles || 0).toLocaleString("de-DE")} analysiert · ${Number(crawlForecast.remaining_articles || 0).toLocaleString("de-DE")} offen · Tracking ${Number(crawlForecast.tracking_coverage_percent || 0).toLocaleString("de-DE")} %`
         : "Kein Crawl aktiv";
     }
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");

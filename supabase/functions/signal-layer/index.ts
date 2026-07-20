@@ -5354,6 +5354,9 @@ Deno.serve(async (req: Request) => {
             ? `Bei aktuellem Verbrauch wird der Warnwert voraussichtlich${projectedLimitDate ? ` am ${new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeZone: "Europe/Berlin" }).format(new Date(projectedLimitDate))}` : " noch in diesem Monat"} erreicht. ${recommendation}`
             : "Der aktuelle Verbrauch bleibt in der Monatsprognose unter dem Warnwert.";
         const currentCrawlId = crawl?.id || null;
+        const activeBackfill = backfill && ["queued", "running"].includes(backfill.status) ? backfill : null;
+        const forecastRunType = activeBackfill ? "backfill" : "crawl";
+        const forecastRunId = activeBackfill?.id || currentCrawlId;
         const currentCrawlUsage = currentCrawlId ? usageRows.filter((row) => row.crawl_run_id === currentCrawlId) : [];
         const currentCrawlActualUsd = currentCrawlUsage.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
         const successfulPrimaryRows = usageRows.filter((row) => row.status === "success" && row.operation === "classification" && row.model === pipelineConfig.ai.primary_model);
@@ -5367,7 +5370,20 @@ Deno.serve(async (req: Request) => {
         const currentCrawlJobs = currentCrawlId ? (analysisJobs || []).filter((job) => job.crawl_run_id === currentCrawlId) : [];
         const remainingCrawlArticles = currentCrawlJobs.filter((job) => ["queued", "running"].includes(job.status)).length;
         const analyzedCrawlArticles = new Set(currentCrawlUsage.filter((row) => row.article_id && Number(row.total_tokens || 0) > 0).map((row) => row.article_id)).size;
-        const projectedCrawlUsd = currentCrawlActualUsd + remainingCrawlArticles * estimatedCostPerArticleUsd;
+        // Backfills deliberately have no crawl_run_id. Attribute their usage
+        // by their persisted start time and use the run counters for the
+        // remaining workload, otherwise the live status shows no estimate.
+        const activeRunUsage = activeBackfill
+          ? usageRows.filter((row) => !row.crawl_run_id && new Date(row.created_at) >= new Date(activeBackfill.started_at))
+          : currentCrawlUsage;
+        const activeRunActualUsd = activeRunUsage.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
+        const activeRunAnalyzedArticles = activeBackfill
+          ? Number(activeBackfill.processed_count || 0)
+          : analyzedCrawlArticles;
+        const activeRunRemainingArticles = activeBackfill
+          ? Math.max(0, Number(activeBackfill.total_count || 0) - Number(activeBackfill.processed_count || 0))
+          : remainingCrawlArticles;
+        const projectedCrawlUsd = activeRunActualUsd + activeRunRemainingArticles * estimatedCostPerArticleUsd;
         const trackedSuccessCalls = usageRows.filter((row) => row.status === "success" && ["classification", "review", "offering_match", "translation"].includes(row.operation));
         const fullyTrackedSuccessCalls = trackedSuccessCalls.filter((row) => row.article_id && Number(row.total_tokens || 0) > 0 && row.estimated_cost_usd !== null).length;
         return corsResponse(origin, {
@@ -5385,13 +5401,15 @@ Deno.serve(async (req: Request) => {
             warning_threshold_usd: pipelineConfig.ai.monthly_warning_usd,
             crawl_forecast: {
               crawl_run_id: currentCrawlId,
-              status: crawl?.status || "idle",
-              actual_usd: currentCrawlActualUsd,
-              actual_eur: usdEurRate === null ? null : currentCrawlActualUsd * usdEurRate,
+              run_id: forecastRunId,
+              run_type: forecastRunType,
+              status: activeBackfill?.status || crawl?.status || "idle",
+              actual_usd: activeRunActualUsd,
+              actual_eur: usdEurRate === null ? null : activeRunActualUsd * usdEurRate,
               projected_usd: projectedCrawlUsd,
               projected_eur: usdEurRate === null ? null : projectedCrawlUsd * usdEurRate,
-              analyzed_articles: analyzedCrawlArticles,
-              remaining_articles: remainingCrawlArticles,
+              analyzed_articles: activeRunAnalyzedArticles,
+              remaining_articles: activeRunRemainingArticles,
               estimated_cost_per_article_usd: estimatedCostPerArticleUsd,
               primary_model: pipelineConfig.ai.primary_model,
               review_model: pipelineConfig.ai.review_enabled ? pipelineConfig.ai.review_model : null,
