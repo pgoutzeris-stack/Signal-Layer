@@ -1646,7 +1646,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.19";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.5.20";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -2016,8 +2016,8 @@ function detectLanguage(text: string): "de" | "en" | "other" {
 
 function isVendorSalesPitch(title: string, text: string): boolean {
   const normalized = normalizeMatchText(`${title} ${text.slice(0, 9000)}`);
-  const vendorOffer = /\b(software|saas|tool\w*|plattform\w*|platform\w*|losung\w*|solution\w*|system\w*|dienstleistung\w*|service\w*|beratung\w*|consulting|agentur\w*|agency|anbieter\w*|provider\w*)\b/i.test(normalized);
-  const selfPromotional = /\b(unsere? (?:software|plattform|losung|tool\w*|service\w*|dienstleistung\w*)|our (?:software|platform|solution|tool\w*|service\w*)|wir (?:bieten|helfen|unterstutzen|entwickeln|ermoglichen|analysieren)|we (?:offer|help|support|provide|enable|develop|analyse|analyze)|ist spezialist fur|spezialist fur|anbieter von|provider of|unsere kunden|our customers|kontaktieren sie uns|contact us|demo (?:anfordern|buchen)|request a demo)\b/i.test(normalized);
+  const vendorOffer = /\b(software|saas|tool\w*|plattform\w*|platform\w*|losung\w*|solution\w*|system\w*|dienstleistung\w*|service\w*|beratung\w*|consulting|agentur\w*|agency|anbieter\w*|provider\w*|practice|capabilit\w*)\b/i.test(normalized);
+  const selfPromotional = /\b(unsere? (?:software|plattform|losung|tool\w*|service\w*|dienstleistung\w*|beratung\w*|expert\w*|kompetenz\w*)|our (?:software|platform|solution|tool\w*|service\w*|practice|capabilit\w*|expert\w*)|wir (?:bieten|helfen|unterstutzen|entwickeln|ermoglichen|analysieren)|we (?:offer|help|support|provide|enable|develop|analyse|analyze|partner)|(?:we |our practice )?help(?:s)? you|ist spezialist fur|spezialist fur|anbieter von|provider of|unsere kunden|our customers|grow your (?:brand|business)|ihre (?:marke|unternehmen) (?:wachsen|starken)|kontaktieren sie uns|contact us|work with us|demo (?:anfordern|buchen)|request a demo)\b/i.test(normalized);
   const profileOrPitchPage = /\b(anbieterprofil|unternehmensprofil|company profile|supplier profile|produktmeldung|product announcement)\b/i.test(normalized)
     || /\b(gmbh|ag|ltd|inc|llc)\b/i.test(normalizeMatchText(title)) && selfPromotional;
 
