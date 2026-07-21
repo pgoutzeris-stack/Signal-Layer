@@ -2765,7 +2765,9 @@ async function callNvidiaClassifier(
         max_tokens: Math.max(2048, config.ai.max_output_tokens),
         stream: false,
       }),
-      signal: AbortSignal.timeout(120_000),
+      // Die gesamte Worker-Ausführung muss auch bei zwei Fallbacks sicher
+      // innerhalb des Edge-Walltime-Limits bleiben.
+      signal: AbortSignal.timeout(45_000),
     });
     if (!response.ok) errorText = await response.text();
   } catch (error) {
