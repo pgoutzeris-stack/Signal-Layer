@@ -1659,7 +1659,7 @@ function hasEventTier1PersonLink(
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
 const NVIDIA_CLASSIFIER_FALLBACKS = ["openai/gpt-oss-120b", "deepseek-ai/deepseek-v4-flash"] as const;
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.9.0";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.9.1";
 const PIPELINE_RULE_MANIFEST_VERSION = "roots-pipeline-rules-v1.0.0";
 const RELEVANCE_SCORING_VERSION = "roots-value-v1.0";
 const EDITORIAL_TEXT_REQUIREMENTS = {
@@ -1939,6 +1939,12 @@ const ROOTS_SALES_CONTEXT_PATTERN = /\b(agency|agentur|consult\w*|beratung|advis
 const OPERATIONAL_ONLY_PATTERN = /\b(factory|factories|plant|production|manufactur\w*|filling|packaging|warehouse|logistics|machinery|machine|facility|facilities|site|sites|fabrik\w*|werk(?:e|en)?|produktions\w*|herstell\w*|abfull\w*|abfuell\w*|verpackung\w*|lager\w*|logistik\w*|maschine\w*|betriebsstatte\w*|standort\w*)\b/i;
 const EXPLICIT_MARKETING_PROBLEM_PATTERN = /\b(problem\w*|challenge\w*|challenged|headwind\w*|declin\w*|sell[- ]through|herausforderung\w*|ruckgang\w*|verlust\w*|stagn\w*|verfehl\w*|scheiter\w*|ineffiz\w*|fragment\w*|silo\w*|mangel\w*|lucke\w*|risiko\w*|akzeptanzproblem\w*|vertrauensverlust\w*|relevanzverlust\w*|kostendruck\w*|umsatzdruck\w*|absatzproblem\w*|wettbewerbsdruck\w*|konsumzuruckhaltung\w*)\b/i;
 const RESOLVED_PROBLEM_PATTERN = /\b(fully resolved|completely resolved|problem solved|challenge solved|vollstandig gelost|abschliessend gelost|bereits behoben|successfully completed|erfolgreich abgeschlossen)\b/i;
+function isExplicitUnresolvedMarketingProblem(evidence: string): boolean {
+  const normalized = normalizeMatchText(evidence);
+  return EXPLICIT_MARKETING_PROBLEM_PATTERN.test(normalized)
+    && ROOTS_SALES_CONTEXT_PATTERN.test(normalized)
+    && !RESOLVED_PROBLEM_PATTERN.test(normalized);
+}
 type AiSalesTrigger = { id: string; confidence: number; evidence: string };
 type AiRouteDecision = { eligible: boolean; confidence: number; evidence: string; reason: string };
 type AiMarketingUse = { publishable: boolean; transferable_value: string; sufficient_substance: boolean; evidence: string };
@@ -2360,13 +2366,15 @@ function clampConfidence(value: unknown): number {
 
 const DIRECT_MARKETING_TOPIC_IDS = new Set(["customer_insights", "marketing_insights", "fmcg_retail_signale"]);
 const CUSTOMER_CONTEXT_PATTERN = /\b(customer|consumer|shopper|kund\w*|konsument\w*|verbraucher\w*|zielgrupp\w*|kaufverhalten|konsumverhalten|loyalty|customer journey|customer experience|kundenerlebnis)\b/i;
+const CUSTOMER_INSIGHT_SIGNAL_PATTERN = /\b(behavior|behaviour|verhalten\w*|bedurf\w*|need\w*|erwart\w*|expect\w*|praferenz\w*|prefer\w*|akzeptanz\w*|zufrieden\w*|frustr\w*|vertrauen\w*|loyalty|kundenbindung\w*|kaufabbruch\w*|anbieterwechsel\w*|befrag\w*|umfrage\w*|studie\w*|research|insight\w*|erkenntnis\w*|prozent|percent|\d+(?:[.,]\d+)?\s*%)\b/i;
 const MARKETING_CONTEXT_PATTERN = /\b(marketing|brand|marke\w*|branding|positionier\w*|kommunikation|campaign|kampagn\w*|media|werbung|advertis\w*|crm|newsletter|customer journey|customer experience|kundenerlebnis|zielgrupp\w*|consumer insight|customer insight|shopper insight)\b/i;
 const RETAIL_CONTEXT_PATTERN = /\b(retail|handel\w*|handler\w*|store|filial\w*|point of sale|\bpos\b|assortment|sortiment\w*|category management|kategoriemanagement|pricing|preisstrateg\w*|promotion|retail media|shopper)\b/i;
 const INDUSTRIAL_OPERATIONS_PATTERN = /\b(production|manufactur\w*|factory|plant|facility|battery|batterie\w*|zellfertigung|zellfabrik|fertigung\w*|produktion\w*|fabrik\w*|werk\w*|maschine\w*|anlage\w*|trockenbeschichtung|energieverbrauch|energieeffizienz|lieferkette|supply chain|logistik|rohstoff\w*|industrial|industrie\w*)\b/i;
 
 function hasDirectMarketingContext(topic: AiTag): boolean {
   const evidence = normalizeMatchText(topic.evidence);
-  if (topic.id === "customer_insights") return CUSTOMER_CONTEXT_PATTERN.test(evidence);
+  if (topic.id === "customer_insights") return CUSTOMER_CONTEXT_PATTERN.test(evidence)
+    && CUSTOMER_INSIGHT_SIGNAL_PATTERN.test(evidence);
   if (topic.id === "marketing_insights") return MARKETING_CONTEXT_PATTERN.test(evidence);
   if (topic.id === "fmcg_retail_signale") return RETAIL_CONTEXT_PATTERN.test(evidence);
   if (topic.id !== "ki_performance") return false;
@@ -2412,7 +2420,7 @@ function recoverMissingMarketingTopics(articleText: string, existing: AiTag[], m
   const sentences = articleText.split(/(?<=[.!?])\s+|\n+/).map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length >= 45 && sentence.length <= 700);
   const rules: Array<{ id: typeof TOPIC_IDS[number]; pattern: RegExp }> = [
-    { id: "customer_insights", pattern: /\b(customer|consumer|shopper|kund\w*|konsument\w*|verbraucher\w*|kaufverhalten|konsumverhalten|zielgrupp\w*|loyalty)\b/i },
+    { id: "customer_insights", pattern: /(?=.*\b(customer|consumer|shopper|kund\w*|konsument\w*|verbraucher\w*|kaufverhalten|konsumverhalten|zielgrupp\w*|loyalty)\b)(?=.*\b(behavior|behaviour|verhalten\w*|bedurf\w*|need\w*|erwart\w*|expect\w*|praferenz\w*|prefer\w*|akzeptanz\w*|zufrieden\w*|frustr\w*|vertrauen\w*|loyalty|kundenbindung\w*|befrag\w*|umfrage\w*|studie\w*|research|insight\w*|erkenntnis\w*|prozent|percent|\d+(?:[.,]\d+)?\s*%))/i },
     { id: "fmcg_retail_signale", pattern: /\b(retail|handel\w*|handler\w*|sortiment\w*|assortment|pricing|preisstrateg\w*|promotion|category management|kategoriemanagement|store concept|filialkonzept)\b/i },
     { id: "ki_performance", pattern: /(?=.*\b(ai|artificial intelligence|ki|kunstliche intelligenz)\b)(?=.*\b(used|uses|using|deploy\w*|implement\w*|application|eingesetzt|einfuhr\w*|automati\w*|optimier\w*|pricing|preis\w*)\b)/i },
   ];
@@ -3437,6 +3445,7 @@ function validateClassification(
     .filter((trigger) => SALES_TRIGGER_IDS.includes(trigger.id as typeof SALES_TRIGGER_IDS[number]))
     .map((trigger) => ({ ...trigger, confidence: clampConfidence(trigger.confidence) }))
     .filter((trigger) => trigger.confidence >= config.quality.sales_trigger_confidence && evidenceExists(trigger.evidence, articleText))
+    .filter((trigger) => trigger.id !== "marketing_problem" || isExplicitUnresolvedMarketingProblem(trigger.evidence))
     .filter((trigger) => !config.decisions.sales_requires_implementation
       || /\b(launch\w*|implement\w*|invest\w*|acquir\w*|expand\w*|start\w*|einfuhr\w*|investier\w*|ubernomm\w*|expandier\w*|gestartet|umgesetzt)\b/i.test(normalizeMatchText(trigger.evidence)));
   const marketingUse: AiMarketingUse = {
@@ -3499,10 +3508,7 @@ function validateClassification(
   }
   const validatedMarketingProblem = salesTriggers.find((trigger) => trigger.id === "marketing_problem");
   const problemEvidence = salesUse.evidence || validatedMarketingProblem?.evidence || "";
-  const normalizedProblemEvidence = normalizeMatchText(problemEvidence);
-  const hasExplicitMarketingProblem = EXPLICIT_MARKETING_PROBLEM_PATTERN.test(normalizedProblemEvidence)
-    && ROOTS_SALES_CONTEXT_PATTERN.test(normalizedProblemEvidence)
-    && !RESOLVED_PROBLEM_PATTERN.test(normalizedProblemEvidence);
+  const hasExplicitMarketingProblem = isExplicitUnresolvedMarketingProblem(problemEvidence);
   if (validatedMarketingProblem && companies.some((company) => company.role !== "incidental_mention")
       && hasExplicitMarketingProblem) {
     salesUse.actionable = true;
@@ -3815,6 +3821,13 @@ async function tagArticle(
   const activeCompanies = classification.companies.filter((company) => company.role !== "incidental_mention");
   const primaryCompany = classification.companies.find((company) => company.role === "primary_subject")?.name
     || activeCompanies[0]?.name || null;
+  const modelSalesConflict = Boolean(reviewerExecution && primary
+    && primary.routing_decisions.sales.eligible !== classification.routing_decisions.sales.eligible);
+  if (modelSalesConflict && classification.routing_decisions.sales.eligible) {
+    // A reviewer may surface a plausible lead, but must not promote a primary
+    // "no Sales" decision straight into the Sales feed without human review.
+    classification.relevance_status = "uncertain";
+  }
   // Recover explicit strategic brand/CX implementations when the structured
   // model describes the opportunity correctly but omits the trigger or leaves
   // the Sales evidence field empty. Exact article evidence is still required.
@@ -3849,7 +3862,11 @@ async function tagArticle(
       && /\b(hohere\w* preis\w*|preisstellung\w*|preisaufschlag\w*|preispremium\w*|teurer\w*)\b/i.test(normalizeMatchText(passage))
       && /\b(bedingt|begrund\w*|rechtfertig\w*|zuruckzufuhr\w*|resultier\w*|wegen|durch)\b/i.test(normalizeMatchText(passage))
       && /\b(produkt\w*|angebot\w*|rezeptur\w*|innovation\w*|zielgruppe\w*|verbraucher\w*)\b/i.test(normalizeMatchText(passage))) || "";
-  if (activeCompanies.length > 0 && priceValueEvidence) {
+  // A price explanation is not itself a problem. Only recover this route when
+  // the same account-specific passage independently proves an unresolved
+  // marketing/customer problem (e.g. resistance, decline or acceptance issue).
+  if (activeCompanies.length > 0 && priceValueEvidence
+      && isExplicitUnresolvedMarketingProblem(priceValueEvidence)) {
     classification.relevance_status = "reliable";
     classification.overall_confidence = Math.max(classification.overall_confidence, 0.86);
     classification.sales_use = {
@@ -3957,8 +3974,15 @@ async function tagArticle(
       ...classification.rejection_reasons,
     ];
   }
-  const salesEligible = salesCandidate && Boolean(matchedOffering);
+  const preliminarySalesEligible = salesCandidate && Boolean(matchedOffering);
   const routeValueScores = calibrateRouteValueScores(classification, articleText, marketingEligible, salesCandidate, matchedOffering);
+  const salesScoreConsistent = routeValueScores.sales.score >= 60
+    && classification.sales_opportunity_value.problem_strength >= 55
+    && classification.sales_opportunity_value.roots_fit >= 60;
+  const salesEligible = preliminarySalesEligible && salesScoreConsistent && !modelSalesConflict;
+  if (preliminarySalesEligible && !salesEligible && !marketingEligible) {
+    classification.relevance_status = "uncertain";
+  }
   const manualReviewTracks: string[] = [];
   const marketingBorderline = classification.relevance_status !== "rejected"
     && !marketingEligible
@@ -4195,6 +4219,9 @@ async function tagArticle(
         account_specific_sales_evidence: hasAccountSpecificSalesEvidence,
         roots_sales_opportunity: rootsSalesOpportunity,
         offering_match: matchedOffering,
+        model_sales_conflict: modelSalesConflict,
+        sales_score_consistent: salesScoreConsistent,
+        preliminary_sales_eligible: preliminarySalesEligible,
         sales_eligible: salesEligible,
         sales_borderline: salesBorderline,
         publication_date_present: hasPublicationDate,
