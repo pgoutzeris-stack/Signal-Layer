@@ -336,6 +336,15 @@ function cacheEls() {
   els.statusErrorCount = document.getElementById("status-error-count");
   els.statusErrorWindow = document.getElementById("status-error-window");
   els.apiErrorList = document.getElementById("api-error-list");
+  els.statusCostPanel = document.getElementById("status-cost-panel");
+  els.statusCostToggle = document.getElementById("status-cost-toggle");
+  els.statusCostBody = document.getElementById("status-cost-body");
+  els.statusCostSummary = document.getElementById("status-cost-summary");
+  els.statusAccessPanel = document.getElementById("status-access-panel");
+  els.statusAccessToggle = document.getElementById("status-access-toggle");
+  els.statusAccessBody = document.getElementById("status-access-body");
+  els.statusAccessSummary = document.getElementById("status-access-summary");
+  els.statusAccessWindow = document.getElementById("status-access-window");
   els.pipelineVersion = document.getElementById("pipeline-version");
   els.btnSavePipeline = document.getElementById("btn-save-pipeline");
   els.btnSavePipelineHeader = document.getElementById("btn-save-pipeline-header");
@@ -2463,12 +2472,13 @@ function scheduleStatusRefresh(isActive) {
 
 async function loadLastRun() {
   try {
-    const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, analysis_error_breakdown: analysisErrors = [], error_window: errorWindow = {}, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
+    const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, analysis_error_breakdown: analysisErrors = [], error_window: errorWindow = {}, access_window: accessWindow = {}, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
     const formatEur = (value) => value === null || value === undefined
       ? "Kurs wird geladen"
       : `${Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     els.geminiCostMonth.textContent = formatEur(costs?.month_eur);
     els.geminiCostToday.textContent = formatEur(costs?.today_eur);
+    els.statusCostSummary.textContent = formatEur(costs?.month_eur);
     const crawlForecast = costs?.crawl_forecast;
     const forecastRunId = crawlForecast?.run_id || crawlForecast?.crawl_run_id;
     els.geminiRequestCount.textContent = forecastRunId ? formatEur(crawlForecast.projected_eur) : "–";
@@ -2585,10 +2595,20 @@ async function loadLastRun() {
     if (browserRecovered) {
       crawlResults.push({ value: browserRecovered, label: "Volltexte wiederhergestellt", tone: "success", icon: "fa-solid fa-file-circle-check" });
     }
+    els.statusAccessPanel.hidden = crawlResults.length === 0;
     els.sourceHealthNote.hidden = crawlResults.length === 0;
     els.sourceHealthNote.innerHTML = crawlResults.map((result) =>
       `<span class="crawl-result-pill crawl-result-pill--${result.tone}"${result.detail ? ` data-error-tip="1" data-error-label="${escapeHtml(result.detailLabel || "Paywall-Quellen")}" data-error-explain="${escapeHtml(result.detailExplain || "Diese Quellen blockieren den vollständigen Direktabruf. Artikel ohne Volltext werden nicht künstlich analysiert.")}" data-error-raw="${escapeHtml(result.detail)}" tabindex="0"` : ""}><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
     ).join("");
+    els.statusAccessSummary.textContent = browserPending
+      ? `${browserPending.toLocaleString("de-DE")} aktiv`
+      : missingPaywallCredentials ? `${missingPaywallCredentials.toLocaleString("de-DE")} Hinweise`
+        : `${browserRecovered.toLocaleString("de-DE")} erledigt`;
+    const accessWindowDate = accessWindow?.started_at ? new Date(accessWindow.started_at) : null;
+    const accessWindowDateLabel = accessWindowDate && !Number.isNaN(accessWindowDate.getTime())
+      ? accessWindowDate.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+      : "aktueller Zeitraum";
+    els.statusAccessWindow.textContent = `${accessWindow?.label || "Live-Queue und aktueller Quellenstand"} · ab ${accessWindowDateLabel}`;
     const queuedAnalyses = Number(analysisQueue.queued || 0);
     const runningAnalyses = Number(analysisQueue.running || 0);
     const completedAnalyses = Number(analysisQueue.done || 0);
@@ -2715,7 +2735,7 @@ async function loadLastRun() {
       chip.addEventListener("mouseenter", () => positionErrorPopover(chip));
       chip.addEventListener("focusin", () => positionErrorPopover(chip));
     });
-    scheduleStatusRefresh(isActive);
+    scheduleStatusRefresh(isActive || browserPending > 0);
   } catch {
     els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
     setLiveStatus(null, null);
@@ -2724,13 +2744,16 @@ async function loadLastRun() {
 }
 
 function bindUi() {
-  els.statusErrorToggle?.addEventListener("click", () => {
-    const expanded = els.statusErrorToggle.getAttribute("aria-expanded") !== "true";
-    els.statusErrorToggle.setAttribute("aria-expanded", String(expanded));
-    els.apiErrorList.hidden = !expanded;
-    const label = els.statusErrorToggle.querySelector("b");
-    if (label) label.textContent = expanded ? "Fehler einklappen" : "Fehler ausklappen";
+  const bindStatusDisclosure = (toggle, body, noun) => toggle?.addEventListener("click", () => {
+    const expanded = toggle.getAttribute("aria-expanded") !== "true";
+    toggle.setAttribute("aria-expanded", String(expanded));
+    body.hidden = !expanded;
+    const label = toggle.querySelector("b");
+    if (label) label.textContent = expanded ? `${noun} einklappen` : `${noun} ausklappen`;
   });
+  bindStatusDisclosure(els.statusErrorToggle, els.apiErrorList, "Fehler");
+  bindStatusDisclosure(els.statusCostToggle, els.statusCostBody, "Kosten");
+  bindStatusDisclosure(els.statusAccessToggle, els.statusAccessBody, "Abrufstatus");
   els.appNav.addEventListener("click", (event) => {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);

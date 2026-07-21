@@ -223,6 +223,23 @@
   .status-error-toggle[aria-expanded="true"] > span:last-child i { transform: rotate(180deg); }
   .api-error-list { display: grid; gap: 9px; padding: 9px; border-top: 1px solid #fee2e2; background: #fff; }
   .api-error-list[hidden] { display: none; }
+  .status-disclosure-panel { margin-top: 9px; border: 1px solid #dbe5f1; border-radius: 11px; background: #fff; overflow: hidden; }
+  .status-disclosure-panel[hidden], .status-disclosure-body[hidden] { display: none; }
+  .status-disclosure-toggle { width: 100%; min-height: 42px; padding: 7px 9px; border: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ink); background: #f8fbff; font: inherit; text-align: left; cursor: pointer; }
+  .status-disclosure-toggle:hover, .status-disclosure-toggle:focus-visible { outline: none; background: #f1f7ff; }
+  .status-disclosure-toggle > span:first-child { min-width: 0; display: grid; grid-template-columns: 24px minmax(0,1fr); column-gap: 7px; align-items: center; }
+  .status-disclosure-toggle > span:first-child > i { grid-row: 1 / 3; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; color: #1d4ed8; background: #dbeafe; font-size: .62rem; }
+  .status-disclosure-toggle b { display: block; font-size: .66rem; }
+  .status-disclosure-toggle small { display: block; overflow: hidden; color: var(--muted); font-size: .52rem; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+  .status-disclosure-toggle > span:last-child { display: inline-flex; align-items: center; gap: 7px; color: #1d4ed8; font-size: .63rem; font-weight: 850; white-space: nowrap; }
+  .status-disclosure-toggle > span:last-child i { color: var(--muted); transition: transform .16s; }
+  .status-disclosure-toggle[aria-expanded="true"] > span:last-child i { transform: rotate(180deg); }
+  .status-disclosure-body { padding: 9px; border-top: 1px solid #dbe5f1; background: #fff; }
+  .status-disclosure-body .telemetry-grid, .status-disclosure-body .source-health-note { margin-top: 0; }
+  .status-access-panel .status-disclosure-toggle { background: #fafafa; }
+  .status-access-panel .status-disclosure-toggle:hover, .status-access-panel .status-disclosure-toggle:focus-visible { background: #f4f6f8; }
+  .status-access-panel .status-disclosure-toggle > span:first-child > i { color: #475569; background: #e9eef4; }
+  .status-access-panel .status-disclosure-toggle > span:last-child { color: #475569; }
   .status-error-group { display: grid; gap: 5px; }
   .status-error-group + .status-error-group { padding-top: 8px; border-top: 1px solid #eef2f7; }
   .status-error-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .52rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
@@ -1724,14 +1741,30 @@
                     <div class="api-error-list" id="api-error-list" hidden></div>
                   </section>
                 </div>
-                <div class="telemetry-grid">
-                  <div class="telemetry-stat" id="gemini-cost-stat"><span>Gemini im Monat</span><b id="gemini-cost-month">–</b></div>
-                  <div class="telemetry-stat"><span>Heute</span><b id="gemini-cost-today">–</b></div>
-                  <div class="telemetry-stat telemetry-stat--interactive" id="crawl-cost-forecast-stat" tabindex="0"><span>Crawl-Prognose</span><b id="gemini-request-count">–</b><div class="cost-detail-popover" id="crawl-cost-detail" role="tooltip"></div></div>
-                  <div class="telemetry-stat"><span>Quellenläufe</span><b id="source-attempt-count">–</b></div>
-                </div>
-                <div class="spend-forecast" id="spend-forecast" hidden><i class="fa-solid fa-chart-line"></i><div><b id="spend-forecast-title"></b><span id="spend-forecast-copy"></span></div></div>
-                <div class="source-health-note" id="source-health-note"></div>
+                <section class="status-disclosure-panel status-cost-panel" id="status-cost-panel">
+                  <button type="button" class="status-disclosure-toggle" id="status-cost-toggle" aria-expanded="false" aria-controls="status-cost-body">
+                    <span><i class="fa-solid fa-coins"></i><span><b>Kosten ausklappen</b><small>Live aus dem unveränderlichen Supabase-Kostenledger</small></span></span>
+                    <span><strong id="status-cost-summary">–</strong><i class="fa-solid fa-chevron-down"></i></span>
+                  </button>
+                  <div class="status-disclosure-body" id="status-cost-body" hidden>
+                    <div class="telemetry-grid">
+                      <div class="telemetry-stat" id="gemini-cost-stat"><span>Gemini im Monat</span><b id="gemini-cost-month">–</b></div>
+                      <div class="telemetry-stat"><span>Heute</span><b id="gemini-cost-today">–</b></div>
+                      <div class="telemetry-stat telemetry-stat--interactive" id="crawl-cost-forecast-stat" tabindex="0"><span>Crawl-Prognose</span><b id="gemini-request-count">–</b><div class="cost-detail-popover" id="crawl-cost-detail" role="tooltip"></div></div>
+                    </div>
+                    <div class="spend-forecast" id="spend-forecast" hidden><i class="fa-solid fa-chart-line"></i><div><b id="spend-forecast-title"></b><span id="spend-forecast-copy"></span></div></div>
+                  </div>
+                </section>
+                <section class="status-disclosure-panel status-access-panel" id="status-access-panel" hidden>
+                  <button type="button" class="status-disclosure-toggle" id="status-access-toggle" aria-expanded="false" aria-controls="status-access-body">
+                    <span><i class="fa-solid fa-globe"></i><span><b>Abrufstatus ausklappen</b><small id="status-access-window">Live-Queue und aktueller Quellenstand</small></span></span>
+                    <span><strong id="status-access-summary">0 aktiv</strong><i class="fa-solid fa-chevron-down"></i></span>
+                  </button>
+                  <div class="status-disclosure-body" id="status-access-body" hidden>
+                    <div class="telemetry-grid"><div class="telemetry-stat"><span>Quellenläufe</span><b id="source-attempt-count">–</b></div></div>
+                    <div class="source-health-note" id="source-health-note"></div>
+                  </div>
+                </section>
               </div>
               <span class="crawl-status-hint" id="crawl-status-hint">Klicken, um einen Crawl zu starten.</span>
             </div>
@@ -1998,7 +2031,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260720-1930';
+import { initApp } from './app.js?v=20260721-1245';
 
 const { createClient } = window.supabase;
 const sb = createClient(SB_URL, SB_ANON, {

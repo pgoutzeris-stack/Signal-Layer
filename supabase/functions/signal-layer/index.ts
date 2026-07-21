@@ -1647,7 +1647,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.7.0";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.8.0";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -2192,12 +2192,19 @@ function clampConfidence(value: unknown): number {
 }
 
 const DIRECT_MARKETING_TOPIC_IDS = new Set(["customer_insights", "marketing_insights", "fmcg_retail_signale"]);
+const CUSTOMER_CONTEXT_PATTERN = /\b(customer|consumer|shopper|kund\w*|konsument\w*|verbraucher\w*|zielgrupp\w*|kaufverhalten|konsumverhalten|loyalty|customer journey|customer experience|kundenerlebnis)\b/i;
+const MARKETING_CONTEXT_PATTERN = /\b(marketing|brand|marke\w*|branding|positionier\w*|kommunikation|campaign|kampagn\w*|media|werbung|advertis\w*|crm|newsletter|customer journey|customer experience|kundenerlebnis|zielgrupp\w*|consumer insight|customer insight|shopper insight)\b/i;
+const RETAIL_CONTEXT_PATTERN = /\b(retail|handel\w*|handler\w*|store|filial\w*|point of sale|\bpos\b|assortment|sortiment\w*|category management|kategoriemanagement|pricing|preisstrateg\w*|promotion|retail media|shopper)\b/i;
+const INDUSTRIAL_OPERATIONS_PATTERN = /\b(production|manufactur\w*|factory|plant|facility|battery|batterie\w*|zellfertigung|zellfabrik|fertigung\w*|produktion\w*|fabrik\w*|werk\w*|maschine\w*|anlage\w*|trockenbeschichtung|energieverbrauch|energieeffizienz|lieferkette|supply chain|logistik|rohstoff\w*|industrial|industrie\w*)\b/i;
 
 function hasDirectMarketingContext(topic: AiTag): boolean {
-  if (DIRECT_MARKETING_TOPIC_IDS.has(topic.id)) return true;
+  const evidence = normalizeMatchText(topic.evidence);
+  if (topic.id === "customer_insights") return CUSTOMER_CONTEXT_PATTERN.test(evidence);
+  if (topic.id === "marketing_insights") return MARKETING_CONTEXT_PATTERN.test(evidence);
+  if (topic.id === "fmcg_retail_signale") return RETAIL_CONTEXT_PATTERN.test(evidence);
   if (topic.id !== "ki_performance") return false;
-  return /\b(marketing|brand|customer|consumer|shopper|retail|campaign|media|assortment|pricing|promotion|marke\w*|kund\w*|konsum\w*|handel\w*|kampagn\w*|sortiment\w*|preis\w*)\b/i
-    .test(normalizeMatchText(topic.evidence));
+  return (MARKETING_CONTEXT_PATTERN.test(evidence) || CUSTOMER_CONTEXT_PATTERN.test(evidence) || RETAIL_CONTEXT_PATTERN.test(evidence))
+    && /\b(ai|artificial intelligence|ki|kunstliche intelligenz)\b/i.test(evidence);
 }
 
 const SALES_ONLY_REJECTION_PATTERN = /\b(sales|vertrieb|tier[ -]?1|buying center|kaufsignal|sales[- ]?trigger|mandat|consulting|beratungsbedarf)\b/i;
@@ -2266,6 +2273,13 @@ function hasTransferableMarketingSubstance(
 
   const combined = normalizeMatchText(`${marketingUse.evidence} ${marketingUse.transferable_value}`);
   const article = normalizeMatchText(articleText);
+  const hasRootsMarketingContext = MARKETING_CONTEXT_PATTERN.test(combined)
+    || CUSTOMER_CONTEXT_PATTERN.test(combined) || RETAIL_CONTEXT_PATTERN.test(combined);
+  // Operational innovation can be strategically important without being a
+  // ROOTS Marketing signal. Never convert production, factory, energy or
+  // supply-chain learnings into Marketing unless the evidence separately
+  // proves a direct brand/customer/marketing/retail implication.
+  if (INDUSTRIAL_OPERATIONS_PATTERN.test(combined) && !hasRootsMarketingContext) return false;
   const hasCustomerInsight = directTopics.some((topic) => topic.id === "customer_insights");
   const hasDepth = MARKETING_DEPTH_PATTERN.test(combined);
   const hasSubstantiveResearch = RESEARCH_CONTENT_PATTERN.test(article)
@@ -3010,7 +3024,7 @@ ${taxonomyText.salesTriggers}
 </taxonomy>
 <active_business_policy>${JSON.stringify({ relevance: config.relevance, decisions: config.decisions, routing: config.routing })}</active_business_policy>
 <routing_rules>
-Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item, whitepaper or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Marketing NEVER requires a Tier-1 company or any named company. Missing Tier-1 status is exclusively a Sales limitation and must never appear in article-level rejection_reasons or make Marketing uncertain. General analyses, interviews, studies and market observations qualify when they teach a broader audience something concrete and evidence-backed about a ROOTS topic; a company case study is useful but not required. Company news that cannot teach a broader audience anything is not Marketing. Direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, applied AI or a transferable development in a ROOTS-relevant consumer/FMCG/retail sub-sector is required. sub_branchen_insight MAY qualify Marketing by itself only when it contains a concrete transferable market/category/customer/competitive development, evidence and enough depth to remain useful beyond a single company event. A single acquisition, opening, expansion, result, investment, facility or personnel announcement is never such an insight. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing or transferable sector evidence exists. Empirical studies and surveys from consultancies, institutes, associations or companies require exposed methodology/sample plus findings or data. Whitepapers, research papers, playbooks and trend/market reports may qualify without a survey methodology when they expose concrete findings, frameworks, benchmarks, data or independently useful conclusions. A download announcement, gated landing page or self-promotional claim without an exposed finding does not qualify. If marketing_use.sufficient_substance is true or routing_decisions.marketing.reason describes transferable value, you MUST copy a verbatim supporting sentence into marketing_use.evidence and evaluate publishable independently of Sales.
+Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item, whitepaper or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Marketing NEVER requires a Tier-1 company or any named company. Missing Tier-1 status is exclusively a Sales limitation and must never appear in article-level rejection_reasons or make Marketing uncertain. General analyses, interviews, studies and market observations qualify when they teach a broader audience something concrete and evidence-backed about a ROOTS topic; a company case study is useful but not required. Company news that cannot teach a broader audience anything is not Marketing. Direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, applied AI or a transferable development in a ROOTS-relevant consumer/FMCG/retail sub-sector is required. sub_branchen_insight MAY qualify Marketing by itself only when it contains a concrete transferable market/category/customer/competitive development, evidence and enough depth to remain useful beyond a single company event. A single acquisition, opening, expansion, result, investment, facility or personnel announcement is never such an insight. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing or transferable sector evidence exists. A technology, production, factory, battery, machinery, energy-efficiency, supply-chain or industrial-cost insight is NOT a Marketing insight merely because it is innovative, strategic, transferable or economically important. "Interesting for business" is not the same as "useful for a ROOTS Marketing asset". For marketing_insights, the verbatim topic and marketing_use evidence must itself explicitly concern marketing strategy, brand/positioning, communication/media, customer/consumer/shopper behaviour, customer experience, retail/category/pricing/promotion or marketing organisation/performance. Empirical studies and surveys from consultancies, institutes, associations or companies require exposed methodology/sample plus findings or data. Whitepapers, research papers, playbooks and trend/market reports may qualify without a survey methodology when they expose concrete findings, frameworks, benchmarks, data or independently useful conclusions. A download announcement, gated landing page or self-promotional claim without an exposed finding does not qualify. If marketing_use.sufficient_substance is true or routing_decisions.marketing.reason describes transferable value, you MUST copy a verbatim supporting sentence into marketing_use.evidence and evaluate publishable independently of Sales.
 Software-, Tool-, Plattform-, Agentur-, Beratungs- and other service-provider pages that primarily present or sell their own offering are NOT Marketing signals. Vendor claims that their product creates insights, improves customer experience or raises performance are still sales pitches, not independent insights. This also applies to provider profiles, directories, product descriptions, demos and promotional case examples without independently useful evidence. Exception: substantive studies, research papers, whitepapers, benchmarks, playbooks or trend reports from consultancies/agencies/providers remain eligible when the article itself exposes concrete methodology plus findings, data or transferable customer/industry trends beyond promoting the provider.
 sub_branchen_insight is valid only for a transferable market observation that remains useful beyond the reported company event. A single acquisition, product, expansion, financial result or facility is not transferable.
 Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge or evidenced ROOTS-relevant opportunity, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. The Sales evidence, company_challenge or personalization facts MUST explicitly connect the named Tier-1 company to that challenge or trigger; generic statements about "companies", "brands" or an anonymous case study are Marketing only. A company mention or generic strategic change alone is insufficient. For sources in category "Events & Messen", a named person with a credible role at a Tier-1 company who substantively speaks, presents, discusses or is quoted about a ROOTS marketing, brand, customer, retail, category, innovation or applied-AI topic qualifies event_participation as a Sales trigger. The person's contribution and company affiliation must both be evidenced locally in the article. Attendee lists, speaker directories, schedules, navigation, a session title without described contribution, and a name merely appearing somewhere on the same page are insufficient.
@@ -3055,7 +3069,10 @@ function validateClassification(
     .filter((tag) => tag.id !== "ki_performance" || !config.relevance.require_ai_application
       || /\b(used|uses|using|deploy\w*|implement\w*|pilot|application|anwendung|eingesetzt|einfuhr\w*|automati\w*|optimier\w*)\b/i.test(normalizeMatchText(tag.evidence)))
     .filter((tag) => tag.id !== "marketing_insights" || config.relevance.allow_campaign_without_results
-      || !/\b(campaign|kampagn)\w*\b/i.test(normalizeMatchText(tag.evidence)) || hasRequiredImpact(tag));
+      || !/\b(campaign|kampagn)\w*\b/i.test(normalizeMatchText(tag.evidence)) || hasRequiredImpact(tag))
+    // Topic labels are never trusted on their own. The exact evidence must
+    // contain the semantic context required by that Marketing dimension.
+    .filter((tag) => !DIRECT_MARKETING_TOPIC_IDS.has(tag.id) || hasDirectMarketingContext(tag));
   const territory = raw.territory && TERRITORY_IDS.includes(raw.territory.id as typeof TERRITORY_IDS[number])
       && clampConfidence(raw.territory.confidence) >= config.quality.territory_confidence && evidenceExists(raw.territory.evidence, articleText)
     ? { ...raw.territory, confidence: clampConfidence(raw.territory.confidence) }
@@ -3099,15 +3116,21 @@ function validateClassification(
   if (marketInsightTransferable && marketingUse.sufficient_substance && marketingUse.transferable_value) {
     const recoveredEvidence = marketingUse.evidence || recoverExactMarketingEvidence(articleText);
     if (recoveredEvidence) {
-      if (!topics.some(hasDirectMarketingContext)) {
-        topics.push({
-          id: inferRecoveredMarketingTopic(recoveredEvidence),
-          confidence: Math.max(config.quality.topic_confidence, clampConfidence(raw.routing_decisions?.marketing?.confidence)),
-          evidence: recoveredEvidence,
-        });
+      const recoveredTopic: AiTag = {
+        id: inferRecoveredMarketingTopic(recoveredEvidence),
+        confidence: Math.max(config.quality.topic_confidence, clampConfidence(raw.routing_decisions?.marketing?.confidence)),
+        evidence: recoveredEvidence,
+      };
+      const recoveredHasMarketingContext = hasDirectMarketingContext(recoveredTopic);
+      const recoveredHasSubsectorContext = topics.some((topic) => topic.id === "sub_branchen_insight")
+        && marketInsightTransferable;
+      if (recoveredHasMarketingContext || recoveredHasSubsectorContext) {
+        if (!topics.some(hasDirectMarketingContext) && recoveredHasMarketingContext) topics.push(recoveredTopic);
+        marketingUse.evidence = recoveredEvidence;
+        marketingUse.publishable = true;
+      } else {
+        marketingUse.publishable = false;
       }
-      marketingUse.evidence = recoveredEvidence;
-      marketingUse.publishable = true;
     }
   }
   if (!marketingUse.transferable_value || !marketingUse.sufficient_substance || !marketingUse.evidence) {
@@ -5564,12 +5587,19 @@ Deno.serve(async (req: Request) => {
           ["queued", "running"].includes(job.status)
           || (job.updated_at && new Date(job.updated_at).getTime() >= errorWindowStartMs)
         );
-        sourceHealth.browser_queued = browserJobsInWindow.filter((job) => job.status === "queued").length;
-        sourceHealth.browser_running = browserJobsInWindow.filter((job) => job.status === "running").length;
-        sourceHealth.browser_recovered = browserJobsInWindow.filter((job) => job.status === "done").length;
-        sourceHealth.browser_failed = browserJobsInWindow.filter((job) =>
-          job.status === "error" && job.last_error !== "non_editorial_url"
-        ).length;
+        // These headline values must remain exact even when the browser queue
+        // exceeds PostgREST's row cap. Queued/running are live state; done/error
+        // are scoped to the same current/latest run window shown in the UI.
+        const [{ count: browserQueuedExact }, { count: browserRunningExact }, { count: browserRecoveredExact }, { count: browserFailedExact }] = await Promise.all([
+          admin.schema("signal_layer").from("browser_render_jobs").select("id", { count: "exact", head: true }).eq("status", "queued"),
+          admin.schema("signal_layer").from("browser_render_jobs").select("id", { count: "exact", head: true }).eq("status", "running"),
+          admin.schema("signal_layer").from("browser_render_jobs").select("id", { count: "exact", head: true }).eq("status", "done").gte("updated_at", errorWindowStart),
+          admin.schema("signal_layer").from("browser_render_jobs").select("id", { count: "exact", head: true }).eq("status", "error").neq("last_error", "non_editorial_url").gte("updated_at", errorWindowStart),
+        ]);
+        sourceHealth.browser_queued = Number(browserQueuedExact || 0);
+        sourceHealth.browser_running = Number(browserRunningExact || 0);
+        sourceHealth.browser_recovered = Number(browserRecoveredExact || 0);
+        sourceHealth.browser_failed = Number(browserFailedExact || 0);
         const usdEurRate = await getUsdEurRate();
         const failureDefinitions = {
           content_extraction: {
@@ -5909,6 +5939,10 @@ Deno.serve(async (req: Request) => {
             mode: activeErrorStarts.length ? "live" : "latest",
             label: activeErrorStarts.length ? "Laufender Crawl / laufende Analyse" : "Seit dem letzten Crawl / Analyselauf",
             total: runtimeErrorBreakdown.reduce((sum, error) => sum + Number(error.count || 0), 0),
+          },
+          access_window: {
+            started_at: errorWindowStart,
+            label: activeErrorStarts.length ? "Live-Queue; Erfolge im laufenden Zeitraum" : "Live-Queue; Erfolge seit dem letzten Lauf",
           },
         });
       }
