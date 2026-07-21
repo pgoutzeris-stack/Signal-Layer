@@ -5364,7 +5364,7 @@ Deno.serve(async (req: Request) => {
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
-        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: costLedger }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { data: analysisFailures }, { data: sourceConfigs }, { data: browserJobs }] = await Promise.all([
+        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: costLedger }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { count: queuedAnalysisCountExact }, { count: runningAnalysisCountExact }, { data: analysisFailures }, { data: sourceConfigs }, { data: browserJobs }] = await Promise.all([
           admin.schema("signal_layer").from("crawl_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("crawl_runs").select("id, finished_at, current_index, source_ids")
@@ -5385,6 +5385,10 @@ Deno.serve(async (req: Request) => {
             .select("crawl_run_id,source_id,position,status,error_code").order("position").limit(1000),
           admin.schema("signal_layer").from("article_analysis_jobs")
             .select("article_id,crawl_run_id,status,started_at").in("status", ["queued", "running"]).limit(5000),
+          admin.schema("signal_layer").from("article_analysis_jobs")
+            .select("article_id", { count: "exact", head: true }).eq("status", "queued"),
+          admin.schema("signal_layer").from("article_analysis_jobs")
+            .select("article_id", { count: "exact", head: true }).eq("status", "running"),
           admin.schema("signal_layer").from("articles")
             .select("rejection_reasons,extraction_diagnostic,source:sources(company)")
             .eq("classification_status", "error").order("classified_at", { ascending: false }).limit(2000),
@@ -5518,10 +5522,10 @@ Deno.serve(async (req: Request) => {
           backfillWithProgress = { ...backfill, current_article: currentArticle || null };
         }
         const activeAnalysisJobs = analysisJobs || [];
-        const analysisQueueCounts = activeAnalysisJobs.reduce((summary, job) => {
-          summary[job.status] = (summary[job.status] || 0) + 1;
-          return summary;
-        }, {} as Record<string, number>);
+        const analysisQueueCounts: Record<string, number> = {
+          queued: Number(queuedAnalysisCountExact || 0),
+          running: Number(runningAnalysisCountExact || 0),
+        };
         const runningAnalysisIds = activeAnalysisJobs.filter((job) => job.status === "running")
           .map((job) => job.article_id).filter(Boolean).slice(0, 8);
         let currentAnalysisArticles: Array<{ id: string; title: string }> = [];
