@@ -5196,7 +5196,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("source_crawl_jobs")
             .select("crawl_run_id,source_id,position,status,error_code").order("position").limit(1000),
           admin.schema("signal_layer").from("article_analysis_jobs")
-            .select("crawl_run_id,status").in("status", ["queued", "running"]).limit(5000),
+            .select("article_id,crawl_run_id,status,started_at").in("status", ["queued", "running"]).limit(5000),
           admin.schema("signal_layer").from("articles")
             .select("rejection_reasons,extraction_diagnostic,source:sources(company)")
             .eq("classification_status", "error").order("classified_at", { ascending: false }).limit(2000),
@@ -5329,6 +5329,19 @@ Deno.serve(async (req: Request) => {
             .order("published_at", { ascending: false }).limit(1).maybeSingle();
           backfillWithProgress = { ...backfill, current_article: currentArticle || null };
         }
+        const activeAnalysisJobs = analysisJobs || [];
+        const analysisQueueCounts = activeAnalysisJobs.reduce((summary, job) => {
+          summary[job.status] = (summary[job.status] || 0) + 1;
+          return summary;
+        }, {} as Record<string, number>);
+        const runningAnalysisIds = activeAnalysisJobs.filter((job) => job.status === "running")
+          .map((job) => job.article_id).filter(Boolean).slice(0, 8);
+        let currentAnalysisArticles: Array<{ id: string; title: string }> = [];
+        if (runningAnalysisIds.length) {
+          const { data } = await admin.schema("signal_layer").from("articles")
+            .select("id,title").in("id", runningAnalysisIds);
+          currentAnalysisArticles = data || [];
+        }
         const usdEurRate = await getUsdEurRate();
         const failureDefinitions = {
           content_extraction: {
@@ -5446,16 +5459,20 @@ Deno.serve(async (req: Request) => {
           : forecastStatus === "risk"
             ? `Bei aktuellem Verbrauch wird der Warnwert voraussichtlich${projectedLimitDate ? ` am ${new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeZone: "Europe/Berlin" }).format(new Date(projectedLimitDate))}` : " noch in diesem Monat"} erreicht. ${recommendation}`
             : "Der aktuelle Verbrauch bleibt in der Monatsprognose unter dem Warnwert.";
-        const currentCrawlId = crawl?.id || null;
+        const activeCrawl = crawl && ["queued", "running"].includes(crawl.status) ? crawl : null;
+        const currentCrawlId = activeCrawl?.id || null;
         const activeBackfill = backfill && ["queued", "running"].includes(backfill.status) ? backfill : null;
-        const forecastRunType = activeBackfill ? "backfill" : "crawl";
-        const forecastRunId = activeBackfill?.id || currentCrawlId;
-        const activeRunStartedAt = activeBackfill?.started_at || crawl?.started_at || monthStart.toISOString();
+        const directAnalysisJobs = activeAnalysisJobs.filter((job) => !job.crawl_run_id);
+        const directAnalysisActive = !activeBackfill && directAnalysisJobs.length > 0;
+        const forecastRunType = activeBackfill ? "backfill" : directAnalysisActive ? "analysis_queue" : "crawl";
+        const forecastRunId = activeBackfill?.id || (directAnalysisActive ? "analysis-queue" : currentCrawlId);
+        const directAnalysisStartedAt = directAnalysisJobs.map((job) => job.started_at).filter(Boolean).sort()[0] || new Date().toISOString();
+        const activeRunStartedAt = activeBackfill?.started_at || (directAnalysisActive ? directAnalysisStartedAt : activeCrawl?.started_at) || monthStart.toISOString();
         const { data: exactActiveUsage } = forecastRunId
           ? await admin.schema("signal_layer").rpc("get_ai_usage_aggregate", {
               p_since: activeRunStartedAt,
-              p_crawl_run_id: activeBackfill ? null : currentCrawlId,
-              p_uncrawled_only: Boolean(activeBackfill),
+              p_crawl_run_id: activeBackfill || directAnalysisActive ? null : currentCrawlId,
+              p_uncrawled_only: Boolean(activeBackfill || directAnalysisActive),
             })
           : { data: [] };
         const currentCrawlUsage = currentCrawlId ? usageRows.filter((row) => row.crawl_run_id === currentCrawlId) : [];
@@ -5474,16 +5491,18 @@ Deno.serve(async (req: Request) => {
         // Backfills deliberately have no crawl_run_id. Attribute their usage
         // by their persisted start time and use the run counters for the
         // remaining workload, otherwise the live status shows no estimate.
-        const activeRunUsage = activeBackfill
-          ? usageRows.filter((row) => !row.crawl_run_id && new Date(row.created_at) >= new Date(activeBackfill.started_at))
+        const activeRunUsage = activeBackfill || directAnalysisActive
+          ? usageRows.filter((row) => !row.crawl_run_id && new Date(row.created_at) >= new Date(activeRunStartedAt))
           : currentCrawlUsage;
         const activeAggregateRows = exactActiveUsage || [];
         const activeRunActualUsd = activeAggregateRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
         const activeRunAnalyzedArticles = activeBackfill
           ? Number(activeBackfill.processed_count || 0)
+          : directAnalysisActive ? Math.max(...activeAggregateRows.map((row) => Number(row.article_count || 0)), 0)
           : analyzedCrawlArticles;
         const activeRunRemainingArticles = activeBackfill
           ? Math.max(0, Number(activeBackfill.total_count || 0) - Number(activeBackfill.processed_count || 0))
+          : directAnalysisActive ? directAnalysisJobs.length
           : remainingCrawlArticles;
         const projectedCrawlUsd = activeRunActualUsd + activeRunRemainingArticles * estimatedCostPerArticleUsd;
         const liveSuccessfulUsage = activeRunUsage.filter((row) => row.status === "success" && row.article_id && Number(row.total_tokens || 0) > 0);
@@ -5547,7 +5566,7 @@ Deno.serve(async (req: Request) => {
               crawl_run_id: currentCrawlId,
               run_id: forecastRunId,
               run_type: forecastRunType,
-              status: activeBackfill?.status || crawl?.status || "idle",
+              status: activeBackfill?.status || (directAnalysisActive ? "running" : activeCrawl?.status) || "idle",
               actual_usd: activeRunActualUsd,
               actual_eur: usdEurRate === null ? null : activeRunActualUsd * usdEurRate,
               projected_usd: projectedCrawlUsd,
@@ -5587,10 +5606,11 @@ Deno.serve(async (req: Request) => {
           // The analysis queue is global: recovery/backfill jobs deliberately
           // have no crawl_run_id. Filtering them by the latest crawl made the
           // status claim that nothing was running while recovery was active.
-          analysis_queue: (analysisJobs || []).reduce((summary, job) => {
-            summary[job.status] = (summary[job.status] || 0) + 1;
-            return summary;
-          }, {} as Record<string, number>),
+          analysis_queue: {
+            ...analysisQueueCounts,
+            active: activeAnalysisJobs.length > 0,
+            current_articles: currentAnalysisArticles,
+          },
           analysis_error_breakdown: analysisErrorBreakdown,
         });
       }

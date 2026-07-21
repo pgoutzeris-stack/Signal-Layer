@@ -2134,12 +2134,15 @@ function formatCrawlTime(iso) {
   return Number.isNaN(date.getTime()) ? "--:--" : date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 }
 
-function getLiveStatus(last, backfill) {
+function getLiveStatus(last, backfill, analysisQueue = {}) {
   if (last?.status === "running" || last?.status === "queued") {
     return { tone: "working", label: "Crawl läuft", hint: "Quellen werden gerade geprüft." };
   }
   if (["running", "queued"].includes(backfill?.status)) {
     return { tone: "working", label: "Analyse läuft", hint: "Neue Artikel werden mit Gemini analysiert." };
+  }
+  if (Number(analysisQueue.queued || 0) + Number(analysisQueue.running || 0) > 0) {
+    return { tone: "working", label: "Analyse läuft", hint: "Direkt gestartete Artikelanalysen werden verarbeitet." };
   }
   if (last?.status === "error" || backfill?.status === "error") {
     return { tone: "error", label: "Aufmerksamkeit nötig", hint: "Ein Lauf wurde mit Fehler beendet." };
@@ -2147,8 +2150,8 @@ function getLiveStatus(last, backfill) {
   return { tone: "ready", label: "Bereit", hint: "Klicken, um einen Crawl zu starten." };
 }
 
-function setLiveStatus(last, backfill) {
-  const liveStatus = getLiveStatus(last, backfill);
+function setLiveStatus(last, backfill, analysisQueue = {}) {
+  const liveStatus = getLiveStatus(last, backfill, analysisQueue);
   els.btnCrawlTrigger.classList.remove("status-pill--ready", "status-pill--working", "status-pill--error");
   els.btnCrawlTrigger.classList.add(`status-pill--${liveStatus.tone}`);
   els.btnCrawlTrigger.setAttribute("aria-label", `Status: ${liveStatus.label}`);
@@ -2297,21 +2300,25 @@ async function loadLastRun() {
     els.sourceHealthNote.innerHTML = crawlResults.map((result) =>
       `<span class="crawl-result-pill crawl-result-pill--${result.tone}"${result.detail ? ` data-error-tip="1" data-error-label="${escapeHtml(result.detailLabel || "Paywall-Quellen")}" data-error-explain="${escapeHtml(result.detailExplain || "Diese Quellen blockieren den vollständigen Direktabruf. Artikel ohne Volltext werden nicht künstlich analysiert.")}" data-error-raw="${escapeHtml(result.detail)}" tabindex="0"` : ""}><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
     ).join("");
-    const isActive = setLiveStatus(last, backfill);
+    const queuedAnalyses = Number(analysisQueue.queued || 0);
+    const runningAnalyses = Number(analysisQueue.running || 0);
+    const completedAnalyses = Number(analysisQueue.done || 0);
+    const failedAnalyses = Number(analysisQueue.error || 0);
+    const queueAnalysisActive = queuedAnalyses + runningAnalyses > 0;
+    const isActive = setLiveStatus(last, backfill, analysisQueue);
     const sourceCrawlActive = ["queued", "running"].includes(last?.status);
     els.crawlLiveState.hidden = true;
     if (sourceCrawlActive) {
       els.crawlStatusKicker.textContent = "Aktueller Status";
       els.lastRunText.innerHTML = '<span class="crawl-live-primary">Crawl läuft</span>';
+    } else if (queueAnalysisActive) {
+      els.crawlStatusKicker.textContent = "Aktueller Status";
+      els.lastRunText.innerHTML = '<span class="crawl-live-primary">Analyse läuft</span>';
     } else {
       els.crawlStatusKicker.textContent = "Letzter Crawl";
       els.lastRunText.textContent = formatCrawlTime(lastCompleted?.finished_at);
     }
-    if (!last) {
-      scheduleStatusRefresh(isActive);
-      return;
-    }
-    const sourceProgress = last.source_progress;
+    const sourceProgress = last?.source_progress;
     if (sourceCrawlActive && sourceProgress && Number(sourceProgress.total || 0) > 0) {
       const totalSources = Number(sourceProgress.total || 0);
       const completedSources = Math.min(totalSources, Number(sourceProgress.completed || 0));
@@ -2332,20 +2339,20 @@ async function loadLastRun() {
       els.crawlSourceProgress.hidden = true;
       els.crawlSourceProgress.classList.remove("is-live");
     }
-    const queuedAnalyses = Number(analysisQueue.queued || 0);
-    const runningAnalyses = Number(analysisQueue.running || 0);
-    const completedAnalyses = Number(analysisQueue.done || 0);
-    const failedAnalyses = Number(analysisQueue.error || 0);
-    const queueAnalysisActive = queuedAnalyses + runningAnalyses > 0;
     const articleAnalysisActive = queueAnalysisActive || Boolean(backfill && ["queued", "running"].includes(backfill.status));
     els.articleLiveProgress.hidden = !articleAnalysisActive && analysisErrors.length === 0;
     if (articleAnalysisActive) {
-      const total = queueAnalysisActive ? queuedAnalyses + runningAnalyses + completedAnalyses + failedAnalyses : Number(backfill.total_count || 0);
-      const processed = queueAnalysisActive ? completedAnalyses + failedAnalyses : Number(backfill.processed_count || 0);
+      const total = queueAnalysisActive ? queuedAnalyses + runningAnalyses : Number(backfill.total_count || 0);
+      const processed = queueAnalysisActive ? 0 : Number(backfill.processed_count || 0);
       const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 100;
-      els.backfillProgressText.textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")}`;
+      els.backfillProgressText.textContent = queueAnalysisActive
+        ? `${total.toLocaleString("de-DE")} offen`
+        : `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")}`;
       els.backfillProgressBar.style.width = `${percent}%`;
-      const currentArticleTitle = queueAnalysisActive ? "Neue Artikel werden unabhängig vom Crawl analysiert" : backfill?.current_article?.title || "";
+      const activeArticleTitles = (analysisQueue.current_articles || []).map((article) => article.title).filter(Boolean);
+      const currentArticleTitle = queueAnalysisActive
+        ? activeArticleTitles.join(" · ") || "Direkt gestartete Artikel werden analysiert"
+        : backfill?.current_article?.title || "";
       els.backfillCurrentArticle.hidden = !currentArticleTitle;
       els.backfillCurrentArticle.textContent = currentArticleTitle;
       document.getElementById("backfill-status")?.classList.add("is-live");
