@@ -2729,6 +2729,15 @@ type ClassifierExecution = {
   attempts: ClassifierAttempt[];
 };
 
+class ClassifierChainError extends Error {
+  attempts: ClassifierAttempt[];
+  constructor(message: string, attempts: ClassifierAttempt[]) {
+    super(message);
+    this.name = "ClassifierChainError";
+    this.attempts = attempts;
+  }
+}
+
 function parseModelJson(text: string): AiClassification {
   const source = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
   const first = source.indexOf("{");
@@ -2835,7 +2844,7 @@ async function callClassifierWithFallback(
     return { classification, configuredModel, actualModel: configuredModel, provider: "gemini", fallbackUsed: false, attempts };
   } catch (error) {
     attempts.push({ provider: "gemini", model: configuredModel, status: "error", error: String(error).slice(0, 500) });
-    if (!allowFallback) throw error;
+    if (!allowFallback) throw new ClassifierChainError(String(error), attempts);
   }
   for (const model of NVIDIA_CLASSIFIER_FALLBACKS) {
     try {
@@ -2847,7 +2856,10 @@ async function callClassifierWithFallback(
       attempts.push({ provider: "nvidia", model, status: "error", error: String(error).slice(0, 500) });
     }
   }
-  throw new Error(`Alle KI-Modelle sind fehlgeschlagen: ${attempts.map((attempt) => `${attempt.model} (${attempt.status})`).join(", ")}`);
+  throw new ClassifierChainError(
+    `Alle KI-Modelle sind fehlgeschlagen: ${attempts.map((attempt) => `${attempt.model} (${attempt.status})`).join(", ")}`,
+    attempts,
+  );
 }
 
 // Fixed ROOTS offering catalog (6P-Model, roots-consultants.com). Sales-track
@@ -3748,6 +3760,8 @@ async function tagArticle(
   } catch (error) {
     console.error(`Classification failed for article ${articleId}:`, error);
     if (options.preserveExistingOnAiFailure) throw error;
+    const failedAttempts = error instanceof ClassifierChainError ? error.attempts : [];
+    const failedDuringReview = Boolean(primary);
     await admin.schema("signal_layer").from("articles").update({
       cleaned_content: cleanedContent,
       classification_status: "error",
@@ -3768,11 +3782,14 @@ async function tagArticle(
         models: {
           primary_configured: config.ai.primary_model,
           primary_actual: primaryExecution?.actualModel || null,
-          reviewer_configured: reviewerExecution ? config.ai.review_model : null,
+          reviewer_configured: failedDuringReview || reviewerExecution ? config.ai.review_model : null,
           reviewer_actual: reviewerExecution?.actualModel || reviewerModel,
           fallback_used: Boolean(primaryExecution?.fallbackUsed || reviewerExecution?.fallbackUsed),
           fallback_model: primaryExecution?.fallbackUsed ? primaryExecution.actualModel : reviewerExecution?.fallbackUsed ? reviewerExecution.actualModel : null,
-          attempts: { primary: primaryExecution?.attempts || [], reviewer: reviewerExecution?.attempts || [] },
+          attempts: {
+            primary: primaryExecution?.attempts || (failedDuringReview ? [] : failedAttempts),
+            reviewer: reviewerExecution?.attempts || (failedDuringReview ? failedAttempts : []),
+          },
           prompt_version: CLASSIFIER_PROMPT_VERSION,
         },
         error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
