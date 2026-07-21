@@ -2664,7 +2664,14 @@ async function matchRootsOffering(
     offerings,
     salesContext?.triggerIds || [],
   );
-  if (deterministicMatch) return deterministicMatch;
+  if (deterministicMatch) {
+    const deterministicOffering = offerings.find((offering) => offering.id === deterministicMatch.id);
+    // Deterministic rules may use the model-written challenge for context,
+    // but the defining service concept must still exist in the source article.
+    if (deterministicOffering && offeringFitGuardrail(deterministicOffering, "", articleContext)) {
+      return deterministicMatch;
+    }
+  }
   const key = await getGeminiKey();
   if (!key) return null;
   const catalog = offerings.map((o) => `[${o.pillar || "sonstige"}] ${o.id}: ${o.label} — ${o.description}`).join("\n");
