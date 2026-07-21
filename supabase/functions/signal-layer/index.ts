@@ -4246,7 +4246,7 @@ Deno.serve(async (req: Request) => {
         const { data, error } = await admin.schema("signal_layer").from("pipeline_settings")
           .select("config, version, updated_at").eq("id", "active").single();
         if (error) return errorResponse(origin, error.message, 500);
-        return corsResponse(origin, { settings: { ...data, config: mergePipelineConfig(data.config) } });
+        return corsResponse(origin, { settings: { ...data, config: mergePipelineConfig(data.config), prompt_version: CLASSIFIER_PROMPT_VERSION } });
       }
 
       case "list_gemini_models": {
@@ -4285,7 +4285,7 @@ Deno.serve(async (req: Request) => {
         }).eq("id", "active").select("config, version, updated_at").single();
         if (error) return errorResponse(origin, error.message, 500);
         pipelineConfigCache = { value: requested, at: Date.now() };
-        return corsResponse(origin, { settings: data });
+        return corsResponse(origin, { settings: { ...data, prompt_version: CLASSIFIER_PROMPT_VERSION } });
       }
 
       case "preview_pipeline_impact": {
