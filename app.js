@@ -87,6 +87,54 @@ function technicalAuditPill(articleId, label = "Technische Prüfung") {
   return `<button type="button" class="technical-audit-pill" data-audit-article-id="${escapeHtml(articleId)}"><i class="fa-solid fa-code-branch"></i>${escapeHtml(label)}</button>`;
 }
 
+function reviewTrackMeta(tracks = []) {
+  const normalized = [...new Set((tracks || []).filter((track) => ["marketing", "sales"].includes(track)))];
+  const hasMarketing = normalized.includes("marketing");
+  const hasSales = normalized.includes("sales");
+  if (hasMarketing && hasSales) return {
+    label: "Marketing + Sales",
+    icon: "fa-solid fa-arrows-split-up-and-left",
+    explanation: "Der Artikel zeigt sowohl einen möglichen Marketing-Nutzwert als auch eine mögliche konkrete Sales-Chance. In beiden Prüfpfaden ist aber mindestens ein Pflichtkriterium noch nicht sicher genug belegt – deshalb entscheidet ein Mensch.",
+  };
+  if (hasSales) return {
+    label: "Sales",
+    icon: "fa-solid fa-bullseye",
+    explanation: "Der Artikel könnte eine konkrete Opportunity bei einem relevanten Unternehmen zeigen. Unternehmensbezug, Problem, ROOTS-Leistungsfit, Timing oder Kaufnähe sind jedoch noch nicht vollständig sicher belegt.",
+  };
+  return {
+    label: "Marketing",
+    icon: "fa-solid fa-lightbulb",
+    explanation: "Der Artikel könnte als fachliche Grundlage für ein ROOTS-Marketing-Asset nützlich sein. Neuheit, Übertragbarkeit, fachliche Substanz oder Relevanz sind jedoch noch nicht vollständig sicher belegt.",
+  };
+}
+
+function reviewTrackPill(tracks = []) {
+  const meta = reviewTrackMeta(tracks);
+  return `<span class="review-track-wrap" tabindex="0">
+    <span class="review-track-pill"><i class="${meta.icon}"></i>Prüffall · ${escapeHtml(meta.label)}</span>
+    <span class="review-track-popover" role="tooltip"><b>Warum ${escapeHtml(meta.label)}?</b><span>${escapeHtml(meta.explanation)}</span><small>Die Zuordnung zeigt, in welchem fachlichen Prüfpfad die offene Entscheidung liegt. Sie ist noch keine Freigabe für die Ergebnisansicht.</small></span>
+  </span>`;
+}
+
+function bindReviewTrackPopovers(container) {
+  container?.querySelectorAll(".review-track-wrap").forEach((wrap) => {
+    const popover = wrap.querySelector(".review-track-popover");
+    const position = () => {
+      if (!popover) return;
+      const rect = wrap.getBoundingClientRect();
+      const margin = 12;
+      const gap = 6;
+      const width = Math.min(330, window.innerWidth - margin * 2);
+      popover.style.width = `${width}px`;
+      const height = Math.min(popover.scrollHeight, window.innerHeight - margin * 2, 300);
+      popover.style.left = `${Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin))}px`;
+      popover.style.top = `${window.innerHeight - rect.bottom >= height + gap ? rect.bottom + gap : Math.max(margin, rect.top - height - gap)}px`;
+    };
+    wrap.addEventListener("mouseenter", position);
+    wrap.addEventListener("focusin", position);
+  });
+}
+
 function normalizeTextWithMap(value) {
   const text = decodeHtmlEntities(value);
   let normalized = "";
@@ -283,6 +331,10 @@ function cacheEls() {
   els.backfillProgressBar = document.getElementById("backfill-progress-bar");
   els.backfillCurrentArticle = document.getElementById("backfill-current-article");
   els.backfillProgressDetail = document.getElementById("backfill-progress-detail");
+  els.statusErrorPanel = document.getElementById("status-error-panel");
+  els.statusErrorToggle = document.getElementById("status-error-toggle");
+  els.statusErrorCount = document.getElementById("status-error-count");
+  els.statusErrorWindow = document.getElementById("status-error-window");
   els.apiErrorList = document.getElementById("api-error-list");
   els.pipelineVersion = document.getElementById("pipeline-version");
   els.btnSavePipeline = document.getElementById("btn-save-pipeline");
@@ -955,8 +1007,9 @@ async function loadPipelineReview() {
   const { articles } = await callApi("list_review_articles", { status: "uncertain", limit: 50 });
   target.innerHTML = (articles || []).map((article) => {
     const tracks = article.manual_review_tracks || [];
-    return `<article class="review-item" data-article-id="${article.id}"><div class="review-item-main"><div class="audit-chip-row"><span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span>${tracks.map((track) => `<span class="audit-chip">${track === "sales" ? "Sales" : "Marketing"}</span>`).join("")}</div><strong class="test-result-title">${escapeText(article.title_de || article.title)}</strong><p class="test-result-reason">${escapeText(article.manual_review_reason || article.ai_rationale || "Unsichere Evidenz oder Einordnung")}</p>${technicalAuditPill(article.id)}</div></article>`;
+    return `<article class="review-item" data-article-id="${article.id}"><div class="review-item-main"><div class="audit-chip-row"><span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span>${reviewTrackPill(tracks)}</div><strong class="test-result-title">${escapeText(article.title_de || article.title)}</strong><p class="test-result-reason">${escapeText(article.manual_review_reason || article.ai_rationale || "Unsichere Evidenz oder Einordnung")}</p>${technicalAuditPill(article.id)}</div></article>`;
   }).join("") || `<div class="keyword-empty">Aktuell sind keine echten Grenzfälle in der manuellen Prüfung.</div>`;
+  bindReviewTrackPopovers(target);
 }
 
 const TAXONOMY_KINDS = [
@@ -1666,13 +1719,14 @@ async function loadReviewArticles() {
           ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
           <p class="finding-rationale"><i class="fa-solid fa-scale-balanced"></i><span>${escapeText(article.manual_review_reason || "Mindestens ein fachliches Pflichtkriterium ist noch offen.")}</span></p>
           <div class="finding-meta">
-            ${tracks.map((track) => `<span class="audit-chip">${track === "sales" ? "Sales" : "Marketing"}</span>`).join("")}
+            ${reviewTrackPill(tracks)}
             ${article.primary_company ? `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
             ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
           </div>
         </article>`;
     }).join("");
+    bindReviewTrackPopovers(els.reviewList);
   } catch (err) {
     els.reviewList.innerHTML = `<div class="track-card-empty">Prüfliste konnte nicht geladen werden: ${escapeHtml(err.message)}</div>`;
   }
@@ -1785,8 +1839,183 @@ function auditJson(value) {
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
 
-function auditSection(title, icon, value, open = false) {
-  return `<details class="audit-section" ${open ? "open" : ""}><summary><i class="${icon}"></i>${escapeHtml(title)}</summary><div class="audit-section-content"><pre class="audit-json">${escapeHtml(auditJson(value))}</pre></div></details>`;
+const AUDIT_SECTION_INTROS = {
+  extraction: "Hier wird geprüft, ob wirklich ein vollständiger redaktioneller Artikel vorliegt, in welcher Sprache er geschrieben ist und ob eine saubere deutsche Lesefassung angezeigt werden kann.",
+  deterministic: "Diese Regeln laufen ohne KI. Sie entfernen eindeutig ungeeignete Seiten und Dubletten, bevor Modellkosten entstehen.",
+  models: "Hier stehen die verwendeten KI-Modelle und alle fachlichen Aussagen, die nach der technischen Validierung übrig geblieben sind. Artikeltext gilt dabei immer nur als Datenquelle, nie als Anweisung.",
+  gates: "Gates sind Pflichtschranken. Ein positives Thema allein reicht nicht: Marketing und Sales müssen ihre jeweiligen Belege und Mindestbedingungen separat bestehen.",
+  scores: "Der Score misst den konkreten Nutzwert für ROOTS – nicht die Sicherheit des Modells. Die finale Entscheidung zeigt, wohin der Artikel tatsächlich geroutet wurde.",
+  operations: "Hier wird nachvollziehbar, wie viele KI-Aufrufe und Token angefallen sind, was sie gekostet haben und ob die technischen Worker erfolgreich liefen.",
+};
+
+const AUDIT_FIELD_META = {
+  version: ["Prüfpfad-Version", "Version des technischen Formats, in dem diese Nachweise gespeichert wurden."],
+  completed_at: ["Prüfung abgeschlossen", "Zeitpunkt, an dem die Klassifikation vollständig gespeichert wurde."],
+  extraction: ["Extraktion", "Gespeicherte Ergebnisse der Textgewinnung, Sprachprüfung und Aufbereitung."],
+  diagnostic: ["Extraktionsdiagnose", "Technische Diagnose des Artikelabrufs und der Textgewinnung."],
+  quality: ["Textqualität", "Messwerte, mit denen die Pipeline einen echten ausreichend langen Artikel bestätigt."],
+  code: ["Diagnosecode", "Maschinenlesbare Fehler- oder Zustandsart."],
+  message: ["Erläuterung", "Konkrete verständliche Beschreibung des erkannten Zustands."],
+  http_status: ["HTTP-Status", "Antwortcode der Quellseite, zum Beispiel 200 für erfolgreich oder 403 für blockiert."],
+  content_length: ["Textlänge", "Anzahl der verfügbaren Zeichen nach dem Abruf."],
+  cleaned_length: ["Bereinigte Textlänge", "Zeichen nach dem Entfernen von Navigation, Werbung und Seitenelementen."],
+  sufficient: ["Text ausreichend", "Zeigt, ob Länge und redaktionelle Struktur für eine belastbare Analyse genügen."],
+  reason: ["Begründung", "Erklärung, warum diese Teilentscheidung getroffen wurde."],
+  length: ["Zeichen", "Gemessene Länge des geprüften Textes."],
+  word_count: ["Wörter", "Anzahl der erkannten Wörter im redaktionellen Text."],
+  words: ["Wörter", "Anzahl der erkannten Wörter im redaktionellen Text."],
+  sentence_count: ["Sätze", "Anzahl der erkannten vollständigen Sätze."],
+  sentences: ["Sätze", "Anzahl der erkannten vollständigen Sätze."],
+  recovered: ["Automatisch wiederhergestellt", "Zeigt, ob ein Fallback den zuvor fehlenden Volltext retten konnte."],
+  checked_at: ["Geprüft am", "Zeitpunkt dieser technischen Prüfung."],
+  detected_language: ["Erkannte Sprache", "Sprache des ursprünglich extrahierten Artikels."],
+  final_language: ["Anzeigesprache", "Sprache der gespeicherten und angezeigten Lesefassung."],
+  hard_rejection_reasons: ["Feste Ausschlussregeln", "Eindeutige Gründe, die eine KI-Analyse oder Veröffentlichung verhindern."],
+  exact_duplicate_of: ["Exakte Dublette", "Verweis auf einen bereits vorhandenen inhaltsgleichen Artikel."],
+  title_duplicate_of: ["Titel-Dublette", "Verweis auf eine sehr ähnliche redaktionelle Titelvariante."],
+  event_duplicate_of: ["Ereignis-Dublette", "Verweis auf einen Artikel zum selben bereits erfassten Ereignis."],
+  duplicate_of: ["Dublette von", "Kennung des bereits vorhandenen Originalartikels."],
+  company_candidates: ["Mögliche Zielunternehmen", "Vorab erkannte Tier-1-Unternehmen, die die KI im Kontext prüfen darf."],
+  deterministic: ["Feste Regeln", "Prüfergebnisse der deterministischen Vorfilter ohne KI."],
+  models: ["KI-Prüfung", "Modelle, Regelversionen und validierte strukturierte Antworten."],
+  primary: ["Hauptmodell", "KI-Modell für Klassifikation, Begründung und Score-Komponenten."],
+  reviewer: ["Zweitprüfung", "Optionales zweites KI-Modell für unsichere Grenzfälle."],
+  prompt_version: ["Regelversion", "Version der fachlichen Anweisungen, mit denen dieser Artikel geprüft wurde."],
+  primary_output: ["Erste KI-Antwort", "Validierte Antwort des Hauptmodells vor einer möglichen Zweitprüfung."],
+  final_validated_output: ["Finale KI-Antwort", "Nach Schema- und Textbelegprüfung tatsächlich weiterverwendete Modellantwort."],
+  relevance_status: ["KI-Vorschlag", "Fachlicher Vorschlag der KI vor den abschließenden Server-Gates."],
+  overall_confidence: ["KI-Sicherheit", "Wie sicher die KI ihre fachliche Einordnung einschätzt. Das ist nicht der ROOTS-Relevanzscore."],
+  article_type: ["Artikeltyp", "Erkannte redaktionelle Form, zum Beispiel Studie, Analyse oder Unternehmens-Update."],
+  language: ["Sprache", "Von der Pipeline erkannte Sprache dieses Textes oder Ergebnisses."],
+  event_key: ["Ereignisschlüssel", "Technische Kennung, mit der Berichte zum selben Ereignis als Varianten erkannt werden."],
+  title_de: ["Deutscher Titel", "Bereinigter deutscher Anzeigetitel; der Originaltitel bleibt gespeichert."],
+  summary: ["Zusammenfassung", "Kurze sachliche Zusammenfassung des Artikelinhalts."],
+  rationale: ["KI-Begründung", "Fachliche Begründung der KI auf Basis belegter Aussagen im Artikel."],
+  evidence: ["Textbeleg", "Wörtliche Stelle aus dem Artikel, die diese Aussage stützt."],
+  confidence: ["Sicherheit", "Sicherheitswert dieser einzelnen Zuordnung."],
+  topics: ["Themen", "Fachliche ROOTS-Themen, die durch Textbelege gestützt werden."],
+  territory: ["Territory", "Übergeordneter strategischer Wirkungsbereich des Artikels."],
+  companies: ["Unternehmen", "Im Text erkannte Unternehmen samt ihrer tatsächlichen Rolle im Artikel."],
+  name: ["Name", "Im Artikel oder Ergebnis gespeicherte eindeutige Bezeichnung."],
+  role: ["Rolle im Artikel", "Unterscheidet Hauptgegenstand, aktiv Beteiligte und nur beiläufig erwähnte Unternehmen oder Personen."],
+  id: ["Technische Kennung", "Stabile interne Kennung dieser Kategorie oder Zuordnung."],
+  people: ["Personen und Rollen", "Explizit genannte Ansprechpartner oder Buying-Center-Rollen."],
+  sales_triggers: ["Sales-Trigger", "Belegte strategische Veränderung oder Herausforderung bei einem Zielunternehmen."],
+  market_insight_transferable: ["Insight übertragbar", "Zeigt, ob der fachliche Erkenntniswert über den Einzelfall hinaus für ROOTS-Kunden nutzbar ist."],
+  market_insight_explanation: ["Übertragbarkeit erklärt", "Begründet, wie und warum sich der Insight auf andere Marken, Märkte oder Kunden übertragen lässt."],
+  marketing_asset_value: ["Marketing-Asset-Wert", "Einzelbewertung des Nutzwerts als Grundlage für ein ROOTS-Marketing-Asset."],
+  sales_opportunity_value: ["Sales-Opportunity-Wert", "Einzelbewertung der konkreten Beratungs- und Ansprachechance bei einem Zielunternehmen."],
+  marketing_use: ["Marketing-Nutzwert", "Bewertung, ob der Inhalt als belastbare Grundlage für ein ROOTS-Asset taugt."],
+  sales_use: ["Sales-Nutzwert", "Bewertung, ob ein konkreter Bedarf mit ROOTS-Leistungen verbindbar ist."],
+  novelty: ["Neuheitswert", "Bewertet, wie neu oder überraschend die Erkenntnis für Marketingentscheider ist."],
+  strategic_value: ["Strategischer Wert", "Bewertet die Bedeutung für strategische Marketingentscheidungen statt nur operative Einzelfragen."],
+  transferability: ["Übertragbarkeit", "Bewertet, wie gut sich der Inhalt auf mehrere ROOTS-Kunden und Branchen anwenden lässt."],
+  evidence_strength: ["Belegstärke", "Bewertet Qualität und Eindeutigkeit der im Artikel vorhandenen Nachweise."],
+  problem_strength: ["Problemstärke", "Bewertet, wie konkret und relevant das Unternehmensproblem beschrieben ist."],
+  roots_fit: ["ROOTS-Fit", "Bewertet, wie direkt das belegte Problem zum ROOTS-Leistungsportfolio passt."],
+  buying_intent: ["Kauf- oder Handlungsnähe", "Bewertet, ob konkrete Suche nach Hilfe, Budget, Projekt oder Umsetzungsdruck erkennbar ist."],
+  timing: ["Timing", "Bewertet, wie aktuell und zeitkritisch die Opportunity ist."],
+  publishable: ["Als Asset nutzbar", "Zeigt, ob Inhalt und Belege bereits stark genug für eine fachliche Weiterverarbeitung sind."],
+  sufficient_substance: ["Genügend Substanz", "Zeigt, ob der Artikel mehr als Behauptungen, Werbung oder eine kurze Meldung enthält."],
+  transferable_value: ["Übertragbarer Nutzwert", "Konkret benannter Erkenntniswert für weitere Kunden oder Marketingfragen."],
+  actionable: ["Konkreter Handlungsbedarf", "Zeigt, ob aus dem beschriebenen Problem eine plausible Beratungsmaßnahme ableitbar ist."],
+  company_challenge: ["Unternehmensproblem", "Im Artikel ausdrücklich belegte Herausforderung des relevanten Unternehmens."],
+  roots_relevance: ["ROOTS-Relevanz", "Erklärt, warum ROOTS mit Strategie- und Marketingberatung sinnvoll ansetzen kann."],
+  personalization_facts: ["Fakten für Ansprache", "Belegte unternehmensspezifische Fakten, die eine individuelle Sales-Ansprache ermöglichen."],
+  buying_center: ["Buying Center", "Vorschlag relevanter Rollen für eine mögliche Ansprache; keine erfundenen Personen."],
+  recommended_roles: ["Empfohlene Rollen", "Rollen, die fachlich für das belegte Problem zuständig sein können."],
+  research_required: ["Weitere Recherche nötig", "Zeigt, ob konkrete Ansprechpartner vor einer Ansprache noch verifiziert werden müssen."],
+  eligible: ["KI-seitig geeignet", "Vorschlag der KI, ob der jeweilige Pfad grundsätzlich die fachlichen Kriterien erfüllt."],
+  routing_decisions: ["KI-Routingvorschlag", "Separater KI-Vorschlag für Marketing und Sales vor den festen Serverregeln."],
+  gates: ["Pflichtschranken", "Ergebnisse der festen Marketing-, Sales-, Datums- und Darstellungsregeln."],
+  scores: ["Relevanzscores", "Marketing- und Sales-Nutzwert samt Einzelkomponenten und Begründungen."],
+  marketing: ["Marketing-Pfad", "Alle Werte, die ausschließlich die Eignung für Marketing betreffen."],
+  sales: ["Sales-Pfad", "Alle Werte, die ausschließlich die Eignung für Sales betreffen."],
+  marketing_route_candidate: ["Marketing-Kandidat", "Die KI hat grundsätzlich möglichen Marketing-Nutzwert erkannt."],
+  marketing_eligible: ["Marketing freigabefähig", "Alle festen Marketing-Pflichtkriterien sind vollständig erfüllt."],
+  marketing_borderline: ["Marketing-Grenzfall", "Marketing ist plausibel, aber mindestens ein Pflichtbeleg bleibt offen."],
+  sales_route_candidate: ["Sales-Kandidat", "Die KI hat grundsätzlich eine mögliche konkrete Opportunity erkannt."],
+  account_specific_sales_evidence: ["Unternehmensspezifischer Beleg", "Problem oder Veränderung ist dem Zielunternehmen ausdrücklich zugeordnet."],
+  roots_sales_opportunity: ["ROOTS-Opportunity", "Problem, Beratungsbedarf und ROOTS-Leistungsfit bilden gemeinsam eine belastbare Chance."],
+  offering_match: ["ROOTS-Leistungsmatch", "Spezifischste passende Leistung aus dem gespeicherten ROOTS-Portfolio."],
+  sales_eligible: ["Sales freigabefähig", "Tier-1-Bezug, strategisches Problem, Textbeleg und Leistungsfit sind vollständig erfüllt."],
+  sales_borderline: ["Sales-Grenzfall", "Eine Opportunity ist plausibel, aber noch nicht sicher genug für automatisches Sales-Routing."],
+  publication_date_present: ["Datum vorhanden", "Ohne belastbares Veröffentlichungsdatum erscheint der Artikel nur im Archiv."],
+  display_formatting_required: ["Aufbereitung erforderlich", "Text muss übersetzt oder redaktionell formatiert werden."],
+  display_ready: ["Anzeigefertig", "Titel und Text sind für die Benutzeroberfläche vollständig vorbereitet."],
+  score: ["Relevanzscore", "Nutzwert von 0 bis 100 für den jeweiligen ROOTS-Anwendungsfall."],
+  components: ["Score-Bausteine", "Einzelbewertungen, aus denen der Relevanzscore nachvollziehbar zusammengesetzt wird."],
+  caps: ["Score-Begrenzungen", "Feste Deckel verhindern hohe Scores bei fehlenden Pflichtmerkmalen."],
+  outcome: ["Finale Entscheidung", "Nach KI, Belegprüfung und festen Gates tatsächlich gespeichertes Ergebnis."],
+  status: ["Status", "Technischer oder fachlicher Endzustand dieses Schrittes."],
+  routes: ["Freigegebene Bereiche", "Ergebnisbereiche, in denen der Artikel tatsächlich erscheinen darf."],
+  routing: ["Routing", "Gespeicherte Zielbereiche des Artikels."],
+  manual_review_tracks: ["Manuelle Prüfpfade", "Bereiche, in denen ein Mensch die noch offene Fachentscheidung abwägen soll."],
+  manual_review_reason: ["Grund für manuelle Prüfung", "Konkrete noch offene Pflichtfrage für die menschliche Entscheidung."],
+  rejection_reasons: ["Ausschlussgründe", "Regeln oder Belege, die gegen eine automatische Auswahl sprechen."],
+  usage_events: ["KI-Aufrufe", "Einzelne protokollierte Modellaufrufe einschließlich Token und Kosten."],
+  article_totals: ["Artikel-Summe", "Über alle KI-Schritte dieses Artikels addierter Verbrauch."],
+  requests: ["Aufrufe", "Anzahl der an ein KI-Modell gesendeten Anfragen."],
+  input_tokens: ["Input-Token", "Token für Prompt, Regeln und Artikeltext."],
+  output_tokens: ["Output-Token", "Token der sichtbaren strukturierten Modellantwort."],
+  thinking_tokens: ["Thinking-Token", "Zusätzlicher interner Modellaufwand, sofern vom Anbieter ausgewiesen."],
+  total_tokens: ["Token gesamt", "Summe des ausgewiesenen Modellverbrauchs."],
+  cost_usd: ["Kosten in USD", "Aus Tokenmenge und hinterlegtem Modellpreis berechnete Kosten."],
+  cost_eur: ["Kosten in EUR", "Kosten mit dem zum Buchungszeitpunkt gespeicherten Wechselkurs."],
+  estimated_cost_usd: ["Kosten in USD", "Für diesen konkreten KI-Aufruf berechnete Kosten."],
+  operation: ["KI-Schritt", "Art des Aufrufs, zum Beispiel Klassifikation, Review, Übersetzung oder Leistungsmatch."],
+  model: ["Modell", "Tatsächlich verwendetes KI-Modell."],
+  analysis_job: ["Analyse-Worker", "Technischer Auftrag, der die Artikelanalyse ausgeführt hat."],
+  browser_job: ["Browser-Fallback", "Optionaler Playwright-Auftrag für Seiten, die JavaScript oder Browser-Rendering benötigen."],
+  error: ["Technischer Fehler", "Gespeicherte Fehlermeldung dieses Verarbeitungsschritts."],
+};
+
+function humanizeAuditKey(key) {
+  return String(key || "Wert").replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function auditFriendlyValue(value) {
+  if (value === null || value === undefined || value === "") return "Nicht vorhanden";
+  if (typeof value === "boolean") return value ? "Ja" : "Nein";
+  if (typeof value === "number") return Number.isInteger(value) ? value.toLocaleString("de-DE") : value.toLocaleString("de-DE", { maximumFractionDigits: 6 });
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
+    const date = new Date(text);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleString("de-DE");
+  }
+  return text;
+}
+
+function flattenAuditValue(value, path = [], entries = []) {
+  if (Array.isArray(value)) {
+    if (!value.length) entries.push({ path, value: "Keine Einträge" });
+    else if (value.every((item) => item === null || ["string", "number", "boolean"].includes(typeof item))) entries.push({ path, value: value.map(auditFriendlyValue).join(" · ") });
+    else value.forEach((item, index) => flattenAuditValue(item, [...path, `Eintrag ${index + 1}`], entries));
+    return entries;
+  }
+  if (value && typeof value === "object") {
+    const pairs = Object.entries(value);
+    if (!pairs.length) entries.push({ path, value: "Keine Angaben" });
+    else pairs.forEach(([key, child]) => flattenAuditValue(child, [...path, key], entries));
+    return entries;
+  }
+  entries.push({ path, value: auditFriendlyValue(value) });
+  return entries;
+}
+
+function auditTextView(sectionId, value) {
+  const entries = flattenAuditValue(value);
+  const rows = entries.map((entry) => {
+    const technicalKey = entry.path.filter((part) => !String(part).startsWith("Eintrag ")).slice(-1)[0] || "Wert";
+    const [label, explanation] = AUDIT_FIELD_META[technicalKey] || [humanizeAuditKey(technicalKey), "Gespeicherter Teilwert dieses Prüfschritts."];
+    const breadcrumb = entry.path.map((part) => String(part).startsWith("Eintrag ") ? part : (AUDIT_FIELD_META[part]?.[0] || humanizeAuditKey(part))).join(" › ");
+    return `<div class="audit-explanation-row"><div><b>${escapeHtml(label)}</b><small>${escapeHtml(explanation)}</small><code>${escapeHtml(breadcrumb || technicalKey)}</code></div><strong>${escapeText(entry.value)}</strong></div>`;
+  }).join("");
+  return `<div class="audit-explainer"><p>${escapeHtml(AUDIT_SECTION_INTROS[sectionId] || "Dieser Abschnitt erklärt die gespeicherten Prüfdaten in Alltagssprache.")}</p><div class="audit-explanation-list">${rows || '<div class="audit-empty">Für diesen Schritt wurden keine Werte gespeichert.</div>'}</div></div>`;
+}
+
+function auditSection(sectionId, title, icon, value) {
+  return `<details class="audit-section" data-audit-section="${escapeHtml(sectionId)}"><summary><span class="audit-section-title"><i class="${icon}"></i>${escapeHtml(title)}</span><span class="audit-view-toggle" role="group" aria-label="Darstellung wählen"><button type="button" class="is-active" data-audit-view="text" aria-pressed="true">Text</button><button type="button" data-audit-view="code" aria-pressed="false">Code</button></span></summary><div class="audit-section-content"><div class="audit-view audit-view--text">${auditTextView(sectionId, value)}</div><div class="audit-view audit-view--code" hidden><pre class="audit-json">${escapeHtml(auditJson(value))}</pre></div></div></details>`;
 }
 
 async function openTechnicalAudit(articleId) {
@@ -1811,12 +2040,12 @@ async function openTechnicalAudit(articleId) {
           <div class="audit-summary-card"><span>Modelle</span><b>${escapeHtml([article.ai_model, article.reviewer_model].filter(Boolean).join(" + ") || "Regelbasiert")}</b></div>
           <div class="audit-summary-card"><span>KI-Verbrauch</span><b>${totalTokens.toLocaleString("de-DE")} Token · $${totalCost.toFixed(6)}</b></div>
         </div>
-        ${auditSection("1 · Extraktion, Sprache und Formatierung", "fa-solid fa-file-arrow-down", audit.extraction || article.extraction_diagnostic, true)}
-        ${auditSection("2 · Deterministische Vorfilter und Dubletten", "fa-solid fa-filter", audit.deterministic || {}, true)}
-        ${auditSection("3 · KI-Modelle und validierte Ausgaben", "fa-solid fa-wand-magic-sparkles", audit.models || { final_validated_output: article.classification_payload })}
-        ${auditSection("4 · Marketing-/Sales-Gates und Regeln", "fa-solid fa-code-branch", audit.gates || article.routing_evidence, true)}
-        ${auditSection("5 · Relevanzscore und finale Entscheidung", "fa-solid fa-chart-line", { scores: audit.scores || article.route_score_details, outcome: audit.outcome || { status: article.classification_status, routing: article.routing, manual_review_tracks: tracks }, rationale: article.ai_rationale, rejection_reasons: article.rejection_reasons }, true)}
-        ${auditSection("6 · Token, Kosten und Worker-Läufe", "fa-solid fa-coins", { usage_events: usage, article_totals: { requests: article.gemini_request_count, input_tokens: article.gemini_input_tokens, output_tokens: article.gemini_output_tokens, thinking_tokens: article.gemini_thinking_tokens, total_tokens: article.gemini_total_tokens, cost_usd: article.gemini_cost_usd, cost_eur: article.gemini_cost_eur }, analysis_job: trace.analysis_job, browser_job: trace.browser_job })}
+        ${auditSection("extraction", "1 · Extraktion, Sprache und Formatierung", "fa-solid fa-file-arrow-down", audit.extraction || article.extraction_diagnostic)}
+        ${auditSection("deterministic", "2 · Deterministische Vorfilter und Dubletten", "fa-solid fa-filter", audit.deterministic || {})}
+        ${auditSection("models", "3 · KI-Modelle und validierte Ausgaben", "fa-solid fa-wand-magic-sparkles", audit.models || { final_validated_output: article.classification_payload })}
+        ${auditSection("gates", "4 · Marketing-/Sales-Gates und Regeln", "fa-solid fa-code-branch", audit.gates || article.routing_evidence)}
+        ${auditSection("scores", "5 · Relevanzscore und finale Entscheidung", "fa-solid fa-chart-line", { scores: audit.scores || article.route_score_details, outcome: audit.outcome || { status: article.classification_status, routing: article.routing, manual_review_tracks: tracks }, rationale: article.ai_rationale, rejection_reasons: article.rejection_reasons })}
+        ${auditSection("operations", "6 · Token, Kosten und Worker-Läufe", "fa-solid fa-coins", { usage_events: usage, article_totals: { requests: article.gemini_request_count, input_tokens: article.gemini_input_tokens, output_tokens: article.gemini_output_tokens, thinking_tokens: article.gemini_thinking_tokens, total_tokens: article.gemini_total_tokens, cost_usd: article.gemini_cost_usd, cost_eur: article.gemini_cost_eur }, analysis_job: trace.analysis_job, browser_job: trace.browser_job })}
       </div>`;
   } catch (error) {
     els.technicalAuditContent.innerHTML = `<button type="button" class="article-detail-close technical-audit-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button><div class="detail-loading">Technische Prüfung konnte nicht geladen werden: ${escapeHtml(error.message)}</div>`;
@@ -2234,7 +2463,7 @@ function scheduleStatusRefresh(isActive) {
 
 async function loadLastRun() {
   try {
-    const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, analysis_error_breakdown: analysisErrors = [], cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
+    const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, analysis_error_breakdown: analysisErrors = [], error_window: errorWindow = {}, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
     const formatEur = (value) => value === null || value === undefined
       ? "Kurs wird geladen"
       : `${Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -2356,12 +2585,6 @@ async function loadLastRun() {
     if (browserRecovered) {
       crawlResults.push({ value: browserRecovered, label: "Volltexte wiederhergestellt", tone: "success", icon: "fa-solid fa-file-circle-check" });
     }
-    const browserFailed = Number(health?.browser_failed || 0);
-    if (browserFailed) {
-      crawlResults.push({ value: browserFailed, label: "Browser-Abrufe ohne Volltext", tone: "error", icon: "fa-solid fa-triangle-exclamation",
-        detail: "Vollständig gerendert, aber weiterhin Paywall, zu wenig redaktioneller Text oder technischer Browserfehler",
-        detailLabel: "Browser-Fallback abgeschlossen", detailExplain: "Chromium konnte diese Seiten nicht als vollständige redaktionelle Artikel bestätigen. Echte Paywalls ohne Zugang bleiben separat gekennzeichnet." });
-    }
     els.sourceHealthNote.hidden = crawlResults.length === 0;
     els.sourceHealthNote.innerHTML = crawlResults.map((result) =>
       `<span class="crawl-result-pill crawl-result-pill--${result.tone}"${result.detail ? ` data-error-tip="1" data-error-label="${escapeHtml(result.detailLabel || "Paywall-Quellen")}" data-error-explain="${escapeHtml(result.detailExplain || "Diese Quellen blockieren den vollständigen Direktabruf. Artikel ohne Volltext werden nicht künstlich analysiert.")}" data-error-raw="${escapeHtml(result.detail)}" tabindex="0"` : ""}><i class="${result.icon}"></i>${result.value.toLocaleString("de-DE")} ${result.label}</span>`
@@ -2434,20 +2657,42 @@ async function loadLastRun() {
       els.backfillCurrentArticle.textContent = "";
       document.getElementById("backfill-status")?.classList.remove("is-live");
     }
-    const visibleErrors = analysisErrors.length ? analysisErrors : (backfill?.error_breakdown || []);
-    els.apiErrorList.innerHTML = visibleErrors.map((error) => {
+    const deduplicatedErrors = [...(analysisErrors || []).reduce((map, error) => {
+      const key = String(error.code || error.label || "unknown");
+      if (!map.has(key)) map.set(key, error);
+      return map;
+    }, new Map()).values()];
+    const totalVisibleErrors = deduplicatedErrors.reduce((sum, error) => sum + Number(error.count || 0), 0);
+    els.statusErrorPanel.hidden = totalVisibleErrors === 0;
+    els.statusErrorCount.textContent = totalVisibleErrors.toLocaleString("de-DE");
+    const windowDate = errorWindow?.started_at ? new Date(errorWindow.started_at) : null;
+    const windowDateLabel = windowDate && !Number.isNaN(windowDate.getTime())
+      ? windowDate.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+      : "aktueller Zeitraum";
+    els.statusErrorWindow.textContent = `${errorWindow?.label || "Seit dem letzten Lauf"} · ab ${windowDateLabel}`;
+    const groupedErrors = deduplicatedErrors.reduce((groups, error) => {
+      const group = error.group || "Weitere Fehler";
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(error);
+      return groups;
+    }, new Map());
+    const renderErrorChip = (error) => {
       const sources = (error.sources || []).map((source) => `<span><span>${escapeHtml(source.company)}</span><b>${Number(source.count || 0).toLocaleString("de-DE")}</b></span>`).join("");
       const diagnostics = (error.diagnostics || []).map((diagnostic) => `<span class="analysis-error-cause" title="${escapeHtml(diagnostic.message || "")}"><i class="fa-solid fa-magnifying-glass"></i><span><b>${escapeHtml(diagnostic.label)}</b><small>${escapeHtml(diagnostic.message || "")}</small></span><strong>${Number(diagnostic.count || 0).toLocaleString("de-DE")}</strong></span>`).join("");
       return `<span class="analysis-error-chip" tabindex="0">
         <span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-triangle-exclamation"></i>${Number(error.count || 0).toLocaleString("de-DE")} ${escapeHtml(error.label)}</span>
         <span class="analysis-error-popover" role="tooltip">
-          <span class="analysis-error-popover-head"><i class="fa-solid fa-triangle-exclamation"></i><span><b>${escapeHtml(error.label)}</b><small>${escapeHtml(error.explanation || "Technischer Analysefehler")}</small></span></span>
+          <span class="analysis-error-popover-head"><i class="fa-solid fa-triangle-exclamation"></i><span><b>${escapeHtml(error.label)}</b><small>${escapeHtml(error.scope || "Aktueller Lauf")} · ${escapeHtml(error.explanation || "Technischer Analysefehler")}</small></span></span>
           ${error.action ? `<span class="analysis-error-action"><b>Automatische Behandlung</b>${escapeHtml(error.action)}</span>` : ""}
           ${diagnostics ? `<span class="analysis-error-causes"><b>Erkannte Ursachen</b>${diagnostics}</span>` : ""}
           ${sources ? `<span class="analysis-error-sources"><b>Am häufigsten betroffen</b>${sources}</span>` : ""}
           <code class="analysis-error-technical">${escapeHtml(error.raw_message || error.technical_message || "Keine technische Meldung gespeichert")}</code>
         </span>
       </span>`;
+    };
+    els.apiErrorList.innerHTML = [...groupedErrors.entries()].map(([group, errors]) => {
+      const groupCount = errors.reduce((sum, error) => sum + Number(error.count || 0), 0);
+      return `<section class="status-error-group"><header class="status-error-group-head"><span>${escapeHtml(group)}</span><b>${groupCount.toLocaleString("de-DE")}</b></header><div class="status-error-pills">${errors.map(renderErrorChip).join("")}</div></section>`;
     }).join("");
     const positionErrorPopover = (chip) => {
       const popover = chip.querySelector(".analysis-error-popover");
@@ -2479,6 +2724,13 @@ async function loadLastRun() {
 }
 
 function bindUi() {
+  els.statusErrorToggle?.addEventListener("click", () => {
+    const expanded = els.statusErrorToggle.getAttribute("aria-expanded") !== "true";
+    els.statusErrorToggle.setAttribute("aria-expanded", String(expanded));
+    els.apiErrorList.hidden = !expanded;
+    const label = els.statusErrorToggle.querySelector("b");
+    if (label) label.textContent = expanded ? "Fehler einklappen" : "Fehler ausklappen";
+  });
   els.appNav.addEventListener("click", (event) => {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);
@@ -2519,6 +2771,22 @@ function bindUi() {
     if (event.target === els.articleDetailModal || event.target.closest(".article-detail-close:not(.technical-audit-close)")) closeArticleDetail();
   });
   els.technicalAuditModal?.addEventListener("click", (event) => {
+    const viewButton = event.target.closest("[data-audit-view]");
+    if (viewButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const section = viewButton.closest(".audit-section");
+      const view = viewButton.dataset.auditView;
+      section?.querySelectorAll("[data-audit-view]").forEach((button) => {
+        const active = button.dataset.auditView === view;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      section?.querySelectorAll(".audit-view").forEach((panel) => {
+        panel.hidden = !panel.classList.contains(`audit-view--${view}`);
+      });
+      return;
+    }
     if (event.target === els.technicalAuditModal || event.target.closest(".technical-audit-close")) closeTechnicalAudit();
   });
   document.addEventListener("click", (event) => {

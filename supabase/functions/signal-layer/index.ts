@@ -5364,10 +5364,10 @@ Deno.serve(async (req: Request) => {
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
-        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: costLedger }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { count: queuedAnalysisCountExact }, { count: runningAnalysisCountExact }, { data: analysisFailures }, { data: sourceConfigs }, { data: browserJobs }] = await Promise.all([
+        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: costLedger }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { count: queuedAnalysisCountExact }, { count: runningAnalysisCountExact }, { data: currentPromptFirst }, { data: sourceConfigs }, { data: browserJobs }] = await Promise.all([
           admin.schema("signal_layer").from("crawl_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
-          admin.schema("signal_layer").from("crawl_runs").select("id, finished_at, current_index, source_ids")
+          admin.schema("signal_layer").from("crawl_runs").select("id, started_at, finished_at, current_index, source_ids")
             .eq("status", "done").not("finished_at", "is", null)
             .order("finished_at", { ascending: false }).limit(20),
           admin.schema("signal_layer").from("classification_backfill_runs").select("*")
@@ -5389,11 +5389,12 @@ Deno.serve(async (req: Request) => {
             .select("article_id", { count: "exact", head: true }).eq("status", "queued"),
           admin.schema("signal_layer").from("article_analysis_jobs")
             .select("article_id", { count: "exact", head: true }).eq("status", "running"),
-          admin.schema("signal_layer").from("articles")
-            .select("rejection_reasons,extraction_diagnostic,source:sources(company)")
-            .eq("classification_status", "error").order("classified_at", { ascending: false }).limit(2000),
-          admin.schema("signal_layer").from("sources").select("company,crawl_config").eq("active", true),
-          admin.schema("signal_layer").from("browser_render_jobs").select("status,last_error").limit(5000),
+          admin.schema("signal_layer").from("articles").select("classified_at")
+            .eq("prompt_version", CLASSIFIER_PROMPT_VERSION).not("classified_at", "is", null)
+            .order("classified_at", { ascending: true }).limit(1).maybeSingle(),
+          admin.schema("signal_layer").from("sources").select("id,company,crawl_config").eq("active", true),
+          admin.schema("signal_layer").from("browser_render_jobs")
+            .select("status,last_error,updated_at,article:articles(source:sources(company))").limit(5000),
         ]);
         let backfillErrorCount = 0;
         let errorBreakdown: Array<{ code: string; label: string; explanation: string; count: number }> = [];
@@ -5471,12 +5472,6 @@ Deno.serve(async (req: Request) => {
         sourceHealth.paywall_source_names = paywallSources.map((source) => source.company).slice(0, 12);
         sourceHealth.paywall_missing_credentials = paywallSourcesMissingCredentials.length;
         sourceHealth.paywall_missing_credential_names = paywallSourcesMissingCredentials.map((source) => source.company).slice(0, 20);
-        sourceHealth.browser_queued = (browserJobs || []).filter((job) => job.status === "queued").length;
-        sourceHealth.browser_running = (browserJobs || []).filter((job) => job.status === "running").length;
-        sourceHealth.browser_recovered = (browserJobs || []).filter((job) => job.status === "done").length;
-        sourceHealth.browser_failed = (browserJobs || []).filter((job) =>
-          job.status === "error" && job.last_error !== "non_editorial_url"
-        ).length;
         let crawlWithProgress = crawl || null;
         if (crawl) {
           const sourceIds = Array.isArray(crawl.source_ids) ? crawl.source_ids as string[] : [];
@@ -5534,6 +5529,47 @@ Deno.serve(async (req: Request) => {
             .select("id,title").in("id", runningAnalysisIds);
           currentAnalysisArticles = data || [];
         }
+        const activeCrawlForErrors = crawl && ["queued", "running"].includes(crawl.status) ? crawl : null;
+        const activeBackfillForErrors = backfill && ["queued", "running"].includes(backfill.status) ? backfill : null;
+        const directAnalysisForErrors = activeAnalysisJobs.filter((job) => !job.crawl_run_id);
+        const activeErrorStarts = [
+          activeCrawlForErrors?.started_at,
+          activeBackfillForErrors?.started_at,
+          directAnalysisForErrors.length ? currentPromptFirst?.classified_at : null,
+        ].filter(Boolean).map((value) => new Date(value as string).getTime()).filter(Number.isFinite);
+        const latestCompletedCrawl = (completedCrawls || [])[0] || null;
+        const idleErrorStarts = [latestCompletedCrawl?.started_at, backfill?.started_at, currentPromptFirst?.classified_at]
+          .filter(Boolean).map((value) => new Date(value as string).getTime()).filter(Number.isFinite);
+        const errorWindowStartMs = activeErrorStarts.length
+          ? Math.min(...activeErrorStarts)
+          : idleErrorStarts.length ? Math.max(...idleErrorStarts) : dayStart.getTime();
+        const errorWindowStart = new Date(errorWindowStartMs).toISOString();
+        // PostgREST projects commonly cap a response at 1,000 rows. Page the
+        // live error window explicitly so the grouped pill counts stay exact
+        // even during a full-corpus re-analysis.
+        const scopedAnalysisFailures: Array<Record<string, any>> = [];
+        for (let offset = 0; offset < 20_000; offset += 1_000) {
+          const { data: failurePage, error: failurePageError } = await admin.schema("signal_layer").from("articles")
+            .select("classified_at,prompt_version,rejection_reasons,extraction_diagnostic,source:sources(company)")
+            .eq("classification_status", "error").gte("classified_at", errorWindowStart)
+            .order("classified_at", { ascending: false }).range(offset, offset + 999);
+          if (failurePageError) {
+            console.error("Could not load the live analysis error window", failurePageError);
+            break;
+          }
+          scopedAnalysisFailures.push(...(failurePage || []));
+          if ((failurePage || []).length < 1_000) break;
+        }
+        const browserJobsInWindow = (browserJobs || []).filter((job) =>
+          ["queued", "running"].includes(job.status)
+          || (job.updated_at && new Date(job.updated_at).getTime() >= errorWindowStartMs)
+        );
+        sourceHealth.browser_queued = browserJobsInWindow.filter((job) => job.status === "queued").length;
+        sourceHealth.browser_running = browserJobsInWindow.filter((job) => job.status === "running").length;
+        sourceHealth.browser_recovered = browserJobsInWindow.filter((job) => job.status === "done").length;
+        sourceHealth.browser_failed = browserJobsInWindow.filter((job) =>
+          job.status === "error" && job.last_error !== "non_editorial_url"
+        ).length;
         const usdEurRate = await getUsdEurRate();
         const failureDefinitions = {
           content_extraction: {
@@ -5553,6 +5589,12 @@ Deno.serve(async (req: Request) => {
             explanation: "Das Modellkontingent oder kurzfristige Anfragelimit war ausgeschöpft.",
             action: "Technische Wiederholung mit Abstand; bei dauerhaftem Fehler Modellkontingent prüfen.",
             technical_message: "Gemini API 429: quota or rate limit exceeded",
+          },
+          timeout: {
+            label: "Analyse mit Zeitüberschreitung",
+            explanation: "Der KI- oder Verarbeitungsschritt wurde nicht innerhalb des technischen Zeitlimits abgeschlossen.",
+            action: "Der Worker kann den Artikel erneut einreihen; wiederholte Fälle werden als eigener Fehlertyp sichtbar.",
+            technical_message: "Analysis request timed out",
           },
           invalid_response: {
             label: "Modellantwort nicht lesbar",
@@ -5592,12 +5634,13 @@ Deno.serve(async (req: Request) => {
           unknown: "Noch keine Detaildiagnose",
         };
         const failureMap = new Map<string, { count: number; sources: Map<string, number>; diagnostics: Map<string, { count: number; message: string }>; raw: string }>();
-        for (const row of analysisFailures || []) {
+        for (const row of scopedAnalysisFailures) {
           const raw = String(row.rejection_reasons?.[0] || "Unklassifizierter Analysefehler");
           const normalized = raw.toLowerCase();
           const code = normalized.includes("artikelinhalt nicht verfügbar") ? "content_extraction"
             : normalized.includes("spending cap") ? "spending_cap"
             : normalized.includes("429") || normalized.includes("quota") || normalized.includes("rate limit") ? "rate_limit"
+            : normalized.includes("timed out") || normalized.includes("timeout") || normalized.includes("zeitüberschreitung") ? "timeout"
             : normalized.includes("503") || normalized.includes("high demand") || normalized.includes("temporarily unavailable") ? "model_busy"
             : normalized.includes("no valid classification") || normalized.includes("invalid") ? "invalid_response"
             : "other";
@@ -5616,7 +5659,10 @@ Deno.serve(async (req: Request) => {
           failureMap.set(code, entry);
         }
         const analysisErrorBreakdown = [...failureMap.entries()].map(([code, entry]) => ({
-          code, ...failureDefinitions[code as keyof typeof failureDefinitions], count: entry.count,
+          code, group: code === "content_extraction" ? "Volltext & Zugriff"
+            : ["spending_cap", "rate_limit", "model_busy", "timeout"].includes(code) ? "KI-Dienst"
+            : "Antwort & Verarbeitung",
+          scope: "Artikelanalyse", ...failureDefinitions[code as keyof typeof failureDefinitions], count: entry.count,
           sources: [...entry.sources.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([company, count]) => ({ company, count })),
           diagnostics: [...entry.diagnostics.entries()].sort((a, b) => b[1].count - a[1].count).map(([diagnosticCode, diagnostic]) => ({
             code: diagnosticCode, label: extractionDiagnosticLabels[diagnosticCode] || diagnosticCode,
@@ -5624,6 +5670,60 @@ Deno.serve(async (req: Request) => {
           })),
           raw_message: entry.raw.replace(/\s+/g, " ").slice(0, 500),
         })).sort((a, b) => b.count - a.count);
+        const sourceNameById = new Map((sourceConfigs || []).map((source) => [source.id, source.company]));
+        const sourceFailureMap = new Map<string, { count: number; sources: Map<string, number>; raw: string }>();
+        for (const row of currentCrawlHealth.filter((attempt) => attempt.status === "error")) {
+          const code = String(row.error_code || "source_error");
+          const raw = String(row.error_message || "Quellenabruf fehlgeschlagen").replace(/\s+/g, " ").slice(0, 500);
+          const entry = sourceFailureMap.get(code) || { count: 0, sources: new Map<string, number>(), raw };
+          entry.count += 1;
+          const sourceName = String(sourceNameById.get(row.source_id) || "Unbekannte Quelle");
+          entry.sources.set(sourceName, (entry.sources.get(sourceName) || 0) + 1);
+          sourceFailureMap.set(code, entry);
+        }
+        const sourceFailureLabels: Record<string, { label: string; explanation: string; action: string }> = {
+          source_timeout: { label: "Quellenabruf mit Zeitüberschreitung", explanation: "Die Quelle antwortete im letzten Crawl nicht rechtzeitig.", action: "Der nächste Crawl versucht die Quelle erneut; wiederholte Timeouts sollten in den Quellendetails geprüft werden." },
+          http_403: { label: "Quelle blockiert den Abruf", explanation: "Die Quelle hat den automatischen Zugriff mit HTTP 403 verweigert.", action: "Browser-Fallback, Login-Status und Bot-Schutz der Quelle prüfen." },
+          rate_limited: { label: "Quelle begrenzt Abrufe", explanation: "Die Quelle hat im letzten Crawl zu viele oder zu schnelle Abrufe abgelehnt.", action: "Der nächste Lauf verwendet Abstand und versucht den Abruf erneut." },
+          source_error: { label: "Quellen-Crawl fehlgeschlagen", explanation: "Eine Quelle konnte im letzten Crawl technisch nicht abgeschlossen werden.", action: "Die konkrete Servermeldung und die betroffenen Quellen unten prüfen." },
+        };
+        const sourceErrorBreakdown = [...sourceFailureMap.entries()].map(([code, entry]) => ({
+          code: `source:${code}`, group: "Quellen-Crawl", scope: "Letzter Crawl",
+          ...(sourceFailureLabels[code] || { label: "Quellen-Crawl fehlgeschlagen", explanation: "Eine Quelle konnte im letzten Crawl technisch nicht abgeschlossen werden.", action: "Die konkrete Servermeldung und die betroffenen Quellen unten prüfen." }),
+          count: entry.count,
+          sources: [...entry.sources.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([company, count]) => ({ company, count })),
+          diagnostics: [], raw_message: entry.raw,
+        })).sort((a, b) => b.count - a.count);
+        const browserFailureMap = new Map<string, { count: number; sources: Map<string, number> }>();
+        for (const job of browserJobsInWindow.filter((item) => item.status === "error" && item.last_error !== "non_editorial_url")) {
+          const rawError = String(job.last_error || "browser_render_failed");
+          const normalizedError = rawError.toLowerCase();
+          const code = normalizedError.includes("paywall") || normalizedError.includes("login") ? "paywall_or_login"
+            : normalizedError.includes("timeout") || normalizedError.includes("timed out") ? "timeout"
+            : normalizedError.includes("short") || normalizedError.includes("content") || normalizedError.includes("extract") ? "incomplete_content"
+            : "browser_render_failed";
+          const entry = browserFailureMap.get(code) || { count: 0, sources: new Map<string, number>() };
+          entry.count += 1;
+          const linkedArticle = Array.isArray(job.article) ? job.article[0] : job.article;
+          const linkedSource = Array.isArray(linkedArticle?.source) ? linkedArticle.source[0] : linkedArticle?.source;
+          const sourceName = String(linkedSource?.company || "Unbekannte Quelle");
+          entry.sources.set(sourceName, (entry.sources.get(sourceName) || 0) + 1);
+          browserFailureMap.set(code, entry);
+        }
+        const browserErrorBreakdown = [...browserFailureMap.entries()].map(([code, entry]) => ({
+          code: `browser:${code}`, group: "Browser-Fallback", scope: "Aktueller Zeitraum",
+          label: code === "paywall_or_login" ? "Browser-Fallback durch Paywall begrenzt"
+            : code === "timeout" ? "Browser-Fallback mit Zeitüberschreitung" : "Browser-Fallback ohne Volltext",
+          explanation: code === "paywall_or_login"
+            ? "Auch der vollständig gerenderte Browserabruf sah nur eine Paywall oder einen Teaser."
+            : code === "timeout" ? "Die Seite konnte im Browser nicht innerhalb des technischen Zeitlimits fertig geladen werden."
+              : "Chromium konnte keinen ausreichend vollständigen redaktionellen Artikeltext gewinnen.",
+          action: code === "paywall_or_login" ? "Gültigen Quellenzugang hinterlegen oder Login-Konfiguration prüfen." : "Quellseite und Extraktionsdiagnose prüfen; der nächste Crawl kann erneut versuchen.",
+          count: entry.count,
+          sources: [...entry.sources.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([company, count]) => ({ company, count })),
+          diagnostics: [], raw_message: code,
+        })).sort((a, b) => b.count - a.count);
+        const runtimeErrorBreakdown = [...analysisErrorBreakdown, ...sourceErrorBreakdown, ...browserErrorBreakdown];
         // Gemini exposes usage per request but no API endpoint for the billing
         // project's configured spending cap. Forecast the user-defined warning
         // threshold from the usage ledger instead and label it as a projection.
@@ -5803,7 +5903,13 @@ Deno.serve(async (req: Request) => {
             active: activeAnalysisJobs.length > 0,
             current_articles: currentAnalysisArticles,
           },
-          analysis_error_breakdown: analysisErrorBreakdown,
+          analysis_error_breakdown: runtimeErrorBreakdown,
+          error_window: {
+            started_at: errorWindowStart,
+            mode: activeErrorStarts.length ? "live" : "latest",
+            label: activeErrorStarts.length ? "Laufender Crawl / laufende Analyse" : "Seit dem letzten Crawl / Analyselauf",
+            total: runtimeErrorBreakdown.reduce((sum, error) => sum + Number(error.count || 0), 0),
+          },
         });
       }
 
