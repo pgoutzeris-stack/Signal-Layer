@@ -1736,6 +1736,12 @@ function mergePipelineConfig(raw: Partial<PipelineConfig> | null | undefined): P
   merged.filters.require_professional_signal = true;
   merged.decisions.marketing_requires_direct_evidence = true;
   merged.decisions.reject_pure_appointments = true;
+  // The automatic production pipeline has one cost-controlled AI runtime.
+  // Persisted settings from older clients cannot silently switch mass jobs
+  // back to a more expensive model or synchronous execution.
+  merged.ai.primary_model = GEMINI_PRIMARY_MODEL;
+  merged.ai.review_model = GEMINI_PRIMARY_MODEL;
+  merged.ai.batch_enabled = true;
   // These values describe hard runtime limits. Keeping them normalized here
   // prevents a stale database row or older frontend from advertising a value
   // that the worker does not actually execute.
@@ -1794,11 +1800,11 @@ function buildPipelineRuleManifest(config: PipelineConfig) {
       frontend: "Darstellung des bereits gespeicherten Ergebnisses",
     },
     ai_operations: [
-      { id: "classification", title: "Hauptklassifizierung und Scoring", model: config.ai.primary_model, when: "Für jeden Kandidaten, der alle Vorfilter besteht." },
-      { id: "review", title: "Gezielte Zweitprüfung", model: config.ai.review_model, when: config.ai.review_enabled ? "Nur bei echten Marketing-/Sales-Grenzfällen, widersprüchlichen Belegen oder unsicheren Sales-Kandidaten." : "Derzeit deaktiviert." },
-      { id: "batch", title: "Kostengünstiger Automatiklauf", model: config.ai.primary_model, when: config.ai.batch_enabled ? `Neue Crawl-Artikel laufen in Gruppen von bis zu ${config.ai.batch_size} über die Gemini Batch API zum halben Tokenpreis.` : "Batch ist deaktiviert; automatische Analysen laufen synchron." },
-      { id: "offering_match", title: "ROOTS-Leistungsmatch", model: config.ai.primary_model, when: "Nur für einen bereits belegten Sales-Kandidaten; ein exakter Artikelbeleg bleibt Pflicht." },
-      { id: "translation", title: "Übersetzung und Darstellungsformatierung", model: config.ai.primary_model, when: "Nur wenn Sprache oder Textformat eine saubere deutsche Darstellung erfordern." },
+      { id: "classification", title: "Hauptklassifizierung und Scoring", model: `${config.ai.primary_model} · Batch`, when: "Automatische Artikel laufen über die Gemini Batch API zum halben Tokenpreis. Nur eine bewusst gestartete Einzelvorschau antwortet sofort zum Standardpreis." },
+      { id: "review", title: "Gezielte Zweitprüfung", model: config.ai.review_model, when: config.ai.review_enabled ? "Dasselbe Flash-Lite-Modell prüft nur echte Grenzfälle. Weil das Ergebnis der Hauptprüfung dafür bereits vorliegen muss, wird dieser abhängige Aufruf einzeln protokolliert." : "Derzeit deaktiviert." },
+      { id: "batch", title: "Aktiver Automatikmodus", model: `${config.ai.primary_model} · Batch`, when: `Alle automatischen Analysejobs werden in Gruppen von bis zu ${config.ai.batch_size} über die Gemini Batch API eingereicht. Es gibt keinen automatischen Wechsel zum Standardpreis.` },
+      { id: "offering_match", title: "ROOTS-Leistungsmatch", model: config.ai.primary_model, when: "Dasselbe Flash-Lite-Modell wird nur genutzt, wenn der deterministische Leistungsmatch einen belegten Sales-Kandidaten nicht eindeutig zuordnen kann." },
+      { id: "translation", title: "Übersetzung und Darstellungsformatierung", model: config.ai.primary_model, when: "Dasselbe Flash-Lite-Modell wird nur verwendet, wenn Sprache oder Textformat eine deutsche Lesefassung erfordern." },
     ],
     stages: [
       {
@@ -1834,9 +1840,9 @@ function buildPipelineRuleManifest(config: PipelineConfig) {
         summary: "Gemini versteht den Zusammenhang, schlägt Klassifikation und Nutzwert vor und muss jede Kernaussage belegen.",
         input: "Vorgeprüfter Volltext", check: "Bedeutung, Evidenz und Nutzwert", output: "Strukturierter KI-Vorschlag",
         rules: [
-          configured("gemini.primary", "Hauptmodell", "Analysiert Themen, Territories, Artikeltyp, Unternehmen, Personen, Sales-Trigger, Routing und beide Nutzwert-Scores in einem strukturierten Aufruf.", ["gemini"], "ai.primary_model", config.ai.primary_model),
+          configured("gemini.primary", "Hauptmodell", "Gemini 2.5 Flash-Lite analysiert Themen, Territories, Artikeltyp, Unternehmen, Personen, Sales-Trigger, Routing und beide Nutzwert-Scores in einem strukturierten Aufruf.", ["gemini"], "ai.primary_model", config.ai.primary_model),
           configured("gemini.review", "Zweitprüfung bei echtem Grenzfall", "Ein zweiter Vollaufruf erfolgt nur bei widersprüchlicher Evidenz, einem echten manuellen Grenzfall oder einem unsicheren Sales-Kandidaten.", ["gemini", "server"], "ai.review_enabled", config.ai.review_enabled, config.ai.review_model),
-          configured("gemini.batch", "Batch für automatische Läufe", "Automatisch gecrawlte Artikel werden mit demselben Modell asynchron zum halben Tokenpreis verarbeitet.", ["gemini", "supabase"], "ai.batch_enabled", config.ai.batch_enabled, `bis ${config.ai.batch_size} Artikel`),
+          configured("gemini.batch", "Flash-Lite Batch für alle Automatikläufe", "Alle automatisch gecrawlten oder zur Neuanalyse eingereihten Artikel werden mit Gemini 2.5 Flash-Lite asynchron zum halben Tokenpreis verarbeitet. Ein fehlgeschlagener Batch wechselt nicht unbemerkt auf den Standardpreis.", ["gemini", "supabase"], "ai.batch_enabled", config.ai.batch_enabled, `gemini-2.5-flash-lite · bis ${config.ai.batch_size} Artikel`),
           fixed("ai.no_provider_fallback", "Kein externer Modell-Fallback", "Wenn das konfigurierte Gemini-Modell ausfällt, wird keine NVIDIA- oder andere Drittanbieter-KI verwendet. Die Hauptanalyse wird als technischer Fehler protokolliert; scheitert nur die optionale Zweitprüfung, bleibt die bereits validierte Hauptanalyse erhalten.", ["gemini", "server"]),
           fixed("gemini.evidence", "Wörtliche Belege sind Pflicht", "Themen, Unternehmen, Personen, Trigger und Routing müssen jeweils durch eine konkrete Passage aus Titel oder Artikeltext gestützt sein.", ["gemini"]),
           fixed("gemini.untrusted", "Artikeltext ist keine Anweisung", "Der Prompt behandelt den Artikel als nicht vertrauenswürdige Daten und ignoriert darin enthaltene Instruktionen.", ["gemini", "server"]),
@@ -5333,7 +5339,7 @@ Deno.serve(async (req: Request) => {
             await admin.schema("signal_layer").from("ai_batch_jobs").update({ status: mapped, checked_at: new Date().toISOString(), finished_at: new Date().toISOString(), error_message: JSON.stringify(providerJob?.error || {}).slice(0, 1000) }).eq("id", batch.id);
             const { data: failedItems } = await admin.schema("signal_layer").from("ai_batch_items").select("analysis_job_id").eq("batch_id", batch.id).eq("status", "submitted");
             for (const item of failedItems || []) {
-              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "queued", processing_mode: "standard", attempts: 0, started_at: null, error_message: `batch_${mapped}` }).eq("id", item.analysis_job_id);
+              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", processing_mode: "batch", finished_at: new Date().toISOString(), error_message: `batch_${mapped}` }).eq("id", item.analysis_job_id);
               await admin.schema("signal_layer").from("ai_batch_items").update({ status: "failed", error_message: `batch_${mapped}` }).eq("analysis_job_id", item.analysis_job_id);
             }
             continue;
@@ -5370,9 +5376,10 @@ Deno.serve(async (req: Request) => {
               completedItems += 1;
             } catch (batchItemError) {
               await admin.schema("signal_layer").from("ai_batch_items").update({ status: "failed", error_message: String(batchItemError).slice(0, 1000) }).eq("id", item.id);
-              // Only the failed result falls back to the ordinary chain; valid
-              // batch results are never paid for twice.
-              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "queued", processing_mode: "standard", attempts: 0, started_at: null, error_message: "batch_result_invalid" }).eq("id", item.analysis_job_id);
+              // Never pay for the same automatic article again at the standard
+              // rate. The precise batch error remains visible for a deliberate
+              // retry after the cause has been fixed.
+              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", processing_mode: "batch", finished_at: new Date().toISOString(), error_message: "batch_result_invalid" }).eq("id", item.analysis_job_id);
             }
           }
           const { count: remaining } = await admin.schema("signal_layer").from("ai_batch_items")
@@ -5430,7 +5437,7 @@ Deno.serve(async (req: Request) => {
             submitted = batchRequests.length;
           } catch (submissionError) {
             for (const entry of batchRequests) {
-              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "queued", processing_mode: "standard", attempts: 0, started_at: null, error_message: String(submissionError).slice(0, 500) }).eq("id", entry.job.id);
+              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", processing_mode: "batch", finished_at: new Date().toISOString(), error_message: String(submissionError).slice(0, 500) }).eq("id", entry.job.id);
             }
           }
         }

@@ -397,12 +397,12 @@ const PIPELINE_FIELDS = {
     ["filters.deduplicate", "boolean", "Duplikate erkennen", "Identischer normalisierter Inhalt wird nur einmal ausgewertet."],
   ],
   ai: [
-    ["ai.primary_model", "model", "Modell für die erste Prüfung", "Prüft jeden Artikel, der den Vorfilter besteht."],
-    ["ai.review_model", "model", "Modell für die zweite Prüfung", "Prüft nur unsichere Ergebnisse erneut."],
+    ["ai.primary_model", "model", "Modell für die erste Prüfung", "Aktuell fest auf Gemini 2.5 Flash-Lite; automatische Artikel laufen im Batch."],
+    ["ai.review_model", "model", "Modell für die zweite Prüfung", "Nutzt ebenfalls Gemini 2.5 Flash-Lite und prüft nur echte Grenzfälle."],
     ["ai.review_enabled", "boolean", "Zweite Prüfung bei Unsicherheit", "Erhöht Sicherheit, verursacht aber zusätzliche Kosten."],
     ["ai.review_confidence_below", "decimal", "Sales-Grenzfall unter", "Nur ein bereits belegter Sales-Kandidat unter diesem Wert erhält zusätzlich eine Zweitprüfung.", .5, 1],
     ["ai.review_rejected_articles", "boolean", "Auch klare Ablehnungen erneut prüfen", "Normalerweise aus Kostengründen ausgeschaltet."],
-    ["ai.batch_enabled", "boolean", "Automatische Läufe als Batch", "Nutzt dasselbe Gemini-Modell asynchron zum halben Tokenpreis."],
+    ["ai.batch_enabled", "boolean", "Automatische Läufe als Batch", "Fest aktiv: automatische Analysejobs nutzen Flash-Lite asynchron zum halben Tokenpreis."],
     ["ai.batch_size", "number", "Artikel pro KI-Batch", "Kleine Gruppen halten Status und Fehler je Artikel nachvollziehbar.", 1, 32],
     ["ai.thinking_level", "thinking", "Prüftiefe", "Mehr Tiefe kann Qualität und Kosten erhöhen."],
     ["ai.max_output_tokens", "number", "Maximale Antwortlänge", "Begrenzt Analyse, Übersetzung und Begründung.", 512, 8192],
@@ -531,7 +531,8 @@ function pipelineField(path) {
     const modelIds = [...new Set([value, ...geminiModelCatalog.map((model) => model.id)].filter(Boolean))];
     control = `<select class="pipeline-control pipeline-model-select" data-pipeline-path="${path}" ${geminiModelCatalogState.status === "loading" ? "disabled" : ""}>${modelIds.map((model) => {
       const option = geminiModelCatalog.find((item) => item.id === model);
-      const label = option ? `${option.display_name} · ${option.id}` : model;
+      const batchSuffix = getConfigValue("ai.batch_enabled") && path === "ai.primary_model" ? " · Batch (50 % Preis)" : "";
+      const label = option ? `${option.display_name}${batchSuffix} · ${option.id}` : `${model}${batchSuffix}`;
       return `<option value="${escapeHtml(model)}" ${model === value ? "selected" : ""}>${escapeHtml(label)}</option>`;
     }).join("")}</select>`;
   }
@@ -575,7 +576,8 @@ function operationsModelSelect(path, label, description, icon) {
   const modelIds = [...new Set([value, ...geminiModelCatalog.map((model) => model.id)].filter(Boolean))];
   const options = modelIds.map((modelId) => {
     const model = geminiModelCatalog.find((item) => item.id === modelId);
-    const optionLabel = model?.display_name || modelId;
+    const batchSuffix = getConfigValue("ai.batch_enabled") && path === "ai.primary_model" ? " · Batch (50 % Preis)" : "";
+    const optionLabel = `${model?.display_name || modelId}${batchSuffix}`;
     return `<option value="${escapeHtml(modelId)}" ${modelId === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`;
   }).join("");
   return `<label class="operations-model-field"><span class="operations-model-icon"><i class="${icon}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)}</small><span class="operations-select-wrap"><select class="pipeline-control" data-pipeline-path="${path}" ${geminiModelCatalogState.status === "loading" ? "disabled" : ""} aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
@@ -600,13 +602,13 @@ function renderOperationsPanel(telemetry) {
     </section>
 
     <section class="operations-card">
-      <div class="operations-card-head"><div><span>KI-Konfiguration</span><h4>Modelle für neue Artikel</h4><p>Das Hauptmodell klassifiziert und bewertet den Marketing-/Sales-Nutzwert im selben Aufruf. Bei Bedarf folgen getrennt protokollierte Aufrufe für Zweitprüfung, ROOTS-Leistungsmatch sowie Übersetzung und Formatierung.</p></div>${modelState}</div>
+      <div class="operations-card-head"><div><span>KI-Konfiguration</span><h4>Gemini 2.5 Flash-Lite Batch ist aktiv</h4><p>Alle automatischen Hauptanalysen laufen zum 50-%-Batchpreis. Abhängige Zusatzschritte verwenden dasselbe Flash-Lite-Modell und werden separat protokolliert; manuelle Vorschauen bleiben sofortige Einzelaufrufe.</p></div>${modelState}</div>
       <div class="operations-model-grid">
         ${operationsModelSelect("ai.primary_model", "Hauptmodell", "Analysiert alle Artikel nach dem Vorfilter.", "fa-solid fa-bolt")}
         ${operationsModelSelect("ai.review_model", "Modell für zweite Prüfung", "Kontrolliert nur echte Grenzfälle und widersprüchliche Belege.", "fa-solid fa-shield-halved")}
       </div>
       <div class="operations-review-row"><div><b>Zweite Prüfung bei Unsicherheit</b><small>${reviewEnabled ? "Aktiv – erhöht die Sicherheit bei Grenzfällen." : "Aus – Grenzfälle werden nicht erneut geprüft."}</small></div><label class="source-toggle pipeline-switch"><input data-pipeline-path="ai.review_enabled" type="checkbox" ${reviewEnabled ? "checked" : ""} aria-label="Zweite Prüfung bei Unsicherheit"><span class="source-toggle-slider"></span></label></div>
-      <div class="operations-review-row"><div><b>50-%-Batchpreis für automatische Läufe</b><small>${batchEnabled ? "Aktiv – neue Crawl-Artikel werden gesammelt und asynchron mit demselben Modell analysiert." : "Aus – jeder Artikel wird sofort zum Standardpreis analysiert."}</small></div><label class="source-toggle pipeline-switch"><input data-pipeline-path="ai.batch_enabled" type="checkbox" ${batchEnabled ? "checked" : ""} aria-label="Gemini Batch aktivieren"><span class="source-toggle-slider"></span></label></div>
+      <div class="operations-review-row"><div><b>50-%-Batchpreis für automatische Läufe</b><small>Aktiv und serverseitig geschützt – neue Crawl- und Neuanalyse-Artikel werden gesammelt mit Gemini 2.5 Flash-Lite verarbeitet. Bei einem Batchfehler erfolgt kein stiller Wechsel zum Standardpreis.</small></div><label class="source-toggle pipeline-switch"><input data-pipeline-path="ai.batch_enabled" type="checkbox" checked disabled aria-label="Gemini Batch ist fest aktiviert"><span class="source-toggle-slider"></span></label></div>
       ${pipelineFields(["ai.batch_size"])}
       <button type="button" class="operations-refresh" data-refresh-gemini-models ${geminiModelCatalogState.status === "loading" ? "disabled" : ""}><i class="fa-solid fa-arrows-rotate"></i> Modellauswahl aktualisieren</button>
     </section>
