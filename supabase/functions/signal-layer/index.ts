@@ -3238,19 +3238,24 @@ function selectCompanyCandidates(
   return companies.filter((company) => [company.name, ...(company.aliases || [])].some((term) => {
     const normalizedTerm = normalizeMatchText(term);
     if (normalizedTerm.length < 3 || !normalizedText.includes(` ${normalizedTerm} `)) return false;
-    // Some valid brands are also ordinary words. Require local brand/company
-    // context so phrases such as "in rasantem Tempo" or UI text containing
-    // "action" cannot become Tier-1 matches.
-    if (normalizedTerm === "action" || normalizedTerm === "tempo") {
+    // Every single-token company/brand term can collide with ordinary language
+    // (Tempo, Action, Mars, Puma, Metro, Netto, Globus, ...). A bare word is
+    // never enough: require a syntactic brand/entity relation or an action in
+    // which the term itself is the acting subject. This is deliberately generic
+    // so newly added Tier-1 aliases receive the same protection automatically.
+    if (!normalizedTerm.includes(" ")) {
       const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const mention = new RegExp(`(?:^|[^A-Za-z])${escaped}(?:[^A-Za-z]|$)`, "g");
+      const mention = new RegExp(`(?:^|[^A-Za-zÀ-ÖØ-öø-ÿ])${escaped}(?:[^A-Za-zÀ-ÖØ-öø-ÿ]|$)`, "gi");
+      const actorVerb = /^(?:\s|[,:;()\-–—])*\b(?:announc\w*|launch\w*|introduc\w*|invest\w*|acquir\w*|expand\w*|open\w*|plan\w*|partner\w*|report\w*|sell\w*|grow\w*|appoint\w*|meld\w*|kundig\w*|start\w*|bring\w*|fuhr\w*|investier\w*|ubern\w*|expandier\w*|eroffn\w*|plan\w*|kooperier\w*|steiger\w*|wach\w*|beruf\w*|senk\w*|erhoh\w*|verzeichn\w*|positionier\w*|transformier\w*)\b/i;
+      const entityBefore = /\b(?:marke\w*|brand\w*|unternehmen\w*|company|konzern\w*|group|gruppe\w*|retailer\w*|handler\w*|hersteller\w*|anbieter\w*|discounter\w*|tochter\w*|ceo|chef\w*|vorstand\w*)\b(?:\s+\w+){0,4}\s*$/i;
+      const ownedByBefore = /\b(?:bei|von|fur|des|der|durch)\s*$/i;
+      const businessAfter = /\b(?:marke\w*|brand\w*|unternehmen\w*|company|konzern\w*|group|gruppe\w*|retailer\w*|handler\w*|hersteller\w*|anbieter\w*|discounter\w*|umsatz\w*|produkt\w*|sortiment\w*|strategie\w*|kampagn\w*|kunde\w*|consumer\w*|store\w*|filial\w*|markt\w*)\b/i;
       let match: RegExpExecArray | null;
       while ((match = mention.exec(articleText)) !== null) {
-        const window = normalizeMatchText(articleText.slice(Math.max(0, match.index - 100), match.index + term.length + 140));
-        const hasRequiredContext = normalizedTerm === "action"
-          ? /\b(discount\w*|discounter\w*|retailer\w*|handler\w*|einzelhandel\w*|filial\w*|store\w*|unternehmen\w*|company|konzern\w*|group|ceo|umsatz\w*|eroffn\w*|expand\w*|invest\w*|launch\w*|announc\w*|plan\w*|partner\w*)\b/i.test(window)
-          : /\b(essity|taschentuch\w*|tissue\w*|hygiene\w*|papier\w*|paper\w*|marke\w*|brand\w*|produkt\w*|packung\w*|weich\w*|schnupfen\w*|nasen\w*)\b/i.test(window);
-        if (hasRequiredContext) return true;
+        const termStart = match.index + Math.max(0, match[0].toLowerCase().indexOf(term.toLowerCase()));
+        const before = normalizeMatchText(articleText.slice(Math.max(0, termStart - 120), termStart));
+        const after = normalizeMatchText(articleText.slice(termStart + term.length, termStart + term.length + 180));
+        if (entityBefore.test(before) || actorVerb.test(after) || (ownedByBefore.test(before) && businessAfter.test(after))) return true;
       }
       return false;
     }
