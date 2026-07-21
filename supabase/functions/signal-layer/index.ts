@@ -1648,6 +1648,18 @@ function hasEventTier1PersonLink(
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
 const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.8.0";
+const PIPELINE_RULE_MANIFEST_VERSION = "roots-pipeline-rules-v1.0.0";
+const RELEVANCE_SCORING_VERSION = "roots-value-v1.0";
+const EDITORIAL_TEXT_REQUIREMENTS = {
+  minimumCharacters: 500,
+  minimumWords: 70,
+  minimumSentences: 3,
+  denseMinimumCharacters: 430,
+  denseMinimumWords: 75,
+  denseMinimumSentences: 5,
+} as const;
+const MARKETING_SCORE_WEIGHTS = { novelty: 25, strategic_value: 30, transferability: 25, evidence_strength: 20 } as const;
+const SALES_SCORE_WEIGHTS = { problem_strength: 32, roots_fit: 30, buying_intent: 23, timing: 15 } as const;
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -1683,8 +1695,8 @@ const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
     retail_signal_qualifies_marketing: true, sales_requires_implementation: false,
     sales_allow_risks: true, buying_center_allow_role_without_name: true, reject_pure_appointments: true,
   },
-  crawl: { freshness_days: 183, future_tolerance_hours: 24, article_batch_size: 10, default_max_depth: 2, default_max_pages: 40, event_max_depth: 1, event_max_pages: 24 },
-  filters: { minimum_text_length: 240, require_professional_signal: true, reject_career_pages: true, reject_faq_pages: true, reject_event_programs: true, reject_future_dates: true, deduplicate: true },
+  crawl: { freshness_days: 183, future_tolerance_hours: 24, article_batch_size: 1, default_max_depth: 2, default_max_pages: 40, event_max_depth: 1, event_max_pages: 24 },
+  filters: { minimum_text_length: EDITORIAL_TEXT_REQUIREMENTS.minimumCharacters, require_professional_signal: true, reject_career_pages: true, reject_faq_pages: true, reject_event_programs: true, reject_future_dates: true, deduplicate: true },
   ai: { primary_model: GEMINI_PRIMARY_MODEL, review_model: GEMINI_REVIEW_MODEL, review_enabled: true, review_confidence_below: 0.94, review_rejected_articles: false, thinking_level: "low", max_output_tokens: 4096, monthly_warning_usd: 10 },
   quality: { topic_confidence: 0.82, territory_confidence: 0.84, company_confidence: 0.86, person_confidence: 0.86, sales_trigger_confidence: 0.86, routing_confidence: 0.88, reliable_confidence: 0.9 },
   routing: { marketing_enabled: true, sales_enabled: true, buying_center_enabled: true, sales_requires_tier1: true, sales_requires_trigger: true, buying_center_requires_person: true, subsector_alone_is_marketing: false },
@@ -1718,6 +1730,11 @@ function mergePipelineConfig(raw: Partial<PipelineConfig> | null | undefined): P
   merged.filters.require_professional_signal = true;
   merged.decisions.marketing_requires_direct_evidence = true;
   merged.decisions.reject_pure_appointments = true;
+  // These values describe hard runtime limits. Keeping them normalized here
+  // prevents a stale database row or older frontend from advertising a value
+  // that the worker does not actually execute.
+  merged.filters.minimum_text_length = Math.max(EDITORIAL_TEXT_REQUIREMENTS.minimumCharacters, Number(merged.filters.minimum_text_length || 0));
+  merged.crawl.article_batch_size = 1;
   return merged;
 }
 
@@ -1728,6 +1745,139 @@ async function getPipelineConfig(force = false): Promise<PipelineConfig> {
   const value = mergePipelineConfig(data?.config as Partial<PipelineConfig> | undefined);
   pipelineConfigCache = { value, at: Date.now() };
   return value;
+}
+
+type PipelineRule = {
+  id: string;
+  title: string;
+  explanation: string;
+  systems: Array<"source" | "crawler" | "browser" | "code" | "gemini" | "server" | "frontend">;
+  status: "active" | "inactive" | "conditional";
+  locked: boolean;
+  config_path?: string;
+  value?: string | number | boolean;
+  technical?: string;
+};
+
+function buildPipelineRuleManifest(config: PipelineConfig) {
+  const configured = (
+    id: string, title: string, explanation: string, systems: PipelineRule["systems"],
+    configPath: string, value: string | number | boolean, technical?: string,
+  ): PipelineRule => ({
+    id, title, explanation, systems, config_path: configPath, value,
+    status: typeof value === "boolean" ? (value ? "active" : "inactive") : "active",
+    locked: false, technical,
+  });
+  const fixed = (
+    id: string, title: string, explanation: string, systems: PipelineRule["systems"],
+    technical?: string, status: PipelineRule["status"] = "active",
+  ): PipelineRule => ({ id, title, explanation, systems, status, locked: true, technical });
+
+  return {
+    version: PIPELINE_RULE_MANIFEST_VERSION,
+    prompt_version: CLASSIFIER_PROMPT_VERSION,
+    scoring_version: RELEVANCE_SCORING_VERSION,
+    source_of_truth: "Supabase Edge Function + aktive Pipeline-Konfiguration",
+    systems: {
+      source: "RSS oder Sitemap der Quelle",
+      crawler: "Nativer, domainbegrenzter Crawler",
+      browser: "Playwright-Browser-Fallback über GitHub Actions",
+      code: "Deterministische TypeScript-Regel ohne KI-Kosten",
+      gemini: "Semantische Gemini-Prüfung mit strukturiertem Ergebnis",
+      server: "Finale serverseitige Validierung und Speicherung",
+      frontend: "Darstellung des bereits gespeicherten Ergebnisses",
+    },
+    ai_operations: [
+      { id: "classification", title: "Hauptklassifizierung und Scoring", model: config.ai.primary_model, when: "Für jeden Kandidaten, der alle Vorfilter besteht." },
+      { id: "review", title: "Zweitprüfung", model: config.ai.review_model, when: config.ai.review_enabled ? `Bei unsicheren Ergebnissen unter ${config.ai.review_confidence_below}.` : "Derzeit deaktiviert." },
+      { id: "offering_match", title: "ROOTS-Leistungsmatch", model: config.ai.primary_model, when: "Nur für einen bereits belegten Sales-Kandidaten; ein exakter Artikelbeleg bleibt Pflicht." },
+      { id: "translation", title: "Übersetzung und Darstellungsformatierung", model: config.ai.primary_model, when: "Nur wenn Sprache oder Textformat eine saubere deutsche Darstellung erfordern." },
+    ],
+    stages: [
+      {
+        id: "crawl", number: "01", icon: "fa-solid fa-link", title: "Quellen und Volltext", short_title: "Quellen",
+        summary: "Findet Artikel günstig über strukturierte Wege und stellt bei Bedarf den vollständigen Text im Browser wieder her.",
+        input: "Aktive Quellen", check: "URL, Datum und Volltext", output: "Bereinigter Artikelkandidat",
+        rules: [
+          fixed("crawl.structured_first", "RSS und Sitemap zuerst", "RSS und Sitemap liefern Artikel-URLs ohne Browserkosten. Der native Crawler ergänzt nur innerhalb der erlaubten Domain.", ["source", "crawler"]),
+          fixed("crawl.browser_fallback", "Browser-Fallback bei JavaScript, Blockade oder Paywall", "Wenn Direktabruf oder Quellenerkennung scheitern, übernimmt Playwright über GitHub Actions. Wiederhergestellter Volltext wird automatisch erneut analysiert.", ["browser", "server"], "browser_source_discovery_jobs und browser_article_jobs"),
+          configured("crawl.freshness", "Aktualitätsfenster", "Beim initialen Crawl werden nur Artikel innerhalb dieses Rückblicks aufgenommen.", ["server"], "crawl.freshness_days", config.crawl.freshness_days, "Tage"),
+          configured("crawl.future_tolerance", "Zukunftstoleranz", "Ein Datum darf nur begrenzt in der Zukunft liegen; weiter entfernte Datumswerte werden verworfen.", ["server"], "crawl.future_tolerance_hours", config.crawl.future_tolerance_hours, "Stunden"),
+          configured("crawl.default_limits", "Normale Crawl-Grenzen", "Begrenzt Linktiefe und Seitenzahl für normale Quellen.", ["crawler"], "crawl.default_max_pages", config.crawl.default_max_pages, `Tiefe ${config.crawl.default_max_depth}`),
+          configured("crawl.event_limits", "Strengere Grenzen für Eventquellen", "Messe-, Speaker- und Programmseiten werden enger durchsucht, damit keine Listenflut entsteht.", ["crawler"], "crawl.event_max_pages", config.crawl.event_max_pages, `Tiefe ${config.crawl.event_max_depth}`),
+          fixed("crawl.batch_size", "Ein Artikel je Edge-Function-Schritt", "Der Crawl speichert seinen Fortschritt nach jedem Artikel. So bleiben lange Läufe sichtbar und laufen nicht in das Ausführungslimit.", ["server"], "article_batch_size = 1"),
+        ],
+      },
+      {
+        id: "prefilter", number: "02", icon: "fa-solid fa-filter", title: "Bereinigung und Vorfilter", short_title: "Vorfilter",
+        summary: "Stoppt unvollständige Texte, Nicht-Artikel, Eigenwerbung und fachfremdes Rauschen vor dem ersten Gemini-Aufruf.",
+        input: "Geladener Rohtext", check: "Textqualität und Fachsignal", output: "KI-Kandidat oder dokumentierter Stopp",
+        rules: [
+          fixed("prefilter.text_quality", "Vollständiger redaktioneller Text", `Normalfall: mindestens ${config.filters.minimum_text_length} Zeichen, ${EDITORIAL_TEXT_REQUIREMENTS.minimumWords} Wörter und ${EDITORIAL_TEXT_REQUIREMENTS.minimumSentences} Sätze. Dichte Kurztexte dürfen ab ${EDITORIAL_TEXT_REQUIREMENTS.denseMinimumCharacters} Zeichen, ${EDITORIAL_TEXT_REQUIREMENTS.denseMinimumWords} Wörtern und ${EDITORIAL_TEXT_REQUIREMENTS.denseMinimumSentences} Sätzen passieren. Paywall-Teaser reichen nie.`, ["code", "server"], "editorialTextQuality"),
+          fixed("prefilter.non_articles", "Keine Verzeichnisse, Pressemappen oder Textsammlungen", "Kontaktseiten, Anbieterprofile, Übersichten, Downloadsammlungen und mehrere aufeinanderfolgende Versalzeilen gelten nicht als eigenständiger Artikel.", ["code"]),
+          fixed("prefilter.vendor_pitch", "Keine Tool- oder Dienstleisterwerbung", "Software-, Agentur- und Beratungs-Pitches werden gestoppt. Substanzielle Studien, Whitepaper, Marktberichte und Playbooks mit Methodik und Ergebnissen dürfen weiter.", ["code"]),
+          fixed("prefilter.noise", "Karriere, FAQ und reine Eventprogramme stoppen", "Jobs, Hilfeseiten, Teilnehmerlisten, Agenden und alte Eventseiten werden vor Gemini ausgeschlossen.", ["code"]),
+          fixed("prefilter.professional_signal", "Breiter Fachsignal-Vorfilter", "Deutsch- und englischsprachige Signalmuster entscheiden nur, ob Gemini den Inhalt prüfen darf. Ein Keyword erzeugt niemals selbst ein Tag oder Routing.", ["code"], "professionalSignalPatterns"),
+          fixed("prefilter.weak_news", "Schwache Meldungstypen stoppen", "Reine Personalien, taktische Rabatte, dünnes Sponsoring und Produktmeldungen ohne Strategie bleiben draußen.", ["code"]),
+          fixed("prefilter.deduplication", "Duplikate zusammenführen", "Identische Inhalte sowie sehr ähnliche Titel- und Ereignisvarianten werden nicht mehrfach ausgewählt.", ["code", "server"]),
+        ],
+      },
+      {
+        id: "gemini", number: "03", icon: "fa-solid fa-wand-magic-sparkles", title: "Semantische KI-Prüfung", short_title: "KI-Prüfung",
+        summary: "Gemini versteht den Zusammenhang, schlägt Klassifikation und Nutzwert vor und muss jede Kernaussage belegen.",
+        input: "Vorgeprüfter Volltext", check: "Bedeutung, Evidenz und Nutzwert", output: "Strukturierter KI-Vorschlag",
+        rules: [
+          configured("gemini.primary", "Hauptmodell", "Analysiert Themen, Territories, Artikeltyp, Unternehmen, Personen, Sales-Trigger, Routing und beide Nutzwert-Scores in einem strukturierten Aufruf.", ["gemini"], "ai.primary_model", config.ai.primary_model),
+          configured("gemini.review", "Zweitprüfung bei Unsicherheit", "Ein zweiter Aufruf kontrolliert nur Ergebnisse unterhalb der eingestellten Sicherheitsschwelle.", ["gemini", "server"], "ai.review_enabled", config.ai.review_enabled, `${config.ai.review_model} unter ${config.ai.review_confidence_below}`),
+          fixed("gemini.evidence", "Wörtliche Belege sind Pflicht", "Themen, Unternehmen, Personen, Trigger und Routing müssen jeweils durch eine konkrete Passage aus Titel oder Artikeltext gestützt sein.", ["gemini"]),
+          fixed("gemini.untrusted", "Artikeltext ist keine Anweisung", "Der Prompt behandelt den Artikel als nicht vertrauenswürdige Daten und ignoriert darin enthaltene Instruktionen.", ["gemini", "server"]),
+          fixed("gemini.scores", "Zwei getrennte Nutzwert-Scores", "Marketing misst den möglichen Wert als Grundlage für ROOTS-Assets. Sales misst die konkrete Opportunity bei einem Tier-1-Kunden. Beides ist keine Modellkonfidenz.", ["gemini"]),
+        ],
+      },
+      {
+        id: "validation", number: "04", icon: "fa-solid fa-shield-halved", title: "Servervalidierung", short_title: "Validierung",
+        summary: "Der Server vertraut dem KI-Vorschlag nicht blind, sondern prüft IDs, Schwellen, Zitate und deren fachliche Bedeutung.",
+        input: "KI-Vorschlag", check: "Schwellen und Originalbelege", output: "Zuverlässig, Grenzfall oder abgelehnt",
+        rules: [
+          fixed("validation.exact_evidence", "Originalbeleg muss existieren", "Jede Evidenz wird normalisiert mit Titel und Artikeltext abgeglichen. Erfundenes oder nur sinngemäßes Zitat wird verworfen.", ["server"]),
+          fixed("validation.topic_context", "Beleg muss semantisch zum Tag passen", "Customer-Belege müssen Kunden oder Verhalten betreffen; Marketing-Belege Marke, Kommunikation oder CX; Retail-Belege Handel, Sortiment, Pricing, Promotion oder Store.", ["code", "server"]),
+          fixed("validation.operations_guard", "Industrie- und Operations-Schutz", "Produktion, Fabrik, Batterie, Maschinen, Energie, Logistik und Lieferkette reichen ohne separaten Marketing-, Customer- oder Retail-Beleg nicht.", ["code", "gemini", "server"]),
+          configured("validation.quality_profile", "Gemeinsames Qualitätsprofil", "Das Profil setzt alle Konfidenzschwellen konsistent. Automatisches Routing braucht zusätzlich den Status zuverlässig.", ["server"], "experience.quality_profile", config.experience.quality_profile, `Thema ${config.quality.topic_confidence}; Routing ${config.quality.routing_confidence}; zuverlässig ${config.quality.reliable_confidence}`),
+          configured("validation.ai_application", "Konkrete KI-Anwendung", "Wenn aktiv, reichen allgemeine KI-Meinungen nicht; Anwendung, Pilot oder Wirkung müssen im Beleg stehen.", ["code", "server"], "relevance.require_ai_application", config.relevance.require_ai_application),
+          configured("validation.subsector_transfer", "Übertragbarer Sub-Branchen-Insight", "Wenn aktiv, muss die Erkenntnis über einen einzelnen Unternehmensfall hinaus relevant sein.", ["gemini", "server"], "relevance.require_subsector_transferability", config.relevance.require_subsector_transferability),
+          fixed("validation.article_type", "Zulässiger Artikeltyp und deutscher Titel", "Der Artikeltyp wird normalisiert. Sonstiges bleibt ausgeschlossen; eine automatische Freigabe benötigt außerdem einen faktentreuen deutschen Titel.", ["code", "server"]),
+        ],
+      },
+      {
+        id: "routing", number: "05", icon: "fa-solid fa-code-branch", title: "Marketing, Sales und Buying Center", short_title: "Routing",
+        summary: "Marketing und Sales werden fachlich getrennt geprüft. Besteht Sales vollständig, hat es in der sichtbaren Ausgabe Vorrang vor Marketing.",
+        input: "Validierte Klassifikation", check: "Track-spezifische Pflichtbedingungen", output: "Genau passende Route oder Grenzfall",
+        rules: [
+          configured("routing.marketing", "Marketing braucht belegten Asset-Nutzen", "Status zuverlässig, direktes semantisch passendes ROOTS-Thema, veröffentlichungsfähiger Marketing-Nutzen und Routing-Evidenz sind Pflicht.", ["gemini", "server"], "routing.marketing_enabled", config.routing.marketing_enabled),
+          configured("routing.subsector", "Übertragbarer Sub-Branchen-Insight kann Marketing sein", "Wenn aktiv, darf eine übertragbare Marktbeobachtung auch ohne weiteres Kernthema Marketing werden. Sie braucht weiterhin Evidenz und veröffentlichungsfähigen Nutzwert.", ["gemini", "server"], "routing.subsector_alone_is_marketing", config.routing.subsector_alone_is_marketing),
+          configured("routing.sales", "Sales braucht einen konkreten Tier-1-Bedarf", "Pflicht sind: zuverlässiger Status, aktives Tier-1 als Hauptgegenstand oder Betroffener, strategischer Trigger, unternehmensspezifischer Beleg, ROOTS-relevanter Beratungsbedarf und ein konkreter ROOTS-Leistungsmatch.", ["gemini", "server"], "routing.sales_enabled", config.routing.sales_enabled),
+          fixed("routing.offering", "ROOTS-Leistungsmatch ist ein harter Sales-Gate", "Der zusätzliche Match-Aufruf darf nur eine gespeicherte ROOTS-Leistung mit exaktem Artikelbeleg auswählen. Ohne belastbaren Match wird nicht automatisch Sales geroutet.", ["gemini", "server"]),
+          fixed("routing.exclusive", "Sales und Marketing erscheinen nicht doppelt", "Beide Tracks werden zunächst unabhängig bewertet. Wenn Sales alle Bedingungen besteht, erhält Sales die sichtbare Route und Marketing wird für denselben Artikel unterdrückt.", ["server"], "salesRouted; marketingRouted = marketingEligible && !salesRouted"),
+          configured("routing.buying_center", "Buying Center erst nach Sales", "Erst ein erfolgreiches Sales-Signal kann passende Personen oder konkrete Zielrollen erhalten.", ["gemini", "server"], "routing.buying_center_enabled", config.routing.buying_center_enabled),
+          fixed("routing.marketing_score", "Marketing-Asset-Score", "Gewichtung: 25 % Neuigkeit, 30 % strategischer Wert, 25 % Übertragbarkeit und 20 % Evidenz. Wiederkehrende Tracker und schwächere Formate werden gedeckelt.", ["gemini", "server"], JSON.stringify(MARKETING_SCORE_WEIGHTS)),
+          fixed("routing.sales_score", "Sales-Opportunity-Score", "Gewichtung: 32 % Problemstärke, 30 % ROOTS-Fit, 23 % Kaufabsicht und 15 % Timing. Breite Trigger, fehlende Hilfesuche und reine Kreativumsetzung werden gedeckelt.", ["gemini", "server"], JSON.stringify(SALES_SCORE_WEIGHTS)),
+        ],
+      },
+      {
+        id: "output", number: "06", icon: "fa-solid fa-table-cells-large", title: "Ergebnis und manuelle Prüfung", short_title: "Ergebnis",
+        summary: "Speichert nicht nur das Ergebnis, sondern auch Prüfpfad, Modelle, Belege, Scores und Gründe für spätere Nachvollziehbarkeit.",
+        input: "Final geprüfte Tracks", check: "Datum und Mindestsubstanz", output: "Kachel, manuelle Prüfung, Archiv oder Fehler",
+        rules: [
+          fixed("output.no_date", "Ohne Veröffentlichungsdatum immer Archiv", "Ein Artikel ohne belastbares Datum wird unabhängig von KI-Score und möglichen Routen nicht veröffentlicht.", ["server"]),
+          fixed("output.manual_marketing", "Marketing-Grenzfall braucht echte Evidenz", "Manuelle Prüfung ist nur möglich, wenn ein direktes ROOTS-Thema und ein konkreter Marketing-Beleg vorhanden sind, aber etwa Übertragbarkeit, Substanz oder Sicherheit offen bleiben.", ["server"]),
+          fixed("output.manual_sales", "Sales-Grenzfall braucht Tier-1 und Herausforderung", "Manuelle Prüfung setzt Tier-1, Trigger, unternehmensspezifische Evidenz, konkrete Herausforderung und ROOTS-Relevanz voraus. Ohne diese Basis geht der Artikel ins Archiv.", ["server"]),
+          fixed("output.archive", "Kein Signal bedeutet Archiv statt Prüfliste", "Wenn weder Marketing noch Sales genügend Pflichtkriterien für eine menschliche Abwägung erfüllt, wird der Artikel sicher abgelehnt und archiviert.", ["server"]),
+          fixed("output.error", "Technische Fehler sind keine fachliche Ablehnung", "Extraktionsfehler, Quota, Timeout oder unlesbare Modellantwort bleiben als Fehler sichtbar und können erneut verarbeitet werden.", ["server", "frontend"]),
+          fixed("output.audit", "Vollständiger Prüfpfad", "Extraktion, deterministische Regeln, verwendete Modelle, Prompt-Version, Belege, Leistungsmatch, Scores, manuelle Tracks und finale Route werden am Artikel gespeichert.", ["server", "frontend"]),
+        ],
+      },
+    ],
+  };
 }
 const TOPIC_IDS = [
   "customer_insights", "marketing_insights", "fmcg_retail_signale",
@@ -2071,9 +2221,13 @@ function editorialTextQuality(text: string, config: PipelineConfig = DEFAULT_PIP
   const length = cleaned.length;
   const words = cleaned.split(/\s+/).filter((word) => /[A-Za-zÄÖÜäöüß]/.test(word)).length;
   const sentences = (cleaned.match(/[.!?](?:[”»"')\]]|\s|$)/g) || []).length;
-  const requiredLength = Math.max(500, Number(config.filters.minimum_text_length || 0));
-  const enoughProse = length >= requiredLength && words >= 70 && sentences >= 3;
-  const denseShortArticle = length >= 430 && words >= 75 && sentences >= 5;
+  const requiredLength = Math.max(EDITORIAL_TEXT_REQUIREMENTS.minimumCharacters, Number(config.filters.minimum_text_length || 0));
+  const enoughProse = length >= requiredLength
+    && words >= EDITORIAL_TEXT_REQUIREMENTS.minimumWords
+    && sentences >= EDITORIAL_TEXT_REQUIREMENTS.minimumSentences;
+  const denseShortArticle = length >= EDITORIAL_TEXT_REQUIREMENTS.denseMinimumCharacters
+    && words >= EDITORIAL_TEXT_REQUIREMENTS.denseMinimumWords
+    && sentences >= EDITORIAL_TEXT_REQUIREMENTS.denseMinimumSentences;
   const sufficient = !looksLikePaywallTeaser(cleaned) && (enoughProse || denseShortArticle);
   const reason = sufficient ? "Ausreichender redaktioneller Volltext"
     : looksLikePaywallTeaser(cleaned) ? "Paywall- oder Login-Auszug statt Volltext"
@@ -2781,8 +2935,12 @@ function calibrateRouteValueScores(
   const m = classification.marketing_asset_value;
   const s = classification.sales_opportunity_value;
   const round = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
-  let marketingScore = marketingEligible
-    ? round(m.novelty * 0.25 + m.strategic_value * 0.30 + m.transferability * 0.25 + m.evidence_strength * 0.20) : 0;
+  let marketingScore = marketingEligible ? round(
+    m.novelty * MARKETING_SCORE_WEIGHTS.novelty / 100
+    + m.strategic_value * MARKETING_SCORE_WEIGHTS.strategic_value / 100
+    + m.transferability * MARKETING_SCORE_WEIGHTS.transferability / 100
+    + m.evidence_strength * MARKETING_SCORE_WEIGHTS.evidence_strength / 100,
+  ) : 0;
   const normalized = normalizeMatchText(articleText);
   const recurringTracker = /\b(jahrlich|annual|monatlich|monthly|regelmassig|wiederkehrend|edition|welle|tracker|seit \d{4})\b/i.test(normalized);
   if (recurringTracker && m.novelty < 70) marketingScore = Math.min(marketingScore, 69);
@@ -2802,8 +2960,12 @@ function calibrateRouteValueScores(
     timing: Math.max(s.timing, 55),
     reason: "Das Unternehmen begründet aktuell eine höhere Preispositionierung; ROOTS passt mit Value Proposition und Nutzenargumentation, eine konkrete Kaufabsicht ist jedoch nicht belegt.",
   } : s;
-  let salesScore = salesCandidate && matchedOffering
-    ? round(calibratedSalesComponents.problem_strength * 0.32 + calibratedSalesComponents.roots_fit * 0.30 + calibratedSalesComponents.buying_intent * 0.23 + calibratedSalesComponents.timing * 0.15) : 0;
+  let salesScore = salesCandidate && matchedOffering ? round(
+    calibratedSalesComponents.problem_strength * SALES_SCORE_WEIGHTS.problem_strength / 100
+    + calibratedSalesComponents.roots_fit * SALES_SCORE_WEIGHTS.roots_fit / 100
+    + calibratedSalesComponents.buying_intent * SALES_SCORE_WEIGHTS.buying_intent / 100
+    + calibratedSalesComponents.timing * SALES_SCORE_WEIGHTS.timing / 100,
+  ) : 0;
   const explicitHelp = /\b(sucht|suchen|seeking|request for proposal|\brfp\b|tender|ausschreibung|partner gesucht|beratung gesucht|consultancy|consulting support|externe unterstutzung|externe hilfe|mandat|pitch|budget freigegeben)\b/i.test(normalized);
   const explicitProblem = EXPLICIT_MARKETING_PROBLEM_PATTERN.test(normalized)
     && ROOTS_SALES_CONTEXT_PATTERN.test(normalized) && !RESOLVED_PROBLEM_PATTERN.test(normalized);
@@ -3387,7 +3549,7 @@ async function tagArticle(
       marketing_relevance_score: 0, sales_relevance_score: 0,
       marketing_relevance_reason: "Kein eigenständiger redaktioneller Artikel oder kein belastbarer Marketing-Asset-Nutzen.",
       sales_relevance_reason: "Kein eigenständiger redaktioneller Artikel oder keine belastbare Tier-1-Sales-Opportunity.",
-      relevance_scoring_version: "roots-value-v1.0", route_score_details: {},
+      relevance_scoring_version: RELEVANCE_SCORING_VERSION, route_score_details: {},
       extraction_diagnostic: contentUnavailable ? diagnosticForFailure : null,
       manual_review_tracks: [], manual_review_reason: null,
       classification_audit: {
@@ -3790,7 +3952,7 @@ async function tagArticle(
     marketing_relevance_reason: routeValueScores.marketing.reason,
     sales_relevance_score: routeValueScores.sales.score,
     sales_relevance_reason: routeValueScores.sales.reason,
-    relevance_scoring_version: "roots-value-v1.0",
+    relevance_scoring_version: RELEVANCE_SCORING_VERSION,
     route_score_details: routeValueScores,
     extraction_diagnostic: extractionDiagnostic?.recovered ? extractionDiagnostic : null,
     manual_review_tracks: storedReviewTracks,
@@ -4246,7 +4408,16 @@ Deno.serve(async (req: Request) => {
         const { data, error } = await admin.schema("signal_layer").from("pipeline_settings")
           .select("config, version, updated_at").eq("id", "active").single();
         if (error) return errorResponse(origin, error.message, 500);
-        return corsResponse(origin, { settings: { ...data, config: mergePipelineConfig(data.config), prompt_version: CLASSIFIER_PROMPT_VERSION } });
+        const config = mergePipelineConfig(data.config);
+        return corsResponse(origin, {
+          settings: {
+            ...data,
+            config,
+            prompt_version: CLASSIFIER_PROMPT_VERSION,
+            scoring_version: RELEVANCE_SCORING_VERSION,
+            rule_manifest: buildPipelineRuleManifest(config),
+          },
+        });
       }
 
       case "list_gemini_models": {
@@ -4269,7 +4440,11 @@ Deno.serve(async (req: Request) => {
         const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Number(value)));
         requested.crawl.freshness_days = Math.round(clamp(requested.crawl.freshness_days, 1, 365));
         requested.crawl.future_tolerance_hours = Math.round(clamp(requested.crawl.future_tolerance_hours, 0, 72));
-        requested.filters.minimum_text_length = Math.round(clamp(requested.filters.minimum_text_length, 100, 5000));
+        requested.filters.minimum_text_length = Math.round(clamp(
+          requested.filters.minimum_text_length,
+          EDITORIAL_TEXT_REQUIREMENTS.minimumCharacters,
+          5000,
+        ));
         requested.ai.review_confidence_below = clamp(requested.ai.review_confidence_below, 0.5, 1);
         requested.ai.max_output_tokens = Math.round(clamp(requested.ai.max_output_tokens, 512, 8192));
         requested.ai.monthly_warning_usd = clamp(requested.ai.monthly_warning_usd, 0, 10000);
@@ -4285,7 +4460,15 @@ Deno.serve(async (req: Request) => {
         }).eq("id", "active").select("config, version, updated_at").single();
         if (error) return errorResponse(origin, error.message, 500);
         pipelineConfigCache = { value: requested, at: Date.now() };
-        return corsResponse(origin, { settings: { ...data, prompt_version: CLASSIFIER_PROMPT_VERSION } });
+        return corsResponse(origin, {
+          settings: {
+            ...data,
+            config: requested,
+            prompt_version: CLASSIFIER_PROMPT_VERSION,
+            scoring_version: RELEVANCE_SCORING_VERSION,
+            rule_manifest: buildPipelineRuleManifest(requested),
+          },
+        });
       }
 
       case "preview_pipeline_impact": {

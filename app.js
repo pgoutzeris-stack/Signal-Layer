@@ -388,7 +388,7 @@ const PIPELINE_FIELDS = {
     ["crawl.event_max_pages", "number", "Seiten pro Eventquelle", "Begrenzt große Messe- und Eventseiten.", 1, 100],
   ],
   filters: [
-    ["filters.minimum_text_length", "number", "Mindestlänge des Artikels", "Kürzere Seiten gelten nicht als vollständiger Artikel.", 100, 5000],
+    ["filters.minimum_text_length", "number", "Mindestlänge des Artikels", "Normalfall: mindestens diese Zeichenzahl sowie 70 Wörter und 3 vollständige Sätze. Dichte Kurztexte besitzen eine feste Ausnahme.", 500, 5000],
     ["filters.require_professional_signal", "boolean", "Fachsignal erforderlich", "Fordert Marketing, Customer, Retail, Innovation oder Strategie auf Deutsch oder Englisch."],
     ["filters.reject_career_pages", "boolean", "Karriereseiten ablehnen", "Filtert Jobs, Ausbildung, Bewerbung und Praktika."],
     ["filters.reject_faq_pages", "boolean", "FAQ- und Hilfeseiten ablehnen", "Entfernt allgemeine Fragen, Support und Serviceinhalte."],
@@ -422,7 +422,7 @@ const PIPELINE_FIELDS = {
     ["routing.sales_requires_tier1", "boolean", "Sales braucht Tier-1", "Verhindert Sales-Routing ohne Zielunternehmen."],
     ["routing.sales_requires_trigger", "boolean", "Sales braucht strategischen Trigger", "Eine Unternehmensnennung allein reicht nicht."],
     ["routing.buying_center_requires_person", "boolean", "Buying Center braucht Person/Rolle", "Verhindert generische Buying-Center-Zuordnung."],
-    ["routing.subsector_alone_is_marketing", "boolean", "Sub-Branche allein als Marketing", "Bewusst streng deaktiviert: Marktbeobachtung allein ist kein direktes Marketingsignal."],
+    ["routing.subsector_alone_is_marketing", "boolean", "Sub-Branche allein als Marketing", "Wenn aktiv, kann eine belegte und übertragbare Marktbeobachtung Marketing werden."],
   ],
 };
 
@@ -460,7 +460,7 @@ async function loadPipelineSettings() {
   pipelineSettings = settings;
   pipelineBaselineConfig = structuredClone(settings.config);
   renderBusinessPipelineStudio();
-  els.pipelineVersion.textContent = `Regelwerk ${settings.prompt_version || "aktiv"} · Konfiguration ${settings.version} · zuletzt ${new Date(settings.updated_at).toLocaleString("de-DE")}`;
+  els.pipelineVersion.textContent = `Regelwerk ${settings.rule_manifest?.version || settings.prompt_version || "aktiv"} · Prompt ${settings.prompt_version || "aktiv"} · Konfiguration ${settings.version} · zuletzt ${new Date(settings.updated_at).toLocaleString("de-DE")}`;
   void callApi("get_tagging_stats").then((stats) => {
     pipelineStats = stats;
     renderPipelineStudio();
@@ -597,7 +597,7 @@ function renderOperationsPanel(telemetry) {
     </section>
 
     <section class="operations-card">
-      <div class="operations-card-head"><div><span>KI-Konfiguration</span><h4>Modelle für neue Artikel</h4><p>Das Hauptmodell klassifiziert und bewertet den Marketing-/Sales-Nutzwert im selben Aufruf. Die zweite Prüfung greift nur bei unsicheren Ergebnissen; es gibt kein drittes Scoring-Modell.</p></div>${modelState}</div>
+      <div class="operations-card-head"><div><span>KI-Konfiguration</span><h4>Modelle für neue Artikel</h4><p>Das Hauptmodell klassifiziert und bewertet den Marketing-/Sales-Nutzwert im selben Aufruf. Bei Bedarf folgen getrennt protokollierte Aufrufe für Zweitprüfung, ROOTS-Leistungsmatch sowie Übersetzung und Formatierung.</p></div>${modelState}</div>
       <div class="operations-model-grid">
         ${operationsModelSelect("ai.primary_model", "Hauptmodell", "Analysiert alle Artikel nach dem Vorfilter.", "fa-solid fa-bolt")}
         ${operationsModelSelect("ai.review_model", "Modell für zweite Prüfung", "Kontrolliert Ergebnisse unterhalb der Sicherheitsgrenze.", "fa-solid fa-shield-halved")}
@@ -688,7 +688,7 @@ const STAGE_PAGE_META = {
 };
 
 function stageSystem(kind, label) {
-  const icons = { source: "fa-solid fa-link", apify: "fa-solid fa-spider", server: "fa-solid fa-shield-halved", ai: "fa-solid fa-wand-magic-sparkles", result: "fa-solid fa-circle-check" };
+  const icons = { source: "fa-solid fa-link", crawler: "fa-solid fa-spider", browser: "fa-solid fa-window-maximize", code: "fa-solid fa-code", server: "fa-solid fa-shield-halved", gemini: "fa-solid fa-wand-magic-sparkles", ai: "fa-solid fa-wand-magic-sparkles", frontend: "fa-solid fa-display", result: "fa-solid fa-circle-check" };
   return `<span class="stage-system stage-system--${kind}"><i class="${icons[kind] || "fa-solid fa-gear"}"></i>${escapeHtml(label)}</span>`;
 }
 
@@ -701,7 +701,47 @@ function stageSection(title, copy, content, editLabel = "") {
   return `<section class="stage-section"><header><div><h5>${escapeHtml(title)}</h5>${copy ? `<p>${escapeHtml(copy)}</p>` : ""}</div>${editLabel ? `<button type="button" class="stage-edit-button" data-pipeline-open-editor><i class="fa-solid fa-pen"></i>${escapeHtml(editLabel)}</button>` : ""}</header>${content}</section>`;
 }
 
+function getManifestStage(stageId) {
+  return pipelineSettings?.rule_manifest?.stages?.find((stage) => stage.id === stageId) || null;
+}
+
+function manifestSystemLabel(system) {
+  return ({ source: "Quelle", crawler: "Crawler", browser: "Browser-Fallback", code: "Feste Regel", gemini: "Gemini", server: "Server", frontend: "Frontend" })[system] || system;
+}
+
+function renderManifestRule(rule) {
+  const state = rule.status === "inactive" ? "Aus" : rule.status === "conditional" ? "Bei Bedarf" : "Aktiv";
+  const value = rule.value === undefined ? "" : `<span class="quality-tag ${rule.status === "inactive" ? "quality-tag--uncertain" : "quality-tag--reliable"}">${escapeHtml(typeof rule.value === "boolean" ? (rule.value ? "Ein" : "Aus") : String(rule.value))}</span>`;
+  const systems = (rule.systems || []).map((system) => stageSystem(system, manifestSystemLabel(system))).join("");
+  return `<article class="stage-card manifest-rule-card">
+    <span class="stage-card-icon"><i class="${rule.locked ? "fa-solid fa-lock" : "fa-solid fa-sliders"}"></i></span>
+    <div><div class="logic-card-top"><b>${escapeHtml(rule.title)}</b>${value}</div><p>${escapeHtml(rule.explanation)}</p>${rule.technical ? `<small class="manifest-technical">Technisch: ${escapeHtml(rule.technical)}</small>` : ""}<div class="stage-system-row">${systems}</div></div>
+    <span class="rule-owner"><i class="fa-solid ${rule.locked ? "fa-lock" : "fa-pen"}"></i>${rule.locked ? "Feste Schutzregel" : `Konfigurierbar · ${state}`}</span>
+  </article>`;
+}
+
+function renderManifestStageOverview(stage, manifestStage) {
+  const summary = `<div class="stage-io-grid">
+    <article><span>Kommt hinein</span><b>${escapeHtml(manifestStage.input)}</b></article>
+    <i class="fa-solid fa-arrow-right"></i>
+    <article><span>Hier passiert</span><b>${escapeHtml(manifestStage.check)}</b></article>
+    <i class="fa-solid fa-arrow-right"></i>
+    <article class="stage-io-result"><span>Kommt heraus</span><b>${escapeHtml(manifestStage.output)}</b></article>
+  </div>`;
+  const configurable = (manifestStage.rules || []).some((rule) => !rule.locked);
+  const editLabel = STAGE_PAGE_META[stage.id]?.edit && configurable ? "Einstellungen ändern" : "";
+  const rules = stageSection("So entscheidet diese Station", manifestStage.summary, `<div class="stage-card-grid stage-card-grid--3">${(manifestStage.rules || []).map(renderManifestRule).join("")}</div>`, editLabel);
+  let aiOperations = "";
+  if (stage.id === "gemini" && pipelineSettings.rule_manifest.ai_operations?.length) {
+    aiOperations = stageSection("Welche KI-Aufrufe können entstehen?", "Alle Operationen werden mit Modell, Tokens und Kosten separat protokolliert.", `<div class="stage-card-grid stage-card-grid--4">${pipelineSettings.rule_manifest.ai_operations.map((operation) => stageCard("fa-solid fa-wand-magic-sparkles", operation.title, `${operation.when} Modell: ${operation.model}`, "gemini", "Gemini")).join("")}</div>`);
+  }
+  const manifestMeta = `<div class="stage-outcome stage-outcome--single"><span><i class="fa-solid fa-circle-check"></i><b>Live-Regelwerk</b> ${escapeHtml(pipelineSettings.rule_manifest.version)} · Prompt ${escapeHtml(pipelineSettings.rule_manifest.prompt_version)} · Scoring ${escapeHtml(pipelineSettings.rule_manifest.scoring_version)}</span></div>`;
+  return `<div class="stage-page">${summary}${rules}${aiOperations}${manifestMeta}</div>`;
+}
+
 function renderStageOverview(stage) {
+  const manifestStage = getManifestStage(stage.id);
+  if (manifestStage) return renderManifestStageOverview(stage, manifestStage);
   const meta = STAGE_PAGE_META[stage.id];
   const summary = `<div class="stage-io-grid">
     <article><span>Kommt hinein</span><b>${escapeHtml(meta.input)}</b></article>
@@ -727,7 +767,7 @@ function renderStageOverview(stage) {
   }
 
   if (stage.id === "prefilter") {
-    content = stageSection("Was prüft der Vorfilter?", "Alle Prüfungen laufen automatisch in Supabase. Apify ist hier bereits fertig.", `<div class="stage-card-grid stage-card-grid--3">
+    content = stageSection("Was prüft der Vorfilter?", "Alle Prüfungen laufen automatisch nach der Volltextgewinnung in Supabase.", `<div class="stage-card-grid stage-card-grid--3">
       ${stageCard("fa-solid fa-eraser", "Text aufräumen", "Menüs, Newsletter, Datenschutz und doppelte Zeilen entfernen.", "server", "Supabase", "Der eigentliche Artikel bleibt erhalten; Seitennavigation wird entfernt.")}
       ${stageCard("fa-solid fa-file-lines", "Vollständiger Artikel", `Mindestens ${Number(getConfigValue("filters.minimum_text_length"))} Zeichen Artikeltext.`, "server", "Feste Regel")}
       ${stageCard("fa-solid fa-ban", "Passende Seitenart", "Karriere, FAQ und reine Eventprogramme stoppen.", "server", "Feste Regel")}
@@ -740,7 +780,7 @@ function renderStageOverview(stage) {
       ${stageCard("fa-solid fa-store", "Handel & FMCG", "Sortiment, Preise, Eigenmarken, Stores und Retail Media.", null, null)}
       ${stageCard("fa-solid fa-lightbulb", "KI & Innovation", "Konkrete Anwendungen, Automatisierung und Wirkung.", null, null)}
       ${stageCard("fa-solid fa-chart-line", "Strategie", "Wachstum, Markteintritt, Geschäftsmodell und Wandel.", null, null)}
-    </div>`) + stageSection("Welche Systeme arbeiten hier?", "", `<div class="stage-system-row">${stageSystem("apify", "Apify: abgeschlossen")}${stageSystem("server", "Supabase: entscheidet")}${stageSystem("ai", "Gemini: erst im nächsten Schritt")}</div><div class="stage-outcome"><span><i class="fa-solid fa-circle-xmark"></i><b>Stopp</b> Ablehnungsgrund wird gespeichert.</span><span><i class="fa-solid fa-circle-arrow-right"></i><b>Weiter</b> Artikel geht zur KI-Prüfung.</span></div>`);
+    </div>`) + stageSection("Welche Systeme arbeiten hier?", "", `<div class="stage-system-row">${stageSystem("crawler", "Crawler: abgeschlossen")}${stageSystem("browser", "Browser: nur bei Bedarf")}${stageSystem("server", "Supabase: entscheidet")}${stageSystem("ai", "Gemini: erst im nächsten Schritt")}</div><div class="stage-outcome"><span><i class="fa-solid fa-circle-xmark"></i><b>Stopp</b> Ablehnungsgrund wird gespeichert.</span><span><i class="fa-solid fa-circle-arrow-right"></i><b>Weiter</b> Artikel geht zur KI-Prüfung.</span></div>`);
   }
 
   if (stage.id === "gemini") {
@@ -819,7 +859,7 @@ function renderRoutingEditor(route) {
   }[route];
   if (!meta) return "";
   let content = "";
-  if (route === "marketing") content = `<div class="route-editor-intro"><i class="${meta.icon}"></i><div><b>Was hier angepasst wird</b><p>Marketing wird unabhängig von Sales bewertet. Ein Tier-1-Unternehmen ist dafür nicht erforderlich; direkte, übertragbare und zum Themen-Tag passende Evidenz bleibt Pflicht.</p></div></div><div class="stage-toggle-list">${simpleToggle("routing.marketing_enabled", "Marketing-Routing aktiv", "Zeigt bestätigte Marketing-Signale als Marketing-Kacheln.")}${simpleToggle("decisions.customer_signal_qualifies_marketing", "Customer-Signale berücksichtigen", "Belegte Kundenbedürfnisse, Verhalten oder Customer Experience können Marketing qualifizieren.")}${simpleToggle("decisions.retail_signal_qualifies_marketing", "Retail-Signale berücksichtigen", "Belegte Sortiments-, Pricing-, Promotion- oder Store-Strategien können Marketing qualifizieren.")}${simpleToggle("routing.subsector_alone_is_marketing", "Sub-Branchen-Insight allein zulassen", "Wenn aktiv, kann eine übertragbare Marktbeobachtung ohne weiteres Kernthema Marketing werden.")}</div><div class="stage-fixed-note"><i class="fa-solid fa-lock"></i><span>Direkte und semantisch passende Themenbelege sowie der Industrie-/Operations-Schutz sind feste Sicherheitsregeln und können hier nicht abgeschaltet werden.</span></div>`;
+  if (route === "marketing") content = `<div class="route-editor-intro"><i class="${meta.icon}"></i><div><b>Was hier angepasst wird</b><p>Marketing wird fachlich unabhängig von Sales bewertet. Besteht Sales am Ende vollständig, hat es in der sichtbaren Ausgabe Vorrang. Ein Tier-1-Unternehmen ist für Marketing nicht erforderlich; direkte, übertragbare und zum Themen-Tag passende Evidenz bleibt Pflicht.</p></div></div><div class="stage-toggle-list">${simpleToggle("routing.marketing_enabled", "Marketing-Routing aktiv", "Zeigt bestätigte Marketing-Signale als Marketing-Kacheln.")}${simpleToggle("decisions.customer_signal_qualifies_marketing", "Customer-Signale berücksichtigen", "Belegte Kundenbedürfnisse, Verhalten oder Customer Experience können Marketing qualifizieren.")}${simpleToggle("decisions.retail_signal_qualifies_marketing", "Retail-Signale berücksichtigen", "Belegte Sortiments-, Pricing-, Promotion- oder Store-Strategien können Marketing qualifizieren.")}${simpleToggle("routing.subsector_alone_is_marketing", "Sub-Branchen-Insight allein zulassen", "Wenn aktiv, kann eine übertragbare Marktbeobachtung ohne weiteres Kernthema Marketing werden.")}</div><div class="stage-fixed-note"><i class="fa-solid fa-lock"></i><span>Direkte und semantisch passende Themenbelege sowie der Industrie-/Operations-Schutz sind feste Sicherheitsregeln und können hier nicht abgeschaltet werden.</span></div>`;
   if (route === "sales") content = `<div class="route-editor-intro"><i class="${meta.icon}"></i><div><b>Was hier angepasst wird</b><p>Sales braucht einen belastbaren Unternehmensanlass. Danach wird genau eine konkrete ROOTS-Leistung aus dem 6P-Katalog zugeordnet.</p></div></div><div class="stage-toggle-list">${simpleToggle("routing.sales_enabled", "Sales-Routing aktiv", "Zeigt bestätigte Sales-Signale als Sales-Kacheln.")}${simpleToggle("routing.sales_requires_tier1", "Tier-1-Unternehmen erforderlich", "Verhindert Sales-Routing ohne priorisierten Zielkunden.")}${simpleToggle("routing.sales_requires_trigger", "Strategischer Anlass erforderlich", "Eine Firmen- oder Markennennung allein reicht nicht.")}${simpleToggle("decisions.sales_requires_implementation", "Konkrete Umsetzung verlangen", "Wenn aktiv, reichen unverbindliche Absichten oder vage Pläne nicht.")}${simpleToggle("decisions.sales_allow_risks", "Strategische Risiken berücksichtigen", "Auch belegte aktuelle Risiken können eine relevante Ansprache begründen.")}</div>${taxonomyEditor("sales_triggers", "Sales-Trigger", "Bezeichnungen und Beschreibungen werden für zukünftige Sales-Prüfungen verwendet.")}${offeringsEditor()}`;
   if (route === "buying_center") content = `<div class="route-editor-intro"><i class="${meta.icon}"></i><div><b>Was hier angepasst wird</b><p>Buying Center wird erst nach erfolgreichem Sales-Routing geprüft und ergänzt passende Verantwortliche für den belegten Anlass.</p></div></div><div class="stage-toggle-list">${simpleToggle("routing.buying_center_enabled", "Buying Center aktiv", "Ergänzt zu geeigneten Sales-Signalen passende Personen oder Rollen.")}${simpleToggle("routing.buying_center_requires_person", "Person oder konkrete Rolle erforderlich", "Verhindert generische Ansprechpartner ohne Bezug zum Anlass.")}${simpleToggle("decisions.buying_center_allow_role_without_name", "Konkrete Rolle ohne Namen zulassen", "Erlaubt zum Beispiel Head of Customer Experience, wenn kein Name belastbar belegt ist.")}</div><div class="stage-fixed-note"><i class="fa-solid fa-lock"></i><span>Reine Ernennungen, Pressesprecher und unpassende C-Level-Rollen bleiben ausgeschlossen.</span></div>`;
   return `<div class="stage-editor-overlay routing-editor-overlay"><section class="stage-editor-card routing-editor-card" role="dialog" aria-modal="true" aria-labelledby="routing-editor-title"><header><div class="routing-editor-heading"><span class="routing-editor-heading-icon"><i class="${meta.icon}"></i></span><div><span>${escapeHtml(meta.eyebrow)}</span><h5 id="routing-editor-title">${escapeHtml(meta.title)}</h5><p>${escapeHtml(meta.copy)}</p></div></div><button type="button" class="pipeline-icon-btn" data-routing-editor-close aria-label="Routing-Einstellungen schließen"><i class="fa-solid fa-xmark"></i></button></header><main>${content}</main><footer><span class="routing-save-note"><i class="fa-solid fa-circle-info"></i> Gilt für zukünftige Analysen</span><div><button type="button" class="btn-secondary" data-routing-editor-close>Abbrechen</button><button type="button" class="btn-primary" data-pipeline-save><i class="fa-solid fa-floppy-disk"></i> Speichern</button></div></footer></section></div>`;
@@ -833,7 +873,9 @@ function renderPipelineDrilldown() {
   const stageIndex = pipelineStageDefinitions.indexOf(stage);
   const previousStage = pipelineStageDefinitions[stageIndex - 1];
   const nextStage = pipelineStageDefinitions[stageIndex + 1];
-  const meta = STAGE_PAGE_META[stage.id];
+  const fallbackMeta = STAGE_PAGE_META[stage.id];
+  const manifestStage = getManifestStage(stage.id);
+  const meta = manifestStage ? { ...fallbackMeta, title: manifestStage.title, summary: manifestStage.summary } : fallbackMeta;
   target.hidden = false;
   target.innerHTML = `<div class="pipeline-drilldown-card pipeline-drilldown-card--single" role="dialog" aria-modal="true" aria-labelledby="pipeline-detail-title">
     <header class="pipeline-drilldown-head"><div><div class="pipeline-breadcrumb"><button type="button" data-pipeline-detail-close>Pipeline</button><i class="fa-solid fa-chevron-right"></i><b>${stage.number} ${escapeHtml(meta.title)}</b></div><div class="pipeline-drilldown-title"><span><i class="${stage.icon}"></i></span><div><h4 id="pipeline-detail-title" tabindex="-1">${escapeHtml(meta.title)}</h4><p>${escapeHtml(meta.summary)}</p></div></div></div><div class="pipeline-drilldown-head-actions"><button type="button" class="pipeline-icon-btn" data-pipeline-stage-prev title="Vorherige Station" ${previousStage ? "" : "disabled"}><i class="fa-solid fa-arrow-left"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-stage-next title="Nächste Station" ${nextStage ? "" : "disabled"}><i class="fa-solid fa-arrow-right"></i></button><button type="button" class="pipeline-icon-btn" data-pipeline-detail-close title="Schließen"><i class="fa-solid fa-xmark"></i></button></div></header>
@@ -867,10 +909,10 @@ function renderPipelineStudio() {
       id: "crawl", number: "01", icon: "fa-solid fa-globe", title: "Quellen und Artikelkandidaten",
       description: "RSS, Sitemap und der native Crawler liefern URLs. Datum, Tiefe und Seitenzahl begrenzen den Suchraum.", owners: ["code", "server"], open: false,
       tabs: [
-        { id: "flow", icon: "fa-solid fa-route", label: "So funktioniert es", content: `<div class="pipeline-layer-map" aria-label="Verantwortung von Quelle, Apify, Supabase und Vorfilter">
+        { id: "flow", icon: "fa-solid fa-route", label: "So funktioniert es", content: `<div class="pipeline-layer-map" aria-label="Verantwortung von Quelle, Crawler, Browser-Fallback, Supabase und Vorfilter">
           <article><i class="fa-solid fa-link"></i><span>01 · Einstieg</span><b>Präzise Quellen-URL</b><small>News, Blog oder Presse begrenzt den Suchraum.</small></article>
           <i class="fa-solid fa-arrow-right"></i>
-          <article><i class="fa-solid fa-spider"></i><span>02 · Apify</span><b>Links und Crawl-Grenzen</b><small>Domain, URL-Ausschlüsse, Tiefe und Seitenzahl.</small></article>
+          <article><i class="fa-solid fa-spider"></i><span>02 · Nativer Crawler</span><b>Links und Crawl-Grenzen</b><small>Domain, URL-Ausschlüsse, Tiefe und Seitenzahl.</small></article>
           <i class="fa-solid fa-arrow-right"></i>
           <article><i class="fa-solid fa-shield-halved"></i><span>03 · Supabase</span><b>URL und Datum erneut prüfen</b><small>Sicherheitsnetz vor Speicherung und Download.</small></article>
           <i class="fa-solid fa-arrow-right"></i>
@@ -878,7 +920,7 @@ function renderPipelineStudio() {
         </div><div class="logic-grid pipeline-source-methods">
           <article class="logic-card"><div class="logic-card-top"><h5>RSS zuerst</h5>${pipelineOwner("code")}</div><p>Strukturierte Feed-Einträge liefern Titel, URL und häufig ein bestätigtes Veröffentlichungsdatum.</p></article>
           <article class="logic-card"><div class="logic-card-top"><h5>Sitemap danach</h5>${pipelineOwner("code")}</div><p>News- und Blog-URLs werden gesammelt. Ein Sitemap-<code>lastmod</code> gilt nicht automatisch als Veröffentlichungsdatum.</p></article>
-          <article class="logic-card"><div class="logic-card-top"><h5>Apify nur als Fallback</h5>${pipelineOwner("server")}</div><p>Fehlen strukturierte Wege, gelten dieselben URL-Ausschlüsse innerhalb der festgelegten Crawl-Grenzen.</p></article>
+          <article class="logic-card"><div class="logic-card-top"><h5>Browser nur als Fallback</h5>${pipelineOwner("server")}</div><p>Scheitern strukturierte Wege oder der Direktabruf an JavaScript, Blockade oder Paywall, übernimmt Playwright über GitHub Actions und stößt danach die Analyse erneut an.</p></article>
         </div>` },
         { id: "rules", icon: "fa-solid fa-list-check", label: "Prüfregeln", content: `<div class="pipeline-explainer"><ul class="pipeline-checklist">
           <li><i class="fa-solid fa-calendar-check"></i><div><b>Zeitraum</b><span>Beim ersten Lauf werden standardmäßig nur Artikel der letzten ${Number(getConfigValue("crawl.freshness_days"))} Tage berücksichtigt.</span></div></li>
@@ -908,7 +950,7 @@ function renderPipelineStudio() {
           <section class="signal-family"><h5>KI und Innovation</h5><div class="signal-family-tags"><span>KI-Anwendung</span><span>KI-Plattform</span><span>Automatisierung</span><span>generative AI</span><span>AI initiative</span></div></section>
           <section class="signal-family"><h5>Strategie und Wachstum</h5><div class="signal-family-tags"><span>Markteintritt</span><span>Expansion</span><span>Geschäftsmodell</span><span>Restrukturierung</span><span>acquisition</span><span>agency change</span></div></section>
         </div><div class="pipeline-locked-grid">${lockedRule("Karriere und FAQ ablehnen", "Fest im Code; nicht über die Oberfläche deaktivierbar.")}${lockedRule("Duplikate entfernen", "Fest im Code; normalisierter Inhalts-Hash.")}${lockedRule("Fachsignal verlangen", "Fest im Code; DE/EN-Muster als kostensparendes Gate.")}${lockedRule("Reine Personalernennungen ablehnen", "Fest im Code; Ausnahme nur bei strategischem Trigger.")}${lockedRule("Legacy-Keywords sind inaktiv", "Alte Listen bleiben nur für Audit-Zwecke erhalten und entscheiden nicht mit.")}</div>` },
-        { id: "edit", icon: "fa-solid fa-pen", label: "Bearbeiten", content: `<div class="pipeline-responsibility-note pipeline-responsibility-note--content"><i class="fa-solid fa-filter"></i><div><b>Dieser Schritt läuft in Supabase, nicht in Apify.</b><span>Er bewertet den bereits geladenen Artikelinhalt und entscheidet, ob ein Gemini-Aufruf sinnvoll ist.</span></div></div>${pipelineEditHead("Vorfilter", "Hier wird festgelegt, welche Artikel Gemini prüfen darf.")}${pipelineFields(["filters.minimum_text_length"])}${policyToggle("relevance.allow_product_launch_without_strategy", "Neue Produkte ohne Marketingbezug trotzdem prüfen", "Wenn eingeschaltet, prüft Gemini auch Meldungen ohne Kampagne, Zielgruppe oder Markenentscheidung.", "Vorfilter + Policy")}<div class="pipeline-locked-grid">${lockedRule("Fachsignal erforderlich", "Server setzt diese Regel bei jedem Speichern wieder auf aktiv.")}${lockedRule("Karriere, FAQ und Eventprogramme", "Diese Schutzfilter sind nicht abschaltbar.")}</div>` },
+        { id: "edit", icon: "fa-solid fa-pen", label: "Bearbeiten", content: `<div class="pipeline-responsibility-note pipeline-responsibility-note--content"><i class="fa-solid fa-filter"></i><div><b>Dieser Schritt läuft nach Crawler und Browser-Fallback in Supabase.</b><span>Er bewertet den bereits geladenen Artikelinhalt und entscheidet, ob ein Gemini-Aufruf sinnvoll ist.</span></div></div>${pipelineEditHead("Vorfilter", "Hier wird festgelegt, welche Artikel Gemini prüfen darf.")}${pipelineFields(["filters.minimum_text_length"])}${policyToggle("relevance.allow_product_launch_without_strategy", "Neue Produkte ohne Marketingbezug trotzdem prüfen", "Wenn eingeschaltet, prüft Gemini auch Meldungen ohne Kampagne, Zielgruppe oder Markenentscheidung.", "Vorfilter + Policy")}<div class="pipeline-locked-grid">${lockedRule("Fachsignal erforderlich", "Server setzt diese Regel bei jedem Speichern wieder auf aktiv.")}${lockedRule("Karriere, FAQ und Eventprogramme", "Diese Schutzfilter sind nicht abschaltbar.")}</div>` },
       ],
     },
     {
@@ -966,7 +1008,7 @@ function renderPipelineStudio() {
           <article class="logic-card"><div class="logic-card-top"><h5>Marketing-Asset-Score</h5>${pipelineOwner("ai")} ${pipelineOwner("server")}</div><p>Gemini bewertet Neuigkeit, strategischen Wert, Übertragbarkeit und Evidenz. Der Server gewichtet 25/30/25/20 und deckelt wiederkehrende oder schwächere Formate.</p>${pipelineCode("score = 25% novelty + 30% strategy + 25% transfer + 20% evidence")}</article>
           <article class="logic-card"><div class="logic-card-top"><h5>Sales-Opportunity-Score</h5>${pipelineOwner("ai")} ${pipelineOwner("server")}</div><p>Gemini bewertet Problem, ROOTS-Fit, Kaufabsicht und Timing. Der Server gewichtet 32/30/23/15 und begrenzt M&A, Expansion oder kreative Ausführung ohne Beratungsbedarf.</p>${pipelineCode("score = 32% problem + 30% ROOTS fit + 23% intent + 15% timing")}</article>
         </div><div class="pipeline-locked-grid">${lockedRule("Score ist keine Konfidenz", "Er misst den Nutzwert für Marketing-Assets beziehungsweise konkrete Sales-Opportunities.")}${lockedRule("Kein drittes KI-Modell", "Die Komponenten entstehen im Hauptaufruf; Review nur nach bestehender Regel.")}${lockedRule("Themenbeleg muss semantisch passen", "Fest im Servercode: Das KI-Tag allein genügt nie.")}${lockedRule("Reine Industrie-/Operations-Signale ablehnen", "Fest in Prompt und Servercode; nur ein separater ROOTS-Marketingbeleg kann die Sperre überwinden.")}${lockedRule("Reine CEO-/CMO-Ernennung ablehnen", "Fest im Code; nur mit strategischem Trigger weiter.")}</div>` },
-        { id: "edit", icon: "fa-solid fa-pen", label: "Bearbeiten", content: `${pipelineEditHead("Marketing-Routing", "Legt fest, welche bereits validierten Themen eine Marketing-Kachel erzeugen dürfen.")}<div class="rule-list">${policyToggle("routing.marketing_enabled", "Marketing-Routing aktiv", "Erzeugt Marketing-Kacheln bei direkter Evidenz.")}${policyToggle("decisions.customer_signal_qualifies_marketing", "Customer-Signal qualifiziert Marketing", "Nur mit wörtlicher Customer-Evidenz und bestandener Qualitätsprüfung.")}${policyToggle("decisions.retail_signal_qualifies_marketing", "Retail-Signal qualifiziert Marketing", "Sortiment, Pricing, Promotion oder Store-Strategie können Marketing auslösen.")}${policyToggle("routing.subsector_alone_is_marketing", "Sub-Branche allein als Marketing", "Standardmäßig aus: Marktbeobachtung allein ist kein direkter Marketingbeleg.")}</div><div style="height:10px"></div>${pipelineEditHead("Sales und Buying Center", "Diese Regeln greifen erst nach zuverlässiger Gesamtklassifikation.")}<div class="rule-list">${policyToggle("routing.sales_enabled", "Sales-Routing aktiv", "Erzeugt Sales-Kacheln bei erfüllten Bedingungen.")}${policyToggle("routing.sales_requires_tier1", "Tier-1-Unternehmen erforderlich", "Verhindert Sales-Routing ohne Zielunternehmen.")}${policyToggle("routing.sales_requires_trigger", "Strategischer Trigger erforderlich", "Eine Unternehmensnennung allein reicht nicht.")}${policyToggle("decisions.sales_requires_implementation", "Umsetzung statt Absicht verlangen", "Vage Pläne und unverbindliche Aussagen reichen dann nicht.")}${policyToggle("decisions.sales_allow_risks", "Strategische Risiken berücksichtigen", "Auch belastbare Risiken können eine Ansprache begründen.")}${policyToggle("routing.buying_center_enabled", "Buying Center aktiv", "Wird erst nach erfolgreichem Sales-Routing geprüft.")}${policyToggle("routing.buying_center_requires_person", "Person oder Rolle erforderlich", "Verhindert generische Buying-Center-Zuordnung.")}${policyToggle("decisions.buying_center_allow_role_without_name", "Konkrete Rolle ohne Namen zulassen", "Zum Beispiel Head of Customer Experience.")}</div>` },
+        { id: "edit", icon: "fa-solid fa-pen", label: "Bearbeiten", content: `${pipelineEditHead("Marketing-Routing", "Legt fest, welche bereits validierten Themen eine Marketing-Kachel erzeugen dürfen.")}<div class="rule-list">${policyToggle("routing.marketing_enabled", "Marketing-Routing aktiv", "Erzeugt Marketing-Kacheln bei direkter Evidenz.")}${policyToggle("decisions.customer_signal_qualifies_marketing", "Customer-Signal qualifiziert Marketing", "Nur mit wörtlicher Customer-Evidenz und bestandener Qualitätsprüfung.")}${policyToggle("decisions.retail_signal_qualifies_marketing", "Retail-Signal qualifiziert Marketing", "Sortiment, Pricing, Promotion oder Store-Strategie können Marketing auslösen.")}${policyToggle("routing.subsector_alone_is_marketing", "Sub-Branche allein als Marketing", "Wenn aktiv, kann ein belegter und übertragbarer Sub-Branchen-Insight Marketing werden.")}</div><div style="height:10px"></div>${pipelineEditHead("Sales und Buying Center", "Diese Regeln greifen erst nach zuverlässiger Gesamtklassifikation.")}<div class="rule-list">${policyToggle("routing.sales_enabled", "Sales-Routing aktiv", "Erzeugt Sales-Kacheln bei erfüllten Bedingungen.")}${policyToggle("routing.sales_requires_tier1", "Tier-1-Unternehmen erforderlich", "Verhindert Sales-Routing ohne Zielunternehmen.")}${policyToggle("routing.sales_requires_trigger", "Strategischer Trigger erforderlich", "Eine Unternehmensnennung allein reicht nicht.")}${policyToggle("decisions.sales_requires_implementation", "Umsetzung statt Absicht verlangen", "Vage Pläne und unverbindliche Aussagen reichen dann nicht.")}${policyToggle("decisions.sales_allow_risks", "Strategische Risiken berücksichtigen", "Auch belastbare Risiken können eine Ansprache begründen.")}${policyToggle("routing.buying_center_enabled", "Buying Center aktiv", "Wird erst nach erfolgreichem Sales-Routing geprüft.")}${policyToggle("routing.buying_center_requires_person", "Person oder Rolle erforderlich", "Verhindert generische Buying-Center-Zuordnung.")}${policyToggle("decisions.buying_center_allow_role_without_name", "Konkrete Rolle ohne Namen zulassen", "Zum Beispiel Head of Customer Experience.")}</div>` },
       ],
     },
     {
@@ -987,7 +1029,12 @@ function renderPipelineStudio() {
 
   pipelineStageDefinitions = stages;
   studio.innerHTML = stages.slice(0, 5).map((stage) => {
-    const overview = PIPELINE_OVERVIEW_META[stage.id];
+    const manifestStage = getManifestStage(stage.id);
+    const overview = manifestStage ? {
+      label: manifestStage.short_title || manifestStage.title,
+      summary: manifestStage.summary,
+      hover: (manifestStage.rules || []).slice(0, 4).map((rule) => rule.title),
+    } : PIPELINE_OVERVIEW_META[stage.id];
     const [statLabel, statValue] = pipelineStageStat(stage.id);
     return `<button type="button" class="pipeline-overview-card" data-pipeline-open-stage="${stage.id}" aria-label="${escapeHtml(overview.label)} im Ablauf öffnen"><span class="pipeline-overview-card-number">${stage.number}</span><span class="pipeline-overview-card-icon"><i class="${stage.icon}"></i></span><h4>${escapeHtml(overview.label)}</h4><p>${escapeHtml(overview.summary)}</p><span class="pipeline-overview-stat"><small>${escapeHtml(statLabel)}</small><b>${escapeHtml(statValue)}</b></span><span class="pipeline-overview-card-action">Ablauf ansehen <i class="fa-solid fa-arrow-right"></i></span><span class="pipeline-card-popover" aria-hidden="true"><strong>Auf einen Blick</strong><ul>${overview.hover.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></span></button>`;
   }).join("");
@@ -1013,7 +1060,8 @@ function renderBusinessPipelineStudio() {
 
   const diagnostics = document.getElementById("diagnostics-content");
   const q = pipelineSettings.config.quality;
-  if (diagnostics) diagnostics.innerHTML = `<div class="diagnostic-grid"><section class="diagnostic-card"><h4>KI-Orchestrierung</h4><div class="diagnostic-row"><span>Primary inkl. Scoring</span><code>${escapeHtml(getConfigValue("ai.primary_model"))}</code></div><div class="diagnostic-row"><span>Reviewer</span><code>${escapeHtml(getConfigValue("ai.review_model"))}</code></div><div class="diagnostic-row"><span>Prompt-Version</span><code>roots-signal-v1.7.0</code></div><div class="diagnostic-row"><span>Scoring-Version</span><code>roots-value-v1.0</code></div><div class="diagnostic-row"><span>Thinking</span><code>${escapeHtml(getConfigValue("ai.thinking_level"))}</code></div></section><section class="diagnostic-card"><h4>Schwellen aus Profil „${escapeHtml(getConfigValue("experience.quality_profile"))}“</h4>${Object.entries(q).map(([key,value]) => `<div class="diagnostic-row"><span>${escapeHtml(key)}</span><code>${Number(value).toFixed(2)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>Aktive Entscheidungsquellen</h4><div class="diagnostic-row"><span>Vorfilter</span><code>TypeScript-Regeln</code></div><div class="diagnostic-row"><span>Semantik + Score-Komponenten</span><code>System-Prompt + Gemini</code></div><div class="diagnostic-row"><span>Evidenz</span><code>Servervalidierung</code></div><div class="diagnostic-row"><span>Gewichtung & Deckel</span><code>Servercode</code></div></section><section class="diagnostic-card"><h4>Guardrails</h4><div class="diagnostic-row"><span>Prompt Injection</span><code>Artikel ist untrusted data</code></div><div class="diagnostic-row"><span>Evidenz</span><code>Originaltext-Match</code></div><div class="diagnostic-row"><span>Duplikate</span><code>SHA-256 + Ereignis-/Sprachvarianten</code></div><div class="diagnostic-row"><span>Keywords</span><code>nicht aktiv</code></div></section></div>`;
+  const manifest = pipelineSettings.rule_manifest;
+  if (diagnostics) diagnostics.innerHTML = `<div class="diagnostic-grid"><section class="diagnostic-card"><h4>Versionierte Quelle der Wahrheit</h4><div class="diagnostic-row"><span>Regelmanifest</span><code>${escapeHtml(manifest?.version || "nicht verfügbar")}</code></div><div class="diagnostic-row"><span>Prompt-Version</span><code>${escapeHtml(manifest?.prompt_version || pipelineSettings.prompt_version || "–")}</code></div><div class="diagnostic-row"><span>Scoring-Version</span><code>${escapeHtml(manifest?.scoring_version || pipelineSettings.scoring_version || "–")}</code></div><div class="diagnostic-row"><span>Konfiguration</span><code>${Number(pipelineSettings.version || 0)}</code></div></section><section class="diagnostic-card"><h4>Schwellen aus Profil „${escapeHtml(getConfigValue("experience.quality_profile"))}“</h4>${Object.entries(q).map(([key,value]) => `<div class="diagnostic-row"><span>${escapeHtml(key)}</span><code>${Number(value).toFixed(2)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>KI-Operationen</h4>${(manifest?.ai_operations || []).map((operation) => `<div class="diagnostic-row"><span>${escapeHtml(operation.title)}</span><code>${escapeHtml(operation.model)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>Aktive Guardrails</h4><div class="diagnostic-row"><span>Fachsignal-Vorfilter</span><code>aktiv · kein Routing</code></div><div class="diagnostic-row"><span>Belegprüfung</span><code>Originaltext + Tag-Kontext</code></div><div class="diagnostic-row"><span>Operations-Schutz</span><code>aktiv</code></div><div class="diagnostic-row"><span>Duplikate</span><code>Inhalt + Titel + Ereignis</code></div></section></div>`;
 }
 
 async function loadPipelineReview() {
@@ -1117,7 +1165,7 @@ async function savePipelineSettings() {
   pipelineDrilldownState.editorOpen = false;
   pipelineDrilldownState.routeEditor = null;
   renderBusinessPipelineStudio();
-  els.pipelineVersion.textContent = `Regelwerk ${settings.prompt_version || "aktiv"} · Konfiguration ${settings.version} · gerade gespeichert`;
+  els.pipelineVersion.textContent = `Regelwerk ${settings.rule_manifest?.version || settings.prompt_version || "aktiv"} · Prompt ${settings.prompt_version || "aktiv"} · Konfiguration ${settings.version} · gerade gespeichert`;
   toast("Pipeline-Konfiguration gespeichert");
 }
 
