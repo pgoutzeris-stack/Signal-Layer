@@ -1,0 +1,5 @@
+[functions.signal-layer]
+# Browser jobs authenticate with the dedicated CRAWLER_WORKER_SECRET inside
+# the function. Gateway JWT verification would reject that shared secret
+# before the function can perform its own constant-value comparison.
+verify_jwt = false

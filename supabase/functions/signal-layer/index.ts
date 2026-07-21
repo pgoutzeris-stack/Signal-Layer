@@ -4154,7 +4154,14 @@ Deno.serve(async (req: Request) => {
         if (articleJobError) return errorResponse(origin, articleJobError.message, 500);
         for (const job of articleJobs || []) {
           const { data: article } = await admin.schema("signal_layer").from("articles")
-            .select("id,url,source_id,source:sources(id,url,crawl_config)").eq("id", job.article_id).maybeSingle();
+            .select("id,url,source_id,classification_status,source:sources(id,url,crawl_config)").eq("id", job.article_id).maybeSingle();
+          if (article && ["reliable", "uncertain", "rejected"].includes(String(article.classification_status || ""))) {
+            await admin.schema("signal_layer").from("browser_render_jobs").update({
+              status: "error", last_error: "superseded_by_classification",
+              finished_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            }).eq("id", job.id);
+            continue;
+          }
           if (!article?.url) {
             await admin.schema("signal_layer").from("browser_render_jobs").update({
               status: "error", last_error: "article_url_missing", finished_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -5777,7 +5784,8 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("browser_render_jobs").select("id", { count: "exact", head: true }).eq("status", "queued"),
           admin.schema("signal_layer").from("browser_render_jobs").select("id", { count: "exact", head: true }).eq("status", "running"),
           admin.schema("signal_layer").from("browser_render_jobs").select("id", { count: "exact", head: true }).eq("status", "done").gte("updated_at", errorWindowStart),
-          admin.schema("signal_layer").from("browser_render_jobs").select("id", { count: "exact", head: true }).eq("status", "error").neq("last_error", "non_editorial_url").gte("updated_at", errorWindowStart),
+          admin.schema("signal_layer").from("browser_render_jobs").select("id", { count: "exact", head: true }).eq("status", "error")
+            .not("last_error", "in", '("non_editorial_url","superseded_by_classification")').gte("updated_at", errorWindowStart),
         ]);
         sourceHealth.browser_queued = Number(browserQueuedExact || 0);
         sourceHealth.browser_running = Number(browserRunningExact || 0);
@@ -5908,7 +5916,8 @@ Deno.serve(async (req: Request) => {
           diagnostics: [], raw_message: entry.raw,
         })).sort((a, b) => b.count - a.count);
         const browserFailureMap = new Map<string, { count: number; sources: Map<string, number> }>();
-        for (const job of browserJobsInWindow.filter((item) => item.status === "error" && item.last_error !== "non_editorial_url")) {
+        for (const job of browserJobsInWindow.filter((item) => item.status === "error"
+          && !["non_editorial_url", "superseded_by_classification"].includes(String(item.last_error || "")))) {
           const rawError = String(job.last_error || "browser_render_failed");
           const normalizedError = rawError.toLowerCase();
           const code = normalizedError.includes("paywall") || normalizedError.includes("login") ? "paywall_or_login"
