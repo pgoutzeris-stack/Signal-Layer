@@ -3238,16 +3238,19 @@ function selectCompanyCandidates(
   return companies.filter((company) => [company.name, ...(company.aliases || [])].some((term) => {
     const normalizedTerm = normalizeMatchText(term);
     if (normalizedTerm.length < 3 || !normalizedText.includes(` ${normalizedTerm} `)) return false;
-    // Some valid company names are also ordinary words. Require the original
-    // casing plus local company/action context so footer/UI phrases such as
-    // "To complete this action" cannot become a Tier-1 match.
-    if (normalizedTerm === "action") {
+    // Some valid brands are also ordinary words. Require local brand/company
+    // context so phrases such as "in rasantem Tempo" or UI text containing
+    // "action" cannot become Tier-1 matches.
+    if (normalizedTerm === "action" || normalizedTerm === "tempo") {
       const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const mention = new RegExp(`(?:^|[^A-Za-z])${escaped}(?:[^A-Za-z]|$)`, "g");
       let match: RegExpExecArray | null;
       while ((match = mention.exec(articleText)) !== null) {
         const window = normalizeMatchText(articleText.slice(Math.max(0, match.index - 100), match.index + term.length + 140));
-        if (/\b(discount\w*|discounter\w*|retailer\w*|handler\w*|einzelhandel\w*|filial\w*|store\w*|unternehmen\w*|company|konzern\w*|group|ceo|umsatz\w*|eroffn\w*|expand\w*|invest\w*|launch\w*|announc\w*|plan\w*|partner\w*)\b/i.test(window)) return true;
+        const hasRequiredContext = normalizedTerm === "action"
+          ? /\b(discount\w*|discounter\w*|retailer\w*|handler\w*|einzelhandel\w*|filial\w*|store\w*|unternehmen\w*|company|konzern\w*|group|ceo|umsatz\w*|eroffn\w*|expand\w*|invest\w*|launch\w*|announc\w*|plan\w*|partner\w*)\b/i.test(window)
+          : /\b(essity|taschentuch\w*|tissue\w*|hygiene\w*|papier\w*|paper\w*|marke\w*|brand\w*|produkt\w*|packung\w*|weich\w*|schnupfen\w*|nasen\w*)\b/i.test(window);
+        if (hasRequiredContext) return true;
       }
       return false;
     }
