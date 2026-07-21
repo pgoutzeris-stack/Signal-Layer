@@ -1943,6 +1943,16 @@ const AUDIT_FIELD_META = {
   models: ["KI-Prüfung", "Modelle, Regelversionen und validierte strukturierte Antworten."],
   primary: ["Hauptmodell", "KI-Modell für Klassifikation, Begründung und Score-Komponenten."],
   reviewer: ["Zweitprüfung", "Optionales zweites KI-Modell für unsichere Grenzfälle."],
+  primary_configured: ["Konfiguriertes Hauptmodell", "Das in Einstellungen › Kosten & Betrieb ausgewählte Originalmodell."],
+  primary_actual: ["Tatsächlich verwendetes Hauptmodell", "Das Modell, dessen validierte Antwort für diesen Artikel verwendet wurde."],
+  primary_provider: ["Anbieter des Hauptmodells", "Gemini ist der konfigurierte Primäranbieter; NVIDIA wird nur bei einem dokumentierten Ausfall verwendet."],
+  reviewer_configured: ["Konfiguriertes Review-Modell", "Das in den Einstellungen ausgewählte Originalmodell für eine mögliche Zweitprüfung."],
+  reviewer_actual: ["Tatsächlich verwendetes Review-Modell", "Das Modell, das eine tatsächlich ausgelöste Zweitprüfung ausgeführt hat."],
+  reviewer_provider: ["Anbieter der Zweitprüfung", "Anbieter des tatsächlich ausgeführten Review-Aufrufs."],
+  fallback_used: ["Fallback verwendet", "Ja bedeutet: Das konfigurierte Gemini-Modell war nicht verfügbar und ein dokumentiertes NVIDIA-Ausweichmodell hat übernommen."],
+  fallback_model: ["Verwendetes Fallback-Modell", "Konkretes NVIDIA-Modell, das nach dem Ausfall des Originalmodells erfolgreich geantwortet hat."],
+  attempts: ["Modellversuche", "Chronologische Liste aller Original- und Fallback-Aufrufe mit Erfolg oder Fehler."],
+  provider: ["KI-Anbieter", "Technischer Anbieter des jeweiligen Modellaufrufs."],
   prompt_version: ["Regelversion", "Version der fachlichen Anweisungen, mit denen dieser Artikel geprüft wurde."],
   primary_output: ["Erste KI-Antwort", "Validierte Antwort des Hauptmodells vor einer möglichen Zweitprüfung."],
   final_validated_output: ["Finale KI-Antwort", "Nach Schema- und Textbelegprüfung tatsächlich weiterverwendete Modellantwort."],
@@ -2093,6 +2103,12 @@ async function openTechnicalAudit(articleId) {
     const totalTokens = usage.reduce((sum, event) => sum + Number(event.total_tokens || 0), 0);
     const totalCost = usage.reduce((sum, event) => sum + Number(event.estimated_cost_usd || 0), 0);
     const tracks = article.manual_review_tracks || [];
+    const modelAudit = audit.models || {};
+    const fallbackUsed = Boolean(modelAudit.fallback_used);
+    const actualModelRaw = modelAudit.primary_actual || article.ai_model || "";
+    const aiModelWasUsed = Boolean(actualModelRaw && !["deterministic-rules", "content-extraction"].includes(actualModelRaw));
+    const configuredModel = modelAudit.primary_configured || modelAudit.primary || article.ai_model || "–";
+    const actualModel = aiModelWasUsed ? actualModelRaw : "Regelbasiert";
     els.technicalAuditContent.innerHTML = `
       <button type="button" class="article-detail-close technical-audit-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
       <header class="technical-audit-head"><span>Nachvollziehbare Klassifizierung</span><h2 id="technical-audit-title">${escapeText(article.title_de || article.title || "Technische Prüfung")}</h2><p>Gespeicherter Prüfpfad aus Extraktion, deterministischen Regeln, validierten KI-Ausgaben, Routing-Gates, Scores und Tokenkosten.</p></header>
@@ -2100,8 +2116,13 @@ async function openTechnicalAudit(articleId) {
         <div class="audit-summary-grid">
           <div class="audit-summary-card"><span>Ergebnis</span><b>${escapeHtml(STATUS_LABELS[article.classification_status] || article.classification_status || "–")}</b></div>
           <div class="audit-summary-card"><span>Review-Track</span><b>${escapeHtml(tracks.length ? tracks.map((track) => track === "sales" ? "Sales" : "Marketing").join(" + ") : "Keiner")}</b></div>
-          <div class="audit-summary-card"><span>Modelle</span><b>${escapeHtml([article.ai_model, article.reviewer_model].filter(Boolean).join(" + ") || "Regelbasiert")}</b></div>
+          <div class="audit-summary-card"><span>Tatsächliches Modell</span><b>${escapeHtml([actualModel, article.reviewer_model].filter(Boolean).join(" + "))}</b></div>
           <div class="audit-summary-card"><span>KI-Verbrauch</span><b>${totalTokens.toLocaleString("de-DE")} Token · $${totalCost.toFixed(6)}</b></div>
+        </div>
+        <div class="audit-model-status ${fallbackUsed ? "audit-model-status--fallback" : "audit-model-status--original"}">
+          <span class="audit-model-status-icon"><i class="fa-solid ${fallbackUsed ? "fa-shuffle" : aiModelWasUsed ? "fa-circle-check" : "fa-code-branch"}"></i></span>
+          <div><b>${fallbackUsed ? "Fallback-KI wurde verwendet" : aiModelWasUsed ? "Konfiguriertes Originalmodell wurde verwendet" : "Regelbasierte Prüfung ohne KI"}</b><p>${fallbackUsed ? `Das Originalmodell ${escapeHtml(configuredModel)} war nicht verfügbar. Die gespeicherte Entscheidung stammt von ${escapeHtml(modelAudit.fallback_model || actualModel)}. Alle Versuche stehen in Abschnitt 3.` : aiModelWasUsed ? `Die Entscheidung stammt direkt vom konfigurierten Modell ${escapeHtml(configuredModel)}.` : "Der Artikel wurde durch eindeutige Vorfilter entschieden; für diese Entscheidung war kein KI-Aufruf erforderlich."}</p></div>
+          ${fallbackUsed ? `<button type="button" class="audit-original-retry" data-reanalyze-original="${escapeHtml(article.id)}" data-original-model="${escapeHtml(configuredModel)}"><i class="fa-solid fa-rotate-right"></i><span>Mit Originalmodell erneut analysieren</span></button>` : ""}
         </div>
         ${auditSection("extraction", "1 · Extraktion, Sprache und Formatierung", "fa-solid fa-file-arrow-down", audit.extraction || article.extraction_diagnostic)}
         ${auditSection("deterministic", "2 · Deterministische Vorfilter und Dubletten", "fa-solid fa-filter", audit.deterministic || {})}
@@ -2112,6 +2133,23 @@ async function openTechnicalAudit(articleId) {
       </div>`;
   } catch (error) {
     els.technicalAuditContent.innerHTML = `<button type="button" class="article-detail-close technical-audit-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button><div class="detail-loading">Technische Prüfung konnte nicht geladen werden: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function reanalyzeWithConfiguredModel(button) {
+  const articleId = button?.dataset?.reanalyzeOriginal;
+  if (!articleId || button.disabled) return;
+  const originalLabel = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Originalmodell analysiert …</span>';
+  try {
+    await callApi("reanalyze_with_configured_model", { article_id: articleId });
+    toast("Artikel wurde mit dem konfigurierten Originalmodell neu analysiert");
+    await openTechnicalAudit(articleId);
+  } catch (error) {
+    button.disabled = false;
+    button.innerHTML = originalLabel;
+    toast(error.message, "err");
   }
 }
 
@@ -2848,6 +2886,13 @@ function bindUi() {
     if (event.target === els.articleDetailModal || event.target.closest(".article-detail-close:not(.technical-audit-close)")) closeArticleDetail();
   });
   els.technicalAuditModal?.addEventListener("click", (event) => {
+    const retryButton = event.target.closest("[data-reanalyze-original]");
+    if (retryButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      void reanalyzeWithConfiguredModel(retryButton);
+      return;
+    }
     const viewButton = event.target.closest("[data-audit-view]");
     if (viewButton) {
       event.preventDefault();
