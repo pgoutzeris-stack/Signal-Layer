@@ -83,6 +83,10 @@ function escapeText(value) {
   return escapeHtml(decodeHtmlEntities(value));
 }
 
+function technicalAuditPill(articleId, label = "Technische Prüfung") {
+  return `<button type="button" class="technical-audit-pill" data-audit-article-id="${escapeHtml(articleId)}"><i class="fa-solid fa-code-branch"></i>${escapeHtml(label)}</button>`;
+}
+
 function normalizeTextWithMap(value) {
   const text = decodeHtmlEntities(value);
   let normalized = "";
@@ -228,6 +232,8 @@ async function callApi(action, payload = {}) {
 function cacheEls() {
   els.toastContainer = document.getElementById("toast-container");
   els.btnSettings = document.getElementById("btn-settings");
+  els.technicalAuditModal = document.getElementById("technical-audit-modal");
+  els.technicalAuditContent = document.getElementById("technical-audit-content");
   els.appNav = document.getElementById("app-nav");
   els.appViews = document.querySelectorAll(".app-view");
   els.dashboardReliableCount = document.getElementById("dashboard-reliable-count");
@@ -940,14 +946,17 @@ function renderBusinessPipelineStudio() {
 
   const diagnostics = document.getElementById("diagnostics-content");
   const q = pipelineSettings.config.quality;
-  if (diagnostics) diagnostics.innerHTML = `<div class="diagnostic-grid"><section class="diagnostic-card"><h4>KI-Orchestrierung</h4><div class="diagnostic-row"><span>Primary inkl. Scoring</span><code>${escapeHtml(getConfigValue("ai.primary_model"))}</code></div><div class="diagnostic-row"><span>Reviewer</span><code>${escapeHtml(getConfigValue("ai.review_model"))}</code></div><div class="diagnostic-row"><span>Prompt-Version</span><code>roots-signal-v1.6.0</code></div><div class="diagnostic-row"><span>Scoring-Version</span><code>roots-value-v1.0</code></div><div class="diagnostic-row"><span>Thinking</span><code>${escapeHtml(getConfigValue("ai.thinking_level"))}</code></div></section><section class="diagnostic-card"><h4>Schwellen aus Profil „${escapeHtml(getConfigValue("experience.quality_profile"))}“</h4>${Object.entries(q).map(([key,value]) => `<div class="diagnostic-row"><span>${escapeHtml(key)}</span><code>${Number(value).toFixed(2)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>Aktive Entscheidungsquellen</h4><div class="diagnostic-row"><span>Vorfilter</span><code>TypeScript-Regeln</code></div><div class="diagnostic-row"><span>Semantik + Score-Komponenten</span><code>System-Prompt + Gemini</code></div><div class="diagnostic-row"><span>Evidenz</span><code>Servervalidierung</code></div><div class="diagnostic-row"><span>Gewichtung & Deckel</span><code>Servercode</code></div></section><section class="diagnostic-card"><h4>Guardrails</h4><div class="diagnostic-row"><span>Prompt Injection</span><code>Artikel ist untrusted data</code></div><div class="diagnostic-row"><span>Evidenz</span><code>Originaltext-Match</code></div><div class="diagnostic-row"><span>Duplikate</span><code>SHA-256 Content Hash</code></div><div class="diagnostic-row"><span>Keywords</span><code>nicht aktiv</code></div></section></div>`;
+  if (diagnostics) diagnostics.innerHTML = `<div class="diagnostic-grid"><section class="diagnostic-card"><h4>KI-Orchestrierung</h4><div class="diagnostic-row"><span>Primary inkl. Scoring</span><code>${escapeHtml(getConfigValue("ai.primary_model"))}</code></div><div class="diagnostic-row"><span>Reviewer</span><code>${escapeHtml(getConfigValue("ai.review_model"))}</code></div><div class="diagnostic-row"><span>Prompt-Version</span><code>roots-signal-v1.7.0</code></div><div class="diagnostic-row"><span>Scoring-Version</span><code>roots-value-v1.0</code></div><div class="diagnostic-row"><span>Thinking</span><code>${escapeHtml(getConfigValue("ai.thinking_level"))}</code></div></section><section class="diagnostic-card"><h4>Schwellen aus Profil „${escapeHtml(getConfigValue("experience.quality_profile"))}“</h4>${Object.entries(q).map(([key,value]) => `<div class="diagnostic-row"><span>${escapeHtml(key)}</span><code>${Number(value).toFixed(2)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>Aktive Entscheidungsquellen</h4><div class="diagnostic-row"><span>Vorfilter</span><code>TypeScript-Regeln</code></div><div class="diagnostic-row"><span>Semantik + Score-Komponenten</span><code>System-Prompt + Gemini</code></div><div class="diagnostic-row"><span>Evidenz</span><code>Servervalidierung</code></div><div class="diagnostic-row"><span>Gewichtung & Deckel</span><code>Servercode</code></div></section><section class="diagnostic-card"><h4>Guardrails</h4><div class="diagnostic-row"><span>Prompt Injection</span><code>Artikel ist untrusted data</code></div><div class="diagnostic-row"><span>Evidenz</span><code>Originaltext-Match</code></div><div class="diagnostic-row"><span>Duplikate</span><code>SHA-256 + Ereignis-/Sprachvarianten</code></div><div class="diagnostic-row"><span>Keywords</span><code>nicht aktiv</code></div></section></div>`;
 }
 
 async function loadPipelineReview() {
   const target = document.getElementById("pipeline-review-list");
   if (!target) return;
   const { articles } = await callApi("list_review_articles", { status: "uncertain", limit: 50 });
-  target.innerHTML = (articles || []).map((article) => `<article class="review-item" data-article-id="${article.id}"><div class="review-item-main"><span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span><strong class="test-result-title">${escapeText(article.title)}</strong><p class="test-result-reason">${escapeText(article.ai_rationale || article.rejection_reasons?.[0] || "Unsichere Evidenz oder Einordnung")}</p></div></article>`).join("") || `<div class="keyword-empty">Aktuell sind keine Artikel in der manuellen Prüfung.</div>`;
+  target.innerHTML = (articles || []).map((article) => {
+    const tracks = article.manual_review_tracks || [];
+    return `<article class="review-item" data-article-id="${article.id}"><div class="review-item-main"><div class="audit-chip-row"><span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span>${tracks.map((track) => `<span class="audit-chip">${track === "sales" ? "Sales" : "Marketing"}</span>`).join("")}</div><strong class="test-result-title">${escapeText(article.title_de || article.title)}</strong><p class="test-result-reason">${escapeText(article.manual_review_reason || article.ai_rationale || "Unsichere Evidenz oder Einordnung")}</p>${technicalAuditPill(article.id)}</div></article>`;
+  }).join("") || `<div class="keyword-empty">Aktuell sind keine echten Grenzfälle in der manuellen Prüfung.</div>`;
 }
 
 const TAXONOMY_KINDS = [
@@ -1306,6 +1315,7 @@ function renderFindings(track) {
           <div class="finding-meta">
             ${companies.map((c) => `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
             ${source?.company ? `<span class="tag tag--source" title="Quelle: ${escapeHtml(source.company)}"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
+            ${technicalAuditPill(article.id)}
           </div>
         </article>
       `;
@@ -1436,7 +1446,7 @@ function renderArchive() {
       <div class="finding-item-top"><span class="finding-dimension">${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type || "Sonstiger Inhalt")}</span><div class="finding-top-tags">${isNew ? '<span class="finding-new-badge">NEU</span>' : ""}${formatFindingDate(article.published_at)}</div></div>
       <span class="finding-title">${escapeText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
       <p class="archive-reason"><i class="fa-solid fa-circle-info"></i><span>${escapeHtml(archiveExplanation(article))}</span></p>
-      <div class="finding-meta">${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i>${escapeHtml(source.company)}</span>` : ""}<span class="tag"><i class="fa-solid fa-circle-info"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span></div>
+      <div class="finding-meta">${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i>${escapeHtml(source.company)}</span>` : ""}<span class="tag"><i class="fa-solid fa-circle-info"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span>${technicalAuditPill(article.id)}</div>
     </article>`;
   }).join("");
 }
@@ -1632,7 +1642,7 @@ async function loadReviewArticles() {
     const { articles } = await callApi("list_review_articles", { limit: 20 });
     if (countEl) countEl.textContent = Number(articles?.length || 0).toLocaleString("de-DE");
     if (!articles?.length) {
-      els.reviewList.innerHTML = `<div class="track-card-empty">Keine offenen oder fehlerhaften Klassifikationen.</div>`;
+      els.reviewList.innerHTML = `<div class="track-card-empty">Keine fachlichen Grenzfälle für eine menschliche Abwägung.</div>`;
       return;
     }
     els.reviewList.innerHTML = articles.map((article) => {
@@ -1641,21 +1651,25 @@ async function loadReviewArticles() {
       const reasons = article.rejection_reasons || [];
       const confidence = formatConfidence(article.relevance_confidence);
       const isNew = isToday(article.classified_at);
+      const tracks = article.manual_review_tracks || [];
       return `
         <article class="finding-item" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
           <div class="finding-item-top">
             <span class="finding-dimension">${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type || "Sonstiger Inhalt")}</span>
             <div class="finding-top-tags">
               ${isNew ? `<span class="finding-new-badge">NEU</span>` : ""}
-              <span class="quality-tag quality-tag--${escapeHtml(status)}"><i class="${status === "error" ? "fa-solid fa-triangle-exclamation" : status === "pending" ? "fa-solid fa-clock" : "fa-solid fa-circle-exclamation"}"></i> ${status === "uncertain" ? "Manuelle Prüfung" : status === "pending" ? "Ausstehend" : "Klassifikationsfehler"}${confidence ? ` · ${confidence}` : ""}</span>
+              <span class="quality-tag quality-tag--uncertain"><i class="fa-solid fa-scale-balanced"></i> Manuelle Prüfung${confidence ? ` · ${confidence}` : ""}</span>
               ${formatFindingDate(article.published_at)}
             </div>
           </div>
           <span class="finding-title">${escapeText(article.title_de || article.title || "Ohne Titel")}</span>
-          ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : reasons[0] ? `<p class="finding-summary">${escapeText(reasons[0])}</p>` : ""}
+          ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
+          <p class="finding-rationale"><i class="fa-solid fa-scale-balanced"></i><span>${escapeText(article.manual_review_reason || "Mindestens ein fachliches Pflichtkriterium ist noch offen.")}</span></p>
           <div class="finding-meta">
+            ${tracks.map((track) => `<span class="audit-chip">${track === "sales" ? "Sales" : "Marketing"}</span>`).join("")}
             ${article.primary_company ? `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
             ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
+            ${technicalAuditPill(article.id)}
           </div>
         </article>`;
     }).join("");
@@ -1701,9 +1715,12 @@ async function openArticleDetail(articleId) {
     const confidence = formatConfidence(article.relevance_confidence);
     const routedSales = (article.routing || []).includes("sales");
     const routedMarketing = (article.routing || []).includes("marketing");
-    const valueScore = routedSales ? Number(article.sales_relevance_score || 0) : Number(article.marketing_relevance_score || 0);
-    const valueLabel = routedSales ? "Sales-Opportunity-Relevanz" : "Marketing-Asset-Relevanz";
-    const valueReason = routedSales ? article.sales_relevance_reason : article.marketing_relevance_reason;
+    const reviewTracks = article.manual_review_tracks || [];
+    const salesPerspective = routedSales || (!routedMarketing && reviewTracks.length === 1 && reviewTracks[0] === "sales");
+    const valueScore = salesPerspective ? Number(article.sales_relevance_score || 0) : Number(article.marketing_relevance_score || 0);
+    const valueLabel = salesPerspective ? "Sales-Opportunity-Relevanz" : "Marketing-Asset-Relevanz";
+    const valueReason = status === "uncertain" ? article.manual_review_reason
+      : salesPerspective ? article.sales_relevance_reason : article.marketing_relevance_reason;
     // Prefer the German translation for foreign-language articles.
     const isTranslated = Boolean(article.content_de) && article.language && article.language !== "de";
     const fulltext = article.content_de || article.cleaned_content || article.content || article.excerpt || "Kein Artikeltext gespeichert.";
@@ -1748,7 +1765,7 @@ async function openArticleDetail(articleId) {
         ${evidence.length ? `<div class="decision-block"><span class="decision-label">Bestandene Evidenzregeln</span><div class="evidence-list">${evidence.map(([key, quote], index) => `<blockquote class="evidence-item" data-evidence-index="${index}" tabindex="0"><strong>${escapeHtml(key)}</strong>${escapeText(quote)}</blockquote>`).join("")}</div></div>` : ""}
         <div class="decision-block">
           <span class="decision-label">Technische Prüfung</span>
-          <p class="decision-rationale">${escapeHtml(article.ai_model || "Regelbasiert")} ${article.reviewer_model ? `+ Review durch ${escapeHtml(article.reviewer_model)}` : ""}<br>Prompt: ${escapeHtml(article.prompt_version || "Legacy")}<br>Scoring: ${escapeHtml(article.relevance_scoring_version || "Legacy")}</p>
+          ${technicalAuditPill(article.id, "Prüfpfad vollständig öffnen")}
         </div>
       </aside>`;
     bindEvidenceHover();
@@ -1760,6 +1777,54 @@ async function openArticleDetail(articleId) {
 function closeArticleDetail() {
   els.articleDetailModal.classList.remove("show");
   document.body.style.overflow = "";
+}
+
+function auditJson(value) {
+  if (value === null || value === undefined || value === "") return "–";
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+function auditSection(title, icon, value, open = false) {
+  return `<details class="audit-section" ${open ? "open" : ""}><summary><i class="${icon}"></i>${escapeHtml(title)}</summary><div class="audit-section-content"><pre class="audit-json">${escapeHtml(auditJson(value))}</pre></div></details>`;
+}
+
+async function openTechnicalAudit(articleId) {
+  if (!articleId || !els.technicalAuditModal || !els.technicalAuditContent) return;
+  els.technicalAuditModal.classList.add("show");
+  els.technicalAuditContent.innerHTML = LOADER_HTML;
+  try {
+    const { article } = await callApi("get_article_detail", { article_id: articleId });
+    const audit = article.classification_audit || {};
+    const trace = article.technical_trace || {};
+    const usage = trace.usage_events || [];
+    const totalTokens = usage.reduce((sum, event) => sum + Number(event.total_tokens || 0), 0);
+    const totalCost = usage.reduce((sum, event) => sum + Number(event.estimated_cost_usd || 0), 0);
+    const tracks = article.manual_review_tracks || [];
+    els.technicalAuditContent.innerHTML = `
+      <button type="button" class="article-detail-close technical-audit-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
+      <header class="technical-audit-head"><span>Nachvollziehbare Klassifizierung</span><h2 id="technical-audit-title">${escapeText(article.title_de || article.title || "Technische Prüfung")}</h2><p>Gespeicherter Prüfpfad aus Extraktion, deterministischen Regeln, validierten KI-Ausgaben, Routing-Gates, Scores und Tokenkosten.</p></header>
+      <div class="technical-audit-body">
+        <div class="audit-summary-grid">
+          <div class="audit-summary-card"><span>Ergebnis</span><b>${escapeHtml(STATUS_LABELS[article.classification_status] || article.classification_status || "–")}</b></div>
+          <div class="audit-summary-card"><span>Review-Track</span><b>${escapeHtml(tracks.length ? tracks.map((track) => track === "sales" ? "Sales" : "Marketing").join(" + ") : "Keiner")}</b></div>
+          <div class="audit-summary-card"><span>Modelle</span><b>${escapeHtml([article.ai_model, article.reviewer_model].filter(Boolean).join(" + ") || "Regelbasiert")}</b></div>
+          <div class="audit-summary-card"><span>KI-Verbrauch</span><b>${totalTokens.toLocaleString("de-DE")} Token · $${totalCost.toFixed(6)}</b></div>
+        </div>
+        ${auditSection("1 · Extraktion, Sprache und Formatierung", "fa-solid fa-file-arrow-down", audit.extraction || article.extraction_diagnostic, true)}
+        ${auditSection("2 · Deterministische Vorfilter und Dubletten", "fa-solid fa-filter", audit.deterministic || {}, true)}
+        ${auditSection("3 · KI-Modelle und validierte Ausgaben", "fa-solid fa-wand-magic-sparkles", audit.models || { final_validated_output: article.classification_payload })}
+        ${auditSection("4 · Marketing-/Sales-Gates und Regeln", "fa-solid fa-code-branch", audit.gates || article.routing_evidence, true)}
+        ${auditSection("5 · Relevanzscore und finale Entscheidung", "fa-solid fa-chart-line", { scores: audit.scores || article.route_score_details, outcome: audit.outcome || { status: article.classification_status, routing: article.routing, manual_review_tracks: tracks }, rationale: article.ai_rationale, rejection_reasons: article.rejection_reasons }, true)}
+        ${auditSection("6 · Token, Kosten und Worker-Läufe", "fa-solid fa-coins", { usage_events: usage, article_totals: { requests: article.gemini_request_count, input_tokens: article.gemini_input_tokens, output_tokens: article.gemini_output_tokens, thinking_tokens: article.gemini_thinking_tokens, total_tokens: article.gemini_total_tokens, cost_usd: article.gemini_cost_usd, cost_eur: article.gemini_cost_eur }, analysis_job: trace.analysis_job, browser_job: trace.browser_job })}
+      </div>`;
+  } catch (error) {
+    els.technicalAuditContent.innerHTML = `<button type="button" class="article-detail-close technical-audit-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button><div class="detail-loading">Technische Prüfung konnte nicht geladen werden: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function closeTechnicalAudit() {
+  els.technicalAuditModal?.classList.remove("show");
 }
 
 async function loadClassificationTests() {
@@ -1779,6 +1844,7 @@ async function loadClassificationTests() {
         <div class="test-result-top"><span class="finding-dimension">Test ${index + 1}</span><span class="quality-tag quality-tag--${escapeHtml(status)}">${escapeHtml(STATUS_LABELS[status] || status)}${confidence ? ` · ${confidence}` : ""}</span></div>
         <span class="test-result-title">${escapeText(article.title || "Ohne Titel")}</span>
         <p class="test-result-reason">${escapeHtml(reason)}</p>
+        ${technicalAuditPill(article.id)}
       </article>`;
     }).join("");
   } catch (err) {
@@ -2439,6 +2505,7 @@ function bindUi() {
     control.addEventListener("change", updateSignalView)
   );
   const openCardDetail = (event) => {
+    if (event.target.closest("[data-audit-article-id]")) return;
     const card = event.target.closest("[data-article-id]");
     if (card) void openArticleDetail(card.dataset.articleId);
   };
@@ -2449,7 +2516,17 @@ function bindUi() {
     });
   });
   els.articleDetailModal.addEventListener("click", (event) => {
-    if (event.target === els.articleDetailModal || event.target.closest(".article-detail-close")) closeArticleDetail();
+    if (event.target === els.articleDetailModal || event.target.closest(".article-detail-close:not(.technical-audit-close)")) closeArticleDetail();
+  });
+  els.technicalAuditModal?.addEventListener("click", (event) => {
+    if (event.target === els.technicalAuditModal || event.target.closest(".technical-audit-close")) closeTechnicalAudit();
+  });
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-audit-article-id]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void openTechnicalAudit(button.dataset.auditArticleId);
   });
 
   // External links (e.g. "Originalquelle") must not navigate the iframe. When
@@ -2638,6 +2715,7 @@ function bindUi() {
   });
 
   document.getElementById("pipeline-review-list")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-audit-article-id]")) return;
     const article = event.target.closest("[data-article-id]");
     if (article) void openArticleDetail(article.dataset.articleId);
   });
@@ -2702,7 +2780,8 @@ function bindUi() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (els.articleDetailModal.classList.contains("show")) closeArticleDetail();
+    if (els.technicalAuditModal?.classList.contains("show")) closeTechnicalAudit();
+    else if (els.articleDetailModal.classList.contains("show")) closeArticleDetail();
     else if (els.addSourceModal.classList.contains("show")) closeAddSource();
     else if (pipelineDrilldownState.stageId) {
       collectPipelineDraft();

@@ -1647,7 +1647,7 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.6.1";
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.7.0";
 type PipelineConfig = {
   experience: { quality_profile: "strict" | "balanced" | "discovery" };
   relevance: {
@@ -2050,14 +2050,35 @@ function hasConsecutiveAllCapsSentences(text: string): boolean {
 }
 
 function detectLanguage(text: string): "de" | "en" | "other" {
-  const normalized = ` ${normalizeMatchText(text)} `;
-  const de = [" der ", " die ", " und ", " mit ", " für ", " von ", " wird ", " unternehmen "]
-    .filter((term) => normalized.includes(normalizeMatchText(term))).length;
-  const en = [" the ", " and ", " with ", " for ", " from ", " company ", " market ", " will "]
-    .filter((term) => normalized.includes(normalizeMatchText(term))).length;
-  if (de >= 2 && de > en) return "de";
-  if (en >= 2 && en > de) return "en";
+  // Count complete function words, not substrings. The former implementation
+  // accidentally found e.g. "der" inside unrelated words and allowed the
+  // model to label clearly English articles as German.
+  const tokens = normalizeMatchText(text).split(" ").filter(Boolean).slice(0, 2400);
+  const counts = new Map<string, number>();
+  for (const token of tokens) counts.set(token, (counts.get(token) || 0) + 1);
+  const score = (terms: string[]) => terms.reduce((sum, term) => sum + Math.min(counts.get(term) || 0, 8), 0);
+  const de = score(["der", "die", "das", "den", "dem", "und", "mit", "fur", "von", "wird", "werden", "ist", "sind", "ein", "eine", "auf", "zu", "im", "des", "unternehmen"]);
+  const en = score(["the", "and", "with", "for", "from", "company", "market", "will", "is", "are", "a", "an", "of", "to", "in", "on", "that", "this", "has"]);
+  if (de >= 6 && de >= en * 1.35) return "de";
+  if (en >= 6 && en >= de * 1.35) return "en";
   return "other";
+}
+
+function editorialTextQuality(text: string, config: PipelineConfig = DEFAULT_PIPELINE_CONFIG): {
+  sufficient: boolean; length: number; words: number; sentences: number; reason: string;
+} {
+  const cleaned = cleanArticleText(text);
+  const length = cleaned.length;
+  const words = cleaned.split(/\s+/).filter((word) => /[A-Za-zÄÖÜäöüß]/.test(word)).length;
+  const sentences = (cleaned.match(/[.!?](?:[”»"')\]]|\s|$)/g) || []).length;
+  const requiredLength = Math.max(500, Number(config.filters.minimum_text_length || 0));
+  const enoughProse = length >= requiredLength && words >= 70 && sentences >= 3;
+  const denseShortArticle = length >= 430 && words >= 75 && sentences >= 5;
+  const sufficient = !looksLikePaywallTeaser(cleaned) && (enoughProse || denseShortArticle);
+  const reason = sufficient ? "Ausreichender redaktioneller Volltext"
+    : looksLikePaywallTeaser(cleaned) ? "Paywall- oder Login-Auszug statt Volltext"
+      : `Nur ${length} Zeichen, ${words} Wörter und ${sentences} vollständige Sätze nach Bereinigung`;
+  return { sufficient, length, words, sentences, reason };
 }
 
 function isVendorSalesPitch(title: string, text: string): boolean {
@@ -2112,15 +2133,11 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
   }
   const normalizedTitle = normalizeMatchText(title);
   const normalizedText = normalizeMatchText(text);
-  // Feed fallbacks deliberately combine the exact headline and an attributed
-  // editorial synopsis. Accept those from 180 characters; applying the full
-  // article threshold here made the valid fallback impossible for 180–239
-  // character publisher summaries.
-  const attributedSynopsis = text.trim().length >= 180
-    && normalizedTitle.length >= 12
-    && normalizedText.startsWith(normalizedTitle);
-  const contentUnavailable = (text.trim().length < config.filters.minimum_text_length && !attributedSynopsis)
-    || looksLikePaywallTeaser(text);
+  // A feed teaser remains useful as a recovery hint, but it is not a full
+  // article and therefore must never enter semantic classification/manual
+  // review. Browser recovery gets a chance first; otherwise this stays a
+  // technical extraction error.
+  const contentUnavailable = !editorialTextQuality(text, config).sufficient;
   if (contentUnavailable) reasons.push("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
   const titleYear = title.match(/\b(20\d{2})\b/)?.[1];
   if (titleYear && Number(titleYear) <= new Date().getUTCFullYear() - 2
@@ -2537,7 +2554,7 @@ type RootsOffering = { id: string; pillar: string; label: string; description: s
 function offeringFitGuardrail(offering: RootsOffering, challenge: string, exactEvidence: string): boolean {
   const text = normalizeMatchText(`${challenge} ${exactEvidence}`);
   const strictPatterns: Record<string, RegExp> = {
-    presence_customer_experience_management: /\b(customer experience|customer journey|kundenerlebnis\w*|kundenreise\w*|touchpoint\w*)\b/i,
+    presence_customer_experience_management: /\b(customer experience\w*|customer journey\w*|kundenerlebnis\w*|kundenreise\w*|touchpoint\w*)\b/i,
     purpose_value_proposition: /\b(value proposition|nutzenversprechen\w*|wertversprechen\w*|mehrwert\w*|preisposition\w*|preisstellung\w*|preispremium\w*|hohere\w* preis\w*|preis\w* rechtfertig\w*|nutzenargument\w*)\b/i,
     planning_innovationsstrategie: /\b(innovationsstrateg\w*|innovationsroadmap\w*|innovationsportfolio\w*|innovation\w*|produktentwickl\w*|rezeptentwickl\w*|neuheit\w*|suchfeld\w*)\b/i,
     presence_customer_insights: /\b(customer insight\w*|consumer insight\w*|shopper insight\w*|kundenbedurfnis\w*|kundenverhalten\w*|kaufverhalten\w*|marktforschung\w*|verbraucherforschung\w*)\b/i,
@@ -2593,7 +2610,7 @@ function matchRootsOfferingDeterministically(
   if (valueOrPriceChallenge && productAudienceContext) {
     return select("purpose_value_proposition", "ROOTS kann mit der Value Proposition andocken und den belegten Mehrwert des Angebots für die relevante Zielgruppe so schärfen, dass die höhere Preispositionierung nachvollziehbar und differenzierend begründet wird.");
   }
-  if (/\b(customer experience|customer journey|kundenerlebnis\w*|touchpoint\w*)\b/i.test(text)
+  if (/\b(customer experience\w*|customer journey\w*|kundenerlebnis\w*|touchpoint\w*)\b/i.test(text)
       && /\b(konsistent\w*|strateg\w*|steuer\w*|transform\w*|optimier\w*|etablier\w*)\b/i.test(text)) {
     return select("presence_customer_experience_management", "ROOTS kann mit Customer Experience Management andocken und die belegte Customer-Journey-Veränderung über relevante Touchpoints systematisch und konsistent ausgestalten.");
   }
@@ -2724,8 +2741,8 @@ async function matchRootsOffering(
     if (!offeringFitGuardrail(offering, challenge, exactEvidence)) return null;
     const rawReasoning = String(parsed.reasoning || "").trim();
     if (offering.id !== "presence_customer_experience_management"
-        && /\b(customer journey|kundenreise|touchpoint\w*)\b/i.test(normalizeMatchText(rawReasoning))
-        && !/\b(customer journey|kundenreise|touchpoint\w*)\b/i.test(normalizeMatchText(articleContext))) return null;
+        && /\b(customer journey\w*|kundenreise\w*|touchpoint\w*)\b/i.test(normalizeMatchText(rawReasoning))
+        && !/\b(customer journey\w*|kundenreise\w*|touchpoint\w*)\b/i.test(normalizeMatchText(articleContext))) return null;
     const reasoning = /^ROOTS kann\b/i.test(rawReasoning)
       ? rawReasoning
       : `ROOTS kann mit ${offering.label} andocken: ${rawReasoning || offering.description}`;
@@ -2795,9 +2812,11 @@ function calibrateRouteValueScores(
 
 function needsAiDisplayFormatting(text: string): boolean {
   const source = String(text || "").trim();
-  if (source.length < 1200) return false;
+  if (source.length < 420) return false;
   const lines = source.split("\n").map((line) => line.trim()).filter(Boolean);
   const longestLine = lines.reduce((max, line) => Math.max(max, line.length), 0);
+  const sentenceCount = (source.match(/[.!?](?:[”»"')\]]|\s|$)/g) || []).length;
+  const paragraphCount = source.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean).length;
   const substantialLines = lines.filter((line) => line.replace(/^#{1,6}\s+|^-\s+/, "").length >= 30);
   const shoutingLines = substantialLines.filter((line) => {
     const body = line.replace(/^#{1,6}\s+|^-\s+/, "");
@@ -2805,7 +2824,8 @@ function needsAiDisplayFormatting(text: string): boolean {
     const upper = body.match(/[A-ZÄÖÜ]/g) || [];
     return letters.length >= 15 && upper.length / letters.length >= 0.72;
   });
-  return longestLine > 1800 || (source.length > 2500 && lines.length < 5)
+  return longestLine > 900 || (source.length > 800 && lines.length < 3)
+    || (source.length > 650 && sentenceCount >= 4 && paragraphCount < 2)
     || shoutingLines.length >= 3 && shoutingLines.length / Math.max(1, substantialLines.length) >= 0.25
     || /\$\{[^}]+\}|\{\{[^}]+\}\}|&(?:nbsp|amp|quot|auml|ouml|uuml);/i.test(source);
 }
@@ -3001,6 +3021,7 @@ Rate marketing_asset_value independently from classification confidence. Score n
 Rate sales_opportunity_value independently from classification confidence. Score problem_strength, roots_fit, buying_intent and timing from 0 to 100. 100 requires an explicit current Tier-1 marketing problem, exact fit with strategic marketing consulting and direct evidence that help, a partner, consultancy, pitch, tender, mandate or budget is being sought. An explicit problem plus credible ROOTS fit without buying intent belongs in the upper range but below 90. Revenue decline, merger, partnership, investment or expansion alone is weak. Creative execution needs such as logo design, packaging production, campaign creation or media buying are not strategic ROOTS consulting demand. Explain the opportunity value in one concise German sentence.
 Sales is not a synonym for Marketing. A campaign_launch alone is NEVER a Sales signal. General product launches, portfolio news, sponsorships, testimonials and campaign execution remain Marketing unless the article separately proves a concrete strategic change or commercial need relevant to ROOTS. Investment qualifies only when it concerns marketing, brand, customer/consumer insights, retail media, category management, marketing technology, capabilities or an external partner/agency/consulting mandate. Investment in factories, filling, packaging, machinery, production, logistics, buildings or other operational infrastructure is not a ROOTS Sales signal. Require verbatim Sales evidence for the strategic change, buying need, mandate, budget, tender, partner search or ROOTS-relevant capability build. The same strategic passage may support Marketing and Sales only when all additional Sales substance requirements are independently fulfilled.
 Marketing and Sales are evaluated independently. Missing Tier-1 status, a missing Sales trigger or an ineligible Buying Center must NEVER make an otherwise evidence-backed Marketing result uncertain or rejected. Put route-specific failures only into routing_decisions.sales.reason, not into the article-level rejection_reasons array. Article-level rejection_reasons are reserved for reasons that invalidate every route.
+Use uncertain only for a genuine human borderline decision: at least one route must have concrete verbatim evidence and pass some, but not all, of its mandatory gates. If neither Marketing nor Sales has a ROOTS-relevant topic/challenge, exact evidence and meaningful substance, return rejected with high confidence. Technical extraction, language or formatting problems are handled before this prompt and are never reasons for uncertain. A Sales borderline needs a named Tier-1 account plus an account-specific strategic trigger/challenge; a Marketing borderline needs a ROOTS-relevant topic plus transferable editorial evidence. Generic company news, broad industry relevance or a score without direct evidence is not a borderline case.
 Return EVERY separately evidenced applicable topic, not only the strongest one. Multi-topic classification is expected: consumer/customer behaviour plus retail/pricing should return both customer_insights and fmcg_retail_signale; a concrete AI application in marketing/customer/retail/pricing must additionally return ki_performance; a transferable sector conclusion may additionally return sub_branchen_insight. Each topic needs its own verbatim evidence sentence.
 Pure title sponsorship, logo placement, generic visibility/community claims and tactical discounts/coupons are not Marketing by themselves. They require a concrete activation mechanism plus strategic rationale, customer insight, tested learning or measurable result. A campaign or product launch needs transferable substance beyond the announcement itself.
 For each routing_decision, provide separate verbatim evidence. If routing is not eligible, use an empty evidence string and explain why in German.
@@ -3345,6 +3366,15 @@ async function tagArticle(
       sales_relevance_reason: "Kein eigenständiger redaktioneller Artikel oder keine belastbare Tier-1-Sales-Opportunity.",
       relevance_scoring_version: "roots-value-v1.0", route_score_details: {},
       extraction_diagnostic: contentUnavailable ? diagnosticForFailure : null,
+      manual_review_tracks: [], manual_review_reason: null,
+      classification_audit: {
+        version: "roots-audit-v1",
+        completed_at: new Date().toISOString(),
+        extraction: { diagnostic: diagnosticForFailure, cleaned_length: cleanedContent.length, quality: editorialTextQuality(cleanedContent, config) },
+        deterministic: { hard_rejection_reasons: hardReasons, duplicate_of: duplicate?.id || null },
+        models: { primary: null, reviewer: null, prompt_version: CLASSIFIER_PROMPT_VERSION },
+        outcome: { status: contentUnavailable && !recognisedNonArticle ? "error" : "rejected", routes: [], manual_review_tracks: [] },
+      },
     }).eq("id", articleId);
     return;
   }
@@ -3386,6 +3416,16 @@ async function tagArticle(
       classified_at: new Date().toISOString(),
       content_hash: contentHash,
       tag_status: "untagged",
+      manual_review_tracks: [],
+      manual_review_reason: null,
+      classification_audit: {
+        version: "roots-audit-v1", completed_at: new Date().toISOString(),
+        extraction: { diagnostic: extractionDiagnostic, cleaned_length: cleanedContent.length, quality: editorialTextQuality(cleanedContent, config) },
+        deterministic: { hard_rejection_reasons: [], duplicate_of: null },
+        models: { primary: config.ai.primary_model, reviewer: reviewerModel, prompt_version: CLASSIFIER_PROMPT_VERSION },
+        error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+        outcome: { status: "error", routes: [], manual_review_tracks: [] },
+      },
     }).eq("id", articleId);
     return;
   }
@@ -3461,12 +3501,13 @@ async function tagArticle(
       reason: "Kein übertragbarer, allgemein veröffentlichungsfähiger ROOTS-Content-Ansatz mit belastbarem Artikelbeleg vorhanden.",
     };
   }
-  const marketingEligible = config.routing.marketing_enabled && classification.relevance_status === "reliable"
+  const marketingRouteCandidate = config.routing.marketing_enabled
     && (directMarketingTopics.length > 0 || config.routing.subsector_alone_is_marketing
       && classification.market_insight_transferable
       && classification.topics.some((topic) => topic.id === "sub_branchen_insight"))
     && classification.marketing_use.publishable
     && classification.routing_decisions.marketing.eligible;
+  const marketingEligible = classification.relevance_status === "reliable" && marketingRouteCandidate;
   const routedMarketingTopics = [
     ...directMarketingTopics,
     ...classification.topics.filter((topic) => topic.id === "sub_branchen_insight"
@@ -3500,7 +3541,7 @@ async function tagArticle(
       reason: "Der Artikel enthält nur allgemeine Fach- oder Fallbeispielaussagen; kein belegter Sales-Anlass ist konkret mit dem erkannten Tier-1-Unternehmen verknüpft.",
     };
   }
-  const salesCandidate = config.routing.sales_enabled && classification.relevance_status === "reliable"
+  const salesRouteCandidate = config.routing.sales_enabled
     && (!config.routing.sales_requires_tier1 || activeCompanies.length > 0)
     && (!config.routing.sales_requires_trigger || classification.sales_triggers.length > 0)
     && rootsSalesOpportunity
@@ -3508,7 +3549,7 @@ async function tagArticle(
     && classification.routing_decisions.sales.eligible;
   // Ground the Sales trigger against ROOTS' actual offering catalog — only
   // for genuinely sales-eligible articles (cheap, targeted extra call).
-  const matchedOffering = salesCandidate
+  const matchedOffering = salesRouteCandidate && classification.relevance_status !== "rejected"
       ? await matchRootsOffering(
         classification.sales_use.company_challenge,
         classification.sales_use.evidence || classification.routing_decisions.sales.evidence,
@@ -3526,7 +3567,8 @@ async function tagArticle(
     : null;
   // A concrete ROOTS service is now a hard Sales gate. Ambiguous candidates
   // go to manual review instead of appearing as generic Sales opportunities.
-  if (salesCandidate && !matchedOffering) {
+  const salesCandidate = classification.relevance_status === "reliable" && salesRouteCandidate;
+  if (salesCandidate && !matchedOffering && !marketingEligible) {
     classification.relevance_status = "uncertain";
     classification.rejection_reasons = [
       "Kein belastbarer Match mit einer konkreten ROOTS-Leistung – manuelle Prüfung erforderlich.",
@@ -3535,9 +3577,66 @@ async function tagArticle(
   }
   const salesEligible = salesCandidate && Boolean(matchedOffering);
   const routeValueScores = calibrateRouteValueScores(classification, articleText, marketingEligible, salesCandidate, matchedOffering);
+  const manualReviewTracks: string[] = [];
+  const marketingBorderline = classification.relevance_status !== "rejected"
+    && !marketingEligible
+    && directMarketingTopics.length > 0
+    && Boolean(classification.marketing_use.evidence)
+    && (classification.marketing_use.publishable
+      || classification.marketing_asset_value.strategic_value >= 45
+      || classification.marketing_asset_value.transferability >= 45);
+  const salesBorderline = classification.relevance_status !== "rejected"
+    && !salesEligible
+    && activeCompanies.length > 0
+    && classification.sales_triggers.length > 0
+    && hasAccountSpecificSalesEvidence
+    && Boolean(classification.sales_use.company_challenge)
+    && Boolean(classification.sales_use.roots_relevance);
+  if (marketingBorderline && routeValueScores.marketing.score === 0) {
+    const components = classification.marketing_asset_value;
+    routeValueScores.marketing.score = Math.min(79, Math.max(1, Math.round(
+      components.novelty * 0.25 + components.strategic_value * 0.30
+      + components.transferability * 0.25 + components.evidence_strength * 0.20,
+    )));
+    routeValueScores.marketing.reason = components.reason
+      || "Marketing-Grenzfall mit belegtem ROOTS-Thema, dessen Übertragbarkeit oder Substanz noch menschlich geprüft werden muss.";
+  }
+  if (salesBorderline && routeValueScores.sales.score === 0) {
+    const components = classification.sales_opportunity_value;
+    routeValueScores.sales.score = Math.min(matchedOffering ? 79 : 69, Math.max(1, Math.round(
+      components.problem_strength * 0.32 + components.roots_fit * 0.30
+      + components.buying_intent * 0.23 + components.timing * 0.15,
+    )));
+    routeValueScores.sales.reason = components.reason
+      || "Sales-Grenzfall mit belegtem Tier-1-Anlass, bei dem ROOTS-Leistungsmatch, Triggerstärke oder Sicherheit noch offen sind.";
+  }
+  if (classification.relevance_status === "uncertain") {
+    if (marketingBorderline) manualReviewTracks.push("marketing");
+    if (salesBorderline) manualReviewTracks.push("sales");
+    // "uncertain" is reserved for a real human trade-off. No direct ROOTS
+    // evidence on either route means archive, not a noisy review task.
+    if (manualReviewTracks.length === 0) {
+      classification.relevance_status = "rejected";
+      classification.rejection_reasons = [
+        "Kein belegter Marketing- oder Sales-Grenzfall: keine Route erfüllt genügend Pflichtkriterien für eine menschliche Abwägung.",
+        ...classification.rejection_reasons,
+      ];
+    }
+  }
+  const manualReviewReason = manualReviewTracks.length
+    ? `${manualReviewTracks.includes("marketing") ? "Marketing: ROOTS-relevante Evidenz vorhanden, aber mindestens ein Pflichtkriterium wie Übertragbarkeit, Substanz oder Sicherheit ist offen. " : ""}${manualReviewTracks.includes("sales") ? "Sales: Tier-1-Anlass und strategische Herausforderung sind belegt, aber mindestens ein Pflichtkriterium wie ROOTS-Leistungsmatch, Triggerstärke oder Sicherheit ist offen." : ""}`.trim()
+    : null;
   const { data: publicationMeta } = await admin.schema("signal_layer").from("articles")
     .select("published_at").eq("id", articleId).maybeSingle();
   const hasPublicationDate = Boolean(publicationMeta?.published_at);
+  if (!hasPublicationDate) {
+    classification.relevance_status = "rejected";
+    manualReviewTracks.splice(0, manualReviewTracks.length);
+    classification.rejection_reasons = [
+      "Kein belastbares Veröffentlichungsdatum – der Artikel bleibt im Archiv.",
+      ...classification.rejection_reasons,
+    ];
+  }
   // Final feeds are mutually exclusive. Marketing is still evaluated first
   // so Sales failures cannot suppress a valid editorial signal, but a fully
   // qualified Sales opportunity takes precedence in the visible routing.
@@ -3567,18 +3666,33 @@ async function tagArticle(
       const from = new Date(publishedAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const to = new Date(publishedAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const { data: eventCandidates } = await admin.schema("signal_layer").from("articles")
-        .select("id,event_cluster_key").neq("id", articleId).is("duplicate_of", null)
+        .select("id,event_cluster_key,title,title_de,classification_status").neq("id", articleId).is("duplicate_of", null)
         .not("event_cluster_key", "is", null).gte("published_at", from).lte("published_at", to)
         .limit(150);
       const currentCompanyKey = eventClusterKey.split("::", 1)[0];
-      const eventMatch = (eventCandidates || []).find((candidate: { id: string; event_cluster_key?: string }) => {
+      const eventMatch = (eventCandidates || []).find((candidate: { id: string; event_cluster_key?: string; title?: string; title_de?: string; classification_status?: string }) => {
         const candidateKey = normalizeMatchText(candidate.event_cluster_key || "");
         if (!candidateKey || candidateKey === eventClusterKey) return candidateKey === eventClusterKey;
         if ((candidate.event_cluster_key || "").split("::", 1)[0] !== currentCompanyKey) return false;
         const similarity = tokenSimilarity(eventClusterKey, candidate.event_cluster_key || "");
-        return similarity.shared >= 3 && similarity.score >= 0.42;
+        if (similarity.shared >= 3 && similarity.score >= 0.42) return true;
+        // The model always supplies title_de, so DE/EN URL variants can be
+        // compared in one language even when their event_key was emitted in
+        // different languages.
+        const titleMatch = tokenSimilarity(classification.title_de || title, candidate.title_de || candidate.title || "");
+        return titleMatch.shared >= 4 && titleMatch.score >= 0.55;
       });
-      eventDuplicateId = eventMatch?.id || null;
+      if (eventMatch && classification.relevance_status === "reliable" && eventMatch.classification_status !== "reliable") {
+        await admin.schema("signal_layer").from("articles").update({
+          classification_status: "rejected",
+          rejection_reasons: ["Redaktionelle Dublette desselben Unternehmensereignisses"],
+          duplicate_of: articleId, routing: [], buying_center_candidate: false,
+          tag_status: "untagged", manual_review_tracks: [], manual_review_reason: null,
+        }).eq("id", eventMatch.id);
+        await admin.schema("signal_layer").from("findings").delete().eq("article_id", eventMatch.id);
+      } else {
+        eventDuplicateId = eventMatch?.id || null;
+      }
     }
   }
   const tagConfidence = Object.fromEntries([
@@ -3598,27 +3712,37 @@ async function tagArticle(
 
   // Foreign-language articles always get a German reading version. German
   // articles use the same cheap pass only when structure is objectively broken.
-  const finalLanguage = classification.language || language;
-  const contentDe = finalLanguage !== "de" || needsAiDisplayFormatting(cleanedContent)
+  const finalLanguage = language !== "other" ? language : classification.language;
+  const formattingRequired = finalLanguage !== "de" || needsAiDisplayFormatting(cleanedContent);
+  const contentDe = formattingRequired
     ? await translateArticleToGerman(cleanedContent, { articleId, crawlRunId: crawlRunId || undefined })
     : null;
+  const displayReady = !formattingRequired || Boolean(contentDe);
+  const storedStatus = displayReady ? classification.relevance_status : "error";
+  const storedRouting = displayReady ? routing : [];
+  const storedReviewTracks = displayReady && storedStatus === "uncertain" ? manualReviewTracks : [];
+  const storedRejectionReasons = displayReady ? classification.rejection_reasons : [
+    finalLanguage !== "de"
+      ? "Deutsche Lesefassung konnte technisch nicht erzeugt werden."
+      : "Die erforderliche Textformatierung konnte technisch nicht abgeschlossen werden.",
+  ];
 
   await admin.schema("signal_layer").from("articles").update({
     content_de: contentDe,
     cleaned_content: cleanedContent,
     article_type: classification.article_type,
-    classification_status: classification.relevance_status,
+    classification_status: storedStatus,
     relevance_confidence: classification.overall_confidence,
     tag_confidence: tagConfidence,
     tag_evidence: tagEvidence,
     primary_company: primaryCompany,
     company_mentions: classification.companies,
     person_mentions: classification.people,
-    rejection_reasons: classification.rejection_reasons,
+    rejection_reasons: storedRejectionReasons,
     ai_summary: classification.summary,
     title_de: classification.title_de,
     ai_rationale: classification.rationale,
-    language: classification.language || language,
+    language: finalLanguage,
     ai_model: config.ai.primary_model,
     reviewer_model: reviewerModel,
     prompt_version: CLASSIFIER_PROMPT_VERSION,
@@ -3635,8 +3759,8 @@ async function tagArticle(
     matched_companies: activeCompanies.map((company) => company.name),
     matched_persons: buyingCenterCandidate ? buyingCenterLabels : classification.people.map((person) => `${person.name} (${person.role})`),
     buying_center_candidate: buyingCenterCandidate,
-    routing,
-    tag_status: classification.relevance_status === "reliable" ? "tagged" : "untagged",
+    routing: storedRouting,
+    tag_status: storedStatus === "reliable" ? "tagged" : "untagged",
     matched_offering: matchedOffering?.label || null,
     matched_offering_reasoning: matchedOffering?.reasoning || null,
     marketing_relevance_score: routeValueScores.marketing.score,
@@ -3646,7 +3770,52 @@ async function tagArticle(
     relevance_scoring_version: "roots-value-v1.0",
     route_score_details: routeValueScores,
     extraction_diagnostic: extractionDiagnostic?.recovered ? extractionDiagnostic : null,
+    manual_review_tracks: storedReviewTracks,
+    manual_review_reason: storedReviewTracks.length ? manualReviewReason : null,
+    classification_audit: {
+      version: "roots-audit-v1",
+      completed_at: new Date().toISOString(),
+      extraction: {
+        diagnostic: extractionDiagnostic,
+        cleaned_length: cleanedContent.length,
+        quality: editorialTextQuality(cleanedContent, config),
+        detected_language: language,
+        final_language: finalLanguage,
+      },
+      deterministic: {
+        hard_rejection_reasons: hardReasons,
+        exact_duplicate_of: exactDuplicate?.id || null,
+        title_duplicate_of: titleDuplicate?.id || null,
+        event_duplicate_of: eventDuplicateId,
+        company_candidates: companyCandidates.map((company) => company.name),
+      },
+      models: {
+        primary: config.ai.primary_model,
+        reviewer: reviewerModel,
+        prompt_version: CLASSIFIER_PROMPT_VERSION,
+        primary_output: primary,
+        final_validated_output: classification,
+      },
+      gates: {
+        marketing_route_candidate: marketingRouteCandidate,
+        marketing_eligible: marketingEligible,
+        marketing_borderline: marketingBorderline,
+        sales_route_candidate: salesRouteCandidate,
+        account_specific_sales_evidence: hasAccountSpecificSalesEvidence,
+        roots_sales_opportunity: rootsSalesOpportunity,
+        offering_match: matchedOffering,
+        sales_eligible: salesEligible,
+        sales_borderline: salesBorderline,
+        publication_date_present: hasPublicationDate,
+        display_formatting_required: formattingRequired,
+        display_ready: displayReady,
+      },
+      scores: routeValueScores,
+      outcome: { status: storedStatus, routes: storedRouting, manual_review_tracks: storedReviewTracks, manual_review_reason: storedReviewTracks.length ? manualReviewReason : null },
+    },
   }).eq("id", articleId);
+
+  if (!displayReady) return;
 
   if (!hasPublicationDate) {
     await admin.schema("signal_layer").from("findings").delete().eq("article_id", articleId);
@@ -3664,6 +3833,7 @@ async function tagArticle(
       rejection_reasons: ["Redaktionelle Dublette desselben Unternehmensereignisses"],
       duplicate_of: eventDuplicateId,
       routing: [], buying_center_candidate: false, tag_status: "untagged",
+      manual_review_tracks: [], manual_review_reason: null,
     }).eq("id", articleId);
     return;
   }
@@ -4554,7 +4724,7 @@ Deno.serve(async (req: Request) => {
           let analysisContent = String(article.content || "");
           const extractionCapture: ExtractionDiagnosticCapture = {};
           const malformedListing = analysisTitle.length > 300;
-          if ((analysisContent.trim().length < 400 || looksLikePaywallTeaser(analysisContent) || malformedListing) && article.url) {
+          if ((!editorialTextQuality(analysisContent).sufficient || malformedListing) && article.url) {
             let sourceWithAuth: { id: string; url: string; crawl_config?: Record<string, unknown> } | null = null;
             if (article.source_id) {
               const { data: src } = await admin.schema("signal_layer").from("sources")
@@ -4569,9 +4739,9 @@ Deno.serve(async (req: Request) => {
                 title: analysisTitle, content: analysisContent, excerpt: retried.excerpt || article.excerpt,
               }).eq("id", article.id);
             }
-            if (looksLikePaywallTeaser(analysisContent) || analysisContent.trim().length < 400) {
+            if (!editorialTextQuality(analysisContent).sufficient) {
               const synopsis = buildCandidateSynopsis(analysisTitle, article.excerpt || "");
-              if (synopsis) {
+              if (synopsis && editorialTextQuality(synopsis).sufficient) {
                 analysisContent = synopsis;
                 extractionCapture.value = {
                   ...(extractionCapture.value || {
@@ -4582,15 +4752,24 @@ Deno.serve(async (req: Request) => {
                   message: "Der Direktabruf lieferte keinen Volltext; die Analyse konnte mit einem redaktionellen Feed-Auszug fortgesetzt werden.",
                 };
                 await admin.schema("signal_layer").from("articles").update({ content: synopsis }).eq("id", article.id);
+              } else {
+                const quality = editorialTextQuality(analysisContent);
+                captureExtractionDiagnostic(extractionCapture, {
+                  code: looksLikePaywallTeaser(analysisContent) ? "paywall_after_login" : "too_short",
+                  message: `Kein klassifizierbarer Volltext: ${quality.reason}. Direktabruf und Feed-Auszug waren nicht ausreichend.`,
+                  content_length: quality.length,
+                  recovered: false,
+                });
               }
             }
           }
-          const diagnosticTextLength = cleanArticleText(analysisContent).length;
-          if (!extractionCapture.value && diagnosticTextLength < 240) {
+          const diagnosticQuality = editorialTextQuality(analysisContent);
+          if (!extractionCapture.value && !diagnosticQuality.sufficient) {
             captureExtractionDiagnostic(extractionCapture, {
               code: "too_short",
-              message: `Nach Entfernen von Navigation und Seitenelementen blieben nur ${diagnosticTextLength} Zeichen redaktioneller Text übrig.`,
-              content_length: diagnosticTextLength,
+              message: `Nach Entfernen von Navigation und Seitenelementen ist der Text nicht klassifizierbar: ${diagnosticQuality.reason}.`,
+              content_length: diagnosticQuality.length,
+              recovered: false,
             });
           }
           await tagArticle(admin, article.id, job.crawl_run_id, analysisTitle, analysisContent, [], companies || [], source || {}, extractionCapture.value || null);
@@ -5100,19 +5279,19 @@ Deno.serve(async (req: Request) => {
       }
 
       case "list_review_articles": {
-        const { limit, status } = body as { limit?: number; status?: string };
+        const { limit } = body as { limit?: number };
         const admin = getAdminClient();
         // Only surface reviewable items from the active window (last 3 months)
         // or undated ones; stale 2017/2018 articles must not clutter the queue.
         const reviewCutoff = new Date();
         reviewCutoff.setUTCMonth(reviewCutoff.getUTCMonth() - 3);
         let reviewQuery = admin.schema("signal_layer").from("articles")
-          .select("id, title, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, source:sources(company, url, category)")
-          .in("classification_status", ["uncertain", "error", "pending"])
+          .select("id, title, title_de, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, manual_review_tracks, manual_review_reason, marketing_relevance_score, sales_relevance_score, classified_at, source:sources(company, url, category)")
+          .eq("classification_status", "uncertain")
+          .not("manual_review_tracks", "eq", "{}")
           .or(`published_at.is.null,published_at.gte.${reviewCutoff.toISOString()}`)
           .order("classified_at", { ascending: false, nullsFirst: false })
           .limit(limit || 20);
-        if (status && ["uncertain", "error", "pending"].includes(status)) reviewQuery = reviewQuery.eq("classification_status", status);
         const { data, error } = await reviewQuery;
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { articles: data || [] });
@@ -5162,11 +5341,20 @@ Deno.serve(async (req: Request) => {
         const articleId = String(body.article_id || "");
         if (!articleId) return errorResponse(origin, "article_id is required");
         const admin = getAdminClient();
-        const { data, error } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, route_score_details, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
-          .eq("id", articleId).single();
+        const [{ data, error }, { data: usageEvents }, { data: analysisJob }, { data: browserJob }] = await Promise.all([
+          admin.schema("signal_layer").from("articles")
+            .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, route_score_details, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classification_audit, manual_review_tracks, manual_review_reason, extraction_diagnostic, duplicate_of, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
+            .eq("id", articleId).single(),
+          admin.schema("signal_layer").from("ai_usage_events")
+            .select("model,operation,status,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,error_code,created_at")
+            .eq("article_id", articleId).order("created_at", { ascending: true }).limit(50),
+          admin.schema("signal_layer").from("article_analysis_jobs")
+            .select("status,attempts,error_message,started_at,finished_at,crawl_run_id").eq("article_id", articleId).maybeSingle(),
+          admin.schema("signal_layer").from("browser_render_jobs")
+            .select("status,attempts,last_error,created_at,started_at,finished_at,updated_at").eq("article_id", articleId).maybeSingle(),
+        ]);
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
-        return corsResponse(origin, { article: data });
+        return corsResponse(origin, { article: { ...data, technical_trace: { usage_events: usageEvents || [], analysis_job: analysisJob || null, browser_job: browserJob || null } } });
       }
 
       case "get_dashboard_status": {
