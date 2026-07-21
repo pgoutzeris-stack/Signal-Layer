@@ -1950,16 +1950,16 @@ const AUDIT_FIELD_META = {
   reviewer: ["Zweitprüfung", "Optionales zweites KI-Modell für unsichere Grenzfälle."],
   primary_configured: ["Konfiguriertes Hauptmodell", "Das in Einstellungen › Kosten & Betrieb ausgewählte Originalmodell."],
   primary_actual: ["Tatsächlich verwendetes Hauptmodell", "Das Modell, dessen validierte Antwort für diesen Artikel verwendet wurde."],
-  primary_provider: ["Anbieter des Hauptmodells", "Gemini ist der konfigurierte Primäranbieter; NVIDIA wird nur bei einem dokumentierten Ausfall verwendet."],
+  primary_provider: ["Anbieter des Hauptmodells", "Gemini ist der einzige aktive KI-Anbieter der Klassifikationspipeline."],
   reviewer_configured: ["Konfiguriertes Review-Modell", "Das in den Einstellungen ausgewählte Originalmodell für eine mögliche Zweitprüfung."],
   reviewer_actual: ["Tatsächlich verwendetes Review-Modell", "Das Modell, das eine tatsächlich ausgelöste Zweitprüfung ausgeführt hat."],
   reviewer_provider: ["Anbieter der Zweitprüfung", "Anbieter des tatsächlich ausgeführten Review-Aufrufs."],
-  fallback_used: ["Fallback verwendet", "Ja bedeutet: Das konfigurierte Gemini-Modell war nicht verfügbar und ein dokumentiertes NVIDIA-Ausweichmodell hat übernommen."],
-  fallback_model: ["Verwendetes Fallback-Modell", "Konkretes NVIDIA-Modell, das nach dem Ausfall des Originalmodells erfolgreich geantwortet hat."],
+  fallback_used: ["Historischer Modell-Fallback", "Dieses Feld bleibt für ältere Prüfpfade erhalten. Neue Analysen verwenden keinen NVIDIA- oder Drittanbieter-Fallback mehr."],
+  fallback_model: ["Historisches Fallback-Modell", "Bei älteren Analysen dokumentiert dieses Feld das damals verwendete Ausweichmodell; neue Analysen bleiben beim konfigurierten Gemini-Modell."],
   model_sales_conflict: ["Widerspruch zwischen KI-Prüfungen", "Zeigt, ob Haupt- und Review-Modell bei der Sales-Zulässigkeit widersprüchlich entschieden haben. Ein Widerspruch verhindert automatisches Sales-Routing."],
   sales_score_consistent: ["Sales-Score schlüssig", "Der Gesamtscore sowie Problemstärke und ROOTS-Passung erreichen gemeinsam die Mindestwerte für ein direktes Sales-Signal."],
   preliminary_sales_eligible: ["Sales vor Sicherheitsprüfung", "Alle inhaltlichen Sales-Gates waren zunächst erfüllt; Score- und Widerspruchsprüfung folgen danach als zusätzliche Sicherung."],
-  attempts: ["Modellversuche", "Chronologische Liste aller Original- und Fallback-Aufrufe mit Erfolg oder Fehler."],
+  attempts: ["Modellversuche", "Chronologische Liste der Modellaufrufe mit Erfolg oder Fehler. Historische Datensätze können frühere Fallback-Aufrufe enthalten."],
   provider: ["KI-Anbieter", "Technischer Anbieter des jeweiligen Modellaufrufs."],
   prompt_version: ["Regelversion", "Version der fachlichen Anweisungen, mit denen dieser Artikel geprüft wurde."],
   primary_output: ["Erste KI-Antwort", "Validierte Antwort des Hauptmodells vor einer möglichen Zweitprüfung."],
@@ -2129,7 +2129,7 @@ async function openTechnicalAudit(articleId) {
         </div>
         <div class="audit-model-status ${fallbackUsed ? "audit-model-status--fallback" : "audit-model-status--original"}">
           <span class="audit-model-status-icon"><i class="fa-solid ${fallbackUsed ? "fa-shuffle" : aiModelWasUsed ? "fa-circle-check" : "fa-code-branch"}"></i></span>
-          <div><b>${fallbackUsed ? "Fallback-KI wurde verwendet" : aiModelWasUsed ? "Konfiguriertes Originalmodell wurde verwendet" : "Regelbasierte Prüfung ohne KI"}</b><p>${fallbackUsed ? `Das Originalmodell ${escapeHtml(configuredModel)} war nicht verfügbar. Die gespeicherte Entscheidung stammt von ${escapeHtml(modelAudit.fallback_model || actualModel)}. Alle Versuche stehen in Abschnitt 3.` : aiModelWasUsed ? `Die Entscheidung stammt direkt vom konfigurierten Modell ${escapeHtml(configuredModel)}.` : "Der Artikel wurde durch eindeutige Vorfilter entschieden; für diese Entscheidung war kein KI-Aufruf erforderlich."}</p></div>
+          <div><b>${fallbackUsed ? "Historischer Fallback wurde verwendet" : aiModelWasUsed ? "Konfiguriertes Originalmodell wurde verwendet" : "Regelbasierte Prüfung ohne KI"}</b><p>${fallbackUsed ? `Dieser ältere Prüfpfad stammt noch aus der früheren Fallback-Logik. Das Originalmodell ${escapeHtml(configuredModel)} war nicht verfügbar; die gespeicherte Entscheidung stammt von ${escapeHtml(modelAudit.fallback_model || actualModel)}. Neue Analysen verwenden keinen NVIDIA-Fallback mehr.` : aiModelWasUsed ? `Die Entscheidung stammt direkt vom konfigurierten Modell ${escapeHtml(configuredModel)}.` : "Der Artikel wurde durch eindeutige Vorfilter entschieden; für diese Entscheidung war kein KI-Aufruf erforderlich."}</p></div>
           ${fallbackUsed ? `<button type="button" class="audit-original-retry" data-reanalyze-original="${escapeHtml(article.id)}" data-original-model="${escapeHtml(configuredModel)}"><i class="fa-solid fa-rotate-right"></i><span>Mit Originalmodell erneut analysieren</span></button>` : ""}
         </div>
         ${auditSection("extraction", "1 · Extraktion, Sprache und Formatierung", "fa-solid fa-file-arrow-down", audit.extraction || article.extraction_diagnostic)}
