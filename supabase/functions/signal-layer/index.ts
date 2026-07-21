@@ -4249,13 +4249,16 @@ Deno.serve(async (req: Request) => {
         }
         const rendered = body.article as Record<string, unknown> | undefined;
         const renderedContent = decodeArticleText(String(rendered?.content || "")).trim().slice(0, 20_000);
-        if (Boolean(rendered?.paywall) || cleanArticleText(renderedContent).length < 400) {
+        const renderedQuality = editorialTextQuality(renderedContent, await getPipelineConfig());
+        if (Boolean(rendered?.paywall) || !renderedQuality.sufficient) {
           // A successfully rendered paywall/short page is deterministic. A
           // second identical browser run cannot reveal more text, so reserve
-          // retries for real navigation/network failures only.
+          // retries for real navigation/network failures only. Use the same
+          // prose-quality gate as classification so a 400–499 character page
+          // cannot bounce forever between browser and analysis queues.
           await admin.schema("signal_layer").from("browser_render_jobs").update({
             status: "error",
-            last_error: Boolean(rendered?.paywall) ? "paywall_after_browser_render" : "browser_text_too_short",
+            last_error: Boolean(rendered?.paywall) ? "paywall_after_browser_render" : `browser_text_insufficient:${renderedQuality.reason}`.slice(0, 500),
             finished_at: now,
             updated_at: now,
           }).eq("id", job.id);
@@ -4278,8 +4281,8 @@ Deno.serve(async (req: Request) => {
               checked_at: now,
             } : {
               code: "too_short",
-              message: "Auch nach vollständigem Chromium-Rendering blieb der redaktionelle Artikeltext unter 400 Zeichen.",
-              content_length: cleanArticleText(renderedContent).length,
+              message: `Auch nach vollständigem Chromium-Rendering war der redaktionelle Artikeltext nicht klassifizierbar: ${renderedQuality.reason}.`,
+              content_length: renderedQuality.length,
               checked_at: now,
             },
           }).eq("id", job.article_id);
