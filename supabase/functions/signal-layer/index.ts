@@ -3,19 +3,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.8";
 // ---------------------------------------------------------------------------
 // CORS
 // ---------------------------------------------------------------------------
-const ALLOWED_ORIGINS = [
+const ALLOWED_ORIGINS = new Set([
   "https://pgoutzeris-stack.github.io",
   "http://localhost",
   "http://localhost:3000",
   "http://localhost:5173",
   "http://127.0.0.1",
-];
+]);
 
 function getCorsHeaders(requestOrigin: string | null): Record<string, string> {
   const origin =
-    requestOrigin && ALLOWED_ORIGINS.some((o) => requestOrigin.startsWith(o))
+    requestOrigin && ALLOWED_ORIGINS.has(requestOrigin)
       ? requestOrigin
-      : ALLOWED_ORIGINS[0];
+      : "https://pgoutzeris-stack.github.io";
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -59,6 +59,48 @@ async function requireAuth(req: Request): Promise<{ userId: string } | null> {
   if (error || !user) return null;
   return { userId: user.id };
 }
+
+type AppRole = "reader" | "editor" | "admin";
+
+async function currentAppRole(userId: string): Promise<AppRole | null> {
+  const { data, error } = await getAdminClient()
+    .schema("users")
+    .from("profiles")
+    .select("app_role")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not resolve app role: ${error.message}`);
+  return ["reader", "editor", "admin"].includes(data?.app_role)
+    ? data.app_role as AppRole
+    : null;
+}
+
+const ADMIN_ACTIONS = new Set([
+  "update_pipeline_settings",
+  "start_classification_backfill",
+  "resume_classification_backfill",
+  "reformat_recent_articles",
+  "resume_stalled_crawls",
+]);
+
+const EDITOR_ACTIONS = new Set([
+  "preview_classification",
+  "classify_test_article",
+  "reanalyze_with_configured_model",
+  "preview_pipeline_impact",
+  "add_source",
+  "update_source",
+  "set_source_login",
+  "delete_source",
+  "update_taxonomy",
+  "add_offering",
+  "update_offering",
+  "delete_offering",
+  "add_keyword",
+  "update_keyword",
+  "delete_keyword",
+  "run_crawl",
+]);
 
 // ---------------------------------------------------------------------------
 // Scheduled-trigger auth — pg_cron calls this function with a shared secret
@@ -4454,6 +4496,23 @@ Deno.serve(async (req: Request) => {
   } else {
     auth = await requireAuth(req);
     if (!auth) return errorResponse(origin, "Unauthorized", 401);
+  }
+
+  if (auth && (ADMIN_ACTIONS.has(action) || EDITOR_ACTIONS.has(action))) {
+    let role: AppRole | null;
+    try {
+      role = await currentAppRole(auth.userId);
+    } catch (error) {
+      console.error(error);
+      return errorResponse(origin, "Could not verify permissions", 500);
+    }
+    if (!role) return errorResponse(origin, "Forbidden", 403);
+    if (ADMIN_ACTIONS.has(action) && role !== "admin") {
+      return errorResponse(origin, "Admin permission required", 403);
+    }
+    if (EDITOR_ACTIONS.has(action) && !["editor", "admin"].includes(role)) {
+      return errorResponse(origin, "Editor permission required", 403);
+    }
   }
 
   try {
