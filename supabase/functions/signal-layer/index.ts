@@ -4471,16 +4471,20 @@ Deno.serve(async (req: Request) => {
       }
 
       case "browser_claim_jobs": {
-        const requestedLimit = Math.max(1, Math.min(25, Number(body.limit || 12)));
+        const requestedLimit = Math.max(1, Math.min(4, Number(body.limit || 4)));
         const admin = getAdminClient();
         const jobs = [];
         const sourceLimit = Math.min(4, requestedLimit);
         const { data: sourceJobs, error: sourceJobError } = await admin.schema("signal_layer")
           .rpc("claim_browser_source_discovery_jobs", { p_limit: sourceLimit });
         if (sourceJobError) return errorResponse(origin, sourceJobError.message, 500);
+        const sourceIds = [...new Set((sourceJobs || []).map((job: any) => job.source_id).filter(Boolean))];
+        const { data: claimedSources } = sourceIds.length
+          ? await admin.schema("signal_layer").from("sources").select("id,url,crawl_config").in("id", sourceIds)
+          : { data: [] };
+        const sourceById = new Map((claimedSources || []).map((source: any) => [source.id, source]));
         for (const job of sourceJobs || []) {
-          const { data: source } = await admin.schema("signal_layer").from("sources")
-            .select("id,url,crawl_config").eq("id", job.source_id).maybeSingle();
+          const source: any = sourceById.get(job.source_id);
           if (!source?.url) continue;
           jobs.push({ id: job.id, kind: "source_discovery", url: String(source.crawl_config?.recommended_entry_url || source.url), attempts: job.attempts });
         }
@@ -4490,9 +4494,14 @@ Deno.serve(async (req: Request) => {
           p_limit: remainingLimit,
         });
         if (articleJobError) return errorResponse(origin, articleJobError.message, 500);
+        const articleIds = [...new Set((articleJobs || []).map((job: any) => job.article_id).filter(Boolean))];
+        const { data: claimedArticles } = articleIds.length
+          ? await admin.schema("signal_layer").from("articles")
+            .select("id,url,source_id,classification_status,source:sources(id,url,crawl_config)").in("id", articleIds)
+          : { data: [] };
+        const articleById = new Map((claimedArticles || []).map((article: any) => [article.id, article]));
         for (const job of articleJobs || []) {
-          const { data: article } = await admin.schema("signal_layer").from("articles")
-            .select("id,url,source_id,classification_status,source:sources(id,url,crawl_config)").eq("id", job.article_id).maybeSingle();
+          const article: any = articleById.get(job.article_id);
           if (article && ["reliable", "uncertain", "rejected"].includes(String(article.classification_status || ""))) {
             await admin.schema("signal_layer").from("browser_render_jobs").update({
               status: "error", last_error: "superseded_by_classification",
@@ -4656,12 +4665,6 @@ Deno.serve(async (req: Request) => {
           finished_at: null,
           error_message: null,
         }, { onConflict: "article_id" });
-        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
-        fetch(selfUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-          body: JSON.stringify({ action: "process_analysis_batches" }),
-        }).catch(() => {});
         return corsResponse(origin, { ok: true, queued_for_analysis: true });
       }
 
@@ -5441,8 +5444,6 @@ Deno.serve(async (req: Request) => {
             }
           }
         }
-        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
-        fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_worker" }) }).catch(() => {});
         return corsResponse(origin, { ok: true, submitted, completed_items: completedItems });
       }
 
@@ -5521,8 +5522,6 @@ Deno.serve(async (req: Request) => {
         } catch (workerError) {
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", error_message: String(workerError).slice(0, 1000), finished_at: new Date().toISOString() }).eq("id", job.id);
         }
-        const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
-        fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_worker" }) }).catch(() => {});
         return corsResponse(origin, { ok: true });
       }
 
@@ -5809,7 +5808,6 @@ Deno.serve(async (req: Request) => {
           }).eq("id", queue_job_id);
           fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_crawl_worker", crawl_run_id }) }).catch(() => {});
           fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_batches" }) }).catch(() => {});
-          fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_worker" }) }).catch(() => {});
         } else {
           fetch(selfUrl, {
             method: "POST",
@@ -5924,9 +5922,17 @@ Deno.serve(async (req: Request) => {
         }
         const { count: queuedAnalysisCount } = await admin.schema("signal_layer").from("article_analysis_jobs")
           .select("id", { count: "exact", head: true }).eq("status", "queued");
-        if ((stalledAnalysis || []).length > 0 || Number(queuedAnalysisCount || 0) > 0) {
+        // A provider spending cap cannot recover through rapid retries. Keep
+        // the queue intact and back off for six hours after the latest 429/cap
+        // response; the watchdog resumes automatically afterwards.
+        const analysisBackoffCutoff = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+        const { count: recentProviderLimitCount } = await admin.schema("signal_layer").from("article_analysis_jobs")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "error").gte("finished_at", analysisBackoffCutoff)
+          .or("error_message.ilike.%spending cap%,error_message.ilike.%quota%,error_message.ilike.%429%");
+        if (Number(recentProviderLimitCount || 0) === 0
+          && ((stalledAnalysis || []).length > 0 || Number(queuedAnalysisCount || 0) > 0)) {
           fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_batches" }) }).catch(() => {});
-          fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_worker" }) }).catch(() => {});
         }
 
         return corsResponse(origin, { resumed: (stalled || []).map((r: { id: string }) => r.id) });
@@ -6115,7 +6121,7 @@ Deno.serve(async (req: Request) => {
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("ai_usage_events")
             .select("article_id, crawl_run_id, model, status, operation, inference_mode, input_tokens, output_tokens, thinking_tokens, total_tokens, estimated_cost_usd, created_at")
-            .gte("created_at", monthStart.toISOString()).limit(10000),
+            .gte("created_at", monthStart.toISOString()).order("created_at", { ascending: false }).limit(2000),
           admin.schema("signal_layer").from("ai_cost_ledger_daily")
             .select("usage_date,request_count,error_count,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd")
             .gte("usage_date", monthStart.toISOString().slice(0, 10)),
@@ -6125,7 +6131,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("source_crawl_jobs")
             .select("crawl_run_id,source_id,position,status,error_code").order("position").limit(1000),
           admin.schema("signal_layer").from("article_analysis_jobs")
-            .select("article_id,crawl_run_id,status,started_at").in("status", ["queued", "running"]).limit(5000),
+            .select("article_id,crawl_run_id,status,started_at").in("status", ["queued", "running"]).order("started_at", { ascending: false }).limit(32),
           admin.schema("signal_layer").from("article_analysis_jobs")
             .select("article_id", { count: "exact", head: true }).eq("status", "queued"),
           admin.schema("signal_layer").from("article_analysis_jobs")
@@ -6135,7 +6141,7 @@ Deno.serve(async (req: Request) => {
             .order("classified_at", { ascending: true }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("sources").select("id,company,crawl_config").eq("active", true),
           admin.schema("signal_layer").from("browser_render_jobs")
-            .select("status,last_error,updated_at,article:articles(source:sources(company))").limit(5000),
+            .select("status,last_error,updated_at,article:articles(source:sources(company))").order("updated_at", { ascending: false }).limit(1000),
         ]);
         let backfillErrorCount = 0;
         let errorBreakdown: Array<{ code: string; label: string; explanation: string; count: number }> = [];
