@@ -1447,6 +1447,21 @@ function renderFindings(track) {
 
 const LOADER_HTML = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
 
+const ROOTS_PARENT_ORIGINS = new Set([
+  "https://pgoutzeris-stack.github.io",
+  "https://tauri.localhost",
+  "tauri://localhost",
+]);
+
+function rootsParentOrigin() {
+  try {
+    const origin = new URL(document.referrer).origin;
+    return ROOTS_PARENT_ORIGINS.has(origin) ? origin : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // Open an external URL. Three environments, three strategies:
 // 1. Embedded in the ROOTS Intranet iframe (browser or native Tauri app) - a
 //    plain <a>/window.open is blocked or would replace the tool, so we
@@ -1461,12 +1476,11 @@ function openExternalUrl(url) {
   if (!url || !/^(https?:\/\/|mailto:|tel:)/i.test(url)) return;
   if (document.documentElement.classList.contains("in-iframe")) {
     try {
-      // The parent is github.io in a normal browser but a tauri:// or
-      // https://tauri.localhost origin in the desktop wrapper. A fixed target
-      // origin silently drops the message in Tauri. The parent still validates
-      // this iframe's github.io event.origin and validates the URL scheme.
-      window.parent.postMessage({ type: "roots-open-url", url }, "*");
-      return;
+      const parentOrigin = rootsParentOrigin();
+      if (parentOrigin) {
+        window.parent.postMessage({ type: "roots-open-url", url }, parentOrigin);
+        return;
+      }
     } catch (_) { /* fall through to direct open */ }
   }
   const T = window.__TAURI_INTERNALS__;
