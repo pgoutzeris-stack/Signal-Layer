@@ -2325,7 +2325,8 @@ function isVendorSalesPitch(title: string, text: string): boolean {
 }
 
 function hardRejectionReasons(title: string, text: string, config: PipelineConfig = DEFAULT_PIPELINE_CONFIG): string[] {
-  const normalized = normalizeMatchText(`${title} ${text.slice(0, 5000)}`);
+  // Long reports often put their findings after navigation, author and methodology copy.
+  const normalized = normalizeMatchText(`${title} ${selectClassifierContent(text, 12_000)}`);
   const reasons: string[] = [];
   const careerHits = CAREER_CONTENT_TERMS.filter((term) => containsMatchTerm(normalized, term)).length;
   if (config.filters.reject_career_pages && careerHits >= 3) reasons.push("Karriere-, Bewerbungs- oder Ausbildungsinhalt");
@@ -2391,6 +2392,22 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
     reasons.push("Reiner Produktlaunch ohne Marketing- oder Strategiesignal");
   }
   return [...new Set(reasons)];
+}
+
+function publicationDateRejectionReasons(
+  publishedAt: string | null | undefined,
+  config: PipelineConfig = DEFAULT_PIPELINE_CONFIG,
+  nowMs = Date.now(),
+): string[] {
+  // Unknown dates remain eligible here and are kept archive-only later.
+  if (!publishedAt) return [];
+  const timestamp = Date.parse(publishedAt);
+  if (!Number.isFinite(timestamp)) return [];
+  const oldest = nowMs - Math.max(1, config.crawl.freshness_days) * 24 * 60 * 60 * 1000;
+  const newest = nowMs + Math.max(0, config.crawl.future_tolerance_hours) * 60 * 60 * 1000;
+  if (timestamp < oldest) return [`Bestätigtes Veröffentlichungsdatum liegt außerhalb des ${config.crawl.freshness_days}-Tage-Aktualitätsfensters`];
+  if (timestamp > newest) return [`Bestätigtes Veröffentlichungsdatum liegt mehr als ${config.crawl.future_tolerance_hours} Stunden in der Zukunft`];
+  return [];
 }
 
 async function sha256(value: string): Promise<string> {
@@ -2786,6 +2803,7 @@ async function submitGeminiClassificationBatch(
   model: string,
   requests: Array<{ key: string; prompt: string }>,
   config: PipelineConfig,
+  reservationId?: string,
 ): Promise<string> {
   const key = await getGeminiKey();
   if (!key) throw new Error("Gemini API key is not configured");
@@ -2794,7 +2812,7 @@ async function submitGeminiClassificationBatch(
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       batch: {
-        display_name: `signal-layer-${Date.now()}`,
+        display_name: reservationId ? `signal-layer-${reservationId}` : `signal-layer-${Date.now()}`,
         input_config: {
           requests: {
             requests: requests.map((item) => ({
@@ -2895,11 +2913,22 @@ function shouldReviewClassification(primary: AiClassification, config: PipelineC
     || primary.companies.every((company) => company.role === "incidental_mention"));
   const marketingConflict = marketing.eligible && (!primary.marketing_use.publishable
     || !String(primary.marketing_use.evidence || "").trim());
-  const genuinelyBorderline = primary.relevance_status === "uncertain"
-    && (marketing.eligible || sales.eligible || primary.topics.length > 0 || primary.sales_triggers.length > 0);
-  const highValueSalesNeedsAudit = sales.eligible
-    && primary.overall_confidence < Math.min(config.ai.review_confidence_below, config.quality.reliable_confidence);
-  return genuinelyBorderline || missingRouteEvidence || salesConflict || marketingConflict || highValueSalesNeedsAudit;
+  const reviewThreshold = Math.min(config.ai.review_confidence_below, config.quality.reliable_confidence);
+  const nearDecisionBoundary = primary.overall_confidence >= Math.max(0, reviewThreshold - 0.08)
+    && primary.overall_confidence < reviewThreshold;
+  const evidencedRoute = (marketing.eligible && Boolean(String(marketing.evidence || "").trim()))
+    || (sales.eligible && Boolean(String(sales.evidence || "").trim()));
+  const genuinelyBorderline = primary.relevance_status === "uncertain" && nearDecisionBoundary && evidencedRoute;
+  const salesValue = Math.round(
+    primary.sales_opportunity_value.problem_strength * 0.32
+    + primary.sales_opportunity_value.roots_fit * 0.30
+    + primary.sales_opportunity_value.buying_intent * 0.23
+    + primary.sales_opportunity_value.timing * 0.15,
+  );
+  const highValueSalesNeedsAudit = sales.eligible && salesValue >= 65 && nearDecisionBoundary;
+  return genuinelyBorderline
+    || (nearDecisionBoundary && evidencedRoute && (missingRouteEvidence || salesConflict || marketingConflict))
+    || highValueSalesNeedsAudit;
 }
 
 async function callConfiguredClassifier(
@@ -3400,8 +3429,9 @@ async function buildClassifierPrompt(
   source: { company?: string; category?: string },
   companies: Array<{ name: string; aliases: string[] }>,
   config: PipelineConfig = DEFAULT_PIPELINE_CONFIG,
+  maxContentChars = 12_000,
 ): Promise<string> {
-  const modelContent = selectClassifierContent(cleanedContent);
+  const modelContent = selectClassifierContent(cleanedContent, maxContentChars);
   const taxonomyText = await getTaxonomyText();
   return `<taxonomy>
 Topics:
@@ -3713,6 +3743,8 @@ async function tagArticle(
     forceAi?: boolean;
     precomputedPrimary?: AiClassification;
     precomputedModel?: string;
+    publishedAt?: string | null;
+    sourceId?: string | null;
   } = {},
 ): Promise<void> {
   const config = await getPipelineConfig();
@@ -3720,35 +3752,38 @@ async function tagArticle(
   const cleanedContent = cleanArticleText(content);
   const articleText = `${title}\n${cleanedContent}`;
   const contentHash = await sha256(normalizeMatchText(articleText));
+  const bodyHash = await sha256(normalizeMatchText(cleanedContent));
   const { data: existingArticle } = await admin.schema("signal_layer").from("articles")
-    .select("classification_payload,classification_stage_hash,routing_stage_hash,offering_stage_hash,translation_stage_hash,content_de,ai_model,matched_offering_id,matched_offering,matched_offering_reasoning")
+    .select("classification_payload,classification_stage_hash,routing_stage_hash,offering_stage_hash,translation_stage_hash,content_de,ai_model,matched_offering_id,matched_offering,matched_offering_reasoning,source_id,published_at")
     .eq("id", articleId).maybeSingle();
   const language = detectLanguage(articleText);
-  const hardReasons = hardRejectionReasons(title, cleanedContent, config);
+  const publishedAt = options.publishedAt === undefined ? existingArticle?.published_at : options.publishedAt;
+  const sourceId = options.sourceId === undefined ? existingArticle?.source_id : options.sourceId;
+  const hardReasons = [...publicationDateRejectionReasons(publishedAt, config), ...hardRejectionReasons(title, cleanedContent, config)];
   const { data: exactDuplicate } = config.filters.deduplicate
     ? await admin.schema("signal_layer").from("articles").select("id")
-      .eq("content_hash", contentHash).neq("id", articleId).limit(1).maybeSingle()
+      .or(`content_hash.eq.${contentHash},body_hash.eq.${bodyHash}`).neq("id", articleId).limit(1).maybeSingle()
     : { data: null };
   let titleDuplicate: { id: string } | null = null;
   if (config.filters.deduplicate && !exactDuplicate?.id) {
-    const { data: currentArticle } = await admin.schema("signal_layer").from("articles")
-      .select("source_id,published_at").eq("id", articleId).maybeSingle();
-    if (currentArticle?.source_id && currentArticle?.published_at) {
-      const publishedAt = new Date(currentArticle.published_at);
-      const from = new Date(publishedAt.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-      const to = new Date(publishedAt.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    if (publishedAt) {
+      const publicationDate = new Date(publishedAt);
+      const from = new Date(publicationDate.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+      const to = new Date(publicationDate.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
       const { data: candidates } = await admin.schema("signal_layer").from("articles")
-        .select("id,title,title_de").eq("source_id", currentArticle.source_id)
+        .select("id,title,title_de,source_id")
         .neq("id", articleId).is("duplicate_of", null)
         .gte("published_at", from).lte("published_at", to).limit(100);
       const currentHeadline = canonicalHeadline(title);
-      const match = (candidates || []).find((candidate: { id: string; title?: string; title_de?: string }) => {
+      const match = (candidates || []).find((candidate: { id: string; title?: string; title_de?: string; source_id?: string }) => {
         const candidateHeadlines = [candidate.title, candidate.title_de].filter(Boolean) as string[];
         return candidateHeadlines.some((candidateTitle) => {
           const candidateHeadline = canonicalHeadline(candidateTitle);
           if (currentHeadline.length >= 12 && currentHeadline === candidateHeadline) return true;
           const similarity = tokenSimilarity(title, candidateTitle);
-          return similarity.shared >= 5 && similarity.score >= 0.86;
+          return candidate.source_id === sourceId
+            ? similarity.shared >= 5 && similarity.score >= 0.86
+            : similarity.shared >= 7 && similarity.score >= 0.92;
         });
       });
       titleDuplicate = match ? { id: match.id } : null;
@@ -3777,6 +3812,7 @@ async function tagArticle(
       prompt_version: CLASSIFIER_PROMPT_VERSION,
       classified_at: new Date().toISOString(),
       content_hash: contentHash,
+      body_hash: bodyHash,
       duplicate_of: duplicate?.id || null,
       tag_status: "untagged",
       topics: [], territory: null, matched_companies: [], matched_persons: [],
@@ -3851,8 +3887,9 @@ async function tagArticle(
     // Review only plausible candidates that could still become a signal.
     if (primaryExecution.attempts.length > 0 && shouldReviewClassification(primary, config)) {
       try {
+        const reviewPrompt = await buildClassifierPrompt(title, cleanedContent, source, companyCandidates, config, 6_500);
         reviewerExecution = await callConfiguredClassifier(
-          config.ai.review_model, prompt, primary,
+          config.ai.review_model, reviewPrompt, primary,
           { articleId, crawlRunId: crawlRunId || undefined, operation: "review" },
           (raw) => validateClassification(raw, articleText, companyCandidates, config),
         );
@@ -3891,6 +3928,7 @@ async function tagArticle(
       prompt_version: CLASSIFIER_PROMPT_VERSION,
       classified_at: new Date().toISOString(),
       content_hash: contentHash,
+      body_hash: bodyHash,
       tag_status: "untagged",
       manual_review_tracks: [],
       manual_review_reason: null,
@@ -4287,6 +4325,7 @@ async function tagArticle(
     prompt_version: CLASSIFIER_PROMPT_VERSION,
     classified_at: new Date().toISOString(),
     content_hash: contentHash,
+    body_hash: bodyHash,
     event_cluster_key: eventClusterKey,
     classification_payload: classification,
     sales_triggers: classification.sales_triggers.map((trigger) => trigger.id),
@@ -5379,8 +5418,21 @@ Deno.serve(async (req: Request) => {
           return corsResponse(origin, { ok: true, batch_enabled: false });
         }
 
-        // First collect completed provider jobs. Results stay bound to their
-        // original article/job rows, so polling is idempotent.
+        // A local reservation is created before contacting Gemini. Stale
+        // reservations are failed, not automatically resubmitted, because
+        // provider acceptance can be ambiguous after a network interruption.
+        const staleCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        const { data: staleReservations } = await admin.schema("signal_layer").from("ai_batch_jobs")
+          .select("id").eq("status", "reserving").lt("submitted_at", staleCutoff).limit(20);
+        for (const reservation of staleReservations || []) {
+          await admin.schema("signal_layer").rpc("fail_ai_batch_reservation", {
+            p_batch_id: reservation.id, p_error: "batch_submission_state_unknown",
+          });
+        }
+
+        // First collect completed provider jobs. Result dependencies are read
+        // once per batch rather than once per item.
+        const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
         const { data: openBatches } = await admin.schema("signal_layer").from("ai_batch_jobs")
           .select("id,provider_job_name,model,status").in("status", ["submitted", "running"])
           .order("submitted_at").limit(3);
@@ -5400,9 +5452,12 @@ Deno.serve(async (req: Request) => {
             const mapped = state === "JOB_STATE_CANCELLED" ? "cancelled" : state === "JOB_STATE_EXPIRED" ? "expired" : "failed";
             await admin.schema("signal_layer").from("ai_batch_jobs").update({ status: mapped, checked_at: new Date().toISOString(), finished_at: new Date().toISOString(), error_message: JSON.stringify(providerJob?.error || {}).slice(0, 1000) }).eq("id", batch.id);
             const { data: failedItems } = await admin.schema("signal_layer").from("ai_batch_items").select("analysis_job_id").eq("batch_id", batch.id).eq("status", "submitted");
-            for (const item of failedItems || []) {
-              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", processing_mode: "batch", finished_at: new Date().toISOString(), error_message: `batch_${mapped}` }).eq("id", item.analysis_job_id);
-              await admin.schema("signal_layer").from("ai_batch_items").update({ status: "failed", error_message: `batch_${mapped}` }).eq("analysis_job_id", item.analysis_job_id);
+            const failedJobIds = (failedItems || []).map((item: any) => item.analysis_job_id);
+            if (failedJobIds.length) {
+              await Promise.all([
+                admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", processing_mode: "batch", finished_at: new Date().toISOString(), error_message: `batch_${mapped}` }).in("id", failedJobIds),
+                admin.schema("signal_layer").from("ai_batch_items").update({ status: "failed", error_message: `batch_${mapped}` }).in("analysis_job_id", failedJobIds),
+              ]);
             }
             continue;
           }
@@ -5412,38 +5467,58 @@ Deno.serve(async (req: Request) => {
           }
           const inlineResponses = providerJob?.response?.inlinedResponses || providerJob?.dest?.inlinedResponses || [];
           const { data: items } = await admin.schema("signal_layer").from("ai_batch_items")
-            .select("id,analysis_job_id,article_id,position,status").eq("batch_id", batch.id).order("position");
-          for (const item of (items || []).filter((row: any) => row.status === "submitted").slice(0, 2)) {
+            .select("id,analysis_job_id,article_id,position,status,content_fingerprint").eq("batch_id", batch.id).order("position");
+          const selectedItems = (items || []).filter((row: any) => row.status === "submitted")
+            .slice(0, Math.max(8, Math.min(32, Number(config.ai.batch_size || 8))));
+          const articleIds = selectedItems.map((item: any) => item.article_id);
+          const analysisJobIds = selectedItems.map((item: any) => item.analysis_job_id);
+          const [articlesResult, jobsResult] = await Promise.all([
+            articleIds.length
+              ? admin.schema("signal_layer").from("articles").select("id,title,content,cleaned_content,source_id,published_at,source:sources(company,category)").in("id", articleIds)
+              : Promise.resolve({ data: [] }),
+            analysisJobIds.length
+              ? admin.schema("signal_layer").from("article_analysis_jobs").select("id,crawl_run_id").in("id", analysisJobIds)
+              : Promise.resolve({ data: [] }),
+          ]);
+          const articleById = new Map((articlesResult.data || []).map((article: any) => [article.id, article]));
+          const jobById = new Map((jobsResult.data || []).map((job: any) => [job.id, job]));
+          const succeededItemIds: string[] = [];
+          const succeededJobIds: string[] = [];
+          const failedItemIds: string[] = [];
+          const failedJobIds: string[] = [];
+          for (const item of selectedItems) {
             const inline = inlineResponses[item.position];
             const result = inline?.response;
             try {
               if (!result) throw new Error(JSON.stringify(inline?.error || "missing_batch_response").slice(0, 600));
               const text = result?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("");
               const raw = parseModelJson(String(text || ""));
-              const { data: article } = await admin.schema("signal_layer").from("articles")
-                .select("id,title,content,cleaned_content,source:sources(company,category)").eq("id", item.article_id).single();
-              const { data: analysisJob } = await admin.schema("signal_layer").from("article_analysis_jobs")
-                .select("crawl_run_id").eq("id", item.analysis_job_id).single();
+              const article: any = articleById.get(item.article_id);
+              const analysisJob: any = jobById.get(item.analysis_job_id);
               if (!article) throw new Error("article_not_found");
-              const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
+              const currentFingerprint = await sha256(normalizeMatchText(`${article.title || ""}\n${cleanArticleText(article.content || article.cleaned_content || "")}`));
+              if (item.content_fingerprint && currentFingerprint !== item.content_fingerprint) throw new Error("article_changed_after_batch_submission");
               const source = Array.isArray(article.source) ? article.source[0] : article.source;
               await recordGeminiBatchUsage(item.article_id, analysisJob?.crawl_run_id || null, batch.model, result);
               await tagArticle(
                 admin, article.id, analysisJob?.crawl_run_id || null, article.title || "",
                 article.content || article.cleaned_content || "", [], companies || [], source || {}, null,
-                { precomputedPrimary: raw, precomputedModel: batch.model },
+                { precomputedPrimary: raw, precomputedModel: batch.model, publishedAt: article.published_at, sourceId: article.source_id },
               );
-              await admin.schema("signal_layer").from("ai_batch_items").update({ status: "succeeded" }).eq("id", item.id);
-              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "done", finished_at: new Date().toISOString(), error_message: null }).eq("id", item.analysis_job_id);
+              succeededItemIds.push(item.id); succeededJobIds.push(item.analysis_job_id);
               completedItems += 1;
             } catch (batchItemError) {
-              await admin.schema("signal_layer").from("ai_batch_items").update({ status: "failed", error_message: String(batchItemError).slice(0, 1000) }).eq("id", item.id);
-              // Never pay for the same automatic article again at the standard
-              // rate. The precise batch error remains visible for a deliberate
-              // retry after the cause has been fixed.
-              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", processing_mode: "batch", finished_at: new Date().toISOString(), error_message: "batch_result_invalid" }).eq("id", item.analysis_job_id);
+              console.error("Batch result failed:", item.id, batchItemError);
+              failedItemIds.push(item.id); failedJobIds.push(item.analysis_job_id);
             }
           }
+          const now = new Date().toISOString();
+          const statusWrites: PromiseLike<any>[] = [];
+          if (succeededItemIds.length) statusWrites.push(admin.schema("signal_layer").from("ai_batch_items").update({ status: "succeeded" }).in("id", succeededItemIds));
+          if (succeededJobIds.length) statusWrites.push(admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "done", finished_at: now, error_message: null }).in("id", succeededJobIds));
+          if (failedItemIds.length) statusWrites.push(admin.schema("signal_layer").from("ai_batch_items").update({ status: "failed", error_message: "batch_result_invalid" }).in("id", failedItemIds));
+          if (failedJobIds.length) statusWrites.push(admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", processing_mode: "batch", finished_at: now, error_message: "batch_result_invalid" }).in("id", failedJobIds));
+          await Promise.all(statusWrites);
           const { count: remaining } = await admin.schema("signal_layer").from("ai_batch_items")
             .select("id", { count: "exact", head: true }).eq("batch_id", batch.id).eq("status", "submitted");
           await admin.schema("signal_layer").from("ai_batch_jobs").update({
@@ -5458,48 +5533,116 @@ Deno.serve(async (req: Request) => {
         const { data: claimed, error: claimError } = await admin.schema("signal_layer")
           .rpc("claim_article_analysis_jobs", { p_limit: config.ai.batch_size });
         if (claimError) return errorResponse(origin, claimError.message, 500);
-        const batchRequests: Array<{ key: string; prompt: string; job: any; article: any }> = [];
-        const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
+        const claimedArticleIds = [...new Set((claimed || []).map((job: any) => job.article_id))];
+        const { data: claimedArticles } = claimedArticleIds.length
+          ? await admin.schema("signal_layer").from("articles")
+            .select("id,title,content,cleaned_content,source_id,published_at,source:sources(company,category)").in("id", claimedArticleIds)
+          : { data: [] };
+        const prepared = await Promise.all((claimedArticles || []).map(async (article: any) => {
+          const cleaned = cleanArticleText(article.content || article.cleaned_content || "");
+          return { article, cleaned,
+            contentHash: await sha256(normalizeMatchText(`${article.title || ""}\n${cleaned}`)),
+            bodyHash: await sha256(normalizeMatchText(cleaned)) };
+        }));
+        const contentHashes = [...new Set(prepared.map((item) => item.contentHash))];
+        const bodyHashes = [...new Set(prepared.map((item) => item.bodyHash))];
+        const dates = prepared.map((item) => Date.parse(item.article.published_at || "")).filter(Number.isFinite);
+        const titleFrom = dates.length ? new Date(Math.min(...dates) - 14 * 86400_000).toISOString() : null;
+        const titleTo = dates.length ? new Date(Math.max(...dates) + 14 * 86400_000).toISOString() : null;
+        const [contentDupResult, bodyDupResult, titleResult] = config.filters.deduplicate
+          ? await Promise.all([
+            contentHashes.length ? admin.schema("signal_layer").from("articles").select("id,content_hash").in("content_hash", contentHashes) : Promise.resolve({ data: [] }),
+            bodyHashes.length ? admin.schema("signal_layer").from("articles").select("id,body_hash").in("body_hash", bodyHashes) : Promise.resolve({ data: [] }),
+            titleFrom && titleTo ? admin.schema("signal_layer").from("articles")
+              .select("id,title,title_de,source_id,published_at").is("duplicate_of", null)
+              .gte("published_at", titleFrom).lte("published_at", titleTo).limit(1000) : Promise.resolve({ data: [] }),
+          ])
+          : [{ data: [] }, { data: [] }, { data: [] }];
+        const preparedById = new Map(prepared.map((item) => [item.article.id, item]));
+        const batchRequests: Array<{ key: string; prompt: string; job: any; article: any; fingerprint: string }> = [];
         for (const job of claimed || []) {
-          const { data: article } = await admin.schema("signal_layer").from("articles")
-            .select("id,title,content,source:sources(company,category)").eq("id", job.article_id).single();
+          const item: any = preparedById.get(job.article_id);
+          const article = item?.article;
           if (!article) {
             await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", error_message: "article_not_found", finished_at: new Date().toISOString() }).eq("id", job.id);
             continue;
           }
-          const cleaned = cleanArticleText(article.content || "");
-          const hardReasons = hardRejectionReasons(article.title || "", cleaned, config);
+          const { cleaned, contentHash: candidateHash, bodyHash } = item;
+          const hardReasons = [...publicationDateRejectionReasons(article.published_at, config), ...hardRejectionReasons(article.title || "", cleaned, config)];
           const source = Array.isArray(article.source) ? article.source[0] : article.source;
-          const candidateHash = await sha256(normalizeMatchText(`${article.title || ""}\n${cleaned}`));
-          const { data: duplicate } = config.filters.deduplicate
-            ? await admin.schema("signal_layer").from("articles").select("id").eq("content_hash", candidateHash).neq("id", article.id).limit(1).maybeSingle()
-            : { data: null };
-          if (hardReasons.length > 0 || duplicate?.id) {
-            await tagArticle(admin, article.id, job.crawl_run_id || null, article.title || "", article.content || "", [], companies || [], source || {});
+          const exactDuplicate = [
+            ...(contentDupResult.data || []).filter((candidate: any) => candidate.content_hash === candidateHash),
+            ...(bodyDupResult.data || []).filter((candidate: any) => candidate.body_hash === bodyHash),
+          ].find((candidate: any) => candidate.id !== article.id);
+          const titleDuplicate = article.published_at && (titleResult.data || []).find((candidate: any) => {
+            if (candidate.id === article.id || !candidate.published_at
+                || Math.abs(Date.parse(article.published_at) - Date.parse(candidate.published_at)) > 14 * 86400_000) return false;
+            return [candidate.title, candidate.title_de].filter(Boolean).some((candidateTitle: string) => {
+              const similarity = tokenSimilarity(article.title || "", candidateTitle);
+              const currentHeadline = canonicalHeadline(article.title || "");
+              return currentHeadline.length >= 12 && currentHeadline === canonicalHeadline(candidateTitle)
+                || (candidate.source_id === article.source_id
+                  ? similarity.shared >= 5 && similarity.score >= 0.86
+                  : similarity.shared >= 7 && similarity.score >= 0.92);
+            });
+          });
+          const inBatchDuplicate = batchRequests.find((entry) => entry.fingerprint === candidateHash
+            || entry.article.body_hash === bodyHash
+            || (article.published_at && entry.article.published_at
+              && Math.abs(Date.parse(article.published_at) - Date.parse(entry.article.published_at)) <= 14 * 86400_000
+              && (() => { const similarity = tokenSimilarity(article.title || "", entry.article.title || "");
+                return entry.article.source_id === article.source_id
+                  ? similarity.shared >= 5 && similarity.score >= 0.86
+                  : similarity.shared >= 7 && similarity.score >= 0.92; })()));
+          if (hardReasons.length > 0 || exactDuplicate || titleDuplicate || inBatchDuplicate) {
+            await tagArticle(admin, article.id, job.crawl_run_id || null, article.title || "", article.content || article.cleaned_content || "", [], companies || [], source || {}, null, { publishedAt: article.published_at, sourceId: article.source_id });
             await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "done", finished_at: new Date().toISOString() }).eq("id", job.id);
             continue;
           }
+          article.body_hash = bodyHash;
+          await admin.schema("signal_layer").from("articles").update({ cleaned_content: cleaned, content_hash: candidateHash, body_hash: bodyHash }).eq("id", article.id);
           const articleText = `${article.title || ""}\n${cleaned}`;
           const candidates = selectCompanyCandidates(articleText, companies || []);
           const prompt = await buildClassifierPrompt(article.title || "", cleaned, source || {}, candidates, config);
-          batchRequests.push({ key: job.id, prompt, job, article });
+          batchRequests.push({ key: job.id, prompt, job, article, fingerprint: candidateHash });
         }
         let submitted = 0;
         if (batchRequests.length > 0) {
+          let reservationId: string | null = null;
+          let providerName: string | null = null;
           try {
-            const providerName = await submitGeminiClassificationBatch(config.ai.primary_model, batchRequests, config);
-            const { data: storedBatch, error: batchError } = await admin.schema("signal_layer").from("ai_batch_jobs").insert({
-              provider_job_name: providerName, model: config.ai.primary_model, request_count: batchRequests.length,
-            }).select("id").single();
-            if (batchError || !storedBatch) throw new Error(batchError?.message || "batch_storage_failed");
-            const { error: itemsError } = await admin.schema("signal_layer").from("ai_batch_items").insert(batchRequests.map((entry, position) => ({
-              batch_id: storedBatch.id, analysis_job_id: entry.job.id, article_id: entry.article.id, position,
-            })));
-            if (itemsError) throw new Error(itemsError.message);
+            const { data: reserved, error: reservationError } = await admin.schema("signal_layer").rpc("reserve_ai_batch", {
+              p_model: config.ai.primary_model,
+              p_items: batchRequests.map((entry) => ({ analysis_job_id: entry.job.id, article_id: entry.article.id, content_fingerprint: entry.fingerprint })),
+            });
+            if (reservationError || !reserved) throw new Error(reservationError?.message || "batch_reservation_failed");
+            reservationId = String(reserved);
+            providerName = await submitGeminiClassificationBatch(config.ai.primary_model, batchRequests, config, reservationId);
+            let finalized = false;
+            let finalizeMessage = "batch_finalize_failed";
+            for (let attempt = 0; attempt < 3 && !finalized; attempt += 1) {
+              const { data, error } = await admin.schema("signal_layer").rpc("finalize_ai_batch", {
+                p_batch_id: reservationId, p_provider_job_name: providerName,
+              });
+              finalized = !error && data === true;
+              finalizeMessage = error?.message || finalizeMessage;
+            }
+            if (!finalized) throw new Error(`${finalizeMessage}: provider=${providerName}`);
             submitted = batchRequests.length;
           } catch (submissionError) {
-            for (const entry of batchRequests) {
-              await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "error", processing_mode: "batch", finished_at: new Date().toISOString(), error_message: String(submissionError).slice(0, 500) }).eq("id", entry.job.id);
+            if (reservationId && !providerName) {
+              await admin.schema("signal_layer").rpc("fail_ai_batch_reservation", {
+                p_batch_id: reservationId, p_error: String(submissionError).slice(0, 500),
+              });
+            } else if (!reservationId) {
+              await admin.schema("signal_layer").from("article_analysis_jobs").update({
+                status: "error", processing_mode: "batch", finished_at: new Date().toISOString(),
+                error_message: String(submissionError).slice(0, 500),
+              }).in("id", batchRequests.map((entry) => entry.job.id));
+            } else {
+              // Gemini accepted this named reservation. Keep it unresolved so
+              // no automatic duplicate submission can occur.
+              console.error("Gemini batch finalization unresolved:", reservationId, providerName, submissionError);
             }
           }
         }
@@ -5513,7 +5656,7 @@ Deno.serve(async (req: Request) => {
         const job = jobs?.[0];
         if (!job) return corsResponse(origin, { ok: true, idle: true });
         const { data: article } = await admin.schema("signal_layer").from("articles")
-          .select("id,title,url,content,excerpt,source_id,source:sources(company,category)").eq("id", job.article_id).single();
+          .select("id,title,url,content,excerpt,source_id,published_at,source:sources(company,category)").eq("id", job.article_id).single();
         const { data: companies } = await admin.schema("signal_layer").from("tier1_companies").select("name,aliases").eq("active", true);
         if (!article) {
           await admin.schema("signal_layer").from("article_analysis_jobs").update({
@@ -5575,7 +5718,10 @@ Deno.serve(async (req: Request) => {
               recovered: false,
             });
           }
-          await tagArticle(admin, article.id, job.crawl_run_id, analysisTitle, analysisContent, [], companies || [], source || {}, extractionCapture.value || null);
+          await tagArticle(
+            admin, article.id, job.crawl_run_id, analysisTitle, analysisContent, [], companies || [], source || {}, extractionCapture.value || null,
+            { publishedAt: article.published_at, sourceId: article.source_id },
+          );
           await enqueueBrowserRenderJob(article.id, extractionCapture.value || null);
           await admin.schema("signal_layer").from("article_analysis_jobs").update({ status: "done", finished_at: new Date().toISOString() }).eq("id", job.id);
         } catch (workerError) {
