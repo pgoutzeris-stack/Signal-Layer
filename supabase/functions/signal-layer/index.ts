@@ -1,4 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.8";
+import {
+  hasIndependentEventReportSubstance,
+  hasQualifiedTier1EventParticipation,
+  isBareEventAnnouncement,
+} from "./event-signals.ts";
 
 // ---------------------------------------------------------------------------
 // CORS
@@ -1689,11 +1694,9 @@ function hasEventTier1PersonLink(
 // ---------------------------------------------------------------------------
 const GEMINI_PRIMARY_MODEL = "gemini-2.5-flash-lite";
 const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
-// The classifier prompt itself is unchanged. Cost-control/routing stages have
-// independent versions below so deploying them does not invalidate every paid
-// classification in the database.
-const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.9.1";
-const PIPELINE_RULE_MANIFEST_VERSION = "roots-pipeline-rules-v1.0.0";
+// Prompt and deterministic-rule versions make cached decisions reproducible.
+const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.9.2";
+const PIPELINE_RULE_MANIFEST_VERSION = "roots-pipeline-rules-v1.1.0";
 const RELEVANCE_SCORING_VERSION = "roots-value-v1.0";
 const ROUTING_STAGE_VERSION = "roots-routing-v1.1";
 const OFFERING_STAGE_VERSION = "roots-offering-v1.1";
@@ -2324,15 +2327,33 @@ function isVendorSalesPitch(title: string, text: string): boolean {
   return vendorOffer && (selfPromotional || profileOrPitchPage) && !substantiveKnowledgeAsset;
 }
 
-function hardRejectionReasons(title: string, text: string, config: PipelineConfig = DEFAULT_PIPELINE_CONFIG): string[] {
+type EventFilterContext = {
+  sourceCategory?: string;
+  tier1Companies?: Array<{ name: string; aliases: string[] }>;
+};
+
+function hardRejectionReasons(
+  title: string,
+  text: string,
+  config: PipelineConfig = DEFAULT_PIPELINE_CONFIG,
+  eventContext: EventFilterContext = {},
+): string[] {
   // Long reports often put their findings after navigation, author and methodology copy.
   const normalized = normalizeMatchText(`${title} ${selectClassifierContent(text, 12_000)}`);
+  const articleText = `${title}\n${text}`;
+  const eventCompanies = selectCompanyCandidates(articleText, eventContext.tier1Companies || []);
+  const qualifiedEventParticipation = hasQualifiedTier1EventParticipation(articleText, eventCompanies);
+  const independentEventReport = hasIndependentEventReportSubstance(articleText);
   const reasons: string[] = [];
   const careerHits = CAREER_CONTENT_TERMS.filter((term) => containsMatchTerm(normalized, term)).length;
   if (config.filters.reject_career_pages && careerHits >= 3) reasons.push("Karriere-, Bewerbungs- oder Ausbildungsinhalt");
   if (config.filters.reject_faq_pages && /\b(faq|frequently asked questions|fragen und antworten|noch fragen)\b/i.test(title)) reasons.push("FAQ- oder Hilfeseite");
-  if (config.filters.reject_event_programs && /\b(attendees|speakers|agenda|schedule|tickets|event program|teilnehmer|programm|anmeldung)\b/i.test(title)
-      && !/\b(report|rückblick|results|ergebnisse|launch|kampagne|strategy|strategie)\b/i.test(title)) {
+  const genericEventDirectoryTitle = /^(?:event\s+)?(?:attendees|speakers|agenda|schedule|tickets|event program|teilnehmer|programm|anmeldung)(?:\s+\d{4})?$/i.test(title.trim());
+  if (config.filters.reject_event_programs
+      && (genericEventDirectoryTitle
+        || /\b(attendees|speakers|agenda|schedule|tickets|event program|teilnehmer|programm|anmeldung)\b/i.test(title)
+          && !qualifiedEventParticipation && !independentEventReport
+          && !/\b(report|rückblick|results|ergebnisse|launch|kampagne|strategy|strategie)\b/i.test(title))) {
     reasons.push("Event-, Teilnehmer- oder Programmseite ohne strategisches Signal");
   }
   const directoryOrListing = /\b(media contacts?|kontakt|anbieter|supplier|company profile|unternehmensprofil)\b/i.test(title)
@@ -2357,6 +2378,12 @@ function hardRejectionReasons(title: string, text: string, config: PipelineConfi
   // technical extraction error.
   const contentUnavailable = !editorialTextQuality(text, config).sufficient;
   if (contentUnavailable) reasons.push("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
+  if (!contentUnavailable && eventContext.sourceCategory === "Events & Messen" && !qualifiedEventParticipation) {
+    reasons.push("Eventquelle ohne belegten Tier-1-Auftritt einer benannten Person mit Rolle, tatsächlichem Beitrag und ROOTS-relevantem Thema");
+  } else if (!contentUnavailable && eventContext.sourceCategory !== "Events & Messen"
+      && !qualifiedEventParticipation && isBareEventAnnouncement(articleText)) {
+    reasons.push("Bloße Eventteilnahme oder Auftrittsankündigung ohne qualifizierten Tier-1-Beitrag");
+  }
   const titleYear = title.match(/\b(20\d{2})\b/)?.[1];
   if (titleYear && Number(titleYear) <= new Date().getUTCFullYear() - 2
       && /\b(event|messe|festival|conference|konferenz|forum|summit|all in)\b/i.test(title)) {
@@ -3365,11 +3392,7 @@ function passesEventPreClassificationGate(
 ): boolean {
   if (policy.sourceType !== "event") return true;
   const matchedCompanies = selectCompanyCandidates(articleText, tier1Companies);
-  const hasTier1 = matchedCompanies.length > 0;
-  const hasTopicSignal = findEventSignalFamilies(articleText).length > 0;
-  const hasTier1PersonLink = hasTier1 && hasEventTier1PersonLink(articleText, matchedCompanies);
-  return (!policy.requireTier1 || hasTier1)
-    && (!policy.requireTopicSignal || hasTopicSignal || hasTier1PersonLink);
+  return hasQualifiedTier1EventParticipation(articleText, matchedCompanies);
 }
 
 // Topics/territories text is DB-backed (signal_layer.topics/territories) so
@@ -3448,7 +3471,7 @@ ${taxonomyText.salesTriggers}
 Marketing means editorial usefulness for ROOTS: the article must contain enough transferable substance to support a later general post, newsletter item, whitepaper or thought-leadership contribution. Evaluate only that potential; do NOT create content ideas, angles, headlines or finished copy. Marketing NEVER requires a Tier-1 company or any named company. Missing Tier-1 status is exclusively a Sales limitation and must never appear in article-level rejection_reasons or make Marketing uncertain. General analyses, interviews, studies and market observations qualify when they teach a broader audience something concrete and evidence-backed about a ROOTS topic; a company case study is useful but not required. Company news that cannot teach a broader audience anything is not Marketing. Direct evidence for customer behaviour, brand/marketing strategy, campaign/media, retail assortment/pricing/promotion/store strategy, applied AI or a transferable development in a ROOTS-relevant consumer/FMCG/retail sub-sector is required. sub_branchen_insight MAY qualify Marketing by itself only when it contains a concrete transferable market/category/customer/competitive development, evidence and enough depth to remain useful beyond a single company event. A single acquisition, opening, expansion, result, investment, facility or personnel announcement is never such an insight. Acquisitions, mergers, financial results, investments, logistics, production, expansion and personnel news are not Marketing unless separate direct Marketing or transferable sector evidence exists. A technology, production, factory, battery, machinery, energy-efficiency, supply-chain or industrial-cost insight is NOT a Marketing insight merely because it is innovative, strategic, transferable or economically important. "Interesting for business" is not the same as "useful for a ROOTS Marketing asset". For marketing_insights, the verbatim topic and marketing_use evidence must itself explicitly concern marketing strategy, brand/positioning, communication/media, customer/consumer/shopper behaviour, customer experience, retail/category/pricing/promotion or marketing organisation/performance. Empirical studies and surveys from consultancies, institutes, associations or companies require exposed methodology/sample plus findings or data. Whitepapers, research papers, playbooks and trend/market reports may qualify without a survey methodology when they expose concrete findings, frameworks, benchmarks, data or independently useful conclusions. A download announcement, gated landing page or self-promotional claim without an exposed finding does not qualify. If marketing_use.sufficient_substance is true or routing_decisions.marketing.reason describes transferable value, you MUST copy a verbatim supporting sentence into marketing_use.evidence and evaluate publishable independently of Sales.
 Software-, Tool-, Plattform-, Agentur-, Beratungs- and other service-provider pages that primarily present or sell their own offering are NOT Marketing signals. Vendor claims that their product creates insights, improves customer experience or raises performance are still sales pitches, not independent insights. This also applies to provider profiles, directories, product descriptions, demos and promotional case examples without independently useful evidence. Exception: substantive studies, research papers, whitepapers, benchmarks, playbooks or trend reports from consultancies/agencies/providers remain eligible when the article itself exposes concrete methodology plus findings, data or transferable customer/industry trends beyond promoting the provider.
 sub_branchen_insight is valid only for a transferable market observation that remains useful beyond the reported company event. A single acquisition, product, expansion, financial result or facility is not transferable.
-Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge or evidenced ROOTS-relevant opportunity, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. The Sales evidence, company_challenge or personalization facts MUST explicitly connect the named Tier-1 company to that challenge or trigger; generic statements about "companies", "brands" or an anonymous case study are Marketing only. A company mention or generic strategic change alone is insufficient. For sources in category "Events & Messen", a named person with a credible role at a Tier-1 company who substantively speaks, presents, discusses or is quoted about a ROOTS marketing, brand, customer, retail, category, innovation or applied-AI topic qualifies event_participation as a Sales trigger. The person's contribution and company affiliation must both be evidenced locally in the article. Attendee lists, speaker directories, schedules, navigation, a session title without described contribution, and a name merely appearing somewhere on the same page are insufficient.
+Sales means sufficient account-specific substance for later personalized outreach content. Evaluate only whether a credible whitepaper, executive briefing or comparable material could later be developed; do NOT propose an asset, topic, title or finished idea. It requires BOTH a Tier-1 company as primary_subject/affected_party AND at least one evidence-backed strategic sales_trigger, a concrete company challenge or evidenced ROOTS-relevant opportunity, a clear ROOTS contribution, sufficient factual depth and at least one personalization fact. The Sales evidence, company_challenge or personalization facts MUST explicitly connect the named Tier-1 company to that challenge or trigger; generic statements about "companies", "brands" or an anonymous case study are Marketing only. A company mention or generic strategic change alone is insufficient. From ANY source, a named person with a credible role at a Tier-1 company who substantively speaks, presents, discusses, participates or is quoted about a ROOTS marketing, brand, customer, retail, category, innovation or applied-AI topic qualifies event_participation as a Sales trigger. The person's contribution and company affiliation must both be evidenced locally in the article. Attendee lists, speaker directories, schedules, navigation, a session title without described contribution, bare attendance announcements, and a name merely appearing somewhere on the same page are insufficient. Event participation alone is never Marketing. An event report qualifies for Marketing only when the article contains independent transferable findings, data, results, learnings, a framework or another concrete ROOTS-relevant insight beyond announcing the appearance.
 marketing_problem is a valid Sales trigger when the article explicitly proves an unresolved or currently material marketing, brand, customer, consumer, loyalty, media, retail-media, category, positioning or customer-journey problem of a Tier-1 company. The evidenced problem itself supplies the trigger; a separate pitch, investment or transformation announcement is not required. Still require company-specific facts, a credible ROOTS contribution and personalization substance. Generic competitive pressure, sector-wide commentary, speculative criticism, weak performance without a marketing/customer connection, and problems described as fully resolved are not marketing_problem.
 Financial_news is not an article-level rejection reason when it explicitly proves such an unresolved Tier-1 marketing_problem. Ignore the surrounding earnings figures for routing, but evaluate evidenced brand weakness, consumer/customer pressure, sell-through difficulty, marketplace relevance or a stated need to strengthen how the company serves consumers as a possible Sales signal. Pure financial performance without that direct ROOTS connection remains irrelevant.
 Buying Center is downstream of Sales. Recommend one to four specific roles that would genuinely benefit from the proposed asset. A named person from the article is preferred when their responsibility fits; otherwise recommend roles and set research_required=true. A pure CEO/CMO appointment, press contact, testimonial or spokesperson is insufficient.
@@ -3522,10 +3545,15 @@ function validateClassification(
       return { ...person, name, role, confidence: clampConfidence(person.confidence) };
     })
     .filter((person) => person.name && person.role && person.confidence >= config.quality.person_confidence && evidenceExists(person.evidence, articleText));
+  const qualifiedEventParticipation = hasQualifiedTier1EventParticipation(
+    articleText,
+    selectCompanyCandidates(articleText, tier1Companies),
+  );
   const salesTriggers = (Array.isArray(raw.sales_triggers) ? raw.sales_triggers : [])
     .filter((trigger) => SALES_TRIGGER_IDS.includes(trigger.id as typeof SALES_TRIGGER_IDS[number]))
     .map((trigger) => ({ ...trigger, confidence: clampConfidence(trigger.confidence) }))
     .filter((trigger) => trigger.confidence >= config.quality.sales_trigger_confidence && evidenceExists(trigger.evidence, articleText))
+    .filter((trigger) => trigger.id !== "event_participation" || qualifiedEventParticipation)
     .filter((trigger) => trigger.id !== "marketing_problem" || isExplicitUnresolvedMarketingProblem(trigger.evidence))
     .filter((trigger) => !config.decisions.sales_requires_implementation
       || /\b(launch\w*|implement\w*|invest\w*|acquir\w*|expand\w*|start\w*|einfuhr\w*|investier\w*|ubernomm\w*|expandier\w*|gestartet|umgesetzt)\b/i.test(normalizeMatchText(trigger.evidence)));
@@ -3649,7 +3677,8 @@ function validateClassification(
     ...directMarketingTopics,
     ...topics.filter((topic) => topic.id === "sub_branchen_insight" && marketInsightTransferable),
   ];
-  const marketingHasSubstance = hasTransferableMarketingSubstance(articleType, articleText, marketingEligibleTopics, marketingUse);
+  const marketingHasSubstance = hasTransferableMarketingSubstance(articleType, articleText, marketingEligibleTopics, marketingUse)
+    && !isBareEventAnnouncement(articleText);
   if (marketingHasSubstance) {
     // Route-specific Sales failures cannot downgrade a valid Marketing result.
     rejectionReasons = rejectionReasons.filter((reason) => !SALES_ONLY_REJECTION_PATTERN.test(normalizeMatchText(String(reason))));
@@ -3759,7 +3788,13 @@ async function tagArticle(
   const language = detectLanguage(articleText);
   const publishedAt = options.publishedAt === undefined ? existingArticle?.published_at : options.publishedAt;
   const sourceId = options.sourceId === undefined ? existingArticle?.source_id : options.sourceId;
-  const hardReasons = [...publicationDateRejectionReasons(publishedAt, config), ...hardRejectionReasons(title, cleanedContent, config)];
+  const hardReasons = [
+    ...publicationDateRejectionReasons(publishedAt, config),
+    ...hardRejectionReasons(title, cleanedContent, config, {
+      sourceCategory: source.category,
+      tier1Companies,
+    }),
+  ];
   const { data: exactDuplicate } = config.filters.deduplicate
     ? await admin.schema("signal_layer").from("articles").select("id")
       .or(`content_hash.eq.${contentHash},body_hash.eq.${bodyHash}`).neq("id", articleId).limit(1).maybeSingle()
@@ -4794,7 +4829,10 @@ Deno.serve(async (req: Request) => {
         const cleanedContent = cleanArticleText(content);
         const config = await getPipelineConfig();
         const articleText = `${title}\n${cleanedContent}`;
-        const hardReasons = hardRejectionReasons(title, cleanedContent, config);
+        const hardReasons = hardRejectionReasons(title, cleanedContent, config, {
+          sourceCategory: source_category,
+          tier1Companies: companies || [],
+        });
         if (hardReasons.length) {
           const contentUnavailable = hardReasons.includes("Artikelinhalt nicht verfügbar oder Extraktion fehlgeschlagen");
           return corsResponse(origin, {
@@ -5568,8 +5606,14 @@ Deno.serve(async (req: Request) => {
             continue;
           }
           const { cleaned, contentHash: candidateHash, bodyHash } = item;
-          const hardReasons = [...publicationDateRejectionReasons(article.published_at, config), ...hardRejectionReasons(article.title || "", cleaned, config)];
           const source = Array.isArray(article.source) ? article.source[0] : article.source;
+          const hardReasons = [
+            ...publicationDateRejectionReasons(article.published_at, config),
+            ...hardRejectionReasons(article.title || "", cleaned, config, {
+              sourceCategory: source?.category,
+              tier1Companies: companies || [],
+            }),
+          ];
           const exactDuplicate = [
             ...(contentDupResult.data || []).filter((candidate: any) => candidate.content_hash === candidateHash),
             ...(bodyDupResult.data || []).filter((candidate: any) => candidate.body_hash === bodyHash),
@@ -5934,9 +5978,11 @@ Deno.serve(async (req: Request) => {
               continue;
             }
             if (isLikelyNonEditorialPage(fetched)) { rejected.non_editorial = (rejected.non_editorial || 0) + 1; continue; }
-            // Let the evidence-aware classifier verify Tier-1 exhibitors and
-            // named company speakers. The former keyword gate discarded valid
-            // event articles before the AI could inspect their context.
+            const preClassificationText = `${fetched.title || candidate.title || ""}\n${fetched.content || ""}`;
+            if (!passesEventPreClassificationGate(preClassificationText, tier1Companies || [], crawlPolicy)) {
+              rejected.event_tier1_participation_gate = (rejected.event_tier1_participation_gate || 0) + 1;
+              continue;
+            }
 
             // Publication dates are retained for sorting and display only.
             // Scheduled and manual crawls deliberately apply no date gate;
