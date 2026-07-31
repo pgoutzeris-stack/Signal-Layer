@@ -1,4 +1,7 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
+// Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
+// Advanced-Modus und übergibt nur ein paar geteilte Helfer.
+import { activateSimpleMode, initSimpleMode } from "./simple-mode.js";
 
 let sb = null;
 let sources = [];
@@ -1614,6 +1617,33 @@ async function loadDashboardSummary() {
   } catch { /* dashboard counters are non-critical */ }
 }
 
+// ---------------------------------------------------------------------------
+// Modus-Umschalter: "advanced" ist die vollständige Pipeline (Crawl, Marketing,
+// Sales, Archiv), "simple" die reduzierte Pipeline über die letzten
+// gespeicherten Artikel. Die Wahl gilt pro Browser.
+// ---------------------------------------------------------------------------
+const PIPELINE_MODE_KEY = "signal-layer-pipeline-mode";
+
+function storedPipelineMode() {
+  try {
+    return localStorage.getItem(PIPELINE_MODE_KEY) === "simple" ? "simple" : "advanced";
+  } catch (_) {
+    return "advanced";
+  }
+}
+
+function applyPipelineMode(mode, { persist = true } = {}) {
+  const simple = mode === "simple";
+  document.body.classList.toggle("mode-simple", simple);
+  document.querySelectorAll("[data-pipeline-mode]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.pipelineMode === (simple ? "simple" : "advanced"));
+  });
+  if (persist) {
+    try { localStorage.setItem(PIPELINE_MODE_KEY, simple ? "simple" : "advanced"); } catch (_) { /* Modus bleibt für diese Sitzung */ }
+  }
+  if (simple) activateSimpleMode();
+}
+
 function switchAppView(view) {
   els.appNav.querySelectorAll("[data-app-view]").forEach((button) => button.classList.toggle("active", button.dataset.appView === view));
   els.appViews.forEach((section) => section.classList.toggle("show", section.id === `view-${view}`));
@@ -2874,6 +2904,10 @@ function bindUi() {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);
   });
+  document.getElementById("mode-switch")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-pipeline-mode]");
+    if (button) applyPipelineMode(button.dataset.pipelineMode);
+  });
   // Article-type filter is server-side (full archive), so re-fetch on change.
   // The multi-select toggles already updated archiveViewState.articleTypes.
   els.archiveArticleTypeFilter.addEventListener("change", () => {
@@ -3216,6 +3250,8 @@ export function initApp(client) {
     mountResultsHeader();
     enhanceHeaderSelects();
     bindSourceErrorTooltip();
+    initSimpleMode({ callApi, toast, escapeHtml, escapeText, openExternalUrl });
+    applyPipelineMode(storedPipelineMode(), { persist: false });
   }
   void loadLastRun();
   void loadFindings("marketing");

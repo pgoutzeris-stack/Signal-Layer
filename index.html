@@ -149,6 +149,45 @@
     flex: 1; min-height: 0; overflow-y: auto; padding: 2rem 1.5rem;
   }
 
+  /* ---------- Modus-Umschalter (Simple / Advanced) ---------- */
+  .mode-switch-bar { position: sticky; top: 0; z-index: 40; display: flex; justify-content: flex-end; max-width: 1100px; margin: 0 auto .9rem; }
+  .mode-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--bg); box-shadow: var(--shadow-dash); }
+  .mode-switch-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 13px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--muted); font: inherit; font-size: .74rem; font-weight: 750; cursor: pointer; transition: background .18s ease, color .18s ease; }
+  .mode-switch-btn i { font-size: .7rem; }
+  .mode-switch-btn:hover { color: var(--ink); }
+  .mode-switch-btn.is-active { background: var(--brand); color: #fff; }
+  .mode-switch-btn.is-active:hover { color: #fff; }
+
+  /* ---------- Einfacher Modus ---------- */
+  body.mode-simple #app-nav { display: none; }
+  body.mode-simple #view-dashboard,
+  body.mode-simple #view-results,
+  body.mode-simple #view-archive { display: none !important; }
+  body.mode-simple #view-simple { display: block; }
+  body:not(.mode-simple) #view-simple { display: none !important; }
+  .simple-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .simple-status { padding: .85rem 1rem; margin: 0 0 1.2rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: var(--shadow-dash); }
+  .simple-status-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .74rem; color: var(--muted); }
+  .simple-status-row b { color: var(--ink); font-size: .74rem; }
+  .simple-status--error .simple-status-row b { color: var(--danger); }
+  .simple-signal-why { margin: .45rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
+  .simple-signal-evidence { display: block; margin: .55rem 0 0; padding: .5rem .7rem; border-left: 2px solid var(--brand); border-radius: 0 8px 8px 0; background: var(--surface); color: var(--ink); font-size: .72rem; line-height: 1.45; }
+  .simple-rejected-item { padding: .7rem .85rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .simple-rejected-item strong { display: block; font-size: .78rem; font-weight: 650; }
+  .simple-rejected-item small { display: block; margin-top: 3px; color: var(--muted); font-size: .68rem; }
+  .simple-rules { margin-top: 1.2rem; padding: 1.1rem 1.2rem; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: var(--shadow-dash); }
+  .simple-rules h3 { font-size: .95rem; margin-bottom: .2rem; }
+  .simple-rules > p { margin-bottom: 1rem; color: var(--muted); font-size: .74rem; }
+  .simple-rules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .simple-rules-lane { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .simple-rules-lane h4 { font-size: .8rem; margin-bottom: .5rem; }
+  .simple-rules-lane ul, .simple-guardrails ul { list-style: none; display: flex; flex-direction: column; gap: .55rem; }
+  .simple-rules-lane li b, .simple-guardrails li b { display: block; font-size: .74rem; }
+  .simple-rules-lane li span, .simple-guardrails li span { color: var(--muted); font-size: .7rem; line-height: 1.4; }
+  .simple-guardrails { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+  .simple-guardrails h4 { font-size: .8rem; margin-bottom: .55rem; }
+  @media (max-width: 720px) { .simple-rules-grid { grid-template-columns: 1fr; } }
+
   /* ---------- Dashboard ---------- */
   .dashboard-wrap { max-width: 1100px; width: 100%; margin: 0 auto; }
   .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
@@ -1722,6 +1761,16 @@
     </aside>
 
     <main id="main-content">
+      <div class="mode-switch-bar">
+        <div class="mode-switch" id="mode-switch" role="group" aria-label="Pipeline-Modus">
+          <button type="button" class="mode-switch-btn" data-pipeline-mode="simple" title="Einfache Pipeline über die letzten gespeicherten Artikel">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Simple
+          </button>
+          <button type="button" class="mode-switch-btn is-active" data-pipeline-mode="advanced" title="Vollständige Pipeline mit Crawl, Marketing, Sales und Archiv">
+            <i class="fa-solid fa-sliders"></i> Advanced
+          </button>
+        </div>
+      </div>
       <div class="dashboard-wrap">
         <div class="dashboard-header">
           <div>
@@ -1853,6 +1902,39 @@
           </nav>
           <div class="archive-list" id="archive-list"><div class="roots-loader"></div></div>
           <button type="button" class="btn-secondary archive-load-more" id="archive-load-more" hidden><i class="fa-solid fa-plus"></i> Weitere Artikel laden</button>
+        </section>
+
+        <!-- Einfacher Modus: eigene Pipeline über bereits gespeicherte Artikel -->
+        <section class="app-view" id="view-simple">
+          <div class="view-header">
+            <div>
+              <h2>Einfacher Modus</h2>
+              <p>Prüft die letzten <b id="simple-scope-count">100</b> gespeicherten Artikel mit den einfachen Signalregeln. Es wird nichts neu gecrawlt.</p>
+            </div>
+            <div class="simple-actions">
+              <button type="button" class="btn-secondary" id="btn-simple-rules"><i class="fa-solid fa-list-check"></i> Regeln &amp; Guardrails</button>
+              <button type="button" class="btn-primary" id="btn-simple-run"><i class="fa-solid fa-play"></i> Letzte 100 Artikel prüfen</button>
+            </div>
+          </div>
+          <section class="simple-status" id="simple-status">
+            <div class="simple-status-row"><span id="simple-status-label">Wird geladen…</span><b id="simple-status-count"></b></div>
+            <div class="backfill-progress-track"><span id="simple-progress-bar"></span></div>
+          </section>
+          <div class="track-grid">
+            <div class="track-card">
+              <div class="track-card-header"><i class="fa-solid fa-bullhorn"></i> Marketing <span class="track-count" id="simple-marketing-count">0</span></div>
+              <div class="track-findings-list" id="simple-list-marketing"><div class="roots-loader"></div></div>
+            </div>
+            <div class="track-card">
+              <div class="track-card-header"><i class="fa-solid fa-chart-line"></i> Sales <span class="track-count" id="simple-sales-count">0</span></div>
+              <div class="track-findings-list" id="simple-list-sales"><div class="roots-loader"></div></div>
+            </div>
+          </div>
+          <section class="track-card results-review-section">
+            <div class="track-card-header"><i class="fa-solid fa-filter-circle-xmark"></i> Nicht relevant <span class="track-count" id="simple-rejected-count">0</span></div>
+            <div class="review-list" id="simple-rejected-list"><div class="roots-loader"></div></div>
+          </section>
+          <section class="simple-rules" id="simple-rules" hidden></section>
         </section>
 
       </div>
@@ -2042,7 +2124,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260721-1315';
+import { initApp } from './app.js?v=20260801-1030';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
