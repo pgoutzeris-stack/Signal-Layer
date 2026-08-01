@@ -165,7 +165,6 @@
   body.mode-simple #view-archive { display: none !important; }
   body.mode-simple #view-simple { display: block; }
   body:not(.mode-simple) #view-simple { display: none !important; }
-  .simple-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .simple-status { padding: .85rem 1rem; margin: 0 0 1.2rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: var(--shadow-dash); }
   .simple-status-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .74rem; color: var(--muted); }
   .simple-status-row b { color: var(--ink); font-size: .74rem; }
@@ -175,18 +174,6 @@
   .simple-rejected-item { padding: .7rem .85rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
   .simple-rejected-item strong { display: block; font-size: .78rem; font-weight: 650; }
   .simple-rejected-item small { display: block; margin-top: 3px; color: var(--muted); font-size: .68rem; }
-  .simple-rules { margin-top: 1.2rem; padding: 1.1rem 1.2rem; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: var(--shadow-dash); }
-  .simple-rules h3 { font-size: .95rem; margin-bottom: .2rem; }
-  .simple-rules > p { margin-bottom: 1rem; color: var(--muted); font-size: .74rem; }
-  .simple-rules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-  .simple-rules-lane { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-  .simple-rules-lane h4 { font-size: .8rem; margin-bottom: .5rem; }
-  .simple-rules-lane ul, .simple-guardrails ul { list-style: none; display: flex; flex-direction: column; gap: .55rem; }
-  .simple-rules-lane li b, .simple-guardrails li b { display: block; font-size: .74rem; }
-  .simple-rules-lane li span, .simple-guardrails li span { color: var(--muted); font-size: .7rem; line-height: 1.4; }
-  .simple-guardrails { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-  .simple-guardrails h4 { font-size: .8rem; margin-bottom: .55rem; }
-  @media (max-width: 720px) { .simple-rules-grid { grid-template-columns: 1fr; } }
 
   /* ---------- Dashboard ---------- */
   .dashboard-wrap { max-width: 1100px; width: 100%; margin: 0 auto; }
@@ -1906,16 +1893,7 @@
 
         <!-- Einfacher Modus: eigene Pipeline über bereits gespeicherte Artikel -->
         <section class="app-view" id="view-simple">
-          <div class="view-header">
-            <div>
-              <h2>Einfacher Modus</h2>
-              <p>Prüft die letzten <b id="simple-scope-count">100</b> gespeicherten Artikel mit den einfachen Signalregeln. Es wird nichts neu gecrawlt.</p>
-            </div>
-            <div class="simple-actions">
-              <button type="button" class="btn-secondary" id="btn-simple-rules"><i class="fa-solid fa-list-check"></i> Regeln &amp; Guardrails</button>
-              <button type="button" class="btn-primary" id="btn-simple-run"><i class="fa-solid fa-play"></i> Letzte 100 Artikel prüfen</button>
-            </div>
-          </div>
+          <div class="view-header"><div><h2>Signale</h2></div></div>
           <section class="simple-status" id="simple-status">
             <div class="simple-status-row"><span id="simple-status-label">Wird geladen…</span><b id="simple-status-count"></b></div>
             <div class="backfill-progress-track"><span id="simple-progress-bar"></span></div>
@@ -1934,7 +1912,6 @@
             <div class="track-card-header"><i class="fa-solid fa-filter-circle-xmark"></i> Nicht relevant <span class="track-count" id="simple-rejected-count">0</span></div>
             <div class="review-list" id="simple-rejected-list"><div class="roots-loader"></div></div>
           </section>
-          <section class="simple-rules" id="simple-rules" hidden></section>
         </section>
 
       </div>

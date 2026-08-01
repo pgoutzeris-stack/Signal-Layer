@@ -1,7 +1,7 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, initSimpleMode } from "./simple-mode.js";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode } from "./simple-mode.js";
 
 let sb = null;
 let sources = [];
@@ -1642,6 +1642,7 @@ function applyPipelineMode(mode, { persist = true } = {}) {
     try { localStorage.setItem(PIPELINE_MODE_KEY, simple ? "simple" : "advanced"); } catch (_) { /* Modus bleibt für diese Sitzung */ }
   }
   if (simple) activateSimpleMode();
+  else deactivateSimpleMode();
 }
 
 function switchAppView(view) {

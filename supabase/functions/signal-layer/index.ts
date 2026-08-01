@@ -194,6 +194,19 @@ function isInternalCall(req: Request): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Simple mode is a backend job. It is never driven from the browser: a run row
+// is either created through start_simple_run or picked up by the watchdog, and
+// each batch triggers the next one with a service-role self-call.
+// ---------------------------------------------------------------------------
+function triggerSimpleRun(runId: string): void {
+  fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+    body: JSON.stringify({ action: "process_simple_run", run_id: runId }),
+  }).catch(() => { /* the watchdog picks the run up again */ });
+}
+
+// ---------------------------------------------------------------------------
 // API key resolver — reads from the shared, Vault-backed key store.
 // Keys never reach the frontend; only this Edge Function calls Apify.
 // ---------------------------------------------------------------------------
@@ -2974,6 +2987,17 @@ Deno.serve(async (req: Request) => {
       auth = await requireAuth(req);
       if (!auth) return errorResponse(origin, "Unauthorized", 401);
     }
+  } else if (["start_simple_run", "process_simple_run"].includes(action)) {
+    // The simple analysis is a backend job: it is started from the operating
+    // side (cron secret or a run row picked up by the watchdog) and keeps
+    // itself alive through service-role self-calls. An editor may also start it.
+    if (!isInternalCall(req)) {
+      isScheduled = await isScheduledTrigger(req);
+      if (!isScheduled) {
+        auth = await requireAuth(req);
+        if (!auth) return errorResponse(origin, "Unauthorized", 401);
+      }
+    }
   } else if (action === "run_crawl") {
     auth = await requireAuth(req);
     if (!auth) {
@@ -4503,6 +4527,13 @@ Deno.serve(async (req: Request) => {
         const admin = getAdminClient();
         const cutoff = new Date(Date.now() - WATCHDOG_STALL_SECONDS * 1000).toISOString();
 
+        // Simple-mode runs are started from the operating side (a run row) and
+        // continued here whenever their self-call chain has broken off.
+        const { data: openSimpleRuns } = await admin.schema("signal_layer").from("simple_runs")
+          .select("id, last_progress_at").eq("status", "running")
+          .lt("last_progress_at", new Date(Date.now() - 120_000).toISOString()).limit(3);
+        for (const simpleRun of openSimpleRuns || []) triggerSimpleRun(simpleRun.id);
+
         const { data: stalled, error: stalledErr } = await admin.schema("signal_layer").from("crawl_runs")
           .select("id, source_ids, current_index, current_offset")
           .eq("status", "running")
@@ -4640,6 +4671,9 @@ Deno.serve(async (req: Request) => {
           finished_at: articleIds.length ? null : new Date().toISOString(),
         }).select("*").single();
         if (runError) return errorResponse(origin, runError.message, 500);
+        // Fire-and-forget: the run works through its batches server-side, the
+        // frontend only watches the status.
+        if (run?.status === "running") triggerSimpleRun(run.id);
         return corsResponse(origin, { run, batch_size: SIMPLE_BATCH_SIZE });
       }
 
@@ -4662,6 +4696,13 @@ Deno.serve(async (req: Request) => {
           }).eq("id", run.id).select("*").single();
           return corsResponse(origin, { run: finished || run, done: true });
         }
+
+        // Optimistic claim on the current cursor: if the self-call chain and the
+        // watchdog fire at the same time, only one of them pays for the batch.
+        const { data: claimed } = await admin.schema("signal_layer").from("simple_runs")
+          .update({ last_progress_at: new Date().toISOString() })
+          .eq("id", run.id).eq("cursor", run.cursor).eq("status", "running").select("id");
+        if (!claimed || claimed.length === 0) return corsResponse(origin, { run, done: false, skipped: "already_running" });
 
         const { data: articles, error: articlesError } = await admin.schema("signal_layer").from("articles")
           .select("id, title, url, content, cleaned_content, published_at, source:sources(company, url, category)")
@@ -4732,6 +4773,9 @@ Deno.serve(async (req: Request) => {
           finished_at: done ? new Date().toISOString() : null,
         }).eq("id", run.id).select("*").single();
         if (updateError) return errorResponse(origin, updateError.message, 500);
+        // Continue the run in a fresh invocation so no single request runs into
+        // the function timeout.
+        if (!done) triggerSimpleRun(run.id);
         return corsResponse(origin, { run: updated, done, processed_now: rows.length, signals_now: signals });
       }
 

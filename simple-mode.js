@@ -8,8 +8,9 @@
 //
 // Die Regeln selbst stehen serverseitig in
 // supabase/functions/signal-layer/pipeline-simple.ts. Diese Oberfläche zeigt
-// nur, was der Server entschieden hat, und startet den Lauf über die letzten
-// gespeicherten Artikel (kein Crawl).
+// nur, was der Server entschieden hat. Gestartet wird der Lauf ausschliesslich
+// im Backend (siehe process_simple_run / Watchdog) - diese Oberfläche hat kein
+// Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
 let ctx = null;
@@ -18,6 +19,7 @@ let bound = false;
 let running = false;
 let rulesLoaded = false;
 let lastRun = null;
+let pollTimer = null;
 let simpleRules = null;
 
 function el(id) {
@@ -27,9 +29,6 @@ function el(id) {
 function cacheEls() {
   els = {
     view: el("view-simple"),
-    scopeCount: el("simple-scope-count"),
-    runButton: el("btn-simple-run"),
-    rulesButton: el("btn-simple-rules"),
     status: el("simple-status"),
     statusLabel: el("simple-status-label"),
     statusCount: el("simple-status-count"),
@@ -40,7 +39,6 @@ function cacheEls() {
     salesCount: el("simple-sales-count"),
     rejectedList: el("simple-rejected-list"),
     rejectedCount: el("simple-rejected-count"),
-    rules: el("simple-rules"),
   };
 }
 
@@ -121,28 +119,6 @@ function renderRejected(articles, rejectLabels) {
     : `<div class="track-card-empty">Nichts aussortiert.</div>`;
 }
 
-function renderRules(rules) {
-  if (!els.rules || !rules) return;
-  const lane = (entry) => `
-    <div class="simple-rules-lane">
-      <h4>${esc(entry.label)}</h4>
-      <p style="color:var(--muted);font-size:.7rem;margin-bottom:.6rem">${escText(entry.description)}</p>
-      <ul>
-        ${entry.families.map((family) => `<li><b>${escText(family.label)}</b><span>${escText(family.definition)}${family.domains ? ` (nur ${esc(family.domains.join(", "))})` : ""}</span></li>`).join("")}
-      </ul>
-    </div>
-  `;
-  els.rules.innerHTML = `
-    <h3>Regeln &amp; Guardrails des einfachen Modus</h3>
-    <p>Modell ${esc(rules.model)} · Prompt ${esc(rules.version)} · Mindestsicherheit ${esc(rules.min_confidence)} · Mindestnutzwert ${esc(rules.min_score)} · maximal ${esc(rules.prompt_chars)} Zeichen Artikeltext pro Prüfung.</p>
-    <div class="simple-rules-grid">${rules.lanes.map(lane).join("")}</div>
-    <div class="simple-guardrails">
-      <h4>Nicht abschaltbare Guardrails</h4>
-      <ul>${rules.guardrails.map((rule) => `<li><b>${escText(rule.label)}</b><span>${escText(rule.description)}</span></li>`).join("")}</ul>
-    </div>
-  `;
-}
-
 function setStatus(text, detail = "", progress = null, isError = false) {
   if (!els.statusLabel) return;
   els.statusLabel.textContent = text;
@@ -174,21 +150,20 @@ function describeRun(run, totals) {
 // ---------------------------------------------------------------------------
 // Daten laden
 // ---------------------------------------------------------------------------
+// Nur die Beschriftungen der Ablehnungsgründe werden gebraucht; die Regeln
+// selbst leben in pipeline-simple.ts.
 async function loadRules() {
   if (rulesLoaded) return;
   try {
     const { rules } = await ctx.callApi("get_simple_rules");
     rulesLoaded = true;
     simpleRules = rules;
-    if (els.scopeCount) els.scopeCount.textContent = String(rules.article_limit);
-    if (els.runButton) els.runButton.innerHTML = `<i class="fa-solid fa-play"></i> Letzte ${rules.article_limit} Artikel prüfen`;
-    renderRules(rules);
-  } catch (error) {
-    ctx.toast(error.message || "Regeln konnten nicht geladen werden", "err");
+  } catch (_error) {
+    /* Ergebnisse werden auch ohne die Beschriftungen angezeigt */
   }
 }
 
-async function loadResults() {
+async function loadResults({ keepStatus = false } = {}) {
   try {
     const [marketing, sales, rejected, status] = await Promise.all([
       ctx.callApi("list_simple_signals", { lane: "marketing", limit: 60 }),
@@ -199,56 +174,48 @@ async function loadResults() {
     renderLane("marketing", marketing.signals || []);
     renderLane("sales", sales.signals || []);
     renderRejected(rejected.articles || [], simpleRules?.reject_labels);
-    lastRun = status.run || null;
+    if (!keepStatus) {
+      lastRun = status.run || null;
+      running = lastRun?.status === "running";
+    }
     describeRun(lastRun, status.totals);
   } catch (error) {
     setStatus(error.message || "Ergebnisse konnten nicht geladen werden", "", null, true);
   }
 }
 
-// Der Lauf wird in kleinen Paketen abgearbeitet, damit keine Anfrage in das
-// Zeitlimit der Edge Function läuft. Der Browser hält die Kette am Laufen.
-async function runSimplePipeline() {
-  if (running) return;
-  running = true;
-  els.runButton.disabled = true;
-  const originalLabel = els.runButton.innerHTML;
-  els.runButton.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Prüfung läuft…`;
+// Der Lauf selbst läuft im Backend. Solange er läuft, wird der Fortschritt
+// nachgeladen; danach genügt ein langsamer Takt, um einen im Backend gestarteten
+// Lauf zu bemerken.
+const POLL_ACTIVE_MS = 12_000;
+const POLL_IDLE_MS = 60_000;
+
+function scheduleStatusPoll() {
+  if (pollTimer) clearTimeout(pollTimer);
+  if (!document.body.classList.contains("mode-simple")) return;
+  pollTimer = setTimeout(() => void pollStatus(), running ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+}
+
+async function pollStatus() {
+  if (!document.body.classList.contains("mode-simple")) return;
   try {
-    const { run } = await ctx.callApi("start_simple_run");
-    lastRun = run;
-    describeRun(run);
-    let guard = 0;
-    let done = run?.status !== "running";
-    while (!done && guard < 200) {
-      guard += 1;
-      const step = await ctx.callApi("process_simple_run", { run_id: run.id });
-      lastRun = step.run || lastRun;
-      describeRun(lastRun);
-      done = Boolean(step.done) || lastRun?.status !== "running";
-      if (!done) await loadResults();
-    }
-    await loadResults();
-    ctx.toast(`Prüfung abgeschlossen · ${Number(lastRun?.signal_count || 0)} Signale`);
-  } catch (error) {
-    setStatus(error.message || "Lauf fehlgeschlagen", "", null, true);
-    ctx.toast(error.message || "Lauf fehlgeschlagen", "err");
-  } finally {
-    running = false;
-    els.runButton.disabled = false;
-    els.runButton.innerHTML = originalLabel;
+    const status = await ctx.callApi("get_simple_run_status");
+    const previous = lastRun;
+    lastRun = status.run || null;
+    running = lastRun?.status === "running";
+    describeRun(lastRun, status.totals);
+    const advanced = Number(lastRun?.processed_count || 0) !== Number(previous?.processed_count || 0);
+    const finished = previous?.status === "running" && lastRun?.status !== "running";
+    if (advanced || finished || lastRun?.id !== previous?.id) await loadResults({ statusOnly: false, keepStatus: true });
+  } catch (_error) {
+    /* nächster Takt versucht es erneut */
   }
+  scheduleStatusPoll();
 }
 
 function bindUi() {
   if (bound) return;
   bound = true;
-  els.runButton?.addEventListener("click", () => void runSimplePipeline());
-  els.rulesButton?.addEventListener("click", () => {
-    if (!els.rules) return;
-    els.rules.hidden = !els.rules.hidden;
-    if (!els.rules.hidden) els.rules.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
   els.view?.addEventListener("click", (event) => {
     const card = event.target.closest("[data-simple-url]");
     if (card?.dataset.simpleUrl) ctx.openExternalUrl(card.dataset.simpleUrl);
@@ -280,6 +247,11 @@ export function activateSimpleMode() {
     els.marketingList.innerHTML = LOADER;
     els.salesList.innerHTML = LOADER;
   }
-  void loadRules().then(() => loadResults());
   activated = true;
+  void loadRules().then(() => loadResults()).then(scheduleStatusPoll);
+}
+
+export function deactivateSimpleMode() {
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = null;
 }
