@@ -4833,6 +4833,9 @@ Deno.serve(async (req: Request) => {
         const { count: recentProviderLimitCount } = await admin.schema("signal_layer").from("ai_usage_events")
           .select("id", { count: "exact", head: true })
           .eq("model", watchdogConfig.ai.primary_model)
+          // Only the advanced pipeline's own limit answers may pause it. A
+          // simple-mode failure is a separate budget question.
+          .eq("prompt_version", CLASSIFIER_PROMPT_VERSION)
           .in("error_code", ["spending_cap", "insufficient_balance", "rate_limit"])
           .gte("created_at", analysisBackoffCutoff);
         if (Number(recentProviderLimitCount || 0) === 0
