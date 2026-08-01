@@ -395,7 +395,8 @@ async function recordSimpleUsage(
     output_tokens: usage.output,
     thinking_tokens: usage.thinking,
     total_tokens: usage.total,
-    estimated_cost_usd: status === "success" ? cost : 0,
+    // Auch eine unbrauchbare Antwort ist bezahlt, sobald Tokens geflossen sind.
+    estimated_cost_usd: usage.total > 0 ? cost : 0,
     duration_ms: durationMs,
     error_code: errorCode || null,
     error_message: errorMessage ? errorMessage.slice(0, 1000) : null,
@@ -453,7 +454,9 @@ function deepseekRequest(model: string, apiKey: string, prompt: string): Provide
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 900,
+      // Bei DeepSeek zählt max_tokens Reasoning und Antwort zusammen. Mit 900
+      // war die Antwort nach dem Reasoning abgeschnitten, deshalb deutlich mehr.
+      max_tokens: 3_000,
       temperature: 0,
       stream: false,
     }),
@@ -462,15 +465,18 @@ function deepseekRequest(model: string, apiKey: string, prompt: string): Provide
       const cached = Number(usage.prompt_cache_hit_tokens || 0);
       const promptTokens = Number(usage.prompt_tokens || 0);
       const missed = Number(usage.prompt_cache_miss_tokens ?? Math.max(promptTokens - cached, 0));
-      const output = Number(usage.completion_tokens || 0);
+      const completion = Number(usage.completion_tokens || 0);
+      const reasoning = Number(usage.completion_tokens_details?.reasoning_tokens || 0);
       return {
         text: payload?.choices?.[0]?.message?.content || "",
         usage: {
           input: missed,
           cachedInput: cached,
-          output,
-          thinking: Number(usage.completion_tokens_details?.reasoning_tokens || 0),
-          total: Number(usage.total_tokens || promptTokens + output),
+          // completion_tokens enthält die Reasoning-Tokens schon; getrennt
+          // ausgewiesen, aber nur einmal bepreist.
+          output: Math.max(completion - reasoning, 0),
+          thinking: reasoning,
+          total: Number(usage.total_tokens || promptTokens + completion),
         },
       };
     },
