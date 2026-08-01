@@ -56,13 +56,16 @@ import {
   validateClassification,
 } from "./pipeline-advanced.ts";
 import {
+  SIMPLE_AI_CALLS_PER_BATCH,
   SIMPLE_ARTICLE_LIMIT,
   SIMPLE_BATCH_SIZE,
   SIMPLE_MAX_ARTICLE_LIMIT,
   SIMPLE_MODEL,
+  SIMPLE_MIN_TEXT_CHARS,
   SIMPLE_MODEL_CATALOG,
   SIMPLE_PIPELINE_VERSION,
   classifySimpleArticle,
+  simpleResultUsedAi,
   simpleModelOption,
   simpleRuleManifest,
   simpleUsageCostUsd,
@@ -246,6 +249,33 @@ function triggerSelf(payload: Record<string, unknown>, timeoutMs = 120_000): voi
   }).catch(() => { /* the watchdog picks the work up again */ });
   const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
   runtime?.waitUntil?.(pending);
+}
+
+// Mehrere Quellen liefern über den Feed nur die Überschrift. Ohne Text kann der
+// einfache Modus nichts belegen, deshalb wird der Volltext einmal direkt
+// nachgeladen und gespeichert. Kostet keine KI, nur einen HTTP-Aufruf.
+async function ensureSimpleArticleText(
+  admin: ReturnType<typeof getAdminClient>,
+  article: any,
+): Promise<any> {
+  const body = String(article.cleaned_content || article.content || "");
+  if (body.trim().length >= SIMPLE_MIN_TEXT_CHARS || !article.url) return article;
+  try {
+    let sourceWithAuth: { id: string; url: string; crawl_config?: Record<string, unknown> } | null = null;
+    if (article.source_id) {
+      const { data: src } = await admin.schema("signal_layer").from("sources")
+        .select("id, url, crawl_config").eq("id", article.source_id).maybeSingle();
+      sourceWithAuth = src || null;
+    }
+    const fetched = await fetchArticleForSource(String(article.url), sourceWithAuth);
+    const cleaned = cleanArticleText(fetched?.content || "");
+    if (cleaned.trim().length <= body.trim().length) return article;
+    await admin.schema("signal_layer").from("articles")
+      .update({ content: fetched?.content || null, cleaned_content: cleaned }).eq("id", article.id);
+    return { ...article, content: fetched?.content || null, cleaned_content: cleaned };
+  } catch {
+    return article;
+  }
 }
 
 function simpleRunRequest(runId: string, timeoutMs: number): Promise<unknown> {
@@ -4946,10 +4976,21 @@ Deno.serve(async (req: Request) => {
         const deps = { admin, apiKey: modelKey, model: simpleModel };
         const rows: Array<Record<string, unknown>> = [];
         let signals = 0;
-        // Sequential on purpose: one article at a time keeps the request inside
-        // the function timeout and the spend predictable.
-        for (const article of articles || []) {
-          const result = await classifySimpleArticle(deps, article);
+        let aiCalls = 0;
+        let consumed = 0;
+        // The prefilter is free, so a single invocation may look at many
+        // articles; only the AI budget is capped. The cursor advances by the
+        // articles actually looked at, so the pool can be much larger than a
+        // batch without slowing the run down.
+        const ordered = slice
+          .map((id: string) => (articles || []).find((row: { id: string }) => row.id === id))
+          .filter(Boolean);
+        for (const article of ordered) {
+          if (aiCalls >= SIMPLE_AI_CALLS_PER_BATCH) break;
+          consumed += 1;
+          const prepared = await ensureSimpleArticleText(admin, article);
+          const result = await classifySimpleArticle(deps, prepared);
+          if (simpleResultUsedAi(result)) aiCalls += 1;
           if (result.status === "signal") signals += 1;
           rows.push({
             article_id: result.article_id,
@@ -5002,7 +5043,7 @@ Deno.serve(async (req: Request) => {
           if (upsertError) return errorResponse(origin, upsertError.message, 500);
         }
 
-        const cursor = run.cursor + slice.length;
+        const cursor = run.cursor + Math.max(consumed, 1);
         const processed = run.processed_count + rows.length;
         const done = cursor >= allIds.length;
         const { data: updated, error: updateError } = await admin.schema("signal_layer").from("simple_runs").update({
@@ -5018,7 +5059,7 @@ Deno.serve(async (req: Request) => {
         // Continue the run in a fresh invocation so no single request runs into
         // the function timeout.
         if (!done) triggerSimpleRun(run.id);
-        return corsResponse(origin, { run: updated, done, processed_now: rows.length, signals_now: signals });
+        return corsResponse(origin, { run: updated, done, processed_now: rows.length, signals_now: signals, ai_calls: aiCalls });
       }
 
       case "get_simple_run_status": {

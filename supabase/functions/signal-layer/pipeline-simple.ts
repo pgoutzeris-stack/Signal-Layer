@@ -61,10 +61,14 @@ export function simpleModelOption(modelId: string): SimpleModelOption {
     || SIMPLE_MODEL_CATALOG.find((model) => model.id === SIMPLE_MODEL)!;
 }
 // The simple mode is explicitly a re-run over stored articles, never a crawl.
-export const SIMPLE_ARTICLE_LIMIT = 100;
-export const SIMPLE_MAX_ARTICLE_LIMIT = 300;
-export const SIMPLE_BATCH_SIZE = 6;
-export const SIMPLE_MIN_TEXT_CHARS = 400;
+export const SIMPLE_ARTICLE_LIMIT = 1_000;
+export const SIMPLE_MAX_ARTICLE_LIMIT = 3_000;
+// Ein Aufruf darf viele Artikel vorfiltern, aber nur wenige an die KI geben.
+export const SIMPLE_BATCH_SIZE = 40;
+export const SIMPLE_AI_CALLS_PER_BATCH = 8;
+// Kürzere Fachmeldungen sind oft vollständig; unter dieser Grenze bleibt
+// kein Satz übrig, aus dem sich ein Zitat belegen liesse.
+export const SIMPLE_MIN_TEXT_CHARS = 300;
 export const SIMPLE_MIN_CONFIDENCE = 0.7;
 export const SIMPLE_MIN_SCORE = 45;
 export const SIMPLE_PROMPT_CHARS = 3_500;
@@ -85,6 +89,12 @@ export type SimpleFamily = {
   context?: RegExp;
   /** Restricts the family to specific publisher domains. */
   domains?: string[];
+  /**
+   * Rejects the family when the headline itself is about something else
+   * (macro data, quarterly figures). Keeps a broad trigger usable without
+   * dragging economics coverage into the lane.
+   */
+  excludeTitle?: RegExp;
 };
 
 // ---------------------------------------------------------------------------
@@ -96,7 +106,7 @@ const SALES_FAMILIES: SimpleFamily[] = [
     lane: "sales",
     label: "CMO-/Marketingleitung-Wechsel",
     definition: "Eine Marketingführungsrolle (CMO, Marketingleitung, Head of Marketing, Markenverantwortung) wird neu besetzt, verlassen oder umgebaut.",
-    trigger: /\b(cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter\w*|marketingleitung|marketingchef\w*|marketingdirektor\w*|marketingvorstand\w*|marketinggeschaftsfuhr\w*|head of marketing|marketing director|vp marketing|markenchef\w*|markenverantwortung|leiter\w* marketing|leitung marketing|bereichsleiter\w* marketing)\b/,
+    trigger: /\b(cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter\w*|marketingleitung|marketingchef\w*|marketingdirektor\w*|marketingvorstand\w*|marketinggeschaftsfuhr\w*|head of marketing|marketing director|vp marketing|markenchef\w*|markenverantwortung|leiter\w* marketing|leitung marketing|bereichsleiter\w* marketing|marketing chef\w*|marketing leiter\w*|marketing leitung|marketing direktor\w*|marketing vorstand\w*|marken chef\w*|brand director|brand lead|marketingverantwortlich\w*)\b/,
     context: /\b(wechsel\w*|wechselt|ubernimmt|ubernahme|verlasst|verlassen|scheidet aus|abgang|nachfolge\w*|nachfolger\w*|folgt auf|ernannt|ernennt|bestellt|berufen|beruft|antritt|tritt an|tritt zuruck|rucktritt|besetzt|neubesetzung|umbesetzung|vakan\w*|interim|neuer|neue|neues|kommissarisch|appointed|appoints|joins|steps down|succeeds|hires|named|departs|exit)\b/,
   },
   {
@@ -112,7 +122,7 @@ const SALES_FAMILIES: SimpleFamily[] = [
     lane: "sales",
     label: "Marken-Relaunch",
     definition: "Eine Marke, ein Markenauftritt, ein Corporate Design oder eine Verpackungslinie wird relauncht, umgestaltet oder modernisiert.",
-    trigger: /\b(markenrelaunch|marken relaunch|rebranding|re branding|markenauftritt|markenmodernisierung|markenrefresh|markenidentitat|corporate design|neues logo|logo relaunch|packaging redesign|packaging relaunch|verpackungsrelaunch|verpackungsdesign|verpackungsdesigns|relaunch|redesign|brand relaunch|brand refresh|brand redesign|visual identity|neuer look)\b/,
+    trigger: /\b(markenrelaunch|marken relaunch|rebranding|re branding|markenauftritt|markenmodernisierung|markenrefresh|markenidentitat|corporate design|neues logo|logo relaunch|packaging redesign|packaging relaunch|verpackungsrelaunch|verpackungsdesign|verpackungsdesigns|relaunch|redesign|brand relaunch|brand refresh|brand redesign|visual identity|neuer look|wiederbelebt|wiederbeleb\w*|belebt wieder|comeback|neu aufgelegt|neuauflage|reaktivier\w*|kehrt zuruck|bringt zuruck|zuruckgebracht|revival|neu erfunden|neu gedacht|markenwechsel|marke wechselt)\b/,
     context: /\b(marke\w*|brand\w*|logo|design|auftritt|identitat|verpackung\w*|packaging|kommunikation|kampagn\w*|corporate|sortiment\w*|produktlinie|range)\b/,
   },
   {
@@ -128,8 +138,8 @@ const SALES_FAMILIES: SimpleFamily[] = [
     lane: "sales",
     label: "Design-to-Print / Artwork-Restrukturierung",
     definition: "Der Weg von Design zu Druck wird umgebaut: Artwork-Management, Reinzeichnung, Druckvorstufe, Freigabeprozesse, Verpackungsdaten.",
-    trigger: /\b(design to print|artwork\w*|reinzeichnung\w*|druckvorstufe|prepress|pre press|druckdaten|druckfreigabe\w*|farbmanagement|verpackungsartwork|verpackungsdaten|packaging artwork|packaging data|artwork approval|artwork management|packaging management)\b/,
-    context: /\b(prozess\w*|process|workflow\w*|restrukturier\w*|reorganis\w*|umbau\w*|automatisier\w*|automation|effizien\w*|standardisier\w*|digitalisier\w*|system\w*|software|tool\w*|plattform\w*|platform|fehlerquote|fehler\w*|durchlaufzeit\w*|time to market|kosten\w*|freigab\w*|approval|zentralisier\w*|outsourc\w*|insourc\w*|dienstleister\w*)\b/,
+    trigger: /\b(design to print|artwork\w*|reinzeichnung\w*|druckvorstufe|prepress|pre press|druckdaten|druckfreigabe\w*|farbmanagement|verpackungsartwork|verpackungsdaten|packaging artwork|packaging data|artwork approval|artwork management|packaging management|verpackungsdesign\w*|packaging design|designstandard\w*|designrichtlinie\w*|verpackungslinie\w*|etikettendaten|labeldaten|verpackungsvorlage\w*)\b/,
+    context: /\b(prozess\w*|process|workflow\w*|restrukturier\w*|reorganis\w*|umbau\w*|automatisier\w*|automation|effizien\w*|standardisier\w*|digitalisier\w*|system\w*|software|tool\w*|plattform\w*|platform|fehlerquote|fehler\w*|durchlaufzeit\w*|time to market|kosten\w*|freigab\w*|approval|zentralisier\w*|outsourc\w*|insourc\w*|dienstleister\w*|einheitlich\w*|harmonisier\w*|weltweit|international|konsisten\w*|rollout|roll out|umstell\w*)\b/,
   },
   {
     id: "marketing_prozess",
@@ -183,14 +193,17 @@ const MARKETING_FAMILIES: SimpleFamily[] = [
     label: "Customer & Shopper Insights",
     definition: "Belegtes Verhalten, Bedürfnis, Erwartung oder Vertrauen von Kunden, Konsumenten oder Shoppern - idealerweise mit Zahl, Studie oder Befragung.",
     trigger: /\b(customer insight\w*|consumer insight\w*|shopper insight\w*|kundenbedurfnis\w*|kundenerwartung\w*|kundenverhalten|kaufverhalten|konsumverhalten|einkaufsverhalten|shopper\w*|kundenzufriedenheit|kundenbindung|loyalitat\w*|preissensib\w*|konsumklima|verbraucherstimmung|kundenvertrauen|customer journey|customer experience|kundenerlebnis|zielgrupp\w*|konsument\w*|verbraucher\w*|kundschaft|befragte\w*|kunde\w*)\b/,
-    context: /\b(studie\w*|umfrage\w*|befrag\w*|erhebung\w*|panel|report|analyse\w*|prozent|jeder zweite|jeder dritte|mehrheit|zeigt|belegt|ergebnis\w*|erkenntnis\w*|daten|trend\w*|vergleich\w*|verandert\w*|erwart\w*|bedurf\w*)\b/,
+    context: /\b(studie\w*|umfrage\w*|befrag\w*|erhebung\w*|panel|report|analyse\w*|prozent|jeder zweite|jeder dritte|mehrheit|zeigt|belegt|erkenntnis\w*|trend\w*|vergleich\w*|verandert\w*|erwart\w*|bedurf\w*|kauft|greifen zu|verzicht\w*|praferenz\w*|akzeptanz\w*|vertrauen)\b/,
+    // Konjunktur- und Quartalszahlen sind keine Kundenerkenntnis. Solche
+    // Artikel haben es genau in der Überschrift stehen.
+    excludeTitle: /\b(inflation\w*|verbraucherpreis\w*|bruttoinlandsprodukt|\bbip\b|konjunktur\w*|wirtschaftsstimmung|wirtschaftsklima|ifo|zinsen|leitzins\w*|quartal\w*|halbjahr\w*|jahreszahlen|bilanz\w*|umsatzplus|umsatzminus|umsatzruckgang|umsatzeinbruch|gewinn\w*|verlust\w*|ergebnis je aktie|prognose angehoben|wachst um|steigert umsatz|aktie\w*|dividende\w*|ubernimmt|ubernahme|fusion|akquisition)\b/,
   },
   {
     id: "prozess_knowhow",
     lane: "marketing",
     label: "Design-to-Print & Prozess-Know-how",
     definition: "Übertragbares Prozesswissen zu Artwork, Reinzeichnung, Druckvorstufe, Verpackungsdaten oder Marketing-Prozessoptimierung (Learnings, Benchmarks, Vorgehen).",
-    trigger: /\b(design to print|artwork\w*|reinzeichnung\w*|druckvorstufe|prepress|pre press|druckdaten|verpackungsdaten|packaging data|packaging artwork|marketingprozess\w*|marketing operations|prozessoptimierung\w*|kampagnenprozess\w*|freigabeprozess\w*|workflow\w*)\b/,
+    trigger: /\b(design to print|artwork\w*|reinzeichnung\w*|druckvorstufe|prepress|pre press|druckdaten|verpackungsdaten|packaging data|packaging artwork|verpackungsdesign\w*|packaging design|designstandard\w*|marketingprozess\w*|marketing operations|prozessoptimierung\w*|kampagnenprozess\w*|freigabeprozess\w*|workflow\w*)\b/,
     context: /\b(studie\w*|analyse\w*|benchmark\w*|best practice\w*|learning\w*|erkenntnis\w*|leitfaden|how to|vorgehen|methode\w*|framework|whitepaper|report|checkliste|erfahrung\w*|prozent|effizien\w*|fehlerquote|durchlaufzeit\w*|time to market|automatisier\w*|standardisier\w*|digitalisier\w*)\b/,
   },
 ];
@@ -274,6 +287,7 @@ export function prefilterSimpleArticle(article: SimpleArticleInput): SimplePrefi
   const families = SIMPLE_FAMILIES.filter((family) => {
     if (family.domains && !matchesDomain(article, family.domains)) return false;
     if (family.domains && sensitiveBody) return false;
+    if (family.excludeTitle && family.excludeTitle.test(normalizedTitle)) return false;
     if (!family.trigger.test(normalized)) return false;
     return !family.context || family.context.test(normalized);
   });
@@ -562,6 +576,16 @@ export type SimpleResult = {
   prompt_version: string;
 };
 
+// Ablehnungen, die erst nach einer Modellantwort entstehen. Daran erkennt der
+// Aufrufer, ob ein Artikel überhaupt KI-Budget gekostet hat.
+export const SIMPLE_AI_REJECT_REASONS = new Set([
+  "modell_ohne_signal", "familie_nicht_erlaubt", "evidenz_fehlt", "sensibles_zitat", "zu_unsicher", "modellfehler",
+]);
+
+export function simpleResultUsedAi(result: SimpleResult): boolean {
+  return result.status === "signal" || SIMPLE_AI_REJECT_REASONS.has(String(result.reject_reason));
+}
+
 export const SIMPLE_REJECT_LABELS: Record<string, string> = {
   zu_wenig_text: "Zu wenig Artikeltext für eine belastbare Prüfung.",
   sensibles_thema: "Sensibles Thema (Politik, Religion, Kriminalität, Unglück, Gesundheit).",
@@ -657,6 +681,8 @@ export function simpleRuleManifest(activeModel: string = SIMPLE_MODEL) {
     models: SIMPLE_MODEL_CATALOG,
     article_limit: SIMPLE_ARTICLE_LIMIT,
     batch_size: SIMPLE_BATCH_SIZE,
+    ai_calls_per_batch: SIMPLE_AI_CALLS_PER_BATCH,
+    min_text_chars: SIMPLE_MIN_TEXT_CHARS,
     min_confidence: SIMPLE_MIN_CONFIDENCE,
     min_score: SIMPLE_MIN_SCORE,
     prompt_chars: SIMPLE_PROMPT_CHARS,
