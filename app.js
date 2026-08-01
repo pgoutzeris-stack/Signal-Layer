@@ -17,6 +17,7 @@ let pipelineStageDefinitions = [];
 const pipelineDrilldownState = { stageId: null, editorOpen: false, routeEditor: null };
 let statusPollTimer = null;
 let simpleRunStatus = null;
+let simpleForecast = null;
 let lastSpendForecastNotice = "";
 let archiveArticles = [];
 let archiveTotalCount = 0;
@@ -590,6 +591,21 @@ function operationsModelSelect(path, label, description, icon) {
   return `<label class="operations-model-field"><span class="operations-model-icon"><i class="${icon}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)}</small><span class="operations-select-wrap"><select class="pipeline-control" data-pipeline-path="${path}" ${geminiModelCatalogState.status === "loading" ? "disabled" : ""} aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
 }
 
+// Modelle des einfachen Modus kommen aus dem Servercode (pipeline-simple.ts),
+// nicht aus der Gemini-Modellliste, weil dort auch DeepSeek dabei ist.
+function simpleModelSelect() {
+  const catalog = pipelineSettings?.simple_models || [];
+  const value = getConfigValue("ai.simple_model");
+  const options = (catalog.length ? catalog : [{ id: value, label: value }])
+    .map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === value ? "selected" : ""}>${escapeHtml(model.label || model.id)}</option>`)
+    .join("");
+  const active = catalog.find((model) => model.id === value);
+  const price = active
+    ? `Eingabe ${active.input_usd} $ · Cache ${active.cached_input_usd} $ · Ausgabe ${active.output_usd} $ je 1 Mio. Tokens`
+    : "Preisliste im Servercode hinterlegt";
+  return `<label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></span><span class="operations-model-copy"><b>Modell für den einfachen Modus</b><small>Prüft die letzten gespeicherten Artikel. ${escapeHtml(price)}</small><span class="operations-select-wrap"><select class="pipeline-control" data-pipeline-path="ai.simple_model" aria-label="Modell für den einfachen Modus">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
+}
+
 function renderOperationsPanel(telemetry) {
   const euro = (value) => value === null || value === undefined
     ? "–"
@@ -609,7 +625,7 @@ function renderOperationsPanel(telemetry) {
     </section>
 
     <section class="operations-card">
-      <div class="operations-card-head"><div><span>KI-Konfiguration</span><h4>Gemini 2.5 Flash-Lite Batch ist aktiv</h4><p>Alle automatischen Hauptanalysen laufen zum 50-%-Batchpreis. Abhängige Zusatzschritte verwenden dasselbe Flash-Lite-Modell und werden separat protokolliert; manuelle Vorschauen bleiben sofortige Einzelaufrufe.</p></div>${modelState}</div>
+      <div class="operations-card-head"><div><span>KI-Konfiguration · Advanced</span><h4>Gemini 2.5 Flash-Lite Batch ist aktiv</h4><p>Alle automatischen Hauptanalysen laufen zum 50-%-Batchpreis. Abhängige Zusatzschritte verwenden dasselbe Flash-Lite-Modell und werden separat protokolliert; manuelle Vorschauen bleiben sofortige Einzelaufrufe.</p></div>${modelState}</div>
       <div class="operations-model-grid">
         ${operationsModelSelect("ai.primary_model", "Hauptmodell", "Analysiert alle Artikel nach dem Vorfilter.", "fa-solid fa-bolt")}
         ${operationsModelSelect("ai.review_model", "Modell für zweite Prüfung", "Kontrolliert nur echte Grenzfälle und widersprüchliche Belege.", "fa-solid fa-shield-halved")}
@@ -618,6 +634,11 @@ function renderOperationsPanel(telemetry) {
       <div class="operations-review-row"><div><b>50-%-Batchpreis für automatische Läufe</b><small>Aktiv und serverseitig geschützt – neue Crawl- und Neuanalyse-Artikel werden gesammelt mit Gemini 2.5 Flash-Lite verarbeitet. Bei einem Batchfehler erfolgt kein stiller Wechsel zum Standardpreis.</small></div><label class="source-toggle pipeline-switch"><input data-pipeline-path="ai.batch_enabled" type="checkbox" checked disabled aria-label="Gemini Batch ist fest aktiviert"><span class="source-toggle-slider"></span></label></div>
       ${pipelineFields(["ai.batch_size"])}
       <button type="button" class="operations-refresh" data-refresh-gemini-models ${geminiModelCatalogState.status === "loading" ? "disabled" : ""}><i class="fa-solid fa-arrows-rotate"></i> Modellauswahl aktualisieren</button>
+    </section>
+
+    <section class="operations-card">
+      <div class="operations-card-head"><div><span>KI-Konfiguration · Einfacher Modus</span><h4>Eigenes Modell für Simple</h4><p>Der einfache Modus läuft getrennt vom Advanced-Modus: kein Crawl, kein Batch, ein kompakter Aufruf je Artikel. Tokens und Kosten landen im selben Kostenledger, die Prognose erscheint in der Statusleiste.</p></div><i class="fa-solid fa-wand-magic-sparkles operations-card-symbol"></i></div>
+      <div class="operations-model-grid">${simpleModelSelect()}</div>
     </section>
 
     <section class="operations-card operations-card--compact">
@@ -1659,6 +1680,9 @@ function applyPipelineMode(mode, { persist = true } = {}) {
     activateSimpleMode();
   } else {
     deactivateSimpleMode();
+    const forecastLabel = document.getElementById("crawl-cost-forecast-stat")?.querySelector("span");
+    if (forecastLabel) forecastLabel.textContent = "Crawl-Prognose";
+    els.crawlStatusKicker.textContent = "Letzter Crawl";
     void loadLastRun();
   }
 }
@@ -2662,11 +2686,30 @@ function renderSimpleHeaderStatus() {
       ? (run.error_message || "Lauf mit Fehler beendet.")
       : `${Number(run.signal_count || 0)} Signale · ${Number(run.rejected_count || 0)} aussortiert`;
   }
+  // Dieselbe Kachel wie im Advanced-Modus, nur mit den Zahlen des einfachen
+  // Laufs: gemessene Ausgaben plus Hochrechnung auf die offenen Artikel.
+  const forecastStat = document.getElementById("crawl-cost-forecast-stat");
+  const forecastLabel = forecastStat?.querySelector("span");
+  if (forecastLabel) forecastLabel.textContent = "Analyse-Prognose";
+  const eur = (value) => value === null || value === undefined
+    ? "–"
+    : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  els.geminiRequestCount.textContent = simpleForecast
+    ? eur(simpleForecast.projected_eur ?? simpleForecast.spent_eur)
+    : "–";
+  const forecastDetail = document.getElementById("crawl-cost-detail");
+  if (forecastDetail && simpleForecast) {
+    forecastDetail.innerHTML = `<b>${escapeHtml(simpleForecast.model_label || simpleForecast.model || "Modell")}</b>
+      <span>${Number(simpleForecast.analysed_articles || 0).toLocaleString("de-DE")} Artikel geprüft · ${Number(simpleForecast.remaining_articles || 0).toLocaleString("de-DE")} offen</span>
+      <span>${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens · bisher ${eur(simpleForecast.spent_eur)}</span>
+      <span>Hochrechnung für den ganzen Lauf: ${eur(simpleForecast.projected_eur)}</span>`;
+  }
   setLiveStatus(null, null, {});
 }
 
-export function setSimpleRunStatus(run) {
+export function setSimpleRunStatus(run, forecast = null) {
   simpleRunStatus = run || null;
+  simpleForecast = forecast || null;
   renderSimpleHeaderStatus();
 }
 

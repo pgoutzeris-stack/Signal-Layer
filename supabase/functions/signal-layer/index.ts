@@ -60,8 +60,10 @@ import {
   SIMPLE_BATCH_SIZE,
   SIMPLE_MAX_ARTICLE_LIMIT,
   SIMPLE_MODEL,
+  SIMPLE_MODEL_CATALOG,
   SIMPLE_PIPELINE_VERSION,
   classifySimpleArticle,
+  simpleModelOption,
   simpleRuleManifest,
 } from "./pipeline-simple.ts";
 
@@ -198,6 +200,40 @@ function isInternalCall(req: Request): boolean {
 // is either created through start_simple_run or picked up by the watchdog, and
 // each batch triggers the next one with a service-role self-call.
 // ---------------------------------------------------------------------------
+// Kostenprognose des einfachen Modus: gemessene Ausgaben des laufenden Laufs
+// (aus ai_usage_events, also echten Tokens) hochgerechnet auf die noch offenen
+// Artikel. Ohne Messwerte wird nichts geschätzt.
+async function buildSimpleForecast(run: Record<string, unknown> | null | undefined) {
+  if (!run?.id) return null;
+  const admin = getAdminClient();
+  const modelId = String(run.model || SIMPLE_MODEL);
+  const { data: events } = await admin.schema("signal_layer").from("ai_usage_events")
+    .select("estimated_cost_usd, input_tokens, output_tokens, total_tokens, status")
+    .eq("prompt_version", SIMPLE_PIPELINE_VERSION)
+    .gte("created_at", String(run.started_at || new Date(0).toISOString()));
+  const rows = events || [];
+  const spentUsd = rows.reduce((sum: number, row: Record<string, number>) => sum + Number(row.estimated_cost_usd || 0), 0);
+  const analysed = rows.filter((row: Record<string, string>) => row.status === "success").length;
+  const total = Number(run.total_count || 0);
+  const processed = Number(run.processed_count || 0);
+  const remaining = Math.max(total - processed, 0);
+  const perArticleUsd = analysed > 0 ? spentUsd / analysed : null;
+  const projectedUsd = perArticleUsd === null ? null : spentUsd + perArticleUsd * remaining;
+  const rate = await getUsdEurRate().catch(() => null);
+  const toEur = (value: number | null) => value === null || rate === null ? null : value * rate;
+  return {
+    model: modelId,
+    model_label: simpleModelOption(modelId).label,
+    analysed_articles: analysed,
+    remaining_articles: remaining,
+    tokens: rows.reduce((sum: number, row: Record<string, number>) => sum + Number(row.total_tokens || 0), 0),
+    spent_usd: spentUsd,
+    spent_eur: toEur(spentUsd),
+    projected_usd: projectedUsd,
+    projected_eur: toEur(projectedUsd),
+  };
+}
+
 function triggerSimpleRun(runId: string): void {
   fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
     method: "POST",
@@ -224,6 +260,26 @@ async function getApifyKey(): Promise<string> {
   _keyCache.value = (data as string | null) || "";
   _keyCache.at = now;
   return _keyCache.value;
+}
+
+const _deepseekKeyCache: { value: string; at: number } = { value: "", at: 0 };
+
+async function getDeepseekKey(): Promise<string> {
+  const now = Date.now();
+  if (_deepseekKeyCache.value && now - _deepseekKeyCache.at < KEY_CACHE_TTL) return _deepseekKeyCache.value;
+  const { data, error } = await getAdminClient()
+    .schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_deepseek_api_key" });
+  if (error) throw new Error(`Could not read DeepSeek key: ${error.message}`);
+  _deepseekKeyCache.value = data || "";
+  _deepseekKeyCache.at = now;
+  return _deepseekKeyCache.value;
+}
+
+// Liefert den Schlüssel des Anbieters, zu dem das gewählte Modell gehört.
+async function getSimpleModelKey(modelId: string): Promise<string> {
+  return simpleModelOption(modelId).provider === "deepseek"
+    ? await getDeepseekKey()
+    : await getGeminiKey();
 }
 
 async function getGeminiKey(): Promise<string> {
@@ -3374,6 +3430,7 @@ Deno.serve(async (req: Request) => {
             prompt_version: CLASSIFIER_PROMPT_VERSION,
             scoring_version: RELEVANCE_SCORING_VERSION,
             rule_manifest: buildPipelineRuleManifest(config),
+            simple_models: SIMPLE_MODEL_CATALOG,
           },
         });
       }
@@ -3394,6 +3451,9 @@ Deno.serve(async (req: Request) => {
         const allowedModels = new Set((await getAvailableGeminiModels()).map((model) => model.id));
         if (!allowedModels.has(requested.ai.primary_model) || !allowedModels.has(requested.ai.review_model)) {
           return errorResponse(origin, "Das ausgewählte Gemini-Modell ist für diesen API-Key nicht verfügbar oder unterstützt generateContent nicht");
+        }
+        if (!SIMPLE_MODEL_CATALOG.some((model) => model.id === requested.ai.simple_model)) {
+          return errorResponse(origin, "Für den einfachen Modus sind nur Modelle mit hinterlegter Preisliste erlaubt");
         }
         const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Number(value)));
         requested.crawl.freshness_days = Math.round(clamp(requested.crawl.freshness_days, 1, 365));
@@ -4641,7 +4701,8 @@ Deno.serve(async (req: Request) => {
       // data and never touch the advanced pipeline or signal_layer.articles.
       // ---------------------------------------------------------------------
       case "get_simple_rules": {
-        return corsResponse(origin, { rules: simpleRuleManifest() });
+        const simpleConfig = await getPipelineConfig();
+        return corsResponse(origin, { rules: simpleRuleManifest(simpleConfig.ai.simple_model || SIMPLE_MODEL) });
       }
 
       case "start_simple_run": {
@@ -4666,7 +4727,7 @@ Deno.serve(async (req: Request) => {
           article_ids: articleIds,
           total_count: articleIds.length,
           prompt_version: SIMPLE_PIPELINE_VERSION,
-          model: SIMPLE_MODEL,
+          model: (await getPipelineConfig()).ai.simple_model || SIMPLE_MODEL,
           triggered_by: auth?.userId || null,
           finished_at: articleIds.length ? null : new Date().toISOString(),
         }).select("*").single();
@@ -4709,9 +4770,11 @@ Deno.serve(async (req: Request) => {
           .in("id", slice);
         if (articlesError) return errorResponse(origin, articlesError.message, 500);
 
-        let geminiKey = "";
+        const simpleConfig = await getPipelineConfig();
+        const simpleModel = run.model || simpleConfig.ai.simple_model || SIMPLE_MODEL;
+        let modelKey = "";
         try {
-          geminiKey = await getGeminiKey();
+          modelKey = await getSimpleModelKey(simpleModel);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           await admin.schema("signal_layer").from("simple_runs").update({
@@ -4719,14 +4782,15 @@ Deno.serve(async (req: Request) => {
           }).eq("id", run.id);
           return errorResponse(origin, message, 500);
         }
-        if (!geminiKey) {
+        if (!modelKey) {
+          const message = `API key für ${simpleModelOption(simpleModel).label} ist nicht konfiguriert.`;
           await admin.schema("signal_layer").from("simple_runs").update({
-            status: "error", error_message: "Gemini API key is not configured", finished_at: new Date().toISOString(),
+            status: "error", error_message: message, finished_at: new Date().toISOString(),
           }).eq("id", run.id);
-          return errorResponse(origin, "Gemini API key is not configured", 500);
+          return errorResponse(origin, message, 500);
         }
 
-        const deps = { admin, geminiKey, model: SIMPLE_MODEL };
+        const deps = { admin, apiKey: modelKey, model: simpleModel };
         const rows: Array<Record<string, unknown>> = [];
         let signals = 0;
         // Sequential on purpose: one article at a time keeps the request inside
@@ -4795,18 +4859,21 @@ Deno.serve(async (req: Request) => {
 
       case "get_simple_run_status": {
         const admin = getAdminClient();
-        const [{ data: run }, { count: signalCount }, { count: rejectedCount }] = await Promise.all([
+        const [{ data: run }, { count: signalCount }, { count: rejectedCount }, { data: usdEurRate }] = await Promise.all([
           admin.schema("signal_layer").from("simple_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "signal"),
           admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "rejected"),
+          getUsdEurRate().then((rate) => ({ data: rate })).catch(() => ({ data: null })),
         ]);
         return corsResponse(origin, {
           run: run || null,
           batch_size: SIMPLE_BATCH_SIZE,
           totals: { signals: signalCount || 0, rejected: rejectedCount || 0 },
+          forecast: await buildSimpleForecast(run),
+          usd_eur_rate: usdEurRate,
         });
       }
 

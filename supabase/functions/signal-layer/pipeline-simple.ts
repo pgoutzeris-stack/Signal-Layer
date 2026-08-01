@@ -31,7 +31,35 @@ import {
 } from "./pipeline-core.ts";
 
 export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
-export const SIMPLE_MODEL = "gemini-2.5-flash-lite";
+export const SIMPLE_MODEL = "deepseek-v4-pro";
+
+// Auswahlbare Modelle des einfachen Modus mit den Preisen, die im Kostenledger
+// und in der Prognose verwendet werden. Preise sind USD pro 1 Mio. Tokens laut
+// Anbieter-Preisliste (DeepSeek: api-docs.deepseek.com/quick_start/pricing,
+// Gemini: ai.google.dev/pricing). Ein Modell ohne Eintrag darf nicht laufen -
+// sonst wären Tokens und Kosten nicht belastbar.
+export type SimpleModelOption = {
+  id: string;
+  provider: "deepseek" | "gemini";
+  label: string;
+  /** Eingabe ohne Cache-Treffer */
+  input_usd: number;
+  /** Eingabe mit Cache-Treffer (nur DeepSeek liefert das getrennt aus) */
+  cached_input_usd: number;
+  output_usd: number;
+};
+
+export const SIMPLE_MODEL_CATALOG: SimpleModelOption[] = [
+  { id: "deepseek-v4-pro", provider: "deepseek", label: "DeepSeek V4 Pro", input_usd: 0.435, cached_input_usd: 0.003625, output_usd: 0.87 },
+  { id: "deepseek-v4-flash", provider: "deepseek", label: "DeepSeek V4 Flash", input_usd: 0.14, cached_input_usd: 0.0028, output_usd: 0.28 },
+  { id: "gemini-2.5-flash-lite", provider: "gemini", label: "Gemini 2.5 Flash-Lite", input_usd: 0.1, cached_input_usd: 0.1, output_usd: 0.4 },
+  { id: "gemini-2.5-flash", provider: "gemini", label: "Gemini 2.5 Flash", input_usd: 0.3, cached_input_usd: 0.3, output_usd: 2.5 },
+];
+
+export function simpleModelOption(modelId: string): SimpleModelOption {
+  return SIMPLE_MODEL_CATALOG.find((model) => model.id === modelId)
+    || SIMPLE_MODEL_CATALOG.find((model) => model.id === SIMPLE_MODEL)!;
+}
 // The simple mode is explicitly a re-run over stored articles, never a crawl.
 export const SIMPLE_ARTICLE_LIMIT = 100;
 export const SIMPLE_MAX_ARTICLE_LIMIT = 300;
@@ -289,6 +317,10 @@ Sales heisst: ein konkretes Unternehmen hat gerade eine Situation, in der ROOTS-
 Marketing heisst: der Artikel liefert übertragbare Substanz für eigene Inhalte, unabhängig von einem einzelnen Unternehmen.
 headline_de ist eine sachliche deutsche Überschrift ohne neue Fakten, why_de genau ein deutscher Satz zur Begründung.
 </rules>
+<answer_format>
+Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
+{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","company":"Unternehmen oder leerer String"}
+</answer_format>
 <source name="${article.source?.company || "unbekannt"}" category="${article.source?.category || "unbekannt"}" />
 <article_title>${String(article.title || "")}</article_title>
 <article_text>${content}</article_text>`;
@@ -317,27 +349,41 @@ export type SimpleDeps = {
       from: (table: string) => any;
     };
   };
-  geminiKey: string;
+  /** Schlüssel des Anbieters, der zum gewählten Modell gehört. */
+  apiKey: string;
   model?: string;
 };
 
-const MODEL_RATES: Record<string, { input: number; output: number }> = {
-  "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
-  "gemini-2.5-flash": { input: 0.3, output: 2.5 },
+export type SimpleUsage = {
+  input: number;
+  cachedInput: number;
+  output: number;
+  thinking: number;
+  total: number;
 };
+
+const EMPTY_USAGE: SimpleUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
+
+// Getrennte Abrechnung von Cache-Treffern, weil DeepSeek dafür rund 1 % des
+// normalen Eingabepreises verlangt.
+export function simpleUsageCostUsd(modelId: string, usage: SimpleUsage): number {
+  const rates = simpleModelOption(modelId);
+  return (usage.input * rates.input_usd
+    + usage.cachedInput * rates.cached_input_usd
+    + (usage.output + usage.thinking) * rates.output_usd) / 1_000_000;
+}
 
 async function recordSimpleUsage(
   deps: SimpleDeps,
   articleId: string,
   model: string,
   status: "success" | "error",
-  usage: { input: number; output: number; thinking: number; total: number },
+  usage: SimpleUsage,
   durationMs: number,
   errorCode?: string,
   errorMessage?: string,
 ): Promise<void> {
-  const rates = MODEL_RATES[model] || MODEL_RATES["gemini-2.5-flash-lite"];
-  const cost = (usage.input * rates.input + (usage.output + usage.thinking) * rates.output) / 1_000_000;
+  const cost = simpleUsageCostUsd(model, usage);
   await deps.admin.schema("signal_layer").from("ai_usage_events").insert({
     article_id: articleId,
     operation: "classification",
@@ -345,7 +391,7 @@ async function recordSimpleUsage(
     status,
     attempt: 1,
     prompt_version: SIMPLE_PIPELINE_VERSION,
-    input_tokens: usage.input,
+    input_tokens: usage.input + usage.cachedInput,
     output_tokens: usage.output,
     thinking_tokens: usage.thinking,
     total_tokens: usage.total,
@@ -356,38 +402,106 @@ async function recordSimpleUsage(
   });
 }
 
-async function callSimpleGemini(
+type ProviderRequest = {
+  endpoint: string;
+  headers: Record<string, string>;
+  body: string;
+  /** Liest Antworttext und Tokenverbrauch aus der Anbieter-Antwort. */
+  parse: (payload: any) => { text: string; usage: SimpleUsage };
+};
+
+function geminiRequest(model: string, apiKey: string, prompt: string): ProviderRequest {
+  return {
+    endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SIMPLE_SYSTEM_INSTRUCTION }] },
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: SIMPLE_RESPONSE_SCHEMA,
+        maxOutputTokens: 900,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
+    parse: (payload) => {
+      const meta = payload?.usageMetadata || {};
+      return {
+        text: payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("") || "",
+        usage: {
+          input: Number(meta.promptTokenCount || 0),
+          cachedInput: 0,
+          output: Number(meta.candidatesTokenCount || 0),
+          thinking: Number(meta.thoughtsTokenCount || 0),
+          total: Number(meta.totalTokenCount || 0),
+        },
+      };
+    },
+  };
+}
+
+// DeepSeek ist OpenAI-kompatibel und kennt kein Response-Schema, deshalb steht
+// die Antwortform im Prompt und json_object erzwingt gültiges JSON.
+function deepseekRequest(model: string, apiKey: string, prompt: string): ProviderRequest {
+  return {
+    endpoint: "https://api.deepseek.com/chat/completions",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: SIMPLE_SYSTEM_INSTRUCTION },
+        { role: "user", content: prompt },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 900,
+      temperature: 0,
+      stream: false,
+    }),
+    parse: (payload) => {
+      const usage = payload?.usage || {};
+      const cached = Number(usage.prompt_cache_hit_tokens || 0);
+      const promptTokens = Number(usage.prompt_tokens || 0);
+      const missed = Number(usage.prompt_cache_miss_tokens ?? Math.max(promptTokens - cached, 0));
+      const output = Number(usage.completion_tokens || 0);
+      return {
+        text: payload?.choices?.[0]?.message?.content || "",
+        usage: {
+          input: missed,
+          cachedInput: cached,
+          output,
+          thinking: Number(usage.completion_tokens_details?.reasoning_tokens || 0),
+          total: Number(usage.total_tokens || promptTokens + output),
+        },
+      };
+    },
+  };
+}
+
+async function callSimpleModel(
   deps: SimpleDeps,
   articleId: string,
   prompt: string,
 ): Promise<SimpleAiAnswer> {
   const model = deps.model || SIMPLE_MODEL;
+  const option = simpleModelOption(model);
+  const request = option.provider === "deepseek"
+    ? deepseekRequest(model, deps.apiKey, prompt)
+    : geminiRequest(model, deps.apiKey, prompt);
   const startedAt = Date.now();
-  const requestBody = JSON.stringify({
-    systemInstruction: { parts: [{ text: SIMPLE_SYSTEM_INSTRUCTION }] },
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: SIMPLE_RESPONSE_SCHEMA,
-      maxOutputTokens: 900,
-      thinkingConfig: { thinkingBudget: 0 },
-    },
-  });
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   let response: Response | null = null;
   let lastError = "";
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      response = await fetch(endpoint, {
+      response = await fetch(request.endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": deps.geminiKey },
-        body: requestBody,
-        signal: AbortSignal.timeout(45_000),
+        headers: request.headers,
+        body: request.body,
+        signal: AbortSignal.timeout(60_000),
       });
       if (response.ok) break;
       lastError = await response.text();
-      const retryable = (response.status === 429 && !/spending cap/i.test(lastError))
-        || [502, 503, 504].includes(response.status);
+      const hardStop = /spending cap|insufficient balance|invalid api key|unauthorized/i.test(lastError);
+      const retryable = !hardStop && (response.status === 429 || [500, 502, 503, 504].includes(response.status));
       if (!retryable || attempt === 3) break;
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
@@ -398,23 +512,17 @@ async function callSimpleGemini(
   if (!response?.ok) {
     const status = response?.status || 0;
     const errorCode = /spending cap/i.test(lastError) ? "spending_cap"
+      : /insufficient balance/i.test(lastError) ? "insufficient_balance"
+      : /invalid api key|unauthorized|authentication/i.test(lastError) ? "invalid_key"
       : status === 429 ? "rate_limit"
       : status === 503 ? "model_busy"
       : /timeout|abort/i.test(lastError) ? "timeout"
       : `http_${status || "network"}`;
-    await recordSimpleUsage(deps, articleId, model, "error", { input: 0, output: 0, thinking: 0, total: 0 },
-      Date.now() - startedAt, errorCode, lastError);
-    throw new Error(`Gemini ${model} failed: ${status} ${lastError.slice(0, 300)}`);
+    await recordSimpleUsage(deps, articleId, model, "error", EMPTY_USAGE, Date.now() - startedAt, errorCode, lastError);
+    throw new Error(`${option.label} failed: ${status} ${lastError.slice(0, 300)}`);
   }
   const payload = await response.json();
-  const usageMetadata = payload?.usageMetadata || {};
-  const usage = {
-    input: Number(usageMetadata.promptTokenCount || 0),
-    output: Number(usageMetadata.candidatesTokenCount || 0),
-    thinking: Number(usageMetadata.thoughtsTokenCount || 0),
-    total: Number(usageMetadata.totalTokenCount || 0),
-  };
-  const text = payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("");
+  const { text, usage } = request.parse(payload);
   try {
     if (!text) throw new Error("empty answer");
     const answer = JSON.parse(text) as SimpleAiAnswer;
@@ -423,7 +531,7 @@ async function callSimpleGemini(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await recordSimpleUsage(deps, articleId, model, "error", usage, Date.now() - startedAt, "invalid_response", message);
-    throw new Error(`Gemini ${model} returned no valid simple classification`);
+    throw new Error(`${option.label} returned no valid simple classification`);
   }
 }
 
@@ -487,7 +595,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   const model = deps.model || SIMPLE_MODEL;
   let answer: SimpleAiAnswer;
   try {
-    answer = await callSimpleGemini(deps, article.id, buildSimplePrompt(article, prefilter.families));
+    answer = await callSimpleModel(deps, article.id, buildSimplePrompt(article, prefilter.families));
   } catch (_error) {
     return rejected(article, "modellfehler", prefilter.families, model);
   }
@@ -535,10 +643,12 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
 // ---------------------------------------------------------------------------
 // Rule overview for the UI (same source of truth as the executed rules)
 // ---------------------------------------------------------------------------
-export function simpleRuleManifest() {
+export function simpleRuleManifest(activeModel: string = SIMPLE_MODEL) {
   return {
     version: SIMPLE_PIPELINE_VERSION,
-    model: SIMPLE_MODEL,
+    model: activeModel,
+    model_label: simpleModelOption(activeModel).label,
+    models: SIMPLE_MODEL_CATALOG,
     article_limit: SIMPLE_ARTICLE_LIMIT,
     batch_size: SIMPLE_BATCH_SIZE,
     min_confidence: SIMPLE_MIN_CONFIDENCE,

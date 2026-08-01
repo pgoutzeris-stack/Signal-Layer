@@ -196,7 +196,7 @@ async function loadResults({ keepStatus = false } = {}) {
     if (!keepStatus) {
       lastRun = status.run || null;
       running = lastRun?.status === "running";
-      ctx.setSimpleRunStatus(lastRun);
+      ctx.setSimpleRunStatus(lastRun, status.forecast || null);
     }
   } catch (error) {
     ctx.toast(error.message || "Ergebnisse konnten nicht geladen werden", "err");
@@ -222,7 +222,7 @@ async function pollStatus() {
     const previous = lastRun;
     lastRun = status.run || null;
     running = lastRun?.status === "running";
-    ctx.setSimpleRunStatus(lastRun);
+    ctx.setSimpleRunStatus(lastRun, status.forecast || null);
     const advanced = Number(lastRun?.processed_count || 0) !== Number(previous?.processed_count || 0);
     const finished = previous?.status === "running" && lastRun?.status !== "running";
     if (advanced || finished || lastRun?.id !== previous?.id) await loadResults({ statusOnly: false, keepStatus: true });
