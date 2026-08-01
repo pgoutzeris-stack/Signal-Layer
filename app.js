@@ -16,6 +16,7 @@ let pipelineOperationsTelemetry = null;
 let pipelineStageDefinitions = [];
 const pipelineDrilldownState = { stageId: null, editorOpen: false, routeEditor: null };
 let statusPollTimer = null;
+let simpleRunStatus = null;
 let lastSpendForecastNotice = "";
 let archiveArticles = [];
 let archiveTotalCount = 0;
@@ -30,6 +31,7 @@ const state = {
 // Filter selections are multi-select: empty array = "all". Sort stays single.
 const signalViewState = { articleTypes: [], sources: [], sort: "recommended" };
 const archiveViewState = { articleTypes: [], sources: [], sort: "recommended" };
+const simpleViewState = { articleTypes: [], sources: [], sort: "recommended" };
 
 // Maps a filter <select> id to its persistent selection array (mutated in
 // place so closures never hold a stale reference).
@@ -39,6 +41,8 @@ function filterSelectionFor(selectId) {
     case "signal-article-type-filter": return signalViewState.articleTypes;
     case "archive-source-filter": return archiveViewState.sources;
     case "archive-article-type-filter": return archiveViewState.articleTypes;
+    case "simple-source-filter": return simpleViewState.sources;
+    case "simple-article-type-filter": return simpleViewState.articleTypes;
     default: return null;
   }
 }
@@ -1632,17 +1636,31 @@ function storedPipelineMode() {
   }
 }
 
+function mountStatusBar(simple) {
+  // Es gibt genau eine Statusleiste. Sie wandert in die Toolbar des aktiven
+  // Modus, damit Pille, Popover, Fehler- und Kostenpanel überall identisch sind.
+  const wrap = document.querySelector(".crawl-trigger-wrap");
+  const toolbar = document.querySelector(simple ? "#view-simple .signal-toolbar" : "#view-results .signal-toolbar");
+  if (wrap && toolbar && wrap.parentElement !== toolbar) toolbar.appendChild(wrap);
+}
+
 function applyPipelineMode(mode, { persist = true } = {}) {
   const simple = mode === "simple";
   document.body.classList.toggle("mode-simple", simple);
+  mountStatusBar(simple);
   document.querySelectorAll("[data-pipeline-mode]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.pipelineMode === (simple ? "simple" : "advanced"));
   });
   if (persist) {
     try { localStorage.setItem(PIPELINE_MODE_KEY, simple ? "simple" : "advanced"); } catch (_) { /* Modus bleibt für diese Sitzung */ }
   }
-  if (simple) activateSimpleMode();
-  else deactivateSimpleMode();
+  if (simple) {
+    renderSimpleHeaderStatus();
+    activateSimpleMode();
+  } else {
+    deactivateSimpleMode();
+    void loadLastRun();
+  }
 }
 
 function switchAppView(view) {
@@ -2586,6 +2604,17 @@ function formatCrawlTime(iso) {
 }
 
 function getLiveStatus(last, backfill, analysisQueue = {}) {
+  // Im einfachen Modus beschreibt dieselbe Pille denselben Zustand, nur bezogen
+  // auf den Backend-Lauf über die gespeicherten Artikel.
+  if (document.body.classList.contains("mode-simple")) {
+    if (simpleRunStatus?.status === "running") {
+      return { tone: "working", label: "Analyse läuft", hint: "Die letzten gespeicherten Artikel werden geprüft." };
+    }
+    if (simpleRunStatus?.status === "error") {
+      return { tone: "error", label: "Aufmerksamkeit nötig", hint: simpleRunStatus.error_message || "Der letzte Lauf wurde mit Fehler beendet." };
+    }
+    return { tone: "ready", label: "Bereit", hint: "Die Analyse wird im Backend gestartet." };
+  }
   if (last?.status === "running" || last?.status === "queued") {
     return { tone: "working", label: "Crawl läuft", hint: "Quellen werden gerade geprüft." };
   }
@@ -2610,6 +2639,35 @@ function setLiveStatus(last, backfill, analysisQueue = {}) {
   const hint = document.getElementById("crawl-status-hint");
   if (hint) hint.textContent = liveStatus.hint;
   return liveStatus.tone === "working";
+}
+
+// Bespielt die geteilten Statuswidgets mit den Zahlen des einfachen Laufs.
+// Es sind bewusst dieselben Elemente wie im Advanced-Modus, inklusive Fehler-
+// und Kostenpanel, die ohnehin modusunabhängig sind.
+function renderSimpleHeaderStatus() {
+  if (!document.body.classList.contains("mode-simple")) return;
+  const run = simpleRunStatus;
+  els.crawlStatusKicker.textContent = "Letzte Analyse";
+  els.lastRunText.textContent = run ? formatCrawlTime(run.finished_at || run.last_progress_at || run.started_at) : "--:--";
+  els.crawlSourceProgress.hidden = true;
+  els.crawlLiveState.hidden = false;
+  const total = Number(run?.total_count || 0);
+  const processed = Number(run?.processed_count || 0);
+  els.articleLiveProgress.hidden = !run;
+  if (run) {
+    els.backfillProgressText.textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} Artikel`;
+    els.backfillProgressBar.style.width = total > 0 ? `${Math.round(Math.min(processed / total, 1) * 100)}%` : "0%";
+    els.backfillCurrentArticle.hidden = true;
+    els.backfillProgressDetail.textContent = run.status === "error"
+      ? (run.error_message || "Lauf mit Fehler beendet.")
+      : `${Number(run.signal_count || 0)} Signale · ${Number(run.rejected_count || 0)} aussortiert`;
+  }
+  setLiveStatus(null, null, {});
+}
+
+export function setSimpleRunStatus(run) {
+  simpleRunStatus = run || null;
+  renderSimpleHeaderStatus();
 }
 
 function scheduleStatusRefresh(isActive) {
@@ -2882,10 +2940,17 @@ async function loadLastRun() {
       chip.addEventListener("mouseenter", () => positionErrorPopover(chip));
       chip.addEventListener("focusin", () => positionErrorPopover(chip));
     });
+    // Fehler- und Kostenpanel gelten für beide Modi. Im einfachen Modus
+    // überschreiben danach die Zahlen des einfachen Laufs Kopf und Fortschritt.
+    renderSimpleHeaderStatus();
     scheduleStatusRefresh(isActive || browserPending > 0);
   } catch {
-    els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
-    setLiveStatus(null, null);
+    if (document.body.classList.contains("mode-simple")) {
+      renderSimpleHeaderStatus();
+    } else {
+      els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
+      setLiveStatus(null, null);
+    }
     scheduleStatusRefresh(false);
   }
 }
@@ -3170,6 +3235,7 @@ function bindUi() {
   });
 
   els.btnCrawlTrigger.addEventListener("click", (e) => {
+    if (document.body.classList.contains("mode-simple")) { e.stopPropagation(); return; }
     e.stopPropagation();
     if (els.crawlDropdown.classList.contains("show")) closeCrawlDropdown();
     else void openCrawlDropdown();
@@ -3251,7 +3317,11 @@ export function initApp(client) {
     mountResultsHeader();
     enhanceHeaderSelects();
     bindSourceErrorTooltip();
-    initSimpleMode({ callApi, toast, escapeHtml, escapeText, openExternalUrl });
+    initSimpleMode({
+      callApi, toast, escapeHtml, escapeText, openExternalUrl,
+      setSimpleRunStatus, enhanceHeaderSelects, pruneSelection,
+      articleTypeLabels: ARTICLE_TYPE_LABELS, viewState: simpleViewState,
+    });
     applyPipelineMode(storedPipelineMode(), { persist: false });
   }
   void loadLastRun();

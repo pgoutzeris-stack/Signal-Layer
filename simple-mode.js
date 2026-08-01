@@ -21,6 +21,8 @@ let rulesLoaded = false;
 let lastRun = null;
 let pollTimer = null;
 let simpleRules = null;
+const signalsByLane = { marketing: [], sales: [] };
+let rejectedRows = [];
 
 function el(id) {
   return document.getElementById(id);
@@ -29,10 +31,9 @@ function el(id) {
 function cacheEls() {
   els = {
     view: el("view-simple"),
-    status: el("simple-status"),
-    statusLabel: el("simple-status-label"),
-    statusCount: el("simple-status-count"),
-    progressBar: el("simple-progress-bar"),
+    articleTypeFilter: el("simple-article-type-filter"),
+    sourceFilter: el("simple-source-filter"),
+    sort: el("simple-sort"),
     marketingList: el("simple-list-marketing"),
     salesList: el("simple-list-sales"),
     marketingCount: el("simple-marketing-count"),
@@ -91,14 +92,56 @@ function signalCard(signal) {
   `;
 }
 
-function renderLane(lane, signals) {
+function signalSourceName(signal) {
+  return sourceOf(signal.article)?.company || "";
+}
+
+function signalDate(signal) {
+  return new Date(signal.article?.published_at || signal.updated_at || 0).getTime() || 0;
+}
+
+// Gleiche Filter- und Sortierlogik wie im Advanced-Modus, nur auf den Feldern
+// des einfachen Modus (Nutzwert statt Relevanzscore).
+function visibleSignals(lane) {
+  const state = ctx.viewState;
+  const filtered = signalsByLane[lane].filter((signal) => {
+    const typeOk = state.articleTypes.length === 0 || state.articleTypes.includes(signal.article?.article_type);
+    const sourceOk = state.sources.length === 0 || state.sources.includes(signalSourceName(signal));
+    return typeOk && sourceOk;
+  });
+  return [...filtered].sort((a, b) => {
+    if (state.sort === "newest") return signalDate(b) - signalDate(a) || Number(b.score || 0) - Number(a.score || 0);
+    if (state.sort === "confidence") return Number(b.confidence || 0) - Number(a.confidence || 0) || Number(b.score || 0) - Number(a.score || 0);
+    return Number(b.score || 0) - Number(a.score || 0) || signalDate(b) - signalDate(a);
+  });
+}
+
+function refreshFilterOptions() {
+  const all = [...signalsByLane.marketing, ...signalsByLane.sales];
+  const types = [...new Set(all.map((signal) => signal.article?.article_type).filter(Boolean))]
+    .sort((a, b) => (ctx.articleTypeLabels[a] || a).localeCompare(ctx.articleTypeLabels[b] || b, "de"));
+  const sources = [...new Set(all.map(signalSourceName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "de"));
+  if (els.articleTypeFilter) {
+    els.articleTypeFilter.innerHTML = `<option value="all">Alle Artikeltypen</option>${types
+      .map((type) => `<option value="${esc(type)}">${esc(ctx.articleTypeLabels[type] || type)}</option>`).join("")}`;
+    ctx.pruneSelection(ctx.viewState.articleTypes, types);
+  }
+  if (els.sourceFilter) {
+    els.sourceFilter.innerHTML = `<option value="all">Alle Quellen</option>${sources
+      .map((source) => `<option value="${esc(source)}">${esc(source)}</option>`).join("")}`;
+    ctx.pruneSelection(ctx.viewState.sources, sources);
+  }
+}
+
+function renderLane(lane) {
   const list = lane === "sales" ? els.salesList : els.marketingList;
   const count = lane === "sales" ? els.salesCount : els.marketingCount;
   if (!list) return;
+  const signals = visibleSignals(lane);
   count.textContent = signals.length.toLocaleString("de-DE");
   list.innerHTML = signals.length
     ? signals.map(signalCard).join("")
-    : `<div class="track-card-empty">Noch keine Signale in dieser Spur. Lauf starten oder Regeln prüfen.</div>`;
+    : `<div class="track-card-empty">Keine Signale entsprechen den gewählten Filtern.</div>`;
 }
 
 function renderRejected(articles, rejectLabels) {
@@ -117,34 +160,6 @@ function renderRejected(articles, rejectLabels) {
       `;
     }).join("")
     : `<div class="track-card-empty">Nichts aussortiert.</div>`;
-}
-
-function setStatus(text, detail = "", progress = null, isError = false) {
-  if (!els.statusLabel) return;
-  els.statusLabel.textContent = text;
-  els.statusCount.textContent = detail;
-  els.status.classList.toggle("simple-status--error", isError);
-  if (els.progressBar) els.progressBar.style.width = progress === null ? "0%" : `${Math.round(progress * 100)}%`;
-}
-
-function describeRun(run, totals) {
-  if (!run) {
-    setStatus("Noch kein Lauf gestartet.", totals ? `${totals.signals} Signale gespeichert` : "");
-    return;
-  }
-  const total = Number(run.total_count || 0);
-  const processed = Number(run.processed_count || 0);
-  const progress = total > 0 ? Math.min(processed / total, 1) : 0;
-  const detail = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} Artikel · ${Number(run.signal_count || 0)} Signale`;
-  if (run.status === "error") {
-    setStatus(run.error_message || "Lauf abgebrochen.", detail, progress, true);
-    return;
-  }
-  if (run.status === "running") {
-    setStatus("Prüfung läuft…", detail, progress);
-    return;
-  }
-  setStatus(`Letzter Lauf abgeschlossen (${formatDate(run.finished_at || run.started_at)})`, detail, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -171,16 +186,20 @@ async function loadResults({ keepStatus = false } = {}) {
       ctx.callApi("list_simple_rejected", { limit: 60 }),
       ctx.callApi("get_simple_run_status"),
     ]);
-    renderLane("marketing", marketing.signals || []);
-    renderLane("sales", sales.signals || []);
-    renderRejected(rejected.articles || [], simpleRules?.reject_labels);
+    signalsByLane.marketing = marketing.signals || [];
+    signalsByLane.sales = sales.signals || [];
+    rejectedRows = rejected.articles || [];
+    refreshFilterOptions();
+    renderLane("marketing");
+    renderLane("sales");
+    renderRejected(rejectedRows, simpleRules?.reject_labels);
     if (!keepStatus) {
       lastRun = status.run || null;
       running = lastRun?.status === "running";
+      ctx.setSimpleRunStatus(lastRun);
     }
-    describeRun(lastRun, status.totals);
   } catch (error) {
-    setStatus(error.message || "Ergebnisse konnten nicht geladen werden", "", null, true);
+    ctx.toast(error.message || "Ergebnisse konnten nicht geladen werden", "err");
   }
 }
 
@@ -203,7 +222,7 @@ async function pollStatus() {
     const previous = lastRun;
     lastRun = status.run || null;
     running = lastRun?.status === "running";
-    describeRun(lastRun, status.totals);
+    ctx.setSimpleRunStatus(lastRun);
     const advanced = Number(lastRun?.processed_count || 0) !== Number(previous?.processed_count || 0);
     const finished = previous?.status === "running" && lastRun?.status !== "running";
     if (advanced || finished || lastRun?.id !== previous?.id) await loadResults({ statusOnly: false, keepStatus: true });
@@ -216,6 +235,12 @@ async function pollStatus() {
 function bindUi() {
   if (bound) return;
   bound = true;
+  const rerender = () => {
+    ctx.viewState.sort = els.sort?.value || "recommended";
+    renderLane("marketing");
+    renderLane("sales");
+  };
+  [els.articleTypeFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
   els.view?.addEventListener("click", (event) => {
     const card = event.target.closest("[data-simple-url]");
     if (card?.dataset.simpleUrl) ctx.openExternalUrl(card.dataset.simpleUrl);

@@ -165,10 +165,6 @@
   body.mode-simple #view-archive { display: none !important; }
   body.mode-simple #view-simple { display: block; }
   body:not(.mode-simple) #view-simple { display: none !important; }
-  .simple-status { padding: .85rem 1rem; margin: 0 0 1.2rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: var(--shadow-dash); }
-  .simple-status-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .74rem; color: var(--muted); }
-  .simple-status-row b { color: var(--ink); font-size: .74rem; }
-  .simple-status--error .simple-status-row b { color: var(--danger); }
   .simple-signal-why { margin: .45rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
   .simple-signal-evidence { display: block; margin: .55rem 0 0; padding: .5rem .7rem; border-left: 2px solid var(--brand); border-radius: 0 8px 8px 0; background: var(--surface); color: var(--ink); font-size: .72rem; line-height: 1.45; }
   .simple-rejected-item { padding: .7rem .85rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
@@ -1893,11 +1889,22 @@
 
         <!-- Einfacher Modus: eigene Pipeline über bereits gespeicherte Artikel -->
         <section class="app-view" id="view-simple">
-          <div class="view-header"><div><h2>Signale</h2></div></div>
-          <section class="simple-status" id="simple-status">
-            <div class="simple-status-row"><span id="simple-status-label">Wird geladen…</span><b id="simple-status-count"></b></div>
-            <div class="backfill-progress-track"><span id="simple-progress-bar"></span></div>
-          </section>
+          <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
+            <span class="signal-toolbar-label"><i class="fa-solid fa-sliders"></i> Ansicht</span>
+            <div class="signal-toolbar-controls">
+              <select class="signal-toolbar-select" id="simple-article-type-filter" aria-label="Artikeltyp filtern">
+                <option value="all">Alle Artikeltypen</option>
+              </select>
+              <select class="signal-toolbar-select" id="simple-source-filter" aria-label="Quelle filtern">
+                <option value="all">Alle Quellen</option>
+              </select>
+              <select class="signal-toolbar-select" id="simple-sort" aria-label="Signale sortieren">
+                <option value="recommended">Empfohlen</option>
+                <option value="newest">Neueste zuerst</option>
+                <option value="confidence">Höchste Relevanz</option>
+              </select>
+            </div>
+          </nav>
           <div class="track-grid">
             <div class="track-card">
               <div class="track-card-header"><i class="fa-solid fa-bullhorn"></i> Marketing <span class="track-count" id="simple-marketing-count">0</span></div>
