@@ -581,11 +581,14 @@ function renderGeminiModelManager() {
 
 function operationsModelSelect(path, label, description, icon) {
   const value = getConfigValue(path);
-  const modelIds = [...new Set([value, ...geminiModelCatalog.map((model) => model.id)].filter(Boolean))];
+  // Auch Modelle anderer Anbieter mit hinterlegter Preisliste sind wählbar.
+  const priced = pipelineSettings?.simple_models || [];
+  const modelIds = [...new Set([value, ...geminiModelCatalog.map((model) => model.id), ...priced.map((model) => model.id)].filter(Boolean))];
   const options = modelIds.map((modelId) => {
-    const model = geminiModelCatalog.find((item) => item.id === modelId);
+    const model = geminiModelCatalog.find((item) => item.id === modelId)
+      || priced.find((item) => item.id === modelId);
     const batchSuffix = getConfigValue("ai.batch_enabled") && path === "ai.primary_model" ? " · Batch (50 % Preis)" : "";
-    const optionLabel = `${model?.display_name || modelId}${batchSuffix}`;
+    const optionLabel = `${model?.display_name || model?.label || modelId}${batchSuffix}`;
     return `<option value="${escapeHtml(modelId)}" ${modelId === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`;
   }).join("");
   return `<label class="operations-model-field"><span class="operations-model-icon"><i class="${icon}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)}</small><span class="operations-select-wrap"><select class="pipeline-control" data-pipeline-path="${path}" ${geminiModelCatalogState.status === "loading" ? "disabled" : ""} aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;

@@ -144,12 +144,12 @@ export function mergePipelineConfig(raw: Partial<PipelineConfig> | null | undefi
   merged.filters.require_professional_signal = true;
   merged.decisions.marketing_requires_direct_evidence = true;
   merged.decisions.reject_pure_appointments = true;
-  // The automatic production pipeline has one cost-controlled AI runtime.
-  // Persisted settings from older clients cannot silently switch mass jobs
-  // back to a more expensive model or synchronous execution.
-  merged.ai.primary_model = GEMINI_PRIMARY_MODEL;
-  merged.ai.review_model = GEMINI_PRIMARY_MODEL;
-  merged.ai.batch_enabled = true;
+  // The model may be switched (Gemini or another provider with a stored price
+  // list), but never silently to a runtime that does not exist: the half-price
+  // batch queue is a Gemini feature, so any other provider runs synchronously.
+  if (!merged.ai.primary_model) merged.ai.primary_model = GEMINI_PRIMARY_MODEL;
+  if (!merged.ai.review_model) merged.ai.review_model = merged.ai.primary_model;
+  merged.ai.batch_enabled = merged.ai.primary_model.startsWith("gemini-");
   // These values describe hard runtime limits. Keeping them normalized here
   // prevents a stale database row or older frontend from advertising a value
   // that the worker does not actually execute.
