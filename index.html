@@ -181,6 +181,28 @@
   .simple-rule-card li b { display: block; font-size: .73rem; }
   .simple-rule-card li span { color: var(--muted); font-size: .69rem; line-height: 1.4; }
   @media (max-width: 720px) { .simple-rule-grid { grid-template-columns: 1fr; } }
+  .pipeline-stage-flow { display: flex; flex-direction: column; gap: .9rem; }
+  .pipeline-stage-card { padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: var(--shadow-dash); }
+  .pipeline-stage-card header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: .4rem; }
+  .pipeline-stage-card header b { font-size: .86rem; }
+  .pipeline-stage-card header small { display: block; margin-top: 2px; color: var(--brand); font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .pipeline-stage-card > p { color: var(--muted); font-size: .75rem; line-height: 1.5; }
+  .pipeline-detail-row { display: grid; grid-template-columns: 190px 1fr; gap: 10px; padding: .5rem 0; border-top: 1px solid var(--line); font-size: .72rem; }
+  .pipeline-detail-row > span { color: var(--muted); font-weight: 650; }
+  .pipeline-detail-row p { color: var(--ink); line-height: 1.5; }
+  .pipeline-terms { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pipeline-term { padding: 1px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-family: ui-monospace, monospace; font-size: .66rem; }
+  .pipeline-family-list { display: flex; flex-direction: column; gap: 6px; margin-top: .7rem; }
+  .pipeline-detail { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .pipeline-detail > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: .55rem .8rem; cursor: pointer; font-size: .76rem; }
+  .pipeline-detail > summary span { color: var(--brand); font-size: .66rem; font-weight: 700; text-transform: uppercase; }
+  .pipeline-detail[open] > summary { border-bottom: 1px solid var(--line); }
+  .pipeline-detail > p, .pipeline-detail > .pipeline-detail-row { padding: 0 .8rem; }
+  .pipeline-detail > p { margin: .55rem 0; color: var(--muted); font-size: .72rem; line-height: 1.5; }
+  .pipeline-detail .pipeline-detail-row { padding: .5rem .8rem; }
+  .pipeline-model-note { display: flex; gap: 8px; margin-top: 1rem; padding: .7rem .9rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); font-size: .72rem; }
+  .pipeline-model-note i { color: var(--brand); margin-top: 2px; }
+  @media (max-width: 720px) { .pipeline-detail-row { grid-template-columns: 1fr; gap: 2px; } }
   .simple-signal-why { margin: .45rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
   .simple-signal-evidence { display: block; margin: .55rem 0 0; padding: .5rem .7rem; border-left: 2px solid var(--brand); border-radius: 0 8px 8px 0; background: var(--surface); color: var(--ink); font-size: .72rem; line-height: 1.45; }
   .simple-rejected-item { padding: .7rem .85rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
@@ -1988,8 +2010,6 @@
         <div class="settings-header">
           <h2>Einstellungen</h2>
           <div class="toolbar-spacer"></div>
-          <button type="button" class="btn-secondary" id="btn-preview-pipeline" hidden><i class="fa-solid fa-flask"></i> Auswirkungen prüfen</button>
-          <button type="button" class="btn-primary" id="btn-save-pipeline-header" hidden><i class="fa-solid fa-floppy-disk"></i> Speichern</button>
           <div class="mode-switch" id="settings-mode-switch" role="group" aria-label="Einstellungen für Modus">
             <button type="button" class="mode-switch-btn" data-pipeline-mode="simple"><i class="fa-solid fa-wand-magic-sparkles"></i> Simple</button>
             <button type="button" class="mode-switch-btn is-active" data-pipeline-mode="advanced"><i class="fa-solid fa-sliders"></i> Advanced</button>
@@ -2156,7 +2176,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260801-1030b';
+import { initApp } from './app.js?v=20260801-1400';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

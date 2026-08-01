@@ -250,3 +250,24 @@ export function tokenSimilarity(left: string, right: string): { score: number; s
   const shared = [...a].filter((token) => b.has(token)).length;
   return { score: shared / new Set([...a, ...b]).size, shared };
 }
+
+// ---------------------------------------------------------------------------
+// Macht die Wortlisten hinter einem Muster lesbar, damit die Oberfläche zeigen
+// kann, worauf ein Filter wirklich prüft - statt nur den Variablennamen.
+// ---------------------------------------------------------------------------
+export function patternTerms(source: RegExp | string[] | undefined): string[] {
+  if (!source) return [];
+  if (Array.isArray(source)) return source.map((term) => String(term));
+  const raw = source.source
+    .replace(/^\\b\(/, "").replace(/\)\\b$/, "")
+    .replace(/^\(/, "").replace(/\)$/, "");
+  return raw.split("|")
+    .map((part) => part
+      .replace(/\\b/g, "")
+      .replace(/\\w\*/g, "…")
+      .replace(/\(\?:/g, "(")
+      .replace(/\\s/g, " ")
+      .replace(/\\/g, "")
+      .trim())
+    .filter((part) => part.length > 0);
+}

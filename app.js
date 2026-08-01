@@ -355,8 +355,7 @@ function cacheEls() {
   els.statusAccessWindow = document.getElementById("status-access-window");
   els.pipelineVersion = document.getElementById("pipeline-version");
   els.btnSavePipeline = document.getElementById("btn-save-pipeline");
-  els.btnSavePipelineHeader = document.getElementById("btn-save-pipeline-header");
-  els.btnPreviewPipeline = document.getElementById("btn-preview-pipeline");
+
   els.geminiCostStat = document.getElementById("gemini-cost-stat");
   els.geminiCostMonth = document.getElementById("gemini-cost-month");
   els.geminiCostToday = document.getElementById("gemini-cost-today");
@@ -747,13 +746,30 @@ function manifestSystemLabel(system) {
   return ({ source: "Quelle", crawler: "Crawler", browser: "Browser-Fallback", code: "Feste Regel", gemini: "Gemini", server: "Server", frontend: "Frontend" })[system] || system;
 }
 
+// Zeigt die tatsächlichen Wortlisten hinter einer Regel, wenn der Servercode
+// dafür eine Musterbibliothek mitliefert.
+function manifestRuleTerms(rule) {
+  const manifest = pipelineSettings?.rule_manifest || {};
+  const library = manifest.pattern_library || {};
+  const names = (manifest.rule_patterns || {})[rule.id] || (library[rule.technical] ? [rule.technical] : []);
+  const blocks = names
+    .map((name) => ({ name, terms: library[name] || [] }))
+    .filter((entry) => entry.terms.length > 0);
+  if (!blocks.length) return "";
+  const count = blocks.reduce((sum, entry) => sum + entry.terms.length, 0);
+  return `<details class="pipeline-detail" style="margin-top:.55rem">
+    <summary><b>Geprüfte Begriffe und Muster</b><span>${count}</span></summary>
+    ${blocks.map((entry) => `<div class="pipeline-detail-row"><span>${escapeHtml(entry.name)}</span><div class="pipeline-terms">${entry.terms.map((term) => `<code class="pipeline-term">${escapeHtml(term)}</code>`).join("")}</div></div>`).join("")}
+  </details>`;
+}
+
 function renderManifestRule(rule) {
   const state = rule.status === "inactive" ? "Aus" : rule.status === "conditional" ? "Bei Bedarf" : "Aktiv";
   const value = rule.value === undefined ? "" : `<span class="quality-tag ${rule.status === "inactive" ? "quality-tag--uncertain" : "quality-tag--reliable"}">${escapeHtml(typeof rule.value === "boolean" ? (rule.value ? "Ein" : "Aus") : String(rule.value))}</span>`;
   const systems = (rule.systems || []).map((system) => stageSystem(system, manifestSystemLabel(system))).join("");
   return `<article class="stage-card manifest-rule-card">
     <span class="stage-card-icon"><i class="${rule.locked ? "fa-solid fa-lock" : "fa-solid fa-sliders"}"></i></span>
-    <div><div class="logic-card-top"><b>${escapeHtml(rule.title)}</b>${value}</div><p>${escapeHtml(rule.explanation)}</p>${rule.technical ? `<small class="manifest-technical">Technisch: ${escapeHtml(rule.technical)}</small>` : ""}<div class="stage-system-row">${systems}</div></div>
+    <div><div class="logic-card-top"><b>${escapeHtml(rule.title)}</b>${value}</div><p>${escapeHtml(rule.explanation)}</p>${rule.technical ? `<small class="manifest-technical">Technisch: ${escapeHtml(rule.technical)}</small>` : ""}${manifestRuleTerms(rule)}<div class="stage-system-row">${systems}</div></div>
     <span class="rule-owner"><i class="fa-solid ${rule.locked ? "fa-lock" : "fa-pen"}"></i>${rule.locked ? "Feste Schutzregel" : `Konfigurierbar · ${state}`}</span>
   </article>`;
 }
@@ -3158,14 +3174,14 @@ function bindUi() {
       }
       // Save/preview live in the pinned bottom savebar of each panel, not the
       // header — keep the header actions hidden everywhere.
-      els.btnSavePipelineHeader.hidden = true;
-      els.btnPreviewPipeline.hidden = true;
+      // Speichern und Prüfen leben ausschliesslich in der Fussleiste des
+      // jeweiligen Bereichs, nie in der Kopfzeile.
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
       document.getElementById(`settings-panel-${panel}`)?.classList.add("show");
       if (panel !== "apify") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
       if (panel === "simple-pipeline") {
         void loadPipelineSettings()
-          .then(() => renderSimpleSettings(pipelineSettings?.config, pipelineSettings?.simple_models))
+          .then(() => renderSimpleSettings())
           .catch((error) => toast(error.message, "err"));
       }
       if (panel === "manual-review") void loadPipelineReview().catch((error) => toast(error.message, "err"));
@@ -3174,8 +3190,7 @@ function bindUi() {
   });
 
   els.btnSavePipeline.addEventListener("click", () => void savePipelineSettings().catch((error) => toast(error.message, "err")));
-  els.btnSavePipelineHeader.addEventListener("click", () => void savePipelineSettings().catch((error) => toast(error.message, "err")));
-  els.btnPreviewPipeline.addEventListener("click", () => void previewPipelineImpact().catch((error) => toast(error.message, "err")));
+
 
   els.settingsModal.addEventListener("click", (event) => {
     const syncDraft = () => { if (pipelineSettings) collectPipelineDraft(); };

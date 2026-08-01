@@ -18,6 +18,7 @@ import {
   evidenceExists,
   looksLikePaywallTeaser,
   normalizeMatchText,
+  patternTerms,
   selectClassifierContent,
 } from "./pipeline-core.ts";
 import {
@@ -184,9 +185,67 @@ export function buildPipelineRuleManifest(config: PipelineConfig) {
     technical?: string, status: PipelineRule["status"] = "active",
   ): PipelineRule => ({ id, title, explanation, systems, status, locked: true, technical });
 
+  // Die Oberfläche soll pro Regel die tatsächlichen Wortlisten aufklappen
+  // können, nicht nur den Namen der Variablen.
+  const patternLibrary: Record<string, string[]> = {
+    professionalSignalPatterns: [
+      ...patternTerms(MARKETING_CONTEXT_PATTERN),
+      ...patternTerms(RETAIL_CONTEXT_PATTERN),
+      ...patternTerms(CUSTOMER_CONTEXT_PATTERN),
+    ],
+    CAREER_CONTENT_TERMS: patternTerms(CAREER_CONTENT_TERMS),
+    ROLE_TERMS: patternTerms(ROLE_TERMS),
+    ROOTS_SALES_CONTEXT_PATTERN: patternTerms(ROOTS_SALES_CONTEXT_PATTERN),
+    OPERATIONAL_ONLY_PATTERN: patternTerms(OPERATIONAL_ONLY_PATTERN),
+    EXPLICIT_MARKETING_PROBLEM_PATTERN: patternTerms(EXPLICIT_MARKETING_PROBLEM_PATTERN),
+    RESOLVED_PROBLEM_PATTERN: patternTerms(RESOLVED_PROBLEM_PATTERN),
+    CUSTOMER_INSIGHT_SIGNAL_PATTERN: patternTerms(CUSTOMER_INSIGHT_SIGNAL_PATTERN),
+    INDUSTRIAL_OPERATIONS_PATTERN: patternTerms(INDUSTRIAL_OPERATIONS_PATTERN),
+    MARKETING_DEPTH_PATTERN: patternTerms(MARKETING_DEPTH_PATTERN),
+    CONCRETE_ACTIVATION_PATTERN: patternTerms(CONCRETE_ACTIVATION_PATTERN),
+    RESEARCH_CONTENT_PATTERN: patternTerms(RESEARCH_CONTENT_PATTERN),
+    RESEARCH_SUBSTANCE_PATTERN: patternTerms(RESEARCH_SUBSTANCE_PATTERN),
+    THIN_SPONSORSHIP_PATTERN: patternTerms(THIN_SPONSORSHIP_PATTERN),
+    TACTICAL_PRICE_PROMOTION_PATTERN: patternTerms(TACTICAL_PRICE_PROMOTION_PATTERN),
+    SALES_ONLY_REJECTION_PATTERN: patternTerms(SALES_ONLY_REJECTION_PATTERN),
+    MARKETING_RECOVERY_TOPIC_PATTERN: patternTerms(MARKETING_RECOVERY_TOPIC_PATTERN),
+    MARKETING_RECOVERY_VALUE_PATTERN: patternTerms(MARKETING_RECOVERY_VALUE_PATTERN),
+    VENDOR_PITCH_TERMS: patternTerms(/\b(demo|kostenlos testen|jetzt anfragen|unsere losung|unser produkt|whitepaper herunterladen|kontaktieren sie uns|request a demo|free trial|book a call|our solution|our platform)\b/),
+    AI_APPLICATION_TERMS: patternTerms(/\b(used|uses|using|deploy\w*|implement\w*|pilot|application|anwendung|eingesetzt|einfuhr\w*|automati\w*|optimier\w*)\b/),
+    EDITORIAL_TEXT_REQUIREMENTS: [
+      `mindestens ${EDITORIAL_TEXT_REQUIREMENTS.minimumCharacters} Zeichen`,
+      `mindestens ${EDITORIAL_TEXT_REQUIREMENTS.minimumSentences} Sätze`,
+      `mindestens ${EDITORIAL_TEXT_REQUIREMENTS.minimumWords} Wörter`,
+    ],
+    NON_EDITORIAL_URL_PARTS: [
+      "/search", "/suche", "/tag/", "/category/", "/kategorie/", "/author/",
+      "/newsletter", "/abo", "/shop", "/mediadaten", "/impressum", "/datenschutz",
+      "/kontakt", "/jobs", "/karriere", "/stellenangebote", "/faq", "/hilfe",
+    ],
+  };
+
   return {
     version: PIPELINE_RULE_MANIFEST_VERSION,
     prompt_version: CLASSIFIER_PROMPT_VERSION,
+    pattern_library: patternLibrary,
+    // Ordnet jeder Regel die Wortlisten zu, die sie tatsächlich prüft, damit die
+    // Oberfläche sie aufklappen kann statt nur den Variablennamen zu zeigen.
+    rule_patterns: {
+      "prefilter.text_quality": ["EDITORIAL_TEXT_REQUIREMENTS"],
+      "prefilter.non_articles": ["CAREER_CONTENT_TERMS", "NON_EDITORIAL_URL_PARTS"],
+      "prefilter.vendor_pitch": ["VENDOR_PITCH_TERMS"],
+      "prefilter.professional_signal": ["professionalSignalPatterns"],
+      "prefilter.weak_news": ["THIN_SPONSORSHIP_PATTERN", "TACTICAL_PRICE_PROMOTION_PATTERN"],
+      "gemini.evidence": ["MARKETING_DEPTH_PATTERN", "CONCRETE_ACTIVATION_PATTERN"],
+      "validation.topic_context": ["CUSTOMER_INSIGHT_SIGNAL_PATTERN", "MARKETING_RECOVERY_TOPIC_PATTERN"],
+      "validation.operations_guard": ["INDUSTRIAL_OPERATIONS_PATTERN", "OPERATIONAL_ONLY_PATTERN"],
+      "validation.ai_application": ["AI_APPLICATION_TERMS"],
+      "validation.subsector_transfer": ["MARKETING_RECOVERY_VALUE_PATTERN"],
+      "routing.marketing": ["RESEARCH_CONTENT_PATTERN", "RESEARCH_SUBSTANCE_PATTERN"],
+      "routing.sales": ["ROOTS_SALES_CONTEXT_PATTERN", "EXPLICIT_MARKETING_PROBLEM_PATTERN", "RESOLVED_PROBLEM_PATTERN"],
+      "routing.buying_center": ["ROLE_TERMS"],
+      "output.manual_sales": ["SALES_ONLY_REJECTION_PATTERN"],
+    } as Record<string, string[]>,
     scoring_version: RELEVANCE_SCORING_VERSION,
     source_of_truth: "Supabase Edge Function + aktive Pipeline-Konfiguration",
     systems: {

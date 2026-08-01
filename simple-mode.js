@@ -342,32 +342,37 @@ async function loadArchive(append = false) {
 
 // Einstellungen: was einstellbar ist, kommt aus der Konfiguration; die Regeln
 // selbst sind Servercode und werden nur gezeigt.
-export function renderSimpleSettings(config, models) {
+export function renderSimpleSettings() {
   if (!els.settingsContent) return;
-  const rules = simpleRules;
-  if (!rules) {
-    void loadRules().then(() => renderSimpleSettings(config, models));
+  if (!simpleRules) {
+    void loadRules().then(() => renderSimpleSettings());
     return;
   }
-  const modelOptions = (models || rules.models || [])
-    .map((model) => `<option value="${esc(model.id)}" ${model.id === config?.ai?.simple_model ? "selected" : ""}>${esc(model.label || model.id)}</option>`).join("");
-  const lane = (entry) => `
-    <div class="simple-rule-card">
-      <h4>${esc(entry.label)}</h4>
-      <ul>${entry.families.map((family) => `<li><b>${escText(family.label)}</b><span>${escText(family.definition)}${family.domains ? ` (nur ${esc(family.domains.join(", "))})` : ""}</span></li>`).join("")}</ul>
-    </div>`;
+  const rules = simpleRules;
+  const chips = (terms) => (terms || []).map((term) => `<code class="pipeline-term">${escText(term)}</code>`).join("");
+  const familyBlock = (family) => `
+    <details class="pipeline-detail">
+      <summary><b>${escText(family.label)}</b><span>${escText(family.lane === "sales" ? "Sales" : "Marketing")}</span></summary>
+      <p>${escText(family.definition)}</p>
+      <div class="pipeline-detail-row"><span>Kombination</span><p>${escText(family.kombination)}</p></div>
+      ${family.domains ? `<div class="pipeline-detail-row"><span>Nur Quelle</span><p>${escText(family.domains.join(", "))}</p></div>` : ""}
+      <div class="pipeline-detail-row"><span>Auslöser (${(family.trigger_terms || []).length})</span><div class="pipeline-terms">${chips(family.trigger_terms)}</div></div>
+      ${(family.context_terms || []).length ? `<div class="pipeline-detail-row"><span>Kontextpflicht (${family.context_terms.length})</span><div class="pipeline-terms">${chips(family.context_terms)}</div></div>` : ""}
+      ${(family.exclude_title_terms || []).length ? `<div class="pipeline-detail-row"><span>Ausschluss im Titel (${family.exclude_title_terms.length})</span><div class="pipeline-terms">${chips(family.exclude_title_terms)}</div></div>` : ""}
+    </details>`;
+  const systemLabel = { code: "Deterministischer Code", gemini: "KI-Prüfung", server: "Serverseitige Validierung" };
+  const stageBlock = (stage) => `
+    <section class="pipeline-stage-card">
+      <header><div><b>${escText(stage.title)}</b><small>${escText(systemLabel[stage.system] || stage.system)}</small></div></header>
+      <p>${escText(stage.copy)}</p>
+      ${(stage.details || []).map((detail) => `<div class="pipeline-detail-row"><span>${escText(detail.label)}</span><p>${escText(detail.value)}</p></div>`).join("")}
+      ${(stage.families || []).length ? `<div class="pipeline-family-list">${stage.families.map(familyBlock).join("")}</div>` : ""}
+    </section>`;
   els.settingsContent.innerHTML = `
-    <div class="operations-card">
-      <div class="operations-card-head"><div><span>Modell &amp; Umfang</span><h4>${esc(rules.model_label || rules.model)}</h4><p>Prompt ${esc(rules.version)} · maximal ${esc(rules.prompt_chars)} Zeichen Artikeltext je Prüfung · ${esc(rules.ai_calls_per_batch)} KI-Prüfungen pro Aufruf · Mindestlänge ${esc(rules.min_text_chars)} Zeichen · Mindestsicherheit ${esc(rules.min_confidence)} · Mindestnutzwert ${esc(rules.min_score)}</p></div><i class="fa-solid fa-wand-magic-sparkles operations-card-symbol"></i></div>
-      <div class="operations-model-grid">
-        <label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid fa-bolt"></i></span><span class="operations-model-copy"><b>Modell für den einfachen Modus</b><small>Prüft die gespeicherten Artikel. Kosten laufen in dasselbe Kostenledger.</small><span class="operations-select-wrap"><select class="pipeline-control" data-pipeline-path="ai.simple_model" aria-label="Modell für den einfachen Modus">${modelOptions}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>
-      </div>
-      <div class="pipeline-savebar operations-savebar"><span>Gilt für den nächsten Lauf.</span><button class="btn-primary" type="button" data-pipeline-save><i class="fa-solid fa-floppy-disk"></i> Änderungen speichern</button></div>
-    </div>
-    <div class="pipeline-section-head" style="margin-top:1.4rem"><span>Signalfamilien</span><h3>Was gesucht wird</h3><p>Ein Treffer erlaubt nur die KI-Prüfung; das Signal entsteht erst mit wörtlicher Evidenz.</p></div>
-    <div class="simple-rule-grid">${rules.lanes.map(lane).join("")}</div>
-    <div class="pipeline-section-head" style="margin-top:1.4rem"><span>Nicht abschaltbar</span><h3>Guardrails</h3></div>
-    <div class="simple-rule-card"><ul>${rules.guardrails.map((rule) => `<li><b>${escText(rule.label)}</b><span>${escText(rule.description)}</span></li>`).join("")}</ul></div>`;
+    <div class="pipeline-stage-flow">${(rules.stages || []).map(stageBlock).join("")}</div>
+    <div class="pipeline-section-head" style="margin-top:1.4rem"><span>Nicht abschaltbar</span><h3>Guardrails</h3><p>Diese Regeln stehen im Servercode und lassen sich nicht über die Oberfläche deaktivieren.</p></div>
+    <div class="simple-rule-card"><ul>${rules.guardrails.map((rule) => `<li><b>${escText(rule.label)}</b><span>${escText(rule.description)}</span></li>`).join("")}</ul></div>
+    <p class="pipeline-model-note"><i class="fa-solid fa-circle-info"></i> Das Modell für den einfachen Modus wird unter <b>Kosten &amp; Betrieb</b> eingestellt. Aktiv: ${escText(rules.model_label || rules.model)}.</p>`;
 }
 
 export function showSimpleView(view) {

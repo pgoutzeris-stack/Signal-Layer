@@ -27,6 +27,7 @@ import {
   clampConfidence,
   evidenceExists,
   normalizeMatchText,
+  patternTerms,
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
@@ -764,6 +765,88 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
 // ---------------------------------------------------------------------------
 // Rule overview for the UI (same source of truth as the executed rules)
 // ---------------------------------------------------------------------------
+function familyDetail(family: SimpleFamily) {
+  return {
+    id: family.id,
+    label: family.label,
+    definition: family.definition,
+    lane: family.lane,
+    trigger_terms: patternTerms(family.trigger),
+    context_terms: patternTerms(family.context),
+    exclude_title_terms: patternTerms(family.excludeTitle),
+    domains: family.domains || null,
+    kombination: family.context
+      ? "Auslöser UND Kontext müssen im selben Artikel stehen"
+      : "Auslöser genügt",
+  };
+}
+
+// Fünf Stufen, damit die Oberfläche den Ablauf genauso aufklappen kann wie im
+// Advanced-Modus - inklusive der Wörter, auf die wirklich geprüft wird.
+export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
+  const option = simpleModelOption(activeModel);
+  return [
+    {
+      id: "bestand",
+      title: "1 · Artikelauswahl",
+      system: "code",
+      copy: `Kein Crawl. Der Lauf nimmt die neuesten ${SIMPLE_ARTICLE_LIMIT.toLocaleString("de-DE")} gespeicherten Artikel als Pool.`,
+      details: [
+        { label: "Pool", value: `${SIMPLE_ARTICLE_LIMIT.toLocaleString("de-DE")} neueste Artikel nach Crawl-Zeitpunkt` },
+        { label: "KI-Prüfungen je Aufruf", value: String(SIMPLE_AI_CALLS_PER_BATCH) },
+        { label: "Start", value: "Backend-Lauf; die Oberfläche zeigt nur den Fortschritt" },
+      ],
+    },
+    {
+      id: "bereinigung",
+      title: "2 · Bereinigung & Textprüfung",
+      system: "code",
+      copy: "Der gespeicherte Text wird geprüft. Artikel, deren Feed nur die Überschrift lieferte, werden einmal direkt nachgeladen.",
+      details: [
+        { label: "Mindestlänge", value: `${SIMPLE_MIN_TEXT_CHARS} Zeichen Artikeltext` },
+        { label: "Nachladen", value: "Ein direkter Abruf der Originalseite, keine KI" },
+        { label: "Textmenge für die Prüfung", value: `maximal ${SIMPLE_PROMPT_CHARS.toLocaleString("de-DE")} Zeichen` },
+      ],
+    },
+    {
+      id: "vorfilter",
+      title: "3 · Vorfilter (kostenlos)",
+      system: "code",
+      copy: "Signalmuster entscheiden ausschliesslich, ob das Modell den Artikel sehen darf. Ein Treffer erzeugt nie selbst ein Signal.",
+      families: SIMPLE_FAMILIES.map(familyDetail),
+      details: [
+        { label: "Sensible Themen", value: "Im Titel: Artikel komplett aus. Im Text: nur die bild.de-News-Spur aus." },
+        { label: "Sensibles Vokabular", value: patternTerms(SIMPLE_SENSITIVE_PATTERN).slice(0, 40).join(", ") + " …" },
+      ],
+    },
+    {
+      id: "ki",
+      title: "4 · KI-Prüfung",
+      system: "gemini",
+      copy: `Ein Aufruf an ${option.label}. Das Modell darf nur eine der vorgefilterten Familien bestätigen und muss ein wörtliches Zitat liefern.`,
+      details: [
+        { label: "Modell", value: `${option.label} (in Kosten & Betrieb einstellbar)` },
+        { label: "Antwortform", value: "Ein JSON-Objekt: Spur, Familie, Konfidenz, Nutzwert, Zitat, Überschrift, Begründung, Zusammenfassung, Artikeltyp, Sprache" },
+        { label: "Zusatz nur bei viralen News", value: "Das ROOTS-Leistungsportfolio wird in denselben Aufruf gelegt; ohne benannte Leistung und Anschlusssatz entsteht kein Signal." },
+        { label: "Durchläufe", value: "Genau einer je Artikel, keine zweite Runde" },
+      ],
+    },
+    {
+      id: "validierung",
+      title: "5 · Validierung & Ergebnis",
+      system: "server",
+      copy: "Der Server prüft die Antwort nach, bevor ein Signal entsteht.",
+      details: [
+        { label: "Zitatprüfung", value: "Das Zitat muss wortgleich im Artikel stehen, sonst verworfen" },
+        { label: "Familienbindung", value: "Nur vom Vorfilter bestätigte Familien werden akzeptiert" },
+        { label: "Mindestsicherheit", value: String(SIMPLE_MIN_CONFIDENCE) },
+        { label: "Mindestnutzwert", value: String(SIMPLE_MIN_SCORE) },
+        { label: "Ablehnungsgründe", value: Object.values(SIMPLE_REJECT_LABELS).join(" · ") },
+      ],
+    },
+  ];
+}
+
 export function simpleRuleManifest(activeModel: string = SIMPLE_MODEL) {
   return {
     version: SIMPLE_PIPELINE_VERSION,
@@ -794,5 +877,6 @@ export function simpleRuleManifest(activeModel: string = SIMPLE_MODEL) {
     ],
     guardrails: SIMPLE_GUARDRAILS,
     reject_labels: SIMPLE_REJECT_LABELS,
+    stages: simpleStageManifest(activeModel),
   };
 }
