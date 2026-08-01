@@ -65,7 +65,7 @@ export const SIMPLE_ARTICLE_LIMIT = 1_000;
 export const SIMPLE_MAX_ARTICLE_LIMIT = 3_000;
 // Ein Aufruf darf viele Artikel vorfiltern, aber nur wenige an die KI geben.
 export const SIMPLE_BATCH_SIZE = 40;
-export const SIMPLE_AI_CALLS_PER_BATCH = 8;
+export const SIMPLE_AI_CALLS_PER_BATCH = 5;
 // Kürzere Fachmeldungen sind oft vollständig; unter dieser Grenze bleibt
 // kein Satz übrig, aus dem sich ein Zitat belegen liesse.
 export const SIMPLE_MIN_TEXT_CHARS = 300;

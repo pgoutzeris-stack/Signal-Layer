@@ -5118,6 +5118,11 @@ Deno.serve(async (req: Request) => {
         let signals = 0;
         let aiCalls = 0;
         let consumed = 0;
+        // Ein Aufruf der Function hat ein hartes Zeitlimit. Ein Reasoning-Modell
+        // braucht pro Artikel gut 25 Sekunden, deshalb entscheidet die Zeit,
+        // nicht eine feste Zahl von Prüfungen, wann das Paket endet.
+        const batchStartedAt = Date.now();
+        const BATCH_TIME_BUDGET_MS = 85_000;
         // The prefilter is free, so a single invocation may look at many
         // articles; only the AI budget is capped. The cursor advances by the
         // articles actually looked at, so the pool can be much larger than a
@@ -5127,6 +5132,7 @@ Deno.serve(async (req: Request) => {
           .filter(Boolean);
         for (const article of ordered) {
           if (aiCalls >= SIMPLE_AI_CALLS_PER_BATCH) break;
+          if (aiCalls > 0 && Date.now() - batchStartedAt > BATCH_TIME_BUDGET_MS) break;
           consumed += 1;
           const prepared = await ensureSimpleArticleText(admin, article);
           const result = await classifySimpleArticle(deps, prepared);
@@ -5146,7 +5152,7 @@ Deno.serve(async (req: Request) => {
               }
             }
           }
-          rows.push({
+          const row = {
             article_id: result.article_id,
             run_id: run.id,
             status: result.status,
@@ -5169,7 +5175,16 @@ Deno.serve(async (req: Request) => {
             model: result.model,
             prompt_version: result.prompt_version,
             updated_at: new Date().toISOString(),
-          });
+          };
+          rows.push(row);
+          await admin.schema("signal_layer").from("simple_signals").upsert([row], { onConflict: "article_id" });
+          await admin.schema("signal_layer").from("simple_runs").update({
+            cursor: run.cursor + consumed,
+            processed_count: run.processed_count + rows.length,
+            signal_count: run.signal_count + signals,
+            rejected_count: run.rejected_count + (rows.length - signals),
+            last_progress_at: new Date().toISOString(),
+          }).eq("id", run.id);
         }
         // A batch whose AI calls all failed technically (spending cap, empty
         // balance, rate limit, timeout) must not look like a finished check.
@@ -5194,12 +5209,6 @@ Deno.serve(async (req: Request) => {
             finished_at: new Date().toISOString(),
           }).eq("id", run.id);
           return corsResponse(origin, { run: { ...run, status: "error" }, done: true, ai_unavailable: true });
-        }
-
-        if (rows.length > 0) {
-          const { error: upsertError } = await admin.schema("signal_layer").from("simple_signals")
-            .upsert(rows, { onConflict: "article_id" });
-          if (upsertError) return errorResponse(origin, upsertError.message, 500);
         }
 
         const cursor = run.cursor + Math.max(consumed, 1);
