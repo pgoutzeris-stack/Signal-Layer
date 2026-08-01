@@ -1869,8 +1869,9 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
         { role: "user", content: options.prompt + schemaHint },
       ],
       ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
-      // Reasoning tokens share this budget, so the answer needs clear headroom.
-      max_tokens: Math.max(options.maxOutputTokens, 3_000),
+      // Reasoning tokens share this budget with the answer, so the schema needs
+      // extra headroom on top of the configured answer size.
+      max_tokens: Math.min(Math.max(options.maxOutputTokens, 3_000) + 2_500, 8_192),
       temperature: options.temperature ?? 0,
       stream: false,
     })
