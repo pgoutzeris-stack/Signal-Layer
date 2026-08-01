@@ -4818,14 +4818,25 @@ Deno.serve(async (req: Request) => {
             updated_at: new Date().toISOString(),
           });
         }
-        // A batch that failed only for technical reasons (spending cap, rate
-        // limit, timeout) must not look like a finished check. Stop the run so
-        // the articles stay unprocessed and a later run picks them up again.
-        const technicalFailures = rows.filter((row) => row.reject_reason === "modellfehler").length;
-        if (rows.length > 0 && technicalFailures === rows.length) {
+        // A batch whose AI calls all failed technically (spending cap, empty
+        // balance, rate limit, timeout) must not look like a finished check.
+        // Deterministic prefilter rejections are real results and are ignored
+        // here - otherwise a single filtered article would hide the outage.
+        const AI_DECIDED = new Set([
+          "modell_ohne_signal", "familie_nicht_erlaubt", "evidenz_fehlt", "sensibles_zitat", "zu_unsicher",
+        ]);
+        const aiAttempts = rows.filter((row) => row.status === "signal"
+          || row.reject_reason === "modellfehler"
+          || AI_DECIDED.has(String(row.reject_reason)));
+        if (aiAttempts.length > 0 && aiAttempts.every((row) => row.reject_reason === "modellfehler")) {
+          const deterministicRows = rows.filter((row) => row.reject_reason !== "modellfehler");
+          if (deterministicRows.length > 0) {
+            await admin.schema("signal_layer").from("simple_signals")
+              .upsert(deterministicRows, { onConflict: "article_id" });
+          }
           await admin.schema("signal_layer").from("simple_runs").update({
             status: "error",
-            error_message: "KI-Prüfung nicht möglich (siehe ai_usage_events). Lauf gestoppt, keine Artikel bewertet.",
+            error_message: "KI-Prüfung nicht möglich (siehe ai_usage_events). Lauf gestoppt, die betroffenen Artikel bleiben unbewertet.",
             last_progress_at: new Date().toISOString(),
             finished_at: new Date().toISOString(),
           }).eq("id", run.id);
