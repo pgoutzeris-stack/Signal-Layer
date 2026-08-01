@@ -159,12 +159,28 @@
   .mode-switch-btn.is-active:hover { color: #fff; }
 
   /* ---------- Einfacher Modus ---------- */
-  body.mode-simple #app-nav { display: none; }
+  /* Der Modus entscheidet, welche Variante einer Ansicht sichtbar ist. Die
+     Seitenleiste bleibt in beiden Modi gleich. */
   body.mode-simple #view-dashboard,
   body.mode-simple #view-results,
   body.mode-simple #view-archive { display: none !important; }
-  body.mode-simple #view-simple { display: block; }
-  body:not(.mode-simple) #view-simple { display: none !important; }
+  body:not(.mode-simple) #view-simple-dashboard,
+  body:not(.mode-simple) #view-simple-results,
+  body:not(.mode-simple) #view-simple-archive { display: none !important; }
+  .simple-dash-run { margin-top: 1.2rem; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: var(--shadow-dash); font-size: .74rem; color: var(--muted); }
+  .simple-dash-run b { color: var(--ink); }
+  .simple-archive-reason { display: flex; gap: 6px; margin: .45rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.4; }
+  .simple-archive-reason i { flex: 0 0 auto; margin-top: 1px; color: var(--brand); }
+  body.mode-simple .settings-nav-item[data-settings-mode="advanced"] { display: none; }
+  body:not(.mode-simple) .settings-nav-item[data-settings-mode="simple"] { display: none; }
+  .settings-toolbar .mode-switch, .modal-box.large .mode-switch { transform: scale(.92); }
+  .simple-rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+  .simple-rule-card { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .simple-rule-card h4 { font-size: .8rem; margin-bottom: .55rem; }
+  .simple-rule-card ul { list-style: none; display: flex; flex-direction: column; gap: .5rem; }
+  .simple-rule-card li b { display: block; font-size: .73rem; }
+  .simple-rule-card li span { color: var(--muted); font-size: .69rem; line-height: 1.4; }
+  @media (max-width: 720px) { .simple-rule-grid { grid-template-columns: 1fr; } }
   .simple-signal-why { margin: .45rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
   .simple-signal-evidence { display: block; margin: .55rem 0 0; padding: .5rem .7rem; border-left: 2px solid var(--brand); border-radius: 0 8px 8px 0; background: var(--surface); color: var(--ink); font-size: .72rem; line-height: 1.45; }
   .simple-rejected-item { padding: .7rem .85rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
@@ -1887,8 +1903,26 @@
           <button type="button" class="btn-secondary archive-load-more" id="archive-load-more" hidden><i class="fa-solid fa-plus"></i> Weitere Artikel laden</button>
         </section>
 
-        <!-- Einfacher Modus: eigene Pipeline über bereits gespeicherte Artikel -->
-        <section class="app-view" id="view-simple">
+        <!-- Einfacher Modus: Dashboard -->
+        <section class="app-view" id="view-simple-dashboard">
+          <div class="view-header"><div><h2>Dashboard</h2></div></div>
+          <div class="overview-grid">
+            <article class="overview-card"><i class="fa-solid fa-bullhorn"></i><span>Marketing-Signale</span><b id="simple-dash-marketing">–</b></article>
+            <article class="overview-card"><i class="fa-solid fa-chart-line"></i><span>Sales-Signale</span><b id="simple-dash-sales">–</b></article>
+            <article class="overview-card overview-card--archive"><i class="fa-solid fa-filter-circle-xmark"></i><span>Aussortierte Artikel</span><b id="simple-dash-rejected">–</b></article>
+          </div>
+          <section class="simple-dash-run" id="simple-dash-run"></section>
+        </section>
+
+        <!-- Einfacher Modus: Archiv -->
+        <section class="app-view" id="view-simple-archive">
+          <div class="view-header"><div><h2>Archiv <span class="track-count" id="simple-archive-count">0</span></h2><p>Artikel, die der einfache Modus geprüft und aussortiert hat, mit Begründung.</p></div></div>
+          <div class="archive-list" id="simple-archive-list"><div class="roots-loader"></div></div>
+          <button type="button" class="btn-secondary archive-load-more" id="simple-archive-load-more" hidden><i class="fa-solid fa-plus"></i> Weitere Artikel laden</button>
+        </section>
+
+        <!-- Einfacher Modus: Ergebnisse -->
+        <section class="app-view" id="view-simple-results">
           <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
             <span class="signal-toolbar-label"><i class="fa-solid fa-sliders"></i> Ansicht</span>
             <div class="signal-toolbar-controls">
@@ -1933,16 +1967,19 @@
         <div class="settings-nav-item active" data-panel="apify">
           <i class="fa-solid fa-globe"></i> Quellen
         </div>
-        <div class="settings-nav-item" data-panel="pipeline-overview">
+        <div class="settings-nav-item" data-panel="pipeline-overview" data-settings-mode="advanced">
           <i class="fa-solid fa-route"></i> Pipeline
         </div>
-        <div class="settings-nav-item" data-panel="manual-review">
+        <div class="settings-nav-item" data-panel="simple-pipeline" data-settings-mode="simple">
+          <i class="fa-solid fa-route"></i> Pipeline
+        </div>
+        <div class="settings-nav-item" data-panel="manual-review" data-settings-mode="advanced">
           <i class="fa-solid fa-user-check"></i> Manuelle Prüfung
         </div>
         <div class="settings-nav-item" data-panel="operations">
           <i class="fa-solid fa-wave-square"></i> Kosten &amp; Betrieb
         </div>
-        <div class="settings-nav-item" data-panel="diagnostics">
+        <div class="settings-nav-item" data-panel="diagnostics" data-settings-mode="advanced">
           <i class="fa-solid fa-file-code"></i> Systemdiagnose
         </div>
       </nav>
@@ -1953,6 +1990,10 @@
           <div class="toolbar-spacer"></div>
           <button type="button" class="btn-secondary" id="btn-preview-pipeline" hidden><i class="fa-solid fa-flask"></i> Auswirkungen prüfen</button>
           <button type="button" class="btn-primary" id="btn-save-pipeline-header" hidden><i class="fa-solid fa-floppy-disk"></i> Speichern</button>
+          <div class="mode-switch" id="settings-mode-switch" role="group" aria-label="Einstellungen für Modus">
+            <button type="button" class="mode-switch-btn" data-pipeline-mode="simple"><i class="fa-solid fa-wand-magic-sparkles"></i> Simple</button>
+            <button type="button" class="mode-switch-btn is-active" data-pipeline-mode="advanced"><i class="fa-solid fa-sliders"></i> Advanced</button>
+          </div>
           <button type="button" class="close-fs-btn" id="btn-settings-close"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
@@ -2026,6 +2067,13 @@
 
         <div class="settings-panel pipeline-panel" id="settings-panel-operations">
           <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Laufender Betrieb</span><h3>Kosten &amp; Betrieb</h3><p>Kosten im Blick behalten und festlegen, welche KI-Modelle neue Artikel prüfen.</p></div><div id="operations-content"></div></div>
+        </div>
+
+        <div class="settings-panel pipeline-panel" id="settings-panel-simple-pipeline">
+          <div class="pipeline-scroll">
+            <div class="pipeline-section-head"><span>Einfacher Modus</span><h3>Pipeline &amp; Regeln</h3><p>Zwei Stufen: ein kostenloser Vorfilter entscheidet, welche Artikel das Modell sehen darf, danach bestätigt das Modell genau eine Signalfamilie mit wörtlichem Zitat. Kein Crawl, keine Batch-Verarbeitung.</p></div>
+            <div id="simple-settings-content"><div class="keyword-empty">Wird geladen…</div></div>
+          </div>
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-diagnostics">
@@ -2108,7 +2156,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260801-1030';
+import { initApp } from './app.js?v=20260801-1030b';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

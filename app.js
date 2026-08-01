@@ -1,7 +1,7 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode } from "./simple-mode.js";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js";
 
 let sb = null;
 let sources = [];
@@ -1664,7 +1664,7 @@ function mountStatusBar(simple) {
   // Es gibt genau eine Statusleiste. Sie wandert in die Toolbar des aktiven
   // Modus, damit Pille, Popover, Fehler- und Kostenpanel überall identisch sind.
   const wrap = document.querySelector(".crawl-trigger-wrap");
-  const toolbar = document.querySelector(simple ? "#view-simple .signal-toolbar" : "#view-results .signal-toolbar");
+  const toolbar = document.querySelector(simple ? "#view-simple-results .signal-toolbar" : "#view-results .signal-toolbar");
   if (wrap && toolbar && wrap.parentElement !== toolbar) toolbar.appendChild(wrap);
 }
 
@@ -1688,11 +1688,38 @@ function applyPipelineMode(mode, { persist = true } = {}) {
     els.crawlStatusKicker.textContent = "Letzter Crawl";
     void loadLastRun();
   }
+  // Dieselbe Stelle in der Seitenleiste bleibt aktiv, nur eben in der Variante
+  // des jetzt gewählten Modus.
+  switchAppView(activeAppView);
+  syncSettingsPanelForMode(simple);
 }
 
+// Einstellungen: im einfachen Modus die einfache Pipeline zeigen, sonst die
+// vollständige. Geteilte Bereiche (Quellen, Kosten) bleiben stehen.
+function syncSettingsPanelForMode(simple) {
+  const nav = els.settingsNav;
+  if (!nav) return;
+  const activeItem = nav.querySelector(".settings-nav-item.active");
+  const activePanel = activeItem?.dataset.panel;
+  const advancedOnly = new Set(["pipeline-overview", "manual-review", "diagnostics"]);
+  const needsSwitch = simple ? advancedOnly.has(activePanel) : activePanel === "simple-pipeline";
+  if (!needsSwitch) return;
+  const target = simple ? "simple-pipeline" : "pipeline-overview";
+  nav.querySelector(`.settings-nav-item[data-panel="${target}"]`)?.click();
+}
+
+let activeAppView = "dashboard";
+
 function switchAppView(view) {
+  activeAppView = view;
+  const simple = document.body.classList.contains("mode-simple");
   els.appNav.querySelectorAll("[data-app-view]").forEach((button) => button.classList.toggle("active", button.dataset.appView === view));
-  els.appViews.forEach((section) => section.classList.toggle("show", section.id === `view-${view}`));
+  const activeId = simple ? `view-simple-${view}` : `view-${view}`;
+  els.appViews.forEach((section) => section.classList.toggle("show", section.id === activeId));
+  if (simple) {
+    showSimpleView(view);
+    return;
+  }
   if (view === "archive" && !archiveArticles.length) void loadArchive();
 }
 
@@ -1915,13 +1942,18 @@ function renderDetailTags(article) {
   ].join("");
 }
 
-async function openArticleDetail(articleId) {
+// Die Detailansicht ist in beiden Modi dieselbe; nur die Datenquelle wechselt.
+function detailActionForMode() {
+  return document.body.classList.contains("mode-simple") ? "get_simple_article_detail" : "get_article_detail";
+}
+
+async function openArticleDetail(articleId, { action = detailActionForMode() } = {}) {
   if (!articleId) return;
   els.articleDetailModal.classList.add("show");
   document.body.style.overflow = "hidden";
   els.articleDetailContent.innerHTML = LOADER_HTML;
   try {
-    const { article } = await callApi("get_article_detail", { article_id: articleId });
+    const { article } = await callApi(action, { article_id: articleId });
     const source = Array.isArray(article.source) ? article.source[0] : article.source;
     const status = article.classification_status || "legacy";
     const reasons = article.rejection_reasons || [];
@@ -2196,7 +2228,7 @@ async function openTechnicalAudit(articleId) {
   els.technicalAuditModal.classList.add("show");
   els.technicalAuditContent.innerHTML = LOADER_HTML;
   try {
-    const { article } = await callApi("get_article_detail", { article_id: articleId });
+    const { article } = await callApi(detailActionForMode(), { article_id: articleId });
     const audit = article.classification_audit || {};
     const trace = article.technical_trace || {};
     const usage = trace.usage_events || [];
@@ -2294,6 +2326,7 @@ function formatUrlDisplay(urlStr) {
 }
 
 function openSettings() {
+  syncSettingsPanelForMode(document.body.classList.contains("mode-simple"));
   els.settingsModal.classList.add("show");
   // `sources` may already be populated at app start (for the filter menus), so
   // always render the table; only hit the network when we have nothing yet.
@@ -3016,9 +3049,11 @@ function bindUi() {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);
   });
-  document.getElementById("mode-switch")?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-pipeline-mode]");
-    if (button) applyPipelineMode(button.dataset.pipelineMode);
+  ["mode-switch", "settings-mode-switch"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-pipeline-mode]");
+      if (button) applyPipelineMode(button.dataset.pipelineMode);
+    });
   });
   // Article-type filter is server-side (full archive), so re-fetch on change.
   // The multi-select toggles already updated archiveViewState.articleTypes.
@@ -3127,6 +3162,11 @@ function bindUi() {
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
       document.getElementById(`settings-panel-${panel}`)?.classList.add("show");
       if (panel !== "apify") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
+      if (panel === "simple-pipeline") {
+        void loadPipelineSettings()
+          .then(() => renderSimpleSettings(pipelineSettings?.config, pipelineSettings?.simple_models))
+          .catch((error) => toast(error.message, "err"));
+      }
       if (panel === "manual-review") void loadPipelineReview().catch((error) => toast(error.message, "err"));
       if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
     });
@@ -3366,6 +3406,7 @@ export function initApp(client) {
     initSimpleMode({
       callApi, toast, escapeHtml, escapeText, openExternalUrl,
       setSimpleRunStatus, enhanceHeaderSelects, pruneSelection,
+      openArticleDetail, technicalAuditPill,
       articleTypeLabels: ARTICLE_TYPE_LABELS, viewState: simpleViewState,
     });
     applyPipelineMode(storedPipelineMode(), { persist: false });

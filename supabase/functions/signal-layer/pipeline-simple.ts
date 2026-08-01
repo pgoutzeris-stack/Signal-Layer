@@ -75,6 +75,13 @@ export const SIMPLE_PROMPT_CHARS = 3_500;
 // The Marketing news lane is deliberately restricted to one publisher.
 export const SIMPLE_NEWS_DOMAINS = ["bild.de"];
 
+// Bewusst dieselben IDs wie im Advanced-Modus, damit Detailansicht und Filter
+// mit einer Beschriftungstabelle auskommen.
+export const SIMPLE_ARTICLE_TYPES = [
+  "news", "analysis", "interview", "opinion", "study", "report", "case_study",
+  "press_release", "company_update", "event_report", "other",
+] as const;
+
 export type SimpleLane = "sales" | "marketing";
 
 export type SimpleFamily = {
@@ -307,6 +314,9 @@ export type SimpleAiAnswer = {
   headline_de: string;
   why_de: string;
   company: string;
+  summary_de: string;
+  article_type: string;
+  language: string;
 };
 
 export function buildSimplePrompt(article: SimpleArticleInput, families: SimpleFamily[]): string {
@@ -330,10 +340,12 @@ score ist der Nutzwert für ROOTS von 0 bis 100: 80+ nur bei konkretem, belegtem
 Sales heisst: ein konkretes Unternehmen hat gerade eine Situation, in der ROOTS-Beratung anschlussfähig wäre. Nenne dieses Unternehmen in company.
 Marketing heisst: der Artikel liefert übertragbare Substanz für eigene Inhalte, unabhängig von einem einzelnen Unternehmen.
 headline_de ist eine sachliche deutsche Überschrift ohne neue Fakten, why_de genau ein deutscher Satz zur Begründung.
+summary_de fasst den Artikel in maximal zwei deutschen Sätzen zusammen, ohne neue Fakten und ohne Wertung. Fülle es immer aus, auch bei lane="keine".
+article_type beschreibt die Textform, nicht das Thema. language ist die Sprache des Artikeltexts.
 </rules>
 <answer_format>
 Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
-{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","company":"Unternehmen oder leerer String"}
+{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","company":"Unternehmen oder leerer String","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|other","language":"de|en|other"}
 </answer_format>
 <source name="${article.source?.company || "unbekannt"}" category="${article.source?.category || "unbekannt"}" />
 <article_title>${String(article.title || "")}</article_title>
@@ -342,7 +354,7 @@ Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
 
 export const SIMPLE_RESPONSE_SCHEMA = {
   type: "OBJECT",
-  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "company"],
+  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "company", "summary_de", "article_type", "language"],
   properties: {
     lane: { type: "STRING", enum: ["sales", "marketing", "keine"] },
     signal_id: { type: "STRING", description: "Eine id aus candidate_signals oder leer, wenn lane=keine." },
@@ -352,6 +364,9 @@ export const SIMPLE_RESPONSE_SCHEMA = {
     headline_de: { type: "STRING" },
     why_de: { type: "STRING" },
     company: { type: "STRING", description: "Betroffenes Unternehmen oder leer." },
+    summary_de: { type: "STRING", description: "Deutsche Zusammenfassung des Artikels, maximal zwei Sätze." },
+    article_type: { type: "STRING", enum: [...SIMPLE_ARTICLE_TYPES] },
+    language: { type: "STRING", enum: ["de", "en", "other"] },
   },
 };
 
@@ -570,6 +585,9 @@ export type SimpleResult = {
   headline_de: string | null;
   why_de: string | null;
   company: string | null;
+  summary_de: string | null;
+  article_type: string | null;
+  language: string | null;
   matched_families: string[];
   reject_reason: string | null;
   model: string | null;
@@ -611,6 +629,9 @@ function rejected(article: SimpleArticleInput, reason: string, families: SimpleF
     headline_de: null,
     why_de: null,
     company: null,
+    summary_de: null,
+    article_type: null,
+    language: null,
     matched_families: families.map((family) => family.id),
     reject_reason: reason,
     model,
@@ -630,26 +651,32 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     return rejected(article, "modellfehler", prefilter.families, model);
   }
 
+  const answerContext = {
+    summary_de: String(answer.summary_de || "").slice(0, 800) || null,
+    article_type: SIMPLE_ARTICLE_TYPES.includes(String(answer.article_type) as typeof SIMPLE_ARTICLE_TYPES[number])
+      ? String(answer.article_type) : null,
+    language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
+  };
   if (answer.lane !== "sales" && answer.lane !== "marketing") {
-    return rejected(article, "modell_ohne_signal", prefilter.families, model);
+    return { ...rejected(article, "modell_ohne_signal", prefilter.families, model), ...answerContext };
   }
   const family = prefilter.families.find((candidate) => candidate.id === answer.signal_id);
   // Gemini may only confirm a family the prefilter already accepted, and the
   // lane must be the one that family belongs to.
   if (!family || family.lane !== answer.lane) {
-    return rejected(article, "familie_nicht_erlaubt", prefilter.families, model);
+    return { ...rejected(article, "familie_nicht_erlaubt", prefilter.families, model), ...answerContext };
   }
   const evidence = String(answer.evidence || "").trim();
   if (!evidenceExists(evidence, prefilter.text)) {
-    return rejected(article, "evidenz_fehlt", prefilter.families, model);
+    return { ...rejected(article, "evidenz_fehlt", prefilter.families, model), ...answerContext };
   }
   if (SIMPLE_SENSITIVE_PATTERN.test(normalizeMatchText(evidence))) {
-    return rejected(article, "sensibles_zitat", prefilter.families, model);
+    return { ...rejected(article, "sensibles_zitat", prefilter.families, model), ...answerContext };
   }
   const confidence = clampConfidence(answer.confidence);
   const score = Math.max(0, Math.min(100, Math.round(Number(answer.score) || 0)));
   if (confidence < SIMPLE_MIN_CONFIDENCE || score < SIMPLE_MIN_SCORE) {
-    return rejected(article, "zu_unsicher", prefilter.families, model);
+    return { ...rejected(article, "zu_unsicher", prefilter.families, model), ...answerContext };
   }
   return {
     article_id: article.id,
@@ -663,6 +690,10 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     headline_de: String(answer.headline_de || article.title || "").slice(0, 300),
     why_de: String(answer.why_de || "").slice(0, 600),
     company: String(answer.company || "").slice(0, 200) || null,
+    summary_de: String(answer.summary_de || "").slice(0, 800) || null,
+    article_type: SIMPLE_ARTICLE_TYPES.includes(String(answer.article_type) as typeof SIMPLE_ARTICLE_TYPES[number])
+      ? String(answer.article_type) : "other",
+    language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
     matched_families: prefilter.families.map((candidate) => candidate.id),
     reject_reason: null,
     model,

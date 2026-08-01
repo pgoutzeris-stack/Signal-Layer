@@ -30,7 +30,7 @@ function el(id) {
 
 function cacheEls() {
   els = {
-    view: el("view-simple"),
+    view: el("view-simple-results"),
     articleTypeFilter: el("simple-article-type-filter"),
     sourceFilter: el("simple-source-filter"),
     sort: el("simple-sort"),
@@ -40,6 +40,14 @@ function cacheEls() {
     salesCount: el("simple-sales-count"),
     rejectedList: el("simple-rejected-list"),
     rejectedCount: el("simple-rejected-count"),
+    dashMarketing: el("simple-dash-marketing"),
+    dashSales: el("simple-dash-sales"),
+    dashRejected: el("simple-dash-rejected"),
+    dashRun: el("simple-dash-run"),
+    archiveList: el("simple-archive-list"),
+    archiveCount: el("simple-archive-count"),
+    archiveMore: el("simple-archive-load-more"),
+    settingsContent: el("simple-settings-content"),
   };
 }
 
@@ -73,7 +81,7 @@ function signalCard(signal) {
   const source = sourceOf(article);
   const title = signal.headline_de || article.title_de || article.title || article.url || "Ohne Titel";
   return `
-    <article class="finding-item" data-simple-url="${esc(article.url || "")}" tabindex="0" role="button">
+    <article class="finding-item" data-article-id="${esc(article.id || signal.article_id || "")}" tabindex="0" role="button">
       <div class="finding-item-top">
         <span class="finding-dimension">${esc(signal.signal_label || signal.signal_id || "Signal")}</span>
         <div class="finding-top-tags">
@@ -87,6 +95,7 @@ function signalCard(signal) {
       <div class="finding-meta">
         ${signal.company ? `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
         ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
+        ${ctx.technicalAuditPill(article.id || signal.article_id)}
       </div>
     </article>
   `;
@@ -153,7 +162,7 @@ function renderRejected(articles, rejectLabels) {
       const source = sourceOf(article);
       const reason = rejectLabels?.[row.reject_reason] || row.reject_reason || "Ohne Begründung";
       return `
-        <div class="simple-rejected-item" data-simple-url="${esc(article.url || "")}" tabindex="0" role="button">
+        <div class="simple-rejected-item" data-article-id="${esc(article.id || row.article_id || "")}" tabindex="0" role="button">
           <strong>${escText(article.title_de || article.title || article.url || "Ohne Titel")}</strong>
           <small><i class="fa-solid fa-circle-info"></i> ${escText(reason)}${source?.company ? ` · ${esc(source.company)}` : ""}</small>
         </div>
@@ -241,18 +250,126 @@ function bindUi() {
     renderLane("sales");
   };
   [els.articleTypeFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
-  els.view?.addEventListener("click", (event) => {
-    const card = event.target.closest("[data-simple-url]");
-    if (card?.dataset.simpleUrl) ctx.openExternalUrl(card.dataset.simpleUrl);
+  // Klick auf eine Karte öffnet dieselbe Detailansicht wie im Advanced-Modus.
+  const openDetail = (event) => {
+    if (event.target.closest("[data-audit-article-id]")) return;
+    const card = event.target.closest("[data-article-id]");
+    if (card?.dataset.articleId) ctx.openArticleDetail(card.dataset.articleId);
+  };
+  [els.view, el("view-simple-archive")].forEach((root) => {
+    root?.addEventListener("click", openDetail);
+    root?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const card = event.target.closest("[data-article-id]");
+      if (card?.dataset.articleId) {
+        event.preventDefault();
+        ctx.openArticleDetail(card.dataset.articleId);
+      }
+    });
   });
-  els.view?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    const card = event.target.closest("[data-simple-url]");
-    if (card?.dataset.simpleUrl) {
-      event.preventDefault();
-      ctx.openExternalUrl(card.dataset.simpleUrl);
+  els.archiveMore?.addEventListener("click", () => void loadArchive(true));
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard, Archiv, Einstellungen
+// ---------------------------------------------------------------------------
+async function loadDashboard() {
+  try {
+    const { counts, run, forecast } = await ctx.callApi("get_simple_dashboard");
+    if (els.dashMarketing) els.dashMarketing.textContent = Number(counts?.marketing || 0).toLocaleString("de-DE");
+    if (els.dashSales) els.dashSales.textContent = Number(counts?.sales || 0).toLocaleString("de-DE");
+    if (els.dashRejected) els.dashRejected.textContent = Number(counts?.rejected || 0).toLocaleString("de-DE");
+    lastRun = run || null;
+    running = lastRun?.status === "running";
+    ctx.setSimpleRunStatus(lastRun, forecast || null);
+    if (els.dashRun) {
+      const eur = (value) => value === null || value === undefined
+        ? "–"
+        : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+      els.dashRun.innerHTML = lastRun
+        ? `Letzter Lauf: <b>${escText(lastRun.status === "running" ? "läuft" : lastRun.status === "error" ? "mit Fehler beendet" : "abgeschlossen")}</b> ·
+           <b>${Number(lastRun.processed_count || 0).toLocaleString("de-DE")} / ${Number(lastRun.total_count || 0).toLocaleString("de-DE")}</b> Artikel geprüft ·
+           Modell <b>${escText(lastRun.model || "–")}</b>${forecast ? ` · Kosten bisher <b>${eur(forecast.spent_eur)}</b>` : ""}
+           ${lastRun.error_message ? `<br><span style="color:var(--danger)">${escText(lastRun.error_message)}</span>` : ""}`
+        : "Noch kein Lauf gestartet. Der einfache Modus prüft gespeicherte Artikel; gestartet wird er im Backend.";
     }
-  });
+  } catch (error) {
+    if (els.dashRun) els.dashRun.textContent = error.message || "Dashboard konnte nicht geladen werden.";
+  }
+}
+
+let archiveOffset = 0;
+let archiveTotal = 0;
+
+async function loadArchive(append = false) {
+  if (!els.archiveList) return;
+  if (!append) {
+    archiveOffset = 0;
+    els.archiveList.innerHTML = LOADER;
+  }
+  try {
+    const { articles, total } = await ctx.callApi("list_simple_rejected", { limit: 60, offset: archiveOffset });
+    archiveTotal = Number(total || 0);
+    const rows = articles || [];
+    archiveOffset += rows.length;
+    const labels = simpleRules?.reject_labels;
+    const html = rows.map((row) => {
+      const article = row.article || {};
+      const source = sourceOf(article);
+      const reason = labels?.[row.reject_reason] || row.reject_reason || "Ohne Begründung";
+      return `
+        <article class="archive-item" data-article-id="${esc(article.id || row.article_id || "")}" tabindex="0" role="button">
+          <span class="finding-title">${escText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
+          <p class="simple-archive-reason"><i class="fa-solid fa-circle-info"></i> ${escText(reason)}</p>
+          <div class="finding-meta">
+            ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
+            ${article.published_at ? `<span class="finding-date-tag">${esc(formatDate(article.published_at))}</span>` : ""}
+          </div>
+        </article>`;
+    }).join("");
+    els.archiveList.innerHTML = append ? els.archiveList.innerHTML + html : (html || `<div class="track-card-empty">Noch nichts aussortiert.</div>`);
+    if (els.archiveCount) els.archiveCount.textContent = archiveTotal.toLocaleString("de-DE");
+    if (els.archiveMore) els.archiveMore.hidden = archiveOffset >= archiveTotal;
+  } catch (error) {
+    els.archiveList.innerHTML = `<div class="track-card-empty">${escText(error.message || "Archiv konnte nicht geladen werden.")}</div>`;
+  }
+}
+
+// Einstellungen: was einstellbar ist, kommt aus der Konfiguration; die Regeln
+// selbst sind Servercode und werden nur gezeigt.
+export function renderSimpleSettings(config, models) {
+  if (!els.settingsContent) return;
+  const rules = simpleRules;
+  if (!rules) {
+    void loadRules().then(() => renderSimpleSettings(config, models));
+    return;
+  }
+  const modelOptions = (models || rules.models || [])
+    .map((model) => `<option value="${esc(model.id)}" ${model.id === config?.ai?.simple_model ? "selected" : ""}>${esc(model.label || model.id)}</option>`).join("");
+  const lane = (entry) => `
+    <div class="simple-rule-card">
+      <h4>${esc(entry.label)}</h4>
+      <ul>${entry.families.map((family) => `<li><b>${escText(family.label)}</b><span>${escText(family.definition)}${family.domains ? ` (nur ${esc(family.domains.join(", "))})` : ""}</span></li>`).join("")}</ul>
+    </div>`;
+  els.settingsContent.innerHTML = `
+    <div class="operations-card">
+      <div class="operations-card-head"><div><span>Modell &amp; Umfang</span><h4>${esc(rules.model_label || rules.model)}</h4><p>Prompt ${esc(rules.version)} · maximal ${esc(rules.prompt_chars)} Zeichen Artikeltext je Prüfung · ${esc(rules.ai_calls_per_batch)} KI-Prüfungen pro Aufruf · Mindestlänge ${esc(rules.min_text_chars)} Zeichen · Mindestsicherheit ${esc(rules.min_confidence)} · Mindestnutzwert ${esc(rules.min_score)}</p></div><i class="fa-solid fa-wand-magic-sparkles operations-card-symbol"></i></div>
+      <div class="operations-model-grid">
+        <label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid fa-bolt"></i></span><span class="operations-model-copy"><b>Modell für den einfachen Modus</b><small>Prüft die gespeicherten Artikel. Kosten laufen in dasselbe Kostenledger.</small><span class="operations-select-wrap"><select class="pipeline-control" data-pipeline-path="ai.simple_model" aria-label="Modell für den einfachen Modus">${modelOptions}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>
+      </div>
+      <div class="pipeline-savebar operations-savebar"><span>Gilt für den nächsten Lauf.</span><button class="btn-primary" type="button" data-pipeline-save><i class="fa-solid fa-floppy-disk"></i> Änderungen speichern</button></div>
+    </div>
+    <div class="pipeline-section-head" style="margin-top:1.4rem"><span>Signalfamilien</span><h3>Was gesucht wird</h3><p>Ein Treffer erlaubt nur die KI-Prüfung; das Signal entsteht erst mit wörtlicher Evidenz.</p></div>
+    <div class="simple-rule-grid">${rules.lanes.map(lane).join("")}</div>
+    <div class="pipeline-section-head" style="margin-top:1.4rem"><span>Nicht abschaltbar</span><h3>Guardrails</h3></div>
+    <div class="simple-rule-card"><ul>${rules.guardrails.map((rule) => `<li><b>${escText(rule.label)}</b><span>${escText(rule.description)}</span></li>`).join("")}</ul></div>`;
+}
+
+export function showSimpleView(view) {
+  if (!ctx) return;
+  if (view === "dashboard") void loadDashboard();
+  else if (view === "archive") void loadArchive();
+  else void loadResults();
 }
 
 // ---------------------------------------------------------------------------
@@ -273,7 +390,8 @@ export function activateSimpleMode() {
     els.salesList.innerHTML = LOADER;
   }
   activated = true;
-  void loadRules().then(() => loadResults()).then(scheduleStatusPoll);
+  const current = document.querySelector("#app-nav .sidebar-icon-btn.active")?.dataset.appView || "dashboard";
+  void loadRules().then(() => showSimpleView(current)).then(scheduleStatusPoll);
 }
 
 export function deactivateSimpleMode() {

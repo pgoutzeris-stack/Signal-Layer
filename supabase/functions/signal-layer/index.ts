@@ -64,6 +64,7 @@ import {
   SIMPLE_MIN_TEXT_CHARS,
   SIMPLE_MODEL_CATALOG,
   SIMPLE_PIPELINE_VERSION,
+  SIMPLE_REJECT_LABELS,
   classifySimpleArticle,
   simpleResultUsedAi,
   simpleModelOption,
@@ -4883,6 +4884,125 @@ Deno.serve(async (req: Request) => {
       // Every rule lives in pipeline-simple.ts; the actions below only move
       // data and never touch the advanced pipeline or signal_layer.articles.
       // ---------------------------------------------------------------------
+      // Liefert denselben Feldschnitt wie get_article_detail, damit die
+      // Detailansicht im einfachen Modus identisch aussieht und identisch
+      // begründet ist - nur aus den Daten der einfachen Pipeline gespeist.
+      case "get_simple_article_detail": {
+        const articleId = String(body.article_id || "");
+        if (!articleId) return errorResponse(origin, "article_id is required");
+        const admin = getAdminClient();
+        const [{ data: signal }, { data: article, error }, { data: usageEvents }] = await Promise.all([
+          admin.schema("signal_layer").from("simple_signals").select("*").eq("article_id", articleId).maybeSingle(),
+          admin.schema("signal_layer").from("articles")
+            .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, language, source:sources(company, url, category)")
+            .eq("id", articleId).single(),
+          admin.schema("signal_layer").from("ai_usage_events")
+            .select("model,operation,status,inference_mode,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,error_code,created_at")
+            .eq("article_id", articleId).eq("prompt_version", SIMPLE_PIPELINE_VERSION)
+            .order("created_at", { ascending: true }).limit(20),
+        ]);
+        if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
+
+        const rules = simpleRuleManifest((await getPipelineConfig()).ai.simple_model || SIMPLE_MODEL);
+        const familyLabel = (id: string) => {
+          for (const lane of rules.lanes) {
+            const found = lane.families.find((family) => family.id === id);
+            if (found) return found.label;
+          }
+          return id;
+        };
+        const isSignal = signal?.status === "signal";
+        const lane = signal?.lane || null;
+        const score = Number(signal?.score || 0);
+        const rejectLabel = signal?.reject_reason
+          ? (SIMPLE_REJECT_LABELS[signal.reject_reason] || signal.reject_reason)
+          : null;
+        return corsResponse(origin, {
+          article: {
+            ...article,
+            article_type: signal?.article_type || null,
+            language: signal?.language || article.language || null,
+            classification_status: isSignal ? "reliable" : signal ? "rejected" : "pending",
+            relevance_confidence: signal?.confidence ?? null,
+            marketing_relevance_score: lane === "marketing" ? score : 0,
+            sales_relevance_score: lane === "sales" ? score : 0,
+            marketing_relevance_reason: lane === "marketing" ? signal?.why_de || null : null,
+            sales_relevance_reason: lane === "sales" ? signal?.why_de || null : null,
+            routing: lane ? [lane] : [],
+            topics: signal?.signal_id ? [signal.signal_id] : [],
+            territory: null,
+            matched_companies: signal?.company ? [signal.company] : [],
+            matched_persons: [],
+            primary_company: signal?.company || null,
+            company_mentions: [],
+            person_mentions: [],
+            sales_triggers: [],
+            manual_review_tracks: [],
+            manual_review_reason: null,
+            matched_offering: null,
+            matched_offering_reasoning: null,
+            ai_summary: signal?.summary_de || null,
+            ai_rationale: signal?.why_de || rejectLabel,
+            rejection_reasons: isSignal || !rejectLabel ? [] : [rejectLabel],
+            tag_evidence: signal?.evidence && signal?.signal_id
+              ? { [familyLabel(signal.signal_id)]: signal.evidence }
+              : {},
+            tag_confidence: signal?.signal_id ? { [signal.signal_id]: signal.confidence } : {},
+            ai_model: signal?.model || null,
+            reviewer_model: null,
+            prompt_version: signal?.prompt_version || SIMPLE_PIPELINE_VERSION,
+            classified_at: signal?.updated_at || null,
+            classification_payload: {},
+            // Derselbe Aufbau wie der Advanced-Prüfpfad, gefüllt mit den
+            // Stufen der einfachen Pipeline.
+            classification_audit: {
+              mode: "simple",
+              prompt_version: signal?.prompt_version || SIMPLE_PIPELINE_VERSION,
+              prefilter: {
+                bestaetigte_signalfamilien: (signal?.matched_families || []).map(familyLabel),
+                mindestlaenge_zeichen: SIMPLE_MIN_TEXT_CHARS,
+                nur_vorgefilterte_familien_erlaubt: true,
+              },
+              modellentscheidung: {
+                modell: signal?.model || null,
+                spur: lane,
+                signalfamilie: signal?.signal_id ? familyLabel(signal.signal_id) : null,
+                konfidenz: signal?.confidence ?? null,
+                nutzwert: score,
+                begruendung: signal?.why_de || null,
+              },
+              validierung: {
+                zitat_wortgleich_im_artikel: Boolean(signal?.evidence),
+                mindestkonfidenz: rules.min_confidence,
+                mindestnutzwert: rules.min_score,
+                ergebnis: isSignal ? "Signal bestaetigt" : rejectLabel,
+              },
+              guardrails: rules.guardrails.map((rule: { label: string }) => rule.label),
+            },
+            technical_trace: { usage_events: usageEvents || [], analysis_job: null, browser_job: null },
+          },
+        });
+      }
+
+      case "get_simple_dashboard": {
+        const admin = getAdminClient();
+        const [{ count: marketing }, { count: sales }, { count: rejected }, { data: run }] = await Promise.all([
+          admin.schema("signal_layer").from("simple_signals")
+            .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "marketing"),
+          admin.schema("signal_layer").from("simple_signals")
+            .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "sales"),
+          admin.schema("signal_layer").from("simple_signals")
+            .select("id", { count: "exact", head: true }).eq("status", "rejected"),
+          admin.schema("signal_layer").from("simple_runs").select("*")
+            .order("started_at", { ascending: false }).limit(1).maybeSingle(),
+        ]);
+        return corsResponse(origin, {
+          counts: { marketing: marketing || 0, sales: sales || 0, rejected: rejected || 0 },
+          run: run || null,
+          forecast: await buildSimpleForecast(run),
+        });
+      }
+
       case "get_simple_rules": {
         const simpleConfig = await getPipelineConfig();
         return corsResponse(origin, { rules: simpleRuleManifest(simpleConfig.ai.simple_model || SIMPLE_MODEL) });
@@ -4949,7 +5069,7 @@ Deno.serve(async (req: Request) => {
         if (!claimed || claimed.length === 0) return corsResponse(origin, { run, done: false, skipped: "already_running" });
 
         const { data: articles, error: articlesError } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, url, content, cleaned_content, published_at, source:sources(company, url, category)")
+          .select("id, title, url, content, cleaned_content, content_de, excerpt, published_at, source_id, source:sources(company, url, category)")
           .in("id", slice);
         if (articlesError) return errorResponse(origin, articlesError.message, 500);
 
@@ -4991,7 +5111,21 @@ Deno.serve(async (req: Request) => {
           const prepared = await ensureSimpleArticleText(admin, article);
           const result = await classifySimpleArticle(deps, prepared);
           if (simpleResultUsedAi(result)) aiCalls += 1;
-          if (result.status === "signal") signals += 1;
+          if (result.status === "signal") {
+            signals += 1;
+            // Gleiche Leseerfahrung wie im Advanced-Modus: fremdsprachige
+            // Artikel bekommen eine gespeicherte deutsche Fassung.
+            if (result.language && result.language !== "de" && !prepared.content_de) {
+              const german = await translateArticleToGerman(
+                String(prepared.cleaned_content || prepared.content || ""),
+                { articleId: prepared.id },
+              );
+              if (german) {
+                await admin.schema("signal_layer").from("articles")
+                  .update({ content_de: german, language: result.language }).eq("id", prepared.id);
+              }
+            }
+          }
           rows.push({
             article_id: result.article_id,
             run_id: run.id,
@@ -5005,6 +5139,9 @@ Deno.serve(async (req: Request) => {
             headline_de: result.headline_de,
             why_de: result.why_de,
             company: result.company,
+            summary_de: result.summary_de,
+            article_type: result.article_type,
+            language: result.language,
             matched_families: result.matched_families,
             reject_reason: result.reject_reason,
             model: result.model,
@@ -5099,14 +5236,16 @@ Deno.serve(async (req: Request) => {
       }
 
       case "list_simple_rejected": {
-        const { limit } = body as { limit?: number };
-        const { data, error } = await getAdminClient().schema("signal_layer").from("simple_signals")
-          .select("id, article_id, reject_reason, matched_families, updated_at, article:articles(id, title, title_de, url, published_at, source:sources(company, url, category))")
+        const { limit, offset } = body as { limit?: number; offset?: number };
+        const safeLimit = Math.min(Math.max(Number(limit) || 60, 1), 200);
+        const safeOffset = Math.max(Number(offset) || 0, 0);
+        const { data, error, count } = await getAdminClient().schema("signal_layer").from("simple_signals")
+          .select("id, article_id, reject_reason, matched_families, summary_de, article_type, updated_at, article:articles(id, title, title_de, url, published_at, source:sources(company, url, category))", { count: "exact" })
           .eq("status", "rejected")
           .order("updated_at", { ascending: false })
-          .limit(Math.min(Math.max(Number(limit) || 50, 1), 200));
+          .range(safeOffset, safeOffset + safeLimit - 1);
         if (error) return errorResponse(origin, error.message, 500);
-        return corsResponse(origin, { articles: data || [] });
+        return corsResponse(origin, { articles: data || [], total: count || 0 });
       }
 
       case "list_findings": {
