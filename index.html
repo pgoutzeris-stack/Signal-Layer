@@ -124,7 +124,11 @@
     transition: width .22s ease, box-shadow .22s ease;
   }
   .app-sidebar:hover, .app-sidebar:focus-within { width: 260px; box-shadow: 12px 0 28px rgba(15, 23, 42, .08); }
-  .sidebar-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 1.5rem; padding: .35rem .85rem; }
+  /* Eingeklappt liegt die Mitte des Logos genau auf der Mitte der Nav-Icons;
+     aufgeklappt rückt es mit dem Text auf die Textkante. */
+  .sidebar-brand { display: flex; width: 100%; min-width: 0; align-items: center; gap: 10px; margin-bottom: 1.5rem; padding: .35rem 0 .35rem 9px; }
+  .sidebar-brand .sidebar-label { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .app-sidebar:hover .sidebar-brand, .app-sidebar:focus-within .sidebar-brand { padding: .35rem .85rem; }
   .logo-mark {
     width: 36px; height: 36px; border-radius: 10px; background: var(--brand);
     display: flex; align-items: center; justify-content: center; color: #fff;
@@ -202,6 +206,14 @@
   .pipeline-detail .pipeline-detail-row { padding: .5rem .8rem; }
   .pipeline-model-note { display: flex; gap: 8px; margin-top: 1rem; padding: .7rem .9rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); font-size: .72rem; }
   .pipeline-model-note i { color: var(--brand); margin-top: 2px; }
+  .pipeline-steps { list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: .55rem; margin-top: .6rem; }
+  .pipeline-steps li { counter-increment: step; position: relative; padding: .6rem .8rem .6rem 2.4rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .pipeline-steps li::before { content: counter(step); position: absolute; left: .7rem; top: .6rem; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--brand); color: #fff; font-size: .62rem; font-weight: 800; }
+  .pipeline-step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .pipeline-step-head b { font-size: .76rem; }
+  .pipeline-step-kind { flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; background: var(--brand-light); color: var(--brand-dark); font-size: .6rem; font-weight: 750; }
+  .pipeline-steps li p { margin-top: 3px; color: var(--muted); font-size: .71rem; line-height: 1.45; }
+  .pipeline-steps .pipeline-detail { margin-top: .45rem; }
   @media (max-width: 720px) { .pipeline-detail-row { grid-template-columns: 1fr; gap: 2px; } }
   .simple-signal-why { margin: .45rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
   .simple-signal-evidence { display: block; margin: .55rem 0 0; padding: .5rem .7rem; border-left: 2px solid var(--brand); border-radius: 0 8px 8px 0; background: var(--surface); color: var(--ink); font-size: .72rem; line-height: 1.45; }
@@ -799,11 +811,15 @@
   .pipeline-flow-shell::-webkit-scrollbar, .pipeline-depth-nav::-webkit-scrollbar { display: none; }
   .pipeline-flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0; }
   .pipeline-overview-card { position: relative; min-width: 0; min-height: 178px; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--bg); font-family: inherit; text-align: left; cursor: pointer; box-shadow: 0 4px 14px rgba(15,23,42,.04); transition: border-color .18s, box-shadow .18s, transform .18s; }
-  .pipeline-overview-card::after { content: ''; position: absolute; top: 34px; right: -11px; z-index: 2; width: 10px; border-top: 1px solid #9fc0ff; }
-  .pipeline-overview-card:last-child::after { display: none; }
+
   .pipeline-overview-card:hover, .pipeline-overview-card:focus-visible { z-index: 12; outline: none; border-color: var(--brand); box-shadow: 0 14px 34px rgba(32,110,251,.14); transform: translateY(-3px); }
-  .pipeline-overview-card-number { position: absolute; top: 11px; right: 12px; color: #b5c8ea; font-size: 1.25rem; font-weight: 800; }
-  .pipeline-overview-card-icon { display: grid; place-items: center; width: 38px; height: 38px; margin-bottom: 18px; border-radius: 11px; color: #fff; background: var(--brand); font-size: 1rem; box-shadow: 0 7px 16px rgba(32,110,251,.2); }
+  .pipeline-overview-card { display: flex; flex-direction: column; gap: 6px; }
+  .pipeline-overview-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .pipeline-overview-card-number { color: #b5c8ea; font-size: 1.1rem; font-weight: 800; line-height: 1; }
+  .pipeline-overview-card-icon { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; color: #fff; background: var(--brand); font-size: .92rem; box-shadow: 0 7px 16px rgba(32,110,251,.2); }
+  .pipeline-overview-card h4 { font-size: .84rem; line-height: 1.25; }
+  .pipeline-overview-card p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: .7rem; line-height: 1.4; }
+  .pipeline-overview-card .pipeline-overview-stat { margin-top: auto; }
   .pipeline-overview-card-icon i { display: block; margin: 0; color: #fff; font-size: 1rem; }
   .pipeline-overview-card h4 { margin: 0 0 6px; font-size: .8rem; }
   .pipeline-overview-card > p { margin: 0; color: var(--muted); font-size: .64rem; line-height: 1.45; }
@@ -2065,15 +2081,8 @@
             <div class="pipeline-flow-shell">
               <div class="pipeline-flow" id="pipeline-studio" aria-label="High-Level-Pipeline"><div class="keyword-empty">Pipeline wird geladen…</div></div>
             </div>
-            <button type="button" class="pipeline-result-strip" id="pipeline-result-strip" data-pipeline-open-stage="output">
-              <span class="pipeline-result-icon"><i class="fa-solid fa-table-cells-large"></i></span>
-              <span><strong>Was kommt am Ende heraus?</strong><small>Zuverlässige Kacheln, manuelle Prüfung, Ablehnungen, Fehler und Altbestand.</small></span>
-              <span class="pipeline-result-statuses"><b>Zuverlässig</b><b>Prüfung</b><b>Abgelehnt</b></span>
-              <i class="fa-solid fa-arrow-right"></i>
-            </button>
-            <section class="pipeline-funnel" aria-label="Aktueller Artikelbestand"><div><span>Aktueller Bestand</span><p>Echte gespeicherte Statuszahlen, keine Simulation.</p></div><div id="pipeline-funnel-stats"><span class="pipeline-stats-loading"><i class="fa-solid fa-spinner fa-spin"></i> Bestandszahlen werden geladen</span></div></section>
-            <div class="pipeline-impact" id="pipeline-impact-result" hidden></div>
-            <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><div><button type="button" class="btn-secondary" data-pipeline-preview><i class="fa-solid fa-flask"></i> Auswirkungen prüfen</button><button class="btn-primary" id="btn-save-pipeline"><i class="fa-solid fa-floppy-disk"></i> Änderungen speichern</button></div></div>
+
+            <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><div><button class="btn-primary" id="btn-save-pipeline"><i class="fa-solid fa-floppy-disk"></i> Änderungen speichern</button></div></div>
           </div>
           <section class="pipeline-drilldown" id="pipeline-drilldown" aria-modal="true" aria-label="Pipeline-Details" hidden></section>
         </div>
@@ -2169,7 +2178,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260801-1500';
+import { initApp } from './app.js?v=20260801-1600';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

@@ -368,10 +368,9 @@ export function renderSimpleSettings() {
   const icon = { bestand: "fa-solid fa-layer-group", bereinigung: "fa-solid fa-eraser", vorfilter: "fa-solid fa-filter", ki: "fa-solid fa-wand-magic-sparkles", validierung: "fa-solid fa-shield-halved" };
   const card = (stage, index) => `
     <button type="button" class="pipeline-overview-card" data-simple-stage="${esc(stage.id)}">
-      <span class="pipeline-overview-card-number">${index + 1}</span>
-      <span class="pipeline-overview-card-icon"><i class="${icon[stage.id] || "fa-solid fa-gear"}"></i></span>
+      <span class="pipeline-overview-card-head"><span class="pipeline-overview-card-icon"><i class="${icon[stage.id] || "fa-solid fa-gear"}"></i></span><span class="pipeline-overview-card-number">0${index + 1}</span></span>
       <h4>${escText(stage.title.replace(/^\d+\s*·\s*/, ""))}</h4>
-      <p>${escText(stage.copy)}</p>
+      <p>${escText(String(stage.copy).split(". ")[0])}.</p>
       <span class="pipeline-overview-stat"><small>${escText(stage.system === "gemini" ? "KI-Prüfung" : stage.system === "server" ? "Serverseitig" : "Deterministisch")}</small><b>${escText(stage.families ? `${stage.families.length} Signalfamilien` : `${(stage.details || []).length} Regeln`)}</b></span>
       <span class="pipeline-overview-card-action">Station ansehen <i class="fa-solid fa-arrow-right"></i></span>
     </button>`;
@@ -420,6 +419,10 @@ function renderSimpleStagePopup() {
       </div>
     </header>
     <main class="stage-page-scroll"><div class="stage-page">
+      ${(stage.steps || []).length ? `<section class="pipeline-stage-card">
+        <header><div><b>Schritt für Schritt</b><small>In dieser Reihenfolge läuft die Station ab</small></div></header>
+        <ol class="pipeline-steps">${stage.steps.map((step) => `<li><div class="pipeline-step-head"><b>${escText(step.title)}</b><span class="pipeline-step-kind">${escText(step.kind)}</span></div><p>${escText(step.copy)}</p></li>`).join("")}</ol>
+      </section>` : ""}
       <section class="pipeline-stage-card">
         <header><div><b>Werte dieser Station</b><small>${escText(stage.system === "gemini" ? "KI-Prüfung" : stage.system === "server" ? "Serverseitige Validierung" : "Deterministischer Code")}</small></div></header>
         ${(stage.details || []).map((detail) => `<div class="pipeline-detail-row"><span>${escText(detail.label)}</span><p>${escText(detail.value)}</p></div>`).join("")}

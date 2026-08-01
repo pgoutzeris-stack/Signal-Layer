@@ -224,6 +224,50 @@ export function buildPipelineRuleManifest(config: PipelineConfig) {
     ],
   };
 
+  const stageSteps: Record<string, Array<{ title: string; copy: string; kind: string; patterns?: string[] }>> = {
+    crawl: [
+      { title: "Quelle abrufen", copy: "RSS oder Sitemap der aktiven Quelle liefern Titel, URL und Datum. Erst wenn beides fehlt, folgt der eigene Crawler innerhalb derselben Domain.", kind: "Quelle" },
+      { title: "URL-Art prüfen", copy: "Übersichts-, Karriere-, Hilfe- und Serviceseiten werden anhand ihres Pfads verworfen, bevor sie geöffnet werden.", kind: "Deterministischer Code", patterns: ["NON_EDITORIAL_URL_PARTS"] },
+      { title: "Datum prüfen", copy: `Nur Artikel innerhalb des Rückblicks von ${config.crawl.freshness_days} Tagen; Zukunftsdaten über ${config.crawl.future_tolerance_hours} Stunden gelten als fehlerhaft.`, kind: "Deterministischer Code" },
+      { title: "Volltext holen", copy: "Direkter Abruf mit Entfernen von Navigation, Werbung und Bannern. Bei JavaScript, Blockade oder Paywall übernimmt der Browser-Worker.", kind: "Crawler und Browser" },
+    ],
+    prefilter: [
+      { title: "Text bereinigen", copy: "Menü, Cookie-Hinweise, Newsletter-Kästen, Autorenboxen und doppelte Zeilen werden entfernt. Der redaktionelle Text bleibt unverändert.", kind: "Deterministischer Code" },
+      { title: "Textmenge prüfen", copy: `Der Artikel braucht mindestens ${config.filters.minimum_text_length} Zeichen sowie genug Sätze und Wörter, damit ein Zitat überhaupt belegbar ist.`, kind: "Deterministischer Code", patterns: ["EDITORIAL_TEXT_REQUIREMENTS"] },
+      { title: "Seitenart prüfen", copy: "Karriere-, FAQ- und reine Eventprogramm-Seiten werden anhand ihrer typischen Begriffe erkannt und gestoppt.", kind: "Deterministischer Code", patterns: ["CAREER_CONTENT_TERMS"] },
+      { title: "Anbietertext erkennen", copy: "Seiten, die vor allem das eigene Produkt verkaufen, werden ausgeschlossen. Substanzielle Studien derselben Anbieter bleiben erlaubt.", kind: "Deterministischer Code", patterns: ["VENDOR_PITCH_TERMS"] },
+      { title: "Fachsignal prüfen", copy: "Mindestens ein Begriff aus Marketing, Marke, Kunde oder Handel muss vorkommen. Ein Treffer erlaubt nur die KI-Prüfung und erzeugt nie selbst ein Signal.", kind: "Deterministischer Code", patterns: ["professionalSignalPatterns"] },
+      { title: "Dünne Meldungen aussortieren", copy: "Reines Sponsoring und taktische Rabattaktionen ohne Mechanik oder Ergebnis reichen nicht.", kind: "Deterministischer Code", patterns: ["THIN_SPONSORSHIP_PATTERN", "TACTICAL_PRICE_PROMOTION_PATTERN"] },
+      { title: "Duplikate erkennen", copy: "Gleicher Inhalt, gleicher Textkörper oder sehr ähnliche Überschrift derselben Quelle werden nur einmal bewertet.", kind: "Deterministischer Code" },
+    ],
+    gemini: [
+      { title: "Prompt bauen", copy: "Taxonomie, aktive Geschäftsregeln, Tier-1-Liste, Quelle, Titel und bis zu 12.000 Zeichen Artikeltext werden zusammengestellt.", kind: "Server" },
+      { title: "Semantische Prüfung", copy: `${config.ai.primary_model} bewertet Themen, Territory, Unternehmen, Personen, Trigger, Routing und Nutzwert - jeweils nur mit wörtlicher Evidenz.`, kind: "KI" },
+      { title: "Artikeltext bleibt Daten", copy: "Der Prompt weist das Modell an, Artikeltext niemals als Anweisung zu behandeln.", kind: "KI" },
+      { title: "Zweite Prüfung bei Grenzfällen", copy: config.ai.review_enabled ? `Unklare Ergebnisse unter Konfidenz ${config.ai.review_confidence_below} gehen erneut an ${config.ai.review_model}.` : "Aktuell abgeschaltet: Grenzfälle werden nicht erneut geprüft.", kind: "KI" },
+      { title: "Nutzwert bewerten", copy: "Marketing wird über Neuheit, strategischen Wert, Übertragbarkeit und Evidenzstärke bewertet, Sales über Problemstärke, ROOTS-Passung, Kaufabsicht und Timing.", kind: "KI" },
+    ],
+    validation: [
+      { title: "Zitate gegenprüfen", copy: "Jedes Zitat muss wortgleich im Artikel stehen. Fehlt es, wird die Aussage verworfen - nicht korrigiert.", kind: "Server" },
+      { title: "Themen-Kontext prüfen", copy: "Ein Kundenthema braucht belegtes Verhalten oder Bedürfnis, kein allgemeines Wort. Fehlende Belege führen zur Ablehnung des Themas.", kind: "Deterministischer Code", patterns: ["CUSTOMER_INSIGHT_SIGNAL_PATTERN"] },
+      { title: "Produktions- und Industriethemen abgrenzen", copy: "Fabrik, Anlagen, Logistik und Energie sind keine Marketingerkenntnis, auch wenn sie strategisch klingen.", kind: "Deterministischer Code", patterns: ["INDUSTRIAL_OPERATIONS_PATTERN", "OPERATIONAL_ONLY_PATTERN"] },
+      { title: "Schwellen anwenden", copy: `Qualitätsprofil ${config.experience.quality_profile}: Thema ab ${config.quality.topic_confidence}, Routing ab ${config.quality.routing_confidence}, zuverlässig ab ${config.quality.reliable_confidence}.`, kind: "Server" },
+      { title: "Artikeltyp normalisieren", copy: "Der Typ wird aus der tatsächlichen Textform bestimmt, nicht aus Wörtern in der Überschrift.", kind: "Deterministischer Code" },
+    ],
+    routing: [
+      { title: "Marketing entscheiden", copy: "Es braucht übertragbare Substanz und direkte Evidenz. Studien und Reports brauchen offengelegte Methode oder Ergebnisse.", kind: "Server", patterns: ["RESEARCH_CONTENT_PATTERN", "RESEARCH_SUBSTANCE_PATTERN"] },
+      { title: "Sales entscheiden", copy: "Es braucht ein Tier-1-Unternehmen, einen belegten strategischen Trigger, eine konkrete Herausforderung und einen ROOTS-Bezug.", kind: "Server", patterns: ["ROOTS_SALES_CONTEXT_PATTERN", "EXPLICIT_MARKETING_PROBLEM_PATTERN"] },
+      { title: "ROOTS-Leistung zuordnen", copy: "Zuerst deterministisch über Leistungsbegriffe, nur bei Bedarf per KI - und nur mit wörtlichem Beleg im Artikel.", kind: "Deterministischer Code und KI" },
+      { title: "Buying Center ableiten", copy: "Passende Rollen werden aus der Rollenliste bestimmt; eine reine Personalie genügt nicht.", kind: "Deterministischer Code", patterns: ["ROLE_TERMS"] },
+    ],
+    output: [
+      { title: "Zuverlässige Signale zeigen", copy: "Nur Artikel mit bestandener Validierung und aktivem Routing erscheinen als Kachel.", kind: "Server" },
+      { title: "Grenzfälle markieren", copy: "Fehlt genau eine Pflichtprüfung, wird der Artikel als Grenzfall mit Begründung ausgewiesen.", kind: "Server" },
+      { title: "Archiv füllen", copy: "Abgelehnte, alte und technisch fehlerhafte Artikel bleiben mit Begründung nachvollziehbar erhalten.", kind: "Server" },
+      { title: "Prüfpfad speichern", copy: "Jede Station schreibt Modell, Tokens, Kosten und Entscheidungen in den technischen Prüfpfad des Artikels.", kind: "Server" },
+    ],
+  };
+
   return {
     version: PIPELINE_RULE_MANIFEST_VERSION,
     prompt_version: CLASSIFIER_PROMPT_VERSION,
@@ -264,6 +308,7 @@ export function buildPipelineRuleManifest(config: PipelineConfig) {
       { id: "offering_match", title: "ROOTS-Leistungsmatch", model: config.ai.primary_model, when: "Dasselbe Flash-Lite-Modell wird nur genutzt, wenn der deterministische Leistungsmatch einen belegten Sales-Kandidaten nicht eindeutig zuordnen kann." },
       { id: "translation", title: "Übersetzung und Darstellungsformatierung", model: config.ai.primary_model, when: "Dasselbe Flash-Lite-Modell wird nur verwendet, wenn Sprache oder Textformat eine deutsche Lesefassung erfordern." },
     ],
+    stage_steps: stageSteps,
     stages: [
       {
         id: "crawl", number: "01", icon: "fa-solid fa-link", title: "Quellen und Volltext", short_title: "Quellen",

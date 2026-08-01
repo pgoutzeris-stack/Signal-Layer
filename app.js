@@ -752,7 +752,7 @@ function manifestSystemLabel(system) {
 function manifestRuleTerms(rule) {
   const manifest = pipelineSettings?.rule_manifest || {};
   const library = manifest.pattern_library || {};
-  const names = (manifest.rule_patterns || {})[rule.id] || (library[rule.technical] ? [rule.technical] : []);
+  const names = rule.patterns || (manifest.rule_patterns || {})[rule.id] || (library[rule.technical] ? [rule.technical] : []);
   const blocks = names
     .map((name) => ({ name, terms: library[name] || [] }))
     .filter((entry) => entry.terms.length > 0);
@@ -807,9 +807,19 @@ function renderManifestStageOverview(stage, manifestStage) {
     ? stageSection("KI-Aufrufe dieser Station", "Jeder Aufruf wird mit Modell, Tokens und Kosten protokolliert.",
       `<div class="pipeline-family-list">${pipelineSettings.rule_manifest.ai_operations.map((operation) => `<details class="pipeline-detail"><summary><b>${escapeHtml(operation.title)}</b><span>${escapeHtml(operation.model)}</span></summary><p>${escapeHtml(operation.when)}</p></details>`).join("")}</div>`)
     : "";
+  const steps = (pipelineSettings.rule_manifest.stage_steps || {})[stage.id] || [];
+  const stepList = steps.length ? stageSection(
+    "Schritt für Schritt",
+    "In dieser Reihenfolge läuft die Station ab.",
+    `<ol class="pipeline-steps">${steps.map((step) => `<li>
+      <div class="pipeline-step-head"><b>${escapeHtml(step.title)}</b><span class="pipeline-step-kind">${escapeHtml(step.kind)}</span></div>
+      <p>${escapeHtml(step.copy)}</p>
+      ${manifestRuleTerms({ id: `${stage.id}.step`, technical: null, patterns: step.patterns })}
+    </li>`).join("")}</ol>`,
+  ) : "";
   const version = `<div class="stage-outcome stage-outcome--single"><span><i class="fa-solid fa-circle-check"></i><b>Live-Regelwerk</b> ${escapeHtml(pipelineSettings.rule_manifest.version)} · Prompt ${escapeHtml(pipelineSettings.rule_manifest.prompt_version)} · Scoring ${escapeHtml(pipelineSettings.rule_manifest.scoring_version)}</span></div>`;
-  return `<div class="stage-page">${flow}
-    ${group("Geprüfte Filter", manifestStage.summary, adjustable, editLabel)}
+  return `<div class="stage-page">${flow}${stepList}
+    ${group("Einstellbare Filter", manifestStage.summary, adjustable, editLabel)}
     ${group("Nicht abschaltbare Schutzregeln", "Diese Regeln stehen im Servercode und gelten immer.", locked)}
     ${ai}${version}</div>`;
 }
@@ -1111,9 +1121,10 @@ function renderPipelineStudio() {
       hover: (manifestStage.rules || []).slice(0, 4).map((rule) => rule.title),
     } : PIPELINE_OVERVIEW_META[stage.id];
     const [statLabel, statValue] = pipelineStageStat(stage.id);
-    return `<button type="button" class="pipeline-overview-card" data-pipeline-open-stage="${stage.id}" aria-label="${escapeHtml(overview.label)} im Ablauf öffnen"><span class="pipeline-overview-card-number">${stage.number}</span><span class="pipeline-overview-card-icon"><i class="${stage.icon}"></i></span><h4>${escapeHtml(overview.label)}</h4><p>${escapeHtml(overview.summary)}</p><span class="pipeline-overview-stat"><small>${escapeHtml(statLabel)}</small><b>${escapeHtml(statValue)}</b></span><span class="pipeline-overview-card-action">Ablauf ansehen <i class="fa-solid fa-arrow-right"></i></span><span class="pipeline-card-popover" aria-hidden="true"><strong>Auf einen Blick</strong><ul>${overview.hover.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></span></button>`;
+    return `<button type="button" class="pipeline-overview-card" data-pipeline-open-stage="${stage.id}" aria-label="${escapeHtml(overview.label)} im Ablauf öffnen"><span class="pipeline-overview-card-head"><span class="pipeline-overview-card-icon"><i class="${stage.icon}"></i></span><span class="pipeline-overview-card-number">${stage.number}</span></span><h4>${escapeHtml(overview.label)}</h4><p>${escapeHtml(overview.summary)}</p><span class="pipeline-overview-stat"><small>${escapeHtml(statLabel)}</small><b>${escapeHtml(statValue)}</b></span><span class="pipeline-overview-card-action">Ablauf ansehen <i class="fa-solid fa-arrow-right"></i></span></button>`;
   }).join("");
   const statsTarget = document.getElementById("pipeline-funnel-stats");
+  if (!statsTarget) { /* Bestandszahlen sind aus der Ansicht entfernt */ }
   if (statsTarget) {
     statsTarget.innerHTML = pipelineStats?._loadError
       ? `<span class="pipeline-stats-error"><i class="fa-solid fa-triangle-exclamation"></i> Bestandszahlen aktuell nicht verfügbar</span>`
@@ -3252,7 +3263,7 @@ function bindUi() {
       void loadGeminiModels(true).then(() => toast("Gemini-Modelle erfolgreich validiert")).catch((error) => toast(error.message, "err"));
       return;
     }
-    if (event.target.closest("[data-pipeline-preview]")) {
+    if (false) {
       syncDraft();
       void previewPipelineImpact().catch((error) => toast(error.message, "err"));
       return;

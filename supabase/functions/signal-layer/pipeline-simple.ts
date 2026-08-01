@@ -824,6 +824,11 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       title: "1 · Artikelauswahl",
       system: "code",
       copy: `Kein Crawl. Der Lauf nimmt die neuesten ${SIMPLE_ARTICLE_LIMIT.toLocaleString("de-DE")} gespeicherten Artikel als Pool.`,
+      steps: [
+        { title: "Pool bestimmen", copy: `Die neuesten ${SIMPLE_ARTICLE_LIMIT.toLocaleString("de-DE")} gespeicherten Artikel werden nach Crawl-Zeitpunkt genommen. Es werden keine Quellen abgerufen.`, kind: "Deterministischer Code" },
+        { title: "Paketweise abarbeiten", copy: `Ein Aufruf filtert beliebig viele Artikel kostenlos vor und gibt höchstens ${SIMPLE_AI_CALLS_PER_BATCH} an das Modell. Danach übernimmt der nächste Aufruf.`, kind: "Server" },
+        { title: "Fortschritt sichern", copy: "Jeder geprüfte Artikel wird sofort gespeichert, damit ein abgebrochener Aufruf keine bezahlte Prüfung verliert.", kind: "Server" },
+      ],
       details: [
         { label: "Pool", value: `${SIMPLE_ARTICLE_LIMIT.toLocaleString("de-DE")} neueste Artikel nach Crawl-Zeitpunkt` },
         { label: "KI-Prüfungen je Aufruf", value: String(SIMPLE_AI_CALLS_PER_BATCH) },
@@ -835,6 +840,12 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       title: "2 · Bereinigung & Textprüfung",
       system: "code",
       copy: "Der gespeicherte Text wird geprüft. Artikel, deren Feed nur die Überschrift lieferte, werden einmal direkt nachgeladen.",
+      steps: [
+        { title: "Text zusammensetzen", copy: "Geprüft wird Titel plus bereinigter Artikeltext. Umlaute, Sonderzeichen und HTML-Reste werden vereinheitlicht, damit Wortlisten zuverlässig greifen.", kind: "Deterministischer Code" },
+        { title: "Fehlenden Volltext nachladen", copy: `Liegt weniger als ${SIMPLE_MIN_TEXT_CHARS} Zeichen Text vor, wird die Originalseite einmal direkt abgerufen und der gefundene Text gespeichert. Kein KI-Aufruf.`, kind: "Deterministischer Code" },
+        { title: "Mindestlänge durchsetzen", copy: `Bleibt der Text unter ${SIMPLE_MIN_TEXT_CHARS} Zeichen, endet die Prüfung mit "zu wenig Text" - ohne Zitat ist kein Signal belegbar.`, kind: "Deterministischer Code" },
+        { title: "Textmenge begrenzen", copy: `Für die KI-Prüfung werden maximal ${SIMPLE_PROMPT_CHARS.toLocaleString("de-DE")} Zeichen ausgewählt: Anfang, Ende und die inhaltsreichsten Absätze.`, kind: "Server" },
+      ],
       details: [
         { label: "Mindestlänge", value: `${SIMPLE_MIN_TEXT_CHARS} Zeichen Artikeltext` },
         { label: "Nachladen", value: "Ein direkter Abruf der Originalseite, keine KI" },
@@ -846,6 +857,14 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       title: "3 · Vorfilter (kostenlos)",
       system: "code",
       copy: "Signalmuster entscheiden ausschliesslich, ob das Modell den Artikel sehen darf. Ein Treffer erzeugt nie selbst ein Signal.",
+      steps: [
+        { title: "Sensible Themen ausschliessen", copy: "Steht ein sensibles Thema in der Überschrift, endet die Prüfung sofort. Steht es nur im Text, wird die bild.de-News-Spur gesperrt, die Fachspuren bleiben offen.", kind: "Deterministischer Code" },
+        { title: "Tier-1-Unternehmen suchen", copy: "Namen und Aliase aus derselben Tier-1-Liste wie im Advanced-Modus werden als eigenständige Wörter im Text gesucht.", kind: "Deterministischer Code" },
+        { title: "Signalfamilien prüfen", copy: "Je Familie muss ein Auslöser vorkommen und - wo hinterlegt - zusätzlich ein Kontextbegriff. Beides muss im selben Artikel stehen.", kind: "Deterministischer Code" },
+        { title: "Titel-Ausschlüsse anwenden", copy: "Familien mit Ausschlussliste verwerfen Artikel, deren Überschrift von etwas anderem handelt, etwa Quartalszahlen oder Spielberichte.", kind: "Deterministischer Code" },
+        { title: "Quellenbindung prüfen", copy: `Die News-Spur akzeptiert ausschliesslich ${SIMPLE_NEWS_DOMAINS.join(", ")}; alle anderen Familien sind quellenoffen.`, kind: "Deterministischer Code" },
+        { title: "Ergebnis übergeben", copy: "Nur die bestätigten Familien gehen als Auswahl an das Modell. Ohne Treffer endet die Prüfung kostenlos.", kind: "Server" },
+      ],
       families: SIMPLE_FAMILIES.map(familyDetail),
       details: [
         { label: "Sensible Themen", value: "Im Titel: Artikel komplett aus. Im Text: nur die bild.de-News-Spur aus." },
@@ -857,6 +876,13 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       title: "4 · KI-Prüfung",
       system: "gemini",
       copy: `Ein Aufruf an ${option.label}. Das Modell darf nur eine der vorgefilterten Familien bestätigen und muss ein wörtliches Zitat liefern.`,
+      steps: [
+        { title: "Prompt bauen", copy: "Enthalten sind: die bestätigten Familien mit Definition, erkannte Tier-1-Unternehmen, Quelle, Titel und der ausgewählte Artikeltext.", kind: "Server" },
+        { title: "Portfolio nur bei viralen News", copy: "Ist die virale Spur Kandidat, kommt zusätzlich das ROOTS-Leistungsportfolio in denselben Aufruf. Sonst bleibt der Prompt schlank.", kind: "Server" },
+        { title: "Semantische Entscheidung", copy: `${option.label} wählt genau eine Familie, vergibt Konfidenz und Nutzwert, kopiert ein wörtliches Zitat und schreibt Überschrift, Begründung und Zusammenfassung auf Deutsch.`, kind: "KI" },
+        { title: "Artikeltext bleibt Daten", copy: "Die Systemanweisung verbietet, Artikeltext als Anweisung zu behandeln. Im Zweifel muss das Modell \"keine Spur\" antworten.", kind: "KI" },
+        { title: "Genau ein Durchlauf", copy: "Es gibt keine zweite Runde und kein zweites Modell. Alles Nötige entsteht in diesem einen Aufruf.", kind: "KI" },
+      ],
       details: [
         { label: "Modell", value: `${option.label} (in Kosten & Betrieb einstellbar)` },
         { label: "Antwortform", value: "Ein JSON-Objekt: Spur, Familie, Konfidenz, Nutzwert, Zitat, Überschrift, Begründung, Zusammenfassung, Artikeltyp, Sprache" },
@@ -869,6 +895,14 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       title: "5 · Validierung & Ergebnis",
       system: "server",
       copy: "Der Server prüft die Antwort nach, bevor ein Signal entsteht.",
+      steps: [
+        { title: "Familie gegenprüfen", copy: "Nennt das Modell eine Familie, die der Vorfilter nicht bestätigt hat, wird die Antwort verworfen.", kind: "Server" },
+        { title: "Zitat gegenprüfen", copy: "Das Zitat muss wortgleich im Artikel stehen. Fehlt es, wird das Signal verworfen und nicht korrigiert.", kind: "Server" },
+        { title: "Sensibles Zitat abfangen", copy: "Auch ein formal gültiges Zitat wird verworfen, wenn es ein sensibles Thema betrifft.", kind: "Deterministischer Code" },
+        { title: "ROOTS-Bezug bei viralen News", copy: "Ohne benannte Leistung und Anschlusssatz entsteht kein virales Signal.", kind: "Server" },
+        { title: "Schwellen anwenden", copy: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder Nutzwert ${SIMPLE_MIN_SCORE} landen in "Nicht relevant" statt in den Ergebnissen.`, kind: "Server" },
+        { title: "Ergebnis speichern", copy: "Signal oder Ablehnungsgrund werden je Artikel gespeichert, inklusive Modell, Tokens und Kosten.", kind: "Server" },
+      ],
       details: [
         { label: "Zitatprüfung", value: "Das Zitat muss wortgleich im Artikel stehen, sonst verworfen" },
         { label: "Familienbindung", value: "Nur vom Vorfilter bestätigte Familien werden akzeptiert" },
