@@ -4754,6 +4754,20 @@ Deno.serve(async (req: Request) => {
             updated_at: new Date().toISOString(),
           });
         }
+        // A batch that failed only for technical reasons (spending cap, rate
+        // limit, timeout) must not look like a finished check. Stop the run so
+        // the articles stay unprocessed and a later run picks them up again.
+        const technicalFailures = rows.filter((row) => row.reject_reason === "modellfehler").length;
+        if (rows.length > 0 && technicalFailures === rows.length) {
+          await admin.schema("signal_layer").from("simple_runs").update({
+            status: "error",
+            error_message: "KI-Prüfung nicht möglich (siehe ai_usage_events). Lauf gestoppt, keine Artikel bewertet.",
+            last_progress_at: new Date().toISOString(),
+            finished_at: new Date().toISOString(),
+          }).eq("id", run.id);
+          return corsResponse(origin, { run: { ...run, status: "error" }, done: true, ai_unavailable: true });
+        }
+
         if (rows.length > 0) {
           const { error: upsertError } = await admin.schema("signal_layer").from("simple_signals")
             .upsert(rows, { onConflict: "article_id" });
