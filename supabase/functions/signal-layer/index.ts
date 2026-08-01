@@ -296,6 +296,19 @@ async function getSimpleRootsPortfolio(): Promise<string> {
   return text;
 }
 
+// Dieselbe Tier-1-Liste wie im Advanced-Modus, gecacht.
+const simpleTier1Cache: { value: Array<{ name: string; aliases: string[] }>; at: number } = { value: [], at: 0 };
+
+async function getSimpleTier1Companies(): Promise<Array<{ name: string; aliases: string[] }>> {
+  const now = Date.now();
+  if (simpleTier1Cache.value.length && now - simpleTier1Cache.at < 10 * 60 * 1000) return simpleTier1Cache.value;
+  const { data } = await getAdminClient().schema("signal_layer").from("tier1_companies")
+    .select("name, aliases").eq("active", true);
+  simpleTier1Cache.value = (data || []) as Array<{ name: string; aliases: string[] }>;
+  simpleTier1Cache.at = now;
+  return simpleTier1Cache.value;
+}
+
 function simpleRunRequest(runId: string, timeoutMs: number): Promise<unknown> {
   return fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
     method: "POST",
@@ -4948,7 +4961,10 @@ Deno.serve(async (req: Request) => {
             routing: lane ? [lane] : [],
             topics: signal?.signal_id ? [signal.signal_id] : [],
             territory: null,
-            matched_companies: signal?.company ? [signal.company] : [],
+            matched_companies: [...new Set([
+              ...(signal?.tier1_companies || []),
+              ...(signal?.company ? [signal.company] : []),
+            ])],
             matched_persons: [],
             primary_company: signal?.company || null,
             company_mentions: [],
@@ -4977,6 +4993,7 @@ Deno.serve(async (req: Request) => {
               prompt_version: signal?.prompt_version || SIMPLE_PIPELINE_VERSION,
               prefilter: {
                 bestaetigte_signalfamilien: (signal?.matched_families || []).map(familyLabel),
+                erkannte_tier1_unternehmen: signal?.tier1_companies || [],
                 mindestlaenge_zeichen: SIMPLE_MIN_TEXT_CHARS,
                 nur_vorgefilterte_familien_erlaubt: true,
               },
@@ -5113,6 +5130,7 @@ Deno.serve(async (req: Request) => {
         const deps = {
           admin, apiKey: modelKey, model: simpleModel,
           rootsPortfolio: await getSimpleRootsPortfolio(),
+          tier1Companies: await getSimpleTier1Companies(),
         };
         const rows: Array<Record<string, unknown>> = [];
         let signals = 0;
@@ -5170,6 +5188,7 @@ Deno.serve(async (req: Request) => {
             language: result.language,
             roots_offering: result.roots_offering,
             roots_link_de: result.roots_link_de,
+            tier1_companies: result.tier1_companies,
             matched_families: result.matched_families,
             reject_reason: result.reject_reason,
             model: result.model,
@@ -5255,7 +5274,7 @@ Deno.serve(async (req: Request) => {
         if (lane && !["marketing", "sales"].includes(lane)) return errorResponse(origin, "invalid lane");
         const admin = getAdminClient();
         let query = admin.schema("signal_layer").from("simple_signals")
-          .select("id, article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, matched_families, model, prompt_version, created_at, updated_at, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))")
+          .select("id, article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, matched_families, model, prompt_version, created_at, updated_at, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))")
           .eq("status", "signal")
           .order("score", { ascending: false })
           .order("updated_at", { ascending: false })

@@ -1995,9 +1995,6 @@
         <div class="settings-nav-item" data-panel="simple-pipeline" data-settings-mode="simple">
           <i class="fa-solid fa-route"></i> Pipeline
         </div>
-        <div class="settings-nav-item" data-panel="manual-review" data-settings-mode="advanced">
-          <i class="fa-solid fa-user-check"></i> Manuelle Prüfung
-        </div>
         <div class="settings-nav-item" data-panel="operations">
           <i class="fa-solid fa-wave-square"></i> Kosten &amp; Betrieb
         </div>
@@ -2079,10 +2076,6 @@
             <div class="pipeline-savebar"><span id="pipeline-version">Konfiguration wird geladen…</span><div><button type="button" class="btn-secondary" data-pipeline-preview><i class="fa-solid fa-flask"></i> Auswirkungen prüfen</button><button class="btn-primary" id="btn-save-pipeline"><i class="fa-solid fa-floppy-disk"></i> Änderungen speichern</button></div></div>
           </div>
           <section class="pipeline-drilldown" id="pipeline-drilldown" aria-modal="true" aria-label="Pipeline-Details" hidden></section>
-        </div>
-
-        <div class="settings-panel pipeline-panel" id="settings-panel-manual-review">
-          <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Unsichere Entscheidungen</span><h3>Manuelle Prüfung</h3><p>Hier erscheinen Grenzfälle mit Begründung und Evidenz. Eine Freigabe ändert niemals still die Systemregeln.</p></div><div class="review-list" id="pipeline-review-list"><div class="keyword-empty">Wird geladen…</div></div></div>
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-operations">
@@ -2176,7 +2169,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260801-1400';
+import { initApp } from './app.js?v=20260801-1500';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

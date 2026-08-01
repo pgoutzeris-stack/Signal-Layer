@@ -25,6 +25,7 @@
 
 import {
   clampConfidence,
+  containsMatchTerm,
   evidenceExists,
   normalizeMatchText,
   patternTerms,
@@ -253,6 +254,7 @@ export const SIMPLE_GUARDRAILS: SimpleGuardrail[] = [
   { id: "candidate_lock", label: "Nur vorgefilterte Familien", description: "Gemini darf nur eine der Signalfamilien wählen, die der Vorfilter für diesen Artikel bereits bestätigt hat." },
   { id: "sensitive_topics", label: "Politik, Religion, sensible Themen aus", description: "Sensible Themen im Titel schliessen den Artikel komplett aus; im Text schliessen sie die bild.de-News-Spur aus." },
   { id: "news_domain_lock", label: "News nur von bild.de", description: `Die Marketing-Spur "Aktuelle News & Topics" akzeptiert ausschliesslich Artikel von ${SIMPLE_NEWS_DOMAINS.join(", ")}.` },
+  { id: "tier1", label: "Tier-1-Zielkunden erkannt", description: "Namen und Aliase aus derselben Tier-1-Liste wie im Advanced-Modus werden deterministisch im Artikel gesucht und dem Modell als Zielkunden mitgegeben." },
   { id: "min_text", label: "Mindestlänge", description: `Artikel unter ${SIMPLE_MIN_TEXT_CHARS} Zeichen Text gehen nicht an das Modell.` },
   { id: "min_confidence", label: "Mindestsicherheit", description: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder Score ${SIMPLE_MIN_SCORE} landen nicht in den Ergebnissen.` },
 ];
@@ -270,11 +272,25 @@ export type SimpleArticleInput = {
   source?: { company?: string | null; url?: string | null; category?: string | null } | null;
 };
 
+export type SimpleTier1Company = { name: string; aliases?: string[] };
+
 export type SimplePrefilterResult = {
   families: SimpleFamily[];
   text: string;
+  tier1: string[];
   reject?: string;
 };
+
+// Dieselbe Liste und dieselbe Trefferlogik wie im Advanced-Modus: Name oder
+// Alias muss als eigenes Wort im Artikel stehen.
+export function findTier1Companies(text: string, companies: SimpleTier1Company[] = []): string[] {
+  const normalized = normalizeMatchText(text);
+  return companies
+    .filter((company) => [company.name, ...(company.aliases || [])]
+      .filter(Boolean)
+      .some((term) => containsMatchTerm(normalized, String(term))))
+    .map((company) => company.name);
+}
 
 function articleText(article: SimpleArticleInput): string {
   const body = String(article.cleaned_content || article.content || "").trim();
@@ -296,17 +312,21 @@ function matchesDomain(article: SimpleArticleInput, domains: string[]): boolean 
     || sourceHost === domain || sourceHost.endsWith(`.${domain}`));
 }
 
-export function prefilterSimpleArticle(article: SimpleArticleInput): SimplePrefilterResult {
+export function prefilterSimpleArticle(
+  article: SimpleArticleInput,
+  tier1Companies: SimpleTier1Company[] = [],
+): SimplePrefilterResult {
   const text = articleText(article);
   const body = String(article.cleaned_content || article.content || "");
+  const tier1 = findTier1Companies(text, tier1Companies);
   if (body.trim().length < SIMPLE_MIN_TEXT_CHARS) {
-    return { families: [], text, reject: "zu_wenig_text" };
+    return { families: [], text, tier1, reject: "zu_wenig_text" };
   }
   const normalizedTitle = normalizeMatchText(String(article.title || ""));
   const normalized = normalizeMatchText(text);
   // A sensitive topic in the headline means the article itself is about it.
   if (SIMPLE_SENSITIVE_PATTERN.test(normalizedTitle)) {
-    return { families: [], text, reject: "sensibles_thema" };
+    return { families: [], text, tier1, reject: "sensibles_thema" };
   }
   const sensitiveBody = SIMPLE_SENSITIVE_PATTERN.test(normalized);
   const families = SIMPLE_FAMILIES.filter((family) => {
@@ -316,8 +336,8 @@ export function prefilterSimpleArticle(article: SimpleArticleInput): SimplePrefi
     if (!family.trigger.test(normalized)) return false;
     return !family.context || family.context.test(normalized);
   });
-  if (families.length === 0) return { families: [], text, reject: "kein_signalmuster" };
-  return { families, text };
+  if (families.length === 0) return { families: [], text, tier1, reject: "kein_signalmuster" };
+  return { families, text, tier1 };
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +363,7 @@ export function buildSimplePrompt(
   article: SimpleArticleInput,
   families: SimpleFamily[],
   rootsPortfolio = "",
+  tier1 : string[] = [],
 ): string {
   // Das Portfolio kostet Tokens, deshalb steht es nur im Prompt, wenn die Spur
   // "virale News" überhaupt ein Kandidat ist.
@@ -372,6 +393,7 @@ Reicht die Substanz nicht (nur Nebenerwähnung, Terminhinweis, Stellenanzeige, N
 Politik, Religion, Krieg, Kriminalität, Unglücke, Krankheit und andere sensible Themen sind niemals ein Signal: dann lane="keine".
 score ist der Nutzwert für ROOTS von 0 bis 100: 80+ nur bei konkretem, belegtem Anlass mit klarem Bezug zu Marketing, Marke, Kunde, Handel oder Marketingprozess.
 Sales heisst: ein konkretes Unternehmen hat gerade eine Situation, in der ROOTS-Beratung anschlussfähig wäre. Nenne dieses Unternehmen in company.
+Wenn tier1_unternehmen vorhanden ist, sind das die für ROOTS relevanten Zielkunden. Betrifft das Signal eines dieser Unternehmen, nimm genau diesen Namen in company und bewerte den Nutzwert höher.
 Marketing heisst: der Artikel liefert übertragbare Substanz für eigene Inhalte, unabhängig von einem einzelnen Unternehmen.
 headline_de ist eine sachliche deutsche Überschrift ohne neue Fakten, why_de genau ein deutscher Satz zur Begründung.
 summary_de fasst den Artikel in maximal zwei deutschen Sätzen zusammen, ohne neue Fakten und ohne Wertung. Fülle es immer aus, auch bei lane="keine".
@@ -382,7 +404,7 @@ roots_offering und roots_link_de bleiben leer, wenn du nicht die Spur "virale_ne
 Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
 {"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","company":"Unternehmen oder leerer String","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"Leistung oder leerer String","roots_link_de":"ein Satz oder leerer String"}
 </answer_format>
-<source name="${article.source?.company || "unbekannt"}" category="${article.source?.category || "unbekannt"}" />
+${tier1.length ? `<tier1_unternehmen>${tier1.join(", ")}</tier1_unternehmen>\n` : ""}<source name="${article.source?.company || "unbekannt"}" category="${article.source?.category || "unbekannt"}" />
 <article_title>${String(article.title || "")}</article_title>
 <article_text>${content}</article_text>`;
 }
@@ -420,6 +442,8 @@ export type SimpleDeps = {
   model?: string;
   /** Kompakte Liste der ROOTS-Leistungen; nur für die virale Spur gebraucht. */
   rootsPortfolio?: string;
+  /** Tier-1-Zielkunden, identisch zur Advanced-Pipeline. */
+  tier1Companies?: SimpleTier1Company[];
 };
 
 export type SimpleUsage = {
@@ -629,6 +653,7 @@ export type SimpleResult = {
   language: string | null;
   roots_offering: string | null;
   roots_link_de: string | null;
+  tier1_companies: string[];
   matched_families: string[];
   reject_reason: string | null;
   model: string | null;
@@ -659,7 +684,13 @@ export const SIMPLE_REJECT_LABELS: Record<string, string> = {
   modellfehler: "Technischer Fehler bei der KI-Prüfung.",
 };
 
-function rejected(article: SimpleArticleInput, reason: string, families: SimpleFamily[], model: string | null): SimpleResult {
+function rejected(
+  article: SimpleArticleInput,
+  reason: string,
+  families: SimpleFamily[],
+  model: string | null,
+  tier1: string[] = [],
+): SimpleResult {
   return {
     article_id: article.id,
     status: "rejected",
@@ -677,6 +708,7 @@ function rejected(article: SimpleArticleInput, reason: string, families: SimpleF
     language: null,
     roots_offering: null,
     roots_link_de: null,
+    tier1_companies: tier1,
     matched_families: families.map((family) => family.id),
     reject_reason: reason,
     model,
@@ -685,8 +717,8 @@ function rejected(article: SimpleArticleInput, reason: string, families: SimpleF
 }
 
 export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArticleInput): Promise<SimpleResult> {
-  const prefilter = prefilterSimpleArticle(article);
-  if (prefilter.reject) return rejected(article, prefilter.reject, prefilter.families, null);
+  const prefilter = prefilterSimpleArticle(article, deps.tier1Companies || []);
+  if (prefilter.reject) return rejected(article, prefilter.reject, prefilter.families, null, prefilter.tier1);
 
   const model = deps.model || SIMPLE_MODEL;
   let answer: SimpleAiAnswer;
@@ -694,10 +726,10 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     answer = await callSimpleModel(
       deps,
       article.id,
-      buildSimplePrompt(article, prefilter.families, deps.rootsPortfolio || ""),
+      buildSimplePrompt(article, prefilter.families, deps.rootsPortfolio || "", prefilter.tier1),
     );
   } catch (_error) {
-    return rejected(article, "modellfehler", prefilter.families, model);
+    return rejected(article, "modellfehler", prefilter.families, model, prefilter.tier1);
   }
 
   const answerContext = {
@@ -707,32 +739,32 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
   };
   if (answer.lane !== "sales" && answer.lane !== "marketing") {
-    return { ...rejected(article, "modell_ohne_signal", prefilter.families, model), ...answerContext };
+    return { ...rejected(article, "modell_ohne_signal", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
   const family = prefilter.families.find((candidate) => candidate.id === answer.signal_id);
   // Gemini may only confirm a family the prefilter already accepted, and the
   // lane must be the one that family belongs to.
   if (!family || family.lane !== answer.lane) {
-    return { ...rejected(article, "familie_nicht_erlaubt", prefilter.families, model), ...answerContext };
+    return { ...rejected(article, "familie_nicht_erlaubt", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
   const evidence = String(answer.evidence || "").trim();
   if (!evidenceExists(evidence, prefilter.text)) {
-    return { ...rejected(article, "evidenz_fehlt", prefilter.families, model), ...answerContext };
+    return { ...rejected(article, "evidenz_fehlt", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
   if (SIMPLE_SENSITIVE_PATTERN.test(normalizeMatchText(evidence))) {
-    return { ...rejected(article, "sensibles_zitat", prefilter.families, model), ...answerContext };
+    return { ...rejected(article, "sensibles_zitat", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
   // Virale News sind nur ein Signal, wenn der Anschluss an eine ROOTS-Leistung
   // im selben Durchlauf mitgeliefert wurde.
   const rootsLink = String(answer.roots_link_de || "").trim();
   const rootsOffering = String(answer.roots_offering || "").trim();
   if (family.id === SIMPLE_VIRAL_FAMILY_ID && (rootsLink.length < 25 || !rootsOffering)) {
-    return { ...rejected(article, "kein_roots_bezug", prefilter.families, model), ...answerContext };
+    return { ...rejected(article, "kein_roots_bezug", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
   const confidence = clampConfidence(answer.confidence);
   const score = Math.max(0, Math.min(100, Math.round(Number(answer.score) || 0)));
   if (confidence < SIMPLE_MIN_CONFIDENCE || score < SIMPLE_MIN_SCORE) {
-    return { ...rejected(article, "zu_unsicher", prefilter.families, model), ...answerContext };
+    return { ...rejected(article, "zu_unsicher", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
   return {
     article_id: article.id,
@@ -755,6 +787,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
     roots_offering: family.id === SIMPLE_VIRAL_FAMILY_ID ? rootsOffering.slice(0, 200) : null,
     roots_link_de: family.id === SIMPLE_VIRAL_FAMILY_ID ? rootsLink.slice(0, 500) : null,
+    tier1_companies: prefilter.tier1,
     matched_families: prefilter.families.map((candidate) => candidate.id),
     reject_reason: null,
     model,

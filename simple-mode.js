@@ -273,6 +273,17 @@ function bindUi() {
     });
   });
   els.archiveMore?.addEventListener("click", () => void loadArchive(true));
+  // Stationen des einfachen Modus öffnen und durchblättern.
+  document.addEventListener("click", (event) => {
+    const open = event.target.closest("[data-simple-stage]");
+    if (open) { openSimpleStage = open.dataset.simpleStage; renderSimpleStagePopup(); return; }
+    if (event.target.closest("[data-simple-stage-close]")) { openSimpleStage = null; renderSimpleStagePopup(); return; }
+    const stages = simpleRules?.stages || [];
+    const index = stages.findIndex((stage) => stage.id === openSimpleStage);
+    if (event.target.closest("[data-simple-stage-prev]") && stages[index - 1]) { openSimpleStage = stages[index - 1].id; renderSimpleStagePopup(); }
+    if (event.target.closest("[data-simple-stage-next]") && stages[index + 1]) { openSimpleStage = stages[index + 1].id; renderSimpleStagePopup(); }
+  });
+
 }
 
 // ---------------------------------------------------------------------------
@@ -342,13 +353,42 @@ async function loadArchive(append = false) {
 
 // Einstellungen: was einstellbar ist, kommt aus der Konfiguration; die Regeln
 // selbst sind Servercode und werden nur gezeigt.
+let openSimpleStage = null;
+
+// Der einfache Modus zeigt denselben Ablauf wie Advanced: Kacheln im Flow, und
+// je Station ein Popup mit genau vier Blöcken - Ein/Aus, geprüfte Filter,
+// Schwellen, feste Schutzregeln.
 export function renderSimpleSettings() {
   if (!els.settingsContent) return;
   if (!simpleRules) {
     void loadRules().then(() => renderSimpleSettings());
     return;
   }
-  const rules = simpleRules;
+  const stages = simpleRules.stages || [];
+  const icon = { bestand: "fa-solid fa-layer-group", bereinigung: "fa-solid fa-eraser", vorfilter: "fa-solid fa-filter", ki: "fa-solid fa-wand-magic-sparkles", validierung: "fa-solid fa-shield-halved" };
+  const card = (stage, index) => `
+    <button type="button" class="pipeline-overview-card" data-simple-stage="${esc(stage.id)}">
+      <span class="pipeline-overview-card-number">${index + 1}</span>
+      <span class="pipeline-overview-card-icon"><i class="${icon[stage.id] || "fa-solid fa-gear"}"></i></span>
+      <h4>${escText(stage.title.replace(/^\d+\s*·\s*/, ""))}</h4>
+      <p>${escText(stage.copy)}</p>
+      <span class="pipeline-overview-stat"><small>${escText(stage.system === "gemini" ? "KI-Prüfung" : stage.system === "server" ? "Serverseitig" : "Deterministisch")}</small><b>${escText(stage.families ? `${stage.families.length} Signalfamilien` : `${(stage.details || []).length} Regeln`)}</b></span>
+      <span class="pipeline-overview-card-action">Station ansehen <i class="fa-solid fa-arrow-right"></i></span>
+    </button>`;
+  els.settingsContent.innerHTML = `
+    <div class="pipeline-flow">${stages.map(card).join("")}</div>
+    <p class="pipeline-model-note"><i class="fa-solid fa-circle-info"></i> Das Modell für den einfachen Modus wird unter <b>Kosten &amp; Betrieb</b> eingestellt. Aktiv: ${escText(simpleRules.model_label || simpleRules.model)} · Prompt ${escText(simpleRules.version)}.</p>
+    <section class="pipeline-drilldown" id="simple-drilldown" hidden></section>`;
+  renderSimpleStagePopup();
+}
+
+function renderSimpleStagePopup() {
+  const target = el("simple-drilldown");
+  if (!target) return;
+  const stages = simpleRules?.stages || [];
+  const index = stages.findIndex((stage) => stage.id === openSimpleStage);
+  if (index < 0) { target.hidden = true; target.innerHTML = ""; return; }
+  const stage = stages[index];
   const chips = (terms) => (terms || []).map((term) => `<code class="pipeline-term">${escText(term)}</code>`).join("");
   const familyBlock = (family) => `
     <details class="pipeline-detail">
@@ -360,19 +400,39 @@ export function renderSimpleSettings() {
       ${(family.context_terms || []).length ? `<div class="pipeline-detail-row"><span>Kontextpflicht (${family.context_terms.length})</span><div class="pipeline-terms">${chips(family.context_terms)}</div></div>` : ""}
       ${(family.exclude_title_terms || []).length ? `<div class="pipeline-detail-row"><span>Ausschluss im Titel (${family.exclude_title_terms.length})</span><div class="pipeline-terms">${chips(family.exclude_title_terms)}</div></div>` : ""}
     </details>`;
-  const systemLabel = { code: "Deterministischer Code", gemini: "KI-Prüfung", server: "Serverseitige Validierung" };
-  const stageBlock = (stage) => `
-    <section class="pipeline-stage-card">
-      <header><div><b>${escText(stage.title)}</b><small>${escText(systemLabel[stage.system] || stage.system)}</small></div></header>
-      <p>${escText(stage.copy)}</p>
-      ${(stage.details || []).map((detail) => `<div class="pipeline-detail-row"><span>${escText(detail.label)}</span><p>${escText(detail.value)}</p></div>`).join("")}
-      ${(stage.families || []).length ? `<div class="pipeline-family-list">${stage.families.map(familyBlock).join("")}</div>` : ""}
-    </section>`;
-  els.settingsContent.innerHTML = `
-    <div class="pipeline-stage-flow">${(rules.stages || []).map(stageBlock).join("")}</div>
-    <div class="pipeline-section-head" style="margin-top:1.4rem"><span>Nicht abschaltbar</span><h3>Guardrails</h3><p>Diese Regeln stehen im Servercode und lassen sich nicht über die Oberfläche deaktivieren.</p></div>
-    <div class="simple-rule-card"><ul>${rules.guardrails.map((rule) => `<li><b>${escText(rule.label)}</b><span>${escText(rule.description)}</span></li>`).join("")}</ul></div>
-    <p class="pipeline-model-note"><i class="fa-solid fa-circle-info"></i> Das Modell für den einfachen Modus wird unter <b>Kosten &amp; Betrieb</b> eingestellt. Aktiv: ${escText(rules.model_label || rules.model)}.</p>`;
+  const guardrails = (simpleRules.guardrails || []).filter((rule) => {
+    if (stage.id === "vorfilter") return ["keyword_never_decides", "sensitive_topics", "news_domain_lock", "tier1", "min_text"].includes(rule.id);
+    if (stage.id === "ki") return ["candidate_lock", "no_crawl"].includes(rule.id);
+    if (stage.id === "validierung") return ["verbatim_evidence", "min_confidence"].includes(rule.id);
+    return false;
+  });
+  const previous = stages[index - 1];
+  const next = stages[index + 1];
+  target.hidden = false;
+  target.innerHTML = `<div class="pipeline-drilldown-card pipeline-drilldown-card--single" role="dialog" aria-modal="true">
+    <header class="pipeline-drilldown-head">
+      <div><div class="pipeline-breadcrumb"><button type="button" data-simple-stage-close>Pipeline</button><i class="fa-solid fa-chevron-right"></i><b>${escText(stage.title)}</b></div>
+      <div class="pipeline-drilldown-title"><span><i class="fa-solid fa-diagram-project"></i></span><div><h4>${escText(stage.title)}</h4><p>${escText(stage.copy)}</p></div></div></div>
+      <div class="pipeline-drilldown-head-actions">
+        <button type="button" class="pipeline-icon-btn" data-simple-stage-prev ${previous ? "" : "disabled"} title="Vorherige Station"><i class="fa-solid fa-arrow-left"></i></button>
+        <button type="button" class="pipeline-icon-btn" data-simple-stage-next ${next ? "" : "disabled"} title="Nächste Station"><i class="fa-solid fa-arrow-right"></i></button>
+        <button type="button" class="pipeline-icon-btn" data-simple-stage-close title="Schließen"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </header>
+    <main class="stage-page-scroll"><div class="stage-page">
+      <section class="pipeline-stage-card">
+        <header><div><b>Werte dieser Station</b><small>${escText(stage.system === "gemini" ? "KI-Prüfung" : stage.system === "server" ? "Serverseitige Validierung" : "Deterministischer Code")}</small></div></header>
+        ${(stage.details || []).map((detail) => `<div class="pipeline-detail-row"><span>${escText(detail.label)}</span><p>${escText(detail.value)}</p></div>`).join("")}
+      </section>
+      ${(stage.families || []).length ? `<section class="pipeline-stage-card"><header><div><b>Geprüfte Signalfamilien</b><small>${stage.families.length} Familien · Treffer erlaubt nur die KI-Prüfung</small></div></header><div class="pipeline-family-list">${stage.families.map(familyBlock).join("")}</div></section>` : ""}
+      ${guardrails.length ? `<section class="pipeline-stage-card"><header><div><b>Nicht abschaltbare Schutzregeln</b><small>Servercode</small></div></header><div class="pipeline-family-list">${guardrails.map((rule) => `<details class="pipeline-detail"><summary><b>${escText(rule.label)}</b><span>fest</span></summary><p>${escText(rule.description)}</p></details>`).join("")}</div></section>` : ""}
+    </div></main>
+    <footer class="pipeline-drilldown-footer">
+      <button type="button" class="btn-secondary" data-simple-stage-close><i class="fa-solid fa-arrow-left"></i>Zur Pipeline</button>
+      <span class="pipeline-depth-progress">Station ${index + 1} von ${stages.length}</span>
+      ${next ? `<button type="button" class="btn-primary" data-simple-stage-next>Nächste Station<i class="fa-solid fa-arrow-right"></i></button>` : `<button type="button" class="btn-primary" data-simple-stage-close>Schließen<i class="fa-solid fa-xmark"></i></button>`}
+    </footer>
+  </div>`;
 }
 
 export function showSimpleView(view) {

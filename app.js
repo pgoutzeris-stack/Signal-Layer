@@ -609,6 +609,7 @@ function simpleModelSelect() {
 }
 
 function renderOperationsPanel(telemetry) {
+  const simpleMode = document.body.classList.contains("mode-simple");
   const euro = (value) => value === null || value === undefined
     ? "–"
     : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
@@ -626,7 +627,7 @@ function renderOperationsPanel(telemetry) {
       <article><span class="operations-metric-icon operations-metric-icon--green"><i class="fa-solid fa-wand-magic-sparkles"></i></span><div><small>KI-Analysen</small><b>${Number(telemetry?.costs?.requests || 0).toLocaleString("de-DE")}</b></div></article>
     </section>
 
-    <section class="operations-card">
+    ${simpleMode ? "" : `<section class="operations-card">
       <div class="operations-card-head"><div><span>KI-Konfiguration · Advanced</span><h4>Gemini 2.5 Flash-Lite Batch ist aktiv</h4><p>Alle automatischen Hauptanalysen laufen zum 50-%-Batchpreis. Abhängige Zusatzschritte verwenden dasselbe Flash-Lite-Modell und werden separat protokolliert; manuelle Vorschauen bleiben sofortige Einzelaufrufe.</p></div>${modelState}</div>
       <div class="operations-model-grid">
         ${operationsModelSelect("ai.primary_model", "Hauptmodell", "Analysiert alle Artikel nach dem Vorfilter.", "fa-solid fa-bolt")}
@@ -636,12 +637,12 @@ function renderOperationsPanel(telemetry) {
       <div class="operations-review-row"><div><b>50-%-Batchpreis für automatische Läufe</b><small>Aktiv und serverseitig geschützt – neue Crawl- und Neuanalyse-Artikel werden gesammelt mit Gemini 2.5 Flash-Lite verarbeitet. Bei einem Batchfehler erfolgt kein stiller Wechsel zum Standardpreis.</small></div><label class="source-toggle pipeline-switch"><input data-pipeline-path="ai.batch_enabled" type="checkbox" checked disabled aria-label="Gemini Batch ist fest aktiviert"><span class="source-toggle-slider"></span></label></div>
       ${pipelineFields(["ai.batch_size"])}
       <button type="button" class="operations-refresh" data-refresh-gemini-models ${geminiModelCatalogState.status === "loading" ? "disabled" : ""}><i class="fa-solid fa-arrows-rotate"></i> Modellauswahl aktualisieren</button>
-    </section>
+    </section>`}
 
-    <section class="operations-card">
+    ${!simpleMode ? "" : `<section class="operations-card">
       <div class="operations-card-head"><div><span>KI-Konfiguration · Einfacher Modus</span><h4>Eigenes Modell für Simple</h4><p>Der einfache Modus läuft getrennt vom Advanced-Modus: kein Crawl, kein Batch, ein kompakter Aufruf je Artikel. Tokens und Kosten landen im selben Kostenledger, die Prognose erscheint in der Statusleiste.</p></div><i class="fa-solid fa-wand-magic-sparkles operations-card-symbol"></i></div>
       <div class="operations-model-grid">${simpleModelSelect()}</div>
-    </section>
+    </section>`}
 
     <section class="operations-card operations-card--compact">
       <div class="operations-card-head"><div><span>Kostenkontrolle</span><h4>Monatliche Warnung</h4><p>Du erhältst einen Hinweis, sobald die geschätzten KI-Kosten diesen Wert erreichen. Die Pipeline wird nicht gestoppt.</p></div><i class="fa-solid fa-bell operations-card-symbol"></i></div>
@@ -774,23 +775,43 @@ function renderManifestRule(rule) {
   </article>`;
 }
 
+// Aufgeräumte Stationsansicht: was hinein- und herausgeht, welche Filter
+// wirklich greifen (mit aufklappbaren Wortlisten), was einstellbar ist und was
+// fest verdrahtet bleibt. Bewusst schlank - keine Kachelteppiche mehr.
 function renderManifestStageOverview(stage, manifestStage) {
-  const summary = `<div class="stage-io-grid">
+  const flow = `<div class="stage-io-grid">
     <article><span>Kommt hinein</span><b>${escapeHtml(manifestStage.input)}</b></article>
     <i class="fa-solid fa-arrow-right"></i>
     <article><span>Hier passiert</span><b>${escapeHtml(manifestStage.check)}</b></article>
     <i class="fa-solid fa-arrow-right"></i>
     <article class="stage-io-result"><span>Kommt heraus</span><b>${escapeHtml(manifestStage.output)}</b></article>
   </div>`;
-  const configurable = (manifestStage.rules || []).some((rule) => !rule.locked);
-  const editLabel = STAGE_PAGE_META[stage.id]?.edit && configurable ? "Einstellungen ändern" : "";
-  const rules = stageSection("So entscheidet diese Station", manifestStage.summary, `<div class="stage-card-grid stage-card-grid--3">${(manifestStage.rules || []).map(renderManifestRule).join("")}</div>`, editLabel);
-  let aiOperations = "";
-  if (stage.id === "gemini" && pipelineSettings.rule_manifest.ai_operations?.length) {
-    aiOperations = stageSection("Welche KI-Aufrufe können entstehen?", "Alle Operationen werden mit Modell, Tokens und Kosten separat protokolliert.", `<div class="stage-card-grid stage-card-grid--4">${pipelineSettings.rule_manifest.ai_operations.map((operation) => stageCard("fa-solid fa-wand-magic-sparkles", operation.title, `${operation.when} Modell: ${operation.model}`, "gemini", "Gemini")).join("")}</div>`);
-  }
-  const manifestMeta = `<div class="stage-outcome stage-outcome--single"><span><i class="fa-solid fa-circle-check"></i><b>Live-Regelwerk</b> ${escapeHtml(pipelineSettings.rule_manifest.version)} · Prompt ${escapeHtml(pipelineSettings.rule_manifest.prompt_version)} · Scoring ${escapeHtml(pipelineSettings.rule_manifest.scoring_version)}</span></div>`;
-  return `<div class="stage-page">${summary}${rules}${aiOperations}${manifestMeta}</div>`;
+  const rules = manifestStage.rules || [];
+  const adjustable = rules.filter((rule) => !rule.locked);
+  const locked = rules.filter((rule) => rule.locked);
+  const ruleBlock = (rule) => {
+    const value = rule.value === undefined ? "" :
+      `<span class="quality-tag ${rule.status === "inactive" ? "quality-tag--uncertain" : "quality-tag--reliable"}">${escapeHtml(typeof rule.value === "boolean" ? (rule.value ? "Ein" : "Aus") : String(rule.value))}</span>`;
+    return `<details class="pipeline-detail">
+      <summary><b>${escapeHtml(rule.title)}</b>${value || `<span>${rule.locked ? "fest" : "einstellbar"}</span>`}</summary>
+      <p>${escapeHtml(rule.explanation)}</p>
+      ${rule.technical ? `<div class="pipeline-detail-row"><span>Technisch</span><p>${escapeHtml(rule.technical)}</p></div>` : ""}
+      ${manifestRuleTerms(rule)}
+    </details>`;
+  };
+  const group = (title, copy, list, editLabel = "") => list.length
+    ? stageSection(title, copy, `<div class="pipeline-family-list">${list.map(ruleBlock).join("")}</div>`, editLabel)
+    : "";
+  const editLabel = STAGE_PAGE_META[stage.id]?.edit && adjustable.length ? "Einstellungen ändern" : "";
+  const ai = stage.id === "gemini" && pipelineSettings.rule_manifest.ai_operations?.length
+    ? stageSection("KI-Aufrufe dieser Station", "Jeder Aufruf wird mit Modell, Tokens und Kosten protokolliert.",
+      `<div class="pipeline-family-list">${pipelineSettings.rule_manifest.ai_operations.map((operation) => `<details class="pipeline-detail"><summary><b>${escapeHtml(operation.title)}</b><span>${escapeHtml(operation.model)}</span></summary><p>${escapeHtml(operation.when)}</p></details>`).join("")}</div>`)
+    : "";
+  const version = `<div class="stage-outcome stage-outcome--single"><span><i class="fa-solid fa-circle-check"></i><b>Live-Regelwerk</b> ${escapeHtml(pipelineSettings.rule_manifest.version)} · Prompt ${escapeHtml(pipelineSettings.rule_manifest.prompt_version)} · Scoring ${escapeHtml(pipelineSettings.rule_manifest.scoring_version)}</span></div>`;
+  return `<div class="stage-page">${flow}
+    ${group("Geprüfte Filter", manifestStage.summary, adjustable, editLabel)}
+    ${group("Nicht abschaltbare Schutzregeln", "Diese Regeln stehen im Servercode und gelten immer.", locked)}
+    ${ai}${version}</div>`;
 }
 
 function renderStageOverview(stage) {
@@ -1076,7 +1097,7 @@ function renderPipelineStudio() {
           <article class="status-card status-card--error"><h5>Technischer Fehler</h5><p>Zum Beispiel Gemini-Limit, Timeout oder ungültige Modellantwort. Fachlich noch nicht entschieden.</p></article>
           <article class="status-card"><h5>Altbestand</h5><p>Historischer Artikel, der bewusst nicht durch die neue Pipeline gelaufen ist.</p></article>
         </div>` },
-        { id: "rules", icon: "fa-solid fa-eye", label: "Was im Frontend erscheint", content: `<div class="logic-grid"><article class="logic-card"><h5>Kachel</h5><p>Track-spezifischer Relevanzscore, deutscher Titel, Zusammenfassung, fachliche Tags, Territory, Tier-1-Pills und Routing.</p></article><article class="logic-card"><h5>Detailansicht</h5><p>Marketing-Asset- oder Sales-Opportunity-Score mit Begründung, Volltext, Tags, Personen, Trigger und Evidenzstellen.</p></article><article class="logic-card"><h5>Warum diese Entscheidung?</h5><p>Die Seitenleiste zeigt Nutzwert, Begründung, bestandene Regeln und die zugehörigen Textbelege.</p></article></div><div class="pipeline-action-row"><button type="button" class="btn-secondary" data-open-settings-panel="manual-review"><i class="fa-solid fa-user-check"></i> Manuelle Prüfung öffnen</button></div>` },
+        { id: "rules", icon: "fa-solid fa-eye", label: "Was im Frontend erscheint", content: `<div class="logic-grid"><article class="logic-card"><h5>Kachel</h5><p>Track-spezifischer Relevanzscore, deutscher Titel, Zusammenfassung, fachliche Tags, Territory, Tier-1-Pills und Routing.</p></article><article class="logic-card"><h5>Detailansicht</h5><p>Marketing-Asset- oder Sales-Opportunity-Score mit Begründung, Volltext, Tags, Personen, Trigger und Evidenzstellen.</p></article><article class="logic-card"><h5>Warum diese Entscheidung?</h5><p>Die Seitenleiste zeigt Nutzwert, Begründung, bestandene Regeln und die zugehörigen Textbelege.</p></article></div>` },
       ],
     },
   ];
@@ -1718,9 +1739,17 @@ function syncSettingsPanelForMode(simple) {
   if (!nav) return;
   const activeItem = nav.querySelector(".settings-nav-item.active");
   const activePanel = activeItem?.dataset.panel;
-  const advancedOnly = new Set(["pipeline-overview", "manual-review", "diagnostics"]);
+  const advancedOnly = new Set(["pipeline-overview", "diagnostics"]);
+  // Panels, die je Modus anderen Inhalt zeigen, müssen neu gerendert werden -
+  // sonst wechselt nur die Seitenleiste und der Inhalt bleibt stehen.
   const needsSwitch = simple ? advancedOnly.has(activePanel) : activePanel === "simple-pipeline";
-  if (!needsSwitch) return;
+  if (!needsSwitch) {
+    if (activePanel === "operations") {
+      const operations = document.getElementById("operations-content");
+      if (operations) operations.innerHTML = renderOperationsPanel(pipelineOperationsTelemetry);
+    }
+    return;
+  }
   const target = simple ? "simple-pipeline" : "pipeline-overview";
   nav.querySelector(`.settings-nav-item[data-panel="${target}"]`)?.click();
 }
@@ -3184,7 +3213,6 @@ function bindUi() {
           .then(() => renderSimpleSettings())
           .catch((error) => toast(error.message, "err"));
       }
-      if (panel === "manual-review") void loadPipelineReview().catch((error) => toast(error.message, "err"));
       if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
     });
   });
