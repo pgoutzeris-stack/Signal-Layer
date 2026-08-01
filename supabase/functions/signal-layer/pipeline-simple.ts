@@ -79,8 +79,13 @@ export const SIMPLE_NEWS_DOMAINS = ["bild.de"];
 // mit einer Beschriftungstabelle auskommen.
 export const SIMPLE_ARTICLE_TYPES = [
   "news", "analysis", "interview", "opinion", "study", "report", "case_study",
-  "press_release", "company_update", "event_report", "other",
+  "press_release", "company_update", "event_report", "viral_news", "other",
 ] as const;
+
+// Artikeltyp, der für die Spur "virale News" erzwungen wird - damit ist sie in
+// der Oberfläche filterbar, ohne dass das Modell den Typ raten muss.
+export const SIMPLE_VIRAL_ARTICLE_TYPE = "viral_news";
+export const SIMPLE_VIRAL_FAMILY_ID = "virale_news";
 
 export type SimpleLane = "sales" | "marketing";
 
@@ -169,6 +174,18 @@ const MARKETING_FAMILIES: SimpleFamily[] = [
     definition: "Aktuelles, breit interessierendes Konsum-, Marken- oder Handelsthema von bild.de - ausdrücklich ohne Politik, Religion und sensible Themen.",
     trigger: /\b(marke\w*|brand\w*|produkt\w*|hersteller\w*|handel\w*|supermarkt\w*|discounter\w*|lebensmittel\w*|getrank\w*|drogerie\w*|mode\w*|preis\w*|preise|teurer|billiger|inflation\w*|kunde\w*|kundin\w*|verbraucher\w*|konsument\w*|shopper|einkauf\w*|werbung|kampagn\w*|reklame|trend\w*|viral|social media|influencer\w*)\b/,
     domains: SIMPLE_NEWS_DOMAINS,
+  },
+  {
+    id: "virale_news",
+    lane: "marketing",
+    label: "Virale News mit ROOTS-Anschluss",
+    definition: "Breit diskutiertes Thema ausserhalb der Fachpresse (Rede, Auftritt, Debatte, Aufregung), aus dem sich ein LinkedIn-Beitrag machen lässt - aber nur, wenn ein belegbarer Bezug zu einer ROOTS-Leistung besteht.",
+    // Resonanz-Signal: das Thema muss erkennbar Aufmerksamkeit erzeugen.
+    trigger: /\b(viral|geht viral|shitstorm|aufsehen|aufregung|debatte\w*|diskussion\w*|kontrovers\w*|umstritten|kritik\w*|kritisiert|empor\w*|social media|linkedin|netz reagiert|sorgt fur|loste aus|polarisier\w*|eklat|brandrede|wutrede|klartext|statement|appell|ansprache|rede|interview|meinung\w*|kolumne|kommentar)\b/,
+    // Anschluss-Thema: ohne inhaltliche Brücke zu Führung, Haltung, Marke,
+    // Kunde oder Zusammenarbeit gibt es keinen ROOTS-Bezug.
+    context: /\b(fuhrung\w*|leadership|haltung|verantwortung|kultur\w*|team\w*|zusammenarbeit|organisation\w*|wandel|transformation\w*|vertrauen|glaubwurdig\w*|authenti\w*|purpose|sinn|werte|kommunikation\w*|auftritt|reputation|image|marke\w*|brand\w*|kunde\w*|kundin\w*|customer|konsument\w*|verbraucher\w*|mitarbeit\w*|generation\w*|arbeitgeber\w*|employer brand\w*|motivation|leistung\w*|erwartung\w*|strateg\w*)\b/,
+    excludeTitle: /\b(quartal\w*|bilanz\w*|umsatz\w*|gewinn\w*|aktie\w*|dividende\w*|inflation\w*|\bbip\b|konjunktur\w*|spielbericht|tabelle|ergebnisse des spieltags|transfer\w*|verletzt|kader)\b/,
   },
   {
     id: "marketing_strategie",
@@ -317,9 +334,18 @@ export type SimpleAiAnswer = {
   summary_de: string;
   article_type: string;
   language: string;
+  roots_offering: string;
+  roots_link_de: string;
 };
 
-export function buildSimplePrompt(article: SimpleArticleInput, families: SimpleFamily[]): string {
+export function buildSimplePrompt(
+  article: SimpleArticleInput,
+  families: SimpleFamily[],
+  rootsPortfolio = "",
+): string {
+  // Das Portfolio kostet Tokens, deshalb steht es nur im Prompt, wenn die Spur
+  // "virale News" überhaupt ein Kandidat ist.
+  const wantsRootsLink = families.some((family) => family.id === SIMPLE_VIRAL_FAMILY_ID);
   const candidates = families
     .map((family) => `- ${family.id} (${family.lane}): ${family.definition}`)
     .join("\n");
@@ -330,6 +356,13 @@ export function buildSimplePrompt(article: SimpleArticleInput, families: SimpleF
   return `<candidate_signals>
 ${candidates}
 </candidate_signals>
+${wantsRootsLink && rootsPortfolio ? `<roots_portfolio>\n${rootsPortfolio}\n</roots_portfolio>
+<viral_rules>
+Für signal_id "virale_news" gilt zusätzlich: Das Thema muss breit diskutiert sein und sich für einen LinkedIn-Beitrag eignen, auch wenn es kein Marketingthema ist.
+Ein Signal entsteht nur, wenn du eine konkrete Leistung aus roots_portfolio nennen kannst, an die das Thema inhaltlich anschliesst. Schreibe die Leistung in roots_offering und in roots_link_de genau einen deutschen Satz, der den Anschluss beschreibt.
+Der Anschluss muss aus dem Artikelinhalt folgen. Wenn du dafür Fakten erfinden müsstest, gib lane="keine" zurück.
+Sport-, Promi- oder Unterhaltungsberichte ohne übertragbare Aussage zu Führung, Haltung, Kultur, Marke, Kunden oder Zusammenarbeit sind kein Signal.
+</viral_rules>` : ""}
 <rules>
 Entscheide, ob der Artikel genau eine dieser Signalfamilien wirklich belegt.
 Wähle nur eine Familie aus der Liste; erfinde keine neue und wähle keine, die nicht oben steht.
@@ -342,10 +375,11 @@ Marketing heisst: der Artikel liefert übertragbare Substanz für eigene Inhalte
 headline_de ist eine sachliche deutsche Überschrift ohne neue Fakten, why_de genau ein deutscher Satz zur Begründung.
 summary_de fasst den Artikel in maximal zwei deutschen Sätzen zusammen, ohne neue Fakten und ohne Wertung. Fülle es immer aus, auch bei lane="keine".
 article_type beschreibt die Textform, nicht das Thema. language ist die Sprache des Artikeltexts.
+roots_offering und roots_link_de bleiben leer, wenn du nicht die Spur "virale_news" wählst.
 </rules>
 <answer_format>
 Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
-{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","company":"Unternehmen oder leerer String","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|other","language":"de|en|other"}
+{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","company":"Unternehmen oder leerer String","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"Leistung oder leerer String","roots_link_de":"ein Satz oder leerer String"}
 </answer_format>
 <source name="${article.source?.company || "unbekannt"}" category="${article.source?.category || "unbekannt"}" />
 <article_title>${String(article.title || "")}</article_title>
@@ -354,7 +388,7 @@ Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
 
 export const SIMPLE_RESPONSE_SCHEMA = {
   type: "OBJECT",
-  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "company", "summary_de", "article_type", "language"],
+  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "company", "summary_de", "article_type", "language", "roots_offering", "roots_link_de"],
   properties: {
     lane: { type: "STRING", enum: ["sales", "marketing", "keine"] },
     signal_id: { type: "STRING", description: "Eine id aus candidate_signals oder leer, wenn lane=keine." },
@@ -367,6 +401,8 @@ export const SIMPLE_RESPONSE_SCHEMA = {
     summary_de: { type: "STRING", description: "Deutsche Zusammenfassung des Artikels, maximal zwei Sätze." },
     article_type: { type: "STRING", enum: [...SIMPLE_ARTICLE_TYPES] },
     language: { type: "STRING", enum: ["de", "en", "other"] },
+    roots_offering: { type: "STRING", description: "Passende ROOTS-Leistung aus roots_portfolio oder leer." },
+    roots_link_de: { type: "STRING", description: "Ein deutscher Satz, wie ROOTS mit dieser Leistung an das Thema andocken kann. Leer, wenn kein belastbarer Bezug besteht." },
   },
 };
 
@@ -381,6 +417,8 @@ export type SimpleDeps = {
   /** Schlüssel des Anbieters, der zum gewählten Modell gehört. */
   apiKey: string;
   model?: string;
+  /** Kompakte Liste der ROOTS-Leistungen; nur für die virale Spur gebraucht. */
+  rootsPortfolio?: string;
 };
 
 export type SimpleUsage = {
@@ -588,6 +626,8 @@ export type SimpleResult = {
   summary_de: string | null;
   article_type: string | null;
   language: string | null;
+  roots_offering: string | null;
+  roots_link_de: string | null;
   matched_families: string[];
   reject_reason: string | null;
   model: string | null;
@@ -597,7 +637,8 @@ export type SimpleResult = {
 // Ablehnungen, die erst nach einer Modellantwort entstehen. Daran erkennt der
 // Aufrufer, ob ein Artikel überhaupt KI-Budget gekostet hat.
 export const SIMPLE_AI_REJECT_REASONS = new Set([
-  "modell_ohne_signal", "familie_nicht_erlaubt", "evidenz_fehlt", "sensibles_zitat", "zu_unsicher", "modellfehler",
+  "modell_ohne_signal", "familie_nicht_erlaubt", "evidenz_fehlt", "sensibles_zitat", "zu_unsicher",
+  "kein_roots_bezug", "modellfehler",
 ]);
 
 export function simpleResultUsedAi(result: SimpleResult): boolean {
@@ -613,6 +654,7 @@ export const SIMPLE_REJECT_LABELS: Record<string, string> = {
   evidenz_fehlt: "Das Zitat steht nicht wortgleich im Artikel.",
   zu_unsicher: "Konfidenz oder Nutzwert unter der Mindestschwelle.",
   sensibles_zitat: "Das Zitat betrifft ein sensibles Thema.",
+  kein_roots_bezug: "Breit diskutiert, aber ohne belegbaren Anschluss an eine ROOTS-Leistung.",
   modellfehler: "Technischer Fehler bei der KI-Prüfung.",
 };
 
@@ -632,6 +674,8 @@ function rejected(article: SimpleArticleInput, reason: string, families: SimpleF
     summary_de: null,
     article_type: null,
     language: null,
+    roots_offering: null,
+    roots_link_de: null,
     matched_families: families.map((family) => family.id),
     reject_reason: reason,
     model,
@@ -646,7 +690,11 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   const model = deps.model || SIMPLE_MODEL;
   let answer: SimpleAiAnswer;
   try {
-    answer = await callSimpleModel(deps, article.id, buildSimplePrompt(article, prefilter.families));
+    answer = await callSimpleModel(
+      deps,
+      article.id,
+      buildSimplePrompt(article, prefilter.families, deps.rootsPortfolio || ""),
+    );
   } catch (_error) {
     return rejected(article, "modellfehler", prefilter.families, model);
   }
@@ -673,6 +721,13 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   if (SIMPLE_SENSITIVE_PATTERN.test(normalizeMatchText(evidence))) {
     return { ...rejected(article, "sensibles_zitat", prefilter.families, model), ...answerContext };
   }
+  // Virale News sind nur ein Signal, wenn der Anschluss an eine ROOTS-Leistung
+  // im selben Durchlauf mitgeliefert wurde.
+  const rootsLink = String(answer.roots_link_de || "").trim();
+  const rootsOffering = String(answer.roots_offering || "").trim();
+  if (family.id === SIMPLE_VIRAL_FAMILY_ID && (rootsLink.length < 25 || !rootsOffering)) {
+    return { ...rejected(article, "kein_roots_bezug", prefilter.families, model), ...answerContext };
+  }
   const confidence = clampConfidence(answer.confidence);
   const score = Math.max(0, Math.min(100, Math.round(Number(answer.score) || 0)));
   if (confidence < SIMPLE_MIN_CONFIDENCE || score < SIMPLE_MIN_SCORE) {
@@ -691,9 +746,14 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     why_de: String(answer.why_de || "").slice(0, 600),
     company: String(answer.company || "").slice(0, 200) || null,
     summary_de: String(answer.summary_de || "").slice(0, 800) || null,
-    article_type: SIMPLE_ARTICLE_TYPES.includes(String(answer.article_type) as typeof SIMPLE_ARTICLE_TYPES[number])
-      ? String(answer.article_type) : "other",
+    // Der Typ wird für die virale Spur erzwungen, damit die Filterung stimmt.
+    article_type: family.id === SIMPLE_VIRAL_FAMILY_ID
+      ? SIMPLE_VIRAL_ARTICLE_TYPE
+      : SIMPLE_ARTICLE_TYPES.includes(String(answer.article_type) as typeof SIMPLE_ARTICLE_TYPES[number])
+        ? String(answer.article_type) : "other",
     language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
+    roots_offering: family.id === SIMPLE_VIRAL_FAMILY_ID ? rootsOffering.slice(0, 200) : null,
+    roots_link_de: family.id === SIMPLE_VIRAL_FAMILY_ID ? rootsLink.slice(0, 500) : null,
     matched_families: prefilter.families.map((candidate) => candidate.id),
     reject_reason: null,
     model,

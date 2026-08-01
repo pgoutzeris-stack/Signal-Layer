@@ -279,6 +279,23 @@ async function ensureSimpleArticleText(
   }
 }
 
+// Kompaktes ROOTS-Portfolio für die virale Spur: Säule, Leistung, ein Halbsatz.
+// Gecacht, weil es sich selten ändert und sonst jeder Batch die Tabelle liest.
+const simplePortfolioCache: { value: string; at: number } = { value: "", at: 0 };
+
+async function getSimpleRootsPortfolio(): Promise<string> {
+  const now = Date.now();
+  if (simplePortfolioCache.value && now - simplePortfolioCache.at < 10 * 60 * 1000) return simplePortfolioCache.value;
+  const { data } = await getAdminClient().schema("signal_layer").from("roots_offerings")
+    .select("id, label, pillar, description").eq("active", true).order("sort_order", { ascending: true });
+  const text = (data || [])
+    .map((offering: Record<string, string>) => `- [${offering.pillar || "sonstige"}] ${offering.label}: ${String(offering.description || "").split(/[.;]/)[0]}`)
+    .join("\n");
+  simplePortfolioCache.value = text;
+  simplePortfolioCache.at = now;
+  return text;
+}
+
 function simpleRunRequest(runId: string, timeoutMs: number): Promise<unknown> {
   return fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
     method: "POST",
@@ -4939,8 +4956,8 @@ Deno.serve(async (req: Request) => {
             sales_triggers: [],
             manual_review_tracks: [],
             manual_review_reason: null,
-            matched_offering: null,
-            matched_offering_reasoning: null,
+            matched_offering: signal?.roots_offering || null,
+            matched_offering_reasoning: signal?.roots_link_de || null,
             ai_summary: signal?.summary_de || null,
             ai_rationale: signal?.why_de || rejectLabel,
             rejection_reasons: isSignal || !rejectLabel ? [] : [rejectLabel],
@@ -5093,7 +5110,10 @@ Deno.serve(async (req: Request) => {
           return errorResponse(origin, message, 500);
         }
 
-        const deps = { admin, apiKey: modelKey, model: simpleModel };
+        const deps = {
+          admin, apiKey: modelKey, model: simpleModel,
+          rootsPortfolio: await getSimpleRootsPortfolio(),
+        };
         const rows: Array<Record<string, unknown>> = [];
         let signals = 0;
         let aiCalls = 0;
@@ -5142,6 +5162,8 @@ Deno.serve(async (req: Request) => {
             summary_de: result.summary_de,
             article_type: result.article_type,
             language: result.language,
+            roots_offering: result.roots_offering,
+            roots_link_de: result.roots_link_de,
             matched_families: result.matched_families,
             reject_reason: result.reject_reason,
             model: result.model,
@@ -5224,7 +5246,7 @@ Deno.serve(async (req: Request) => {
         if (lane && !["marketing", "sales"].includes(lane)) return errorResponse(origin, "invalid lane");
         const admin = getAdminClient();
         let query = admin.schema("signal_layer").from("simple_signals")
-          .select("id, article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, matched_families, model, prompt_version, created_at, updated_at, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))")
+          .select("id, article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, matched_families, model, prompt_version, created_at, updated_at, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))")
           .eq("status", "signal")
           .order("score", { ascending: false })
           .order("updated_at", { ascending: false })

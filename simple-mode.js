@@ -92,6 +92,11 @@ function signalCard(signal) {
       <span class="finding-title">${escText(title)}</span>
       ${signal.why_de ? `<p class="simple-signal-why">${escText(signal.why_de)}</p>` : ""}
       ${signal.evidence ? `<q class="simple-signal-evidence">${escText(signal.evidence)}</q>` : ""}
+      ${signal.roots_link_de ? `<div class="finding-offering">
+        <div class="finding-offering-head"><span><i class="fa-solid fa-puzzle-piece"></i> Passende ROOTS-Leistung</span></div>
+        <strong>${escText(signal.roots_offering || "")}</strong>
+        <div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escText(signal.roots_link_de)}</p></div>
+      </div>` : ""}
       <div class="finding-meta">
         ${signal.company ? `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
         ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}

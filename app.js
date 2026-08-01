@@ -1260,6 +1260,7 @@ const TERRITORY_LABELS = {
 };
 
 const ARTICLE_TYPE_LABELS = {
+  viral_news: "Virale News",
   news: "Nachricht",
   opinion: "Meinung / Kommentar",
   report: "Report",
