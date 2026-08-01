@@ -234,12 +234,22 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
   };
 }
 
-function triggerSimpleRun(runId: string): void {
-  fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+function simpleRunRequest(runId: string, timeoutMs: number): Promise<unknown> {
+  return fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
     body: JSON.stringify({ action: "process_simple_run", run_id: runId }),
+    signal: AbortSignal.timeout(timeoutMs),
   }).catch(() => { /* the watchdog picks the run up again */ });
+}
+
+// An unawaited fetch is killed when the isolate returns its response, so the
+// next batch is registered as a background task. Without that API the watchdog
+// remains the fallback and advances the run one batch per tick.
+function triggerSimpleRun(runId: string): void {
+  const pending = simpleRunRequest(runId, 120_000);
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  runtime?.waitUntil?.(pending);
 }
 
 // ---------------------------------------------------------------------------
@@ -4592,7 +4602,9 @@ Deno.serve(async (req: Request) => {
         const { data: openSimpleRuns } = await admin.schema("signal_layer").from("simple_runs")
           .select("id, last_progress_at").eq("status", "running")
           .lt("last_progress_at", new Date(Date.now() - 120_000).toISOString()).limit(3);
-        for (const simpleRun of openSimpleRuns || []) triggerSimpleRun(simpleRun.id);
+        // Bewusst awaited: so schiebt jeder Watchdog-Tick den Lauf garantiert um
+        // ein Paket weiter, auch wenn die Selbstkette abgerissen ist.
+        if ((openSimpleRuns || []).length > 0) await simpleRunRequest(openSimpleRuns![0].id, 55_000);
 
         const { data: stalled, error: stalledErr } = await admin.schema("signal_layer").from("crawl_runs")
           .select("id, source_ids, current_index, current_offset")
