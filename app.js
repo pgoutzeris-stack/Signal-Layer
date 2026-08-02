@@ -590,7 +590,7 @@ function operationsModelSelect(path, label, description, icon) {
     const optionLabel = `${model?.display_name || model?.label || modelId}${batchSuffix}`;
     return `<option value="${escapeHtml(modelId)}" ${modelId === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`;
   }).join("");
-  return `<label class="operations-model-field"><span class="operations-model-icon"><i class="${icon}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)}</small><span class="operations-select-wrap"><select class="pipeline-control" data-pipeline-path="${path}" ${geminiModelCatalogState.status === "loading" ? "disabled" : ""} aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
+  return `<label class="operations-model-field"><span class="operations-model-icon"><i class="${icon}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)}</small><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="${path}" ${geminiModelCatalogState.status === "loading" ? "disabled" : ""} aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
 }
 
 // Modelle des einfachen Modus kommen aus dem Servercode (pipeline-simple.ts),
@@ -605,7 +605,7 @@ function simpleModelSelect() {
   const price = active
     ? `Eingabe ${active.input_usd} $ · Cache ${active.cached_input_usd} $ · Ausgabe ${active.output_usd} $ je 1 Mio. Tokens`
     : "Preisliste im Servercode hinterlegt";
-  return `<label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></span><span class="operations-model-copy"><b>Modell für den einfachen Modus</b><small>Prüft die letzten gespeicherten Artikel. ${escapeHtml(price)}</small><span class="operations-select-wrap"><select class="pipeline-control" data-pipeline-path="ai.simple_model" aria-label="Modell für den einfachen Modus">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
+  return `<label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></span><span class="operations-model-copy"><b>Modell für den einfachen Modus</b><small>Prüft die letzten gespeicherten Artikel. ${escapeHtml(price)}</small><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="ai.simple_model" aria-label="Modell für den einfachen Modus">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
 }
 
 function renderOperationsPanel(telemetry) {
@@ -1147,6 +1147,7 @@ function renderBusinessPipelineStudio() {
   const operations = document.getElementById("operations-content");
   if (operations) {
     operations.innerHTML = renderOperationsPanel(pipelineOperationsTelemetry);
+    enhanceHeaderSelects();
   }
 
   const diagnostics = document.getElementById("diagnostics-content");
@@ -1762,7 +1763,10 @@ function syncSettingsPanelForMode(simple) {
   if (!needsSwitch) {
     if (activePanel === "operations") {
       const operations = document.getElementById("operations-content");
-      if (operations) operations.innerHTML = renderOperationsPanel(pipelineOperationsTelemetry);
+      if (operations) {
+        operations.innerHTML = renderOperationsPanel(pipelineOperationsTelemetry);
+        enhanceHeaderSelects();
+      }
     }
     return;
   }
@@ -2818,7 +2822,7 @@ function renderSimpleHeaderStatus() {
   const forecastDetail = document.getElementById("crawl-cost-detail");
   if (forecastDetail && simpleForecast) {
     forecastDetail.innerHTML = `<b>${escapeHtml(simpleForecast.model_label || simpleForecast.model || "Modell")}</b>
-      <span>${Number(simpleForecast.analysed_articles || 0).toLocaleString("de-DE")} Artikel geprüft · ${Number(simpleForecast.remaining_articles || 0).toLocaleString("de-DE")} offen</span>
+      <span>${Number(simpleForecast.processed_articles || 0).toLocaleString("de-DE")} Artikel verarbeitet · ${Number(simpleForecast.analysed_articles || 0).toLocaleString("de-DE")} davon per KI (${Math.round((simpleForecast.ai_share || 0) * 100)} %) · ${Number(simpleForecast.remaining_articles || 0).toLocaleString("de-DE")} offen</span>
       <span>${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens · bisher ${eur(simpleForecast.spent_eur)}</span>
       <span>Hochrechnung für den ganzen Lauf: ${eur(simpleForecast.projected_eur)}</span>`;
   }
@@ -2842,6 +2846,16 @@ async function loadLastRun() {
     const formatEur = (value) => value === null || value === undefined
       ? "Kurs wird geladen"
       : `${Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const simpleMode = document.body.classList.contains("mode-simple");
+    const activeModel = simpleMode ? costs?.simple_model : costs?.advanced_model;
+    const monthLabel = document.getElementById("cost-month-label");
+    if (monthLabel) monthLabel.textContent = "KI-Kosten im Monat";
+    const costModelNote = document.getElementById("cost-panel-model");
+    if (costModelNote) {
+      costModelNote.textContent = activeModel
+        ? `Live aus dem Kostenledger · aktives Modell ${activeModel}`
+        : "Live aus dem Kostenledger";
+    }
     els.geminiCostMonth.textContent = formatEur(costs?.month_eur);
     els.geminiCostToday.textContent = formatEur(costs?.today_eur);
     els.statusCostSummary.textContent = formatEur(costs?.month_eur);

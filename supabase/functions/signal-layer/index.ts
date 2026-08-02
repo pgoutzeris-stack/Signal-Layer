@@ -222,7 +222,10 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
   const total = Number(run.total_count || 0);
   const processed = Number(run.processed_count || 0);
   const remaining = Math.max(total - processed, 0);
-  const perArticleUsd = analysed > 0 ? spentUsd / analysed : null;
+  const aiShare = processed > 0 ? analysed / processed : 0;
+  // Die Hochrechnung muss sich auf verarbeitete Artikel beziehen: die meisten
+  // fallen kostenlos im Vorfilter, nur ein Teil kostet einen KI-Aufruf.
+  const perArticleUsd = processed > 0 ? spentUsd / processed : null;
   const projectedUsd = perArticleUsd === null ? null : spentUsd + perArticleUsd * remaining;
   const rate = await getUsdEurRate().catch(() => null);
   const toEur = (value: number | null) => value === null || rate === null ? null : value * rate;
@@ -230,6 +233,8 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
     model: modelId,
     model_label: simpleModelOption(modelId).label,
     analysed_articles: analysed,
+    processed_articles: processed,
+    ai_share: aiShare,
     remaining_articles: remaining,
     tokens: rows.reduce((sum: number, row: Record<string, number>) => sum + Number(row.total_tokens || 0), 0),
     spent_usd: spentUsd,
@@ -6084,6 +6089,10 @@ Deno.serve(async (req: Request) => {
             : null,
           cost_summary: {
             ...costSummary,
+            // Beide Modi rechnen in dasselbe Ledger; die Oberfläche darf daher
+            // nicht "Gemini" behaupten, sondern nennt die aktiven Modelle.
+            advanced_model: pipelineConfig.ai.primary_model,
+            simple_model: pipelineConfig.ai.simple_model || SIMPLE_MODEL,
             month_eur: usdEurRate === null ? null : costSummary.month_usd * usdEurRate,
             today_eur: usdEurRate === null ? null : costSummary.today_usd * usdEurRate,
             usd_eur_rate: usdEurRate,

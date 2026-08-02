@@ -1851,12 +1851,12 @@
                 </div>
                 <section class="status-disclosure-panel status-cost-panel" id="status-cost-panel">
                   <button type="button" class="status-disclosure-toggle" id="status-cost-toggle" aria-expanded="false" aria-controls="status-cost-body">
-                    <span><i class="fa-solid fa-coins"></i><span><b>Kosten ausklappen</b><small>Live aus dem unveränderlichen Supabase-Kostenledger</small></span></span>
+                    <span><i class="fa-solid fa-coins"></i><span><b>Kosten ausklappen</b><small id="cost-panel-model">Live aus dem Supabase-Kostenledger</small></span></span>
                     <span><strong id="status-cost-summary">–</strong><i class="fa-solid fa-chevron-down"></i></span>
                   </button>
                   <div class="status-disclosure-body" id="status-cost-body" hidden>
                     <div class="telemetry-grid">
-                      <div class="telemetry-stat" id="gemini-cost-stat"><span>Gemini im Monat</span><b id="gemini-cost-month">–</b></div>
+                      <div class="telemetry-stat" id="gemini-cost-stat"><span id="cost-month-label">KI-Kosten im Monat</span><b id="gemini-cost-month">–</b></div>
                       <div class="telemetry-stat"><span>Heute</span><b id="gemini-cost-today">–</b></div>
                       <div class="telemetry-stat telemetry-stat--interactive" id="crawl-cost-forecast-stat" tabindex="0"><span>Crawl-Prognose</span><b id="gemini-request-count">–</b><div class="cost-detail-popover" id="crawl-cost-detail" role="tooltip"></div></div>
                     </div>
@@ -2192,7 +2192,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260801-2000';
+import { initApp } from './app.js?v=20260801-2100';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
