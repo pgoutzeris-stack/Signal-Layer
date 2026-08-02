@@ -98,7 +98,9 @@ function signalCard(signal) {
         <div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escText(signal.roots_link_de)}</p></div>
       </div>` : ""}
       <div class="finding-meta">
-        ${signal.company ? `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
+        ${(signal.tier1_companies || []).map((name) => `<span class="tag tag--kunde" data-pill-info="Einstufung: Tier-1-Unternehmen" tabindex="0"><i class="fa-solid fa-building"></i> ${esc(name)}</span>`).join("")}
+        ${signal.company && !(signal.tier1_companies || []).includes(signal.company) ? `<span class="tag tag--company" data-pill-info="Einstufung: Company" tabindex="0"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
+        ${signal.person_name ? `<span class="tag tag--person" data-pill-info="Einstufung: Person${signal.person_role ? " · " + esc(signal.person_role) : ""}" tabindex="0"><i class="fa-solid fa-user"></i> ${esc(signal.person_name)}</span>` : ""}
         ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
         ${ctx.technicalAuditPill(article.id || signal.article_id)}
       </div>

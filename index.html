@@ -217,6 +217,12 @@
   .pipeline-version-line { display: flex; align-items: center; gap: 8px; margin-top: 1rem; color: var(--muted); font-size: .7rem; }
   .pipeline-version-line i { color: var(--brand); font-size: .66rem; }
   .pipeline-version-line b { color: var(--ink); font-weight: 700; }
+  /* Einstufung der Pills: Tier-1 blau, alles andere neutral weiss. */
+  .tag--company { border-color: var(--line); background: var(--bg); color: var(--ink); }
+  .tag--company i { color: var(--muted); }
+  .tag[data-pill-info] { position: relative; cursor: default; }
+  .tag[data-pill-info]::after { content: attr(data-pill-info); position: absolute; left: 50%; bottom: calc(100% + 6px); z-index: 60; transform: translateX(-50%); padding: .35rem .55rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font-size: .64rem; font-weight: 650; white-space: nowrap; box-shadow: 0 8px 20px rgba(15,23,42,.14); opacity: 0; visibility: hidden; transition: opacity .14s ease; }
+  .tag[data-pill-info]:hover::after, .tag[data-pill-info]:focus-visible::after { opacity: 1; visibility: visible; }
   @media (max-width: 720px) { .pipeline-detail-row { grid-template-columns: 1fr; gap: 2px; } }
   .simple-signal-why { margin: .45rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
   .simple-signal-evidence { display: block; margin: .55rem 0 0; padding: .5rem .7rem; border-left: 2px solid var(--brand); border-radius: 0 8px 8px 0; background: var(--surface); color: var(--ink); font-size: .72rem; line-height: 1.45; }
@@ -2183,7 +2189,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260801-1700';
+import { initApp } from './app.js?v=20260801-1800';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

@@ -4965,10 +4965,14 @@ Deno.serve(async (req: Request) => {
               ...(signal?.tier1_companies || []),
               ...(signal?.company ? [signal.company] : []),
             ])],
-            matched_persons: [],
+            matched_persons: signal?.person_name ? [signal.person_name] : [],
+            person_mentions: signal?.person_name
+              ? [{ name: signal.person_name, role: signal.person_role || "", confidence: signal.confidence, evidence: signal.evidence || "" }]
+              : [],
+            buying_center_candidate: Boolean(signal?.person_name) || (signal?.buying_center_roles || []).length > 0,
+            buying_center_roles: signal?.buying_center_roles || [],
             primary_company: signal?.company || null,
             company_mentions: [],
-            person_mentions: [],
             sales_triggers: [],
             manual_review_tracks: [],
             manual_review_reason: null,
@@ -4977,6 +4981,11 @@ Deno.serve(async (req: Request) => {
             ai_summary: signal?.summary_de || null,
             ai_rationale: signal?.why_de || rejectLabel,
             rejection_reasons: isSignal || !rejectLabel ? [] : [rejectLabel],
+            // Trennt Tier-1-Zielkunden von einem lediglich genannten Unternehmen.
+            company_tiers: Object.fromEntries([
+              ...(signal?.tier1_companies || []).map((name: string) => [name, "tier1"]),
+              ...(signal?.company && !(signal?.tier1_companies || []).includes(signal.company) ? [[signal.company, "company"]] : []),
+            ]),
             tag_evidence: signal?.evidence && signal?.signal_id
               ? { [familyLabel(signal.signal_id)]: signal.evidence }
               : {},
@@ -4994,8 +5003,15 @@ Deno.serve(async (req: Request) => {
               prefilter: {
                 bestaetigte_signalfamilien: (signal?.matched_families || []).map(familyLabel),
                 erkannte_tier1_unternehmen: signal?.tier1_companies || [],
+                genanntes_unternehmen: signal?.company || null,
                 mindestlaenge_zeichen: SIMPLE_MIN_TEXT_CHARS,
                 nur_vorgefilterte_familien_erlaubt: true,
+              },
+              personen: {
+                verantwortliche_person: signal?.person_name || null,
+                rolle: signal?.person_role || null,
+                buying_center_rollen: signal?.buying_center_roles || [],
+                pruefung: "Name, Rolle und jede Rolle müssen wörtlich im Artikel stehen",
               },
               modellentscheidung: {
                 modell: signal?.model || null,
@@ -5189,6 +5205,9 @@ Deno.serve(async (req: Request) => {
             roots_offering: result.roots_offering,
             roots_link_de: result.roots_link_de,
             tier1_companies: result.tier1_companies,
+            person_name: result.person_name,
+            person_role: result.person_role,
+            buying_center_roles: result.buying_center_roles,
             matched_families: result.matched_families,
             reject_reason: result.reject_reason,
             model: result.model,
@@ -5274,7 +5293,7 @@ Deno.serve(async (req: Request) => {
         if (lane && !["marketing", "sales"].includes(lane)) return errorResponse(origin, "invalid lane");
         const admin = getAdminClient();
         let query = admin.schema("signal_layer").from("simple_signals")
-          .select("id, article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, matched_families, model, prompt_version, created_at, updated_at, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))")
+          .select("id, article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, matched_families, model, prompt_version, created_at, updated_at, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))")
           .eq("status", "signal")
           .order("score", { ascending: false })
           .order("updated_at", { ascending: false })
@@ -5461,7 +5480,13 @@ Deno.serve(async (req: Request) => {
             .select("status,attempts,last_error,created_at,started_at,finished_at,updated_at").eq("article_id", articleId).maybeSingle(),
         ]);
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
-        return corsResponse(origin, { article: { ...data, technical_trace: { usage_events: usageEvents || [], analysis_job: analysisJob || null, browser_job: browserJob || null } } });
+        // Dieselbe Einstufung wie im einfachen Modus: Tier-1-Zielkunde oder nur
+        // genanntes Unternehmen.
+        const tier1List = await getSimpleTier1Companies();
+        const tier1Names = new Set(tier1List.map((company) => normalizeMatchText(company.name)));
+        const companyTiers = Object.fromEntries(((data.matched_companies || []) as string[])
+          .map((name) => [name, tier1Names.has(normalizeMatchText(name)) ? "tier1" : "company"]));
+        return corsResponse(origin, { article: { ...data, company_tiers: companyTiers, technical_trace: { usage_events: usageEvents || [], analysis_job: analysisJob || null, browser_job: browserJob || null } } });
       }
 
       case "get_dashboard_status": {

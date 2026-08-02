@@ -34,7 +34,7 @@ import {
 
 export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "1.2";
+export const SIMPLE_VERSION = "1.3";
 export const SIMPLE_UPDATED_AT = "2026-08-01";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -360,6 +360,9 @@ export type SimpleAiAnswer = {
   language: string;
   roots_offering: string;
   roots_link_de: string;
+  person_name: string;
+  person_role: string;
+  buying_center_roles: string[];
 };
 
 export function buildSimplePrompt(
@@ -402,10 +405,12 @@ headline_de ist eine sachliche deutsche Überschrift ohne neue Fakten, why_de ge
 summary_de fasst den Artikel in maximal zwei deutschen Sätzen zusammen, ohne neue Fakten und ohne Wertung. Fülle es immer aus, auch bei lane="keine".
 article_type beschreibt die Textform, nicht das Thema. language ist die Sprache des Artikeltexts.
 roots_offering und roots_link_de bleiben leer, wenn du nicht die Spur "virale_news" wählst.
+person_name und person_role nur, wenn eine Person mit ihrer Rolle wörtlich im Artikel steht und das Signal verantwortet; sonst beide leer.
+buying_center_roles enthält ein bis vier Rollen, die laut Artikeltext von diesem Signal betroffen sind, wörtlich wie genannt. Erfinde keine Rollen; bei keiner belegten Rolle ein leeres Array.
 </rules>
 <answer_format>
 Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
-{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","company":"Unternehmen oder leerer String","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"Leistung oder leerer String","roots_link_de":"ein Satz oder leerer String"}
+{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","company":"Unternehmen oder leerer String","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"Leistung oder leerer String","roots_link_de":"ein Satz oder leerer String","person_name":"Name oder leerer String","person_role":"Rolle oder leerer String","buying_center_roles":["Rolle"]}
 </answer_format>
 ${tier1.length ? `<tier1_unternehmen>${tier1.join(", ")}</tier1_unternehmen>\n` : ""}<source name="${article.source?.company || "unbekannt"}" category="${article.source?.category || "unbekannt"}" />
 <article_title>${String(article.title || "")}</article_title>
@@ -414,7 +419,7 @@ ${tier1.length ? `<tier1_unternehmen>${tier1.join(", ")}</tier1_unternehmen>\n` 
 
 export const SIMPLE_RESPONSE_SCHEMA = {
   type: "OBJECT",
-  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "company", "summary_de", "article_type", "language", "roots_offering", "roots_link_de"],
+  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "company", "summary_de", "article_type", "language", "roots_offering", "roots_link_de", "person_name", "person_role", "buying_center_roles"],
   properties: {
     lane: { type: "STRING", enum: ["sales", "marketing", "keine"] },
     signal_id: { type: "STRING", description: "Eine id aus candidate_signals oder leer, wenn lane=keine." },
@@ -429,6 +434,9 @@ export const SIMPLE_RESPONSE_SCHEMA = {
     language: { type: "STRING", enum: ["de", "en", "other"] },
     roots_offering: { type: "STRING", description: "Passende ROOTS-Leistung aus roots_portfolio oder leer." },
     roots_link_de: { type: "STRING", description: "Ein deutscher Satz, wie ROOTS mit dieser Leistung an das Thema andocken kann. Leer, wenn kein belastbarer Bezug besteht." },
+    person_name: { type: "STRING", description: "Im Artikel genannte Person, die das Signal verantwortet, oder leer." },
+    person_role: { type: "STRING", description: "Rolle dieser Person, wörtlich aus dem Artikel, oder leer." },
+    buying_center_roles: { type: "ARRAY", items: { type: "STRING" }, description: "Ein bis vier im Artikel belegte Rollen, die von diesem Signal betroffen sind." },
   },
 };
 
@@ -657,6 +665,9 @@ export type SimpleResult = {
   roots_offering: string | null;
   roots_link_de: string | null;
   tier1_companies: string[];
+  person_name: string | null;
+  person_role: string | null;
+  buying_center_roles: string[];
   matched_families: string[];
   reject_reason: string | null;
   model: string | null;
@@ -712,6 +723,9 @@ function rejected(
     roots_offering: null,
     roots_link_de: null,
     tier1_companies: tier1,
+    person_name: null,
+    person_role: null,
+    buying_center_roles: [],
     matched_families: families.map((family) => family.id),
     reject_reason: reason,
     model,
@@ -764,6 +778,16 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   if (family.id === SIMPLE_VIRAL_FAMILY_ID && (rootsLink.length < 25 || !rootsOffering)) {
     return { ...rejected(article, "kein_roots_bezug", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
+  // Person und Rollen müssen im Artikel stehen, nicht erfunden sein.
+  const articleNormalized = normalizeMatchText(prefilter.text);
+  const nameCandidate = String(answer.person_name || "").trim();
+  const roleCandidate = String(answer.person_role || "").trim();
+  const personName = nameCandidate && articleNormalized.includes(normalizeMatchText(nameCandidate)) ? nameCandidate.slice(0, 120) : "";
+  const personRole = roleCandidate && articleNormalized.includes(normalizeMatchText(roleCandidate)) ? roleCandidate.slice(0, 120) : "";
+  const buyingCenterRoles = (Array.isArray(answer.buying_center_roles) ? answer.buying_center_roles : [])
+    .map((role) => String(role || "").trim())
+    .filter((role) => role.length > 2 && articleNormalized.includes(normalizeMatchText(role)))
+    .slice(0, 4);
   const confidence = clampConfidence(answer.confidence);
   const score = Math.max(0, Math.min(100, Math.round(Number(answer.score) || 0)));
   if (confidence < SIMPLE_MIN_CONFIDENCE || score < SIMPLE_MIN_SCORE) {
@@ -791,6 +815,10 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     roots_offering: family.id === SIMPLE_VIRAL_FAMILY_ID ? rootsOffering.slice(0, 200) : null,
     roots_link_de: family.id === SIMPLE_VIRAL_FAMILY_ID ? rootsLink.slice(0, 500) : null,
     tier1_companies: prefilter.tier1,
+    // Person und Rollen nur mit Namen und Rolle im Text; sonst bleibt es leer.
+    person_name: personName && personRole ? personName : null,
+    person_role: personName && personRole ? personRole : null,
+    buying_center_roles: buyingCenterRoles,
     matched_families: prefilter.families.map((candidate) => candidate.id),
     reject_reason: null,
     model,
@@ -884,11 +912,12 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
         { title: "Portfolio nur bei viralen News", copy: "Ist die virale Spur Kandidat, kommt zusätzlich das ROOTS-Leistungsportfolio in denselben Aufruf. Sonst bleibt der Prompt schlank.", kind: "Server" },
         { title: "Semantische Entscheidung", copy: `${option.label} wählt genau eine Familie, vergibt Konfidenz und Nutzwert, kopiert ein wörtliches Zitat und schreibt Überschrift, Begründung und Zusammenfassung auf Deutsch.`, kind: "KI" },
         { title: "Artikeltext bleibt Daten", copy: "Die Systemanweisung verbietet, Artikeltext als Anweisung zu behandeln. Im Zweifel muss das Modell \"keine Spur\" antworten.", kind: "KI" },
+        { title: "Person und Rollen mitbestimmen", copy: "Im selben Aufruf nennt das Modell die verantwortliche Person mit Rolle und bis zu vier betroffene Rollen als Buying Center - ohne zusätzlichen KI-Aufruf.", kind: "KI" },
         { title: "Genau ein Durchlauf", copy: "Es gibt keine zweite Runde und kein zweites Modell. Alles Nötige entsteht in diesem einen Aufruf.", kind: "KI" },
       ],
       details: [
         { label: "Modell", value: `${option.label} (in Kosten & Betrieb einstellbar)` },
-        { label: "Antwortform", value: "Ein JSON-Objekt: Spur, Familie, Konfidenz, Nutzwert, Zitat, Überschrift, Begründung, Zusammenfassung, Artikeltyp, Sprache" },
+        { label: "Antwortform", value: "Ein JSON-Objekt: Spur, Familie, Konfidenz, Nutzwert, Zitat, Überschrift, Begründung, Zusammenfassung, Artikeltyp, Sprache, Person mit Rolle, Buying-Center-Rollen" },
         { label: "Zusatz nur bei viralen News", value: "Das ROOTS-Leistungsportfolio wird in denselben Aufruf gelegt; ohne benannte Leistung und Anschlusssatz entsteht kein Signal." },
         { label: "Durchläufe", value: "Genau einer je Artikel, keine zweite Runde" },
       ],
@@ -901,6 +930,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       steps: [
         { title: "Familie gegenprüfen", copy: "Nennt das Modell eine Familie, die der Vorfilter nicht bestätigt hat, wird die Antwort verworfen.", kind: "Server" },
         { title: "Zitat gegenprüfen", copy: "Das Zitat muss wortgleich im Artikel stehen. Fehlt es, wird das Signal verworfen und nicht korrigiert.", kind: "Server" },
+        { title: "Person und Rollen gegenprüfen", copy: "Name, Rolle und jede Buying-Center-Rolle müssen wörtlich im Artikel vorkommen, sonst werden sie verworfen.", kind: "Server" },
         { title: "Sensibles Zitat abfangen", copy: "Auch ein formal gültiges Zitat wird verworfen, wenn es ein sensibles Thema betrifft.", kind: "Deterministischer Code" },
         { title: "ROOTS-Bezug bei viralen News", copy: "Ohne benannte Leistung und Anschlusssatz entsteht kein virales Signal.", kind: "Server" },
         { title: "Schwellen anwenden", copy: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder Nutzwert ${SIMPLE_MIN_SCORE} landen in "Nicht relevant" statt in den Ergebnissen.`, kind: "Server" },

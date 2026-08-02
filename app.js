@@ -1998,8 +1998,18 @@ function renderDetailTags(article) {
   return [
     ...topics.map((topic) => `<span class="tag">${escapeHtml(TOPIC_LABELS[topic] || topic)}</span>`),
     article.territory ? `<span class="tag">${escapeHtml(TERRITORY_LABELS[article.territory] || article.territory)}</span>` : "",
-    ...companies.map((company) => `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${escapeHtml(company)}</span>`),
-    ...people.map((person) => `<span class="tag tag--person"><i class="fa-solid fa-user"></i> ${escapeHtml(person)}</span>`),
+    // Tier-1-Zielkunde blau, sonst neutrale weisse Pill. Die Einstufung steht
+    // beim Überfahren in einer kleinen Box.
+    ...companies.map((company) => {
+      const tier = (article.company_tiers || {})[company] === "tier1" ? "tier1" : "company";
+      return `<span class="tag tag--${tier === "tier1" ? "kunde" : "company"}" data-pill-info="Einstufung: ${tier === "tier1" ? "Tier-1-Unternehmen" : "Company"}" tabindex="0"><i class="fa-solid fa-building"></i> ${escapeHtml(company)}</span>`;
+    }),
+    ...people.map((person) => {
+      const mention = (article.person_mentions || []).find((entry) => entry?.name === person);
+      const role = mention?.role ? ` · ${mention.role}` : "";
+      return `<span class="tag tag--person" data-pill-info="Einstufung: Person${escapeHtml(role)}" tabindex="0"><i class="fa-solid fa-user"></i> ${escapeHtml(person)}</span>`;
+    }),
+    ...(article.buying_center_roles || []).map((role) => `<span class="tag tag--company" data-pill-info="Einstufung: Buying-Center-Rolle" tabindex="0"><i class="fa-solid fa-users"></i> ${escapeHtml(role)}</span>`),
     ...salesTriggers.map((trigger) => `<span class="tag"><i class="fa-solid fa-bolt"></i> ${escapeHtml(SALES_TRIGGER_LABELS[trigger] || trigger)}</span>`),
   ].join("");
 }
