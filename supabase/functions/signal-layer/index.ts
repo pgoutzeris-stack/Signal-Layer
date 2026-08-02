@@ -5239,6 +5239,11 @@ Deno.serve(async (req: Request) => {
           if (aiCalls >= SIMPLE_AI_CALLS_PER_BATCH) break;
           if (aiCalls > 0 && Date.now() - batchStartedAt > BATCH_TIME_BUDGET_MS) break;
           consumed += 1;
+          await admin.schema("signal_layer").from("simple_runs").update({
+            current_article: String(article.title || article.url || "").slice(0, 300),
+            current_position: run.cursor + consumed,
+            last_progress_at: new Date().toISOString(),
+          }).eq("id", run.id);
           const prepared = await ensureSimpleArticleText(admin, article);
           const result = await classifySimpleArticle(deps, prepared);
           if (simpleResultUsedAi(result)) aiCalls += 1;
@@ -5336,6 +5341,7 @@ Deno.serve(async (req: Request) => {
           rejected_count: run.rejected_count + (rows.length - signals),
           status: done ? "done" : "running",
           last_progress_at: new Date().toISOString(),
+          current_article: done ? null : undefined,
           finished_at: done ? new Date().toISOString() : null,
         }).eq("id", run.id).select("*").single();
         if (updateError) return errorResponse(origin, updateError.message, 500);

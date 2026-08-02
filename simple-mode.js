@@ -240,7 +240,7 @@ async function loadResults({ keepStatus = false } = {}) {
 // Der Lauf selbst läuft im Backend. Solange er läuft, wird der Fortschritt
 // nachgeladen; danach genügt ein langsamer Takt, um einen im Backend gestarteten
 // Lauf zu bemerken.
-const POLL_ACTIVE_MS = 12_000;
+const POLL_ACTIVE_MS = 6_000;
 const POLL_IDLE_MS = 60_000;
 
 function scheduleStatusPoll() {

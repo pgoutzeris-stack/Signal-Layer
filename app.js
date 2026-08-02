@@ -2789,7 +2789,17 @@ function renderSimpleHeaderStatus() {
   if (run) {
     els.backfillProgressText.textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} Artikel`;
     els.backfillProgressBar.style.width = total > 0 ? `${Math.round(Math.min(processed / total, 1) * 100)}%` : "0%";
-    els.backfillCurrentArticle.hidden = true;
+    // Schimmer-Zeile mit Echtzeit-Info, wie im Advanced-Modus.
+    const modelLabel = simpleForecast?.model_label || run.model || "Modell";
+    const position = Number(run.current_position || processed || 0);
+    if (run.status === "running") {
+      els.backfillCurrentArticle.hidden = false;
+      els.backfillCurrentArticle.textContent = run.current_article
+        ? `${modelLabel} prüft Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}: ${run.current_article}`
+        : `${modelLabel} prüft Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}`;
+    } else {
+      els.backfillCurrentArticle.hidden = true;
+    }
     els.backfillProgressDetail.textContent = run.status === "error"
       ? (run.error_message || "Lauf mit Fehler beendet.")
       : `${Number(run.signal_count || 0)} Signale · ${Number(run.rejected_count || 0)} aussortiert`;
@@ -3029,7 +3039,17 @@ async function loadLastRun() {
     } else {
       els.backfillProgressText.textContent = "Kein Lauf";
       els.backfillProgressDetail.textContent = "Aktuell werden keine Altartikel geprüft.";
+      // Schimmer-Zeile mit Echtzeit-Info, wie im Advanced-Modus.
+    const modelLabel = simpleForecast?.model_label || run.model || "Modell";
+    const position = Number(run.current_position || processed || 0);
+    if (run.status === "running") {
+      els.backfillCurrentArticle.hidden = false;
+      els.backfillCurrentArticle.textContent = run.current_article
+        ? `${modelLabel} prüft Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}: ${run.current_article}`
+        : `${modelLabel} prüft Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}`;
+    } else {
       els.backfillCurrentArticle.hidden = true;
+    }
       els.backfillCurrentArticle.textContent = "";
       document.getElementById("backfill-status")?.classList.remove("is-live");
     }
