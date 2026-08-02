@@ -5291,6 +5291,7 @@ Deno.serve(async (req: Request) => {
             person_role: result.person_role,
             buying_center_roles: result.buying_center_roles,
             score_details: result.score_details || {},
+            error_kind: result.error_kind,
             matched_families: result.matched_families,
             reject_reason: result.reject_reason,
             model: result.model,
@@ -5299,10 +5300,11 @@ Deno.serve(async (req: Request) => {
             updated_at: new Date().toISOString(),
           };
           rows.push(row);
-          await admin.schema("signal_layer").from("simple_signals").upsert([row], { onConflict: "article_id" });
+          const { error_kind: _errorKind, ...persistedRow } = row;
+          await admin.schema("signal_layer").from("simple_signals").upsert([persistedRow], { onConflict: "article_id" });
           // Dauerhafte Historie: derselbe Artikel bleibt unter jeder Version
           // erhalten, auch wenn ein neuer Lauf den aktuellen Stand überschreibt.
-          const { updated_at: _updatedAt, ...historyRow } = row;
+          const { updated_at: _updatedAt, error_kind: _historyKind, ...historyRow } = row;
           await admin.schema("signal_layer").from("simple_signal_history")
             .upsert([{ ...historyRow, classified_at: new Date().toISOString() }], { onConflict: "article_id,pipeline_version" });
           await admin.schema("signal_layer").from("simple_runs").update({
@@ -5323,8 +5325,14 @@ Deno.serve(async (req: Request) => {
         const aiAttempts = rows.filter((row) => row.status === "signal"
           || row.reject_reason === "modellfehler"
           || AI_DECIDED.has(String(row.reject_reason)));
-        if (aiAttempts.length > 0 && aiAttempts.every((row) => row.reject_reason === "modellfehler")) {
-          const deterministicRows = rows.filter((row) => row.reject_reason !== "modellfehler");
+        // Nur ein echter Anbieterausfall stoppt den Lauf. Unbrauchbare Antworten
+        // betreffen einzelne Artikel und werden beim nächsten Lauf neu geprüft.
+        const providerOutage = aiAttempts.length > 0
+          && aiAttempts.every((row) => row.reject_reason === "modellfehler" && row.error_kind === "provider");
+        if (providerOutage) {
+          const deterministicRows = rows
+            .filter((row) => row.reject_reason !== "modellfehler")
+            .map(({ error_kind: _kind, ...rest }) => rest);
           if (deterministicRows.length > 0) {
             await admin.schema("signal_layer").from("simple_signals")
               .upsert(deterministicRows, { onConflict: "article_id" });

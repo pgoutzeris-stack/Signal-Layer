@@ -34,7 +34,7 @@ import {
 
 export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "1.7";
+export const SIMPLE_VERSION = "1.8";
 export const SIMPLE_UPDATED_AT = "2026-08-01";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -692,6 +692,8 @@ export type SimpleResult = {
   person_role: string | null;
   buying_center_roles: string[];
   score_details: Record<string, unknown> | null;
+  /** "provider" = Anbieter nicht verfügbar, "response" = Antwort unbrauchbar. */
+  error_kind: "provider" | "response" | null;
   matched_families: string[];
   reject_reason: string | null;
   model: string | null;
@@ -751,6 +753,7 @@ function rejected(
     person_role: null,
     buying_center_roles: [],
     score_details: null,
+    error_kind: null,
     matched_families: families.map((family) => family.id),
     reject_reason: reason,
     model,
@@ -770,8 +773,11 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
       article.id,
       buildSimplePrompt(article, prefilter.families, deps.rootsPortfolio || "", prefilter.tier1),
     );
-  } catch (_error) {
-    return rejected(article, "modellfehler", prefilter.families, model, prefilter.tier1);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Ein unbrauchbares Antwortformat ist ein Einzelfall, kein Anbieterausfall.
+    const kind = /no valid simple classification/i.test(message) ? "response" : "provider";
+    return { ...rejected(article, "modellfehler", prefilter.families, model, prefilter.tier1), error_kind: kind };
   }
 
   const answerContext = {
@@ -864,6 +870,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
       modellwert: modelScore,
       begruendung: String(answer.relevance?.reason || "").slice(0, 400) || null,
     },
+    error_kind: null,
     tier1_companies: prefilter.tier1,
     // Person und Rollen nur mit Namen und Rolle im Text; sonst bleibt es leer.
     person_name: personName && personRole ? personName : null,
