@@ -106,8 +106,9 @@ function signalCard(signal) {
       <div class="finding-item-top">
         <span class="finding-dimension">${esc(signal.signal_label || signal.signal_id || "Signal")}</span>
         <div class="finding-top-tags">
+          ${isToday(signal.updated_at || signal.classified_at) ? `<span class="finding-new-badge">NEU</span>` : ""}
           <span class="quality-tag quality-tag--reliable"><i class="fa-solid fa-chart-line"></i> ${esc(signal.lane === "sales" ? "Sales-Relevanz" : "Marketing-Relevanz")} · ${esc(signal.score ?? 0)} %</span>
-          ${article.published_at ? `<span class="finding-date-tag">${esc(formatDate(article.published_at))}</span>` : ""}
+          ${findingDateTag(article.published_at)}
         </div>
       </div>
       <span class="finding-title">${escText(title)}</span>
