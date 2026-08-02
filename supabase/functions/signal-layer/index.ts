@@ -288,8 +288,10 @@ async function getSimpleRootsPortfolio(): Promise<string> {
   if (simplePortfolioCache.value && now - simplePortfolioCache.at < 10 * 60 * 1000) return simplePortfolioCache.value;
   const { data } = await getAdminClient().schema("signal_layer").from("roots_offerings")
     .select("id, label, pillar, description").eq("active", true).order("sort_order", { ascending: true });
+  // Bewusst knapp: Säule und Leistungsname genügen dem Modell für die
+  // semantische Zuordnung und halten den Prompt klein.
   const text = (data || [])
-    .map((offering: Record<string, string>) => `- [${offering.pillar || "sonstige"}] ${offering.label}: ${String(offering.description || "").split(/[.;]/)[0]}`)
+    .map((offering: Record<string, string>) => `- [${offering.pillar || "sonstige"}] ${offering.label}`)
     .join("\n");
   simplePortfolioCache.value = text;
   simplePortfolioCache.at = now;
@@ -5006,6 +5008,12 @@ Deno.serve(async (req: Request) => {
                 genanntes_unternehmen: signal?.company || null,
                 mindestlaenge_zeichen: SIMPLE_MIN_TEXT_CHARS,
                 nur_vorgefilterte_familien_erlaubt: true,
+              },
+              roots_bezug: {
+                leistung: signal?.roots_offering || null,
+                anschluss: signal?.roots_link_de || null,
+                pflicht: "Ohne benannte Leistung und Anschlusssatz entsteht kein Signal",
+                verfahren: "Semantische Zuordnung durch das Modell im selben Aufruf, kein Keywordabgleich",
               },
               personen: {
                 verantwortliche_person: signal?.person_name || null,
