@@ -1983,7 +1983,7 @@
                 <option value="all">Alle Quellen</option>
               </select>
               <select class="signal-toolbar-select" id="simple-version" aria-label="Pipeline-Version">
-                <option value="current">Aktuelle Pipeline</option>
+                <option value="current">Aktueller Stand (alle Versionen)</option>
               </select>
               <select class="signal-toolbar-select" id="simple-sort" aria-label="Signale sortieren">
                 <option value="recommended">Empfohlen</option>
@@ -2193,7 +2193,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260802-1300';
+import { initApp } from './app.js?v=20260802-1400';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

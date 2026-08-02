@@ -214,7 +214,7 @@ async function loadVersions() {
     versionList = versions || [];
     if (!els.version) return;
     const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
-    els.version.innerHTML = `<option value="current">Aktuelle Pipeline</option>${versionList
+    els.version.innerHTML = `<option value="current">Aktueller Stand (alle Versionen)</option>${versionList
       .map((entry) => `<option value="${esc(entry.version)}" ${entry.version === selectedVersion ? "selected" : ""}>Version ${esc(entry.version)} · ${entry.archived_signals ?? entry.signals} Signale · ${esc(date(entry.first_seen_at))}</option>`)
       .join("")}`;
   } catch (_error) { /* Auswahl bleibt bei der aktuellen Pipeline */ }
