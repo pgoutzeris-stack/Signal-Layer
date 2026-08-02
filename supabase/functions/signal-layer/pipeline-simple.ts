@@ -33,6 +33,9 @@ import {
 } from "./pipeline-core.ts";
 
 export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
+// Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
+export const SIMPLE_VERSION = "1.2";
+export const SIMPLE_UPDATED_AT = "2026-08-01";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
 // Auswahlbare Modelle des einfachen Modus mit den Preisen, die im Kostenledger
@@ -917,6 +920,8 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
 export function simpleRuleManifest(activeModel: string = SIMPLE_MODEL) {
   return {
     version: SIMPLE_PIPELINE_VERSION,
+    version_label: SIMPLE_VERSION,
+    updated_at: SIMPLE_UPDATED_AT,
     model: activeModel,
     model_label: simpleModelOption(activeModel).label,
     models: SIMPLE_MODEL_CATALOG,

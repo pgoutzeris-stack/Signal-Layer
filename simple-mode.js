@@ -376,7 +376,7 @@ export function renderSimpleSettings() {
     </button>`;
   els.settingsContent.innerHTML = `
     <div class="pipeline-flow">${stages.map(card).join("")}</div>
-    <p class="pipeline-model-note"><i class="fa-solid fa-circle-info"></i> Das Modell für den einfachen Modus wird unter <b>Kosten &amp; Betrieb</b> eingestellt. Aktiv: ${escText(simpleRules.model_label || simpleRules.model)} · Prompt ${escText(simpleRules.version)}.</p>
+    <p class="pipeline-version-line"><i class="fa-solid fa-circle-check"></i>Pipeline <b>Version ${escText(simpleRules.version_label || "1.0")}</b> · zuletzt geändert ${escText(new Date(simpleRules.updated_at || Date.now()).toLocaleDateString("de-DE"))}</p>
     <section class="pipeline-drilldown" id="simple-drilldown" hidden></section>`;
   renderSimpleStagePopup();
 }
@@ -428,6 +428,7 @@ function renderSimpleStagePopup() {
         ${(stage.details || []).map((detail) => `<div class="pipeline-detail-row"><span>${escText(detail.label)}</span><p>${escText(detail.value)}</p></div>`).join("")}
       </section>
       ${(stage.families || []).length ? `<section class="pipeline-stage-card"><header><div><b>Geprüfte Signalfamilien</b><small>${stage.families.length} Familien · Treffer erlaubt nur die KI-Prüfung</small></div></header><div class="pipeline-family-list">${stage.families.map(familyBlock).join("")}</div></section>` : ""}
+      ${`<p class="pipeline-version-line"><i class="fa-solid fa-circle-check"></i>Pipeline <b>Version ${escText(simpleRules.version_label || "1.0")}</b> · zuletzt geändert ${escText(new Date(simpleRules.updated_at || Date.now()).toLocaleDateString("de-DE"))}</p>`}
       ${guardrails.length ? `<section class="pipeline-stage-card"><header><div><b>Nicht abschaltbare Schutzregeln</b><small>Servercode</small></div></header><div class="pipeline-family-list">${guardrails.map((rule) => `<details class="pipeline-detail"><summary><b>${escText(rule.label)}</b><span>fest</span></summary><p>${escText(rule.description)}</p></details>`).join("")}</div></section>` : ""}
     </div></main>
     <footer class="pipeline-drilldown-footer">

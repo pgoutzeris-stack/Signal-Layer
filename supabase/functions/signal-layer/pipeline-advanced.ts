@@ -50,6 +50,9 @@ export const GEMINI_REVIEW_MODEL = "gemini-2.5-flash-lite";
 
 export const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.9.2";
 
+// Eine gemeinsame, sprechende Version je Modus. Die internen Stufen-Versionen
+// bleiben für den Prüfpfad erhalten, in der Oberfläche steht nur noch diese.
+export const PIPELINE_VERSION = "3.1";
 export const PIPELINE_RULE_MANIFEST_VERSION = "roots-pipeline-rules-v1.1.0";
 
 export const RELEVANCE_SCORING_VERSION = "roots-value-v1.0";
@@ -270,6 +273,7 @@ export function buildPipelineRuleManifest(config: PipelineConfig) {
 
   return {
     version: PIPELINE_RULE_MANIFEST_VERSION,
+    version_label: PIPELINE_VERSION,
     prompt_version: CLASSIFIER_PROMPT_VERSION,
     pattern_library: patternLibrary,
     // Ordnet jeder Regel die Wortlisten zu, die sie tatsächlich prüft, damit die

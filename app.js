@@ -469,7 +469,7 @@ async function loadPipelineSettings() {
   pipelineSettings = settings;
   pipelineBaselineConfig = structuredClone(settings.config);
   renderBusinessPipelineStudio();
-  els.pipelineVersion.textContent = `Regelwerk ${settings.rule_manifest?.version || settings.prompt_version || "aktiv"} · Prompt ${settings.prompt_version || "aktiv"} · Konfiguration ${settings.version} · zuletzt ${new Date(settings.updated_at).toLocaleString("de-DE")}`;
+  els.pipelineVersion.textContent = `Version ${settings.rule_manifest?.version_label || settings.version} · zuletzt geändert ${new Date(settings.updated_at).toLocaleDateString("de-DE")}`;
   void callApi("get_tagging_stats").then((stats) => {
     pipelineStats = stats;
     renderPipelineStudio();
@@ -778,14 +778,22 @@ function renderManifestRule(rule) {
 // Aufgeräumte Stationsansicht: was hinein- und herausgeht, welche Filter
 // wirklich greifen (mit aufklappbaren Wortlisten), was einstellbar ist und was
 // fest verdrahtet bleibt. Bewusst schlank - keine Kachelteppiche mehr.
+// Eine Zeile, beide Modi gleich: Version und letzte Änderung.
+function pipelineVersionLine() {
+  const label = pipelineSettings?.rule_manifest?.version_label || pipelineSettings?.version || "–";
+  const changed = pipelineSettings?.updated_at
+    ? new Date(pipelineSettings.updated_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
+    : "unbekannt";
+  return `<p class="pipeline-version-line"><i class="fa-solid fa-circle-check"></i>Pipeline <b>Version ${escapeHtml(label)}</b> · zuletzt geändert ${escapeHtml(changed)}</p>`;
+}
+
 function renderManifestStageOverview(stage, manifestStage) {
-  const flow = `<div class="stage-io-grid">
-    <article><span>Kommt hinein</span><b>${escapeHtml(manifestStage.input)}</b></article>
-    <i class="fa-solid fa-arrow-right"></i>
-    <article><span>Hier passiert</span><b>${escapeHtml(manifestStage.check)}</b></article>
-    <i class="fa-solid fa-arrow-right"></i>
-    <article class="stage-io-result"><span>Kommt heraus</span><b>${escapeHtml(manifestStage.output)}</b></article>
-  </div>`;
+  const values = `<section class="pipeline-stage-card">
+    <header><div><b>Werte dieser Station</b><small>${escapeHtml((manifestStage.rules || []).some((rule) => (rule.systems || []).includes("gemini")) ? "KI-Prüfung beteiligt" : "Deterministisch und serverseitig")}</small></div></header>
+    <div class="pipeline-detail-row"><span>Kommt hinein</span><p>${escapeHtml(manifestStage.input)}</p></div>
+    <div class="pipeline-detail-row"><span>Hier passiert</span><p>${escapeHtml(manifestStage.check)}</p></div>
+    <div class="pipeline-detail-row"><span>Kommt heraus</span><p>${escapeHtml(manifestStage.output)}</p></div>
+  </section>`;
   const rules = manifestStage.rules || [];
   const adjustable = rules.filter((rule) => !rule.locked);
   const locked = rules.filter((rule) => rule.locked);
@@ -800,27 +808,24 @@ function renderManifestStageOverview(stage, manifestStage) {
     </details>`;
   };
   const group = (title, copy, list, editLabel = "") => list.length
-    ? stageSection(title, copy, `<div class="pipeline-family-list">${list.map(ruleBlock).join("")}</div>`, editLabel)
+    ? `<section class="pipeline-stage-card"><header><div><b>${escapeHtml(title)}</b><small>${escapeHtml(copy || "")}</small></div>${editLabel ? `<button type="button" class="stage-edit-button" data-pipeline-open-editor><i class="fa-solid fa-pen"></i>${escapeHtml(editLabel)}</button>` : ""}</header><div class="pipeline-family-list">${list.map(ruleBlock).join("")}</div></section>`
     : "";
   const editLabel = STAGE_PAGE_META[stage.id]?.edit && adjustable.length ? "Einstellungen ändern" : "";
   const ai = stage.id === "gemini" && pipelineSettings.rule_manifest.ai_operations?.length
-    ? stageSection("KI-Aufrufe dieser Station", "Jeder Aufruf wird mit Modell, Tokens und Kosten protokolliert.",
-      `<div class="pipeline-family-list">${pipelineSettings.rule_manifest.ai_operations.map((operation) => `<details class="pipeline-detail"><summary><b>${escapeHtml(operation.title)}</b><span>${escapeHtml(operation.model)}</span></summary><p>${escapeHtml(operation.when)}</p></details>`).join("")}</div>`)
+    ? `<section class="pipeline-stage-card"><header><div><b>KI-Aufrufe dieser Station</b><small>Jeder Aufruf wird mit Modell, Tokens und Kosten protokolliert</small></div></header><div class="pipeline-family-list">${pipelineSettings.rule_manifest.ai_operations.map((operation) => `<details class="pipeline-detail"><summary><b>${escapeHtml(operation.title)}</b><span>${escapeHtml(operation.model)}</span></summary><p>${escapeHtml(operation.when)}</p></details>`).join("")}</div></section>`
     : "";
   const steps = (pipelineSettings.rule_manifest.stage_steps || {})[stage.id] || [];
-  const stepList = steps.length ? stageSection(
-    "Schritt für Schritt",
-    "In dieser Reihenfolge läuft die Station ab.",
-    `<ol class="pipeline-steps">${steps.map((step) => `<li>
+  const stepList = steps.length ? `<section class="pipeline-stage-card">
+    <header><div><b>Schritt für Schritt</b><small>In dieser Reihenfolge läuft die Station ab</small></div></header>
+    <ol class="pipeline-steps">${steps.map((step) => `<li>
       <div class="pipeline-step-head"><b>${escapeHtml(step.title)}</b><span class="pipeline-step-kind">${escapeHtml(step.kind)}</span></div>
       <p>${escapeHtml(step.copy)}</p>
       ${manifestRuleTerms({ id: `${stage.id}.step`, technical: null, patterns: step.patterns })}
-    </li>`).join("")}</ol>`,
-  ) : "";
-  const version = `<div class="stage-outcome stage-outcome--single"><span><i class="fa-solid fa-circle-check"></i><b>Live-Regelwerk</b> ${escapeHtml(pipelineSettings.rule_manifest.version)} · Prompt ${escapeHtml(pipelineSettings.rule_manifest.prompt_version)} · Scoring ${escapeHtml(pipelineSettings.rule_manifest.scoring_version)}</span></div>`;
-  return `<div class="stage-page">${flow}${stepList}
+    </li>`).join("")}</ol></section>` : "";
+  const version = pipelineVersionLine();
+  return `<div class="stage-page pipeline-stage-flow">${stepList}${values}
     ${group("Einstellbare Filter", manifestStage.summary, adjustable, editLabel)}
-    ${group("Nicht abschaltbare Schutzregeln", "Diese Regeln stehen im Servercode und gelten immer.", locked)}
+    ${group("Nicht abschaltbare Schutzregeln", "Diese Regeln stehen im Servercode und gelten immer", locked)}
     ${ai}${version}</div>`;
 }
 
