@@ -5088,13 +5088,23 @@ Deno.serve(async (req: Request) => {
           .order("first_seen_at", { ascending: false });
         if (error) return errorResponse(origin, error.message, 500);
         const counts = await Promise.all((versions || []).map(async (entry: { version: string }) => {
-          const [{ count: signals }, { count: rejected }] = await Promise.all([
+          const [{ count: signals }, { count: rejected }, { count: archived }, { count: archivedSignals }] = await Promise.all([
             admin.schema("signal_layer").from("simple_signals")
               .select("id", { count: "exact", head: true }).eq("pipeline_version", entry.version).eq("status", "signal"),
             admin.schema("signal_layer").from("simple_signals")
               .select("id", { count: "exact", head: true }).eq("pipeline_version", entry.version).eq("status", "rejected"),
+            admin.schema("signal_layer").from("simple_signal_history")
+              .select("article_id", { count: "exact", head: true }).eq("pipeline_version", entry.version),
+            admin.schema("signal_layer").from("simple_signal_history")
+              .select("article_id", { count: "exact", head: true }).eq("pipeline_version", entry.version).eq("status", "signal"),
           ]);
-          return { ...entry, signals: signals || 0, rejected: rejected || 0 };
+          return {
+            ...entry,
+            signals: signals || 0,
+            rejected: rejected || 0,
+            archived_articles: archived || 0,
+            archived_signals: archivedSignals || 0,
+          };
         }));
         return corsResponse(origin, { versions: counts, current: (await getPipelineConfig()) && simpleRuleManifest((await getPipelineConfig()).ai.simple_model || SIMPLE_MODEL).version_label });
       }
@@ -5278,6 +5288,11 @@ Deno.serve(async (req: Request) => {
           };
           rows.push(row);
           await admin.schema("signal_layer").from("simple_signals").upsert([row], { onConflict: "article_id" });
+          // Dauerhafte Historie: derselbe Artikel bleibt unter jeder Version
+          // erhalten, auch wenn ein neuer Lauf den aktuellen Stand überschreibt.
+          const { updated_at: _updatedAt, ...historyRow } = row;
+          await admin.schema("signal_layer").from("simple_signal_history")
+            .upsert([{ ...historyRow, classified_at: new Date().toISOString() }], { onConflict: "article_id,pipeline_version" });
           await admin.schema("signal_layer").from("simple_runs").update({
             cursor: run.cursor + consumed,
             processed_count: run.processed_count + rows.length,
