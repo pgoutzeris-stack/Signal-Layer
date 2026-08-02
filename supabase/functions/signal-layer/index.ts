@@ -64,6 +64,7 @@ import {
   SIMPLE_MIN_TEXT_CHARS,
   SIMPLE_MODEL_CATALOG,
   SIMPLE_PIPELINE_VERSION,
+  SIMPLE_ALL_REJECT_REASONS,
   SIMPLE_REJECT_LABELS,
   classifySimpleArticle,
   simpleResultUsedAi,
@@ -5415,7 +5416,8 @@ Deno.serve(async (req: Request) => {
       }
 
       case "list_simple_rejected": {
-        const { limit, offset, pipeline_version: rejectedVersion } = body as { limit?: number; offset?: number; pipeline_version?: string };
+        const { limit, offset, pipeline_version: rejectedVersion, reasons, exclude_reasons: excludeReasons } =
+          body as { limit?: number; offset?: number; pipeline_version?: string; reasons?: string[]; exclude_reasons?: string[] };
         const safeLimit = Math.min(Math.max(Number(limit) || 60, 1), 200);
         const safeOffset = Math.max(Number(offset) || 0, 0);
         const rejectedColumns = "article_id, reject_reason, matched_families, summary_de, article_type, pipeline_version, article:articles(id, title, title_de, url, published_at, source:sources(company, url, category))";
@@ -5423,11 +5425,15 @@ Deno.serve(async (req: Request) => {
           ? await getAdminClient().schema("signal_layer").from("simple_signal_history")
             .select(`${rejectedColumns}, classified_at`, { count: "exact" })
             .eq("status", "rejected").eq("pipeline_version", rejectedVersion)
+            .in("reject_reason", Array.isArray(reasons) && reasons.length ? reasons : SIMPLE_ALL_REJECT_REASONS
+              .filter((reason) => !(excludeReasons || []).includes(reason)))
             .order("classified_at", { ascending: false })
             .range(safeOffset, safeOffset + safeLimit - 1)
           : await getAdminClient().schema("signal_layer").from("simple_signals")
             .select(`id, ${rejectedColumns}, updated_at`, { count: "exact" })
             .eq("status", "rejected")
+            .in("reject_reason", Array.isArray(reasons) && reasons.length ? reasons : SIMPLE_ALL_REJECT_REASONS
+              .filter((reason) => !(excludeReasons || []).includes(reason)))
             .order("updated_at", { ascending: false })
             .range(safeOffset, safeOffset + safeLimit - 1);
         if (error) return errorResponse(origin, error.message, 500);

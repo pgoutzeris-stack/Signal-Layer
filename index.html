@@ -1966,7 +1966,15 @@
 
         <!-- Einfacher Modus: Archiv -->
         <section class="app-view" id="view-simple-archive">
-          <div class="view-header"><div><h2>Archiv <span class="track-count" id="simple-archive-count">0</span></h2><p>Artikel, die der einfache Modus geprüft und aussortiert hat, mit Begründung.</p></div></div>
+          <div class="view-header"><div><h2>Archiv <span class="track-count" id="simple-archive-count">0</span></h2></div></div>
+          <nav class="signal-toolbar" aria-label="Archiv sortieren und filtern">
+            <span class="signal-toolbar-label"><i class="fa-solid fa-sliders"></i> Ansicht</span>
+            <div class="signal-toolbar-controls">
+              <select class="signal-toolbar-select" id="simple-archive-reason-filter" aria-label="Grund filtern"><option value="all">Alle Gründe</option></select>
+              <select class="signal-toolbar-select" id="simple-archive-source-filter" aria-label="Quelle filtern"><option value="all">Alle Quellen</option></select>
+              <select class="signal-toolbar-select" id="simple-archive-sort" aria-label="Archiv sortieren"><option value="newest">Neueste zuerst</option><option value="reason">Nach Grund</option></select>
+            </div>
+          </nav>
           <div class="archive-list" id="simple-archive-list"><div class="roots-loader"></div></div>
           <button type="button" class="btn-secondary archive-load-more" id="simple-archive-load-more" hidden><i class="fa-solid fa-plus"></i> Weitere Artikel laden</button>
         </section>
@@ -2002,10 +2010,7 @@
               <div class="track-findings-list" id="simple-list-sales"><div class="roots-loader"></div></div>
             </div>
           </div>
-          <section class="track-card results-review-section">
-            <div class="track-card-header"><i class="fa-solid fa-filter-circle-xmark"></i> Nicht relevant <span class="track-count" id="simple-rejected-count">0</span></div>
-            <div class="review-list" id="simple-rejected-list"><div class="roots-loader"></div></div>
-          </section>
+          <section class="track-card results-review-section"><div class="track-card-header"><i class="fa-solid fa-user-check"></i> Manuelle Prüfung <span class="track-count" id="simple-rejected-count">0</span></div><div class="review-list" id="simple-rejected-list"><div class="roots-loader"></div></div></section>
         </section>
 
       </div>
@@ -2193,7 +2198,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260802-1400';
+import { initApp } from './app.js?v=20260802-1500';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

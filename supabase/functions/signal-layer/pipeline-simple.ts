@@ -711,6 +711,14 @@ export function simpleResultUsedAi(result: SimpleResult): boolean {
   return result.status === "signal" || SIMPLE_AI_REJECT_REASONS.has(String(result.reject_reason));
 }
 
+// Alle möglichen Ablehnungsgründe - erlaubt der Oberfläche, Grenzfälle vom
+// Archiv zu trennen, ohne die Liste doppelt zu pflegen.
+export const SIMPLE_ALL_REJECT_REASONS = [
+  "zu_wenig_text", "sensibles_thema", "kein_signalmuster", "modell_ohne_signal",
+  "familie_nicht_erlaubt", "evidenz_fehlt", "zu_unsicher", "sensibles_zitat",
+  "kein_roots_bezug", "modellfehler",
+];
+
 export const SIMPLE_REJECT_LABELS: Record<string, string> = {
   zu_wenig_text: "Zu wenig Artikeltext für eine belastbare Prüfung.",
   sensibles_thema: "Sensibles Thema (Politik, Religion, Kriminalität, Unglück, Gesundheit).",

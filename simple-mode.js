@@ -48,6 +48,9 @@ function cacheEls() {
     dashRejected: el("simple-dash-rejected"),
     dashRun: el("simple-dash-run"),
     archiveList: el("simple-archive-list"),
+    archiveReason: el("simple-archive-reason-filter"),
+    archiveSource: el("simple-archive-source-filter"),
+    archiveSort: el("simple-archive-sort"),
     archiveCount: el("simple-archive-count"),
     archiveMore: el("simple-archive-load-more"),
     settingsContent: el("simple-settings-content"),
@@ -181,13 +184,18 @@ function renderRejected(articles, rejectLabels) {
       const source = sourceOf(article);
       const reason = rejectLabels?.[row.reject_reason] || row.reject_reason || "Ohne Begründung";
       return `
-        <div class="simple-rejected-item" data-article-id="${esc(article.id || row.article_id || "")}" tabindex="0" role="button">
+        <article class="review-item simple-rejected-item" data-article-id="${esc(article.id || row.article_id || "")}" tabindex="0" role="button">
           <strong>${escText(article.title_de || article.title || article.url || "Ohne Titel")}</strong>
-          <small><i class="fa-solid fa-circle-info"></i> ${escText(reason)}${source?.company ? ` · ${esc(source.company)}` : ""}</small>
-        </div>
+          <small><i class="fa-solid fa-circle-info"></i> ${escText(reason)}</small>
+          <div class="finding-meta">
+            ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
+            ${article.published_at ? `<span class="finding-date-tag">${esc(formatDate(article.published_at))}</span>` : ""}
+            ${ctx.technicalAuditPill(article.id || row.article_id)}
+          </div>
+        </article>
       `;
     }).join("")
-    : `<div class="track-card-empty">Nichts aussortiert.</div>`;
+    : `<div class="track-card-empty">Keine Grenzfälle zur Prüfung.</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +234,7 @@ async function loadResults({ keepStatus = false } = {}) {
     const [marketing, sales, rejected, status] = await Promise.all([
       ctx.callApi("list_simple_signals", { lane: "marketing", limit: 60, ...versionFilter }),
       ctx.callApi("list_simple_signals", { lane: "sales", limit: 60, ...versionFilter }),
-      ctx.callApi("list_simple_rejected", { limit: 60, ...versionFilter }),
+      ctx.callApi("list_simple_rejected", { limit: 60, reasons: ["zu_unsicher", "evidenz_fehlt", "familie_nicht_erlaubt"], ...versionFilter }),
       ctx.callApi("get_simple_run_status"),
     ]);
     signalsByLane.marketing = marketing.signals || [];
@@ -236,17 +244,6 @@ async function loadResults({ keepStatus = false } = {}) {
     renderLane("marketing");
     renderLane("sales");
     renderRejected(rejectedRows, simpleRules?.reject_labels);
-    if (selectedVersion && els.view) {
-      const note = els.view.querySelector(".simple-backup-note") || (() => {
-        const element = document.createElement("p");
-        element.className = "pipeline-version-line simple-backup-note";
-        els.view.querySelector(".signal-toolbar")?.after(element);
-        return element;
-      })();
-      note.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i>Gespeicherter Stand der <b>Pipeline-Version ${escText(selectedVersion)}</b> · Artikel und Regeln wie damals klassifiziert`;
-    } else {
-      els.view?.querySelector(".simple-backup-note")?.remove();
-    }
     if (!keepStatus) {
       lastRun = status.run || null;
       running = lastRun?.status === "running";
@@ -319,6 +316,7 @@ function bindUi() {
     });
   });
   els.archiveMore?.addEventListener("click", () => void loadArchive(true));
+  [els.archiveReason, els.archiveSource, els.archiveSort].forEach((control) => control?.addEventListener("change", renderArchive));
   // Stationen des einfachen Modus öffnen und durchblättern.
   document.addEventListener("click", (event) => {
     const open = event.target.closest("[data-simple-stage]");
@@ -363,37 +361,77 @@ async function loadDashboard() {
 let archiveOffset = 0;
 let archiveTotal = 0;
 
-async function loadArchive(append = false) {
+let archiveRows = [];
+
+function renderArchive() {
   if (!els.archiveList) return;
-  if (!append) {
-    archiveOffset = 0;
-    els.archiveList.innerHTML = LOADER;
-  }
-  try {
-    const { articles, total } = await ctx.callApi("list_simple_rejected", {
-      limit: 60, offset: archiveOffset, ...(selectedVersion ? { pipeline_version: selectedVersion } : {}),
-    });
-    archiveTotal = Number(total || 0);
-    const rows = articles || [];
-    archiveOffset += rows.length;
-    const labels = simpleRules?.reject_labels;
-    const html = rows.map((row) => {
+  const labels = simpleRules?.reject_labels || {};
+  const reasonFilter = els.archiveReason?.value || "all";
+  const sourceFilter = els.archiveSource?.value || "all";
+  const sortMode = els.archiveSort?.value || "newest";
+  const sourceName = (row) => sourceOf(row.article)?.company || "";
+  const rows = archiveRows
+    .filter((row) => reasonFilter === "all" || row.reject_reason === reasonFilter)
+    .filter((row) => sourceFilter === "all" || sourceName(row) === sourceFilter)
+    .sort((a, b) => sortMode === "reason"
+      ? String(labels[a.reject_reason] || a.reject_reason || "").localeCompare(String(labels[b.reject_reason] || b.reject_reason || ""), "de")
+      : new Date(b.article?.published_at || b.updated_at || 0) - new Date(a.article?.published_at || a.updated_at || 0));
+  els.archiveList.innerHTML = rows.length
+    ? rows.map((row) => {
       const article = row.article || {};
       const source = sourceOf(article);
-      const reason = labels?.[row.reject_reason] || row.reject_reason || "Ohne Begründung";
       return `
         <article class="archive-item" data-article-id="${esc(article.id || row.article_id || "")}" tabindex="0" role="button">
           <span class="finding-title">${escText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
-          <p class="simple-archive-reason"><i class="fa-solid fa-circle-info"></i> ${escText(reason)}</p>
+          <p class="archive-reason"><i class="fa-solid fa-circle-info"></i> ${escText(labels[row.reject_reason] || row.reject_reason || "Ohne Begründung")}</p>
+          ${row.summary_de ? `<small class="archive-summary">${escText(row.summary_de)}</small>` : ""}
           <div class="finding-meta">
             ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
             ${article.published_at ? `<span class="finding-date-tag">${esc(formatDate(article.published_at))}</span>` : ""}
           </div>
         </article>`;
-    }).join("");
-    els.archiveList.innerHTML = append ? els.archiveList.innerHTML + html : (html || `<div class="track-card-empty">Noch nichts aussortiert.</div>`);
-    if (els.archiveCount) els.archiveCount.textContent = archiveTotal.toLocaleString("de-DE");
-    if (els.archiveMore) els.archiveMore.hidden = archiveOffset >= archiveTotal;
+    }).join("")
+    : `<div class="track-card-empty">Keine Artikel entsprechen den gewählten Filtern.</div>`;
+  if (els.archiveCount) els.archiveCount.textContent = archiveTotal.toLocaleString("de-DE");
+  if (els.archiveMore) els.archiveMore.hidden = archiveOffset >= archiveTotal;
+}
+
+function refreshArchiveFilters() {
+  const labels = simpleRules?.reject_labels || {};
+  if (els.archiveReason) {
+    const reasons = [...new Set(archiveRows.map((row) => row.reject_reason).filter(Boolean))]
+      .sort((a, b) => String(labels[a] || a).localeCompare(String(labels[b] || b), "de"));
+    els.archiveReason.innerHTML = `<option value="all">Alle Gründe</option>${reasons
+      .map((reason) => `<option value="${esc(reason)}">${escText(labels[reason] || reason)}</option>`).join("")}`;
+  }
+  if (els.archiveSource) {
+    const sources = [...new Set(archiveRows.map((row) => sourceOf(row.article)?.company).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "de"));
+    els.archiveSource.innerHTML = `<option value="all">Alle Quellen</option>${sources
+      .map((source) => `<option value="${esc(source)}">${esc(source)}</option>`).join("")}`;
+  }
+}
+
+async function loadArchive(append = false) {
+  if (!els.archiveList) return;
+  if (!append) {
+    archiveOffset = 0;
+    archiveRows = [];
+    els.archiveList.innerHTML = LOADER;
+  }
+  try {
+    const { articles, total } = await ctx.callApi("list_simple_rejected", {
+      limit: 60, offset: archiveOffset,
+      exclude_reasons: ["zu_unsicher", "evidenz_fehlt", "familie_nicht_erlaubt"],
+      ...(selectedVersion ? { pipeline_version: selectedVersion } : {}),
+    });
+    archiveTotal = Number(total || 0);
+    const rows = articles || [];
+    archiveOffset += rows.length;
+    archiveRows = append ? [...archiveRows, ...rows] : rows;
+    refreshArchiveFilters();
+    renderArchive();
+    ctx.enhanceHeaderSelects();
   } catch (error) {
     els.archiveList.innerHTML = `<div class="track-card-empty">${escText(error.message || "Archiv konnte nicht geladen werden.")}</div>`;
   }
