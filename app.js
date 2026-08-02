@@ -469,7 +469,7 @@ async function loadPipelineSettings() {
   pipelineSettings = settings;
   pipelineBaselineConfig = structuredClone(settings.config);
   renderBusinessPipelineStudio();
-  els.pipelineVersion.textContent = `Pipeline Version ${settings.rule_manifest?.version_label || settings.version} · zuletzt geändert ${new Date(settings.updated_at).toLocaleDateString("de-DE")}`;
+  els.pipelineVersion.textContent = "Änderungen gelten für alle künftigen Artikel.";
   const studioHost = document.getElementById("pipeline-studio");
   if (studioHost) {
     const existing = studioHost.parentElement?.querySelector(".pipeline-version-line");
@@ -1131,7 +1131,13 @@ function renderPipelineStudio() {
       summary: manifestStage.summary,
       hover: (manifestStage.rules || []).slice(0, 4).map((rule) => rule.title),
     } : PIPELINE_OVERVIEW_META[stage.id];
-    const [statLabel, statValue] = pipelineStageStat(stage.id);
+    // Gleiche Kennzahl-Logik wie im einfachen Modus: Art der Prüfung und wie
+    // viele Regeln in dieser Station greifen.
+    const manifestStage = getManifestStage(stage.id);
+    const stageRules = manifestStage?.rules || [];
+    const usesAi = stageRules.some((rule) => (rule.systems || []).includes("gemini"));
+    const statLabel = usesAi ? "KI-Prüfung" : stage.id === "crawl" ? "Quelle und Crawler" : "Deterministisch";
+    const statValue = `${stageRules.length} ${stageRules.length === 1 ? "Regel" : "Regeln"}`;
     return `<button type="button" class="pipeline-overview-card" data-pipeline-open-stage="${stage.id}" aria-label="${escapeHtml(overview.label)} im Ablauf öffnen"><span class="pipeline-overview-card-head"><span class="pipeline-overview-card-icon"><i class="${stage.icon}"></i></span><span class="pipeline-overview-card-number">${stage.number}</span></span><h4>${escapeHtml(overview.label)}</h4><p>${escapeHtml(overview.summary)}</p><span class="pipeline-overview-stat"><small>${escapeHtml(statLabel)}</small><b>${escapeHtml(statValue)}</b></span><span class="pipeline-overview-card-action">Ablauf ansehen <i class="fa-solid fa-arrow-right"></i></span></button>`;
   }).join("");
   const statsTarget = document.getElementById("pipeline-funnel-stats");

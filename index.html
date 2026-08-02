@@ -216,8 +216,7 @@
   .pipeline-steps .pipeline-detail { margin-top: .45rem; }
   .pipeline-version-line { display: flex; align-items: center; gap: 8px; margin-top: 1rem; color: var(--muted); font-size: .7rem; }
   .pipeline-version-line i { color: var(--brand); font-size: .66rem; }
-  #pipeline-version { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .7rem; }
-  #pipeline-version::before { content: "\f058"; font-family: "Font Awesome 6 Free"; font-weight: 900; color: var(--brand); font-size: .66rem; }
+  #pipeline-version { color: var(--muted); font-size: .72rem; }
   .pipeline-version-line b { color: var(--ink); font-weight: 700; }
   /* Einstufung der Pills: Tier-1 blau, alles andere neutral weiss. */
   .tag--company { border-color: var(--line); background: var(--bg); color: var(--ink); }
@@ -2194,7 +2193,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260802-1200';
+import { initApp } from './app.js?v=20260802-1300';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
