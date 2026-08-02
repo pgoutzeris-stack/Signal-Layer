@@ -34,7 +34,7 @@ import {
 
 export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "1.4";
+export const SIMPLE_VERSION = "1.5";
 export const SIMPLE_UPDATED_AT = "2026-08-01";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -257,7 +257,7 @@ export const SIMPLE_GUARDRAILS: SimpleGuardrail[] = [
   { id: "candidate_lock", label: "Nur vorgefilterte Familien", description: "Gemini darf nur eine der Signalfamilien wählen, die der Vorfilter für diesen Artikel bereits bestätigt hat." },
   { id: "sensitive_topics", label: "Politik, Religion, sensible Themen aus", description: "Sensible Themen im Titel schliessen den Artikel komplett aus; im Text schliessen sie die bild.de-News-Spur aus." },
   { id: "news_domain_lock", label: "News nur von bild.de", description: `Die Marketing-Spur "Aktuelle News & Topics" akzeptiert ausschliesslich Artikel von ${SIMPLE_NEWS_DOMAINS.join(", ")}.` },
-  { id: "roots_link", label: "ROOTS-Bezug erforderlich", description: "Jedes Signal braucht eine benannte ROOTS-Leistung und einen Anschlusssatz aus dem Artikelinhalt. Fehlt beides, landet der Artikel in \"Nicht relevant\"." },
+  { id: "roots_link", label: "ROOTS-Bezug als Zusatz", description: "Passt eine ROOTS-Leistung inhaltlich, wird sie mit Anschlusssatz ausgewiesen. Fehlt der Bezug, bleibt das Signal bestehen - nur die virale Spur verlangt ihn zwingend." },
   { id: "tier1", label: "Tier-1-Zielkunden erkannt", description: "Namen und Aliase aus derselben Tier-1-Liste wie im Advanced-Modus werden deterministisch im Artikel gesucht und dem Modell als Zielkunden mitgegeben." },
   { id: "min_text", label: "Mindestlänge", description: `Artikel unter ${SIMPLE_MIN_TEXT_CHARS} Zeichen Text gehen nicht an das Modell.` },
   { id: "min_confidence", label: "Mindestsicherheit", description: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder Score ${SIMPLE_MIN_SCORE} landen nicht in den Ergebnissen.` },
@@ -387,8 +387,8 @@ ${candidates}
 </candidate_signals>
 ${rootsPortfolio ? `<roots_portfolio>\n${rootsPortfolio}\n</roots_portfolio>
 <roots_rules>
-Pflicht für jedes Signal, in Marketing wie in Sales: Nenne in roots_offering genau eine Leistung aus roots_portfolio, an die dieser Artikel inhaltlich anschliesst, und in roots_link_de genau einen deutschen Satz, wie ROOTS damit andocken kann.
-Der Anschluss muss aus dem Artikelinhalt folgen. Wenn du dafür Fakten erfinden oder nur thematisch ähnlich klingen müsstest, gib lane="keine" zurück.
+Zusatzangabe für jedes Signal, in Marketing wie in Sales: Wenn eine Leistung aus roots_portfolio inhaltlich anschliesst, nenne sie in roots_offering und beschreibe in roots_link_de mit einem deutschen Satz, wie ROOTS damit andocken kann.
+Findest du keinen belastbaren Anschluss, lass beide Felder leer. Das ist kein Grund, das Signal zu verwerfen - erfinde niemals einen Bezug.
 Für Sales beschreibt der Satz, was ROOTS dem betroffenen Unternehmen anbieten kann. Für Marketing beschreibt er, welches ROOTS-Thema sich mit diesem Artikel belegen lässt.
 </roots_rules>${hasViralCandidate ? `
 <viral_rules>
@@ -408,7 +408,7 @@ Marketing heisst: der Artikel liefert übertragbare Substanz für eigene Inhalte
 headline_de ist eine sachliche deutsche Überschrift ohne neue Fakten, why_de genau ein deutscher Satz zur Begründung.
 summary_de fasst den Artikel in maximal zwei deutschen Sätzen zusammen, ohne neue Fakten und ohne Wertung. Fülle es immer aus, auch bei lane="keine".
 article_type beschreibt die Textform, nicht das Thema. language ist die Sprache des Artikeltexts.
-roots_offering und roots_link_de sind für jedes Signal Pflicht. Ohne belastbaren Bezug zu einer ROOTS-Leistung gilt lane="keine".
+roots_offering und roots_link_de sind optionale Hilfsangaben. Nur für signal_id "virale_news" sind sie Pflicht, weil dort sonst kein fachliches Kriterium bleibt.
 person_name und person_role nur, wenn eine Person mit ihrer Rolle wörtlich im Artikel steht und das Signal verantwortet; sonst beide leer.
 buying_center_roles enthält ein bis vier Rollen, die laut Artikeltext von diesem Signal betroffen sind, wörtlich wie genannt. Erfinde keine Rollen; bei keiner belegten Rolle ein leeres Array.
 </rules>
@@ -698,7 +698,7 @@ export const SIMPLE_REJECT_LABELS: Record<string, string> = {
   evidenz_fehlt: "Das Zitat steht nicht wortgleich im Artikel.",
   zu_unsicher: "Konfidenz oder Nutzwert unter der Mindestschwelle.",
   sensibles_zitat: "Das Zitat betrifft ein sensibles Thema.",
-  kein_roots_bezug: "Kein belegbarer Anschluss an eine ROOTS-Leistung.",
+  kein_roots_bezug: "Breit diskutiert, aber ohne belegbaren Anschluss an eine ROOTS-Leistung (nur für virale News ein Ausschlussgrund).",
   modellfehler: "Technischer Fehler bei der KI-Prüfung.",
 };
 
@@ -775,11 +775,12 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   if (SIMPLE_SENSITIVE_PATTERN.test(normalizeMatchText(evidence))) {
     return { ...rejected(article, "sensibles_zitat", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
-  // Ohne benannte ROOTS-Leistung und Anschlusssatz entsteht kein Signal - in
-  // beiden Spuren. Der Artikel landet dann in "Nicht relevant".
+  // Der ROOTS-Bezug ist eine Zusatzinformation: er hilft bei der Einordnung,
+  // entscheidet aber nicht über Annahme oder Ablehnung. Nur die virale Spur
+  // braucht ihn, weil sie sonst kein fachliches Kriterium hätte.
   const rootsLink = String(answer.roots_link_de || "").trim();
   const rootsOffering = String(answer.roots_offering || "").trim();
-  if (rootsLink.length < 25 || !rootsOffering) {
+  if (family.id === SIMPLE_VIRAL_FAMILY_ID && (rootsLink.length < 25 || !rootsOffering)) {
     return { ...rejected(article, "kein_roots_bezug", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
   // Person und Rollen müssen im Artikel stehen, nicht erfunden sein.
@@ -816,8 +817,8 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
       : SIMPLE_ARTICLE_TYPES.includes(String(answer.article_type) as typeof SIMPLE_ARTICLE_TYPES[number])
         ? String(answer.article_type) : "other",
     language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
-    roots_offering: rootsOffering.slice(0, 200),
-    roots_link_de: rootsLink.slice(0, 500),
+    roots_offering: rootsOffering.slice(0, 200) || null,
+    roots_link_de: rootsLink.length >= 20 ? rootsLink.slice(0, 500) : null,
     tier1_companies: prefilter.tier1,
     // Person und Rollen nur mit Namen und Rolle im Text; sonst bleibt es leer.
     person_name: personName && personRole ? personName : null,
@@ -922,7 +923,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       details: [
         { label: "Modell", value: `${option.label} (in Kosten & Betrieb einstellbar)` },
         { label: "Antwortform", value: "Ein JSON-Objekt: Spur, Familie, Konfidenz, Nutzwert, Zitat, Überschrift, Begründung, Zusammenfassung, Artikeltyp, Sprache, Person mit Rolle, Buying-Center-Rollen" },
-        { label: "ROOTS-Portfolio im Prompt", value: "Immer enthalten, kompakt als Säule und Leistungsname. Das Modell muss eine Leistung wählen und den Anschluss in einem Satz begründen." },
+        { label: "ROOTS-Portfolio im Prompt", value: "Immer enthalten, kompakt als Säule und Leistungsname. Das Modell ordnet semantisch zu, wenn eine Leistung passt - erzwungen wird es nicht." },
         { label: "Durchläufe", value: "Genau einer je Artikel, keine zweite Runde" },
       ],
     },
@@ -936,7 +937,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
         { title: "Zitat gegenprüfen", copy: "Das Zitat muss wortgleich im Artikel stehen. Fehlt es, wird das Signal verworfen und nicht korrigiert.", kind: "Server" },
         { title: "Person und Rollen gegenprüfen", copy: "Name, Rolle und jede Buying-Center-Rolle müssen wörtlich im Artikel vorkommen, sonst werden sie verworfen.", kind: "Server" },
         { title: "Sensibles Zitat abfangen", copy: "Auch ein formal gültiges Zitat wird verworfen, wenn es ein sensibles Thema betrifft.", kind: "Deterministischer Code" },
-        { title: "ROOTS-Bezug prüfen", copy: "Ohne benannte Leistung und Anschlusssatz von mindestens 25 Zeichen wird das Signal verworfen - in Marketing wie in Sales.", kind: "Server" },
+        { title: "ROOTS-Bezug übernehmen", copy: "Nennt das Modell eine Leistung mit Anschlusssatz, wird sie gespeichert und angezeigt. Fehlt sie, bleibt das Signal gültig - nur bei viralen News führt ein fehlender Bezug zur Ablehnung.", kind: "Server" },
         { title: "Schwellen anwenden", copy: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder Nutzwert ${SIMPLE_MIN_SCORE} landen in "Nicht relevant" statt in den Ergebnissen.`, kind: "Server" },
         { title: "Ergebnis speichern", copy: "Signal oder Ablehnungsgrund werden je Artikel gespeichert, inklusive Modell, Tokens und Kosten.", kind: "Server" },
       ],
