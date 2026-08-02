@@ -131,16 +131,14 @@ function visibleSignals(lane) {
     const sourceOk = state.sources.length === 0 || state.sources.includes(signalSourceName(signal));
     return typeOk && sourceOk;
   });
-  // Empfohlen heisst: was heute veröffentlicht wurde zuerst, darin die höchste
-  // Relevanz - danach der Rest nach Relevanz und Datum.
-  const isToday = (signal) => {
-    const date = new Date(signal.article?.published_at || 0);
-    const now = new Date();
-    return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
-  };
   return [...filtered].sort((a, b) => {
     if (state.sort === "newest") return signalDate(b) - signalDate(a) || Number(b.score || 0) - Number(a.score || 0);
     if (state.sort === "confidence") return Number(b.confidence || 0) - Number(a.confidence || 0) || Number(b.score || 0) - Number(a.score || 0);
+    const today = new Date();
+    const isToday = (signal) => {
+      const date = new Date(signal.article?.published_at || 0);
+      return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
+    };
     const todayDiff = (isToday(b) ? 1 : 0) - (isToday(a) ? 1 : 0);
     if (todayDiff !== 0) return todayDiff;
     return Number(b.score || 0) - Number(a.score || 0) || signalDate(b) - signalDate(a);
@@ -191,8 +189,205 @@ function renderRejected(articles, rejectLabels) {
               ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
             </div>
             <strong class="test-result-title">${escText(article.title_de || article.title || article.url || "Ohne Titel")}</strong>
-            <p class="test-result-reason">${escText(row.summary_de ? `${reason} ${row.summary_de}` : reason)}</p>
+            <p class="test-result-reason">${escText(reason)}</p>
             ${ctx.technicalAuditPill(article.id || row.article_id)}
+          </div>
+        </article>
+      `;
+    }).join("")
+    : `<div class="track-card-empty">Keine Grenzfälle zur Prüfung.</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Daten laden
+// ---------------------------------------------------------------------------
+// Nur die Beschriftungen der Ablehnungsgründe werden gebraucht; die Regeln
+// selbst leben in pipeline-simple.ts.
+async function loadRules() {
+  if (rulesLoaded) return;
+  try {
+    const { rules } = await ctx.callApi("get_simple_rules", selectedVersion ? { pipeline_version: selectedVersion } : {});
+    rulesLoaded = true;
+    simpleRules = rules;
+  } catch (_error) {
+    /* Ergebnisse werden auch ohne die Beschriftungen angezeigt */
+  }
+}
+
+// Versionen des Regelwerks: die Auswahl lädt genau die Artikel, die damals mit
+// diesem Regelstand klassifiziert wurden.
+async function loadVersions() {
+  try {
+    const { versions } = await ctx.callApi("list_simple_versions");
+    versionList = versions || [];
+    if (!els.version) return;
+    const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
+    els.version.innerHTML = `<option value="current">Aktueller Stand (alle Versionen)</option>${versionList
+      .map((entry) => `<option value="${esc(entry.version)}" ${entry.version === selectedVersion ? "selected" : ""}>Version ${esc(entry.version)} · ${entry.archived_signals ?? entry.signals} Signale · ${esc(date(entry.first_seen_at))}</option>`)
+      .join("")}`;
+  } catch (_error) { /* Auswahl bleibt bei der aktuellen Pipeline */ }
+}
+
+async function loadResults({ keepStatus = false } = {}) {
+  const versionFilter = selectedVersion ? { pipeline_version: selectedVersion } : {};
+  try {
+    const [marketing, sales, rejected, status] = await Promise.all([
+      ctx.callApi("list_simple_signals", { lane: "marketing", limit: 60, ...versionFilter }),
+      ctx.callApi("list_simple_signals", { lane: "sales", limit: 60, ...versionFilter }),
+      ctx.callApi("list_simple_rejected", { limit: 60, reasons: ["zu_unsicher", "evidenz_fehlt", "familie_nicht_erlaubt"], ...versionFilter }),
+      ctx.callApi("get_simple_run_status"),
+    ]);
+    signalsByLane.marketing = marketing.signals || [];
+    signalsByLane.sales = sales.signals || [];
+    rejectedRows = rejected.articles || [];
+    refreshFilterOptions();
+    renderLane("marketing");
+    renderLane("sales");
+    renderRejected(rejectedRows, simpleRules?.reject_labels);
+    if (!keepStatus) {
+      lastRun = status.run || null;
+      running = lastRun?.status === "running";
+      ctx.setSimpleRunStatus(lastRun, status.forecast || null);
+    }
+  } catch (error) {
+    ctx.toast(error.message || "Ergebnisse konnten nicht geladen werden", "err");
+  }
+}
+
+// Der Lauf selbst läuft im Backend. Solange er läuft, wird der Fortschritt
+// nachgeladen; danach genügt ein langsamer Takt, um einen im Backend gestarteten
+// Lauf zu bemerken.
+const POLL_ACTIVE_MS = 6_000;
+const POLL_IDLE_MS = 60_000;
+
+function scheduleStatusPoll() {
+  if (pollTimer) clearTimeout(pollTimer);
+  if (!document.body.classList.contains("mode-simple")) return;
+  pollTimer = setTimeout(() => void pollStatus(), running ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+}
+
+async function pollStatus() {
+  if (!document.body.classList.contains("mode-simple")) return;
+  try {
+    const status = await ctx.callApi("get_simple_run_status");
+    const previous = lastRun;
+    lastRun = status.run || null;
+    running = lastRun?.status === "running";
+    ctx.setSimpleRunStatus(lastRun, status.forecast || null);
+    const advanced = Number(lastRun?.processed_count || 0) !== Number(previous?.processed_count || 0);
+    const finished = previous?.status === "running" && lastRun?.status !== "running";
+    if (advanced || finished || lastRun?.id !== previous?.id) await loadResults({ statusOnly: false, keepStatus: true });
+  } catch (_error) {
+    /* nächster Takt versucht es erneut */
+  }
+  scheduleStatusPoll();
+}
+
+function bindUi() {
+  if (bound) return;
+  bound = true;
+  const rerender = () => {
+    ctx.viewState.sort = els.sort?.value || "recommended";
+    renderLane("marketing");
+    renderLane("sales");
+  };
+  [els.articleTypeFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  els.version?.addEventListener("change", () => {
+    selectedVersion = els.version.value === "current" ? "" : els.version.value;
+    rulesLoaded = false;
+    simpleRules = null;
+    void loadRules().then(() => loadResults());
+  });
+  // Klick auf eine Karte öffnet dieselbe Detailansicht wie im Advanced-Modus.
+  const openDetail = (event) => {
+    if (event.target.closest("[data-audit-article-id]")) return;
+    const card = event.target.closest("[data-article-id]");
+    if (card?.dataset.articleId) ctx.openArticleDetail(card.dataset.articleId);
+  };
+  [els.view, el("view-simple-archive")].forEach((root) => {
+    root?.addEventListener("click", openDetail);
+    root?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const card = event.target.closest("[data-article-id]");
+      if (card?.dataset.articleId) {
+        event.preventDefault();
+        ctx.openArticleDetail(card.dataset.articleId);
+      }
+    });
+  });
+  els.archiveMore?.addEventListener("click", () => void loadArchive(true));
+  [els.archiveReason, els.archiveSource, els.archiveSort].forEach((control) => control?.addEventListener("change", renderArchive));
+  // Stationen des einfachen Modus öffnen und durchblättern.
+  document.addEventListener("click", (event) => {
+    const open = event.target.closest("[data-simple-stage]");
+    if (open) { openSimpleStage = open.dataset.simpleStage; renderSimpleStagePopup(); return; }
+    if (event.target.closest("[data-simple-stage-close]")) { openSimpleStage = null; renderSimpleStagePopup(); return; }
+    const stages = simpleRules?.stages || [];
+    const index = stages.findIndex((stage) => stage.id === openSimpleStage);
+    if (event.target.closest("[data-simple-stage-prev]") && stages[index - 1]) { openSimpleStage = stages[index - 1].id; renderSimpleStagePopup(); }
+    if (event.target.closest("[data-simple-stage-next]") && stages[index + 1]) { openSimpleStage = stages[index + 1].id; renderSimpleStagePopup(); }
+  });
+
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard, Archiv, Einstellungen
+// ---------------------------------------------------------------------------
+async function loadDashboard() {
+  try {
+    const { counts, run, forecast } = await ctx.callApi("get_simple_dashboard");
+    if (els.dashMarketing) els.dashMarketing.textContent = Number(counts?.marketing || 0).toLocaleString("de-DE");
+    if (els.dashSales) els.dashSales.textContent = Number(counts?.sales || 0).toLocaleString("de-DE");
+    if (els.dashRejected) els.dashRejected.textContent = Number(counts?.rejected || 0).toLocaleString("de-DE");
+    lastRun = run || null;
+    running = lastRun?.status === "running";
+    ctx.setSimpleRunStatus(lastRun, forecast || null);
+    if (els.dashRun) {
+      const eur = (value) => value === null || value === undefined
+        ? "–"
+        : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+      els.dashRun.innerHTML = lastRun
+        ? `Letzter Lauf: <b>${escText(lastRun.status === "running" ? "läuft" : lastRun.status === "error" ? "mit Fehler beendet" : "abgeschlossen")}</b> ·
+           <b>${Number(lastRun.processed_count || 0).toLocaleString("de-DE")} / ${Number(lastRun.total_count || 0).toLocaleString("de-DE")}</b> Artikel geprüft ·
+           Modell <b>${escText(lastRun.model || "–")}</b>${forecast ? ` · Kosten bisher <b>${eur(forecast.spent_eur)}</b>` : ""}
+           ${lastRun.error_message ? `<br><span style="color:var(--danger)">${escText(lastRun.error_message)}</span>` : ""}`
+        : "Noch kein Lauf gestartet. Der einfache Modus prüft gespeicherte Artikel; gestartet wird er im Backend.";
+    }
+  } catch (error) {
+    if (els.dashRun) els.dashRun.textContent = error.message || "Dashboard konnte nicht geladen werden.";
+  }
+}
+
+let archiveOffset = 0;
+let archiveTotal = 0;
+
+let archiveRows = [];
+
+function renderArchive() {
+  if (!els.archiveList) return;
+  const labels = simpleRules?.reject_labels || {};
+  const reasonFilter = els.archiveReason?.value || "all";
+  const sourceFilter = els.archiveSource?.value || "all";
+  const sortMode = els.archiveSort?.value || "newest";
+  const sourceName = (row) => sourceOf(row.article)?.company || "";
+  const rows = archiveRows
+    .filter((row) => reasonFilter === "all" || row.reject_reason === reasonFilter)
+    .filter((row) => sourceFilter === "all" || sourceName(row) === sourceFilter)
+    .sort((a, b) => sortMode === "reason"
+      ? String(labels[a.reject_reason] || a.reject_reason || "").localeCompare(String(labels[b.reject_reason] || b.reject_reason || ""), "de")
+      : new Date(b.article?.published_at || b.updated_at || 0) - new Date(a.article?.published_at || a.updated_at || 0));
+  els.archiveList.innerHTML = rows.length
+    ? rows.map((row) => {
+      const article = row.article || {};
+      const source = sourceOf(article);
+      return `
+        <article class="archive-item" data-article-id="${esc(article.id || row.article_id || "")}" tabindex="0" role="button">
+          <span class="finding-title">${escText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
+          <p class="archive-reason"><i class="fa-solid fa-circle-info"></i> ${escText(labels[row.reject_reason] || row.reject_reason || "Ohne Begründung")}</p>
+          ${row.summary_de ? `<small class="archive-summary">${escText(row.summary_de)}</small>` : ""}
+          <div class="finding-meta">
+            ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
+            ${article.published_at ? `<span class="finding-date-tag">${esc(formatDate(article.published_at))}</span>` : ""}
           </div>
         </article>`;
     }).join("")
