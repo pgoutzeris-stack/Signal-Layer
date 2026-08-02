@@ -23,6 +23,8 @@ let pollTimer = null;
 let simpleRules = null;
 const signalsByLane = { marketing: [], sales: [] };
 let rejectedRows = [];
+let selectedVersion = "";
+let versionList = [];
 
 function el(id) {
   return document.getElementById(id);
@@ -34,6 +36,7 @@ function cacheEls() {
     articleTypeFilter: el("simple-article-type-filter"),
     sourceFilter: el("simple-source-filter"),
     sort: el("simple-sort"),
+    version: el("simple-version"),
     marketingList: el("simple-list-marketing"),
     salesList: el("simple-list-sales"),
     marketingCount: el("simple-marketing-count"),
@@ -186,7 +189,7 @@ function renderRejected(articles, rejectLabels) {
 async function loadRules() {
   if (rulesLoaded) return;
   try {
-    const { rules } = await ctx.callApi("get_simple_rules");
+    const { rules } = await ctx.callApi("get_simple_rules", selectedVersion ? { pipeline_version: selectedVersion } : {});
     rulesLoaded = true;
     simpleRules = rules;
   } catch (_error) {
@@ -194,12 +197,27 @@ async function loadRules() {
   }
 }
 
+// Versionen des Regelwerks: die Auswahl lädt genau die Artikel, die damals mit
+// diesem Regelstand klassifiziert wurden.
+async function loadVersions() {
+  try {
+    const { versions } = await ctx.callApi("list_simple_versions");
+    versionList = versions || [];
+    if (!els.version) return;
+    const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
+    els.version.innerHTML = `<option value="current">Aktuelle Pipeline</option>${versionList
+      .map((entry) => `<option value="${esc(entry.version)}" ${entry.version === selectedVersion ? "selected" : ""}>Version ${esc(entry.version)} · ${entry.signals} Signale · ${esc(date(entry.first_seen_at))}</option>`)
+      .join("")}`;
+  } catch (_error) { /* Auswahl bleibt bei der aktuellen Pipeline */ }
+}
+
 async function loadResults({ keepStatus = false } = {}) {
+  const versionFilter = selectedVersion ? { pipeline_version: selectedVersion } : {};
   try {
     const [marketing, sales, rejected, status] = await Promise.all([
-      ctx.callApi("list_simple_signals", { lane: "marketing", limit: 60 }),
-      ctx.callApi("list_simple_signals", { lane: "sales", limit: 60 }),
-      ctx.callApi("list_simple_rejected", { limit: 60 }),
+      ctx.callApi("list_simple_signals", { lane: "marketing", limit: 60, ...versionFilter }),
+      ctx.callApi("list_simple_signals", { lane: "sales", limit: 60, ...versionFilter }),
+      ctx.callApi("list_simple_rejected", { limit: 60, ...versionFilter }),
       ctx.callApi("get_simple_run_status"),
     ]);
     signalsByLane.marketing = marketing.signals || [];
@@ -257,6 +275,12 @@ function bindUi() {
     renderLane("sales");
   };
   [els.articleTypeFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  els.version?.addEventListener("change", () => {
+    selectedVersion = els.version.value === "current" ? "" : els.version.value;
+    rulesLoaded = false;
+    simpleRules = null;
+    void loadRules().then(() => loadResults());
+  });
   // Klick auf eine Karte öffnet dieselbe Detailansicht wie im Advanced-Modus.
   const openDetail = (event) => {
     if (event.target.closest("[data-audit-article-id]")) return;
@@ -326,7 +350,9 @@ async function loadArchive(append = false) {
     els.archiveList.innerHTML = LOADER;
   }
   try {
-    const { articles, total } = await ctx.callApi("list_simple_rejected", { limit: 60, offset: archiveOffset });
+    const { articles, total } = await ctx.callApi("list_simple_rejected", {
+      limit: 60, offset: archiveOffset, ...(selectedVersion ? { pipeline_version: selectedVersion } : {}),
+    });
     archiveTotal = Number(total || 0);
     const rows = articles || [];
     archiveOffset += rows.length;
@@ -430,7 +456,7 @@ function renderSimpleStagePopup() {
         ${(stage.details || []).map((detail) => `<div class="pipeline-detail-row"><span>${escText(detail.label)}</span><p>${escText(detail.value)}</p></div>`).join("")}
       </section>
       ${(stage.families || []).length ? `<section class="pipeline-stage-card"><header><div><b>Geprüfte Signalfamilien</b><small>${stage.families.length} Familien · Treffer erlaubt nur die KI-Prüfung</small></div></header><div class="pipeline-family-list">${stage.families.map(familyBlock).join("")}</div></section>` : ""}
-      ${`<p class="pipeline-version-line"><i class="fa-solid fa-circle-check"></i>Pipeline <b>Version ${escText(simpleRules.version_label || "1.0")}</b> · zuletzt geändert ${escText(new Date(simpleRules.updated_at || Date.now()).toLocaleDateString("de-DE"))}</p>`}
+      ${`<p class="pipeline-version-line"><i class="fa-solid fa-circle-check"></i>Pipeline <b>Version ${escText(simpleRules.version_label || "1.0")}</b> · ${simpleRules.snapshot ? `gespeicherter Regelstand vom ${escText(new Date(simpleRules.snapshot_taken_at || Date.now()).toLocaleDateString("de-DE"))}` : `zuletzt geändert ${escText(new Date(simpleRules.updated_at || Date.now()).toLocaleDateString("de-DE"))}`}</p>`}
       ${guardrails.length ? `<section class="pipeline-stage-card"><header><div><b>Nicht abschaltbare Schutzregeln</b><small>Servercode</small></div></header><div class="pipeline-family-list">${guardrails.map((rule) => `<details class="pipeline-detail"><summary><b>${escText(rule.label)}</b><span>fest</span></summary><p>${escText(rule.description)}</p></details>`).join("")}</div></section>` : ""}
     </div></main>
     <footer class="pipeline-drilldown-footer">
@@ -467,7 +493,7 @@ export function activateSimpleMode() {
   }
   activated = true;
   const current = document.querySelector("#app-nav .sidebar-icon-btn.active")?.dataset.appView || "dashboard";
-  void loadRules().then(() => showSimpleView(current)).then(scheduleStatusPoll);
+  void loadVersions().then(() => loadRules()).then(() => showSimpleView(current)).then(scheduleStatusPoll);
 }
 
 export function deactivateSimpleMode() {

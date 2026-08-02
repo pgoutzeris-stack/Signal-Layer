@@ -311,6 +311,26 @@ async function getSimpleTier1Companies(): Promise<Array<{ name: string; aliases:
   return simpleTier1Cache.value;
 }
 
+async function registerSimplePipelineVersion(model: string): Promise<{ version: string; rules_changed_without_bump: boolean }> {
+  const admin = getAdminClient();
+  const rules = simpleRuleManifest(model);
+  const version = String(rules.version_label || "1.0");
+  const hash = await sha256(JSON.stringify({ lanes: rules.lanes, guardrails: rules.guardrails, stages: rules.stages, min_confidence: rules.min_confidence, min_score: rules.min_score, min_text_chars: rules.min_text_chars }));
+  const { data: existing } = await admin.schema("signal_layer").from("simple_pipeline_versions")
+    .select("version, rules_hash").eq("version", version).maybeSingle();
+  if (!existing) {
+    await admin.schema("signal_layer").from("simple_pipeline_versions").insert({
+      version, rules_hash: hash, rules, model, prompt_version: SIMPLE_PIPELINE_VERSION, last_run_at: new Date().toISOString(),
+    });
+    return { version, rules_changed_without_bump: false };
+  }
+  await admin.schema("signal_layer").from("simple_pipeline_versions")
+    .update({ last_run_at: new Date().toISOString() }).eq("version", version);
+  // Gleiche Version, andere Regeln: der Snapshot bleibt unverändert, damit alte
+  // Ergebnisse nachvollziehbar bleiben - der Lauf vermerkt die Abweichung.
+  return { version, rules_changed_without_bump: existing.rules_hash !== hash };
+}
+
 function simpleRunRequest(runId: string, timeoutMs: number): Promise<unknown> {
   return fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
     method: "POST",
@@ -5061,8 +5081,36 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      case "list_simple_versions": {
+        const admin = getAdminClient();
+        const { data: versions, error } = await admin.schema("signal_layer").from("simple_pipeline_versions")
+          .select("version, model, prompt_version, note, first_seen_at, last_run_at")
+          .order("first_seen_at", { ascending: false });
+        if (error) return errorResponse(origin, error.message, 500);
+        const counts = await Promise.all((versions || []).map(async (entry: { version: string }) => {
+          const [{ count: signals }, { count: rejected }] = await Promise.all([
+            admin.schema("signal_layer").from("simple_signals")
+              .select("id", { count: "exact", head: true }).eq("pipeline_version", entry.version).eq("status", "signal"),
+            admin.schema("signal_layer").from("simple_signals")
+              .select("id", { count: "exact", head: true }).eq("pipeline_version", entry.version).eq("status", "rejected"),
+          ]);
+          return { ...entry, signals: signals || 0, rejected: rejected || 0 };
+        }));
+        return corsResponse(origin, { versions: counts, current: (await getPipelineConfig()) && simpleRuleManifest((await getPipelineConfig()).ai.simple_model || SIMPLE_MODEL).version_label });
+      }
+
       case "get_simple_rules": {
         const simpleConfig = await getPipelineConfig();
+        const requestedVersion = String((body as { pipeline_version?: string }).pipeline_version || "");
+        // Ohne Angabe gilt der aktuelle Codestand, mit Angabe der gespeicherte
+        // Regelstand dieser Version.
+        if (requestedVersion) {
+          const { data: snapshot } = await getAdminClient().schema("signal_layer").from("simple_pipeline_versions")
+            .select("rules, version, first_seen_at, last_run_at").eq("version", requestedVersion).maybeSingle();
+          if (snapshot?.rules) {
+            return corsResponse(origin, { rules: { ...snapshot.rules, snapshot: true, snapshot_taken_at: snapshot.first_seen_at } });
+          }
+        }
         return corsResponse(origin, { rules: simpleRuleManifest(simpleConfig.ai.simple_model || SIMPLE_MODEL) });
       }
 
@@ -5151,6 +5199,11 @@ Deno.serve(async (req: Request) => {
           return errorResponse(origin, message, 500);
         }
 
+        const versionInfo = await registerSimplePipelineVersion(simpleModel);
+        if (run.pipeline_version !== versionInfo.version) {
+          await admin.schema("signal_layer").from("simple_runs")
+            .update({ pipeline_version: versionInfo.version }).eq("id", run.id);
+        }
         const deps = {
           admin, apiKey: modelKey, model: simpleModel,
           rootsPortfolio: await getSimpleRootsPortfolio(),
@@ -5220,6 +5273,7 @@ Deno.serve(async (req: Request) => {
             reject_reason: result.reject_reason,
             model: result.model,
             prompt_version: result.prompt_version,
+            pipeline_version: versionInfo.version,
             updated_at: new Date().toISOString(),
           };
           rows.push(row);
@@ -5297,28 +5351,31 @@ Deno.serve(async (req: Request) => {
       }
 
       case "list_simple_signals": {
-        const { lane, limit } = body as { lane?: string; limit?: number };
+        const { lane, limit, pipeline_version: pipelineVersion } = body as { lane?: string; limit?: number; pipeline_version?: string };
         if (lane && !["marketing", "sales"].includes(lane)) return errorResponse(origin, "invalid lane");
         const admin = getAdminClient();
         let query = admin.schema("signal_layer").from("simple_signals")
-          .select("id, article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, matched_families, model, prompt_version, created_at, updated_at, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))")
+          .select("id, article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, pipeline_version, matched_families, model, prompt_version, created_at, updated_at, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))")
           .eq("status", "signal")
           .order("score", { ascending: false })
           .order("updated_at", { ascending: false })
           .limit(Math.min(Math.max(Number(limit) || 60, 1), 200));
         if (lane) query = query.eq("lane", lane);
+        if (pipelineVersion) query = query.eq("pipeline_version", pipelineVersion);
         const { data, error } = await query;
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { signals: data || [] });
       }
 
       case "list_simple_rejected": {
-        const { limit, offset } = body as { limit?: number; offset?: number };
+        const { limit, offset, pipeline_version: rejectedVersion } = body as { limit?: number; offset?: number; pipeline_version?: string };
         const safeLimit = Math.min(Math.max(Number(limit) || 60, 1), 200);
         const safeOffset = Math.max(Number(offset) || 0, 0);
-        const { data, error, count } = await getAdminClient().schema("signal_layer").from("simple_signals")
-          .select("id, article_id, reject_reason, matched_families, summary_de, article_type, updated_at, article:articles(id, title, title_de, url, published_at, source:sources(company, url, category))", { count: "exact" })
-          .eq("status", "rejected")
+        let rejectedQuery = getAdminClient().schema("signal_layer").from("simple_signals")
+          .select("id, article_id, reject_reason, matched_families, summary_de, article_type, pipeline_version, updated_at, article:articles(id, title, title_de, url, published_at, source:sources(company, url, category))", { count: "exact" })
+          .eq("status", "rejected");
+        if (rejectedVersion) rejectedQuery = rejectedQuery.eq("pipeline_version", rejectedVersion);
+        const { data, error, count } = await rejectedQuery
           .order("updated_at", { ascending: false })
           .range(safeOffset, safeOffset + safeLimit - 1);
         if (error) return errorResponse(origin, error.message, 500);
