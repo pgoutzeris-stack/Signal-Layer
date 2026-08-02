@@ -296,7 +296,16 @@ function bindUi() {
     selectedVersion = els.version.value === "current" ? "" : els.version.value;
     rulesLoaded = false;
     simpleRules = null;
-    void loadRules().then(() => loadResults());
+    // Sichtbarer Wechsel: erst leeren und laden zeigen, dann den neuen Stand.
+    [els.marketingList, els.salesList, els.rejectedList, els.archiveList].forEach((list) => {
+      if (list) list.innerHTML = LOADER;
+    });
+    if (els.marketingCount) els.marketingCount.textContent = "…";
+    if (els.salesCount) els.salesCount.textContent = "…";
+    if (els.rejectedCount) els.rejectedCount.textContent = "…";
+    void loadRules().then(() => loadResults()).then(() => {
+      if (document.getElementById("view-simple-archive")?.classList.contains("show")) void loadArchive();
+    });
   });
   // Klick auf eine Karte öffnet dieselbe Detailansicht wie im Advanced-Modus.
   const openDetail = (event) => {
