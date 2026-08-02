@@ -469,7 +469,13 @@ async function loadPipelineSettings() {
   pipelineSettings = settings;
   pipelineBaselineConfig = structuredClone(settings.config);
   renderBusinessPipelineStudio();
-  els.pipelineVersion.textContent = `Version ${settings.rule_manifest?.version_label || settings.version} · zuletzt geändert ${new Date(settings.updated_at).toLocaleDateString("de-DE")}`;
+  els.pipelineVersion.textContent = `Pipeline Version ${settings.rule_manifest?.version_label || settings.version} · zuletzt geändert ${new Date(settings.updated_at).toLocaleDateString("de-DE")}`;
+  const studioHost = document.getElementById("pipeline-studio");
+  if (studioHost) {
+    const existing = studioHost.parentElement?.querySelector(".pipeline-version-line");
+    if (existing) existing.remove();
+    studioHost.insertAdjacentHTML("afterend", pipelineVersionLine());
+  }
   void callApi("get_tagging_stats").then((stats) => {
     pipelineStats = stats;
     renderPipelineStudio();
@@ -2512,6 +2518,20 @@ function getFilteredSorted() {
 }
 
 // Turn a raw crawl error into a meaningful category label + plain explanation.
+const AI_ERROR_LABELS = {
+  invalid_response: "Antwort des Modells war unvollständig und wurde verworfen",
+  spending_cap: "Ausgabenlimit des Anbieters erreicht",
+  insufficient_balance: "Guthaben beim Anbieter aufgebraucht",
+  invalid_key: "API-Key ungültig",
+  rate_limit: "Anbieter hat die Anfrage vorübergehend abgelehnt",
+  model_busy: "Modell war überlastet",
+  timeout: "Zeitüberschreitung beim Anbieter",
+};
+
+function describeAiError(code) {
+  return AI_ERROR_LABELS[code] || code || "Unbekannter Fehler";
+}
+
 function describeSourceError(raw) {
   const e = String(raw || "").toLowerCase();
   if (/\b403\b|forbidden/.test(e)) return { label: "Bot-Schutz (403)", explanation: "Die Quelle blockiert automatische Zugriffe (HTTP 403). Ein Standard-Crawl ist hier nicht möglich – meist braucht es einen echten Browser/Proxy." };
@@ -3087,6 +3107,9 @@ async function loadLastRun() {
       return groups;
     }, new Map());
     const renderErrorChip = (error) => {
+      // Ohne Klartext-Label aus dem Backend wenigstens den Fehlercode erklären.
+      if (!error.label && (error.code || error.error_code)) error.label = describeAiError(error.code || error.error_code);
+      if (!error.explanation && (error.code || error.error_code)) error.explanation = describeAiError(error.code || error.error_code);
       const sources = (error.sources || []).map((source) => `<span><span>${escapeHtml(source.company)}</span><b>${Number(source.count || 0).toLocaleString("de-DE")}</b></span>`).join("");
       const diagnostics = (error.diagnostics || []).map((diagnostic) => `<span class="analysis-error-cause" title="${escapeHtml(diagnostic.message || "")}"><i class="fa-solid fa-magnifying-glass"></i><span><b>${escapeHtml(diagnostic.label)}</b><small>${escapeHtml(diagnostic.message || "")}</small></span><strong>${Number(diagnostic.count || 0).toLocaleString("de-DE")}</strong></span>`).join("");
       return `<span class="analysis-error-chip" tabindex="0">

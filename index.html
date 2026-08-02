@@ -216,6 +216,8 @@
   .pipeline-steps .pipeline-detail { margin-top: .45rem; }
   .pipeline-version-line { display: flex; align-items: center; gap: 8px; margin-top: 1rem; color: var(--muted); font-size: .7rem; }
   .pipeline-version-line i { color: var(--brand); font-size: .66rem; }
+  #pipeline-version { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .7rem; }
+  #pipeline-version::before { content: "\f058"; font-family: "Font Awesome 6 Free"; font-weight: 900; color: var(--brand); font-size: .66rem; }
   .pipeline-version-line b { color: var(--ink); font-weight: 700; }
   /* Einstufung der Pills: Tier-1 blau, alles andere neutral weiss. */
   .tag--company { border-color: var(--line); background: var(--bg); color: var(--ink); }
@@ -809,7 +811,7 @@
   /* ---------- Guided ROOTS pipeline ---------- */
   #settings-panel-pipeline-overview { position: relative; }
   .pipeline-scroll--overview { background: linear-gradient(180deg, var(--brand-light) 0, var(--bg) 250px); }
-  .pipeline-overview-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 24px; padding: 1.35rem; border: 1px solid #dbe8ff; border-radius: 16px; background: rgba(255,255,255,.88); box-shadow: 0 8px 28px rgba(32,110,251,.07); }
+  .pipeline-overview-head { display: none; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 24px; padding: 1.35rem; border: 1px solid #dbe8ff; border-radius: 16px; background: rgba(255,255,255,.88); box-shadow: 0 8px 28px rgba(32,110,251,.07); }
   .pipeline-overview-head > div:first-child > span { color: var(--brand); font-size: .62rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
   .pipeline-overview-head h3 { margin: .35rem 0 .4rem; font-size: 1.3rem; }
   .pipeline-overview-head p { max-width: 720px; margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.55; }
@@ -2192,7 +2194,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260801-2310';
+import { initApp } from './app.js?v=20260802-1200';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

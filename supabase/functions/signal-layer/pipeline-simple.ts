@@ -34,7 +34,7 @@ import {
 
 export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "1.6";
+export const SIMPLE_VERSION = "1.7";
 export const SIMPLE_UPDATED_AT = "2026-08-01";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -579,9 +579,10 @@ function deepseekRequest(model: string, apiKey: string, prompt: string): Provide
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
-      // Bei DeepSeek zählt max_tokens Reasoning und Antwort zusammen. Mit 900
-      // war die Antwort nach dem Reasoning abgeschnitten, deshalb deutlich mehr.
-      max_tokens: 3_000,
+      // Bei DeepSeek zählt max_tokens Reasoning und Antwort zusammen. Mit den
+      // Relevanz-Teilwerten, Person und Zusammenfassung wurde 3000 zu knapp -
+      // abgeschnittene Antworten landeten als invalid_response im Fehlerprotokoll.
+      max_tokens: 6_000,
       temperature: 0,
       stream: false,
     }),
