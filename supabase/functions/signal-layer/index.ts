@@ -5380,32 +5380,52 @@ Deno.serve(async (req: Request) => {
         const { lane, limit, pipeline_version: pipelineVersion } = body as { lane?: string; limit?: number; pipeline_version?: string };
         if (lane && !["marketing", "sales"].includes(lane)) return errorResponse(origin, "invalid lane");
         const admin = getAdminClient();
-        let query = admin.schema("signal_layer").from("simple_signals")
-          .select("id, article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, pipeline_version, matched_families, model, prompt_version, created_at, updated_at, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))")
-          .eq("status", "signal")
-          .order("score", { ascending: false })
-          .order("updated_at", { ascending: false })
-          .limit(Math.min(Math.max(Number(limit) || 60, 1), 200));
+        const signalColumns = "article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, pipeline_version, matched_families, model, prompt_version, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))";
+        const fromHistory = Boolean(pipelineVersion);
+        let query = fromHistory
+          ? admin.schema("signal_layer").from("simple_signal_history")
+            .select(`${signalColumns}, classified_at`)
+            .eq("status", "signal").eq("pipeline_version", pipelineVersion)
+            .order("score", { ascending: false })
+            .order("classified_at", { ascending: false })
+            .limit(Math.min(Math.max(Number(limit) || 60, 1), 200))
+          : admin.schema("signal_layer").from("simple_signals")
+            .select(`id, ${signalColumns}, created_at, updated_at`)
+            .eq("status", "signal")
+            .order("score", { ascending: false })
+            .order("updated_at", { ascending: false })
+            .limit(Math.min(Math.max(Number(limit) || 60, 1), 200));
         if (lane) query = query.eq("lane", lane);
-        if (pipelineVersion) query = query.eq("pipeline_version", pipelineVersion);
         const { data, error } = await query;
         if (error) return errorResponse(origin, error.message, 500);
-        return corsResponse(origin, { signals: data || [] });
+        return corsResponse(origin, {
+          signals: (data || []).map((row: Record<string, unknown>) => ({ ...row, updated_at: row.updated_at || row.classified_at })),
+          from_backup: fromHistory,
+        });
       }
 
       case "list_simple_rejected": {
         const { limit, offset, pipeline_version: rejectedVersion } = body as { limit?: number; offset?: number; pipeline_version?: string };
         const safeLimit = Math.min(Math.max(Number(limit) || 60, 1), 200);
         const safeOffset = Math.max(Number(offset) || 0, 0);
-        let rejectedQuery = getAdminClient().schema("signal_layer").from("simple_signals")
-          .select("id, article_id, reject_reason, matched_families, summary_de, article_type, pipeline_version, updated_at, article:articles(id, title, title_de, url, published_at, source:sources(company, url, category))", { count: "exact" })
-          .eq("status", "rejected");
-        if (rejectedVersion) rejectedQuery = rejectedQuery.eq("pipeline_version", rejectedVersion);
-        const { data, error, count } = await rejectedQuery
-          .order("updated_at", { ascending: false })
-          .range(safeOffset, safeOffset + safeLimit - 1);
+        const rejectedColumns = "article_id, reject_reason, matched_families, summary_de, article_type, pipeline_version, article:articles(id, title, title_de, url, published_at, source:sources(company, url, category))";
+        const { data, error, count } = rejectedVersion
+          ? await getAdminClient().schema("signal_layer").from("simple_signal_history")
+            .select(`${rejectedColumns}, classified_at`, { count: "exact" })
+            .eq("status", "rejected").eq("pipeline_version", rejectedVersion)
+            .order("classified_at", { ascending: false })
+            .range(safeOffset, safeOffset + safeLimit - 1)
+          : await getAdminClient().schema("signal_layer").from("simple_signals")
+            .select(`id, ${rejectedColumns}, updated_at`, { count: "exact" })
+            .eq("status", "rejected")
+            .order("updated_at", { ascending: false })
+            .range(safeOffset, safeOffset + safeLimit - 1);
         if (error) return errorResponse(origin, error.message, 500);
-        return corsResponse(origin, { articles: data || [], total: count || 0 });
+        return corsResponse(origin, {
+          articles: (data || []).map((row: Record<string, unknown>) => ({ ...row, updated_at: row.updated_at || row.classified_at })),
+          total: count || 0,
+          from_backup: Boolean(rejectedVersion),
+        });
       }
 
       case "list_findings": {

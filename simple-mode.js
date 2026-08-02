@@ -206,7 +206,7 @@ async function loadVersions() {
     if (!els.version) return;
     const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
     els.version.innerHTML = `<option value="current">Aktuelle Pipeline</option>${versionList
-      .map((entry) => `<option value="${esc(entry.version)}" ${entry.version === selectedVersion ? "selected" : ""}>Version ${esc(entry.version)} · ${entry.signals} Signale · ${esc(date(entry.first_seen_at))}</option>`)
+      .map((entry) => `<option value="${esc(entry.version)}" ${entry.version === selectedVersion ? "selected" : ""}>Version ${esc(entry.version)} · ${entry.archived_signals ?? entry.signals} Signale · ${esc(date(entry.first_seen_at))}</option>`)
       .join("")}`;
   } catch (_error) { /* Auswahl bleibt bei der aktuellen Pipeline */ }
 }
@@ -227,6 +227,17 @@ async function loadResults({ keepStatus = false } = {}) {
     renderLane("marketing");
     renderLane("sales");
     renderRejected(rejectedRows, simpleRules?.reject_labels);
+    if (selectedVersion && els.view) {
+      const note = els.view.querySelector(".simple-backup-note") || (() => {
+        const element = document.createElement("p");
+        element.className = "pipeline-version-line simple-backup-note";
+        els.view.querySelector(".signal-toolbar")?.after(element);
+        return element;
+      })();
+      note.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i>Gespeicherter Stand der <b>Pipeline-Version ${escText(selectedVersion)}</b> · Artikel und Regeln wie damals klassifiziert`;
+    } else {
+      els.view?.querySelector(".simple-backup-note")?.remove();
+    }
     if (!keepStatus) {
       lastRun = status.run || null;
       running = lastRun?.status === "running";
