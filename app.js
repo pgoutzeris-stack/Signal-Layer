@@ -1836,8 +1836,10 @@ function enhanceHeaderSelects() {
     // Filters with many options (source / article type) get a wide, toolbar-
     // width grid fly-out AND multi-select; the sort dropdown stays a simple
     // single-select column.
-    const isGrid = /source|article-type/.test(select.id);
-    const selection = isGrid ? filterSelectionFor(select.id) : null;
+    // Mehrfachauswahl nur für Filter, die dafür einen Zustand registriert haben.
+    // Ohne diesen Zustand bleibt es ein normaler Einzel-Select.
+    const selection = /source|article-type/.test(select.id) ? filterSelectionFor(select.id) : null;
+    const isGrid = Boolean(selection);
     menu.classList.toggle("roots-select-menu--grid", isGrid);
     wrapper.classList.toggle("roots-select--grid", isGrid);
 
