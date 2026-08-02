@@ -34,8 +34,8 @@ import {
 
 export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "1.8";
-export const SIMPLE_UPDATED_AT = "2026-08-01";
+export const SIMPLE_VERSION = "1.9";
+export const SIMPLE_UPDATED_AT = "2026-08-02";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
 // Auswahlbare Modelle des einfachen Modus mit den Preisen, die im Kostenledger
@@ -127,8 +127,8 @@ const SALES_FAMILIES: SimpleFamily[] = [
     id: "cmo_wechsel",
     lane: "sales",
     label: "CMO-/Marketingleitung-Wechsel",
-    definition: "Eine Marketingführungsrolle (CMO, Marketingleitung, Head of Marketing, Markenverantwortung) wird neu besetzt, verlassen oder umgebaut.",
-    trigger: /\b(cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter\w*|marketingleitung|marketingchef\w*|marketingdirektor\w*|marketingvorstand\w*|marketinggeschaftsfuhr\w*|head of marketing|marketing director|vp marketing|markenchef\w*|markenverantwortung|leiter\w* marketing|leitung marketing|bereichsleiter\w* marketing|marketing chef\w*|marketing leiter\w*|marketing leitung|marketing direktor\w*|marketing vorstand\w*|marken chef\w*|brand director|brand lead|marketingverantwortlich\w*)\b/,
+    definition: "Eine Führungsrolle für Marketing, Marke oder Produkt (CMO, Marketingleitung, Head of Marketing, Brand Director, Chief Creative Officer, Chief Product Officer) wird neu besetzt, verlassen oder umgebaut. Entscheidend ist die Verantwortung für Marke, Markenauftritt oder Produkthandschrift, nicht der genaue Titel.",
+    trigger: /\b(cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter\w*|marketingleitung|marketingchef\w*|marketingdirektor\w*|marketingvorstand\w*|marketinggeschaftsfuhr\w*|head of marketing|marketing director|vp marketing|markenchef\w*|markenverantwortung|leiter\w* marketing|leitung marketing|bereichsleiter\w* marketing|marketing chef\w*|marketing leiter\w*|marketing leitung|marketing direktor\w*|marketing vorstand\w*|marken chef\w*|brand director|brand lead|senior brand director|chief creative officer|chief product officer|chief brand director|head of brand|brand strategy director|markendirektor\w*|produktdirektor\w*|global product director|marketingverantwortlich\w*)\b/,
     context: /\b(wechsel\w*|wechselt|ubernimmt|ubernahme|verlasst|verlassen|scheidet aus|abgang|nachfolge\w*|nachfolger\w*|folgt auf|ernannt|ernennt|bestellt|berufen|beruft|antritt|tritt an|tritt zuruck|rucktritt|besetzt|neubesetzung|umbesetzung|vakan\w*|interim|neuer|neue|neues|kommissarisch|appointed|appoints|joins|steps down|succeeds|hires|named|departs|exit)\b/,
   },
   {

@@ -104,6 +104,47 @@ export function hasAnyMatchTerm(normalizedText: string, terms: string[]): boolea
   return terms.some((term) => containsMatchTerm(normalizedText, term));
 }
 
+const CHARSET_ALIASES: Record<string, string> = {
+  "iso-8859-1": "windows-1252",
+  "latin1": "windows-1252",
+  "iso8859-1": "windows-1252",
+  "iso-8859-15": "iso-8859-15",
+  "cp1252": "windows-1252",
+  "windows-1252": "windows-1252",
+  "utf-8": "utf-8",
+  "utf8": "utf-8",
+};
+
+function resolveCharset(label: string | null | undefined): string | null {
+  if (!label) return null;
+  const key = label.trim().toLowerCase().replace(/^"|"$/g, "");
+  return CHARSET_ALIASES[key] || null;
+}
+
+// Response.text() dekodiert immer als UTF-8. Bei Latin-1-Quellen wurde dadurch
+// jeder Umlaut zu U+FFFD und war nicht mehr rekonstruierbar. Deshalb die Bytes
+// selbst lesen und den Zeichensatz aus dem Header, sonst aus der Deklaration im
+// Dokument bestimmen.
+export async function readResponseText(res: Response): Promise<string> {
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const headerCharset = resolveCharset(res.headers.get("content-type")?.match(/charset=([^;]+)/i)?.[1]);
+  if (headerCharset && headerCharset !== "utf-8") {
+    return new TextDecoder(headerCharset).decode(bytes);
+  }
+  const utf8 = new TextDecoder("utf-8").decode(bytes);
+  if (!headerCharset && utf8.includes("\uFFFD")) {
+    const declared = resolveCharset(
+      utf8.slice(0, 4_000).match(/charset\s*=\s*["']?([\w-]+)/i)?.[1]
+        || utf8.slice(0, 200).match(/encoding\s*=\s*["']([\w-]+)["']/i)?.[1],
+    );
+    if (declared && declared !== "utf-8") return new TextDecoder(declared).decode(bytes);
+    // Keine brauchbare Angabe, aber kaputte Zeichen: Windows-1252 ist bei
+    // deutschen Redaktionssystemen die weitaus häufigste Ursache.
+    return new TextDecoder("windows-1252").decode(bytes);
+  }
+  return utf8;
+}
+
 export function decodeArticleText(value: string): string {
   return value
     .replace(/&nbsp;|&#160;/gi, " ")
@@ -200,9 +241,24 @@ export async function sha256(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// Manche Quellen liefern Latin-1-Bytes, die vor dieser Korrektur als UTF-8
+// gelesen wurden; jeder Umlaut wurde dabei zu U+FFFD. Das Modell zitiert aber
+// mit korrekten Umlauten, sodass ein wortgleicher Vergleich scheiterte. Das
+// Skelett entfernt Umlaute, Ersatzzeichen und alle Trennzeichen auf beiden
+// Seiten, wodurch beide Schreibweisen auf dieselbe Kette fallen.
+export function normalizeEvidenceSkeleton(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .replace(/[äöüÄÖÜ\uFFFD]/g, "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 export function evidenceExists(evidence: string, articleText: string): boolean {
-  const needle = normalizeMatchText(evidence);
-  return needle.length >= 12 && normalizeMatchText(articleText).includes(needle);
+  const needle = normalizeEvidenceSkeleton(evidence);
+  return needle.length >= 12 && normalizeEvidenceSkeleton(articleText).includes(needle);
 }
 
 export function clampConfidence(value: unknown): number {

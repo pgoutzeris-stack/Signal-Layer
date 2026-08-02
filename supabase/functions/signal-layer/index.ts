@@ -11,6 +11,7 @@ import {
   cleanArticleText,
   containsMatchTerm,
   decodeArticleText,
+  readResponseText,
   detectLanguage,
   evidenceExists,
   looksLikePaywallTeaser,
@@ -793,7 +794,7 @@ function rssText(value: string | null): string {
 async function fetchRssArticles(feedUrl: string): Promise<CrawlCandidate[]> {
   const res = await fetchWithTimeout(feedUrl);
   if (!res.ok) return [];
-  const xml = await res.text();
+  const xml = await readResponseText(res);
   const isAtom = /<feed[\s>]/i.test(xml.slice(0, 300));
   const items: CrawlCandidate[] = [];
 
@@ -829,7 +830,7 @@ async function fetchSitemapArticles(sitemapUrl: string, depth = 0): Promise<Craw
   if (depth > 2) return [];
   const res = await fetchWithTimeout(sitemapUrl);
   if (!res.ok) return [];
-  const xml = await res.text();
+  const xml = await readResponseText(res);
 
   if (/<sitemapindex/i.test(xml.slice(0, 300))) {
     const subSitemaps = (xml.match(/<loc>([\s\S]*?)<\/loc>/gi) || [])
@@ -1456,7 +1457,7 @@ async function fetchArticleContent(
       });
       return null;
     }
-    const html = await res.text();
+    const html = await readResponseText(res);
     if (/cf-chl-|checking your browser|just a moment|cloudflare ray id|captcha/i.test(html)) {
       captureExtractionDiagnostic(diagnosticCapture, {
         code: "bot_protection", message: "Die Quelle lieferte eine Bot-/Cloudflare-Prüfseite statt des Artikels.",
@@ -1555,7 +1556,7 @@ async function runFreeLinkCrawl(sourceUrl: string, policy: CrawlPolicy): Promise
     const browserHeaders = { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36", Accept: "text/html,application/xhtml+xml", "Accept-Language": "de-DE,de;q=0.9,en;q=0.8" };
     const res = await fetchWithTimeout(sourceUrl, { headers: browserHeaders });
     if (!res.ok) return { candidates: [], discoveredCount: 0, httpStatus: res.status, providerRunId: null, errorCode: `http_${res.status}`, errorMessage: `Homepage fetch failed: ${res.status}` };
-    const html = await res.text();
+    const html = await readResponseText(res);
     if (looksLikePaywallTeaser(html)) {
       return { candidates: [], discoveredCount: 0, httpStatus: res.status, providerRunId: null, errorCode: "paywall_detected", errorMessage: html.replace(/\s+/g, " ").slice(0, 220) };
     }

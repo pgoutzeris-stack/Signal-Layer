@@ -52,7 +52,7 @@ export const CLASSIFIER_PROMPT_VERSION = "roots-signal-v1.9.2";
 
 // Eine gemeinsame, sprechende Version je Modus. Die internen Stufen-Versionen
 // bleiben für den Prüfpfad erhalten, in der Oberfläche steht nur noch diese.
-export const PIPELINE_VERSION = "3.1";
+export const PIPELINE_VERSION = "3.2";
 export const PIPELINE_RULE_MANIFEST_VERSION = "roots-pipeline-rules-v1.1.0";
 
 export const RELEVANCE_SCORING_VERSION = "roots-value-v1.0";
