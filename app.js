@@ -1133,7 +1133,6 @@ function renderPipelineStudio() {
     } : PIPELINE_OVERVIEW_META[stage.id];
     // Gleiche Kennzahl-Logik wie im einfachen Modus: Art der Prüfung und wie
     // viele Regeln in dieser Station greifen.
-    const manifestStage = getManifestStage(stage.id);
     const stageRules = manifestStage?.rules || [];
     const usesAi = stageRules.some((rule) => (rule.systems || []).includes("gemini"));
     const statLabel = usesAi ? "KI-Prüfung" : stage.id === "crawl" ? "Quelle und Crawler" : "Deterministisch";
