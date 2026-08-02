@@ -4981,6 +4981,7 @@ Deno.serve(async (req: Request) => {
             language: signal?.language || article.language || null,
             classification_status: isSignal ? "reliable" : signal ? "rejected" : "pending",
             relevance_confidence: signal?.confidence ?? null,
+            route_score_details: signal?.score_details || {},
             marketing_relevance_score: lane === "marketing" ? score : 0,
             sales_relevance_score: lane === "sales" ? score : 0,
             marketing_relevance_reason: lane === "marketing" ? signal?.why_de || null : null,
@@ -5289,6 +5290,7 @@ Deno.serve(async (req: Request) => {
             person_name: result.person_name,
             person_role: result.person_role,
             buying_center_roles: result.buying_center_roles,
+            score_details: result.score_details || {},
             matched_families: result.matched_families,
             reject_reason: result.reject_reason,
             model: result.model,
@@ -5380,7 +5382,7 @@ Deno.serve(async (req: Request) => {
         const { lane, limit, pipeline_version: pipelineVersion } = body as { lane?: string; limit?: number; pipeline_version?: string };
         if (lane && !["marketing", "sales"].includes(lane)) return errorResponse(origin, "invalid lane");
         const admin = getAdminClient();
-        const signalColumns = "article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, pipeline_version, matched_families, model, prompt_version, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))";
+        const signalColumns = "article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, score_details, pipeline_version, matched_families, model, prompt_version, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))";
         const fromHistory = Boolean(pipelineVersion);
         let query = fromHistory
           ? admin.schema("signal_layer").from("simple_signal_history")

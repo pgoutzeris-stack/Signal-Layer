@@ -34,7 +34,7 @@ import {
 
 export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "1.5";
+export const SIMPLE_VERSION = "1.6";
 export const SIMPLE_UPDATED_AT = "2026-08-01";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -76,6 +76,11 @@ export const SIMPLE_AI_CALLS_PER_BATCH = 5;
 export const SIMPLE_MIN_TEXT_CHARS = 300;
 export const SIMPLE_MIN_CONFIDENCE = 0.7;
 export const SIMPLE_MIN_SCORE = 45;
+
+// Gleiche Gewichte wie im Advanced-Modus, damit ein Prozentwert in beiden Modi
+// dasselbe bedeutet.
+export const SIMPLE_MARKETING_WEIGHTS = { novelty: 25, strategic_value: 30, transferability: 25, evidence_strength: 20 } as const;
+export const SIMPLE_SALES_WEIGHTS = { problem_strength: 32, roots_fit: 30, buying_intent: 23, timing: 15 } as const;
 export const SIMPLE_PROMPT_CHARS = 3_500;
 // The Marketing news lane is deliberately restricted to one publisher.
 export const SIMPLE_NEWS_DOMAINS = ["bild.de"];
@@ -364,6 +369,7 @@ export type SimpleAiAnswer = {
   person_name: string;
   person_role: string;
   buying_center_roles: string[];
+  relevance: { a: number; b: number; c: number; d: number; reason: string };
 };
 
 export function buildSimplePrompt(
@@ -401,7 +407,8 @@ Wähle nur eine Familie aus der Liste; erfinde keine neue und wähle keine, die 
 evidence muss ein wörtlich aus article_title oder article_text kopierter Satz sein, der genau dieses Signal belegt.
 Reicht die Substanz nicht (nur Nebenerwähnung, Terminhinweis, Stellenanzeige, Navigation, Werbetext, reine Produktwerbung), dann lane="keine".
 Politik, Religion, Krieg, Kriminalität, Unglücke, Krankheit und andere sensible Themen sind niemals ein Signal: dann lane="keine".
-score ist der Nutzwert für ROOTS von 0 bis 100: 80+ nur bei konkretem, belegtem Anlass mit klarem Bezug zu Marketing, Marke, Kunde, Handel oder Marketingprozess.
+Bewerte die Relevanz in vier Teilwerten von 0 bis 100. Für lane="marketing": a Neuheit, b strategischer Wert, c Übertragbarkeit auf andere Marken, d Evidenzstärke. Für lane="sales": a Problemstärke des Unternehmens, b Passung zu strategischer Marketingberatung, c erkennbare Kaufabsicht oder Bedarf, d Timing. 80+ nur bei konkretem, belegtem Anlass; ein blosses Thema ohne Beleg bleibt unter 50. relevance.reason ist ein deutscher Satz.
+score ist dein Gesamteindruck von 0 bis 100; der ausgewiesene Prozentwert wird serverseitig aus den vier Teilwerten berechnet.
 Sales heisst: ein konkretes Unternehmen hat gerade eine Situation, in der ROOTS-Beratung anschlussfähig wäre. Nenne dieses Unternehmen in company.
 Wenn tier1_unternehmen vorhanden ist, sind das die für ROOTS relevanten Zielkunden. Betrifft das Signal eines dieser Unternehmen, nimm genau diesen Namen in company und bewerte den Nutzwert höher.
 Marketing heisst: der Artikel liefert übertragbare Substanz für eigene Inhalte, unabhängig von einem einzelnen Unternehmen.
@@ -423,7 +430,7 @@ ${tier1.length ? `<tier1_unternehmen>${tier1.join(", ")}</tier1_unternehmen>\n` 
 
 export const SIMPLE_RESPONSE_SCHEMA = {
   type: "OBJECT",
-  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "company", "summary_de", "article_type", "language", "roots_offering", "roots_link_de", "person_name", "person_role", "buying_center_roles"],
+  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "company", "summary_de", "article_type", "language", "roots_offering", "roots_link_de", "person_name", "person_role", "buying_center_roles", "relevance"],
   properties: {
     lane: { type: "STRING", enum: ["sales", "marketing", "keine"] },
     signal_id: { type: "STRING", description: "Eine id aus candidate_signals oder leer, wenn lane=keine." },
@@ -441,6 +448,17 @@ export const SIMPLE_RESPONSE_SCHEMA = {
     person_name: { type: "STRING", description: "Im Artikel genannte Person, die das Signal verantwortet, oder leer." },
     person_role: { type: "STRING", description: "Rolle dieser Person, wörtlich aus dem Artikel, oder leer." },
     buying_center_roles: { type: "ARRAY", items: { type: "STRING" }, description: "Ein bis vier im Artikel belegte Rollen, die von diesem Signal betroffen sind." },
+    relevance: {
+      type: "OBJECT",
+      required: ["a", "b", "c", "d", "reason"],
+      properties: {
+        a: { type: "NUMBER", minimum: 0, maximum: 100, description: "Marketing: Neuheit. Sales: Problemstärke." },
+        b: { type: "NUMBER", minimum: 0, maximum: 100, description: "Marketing: strategischer Wert. Sales: ROOTS-Passung." },
+        c: { type: "NUMBER", minimum: 0, maximum: 100, description: "Marketing: Übertragbarkeit. Sales: Kaufabsicht." },
+        d: { type: "NUMBER", minimum: 0, maximum: 100, description: "Marketing: Evidenzstärke. Sales: Timing." },
+        reason: { type: "STRING", description: "Ein deutscher Satz zur Einordnung des Werts." },
+      },
+    },
   },
 };
 
@@ -672,6 +690,7 @@ export type SimpleResult = {
   person_name: string | null;
   person_role: string | null;
   buying_center_roles: string[];
+  score_details: Record<string, unknown> | null;
   matched_families: string[];
   reject_reason: string | null;
   model: string | null;
@@ -730,6 +749,7 @@ function rejected(
     person_name: null,
     person_role: null,
     buying_center_roles: [],
+    score_details: null,
     matched_families: families.map((family) => family.id),
     reject_reason: reason,
     model,
@@ -794,7 +814,21 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     .filter((role) => role.length > 2 && articleNormalized.includes(normalizeMatchText(role)))
     .slice(0, 4);
   const confidence = clampConfidence(answer.confidence);
-  const score = Math.max(0, Math.min(100, Math.round(Number(answer.score) || 0)));
+  // Der Prozentwert entsteht deterministisch aus den vier Teilwerten - dieselbe
+  // Rechnung wie im Advanced-Modus, damit die Zahlen vergleichbar sind.
+  const part = (value: unknown) => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  const components = {
+    a: part(answer.relevance?.a), b: part(answer.relevance?.b),
+    c: part(answer.relevance?.c), d: part(answer.relevance?.d),
+  };
+  const weights = family.lane === "sales" ? SIMPLE_SALES_WEIGHTS : SIMPLE_MARKETING_WEIGHTS;
+  const weightValues = Object.values(weights) as number[];
+  const weighted = Math.round(
+    (components.a * weightValues[0] + components.b * weightValues[1]
+      + components.c * weightValues[2] + components.d * weightValues[3]) / 100,
+  );
+  const modelScore = Math.max(0, Math.min(100, Math.round(Number(answer.score) || 0)));
+  const score = weightValues.reduce((sum, weight) => sum + weight, 0) === 100 && weighted > 0 ? weighted : modelScore;
   if (confidence < SIMPLE_MIN_CONFIDENCE || score < SIMPLE_MIN_SCORE) {
     return { ...rejected(article, "zu_unsicher", prefilter.families, model, prefilter.tier1), ...answerContext };
   }
@@ -819,6 +853,16 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
     roots_offering: rootsOffering.slice(0, 200) || null,
     roots_link_de: rootsLink.length >= 20 ? rootsLink.slice(0, 500) : null,
+    score_details: {
+      lane: family.lane,
+      komponenten: family.lane === "sales"
+        ? { problemstaerke: components.a, roots_passung: components.b, kaufabsicht: components.c, timing: components.d }
+        : { neuheit: components.a, strategischer_wert: components.b, uebertragbarkeit: components.c, evidenzstaerke: components.d },
+      gewichte: weights,
+      gewichteter_wert: weighted,
+      modellwert: modelScore,
+      begruendung: String(answer.relevance?.reason || "").slice(0, 400) || null,
+    },
     tier1_companies: prefilter.tier1,
     // Person und Rollen nur mit Namen und Rolle im Text; sonst bleibt es leer.
     person_name: personName && personRole ? personName : null,
@@ -922,7 +966,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       ],
       details: [
         { label: "Modell", value: `${option.label} (in Kosten & Betrieb einstellbar)` },
-        { label: "Antwortform", value: "Ein JSON-Objekt: Spur, Familie, Konfidenz, Nutzwert, Zitat, Überschrift, Begründung, Zusammenfassung, Artikeltyp, Sprache, Person mit Rolle, Buying-Center-Rollen" },
+        { label: "Antwortform", value: "Ein JSON-Objekt: Spur, Familie, Konfidenz, vier Relevanz-Teilwerte, Zitat, Überschrift, Begründung, Zusammenfassung, Artikeltyp, Sprache, Person mit Rolle, Buying-Center-Rollen" },
         { label: "ROOTS-Portfolio im Prompt", value: "Immer enthalten, kompakt als Säule und Leistungsname. Das Modell ordnet semantisch zu, wenn eine Leistung passt - erzwungen wird es nicht." },
         { label: "Durchläufe", value: "Genau einer je Artikel, keine zweite Runde" },
       ],
@@ -938,7 +982,8 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
         { title: "Person und Rollen gegenprüfen", copy: "Name, Rolle und jede Buying-Center-Rolle müssen wörtlich im Artikel vorkommen, sonst werden sie verworfen.", kind: "Server" },
         { title: "Sensibles Zitat abfangen", copy: "Auch ein formal gültiges Zitat wird verworfen, wenn es ein sensibles Thema betrifft.", kind: "Deterministischer Code" },
         { title: "ROOTS-Bezug übernehmen", copy: "Nennt das Modell eine Leistung mit Anschlusssatz, wird sie gespeichert und angezeigt. Fehlt sie, bleibt das Signal gültig - nur bei viralen News führt ein fehlender Bezug zur Ablehnung.", kind: "Server" },
-        { title: "Schwellen anwenden", copy: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder Nutzwert ${SIMPLE_MIN_SCORE} landen in "Nicht relevant" statt in den Ergebnissen.`, kind: "Server" },
+        { title: "Relevanz gewichten", copy: "Die vier Teilwerte werden serverseitig mit denselben Gewichten wie im Advanced-Modus zu einem Prozentwert verrechnet: Marketing 25/30/25/20, Sales 32/30/23/15.", kind: "Server" },
+        { title: "Schwellen anwenden", copy: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder ${SIMPLE_MIN_SCORE} Prozent Relevanz landen in "Nicht relevant" statt in den Ergebnissen.`, kind: "Server" },
         { title: "Ergebnis speichern", copy: "Signal oder Ablehnungsgrund werden je Artikel gespeichert, inklusive Modell, Tokens und Kosten.", kind: "Server" },
       ],
       details: [

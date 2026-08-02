@@ -88,7 +88,7 @@ function signalCard(signal) {
       <div class="finding-item-top">
         <span class="finding-dimension">${esc(signal.signal_label || signal.signal_id || "Signal")}</span>
         <div class="finding-top-tags">
-          <span class="quality-tag quality-tag--reliable"><i class="fa-solid fa-chart-line"></i> Nutzwert · ${esc(signal.score ?? 0)}</span>
+          <span class="quality-tag quality-tag--reliable"><i class="fa-solid fa-chart-line"></i> ${esc(signal.lane === "sales" ? "Sales-Relevanz" : "Marketing-Relevanz")} · ${esc(signal.score ?? 0)} %</span>
           ${article.published_at ? `<span class="finding-date-tag">${esc(formatDate(article.published_at))}</span>` : ""}
         </div>
       </div>
@@ -128,9 +128,18 @@ function visibleSignals(lane) {
     const sourceOk = state.sources.length === 0 || state.sources.includes(signalSourceName(signal));
     return typeOk && sourceOk;
   });
+  // Empfohlen heisst: was heute veröffentlicht wurde zuerst, darin die höchste
+  // Relevanz - danach der Rest nach Relevanz und Datum.
+  const isToday = (signal) => {
+    const date = new Date(signal.article?.published_at || 0);
+    const now = new Date();
+    return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  };
   return [...filtered].sort((a, b) => {
     if (state.sort === "newest") return signalDate(b) - signalDate(a) || Number(b.score || 0) - Number(a.score || 0);
     if (state.sort === "confidence") return Number(b.confidence || 0) - Number(a.confidence || 0) || Number(b.score || 0) - Number(a.score || 0);
+    const todayDiff = (isToday(b) ? 1 : 0) - (isToday(a) ? 1 : 0);
+    if (todayDiff !== 0) return todayDiff;
     return Number(b.score || 0) - Number(a.score || 0) || signalDate(b) - signalDate(a);
   });
 }
