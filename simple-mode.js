@@ -74,6 +74,21 @@ function formatDate(iso) {
   return date.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+function isToday(iso) {
+  if (!iso) return false;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+}
+
+function findingDateTag(iso) {
+  if (!iso) return `<span class="finding-date-tag finding-date-tag--missing">Ohne Datum</span>`;
+  return `<span class="finding-date-tag">${esc(formatDate(iso))}</span>`;
+}
+
 function sourceOf(article) {
   const source = Array.isArray(article?.source) ? article.source[0] : article?.source;
   return source || null;
@@ -181,21 +196,28 @@ function renderRejected(articles, rejectLabels) {
       const article = row.article || {};
       const source = sourceOf(article);
       const reason = rejectLabels?.[row.reject_reason] || row.reject_reason || "Ohne Begründung";
+      const typeLabel = ctx.articleTypeLabels?.[row.article_type] || row.article_type || "Sonstiger Inhalt";
       return `
-        <article class="review-item" data-article-id="${esc(article.id || row.article_id || "")}" tabindex="0" role="button">
-          <div class="review-item-main">
-            <div class="audit-chip-row">
-              <span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span>
-              ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
+        <article class="finding-item" data-article-id="${esc(article.id || row.article_id || "")}" tabindex="0" role="button">
+          <div class="finding-item-top">
+            <span class="finding-dimension">${esc(typeLabel)}</span>
+            <div class="finding-top-tags">
+              ${isToday(row.updated_at || row.classified_at) ? `<span class="finding-new-badge">NEU</span>` : ""}
+              <span class="quality-tag quality-tag--uncertain"><i class="fa-solid fa-scale-balanced"></i> Manuelle Prüfung</span>
+              ${findingDateTag(article.published_at)}
             </div>
-            <strong class="test-result-title">${escText(article.title_de || article.title || article.url || "Ohne Titel")}</strong>
-            <p class="test-result-reason">${escText(reason)}</p>
+          </div>
+          <span class="finding-title">${escText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
+          ${row.summary_de ? `<p class="finding-summary">${escText(row.summary_de)}</p>` : ""}
+          <p class="finding-rationale"><i class="fa-solid fa-scale-balanced"></i><span>${escText(reason)}</span></p>
+          <div class="finding-meta">
+            ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
             ${ctx.technicalAuditPill(article.id || row.article_id)}
           </div>
         </article>
       `;
     }).join("")
-    : `<div class="track-card-empty">Keine Grenzfälle zur Prüfung.</div>`;
+    : `<div class="track-card-empty">Keine fachlichen Grenzfälle für eine menschliche Abwägung.</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -391,12 +413,17 @@ function renderArchive() {
       const source = sourceOf(article);
       return `
         <article class="archive-item" data-article-id="${esc(article.id || row.article_id || "")}" tabindex="0" role="button">
+          <div class="finding-item-top">
+            <span class="finding-dimension">${esc(ctx.articleTypeLabels?.[row.article_type] || row.article_type || "Sonstiger Inhalt")}</span>
+            <div class="finding-top-tags">${isToday(row.updated_at || row.classified_at) ? `<span class="finding-new-badge">NEU</span>` : ""}${findingDateTag(article.published_at)}</div>
+          </div>
           <span class="finding-title">${escText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
-          <p class="archive-reason"><i class="fa-solid fa-circle-info"></i> ${escText(labels[row.reject_reason] || row.reject_reason || "Ohne Begründung")}</p>
+          <p class="archive-reason"><i class="fa-solid fa-circle-info"></i><span>${escText(labels[row.reject_reason] || row.reject_reason || "Ohne Begründung")}</span></p>
           ${row.summary_de ? `<small class="archive-summary">${escText(row.summary_de)}</small>` : ""}
           <div class="finding-meta">
             ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
-            ${article.published_at ? `<span class="finding-date-tag">${esc(formatDate(article.published_at))}</span>` : ""}
+            <span class="tag"><i class="fa-solid fa-circle-info"></i> Nicht relevant</span>
+            ${ctx.technicalAuditPill(article.id || row.article_id)}
           </div>
         </article>`;
     }).join("")
