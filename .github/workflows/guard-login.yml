@@ -1,0 +1,119 @@
+name: guard login and recruiting
+
+# Externer Waechter. Er prueft von ausserhalb Supabase, ob Anmeldung und
+# Recruiting antworten, und pausiert die schwere Signal-Layer-Arbeit, sobald sie
+# es nicht mehr tun. Bewusst hier und nicht als pg_cron-Job: am 3.8.2026 kamen
+# die geplanten Jobs in der Datenbank selbst nicht mehr zum Start, genau als ein
+# Waechter gebraucht wurde.
+#
+# Ein 5xx oder eine Zeitueberschreitung gilt als Ausfall. Ein 400 oder 401 ist
+# ausdruecklich in Ordnung: es beweist, dass der Dienst antwortet und nur die
+# Testdaten ablehnt.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guard-login
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_URL: https://csmguwcvzreefluhahyu.supabase.co
+      MAX_MS: "3000"
+    steps:
+      - name: Probe login and recruiting
+        id: probe
+        env:
+          ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -uo pipefail
+          if [ -z "${ANON_KEY}" ]; then
+            echo "::error::SUPABASE_ANON_KEY is not configured, so the guard cannot probe."
+            exit 1
+          fi
+
+          probe() {
+            # $1 label, $2 curl args...; prints "<label> <http_code> <ms>"
+            local label="$1"; shift
+            local out
+            out=$(curl -s -o /dev/null -w "%{http_code} %{time_total}" --max-time 20 "$@" || echo "000 20")
+            local code="${out%% *}" secs="${out##* }"
+            local ms
+            ms=$(awk -v s="$secs" 'BEGIN{printf "%d", s*1000}')
+            echo "$label $code $ms"
+          }
+
+          login=$(probe login -X POST \
+            -H "apikey: ${ANON_KEY}" -H "Content-Type: application/json" \
+            -d '{"email":"guard-probe@example.invalid","password":"not-a-real-password"}' \
+            "${PROJECT_URL}/auth/v1/token?grant_type=password")
+
+          recruiting=$(probe recruiting -I \
+            -H "apikey: ${ANON_KEY}" \
+            "${PROJECT_URL}/rest/v1/profiles?select=id&limit=1")
+
+          echo "$login"
+          echo "$recruiting"
+
+          failed=""
+          for line in "$login" "$recruiting"; do
+            set -- $line
+            label="$1"; code="$2"; ms="$3"
+            # 000 = keine Antwort, 5xx = Dienst kaputt, langsam = ueberlastet.
+            if [ "$code" = "000" ] || [ "$code" -ge 500 ] 2>/dev/null; then
+              failed="${failed}${label} antwortete mit ${code}. "
+            elif [ "$ms" -gt "${MAX_MS}" ]; then
+              failed="${failed}${label} brauchte ${ms} ms. "
+            fi
+          done
+
+          if [ -n "$failed" ]; then
+            echo "verdict=down" >> "$GITHUB_OUTPUT"
+            echo "reason=$failed" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=up" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pause heavy work
+        if: steps.probe.outputs.verdict == 'down'
+        env:
+          CRON_SECRET: ${{ secrets.SIGNAL_LAYER_CRON_SECRET }}
+          REASON: ${{ steps.probe.outputs.reason }}
+        run: |
+          set -uo pipefail
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::SIGNAL_LAYER_CRON_SECRET is not configured, so heavy work cannot be paused."
+            exit 1
+          fi
+          curl -s --max-time 25 -X POST "${PROJECT_URL}/functions/v1/signal-layer" \
+            -H "Content-Type: application/json" -H "x-cron-secret: ${CRON_SECRET}" \
+            -d "$(printf '{"action":"set_ops_guard","enabled":false,"reason":%s}' "$(printf '%s' "Waechter: ${REASON}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")"
+          echo
+          echo "::error::Login or recruiting is failing: ${REASON} Heavy Signal Layer work is paused."
+          exit 1
+
+      - name: Release heavy work
+        if: steps.probe.outputs.verdict == 'up'
+        env:
+          CRON_SECRET: ${{ secrets.SIGNAL_LAYER_CRON_SECRET }}
+        run: |
+          set -uo pipefail
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::SIGNAL_LAYER_CRON_SECRET is not configured, so heavy work cannot be released."
+            exit 1
+          fi
+          # Idempotent: gibt die Arbeit frei, sobald beide Dienste zwei Laeufe
+          # hintereinander gesund sind. Ein einzelner gesunder Lauf genuegt,
+          # weil der naechste Ausfall sofort wieder pausiert.
+          curl -s --max-time 25 -X POST "${PROJECT_URL}/functions/v1/signal-layer" \
+            -H "Content-Type: application/json" -H "x-cron-secret: ${CRON_SECRET}" \
+            -d '{"action":"set_ops_guard","enabled":true}'
+          echo

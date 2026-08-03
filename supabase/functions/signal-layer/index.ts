@@ -3321,6 +3321,15 @@ Deno.serve(async (req: Request) => {
         if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
       }
     }
+  } else if (action === "set_ops_guard") {
+    // Wird vom externen Waechter in GitHub Actions aufgerufen, der Anmeldung und
+    // Recruiting von aussen prueft. Muss auch dann funktionieren, wenn in der
+    // Datenbank geplante Jobs nicht mehr starten - deshalb Cron-Secret statt JWT.
+    isScheduled = await isScheduledTrigger(req);
+    if (!isScheduled) {
+      auth = await requireAuth(req);
+      if (!auth) return errorResponse(origin, "Unauthorized", 401);
+    }
   } else if (["resume_stalled_crawls", "resume_classification_backfill", "preview_classification", "classify_test_article", "start_classification_backfill"].includes(action)) {
     isScheduled = await isScheduledTrigger(req);
     if (!isScheduled) {
@@ -4903,6 +4912,21 @@ Deno.serve(async (req: Request) => {
       // leave the run stuck forever (observed repeatedly on the 187-source
       // full crawl).
       // ---------------------------------------------------------------
+      case "set_ops_guard": {
+        const { enabled, reason } = (body || {}) as { enabled?: boolean; reason?: string };
+        const admin = getAdminClient();
+        const on = enabled !== false;
+        const { error } = await admin.schema("signal_layer").from("ops_guard").update({
+          heavy_work_enabled: on,
+          paused_reason: on ? null : (reason || "Extern pausiert.").slice(0, 500),
+          paused_at: on ? null : new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("id", true);
+        if (error) return errorResponse(origin, error.message, 500);
+        console.warn(`ops_guard: schwere Arbeit ${on ? "freigegeben" : "pausiert"}${on ? "" : ` (${reason || "ohne Grund"})`}.`);
+        return corsResponse(origin, { heavy_work_enabled: on, reason: on ? null : reason || null });
+      }
+
       case "resume_stalled_crawls": {
         if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
         // Apify's synchronous browser crawl may legitimately run for up to
