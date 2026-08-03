@@ -248,6 +248,65 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
 
 // Selbstaufruf, der das Ende der Antwort überlebt: ohne waitUntil verwirft das
 // Isolate den ausstehenden fetch, und die Kette bleibt stehen.
+// ---------------------------------------------------------------------------
+// Kapazitaetsschranke. Anmeldung und Recruiting haben Vorrang vor jeder
+// Hintergrundarbeit des Signal Layer. Postgres kennt keine Priorisierung, also
+// verzichtet die Hintergrundarbeit freiwillig: vor jedem Paket wird gemessen,
+// wie schnell die Datenbank auf eine triviale Abfrage antwortet. Ist sie
+// traege, setzt der Job aus statt nachzulegen. 2026-08 hat ein Crawl die
+// Schreibleistung so verbraucht, dass Anmeldungen in Zeitueberschreitungen
+// liefen - genau das verhindert diese Schranke.
+// ---------------------------------------------------------------------------
+type CapacityVerdict = { ok: boolean; reason?: string; probeMs: number };
+
+const CAPACITY_PROBE_FALLBACK_MS = 5_000;
+
+async function checkCapacity(kind: "crawl" | "simple" | "analysis"): Promise<CapacityVerdict> {
+  const admin = getAdminClient();
+  let probeMs = 0;
+  try {
+    const started = Date.now();
+    const { data, error } = await admin.schema("signal_layer").rpc("db_probe_ms");
+    // Die Wanduhr zaehlt mit: sie erfasst auch Wartezeit auf eine freie
+    // Verbindung, die der serverseitige Wert nicht sieht.
+    probeMs = Math.max(Number(data ?? 0), Date.now() - started);
+    if (error) probeMs = CAPACITY_PROBE_FALLBACK_MS;
+  } catch {
+    probeMs = CAPACITY_PROBE_FALLBACK_MS;
+  }
+
+  const { data: guard } = await admin.schema("signal_layer").from("ops_guard")
+    .select("heavy_work_enabled, max_probe_ms, max_render_queue, quiet_hour_start, quiet_hour_end")
+    .eq("id", true).maybeSingle();
+
+  const maxProbe = Number(guard?.max_probe_ms ?? 800);
+  if (guard && guard.heavy_work_enabled === false) {
+    return { ok: false, reason: "Schwere Arbeit ist per Notbremse abgeschaltet (ops_guard).", probeMs };
+  }
+  if (probeMs > maxProbe) {
+    await admin.schema("signal_layer").from("ops_guard").update({
+      paused_reason: `Ausgesetzt: Datenbank antwortete in ${probeMs} ms (Grenze ${maxProbe} ms).`,
+      paused_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).eq("id", true);
+    return { ok: false, reason: `Datenbank ist ausgelastet (${probeMs} ms statt unter ${maxProbe} ms).`, probeMs };
+  }
+  if (kind === "crawl") {
+    const maxQueue = Number(guard?.max_render_queue ?? 500);
+    const { count } = await admin.schema("signal_layer").from("browser_render_jobs")
+      .select("id", { count: "exact", head: true }).eq("status", "queued");
+    if (Number(count || 0) > maxQueue) {
+      return { ok: false, reason: `Render-Warteschlange ist zu lang (${count} von maximal ${maxQueue}).`, probeMs };
+    }
+  }
+  return { ok: true, probeMs };
+}
+
+function capacityResponse(origin: string | null, verdict: CapacityVerdict): Response {
+  return corsResponse(origin, {
+    skipped: true, reason: verdict.reason || "Kapazitaet nicht ausreichend.", probe_ms: verdict.probeMs,
+  }, 200);
+}
+
 function triggerSelf(payload: Record<string, unknown>, timeoutMs = 120_000): void {
   const pending = fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
     method: "POST",
@@ -4097,6 +4156,14 @@ Deno.serve(async (req: Request) => {
       // caller gets an immediate response instead of waiting minutes.
       // ---------------------------------------------------------------
       case "run_crawl": {
+        // Vorrang fuer Anmeldung und Recruiting: bei traeger Datenbank aussetzen.
+        {
+          const capacity = await checkCapacity("crawl");
+          if (!capacity.ok) {
+            console.warn(`Kapazitaetsschranke: ${capacity.reason}`);
+            return capacityResponse(origin, capacity);
+          }
+        }
         const { scope } = body as { scope?: { categories?: string[]; source_ids?: string[] } };
         const admin = getAdminClient();
 
@@ -4144,6 +4211,14 @@ Deno.serve(async (req: Request) => {
       }
 
       case "process_crawl_worker": {
+        // Vorrang fuer Anmeldung und Recruiting: bei traeger Datenbank aussetzen.
+        {
+          const capacity = await checkCapacity("crawl");
+          if (!capacity.ok) {
+            console.warn(`Kapazitaetsschranke: ${capacity.reason}`);
+            return capacityResponse(origin, capacity);
+          }
+        }
         const { crawl_run_id } = body as { crawl_run_id: string };
         const admin = getAdminClient();
         const { data: jobs, error } = await admin.schema("signal_layer").rpc("claim_source_crawl_job", { p_crawl_run_id: crawl_run_id });
@@ -4421,6 +4496,14 @@ Deno.serve(async (req: Request) => {
       }
 
       case "process_analysis_worker": {
+        // Vorrang fuer Anmeldung und Recruiting: bei traeger Datenbank aussetzen.
+        {
+          const capacity = await checkCapacity("analysis");
+          if (!capacity.ok) {
+            console.warn(`Kapazitaetsschranke: ${capacity.reason}`);
+            return capacityResponse(origin, capacity);
+          }
+        }
         const admin = getAdminClient();
         const { data: jobs, error } = await admin.schema("signal_layer").rpc("claim_article_analysis_job");
         if (error) return errorResponse(origin, error.message, 500);
@@ -4520,6 +4603,14 @@ Deno.serve(async (req: Request) => {
       // Internal-only, triggered by run_crawl above.
       // ---------------------------------------------------------------
       case "process_crawl": {
+        // Vorrang fuer Anmeldung und Recruiting: bei traeger Datenbank aussetzen.
+        {
+          const capacity = await checkCapacity("crawl");
+          if (!capacity.ok) {
+            console.warn(`Kapazitaetsschranke: ${capacity.reason}`);
+            return capacityResponse(origin, capacity);
+          }
+        }
         // AI classification can require a second model pass. Keep each Edge
         // invocation short and let the persisted cursor continue the chain.
         const ARTICLE_BATCH_SIZE = 1;
@@ -5158,6 +5249,14 @@ Deno.serve(async (req: Request) => {
       }
 
       case "start_simple_run": {
+        // Vorrang fuer Anmeldung und Recruiting: bei traeger Datenbank aussetzen.
+        {
+          const capacity = await checkCapacity("simple");
+          if (!capacity.ok) {
+            console.warn(`Kapazitaetsschranke: ${capacity.reason}`);
+            return capacityResponse(origin, capacity);
+          }
+        }
         const admin = getAdminClient();
         const requestedLimit = Number((body as { article_limit?: number }).article_limit || SIMPLE_ARTICLE_LIMIT);
         const articleLimit = Math.min(
@@ -5191,6 +5290,14 @@ Deno.serve(async (req: Request) => {
       }
 
       case "process_simple_run": {
+        // Vorrang fuer Anmeldung und Recruiting: bei traeger Datenbank aussetzen.
+        {
+          const capacity = await checkCapacity("simple");
+          if (!capacity.ok) {
+            console.warn(`Kapazitaetsschranke: ${capacity.reason}`);
+            return capacityResponse(origin, capacity);
+          }
+        }
         const admin = getAdminClient();
         const runId = String((body as { run_id?: string }).run_id || "");
         const runQuery = admin.schema("signal_layer").from("simple_runs").select("*");
