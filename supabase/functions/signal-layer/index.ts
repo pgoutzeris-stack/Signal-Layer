@@ -3324,11 +3324,18 @@ Deno.serve(async (req: Request) => {
   } else if (action === "set_ops_guard") {
     // Wird vom externen Waechter in GitHub Actions aufgerufen, der Anmeldung und
     // Recruiting von aussen prueft. Muss auch dann funktionieren, wenn in der
-    // Datenbank geplante Jobs nicht mehr starten - deshalb Cron-Secret statt JWT.
-    isScheduled = await isScheduledTrigger(req);
-    if (!isScheduled) {
-      auth = await requireAuth(req);
-      if (!auth) return errorResponse(origin, "Unauthorized", 401);
+    // Datenbank geplante Jobs nicht mehr starten - deshalb kein JWT. Der
+    // Worker-Bearer liegt bereits als Repo-Secret vor, also braucht der Waechter
+    // kein zusaetzliches Geheimnis.
+    const guardSecret = await getBrowserBatchSecret();
+    const guardAuth = req.headers.get("authorization") || "";
+    const byWorker = Boolean(guardSecret) && guardAuth === `Bearer ${guardSecret}`;
+    if (!byWorker) {
+      isScheduled = await isScheduledTrigger(req);
+      if (!isScheduled) {
+        auth = await requireAuth(req);
+        if (!auth) return errorResponse(origin, "Unauthorized", 401);
+      }
     }
   } else if (["resume_stalled_crawls", "resume_classification_backfill", "preview_classification", "classify_test_article", "start_classification_backfill"].includes(action)) {
     isScheduled = await isScheduledTrigger(req);
