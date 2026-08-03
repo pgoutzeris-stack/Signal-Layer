@@ -784,7 +784,11 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // Ein unbrauchbares Antwortformat ist ein Einzelfall, kein Anbieterausfall.
-    const kind = /no valid simple classification/i.test(message) ? "response" : "provider";
+    // Ebenso ein abgebrochener Aufruf: ein Deploy oder ein Neustart der Runtime
+    // beendet laufende Isolate mitten im Aufruf. Am 3.8.2026 hat genau das einen
+    // Lauf nach 72 von 1000 Artikeln gestoppt, obwohl DeepSeek einwandfrei lief.
+    const singleCase = /no valid simple classification|aborted|abort|connection closed|error sending request|closed before message completed|stream closed|broken pipe/i;
+    const kind = singleCase.test(message) ? "response" : "provider";
     return { ...rejected(article, "modellfehler", prefilter.families, model, prefilter.tier1), error_kind: kind };
   }
 
