@@ -56,15 +56,22 @@ jobs:
             -d '{"email":"guard-probe@example.invalid","password":"not-a-real-password"}' \
             "${PROJECT_URL}/auth/v1/token?grant_type=password")
 
+          # Echte Recruiting-Tabelle, nicht ersatzweise profiles: nur so deckt der
+          # Waechter auch einen Ausfall ab, der allein das Recruiting-Tool trifft.
           recruiting=$(probe recruiting -I \
+            -H "apikey: ${ANON_KEY}" -H "Accept-Profile: recruiting" \
+            "${PROJECT_URL}/rest/v1/applicants?select=id&limit=1")
+
+          profiles=$(probe profiles -I \
             -H "apikey: ${ANON_KEY}" \
             "${PROJECT_URL}/rest/v1/profiles?select=id&limit=1")
 
           echo "$login"
           echo "$recruiting"
+          echo "$profiles"
 
           failed=""
-          for line in "$login" "$recruiting"; do
+          for line in "$login" "$recruiting" "$profiles"; do
             set -- $line
             label="$1"; code="$2"; ms="$3"
             # 000 = keine Antwort, 5xx = Dienst kaputt, langsam = ueberlastet.
