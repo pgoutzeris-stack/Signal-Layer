@@ -4830,11 +4830,32 @@ Deno.serve(async (req: Request) => {
         // ein Paket weiter, auch wenn die Selbstkette abgerissen ist.
         if ((openSimpleRuns || []).length > 0) await simpleRunRequest(openSimpleRuns![0].id, 55_000);
 
-        const { data: stalled, error: stalledErr } = await admin.schema("signal_layer").from("crawl_runs")
+        // Ein Lauf, der laenger als WATCHDOG_MAX_RUN_HOURS laeuft, kommt nicht mehr
+        // voran: 2026-08 hing einer 12 Tage bei Quelle 0 und wurde alle 5 Minuten
+        // neu gestartet, bis die Schreiblast Anmeldungen blockierte. Solche Laeufe
+        // werden beendet, nicht wiederbelebt.
+        const WATCHDOG_MAX_RUN_HOURS = 6;
+        const runCutoff = new Date(Date.now() - WATCHDOG_MAX_RUN_HOURS * 3_600_000).toISOString();
+        const { data: ancient } = await admin.schema("signal_layer").from("crawl_runs")
+          .select("id, started_at").eq("status", "running").lt("started_at", runCutoff);
+        for (const run of ancient || []) {
+          await admin.schema("signal_layer").from("crawl_runs").update({
+            status: "error", finished_at: new Date().toISOString(),
+            error: `Abgebrochen: laeuft seit mehr als ${WATCHDOG_MAX_RUN_HOURS} Stunden ohne Abschluss.`,
+          }).eq("id", run.id).eq("status", "running");
+          await admin.schema("signal_layer").from("source_crawl_jobs")
+            .update({ status: "error", error_code: "run_abandoned", error_message: "Lauf abgebrochen." })
+            .eq("crawl_run_id", run.id).in("status", ["queued", "running"]);
+          console.error(`Watchdog: crawl_run ${run.id} abgebrochen, laeuft seit ${run.started_at}.`);
+        }
+        const ancientIds = new Set((ancient || []).map((run: { id: string }) => run.id));
+
+        const { data: stalledRaw, error: stalledErr } = await admin.schema("signal_layer").from("crawl_runs")
           .select("id, source_ids, current_index, current_offset")
           .eq("status", "running")
           .lt("last_progress_at", cutoff);
         if (stalledErr) return errorResponse(origin, stalledErr.message, 500);
+        const stalled = (stalledRaw || []).filter((run: { id: string }) => !ancientIds.has(run.id));
 
         const selfUrl = `${SUPABASE_URL}/functions/v1/signal-layer`;
         for (const run of stalled || []) {
@@ -4857,7 +4878,11 @@ Deno.serve(async (req: Request) => {
               }).eq("crawl_run_id", run.id).eq("source_id", job.source_id).eq("status", "running");
               if (!retry) await admin.schema("signal_layer").from("sources").update({ last_error: timeoutMessage }).eq("id", job.source_id);
             }
-            await admin.schema("signal_layer").from("crawl_runs").update({ last_progress_at: new Date().toISOString() }).eq("id", run.id);
+            // Nur anfassen, wenn ein Job wirklich umgereiht wurde. Ein
+            // bedingungsloses Update haelt einen toten Lauf unbegrenzt am Leben.
+            if (timedOutJobs.length > 0) {
+              await admin.schema("signal_layer").from("crawl_runs").update({ last_progress_at: new Date().toISOString() }).eq("id", run.id);
+            }
             for (let worker = 0; worker < 3; worker += 1) {
               fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_crawl_worker", crawl_run_id: run.id }) }).catch(() => {});
             }
