@@ -1,7 +1,7 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260802-1730";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260803-1000";
 
 let sb = null;
 let sources = [];
@@ -2853,7 +2853,49 @@ function renderSimpleHeaderStatus() {
       <span>${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens · bisher ${eur(simpleForecast.spent_eur)}</span>
       <span>Hochrechnung für den ganzen Lauf: ${eur(simpleForecast.projected_eur)}</span>`;
   }
+  renderSimpleSupplyPanel(run);
   setLiveStatus(null, null, {});
+}
+
+// Der Abrufstatus beschreibt Crawls, und Simple crawlt nie - es liest einen
+// festen Bestand aus Supabase. Dieselbe Aufklappfläche zeigt hier deshalb den
+// Bestand selbst: wie viele Artikel im Blick sind, wie frisch der jüngste ist
+// und wann zuletzt bewertet wurde. Die Frische ist die eigentlich wichtige
+// Zahl - versiegt der Nachschub, bewertet Simple immer denselben Altbestand.
+function renderSimpleSupplyPanel(run) {
+  if (!els.statusAccessPanel) return;
+  els.statusAccessPanel.hidden = false;
+  const pool = Number(run?.total_count || 0);
+  const newest = run?.pool_newest_at || null;
+  const oldest = run?.pool_oldest_at || null;
+
+  const toggleLabel = els.statusAccessToggle?.querySelector("b");
+  if (toggleLabel) toggleLabel.textContent = "Artikelbestand ausklappen";
+  if (els.statusAccessWindow) {
+    els.statusAccessWindow.textContent = "Fester Bestand aus Supabase, Simple crawlt nicht";
+  }
+  if (els.statusAccessSummary) {
+    els.statusAccessSummary.textContent = pool
+      ? `${pool.toLocaleString("de-DE")} Artikel`
+      : "kein Bestand";
+  }
+  if (!els.statusAccessBody) return;
+
+  const ageHours = newest ? (Date.now() - new Date(newest).getTime()) / 3_600_000 : null;
+  const freshness = ageHours === null
+    ? { text: "unbekannt", stale: false }
+    : ageHours < 24
+      ? { text: `heute, ${formatCrawlTime(newest)}`, stale: false }
+      : { text: `${Math.floor(ageHours / 24)} Tage alt`, stale: ageHours > 48 };
+
+  els.statusAccessBody.innerHTML = `
+    <div class="telemetry-grid">
+      <div class="telemetry-stat"><span>Artikel im Blick</span><b>${pool ? pool.toLocaleString("de-DE") : "–"}</b></div>
+      <div class="telemetry-stat"><span>Jüngster Artikel</span><b>${escapeHtml(freshness.text)}</b></div>
+      <div class="telemetry-stat"><span>Bewertet</span><b>${Number(run?.processed_count || 0).toLocaleString("de-DE")}</b></div>
+    </div>
+    ${oldest ? `<div class="source-health-note">Bestand reicht zurück bis ${escapeHtml(formatFindingDate(oldest).replace(/<[^>]+>/g, ""))}.</div>` : ""}
+    ${freshness.stale ? `<div class="source-health-note"><i class="fa-solid fa-triangle-exclamation"></i> Der Nachschub steht: der jüngste Artikel ist ${escapeHtml(freshness.text)}. Simple bewertet dann immer denselben Bestand.</div>` : ""}`;
 }
 
 export function setSimpleRunStatus(run, forecast = null) {
