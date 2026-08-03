@@ -1,8 +1,11 @@
 name: browser crawler batch
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
+  # Zeitplan am 3.8.2026 ausgesetzt: der Rueckstand von rund 2350 Render-Jobs
+  # hat die Datenbank so belastet, dass Anmeldungen in Zeitueberschreitungen
+  # liefen. Wieder aktivieren, sobald der Rueckstand kontrolliert abgebaut ist.
+  # schedule:
+  #   - cron: "*/15 * * * *"
   workflow_dispatch:
 
 permissions:
