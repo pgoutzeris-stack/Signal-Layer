@@ -20,7 +20,7 @@ export const COMPANY_PROFILE_MODEL = "gemini-2.5-flash";
 /** Obergrenze je Verarbeitungspaket, damit ein Lauf nicht in Recherche umkippt. */
 export const COMPANY_PROFILE_MAX_PER_BATCH = 2;
 export const COMPANY_PROFILE_MAX_OUTPUT_TOKENS = 10_000;
-export const COMPANY_LOGO_LOOKUP_VERSION = "2026-08-worldvectorlogo-v1";
+export const COMPANY_LOGO_LOOKUP_VERSION = "2026-08-worldvectorlogo-v2";
 
 /** Die Karten des Steckbriefs, in der Reihenfolge der Anzeige. */
 export const COMPANY_PROFILE_SECTIONS = [
@@ -323,11 +323,26 @@ export function worldVectorLogoMatchesCompany(company: string, source: URL, asse
  * Favicons oder Logo-Farmen im Steckbrief.
  */
 async function verifyLogoCandidate(company: string, parsed: Record<string, unknown>): Promise<VerifiedLogo | null> {
-  const asset = safeHttpsUrl(parsed.logo_url);
   const source = safeHttpsUrl(parsed.logo_source_url);
   const kind = logoKind(parsed.logo_source_kind);
-  const declared = declaredLogoFormat(parsed.logo_format);
-  if (!asset || !source || !kind || !declared) return null;
+  if (!source || !kind) return null;
+
+  // WorldVectorLogo schützt seine Suchseite teilweise per Cloudflare. Die
+  // öffentliche SVG-CDN folgt jedoch dem dokumentierten Seiten-Slug. Wenn das
+  // Modell die exakte Unternehmensseite belegt, darf der Server deshalb den
+  // Direktlink deterministisch bilden und anschließend wie jeden anderen
+  // Kandidaten vollständig prüfen.
+  const worldVectorSource = kind === "worldvectorlogo" &&
+    ["worldvectorlogo.com", "www.worldvectorlogo.com"].includes(source.hostname);
+  const worldVectorSlug = worldVectorSource
+    ? decodeURIComponent(source.pathname.split("/").filter(Boolean).pop() || "")
+    : "";
+  const derivedWorldVectorAsset = worldVectorSlug
+    ? safeHttpsUrl(`https://cdn.worldvectorlogo.com/logos/${encodeURIComponent(worldVectorSlug)}.svg`)
+    : null;
+  const asset = safeHttpsUrl(parsed.logo_url) || derivedWorldVectorAsset;
+  const declared = declaredLogoFormat(parsed.logo_format) || (derivedWorldVectorAsset ? "svg" : null);
+  if (!asset || !declared) return null;
 
   const assetHost = asset.hostname.toLowerCase();
   if (BLOCKED_LOGO_HOST_PARTS.some((part) => assetHost === part || assetHost.endsWith(`.${part}`))) return null;
@@ -335,7 +350,7 @@ async function verifyLogoCandidate(company: string, parsed: Record<string, unkno
   if (kind === "wikimedia_commons") {
     if (source.hostname !== "commons.wikimedia.org" || asset.hostname !== "upload.wikimedia.org") return null;
   } else if (kind === "worldvectorlogo") {
-    if (!["worldvectorlogo.com", "www.worldvectorlogo.com"].includes(source.hostname) ||
+    if (!worldVectorSource ||
       asset.hostname !== "cdn.worldvectorlogo.com" ||
       !worldVectorLogoMatchesCompany(company, source, asset)) return null;
   } else if (!officialHost || !sameDomain(source.hostname, officialHost)) {
@@ -425,6 +440,10 @@ Priorität: 1. offizielle Presse-/Brand-Seite, 2. Organization.logo der
 offiziellen Website, 3. Wikimedia Commons, 4. als letzter Fallback
 worldvectorlogo.com/de mit direkter SVG-Datei von cdn.worldvectorlogo.com.
 Verwechsle Mutterkonzern, Marke und ähnlich benannte Unternehmen niemals.
+Bei Worldvectorlogo ist die exakte Seite /de/logo/{slug} der notwendige Beleg.
+Wenn der direkte CDN-Link in der Suche nicht sichtbar ist, gib trotzdem diese
+Seite, source_kind "worldvectorlogo" und logo_format "svg" zurück; der Server
+bildet und validiert die SVG-Adresse anschließend selbst.
 
 Antworte ausschließlich als JSON:
 {"website":"hauptdomain.de","logo_url":"https://...","logo_source_url":"https://...","logo_source_kind":"official_media | official_structured_data | wikimedia_commons | worldvectorlogo","logo_format":"svg | png | webp | jpg"}
