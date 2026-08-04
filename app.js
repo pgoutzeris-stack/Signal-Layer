@@ -1,4 +1,5 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
+import { deriveSimpleHeaderState, simpleProgressCounts } from "./status-state.mjs?v=20260804-2330";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2300";
@@ -2896,19 +2897,31 @@ function setLiveStatus(last, backfill, analysisQueue = {}) {
 // Simple hat eine eigene Statusflaeche. Crawl-, Paywall- und Advanced-Fehler
 // werden hier bewusst nie angezeigt.
 function renderSimpleHeaderStatus() {
+  try {
+    renderSimpleHeaderStatusContent();
+  } catch (error) {
+    // Der Status ist Zusatz-UI und darf die Artikelansicht niemals blockieren.
+    // Bei unerwarteten Daten bleibt die App benutzbar und der Status fällt auf
+    // einen neutralen Leerlaufzustand zurück.
+    console.error("Simple-Status konnte nicht dargestellt werden:", error);
+    const trigger = document.getElementById("simple-status-trigger");
+    const live = document.getElementById("simple-live-state");
+    const progress = document.getElementById("simple-article-progress");
+    trigger?.classList.remove("status-pill--ready", "status-pill--working", "status-pill--error");
+    trigger?.classList.add("status-pill--idle");
+    if (trigger) trigger.setAttribute("aria-label", "Simple-Status: Kein Lauf aktiv");
+    if (live) live.textContent = "Kein Lauf aktiv";
+    if (progress) progress.hidden = true;
+  }
+}
+
+function renderSimpleHeaderStatusContent() {
   if (!document.body.classList.contains("mode-simple")) return;
   const run = simpleRunStatus;
-  const activeStates = ["queued", "running"];
-  const triggerRun = activeStates.includes(simpleTriggerBackfill?.status) ? simpleTriggerBackfill : null;
-  const activeRun = triggerRun || (activeStates.includes(run?.status) ? run : null);
-  const recentRuns = [simpleTriggerBackfill, run].filter(Boolean).sort((left, right) =>
-    new Date(right.finished_at || right.last_progress_at || right.started_at || 0).getTime()
-      - new Date(left.finished_at || left.last_progress_at || left.started_at || 0).getTime()
-  );
-  const visibleRun = activeRun || recentRuns[0] || null;
-  const failedRun = !activeRun && visibleRun?.status === "error" ? visibleRun : null;
-  const progressRun = activeRun || failedRun;
-  const progressIsTrigger = progressRun === simpleTriggerBackfill;
+  const {
+    activeTriggerRun: triggerRun, visibleRun, failedRun, progressRun,
+    progressIsTrigger, running, failed, tone, label,
+  } = deriveSimpleHeaderState(run, simpleTriggerBackfill);
   const byId = (id) => document.getElementById(id);
   const trigger = byId("simple-status-trigger");
   const live = byId("simple-live-state");
@@ -2916,22 +2929,15 @@ function renderSimpleHeaderStatus() {
   const progress = byId("simple-article-progress");
   if (!trigger || !live || !time || !progress) return;
 
-  const running = Boolean(activeRun);
-  const failed = Boolean(failedRun);
-  const tone = running ? "working" : failed ? "error" : "idle";
-  const label = running ? "Analyse läuft" : failed ? "Prüfung nötig" : "Kein Lauf aktiv";
   trigger.classList.remove("status-pill--ready", "status-pill--idle", "status-pill--working", "status-pill--error");
   trigger.classList.add(`status-pill--${tone}`);
   trigger.setAttribute("aria-label", `Simple-Status: ${label}`);
   live.textContent = label;
   time.textContent = visibleRun ? formatCrawlTime(visibleRun.finished_at || visibleRun.last_progress_at || visibleRun.started_at) : "--:--";
 
-  const total = Number(progressRun?.total_count || 0);
-  const processed = progressIsTrigger
-    ? Number(progressRun.completed_count || 0) + Number(progressRun.missing_count || 0) + Number(progressRun.error_count || 0)
-    : Number(progressRun?.processed_count || 0);
   progress.hidden = !progressRun;
   if (progressRun) {
+    const { total, processed } = simpleProgressCounts(progressRun, progressIsTrigger);
     byId("simple-progress-text").textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} Artikel`;
     byId("simple-progress-bar").style.width = total > 0 ? `${Math.round(Math.min(processed / total, 1) * 100)}%` : "0%";
     const modelLabel = simpleForecast?.model_label || progressRun.model || "Modell";

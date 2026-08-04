@@ -1,0 +1,39 @@
+name: frontend runtime check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app.js"
+      - "simple-mode.js"
+      - "status-state.mjs"
+      - "index.html"
+      - "tests/frontend-status.test.mjs"
+      - ".github/workflows/frontend-runtime-check.yml"
+  pull_request:
+    paths:
+      - "app.js"
+      - "simple-mode.js"
+      - "status-state.mjs"
+      - "index.html"
+      - "tests/frontend-status.test.mjs"
+      - ".github/workflows/frontend-runtime-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check JavaScript syntax
+        run: |
+          node --check app.js
+          node --check simple-mode.js
+          node --check status-state.mjs
+      - name: Test startup status states
+        run: node --test tests/frontend-status.test.mjs
