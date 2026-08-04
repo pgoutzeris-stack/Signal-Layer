@@ -5924,8 +5924,19 @@ Deno.serve(async (req: Request) => {
             .eq("id", snapshotId).eq("company", name).maybeSingle();
           if (snapshotError) return errorResponse(origin, snapshotError.message, 500);
           if (!snapshot) return errorResponse(origin, "Recherche-Stand nicht gefunden", 404);
+          const historicalProfile = snapshot.profile as Record<string, unknown>;
+          // Das Firmenlogo ist Darstellungsmetadatum, keine historische
+          // Rechercheaussage. Auch ein älterer Inhaltsstand verwendet deshalb
+          // das aktuell serverseitig verifizierte Logo.
           return corsResponse(origin, {
-            profile: { ...(snapshot.profile as Record<string, unknown>), snapshot_id: snapshot.id },
+            profile: {
+              ...historicalProfile,
+              logo_url: data?.logo_url || historicalProfile.logo_url || null,
+              logo_source_url: data?.logo_source_url || historicalProfile.logo_source_url || null,
+              logo_source_kind: data?.logo_source_kind || historicalProfile.logo_source_kind || null,
+              logo_format: data?.logo_format || historicalProfile.logo_format || null,
+              snapshot_id: snapshot.id,
+            },
             profile_versions: versions,
             pending: false,
             pending_logo: false,
