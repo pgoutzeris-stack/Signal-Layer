@@ -32,7 +32,7 @@ const state = {
 // Filter selections are multi-select: empty array = "all". Sort stays single.
 const signalViewState = { articleTypes: [], sources: [], sort: "recommended" };
 const archiveViewState = { articleTypes: [], sources: [], sort: "recommended" };
-const simpleViewState = { articleTypes: [], sources: [], sort: "recommended" };
+const simpleViewState = { articleTypes: [], sources: [], companies: [], sort: "recommended" };
 
 // Maps a filter <select> id to its persistent selection array (mutated in
 // place so closures never hold a stale reference).
@@ -44,6 +44,7 @@ function filterSelectionFor(selectId) {
     case "archive-article-type-filter": return archiveViewState.articleTypes;
     case "simple-source-filter": return simpleViewState.sources;
     case "simple-article-type-filter": return simpleViewState.articleTypes;
+    case "simple-company-filter": return simpleViewState.companies;
     default: return null;
   }
 }
@@ -1533,7 +1534,7 @@ function renderFindings(track) {
             ${article.matched_offering_reasoning ? `<div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escapeText(article.matched_offering_reasoning)}</p></div>` : ""}
           </div>` : ""}
           <div class="finding-meta">
-            ${companies.map((c) => `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-pill-info="Einstufung: Tier-1-Unternehmen · Klick öffnet Steckbrief" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
+            ${companies.map((c) => `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
             ${source?.company ? `<span class="tag tag--source" title="Quelle: ${escapeHtml(source.company)}"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
           </div>
@@ -1838,7 +1839,7 @@ function enhanceHeaderSelects() {
     // single-select column.
     // Mehrfachauswahl nur für Filter, die dafür einen Zustand registriert haben.
     // Ohne diesen Zustand bleibt es ein normaler Einzel-Select.
-    const selection = /source|article-type/.test(select.id) ? filterSelectionFor(select.id) : null;
+    const selection = /source|article-type|company-filter/.test(select.id) ? filterSelectionFor(select.id) : null;
     const isGrid = Boolean(selection);
     menu.classList.toggle("roots-select-menu--grid", isGrid);
     wrapper.classList.toggle("roots-select--grid", isGrid);
@@ -1986,7 +1987,7 @@ async function loadReviewArticles() {
           <p class="finding-rationale"><i class="fa-solid fa-scale-balanced"></i><span>${escapeText(article.manual_review_reason || "Mindestens ein fachliches Pflichtkriterium ist noch offen.")}</span></p>
           <div class="finding-meta">
             ${reviewTrackPill(tracks)}
-            ${article.primary_company ? `<span class="tag tag--kunde" data-company-profile="${escapeHtml(article.primary_company)}" data-pill-info="Einstufung: Tier-1-Unternehmen · Klick öffnet Steckbrief" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
+            ${article.primary_company ? `<span class="tag tag--kunde" data-company-profile="${escapeHtml(article.primary_company)}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
             ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
           </div>
@@ -2998,10 +2999,12 @@ export async function openCompanyProfile(company) {
 if (typeof document !== "undefined") document.addEventListener("click", (event) => {
   const pill = event.target.closest("[data-company-profile]");
   if (!pill) return;
+  // Capture-Phase: der Klick-Handler der Artikelkarte haengt direkt an der Karte
+  // und lief sonst zuerst - dann oeffnete sich der Artikel statt des Steckbriefs.
   event.preventDefault();
   event.stopPropagation();
   void openCompanyProfile(pill.getAttribute("data-company-profile"));
-});
+}, { capture: true });
 
 export function setSimpleRunStatus(run, forecast = null) {
   simpleRunStatus = run || null;

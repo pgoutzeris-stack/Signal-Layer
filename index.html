@@ -2018,6 +2018,9 @@
               <select class="signal-toolbar-select" id="simple-article-type-filter" aria-label="Artikeltyp filtern">
                 <option value="all">Alle Artikeltypen</option>
               </select>
+              <select class="signal-toolbar-select" id="simple-company-filter" aria-label="Unternehmen filtern">
+                <option value="all">Alle Unternehmen</option>
+              </select>
               <select class="signal-toolbar-select" id="simple-source-filter" aria-label="Quelle filtern">
                 <option value="all">Alle Quellen</option>
               </select>
@@ -2229,7 +2232,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260804-0100';
+import { initApp } from './app.js?v=20260804-1200';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

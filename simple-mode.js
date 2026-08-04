@@ -35,6 +35,7 @@ function cacheEls() {
     view: el("view-simple-results"),
     articleTypeFilter: el("simple-article-type-filter"),
     sourceFilter: el("simple-source-filter"),
+    companyFilter: el("simple-company-filter"),
     sort: el("simple-sort"),
     version: el("simple-version"),
     marketingList: el("simple-list-marketing"),
@@ -57,6 +58,8 @@ function cacheEls() {
   };
 }
 
+const COMPANY_FILTER_TIER1 = "__tier1";
+const COMPANY_FILTER_PLAIN = "__company";
 const LOADER = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
 
 function esc(value) {
@@ -120,8 +123,8 @@ function signalCard(signal) {
         <div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escText(signal.roots_link_de)}</p></div>
       </div>` : ""}
       <div class="finding-meta">
-        ${(signal.tier1_companies || []).map((name) => `<span class="tag tag--kunde" data-company-profile="${esc(name)}" data-pill-info="Einstufung: Tier-1-Unternehmen · Klick öffnet Steckbrief" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${esc(name)}</span>`).join("")}
-        ${signal.company && !(signal.tier1_companies || []).includes(signal.company) ? `<span class="tag tag--company" data-pill-info="Einstufung: Company" tabindex="0"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
+        ${(signal.tier1_companies || []).map((name) => `<span class="tag tag--kunde" data-company-profile="${esc(name)}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${esc(name)}</span>`).join("")}
+        ${signal.company && !(signal.tier1_companies || []).includes(signal.company) ? `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
         ${signal.person_name ? `<span class="tag tag--person" data-pill-info="Einstufung: Person${signal.person_role ? " · " + esc(signal.person_role) : ""}" tabindex="0"><i class="fa-solid fa-user"></i> ${esc(signal.person_name)}</span>` : ""}
         ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
         ${ctx.technicalAuditPill(article.id || signal.article_id)}
@@ -140,12 +143,29 @@ function signalDate(signal) {
 
 // Gleiche Filter- und Sortierlogik wie im Advanced-Modus, nur auf den Feldern
 // des einfachen Modus (Nutzwert statt Relevanzscore).
+// Einstufung und einzelne Unternehmen aus demselben Auswahlfeld. Ohne Auswahl
+// bleibt alles sichtbar; mehrere Einträge wirken als "oder".
+function companyMatches(signal, selected) {
+  if (!selected.length) return true;
+  const tier1 = (signal.tier1_companies || []).filter(Boolean);
+  const named = signal.company ? [signal.company] : [];
+  const isTier1 = tier1.length > 0;
+  const hasCompany = named.length > 0 || isTier1;
+  for (const entry of selected) {
+    if (entry === COMPANY_FILTER_TIER1 && isTier1) return true;
+    if (entry === COMPANY_FILTER_PLAIN && hasCompany && !isTier1) return true;
+    if (tier1.includes(entry) || named.includes(entry)) return true;
+  }
+  return false;
+}
+
 function visibleSignals(lane) {
   const state = ctx.viewState;
   const filtered = signalsByLane[lane].filter((signal) => {
     const typeOk = state.articleTypes.length === 0 || state.articleTypes.includes(signal.article?.article_type);
     const sourceOk = state.sources.length === 0 || state.sources.includes(signalSourceName(signal));
-    return typeOk && sourceOk;
+    const companyOk = companyMatches(signal, state.companies || []);
+    return typeOk && sourceOk && companyOk;
   });
   return [...filtered].sort((a, b) => {
     if (state.sort === "newest") return signalDate(b) - signalDate(a) || Number(b.score || 0) - Number(a.score || 0);
@@ -175,6 +195,22 @@ function refreshFilterOptions() {
     els.sourceFilter.innerHTML = `<option value="all">Alle Quellen</option>${sources
       .map((source) => `<option value="${esc(source)}">${esc(source)}</option>`).join("")}`;
     ctx.pruneSelection(ctx.viewState.sources, sources);
+  }
+  if (els.companyFilter) {
+    // Ein Feld für beides: die Einstufung und die einzelnen Unternehmen. Die
+    // zwei Einstufungen tragen Sonderwerte, damit sie sich mit einzelnen
+    // Unternehmen kombinieren lassen, ohne ein zweites Auswahlfeld zu brauchen.
+    const tier1 = [...new Set(all.flatMap((signal) => signal.tier1_companies || []).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "de"));
+    const plain = [...new Set(all.map((signal) => signal.company).filter(Boolean)
+      .filter((name) => !tier1.includes(name)))].sort((a, b) => a.localeCompare(b, "de"));
+    const values = [COMPANY_FILTER_TIER1, COMPANY_FILTER_PLAIN, ...tier1, ...plain];
+    els.companyFilter.innerHTML = `<option value="all">Alle Unternehmen</option>`
+      + `<option value="${COMPANY_FILTER_TIER1}">Nur Tier 1 Company</option>`
+      + `<option value="${COMPANY_FILTER_PLAIN}">Nur Company</option>`
+      + tier1.map((name) => `<option value="${esc(name)}">${esc(name)} · Tier 1</option>`).join("")
+      + plain.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+    ctx.pruneSelection(ctx.viewState.companies, values);
   }
 }
 
@@ -314,7 +350,7 @@ function bindUi() {
     renderLane("marketing");
     renderLane("sales");
   };
-  [els.articleTypeFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  [els.articleTypeFilter, els.sourceFilter, els.companyFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
   els.version?.addEventListener("change", () => {
     selectedVersion = els.version.value === "current" ? "" : els.version.value;
     rulesLoaded = false;
