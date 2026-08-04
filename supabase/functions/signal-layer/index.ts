@@ -5726,7 +5726,7 @@ Deno.serve(async (req: Request) => {
             .select("id,title,url,content,cleaned_content,content_de,excerpt,published_at,source_id,source:sources(company,url,category)")
             .eq("id", articleId).maybeSingle(),
           admin.schema("signal_layer").from("simple_signal_history")
-            .select("tier1_companies,trigger_de").eq("article_id", articleId)
+            .select("company,tier1_companies,trigger_de").eq("article_id", articleId)
             .eq("pipeline_version", run.pipeline_version || "1.9").maybeSingle(),
         ]);
         if (articleError || !article) {
@@ -5751,8 +5751,14 @@ Deno.serve(async (req: Request) => {
         const model = run.model || simpleConfig.ai.simple_model || SIMPLE_MODEL;
         const modelKey = await getSimpleModelKey(model);
         const prepared = await ensureSimpleArticleText(admin, article);
-        const company = (Array.isArray(snapshot?.tier1_companies) ? snapshot.tier1_companies : [])
-          .map((entry: unknown) => String(entry || "").trim()).find(Boolean) || "";
+        const tier1Companies = (Array.isArray(snapshot?.tier1_companies) ? snapshot.tier1_companies : [])
+          .map((entry: unknown) => String(entry || "").trim()).filter(Boolean);
+        // Ein Aufhaenger gehoert nur zum vom Modell bestimmten Zielunternehmen,
+        // nie pauschal zur ersten zufaelligen Tier-1-Erwaehnung im Artikel.
+        const classifiedCompany = String(snapshot?.company || "").trim();
+        const company = tier1Companies.find((name: string) =>
+          normalizeMatchText(name) === normalizeMatchText(classifiedCompany)
+        ) || "";
         const trigger = company ? await generateSimpleTrigger({
           admin, apiKey: modelKey, model,
           rootsPortfolio: await getSimpleRootsPortfolio(),

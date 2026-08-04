@@ -1,7 +1,7 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-1900";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2010";
 
 let sb = null;
 let sources = [];
@@ -33,7 +33,7 @@ const state = {
 // Filter selections are multi-select: empty array = "all". Sort stays single.
 const signalViewState = { articleTypes: [], sources: [], sort: "recommended" };
 const archiveViewState = { articleTypes: [], sources: [], sort: "recommended" };
-const simpleViewState = { articleTypes: [], sources: [], companies: [], sort: "recommended" };
+const simpleViewState = { articleTypes: [], sources: [], sort: "recommended" };
 
 // Maps a filter <select> id to its persistent selection array (mutated in
 // place so closures never hold a stale reference).
@@ -45,7 +45,6 @@ function filterSelectionFor(selectId) {
     case "archive-article-type-filter": return archiveViewState.articleTypes;
     case "simple-source-filter": return simpleViewState.sources;
     case "simple-article-type-filter": return simpleViewState.articleTypes;
-    case "simple-company-filter": return simpleViewState.companies;
     default: return null;
   }
 }
@@ -2921,7 +2920,8 @@ function companyLogoHtml(company, website) {
   // Favicon der Unternehmensdomain, mit Rueckfall auf Initialen. Bewusst kein
   // Logo-Dienst mit Schluessel oder Kontingent.
   return `<div class="cp-logo"><img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128"
-    alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml(initials)}'}))"></div>`;
+    alt="Logo von ${escapeHtml(company)}" loading="lazy" decoding="async"
+    onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml(initials)}'}))"></div>`;
 }
 
 function companyProfileHeadHtml(company, profile, triggerForHead = null) {
@@ -2929,7 +2929,8 @@ function companyProfileHeadHtml(company, profile, triggerForHead = null) {
     ? new Date(profile.researched_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
     : null;
   return `<div class="cp-head">
-    <div>
+    <div class="cp-head-main">
+      <span class="cp-eyebrow"><i class="fa-solid fa-building"></i> Tier-1-Steckbrief</span>
       <h2 id="cp-title">Unternehmensprofil: ${escapeHtml(company)}</h2>
       ${profile?.headline ? `<p class="cp-head-sub">${escapeHtml(profile.headline)}</p>` : ""}
       ${profile ? `<div class="cp-pills">
@@ -2960,13 +2961,13 @@ function renderCompanyProfile(company, profile, pending, trigger = null) {
     ${kpis.length ? `<div class="cp-kpis">${kpis.map((k) => `<div class="cp-kpi">
       <b>${escapeHtml(k.value || "–")}</b><span>${escapeHtml(k.label || "")}</span>
       ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}</div>`).join("")}</div>` : ""}
-    ${sections.length || trigger ? `<div class="cp-grid">${sections.map((sec) => `<div class="cp-sec">
+    ${sections.length || trigger ? `<div class="cp-grid">${sections.map((sec) => `<section class="cp-sec">
       <h3>${escapeHtml(sec.title || "")}</h3>
       <ul>${(Array.isArray(sec.items) ? sec.items : []).map((item) => `<li>${escapeText(item)}</li>`).join("")}</ul>
-    </div>`).join("")}${trigger ? `<div class="cp-sec">
-      <h3>Trigger &amp; Aufhänger — warum jetzt?</h3>
+    </section>`).join("")}${trigger ? `<section class="cp-sec cp-sec--trigger">
+      <h3><i class="fa-solid fa-bolt"></i> Trigger &amp; Aufhänger — warum jetzt?</h3>
       <ul><li>${escapeText(trigger)}</li></ul>
-    </div>` : ""}</div>` : ""}
+    </section>` : ""}</div>` : ""}
     ${profile.unverified_note ? `<div class="cp-note"><i class="fa-solid fa-circle-info"></i> Nicht belegt: ${escapeText(profile.unverified_note)}</div>` : ""}
     ${sources.length ? `<div class="cp-sources"><b>Quellen:</b> ${sources.map((src) =>
       src.uri ? `<a href="${escapeHtml(src.uri)}" target="_blank" rel="noopener">${escapeHtml(src.title)}</a>` : escapeHtml(src.title)

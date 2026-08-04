@@ -26,6 +26,8 @@ const signalsByLane = { marketing: [], sales: [] };
 let rejectedRows = [];
 let selectedVersion = "";
 let versionList = [];
+const companyFilterState = { kind: "tier1", selected: [] };
+const companyFilterIndex = { tier1: [], company: [] };
 
 function el(id) {
   return document.getElementById(id);
@@ -37,6 +39,12 @@ function cacheEls() {
     articleTypeFilter: el("simple-article-type-filter"),
     sourceFilter: el("simple-source-filter"),
     companyFilter: el("simple-company-filter"),
+    companyFilterTrigger: el("simple-company-filter-trigger"),
+    companyFilterLabel: el("simple-company-filter-label"),
+    companyFilterMenu: el("simple-company-filter-menu"),
+    companyFilterHelp: el("simple-company-filter-help"),
+    companyFilterOptions: el("simple-company-filter-options"),
+    companyFilterReset: el("simple-company-filter-reset"),
     sort: el("simple-sort"),
     version: el("simple-version"),
     marketingList: el("simple-list-marketing"),
@@ -122,7 +130,7 @@ function signalCard(signal) {
         <div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escText(signal.roots_link_de)}</p></div>
       </div>` : ""}
       <div class="finding-meta">
-        ${(signal.tier1_companies || []).map((name) => `<span class="tag tag--kunde" data-company-profile="${esc(name)}" data-company-trigger="${esc(signal.trigger_de || signal.why_de || "")}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${esc(name)}</span>`).join("")}
+        ${(signal.tier1_companies || []).map((name) => `<span class="tag tag--kunde" data-company-profile="${esc(name)}" data-company-trigger="${esc(signal.company === name ? signal.trigger_de || "" : "")}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${esc(name)}</span>`).join("")}
         ${signal.company && !(signal.tier1_companies || []).includes(signal.company) ? `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
         ${signal.person_name ? `<span class="tag tag--person" data-pill-info="Einstufung: Person${signal.person_role ? " · " + esc(signal.person_role) : ""}" tabindex="0"><i class="fa-solid fa-user"></i> ${esc(signal.person_name)}</span>` : ""}
         ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
@@ -145,9 +153,54 @@ function signalDate(signal) {
 // Ein Signal passt, wenn seine Einstufung gewaehlt ist und mindestens ein
 // erkanntes Unternehmen in der Mehrfachauswahl steht.
 function companyMatches(signal) {
-  const selected = ctx.viewState.companies || [];
+  const selected = companyFilterState.selected;
   if (selected.length === 0) return true;
-  return (signal.tier1_companies || []).some((name) => selected.includes(name));
+  if (companyFilterState.kind === "tier1") {
+    return (signal.tier1_companies || []).some((name) => selected.includes(name));
+  }
+  return Boolean(signal.company && selected.includes(signal.company));
+}
+
+function renderCompanyFilter() {
+  if (!els.companyFilterOptions) return;
+  const kind = companyFilterState.kind;
+  const options = companyFilterIndex[kind];
+  els.companyFilter.querySelectorAll("[data-company-class]").forEach((button) => {
+    const active = button.dataset.companyClass === kind;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  if (els.companyFilterHelp) {
+    els.companyFilterHelp.textContent = kind === "tier1"
+      ? "Tier-1-Unternehmen mehrfach auswählen"
+      : "Weitere erkannte Unternehmen mehrfach auswählen";
+  }
+  if (els.companyFilterLabel) {
+    els.companyFilterLabel.textContent = companyFilterState.selected.length === 0
+      ? "Unternehmen"
+      : companyFilterState.selected.length === 1
+        ? companyFilterState.selected[0]
+        : `${companyFilterState.selected.length} Unternehmen`;
+  }
+  els.companyFilterOptions.innerHTML = options.length
+    ? options.map((name) => {
+      const selected = companyFilterState.selected.includes(name);
+      return `<button type="button" class="company-filter-option${selected ? " selected" : ""}" data-company-option="${esc(name)}" aria-pressed="${selected}">
+        <i class="fa-${selected ? "solid fa-square-check" : "regular fa-square"}"></i><span>${esc(name)}</span>
+      </button>`;
+    }).join("")
+    : `<div class="company-filter-empty">Für diese Klasse wurden im geladenen Bestand noch keine Unternehmen erkannt.</div>`;
+}
+
+function refreshCompanyFilter(all) {
+  companyFilterIndex.tier1 = [...new Set(all.flatMap((signal) => signal.tier1_companies || []).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "de"));
+  const tier1 = new Set(companyFilterIndex.tier1);
+  companyFilterIndex.company = [...new Set(all.map((signal) => signal.company).filter((name) => name && !tier1.has(name)))]
+    .sort((a, b) => a.localeCompare(b, "de"));
+  const allowed = new Set(companyFilterIndex[companyFilterState.kind]);
+  companyFilterState.selected = companyFilterState.selected.filter((name) => allowed.has(name));
+  renderCompanyFilter();
 }
 
 function visibleSignals(lane) {
@@ -187,13 +240,7 @@ function refreshFilterOptions() {
       .map((source) => `<option value="${esc(source)}">${esc(source)}</option>`).join("")}`;
     ctx.pruneSelection(ctx.viewState.sources, sources);
   }
-  if (els.companyFilter) {
-    const companies = [...new Set(all.flatMap((signal) => signal.tier1_companies || []).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, "de"));
-    els.companyFilter.innerHTML = `<option value="all">Alle Tier-1-Unternehmen</option>${companies
-      .map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("")}`;
-    ctx.pruneSelection(ctx.viewState.companies, companies);
-  }
+  refreshCompanyFilter(all);
 }
 
 function renderLane(lane) {
@@ -337,7 +384,50 @@ function bindUi() {
     renderLane("marketing");
     renderLane("sales");
   };
-  [els.articleTypeFilter, els.sourceFilter, els.companyFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  [els.articleTypeFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  els.companyFilterTrigger?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    document.querySelectorAll(".roots-select.open").forEach((item) => item !== els.companyFilter && item.classList.remove("open"));
+    const open = els.companyFilter.classList.toggle("open");
+    els.companyFilterTrigger.setAttribute("aria-expanded", String(open));
+  });
+  els.companyFilterMenu?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const classButton = event.target.closest("[data-company-class]");
+    if (classButton) {
+      const next = classButton.dataset.companyClass;
+      if (next !== companyFilterState.kind) {
+        companyFilterState.kind = next;
+        companyFilterState.selected = [];
+        renderCompanyFilter();
+        rerender();
+      }
+      return;
+    }
+    const option = event.target.closest("[data-company-option]");
+    if (!option) return;
+    const name = option.dataset.companyOption;
+    const index = companyFilterState.selected.indexOf(name);
+    if (index >= 0) companyFilterState.selected.splice(index, 1);
+    else companyFilterState.selected.push(name);
+    renderCompanyFilter();
+    rerender();
+  });
+  els.companyFilterReset?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    companyFilterState.selected = [];
+    renderCompanyFilter();
+    rerender();
+  });
+  document.addEventListener("click", () => {
+    els.companyFilter?.classList.remove("open");
+    els.companyFilterTrigger?.setAttribute("aria-expanded", "false");
+  });
+  els.companyFilter?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    els.companyFilter.classList.remove("open");
+    els.companyFilterTrigger?.setAttribute("aria-expanded", "false");
+  });
   els.version?.addEventListener("change", () => {
     selectedVersion = els.version.value === "current" ? "" : els.version.value;
     rulesLoaded = false;
