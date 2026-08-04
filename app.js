@@ -3221,18 +3221,10 @@ function companyLogoHtml(company, profile) {
   const initials = String(company || "?").replace(/[^A-Za-zÄÖÜäöü0-9 ]/g, "").split(/\s+/)
     .filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join("") || "?";
   const logoUrl = /^https:\/\//i.test(String(profile?.logo_url || "")) ? String(profile.logo_url) : "";
-  const sourceUrl = /^https:\/\//i.test(String(profile?.logo_source_url || "")) ? String(profile.logo_source_url) : "";
-  const sourceLabels = {
-    official_media: "Offizielle Logoquelle",
-    official_structured_data: "Offizielle Website",
-    wikimedia_commons: "Wikimedia Commons",
-    worldvectorlogo: "Worldvectorlogo",
-  };
   if (!logoUrl) return `<div class="cp-logo-wrap"><div class="cp-logo cp-logo--fallback"><span>${escapeHtml(initials)}</span></div></div>`;
   return `<div class="cp-logo-wrap">
     <div class="cp-logo"><img src="${escapeHtml(logoUrl)}" alt="Logo von ${escapeHtml(company)}" loading="eager" decoding="async"
       onerror="this.parentElement.classList.add('cp-logo--fallback');this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml(initials)}'}))"></div>
-    ${sourceUrl ? `<a class="cp-logo-source" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(sourceLabels[profile?.logo_source_kind] || "Logoquelle")}</a>` : ""}
   </div>`;
 }
 
@@ -3265,7 +3257,12 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
   }
   companyProfileViewState = { company, profile, versions, trigger, triggerState };
   const kpis = Array.isArray(profile.kpis) ? profile.kpis : [];
-  const sections = Array.isArray(profile.sections) ? profile.sections : [];
+  // Alte Steckbrief-Stände konnten versehentlich eine zweite, recherchierte
+  // Trigger-Karte enthalten. Trigger gehören ausschließlich zum geöffneten
+  // Artikel und werden deshalb nur aus dessen data-company-trigger gerendert.
+  const sections = Array.isArray(profile.sections) ? profile.sections.filter((section) =>
+    !/^trigger\s*&?\s*aufhänger/i.test(String(section?.title || "").trim())
+  ) : [];
   const sources = Array.isArray(profile.sources) ? profile.sources : [];
   const triggerCopy = trigger || (triggerState === "mention"
     ? `${company} wurde in diesem Artikel als Tier-1-Unternehmen erwähnt, aber nicht als handelnder oder konkret betroffener Akteur bestätigt. Deshalb erzeugt die Pipeline bewusst keinen Gesprächsaufhänger.`

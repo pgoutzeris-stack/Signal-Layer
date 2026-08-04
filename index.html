@@ -251,8 +251,6 @@
   .cp-logo img { display: block; flex: 0 1 auto; width: auto; height: auto; max-width: 100%; max-height: 100%; margin: auto; object-fit: contain; object-position: 50% 50%; }
   .cp-logo span { font-weight: 800; font-size: 1.05rem; color: var(--brand-dark); letter-spacing: .04em; }
   .cp-logo--fallback { background: var(--brand-light); border-color: color-mix(in srgb, var(--brand) 22%, var(--line)); }
-  .cp-logo-source { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: .6rem; font-weight: 650; text-decoration: none; }
-  .cp-logo-source:hover { color: var(--brand); text-decoration: underline; }
   .cp-close { position: absolute; top: .7rem; right: .8rem; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); font-size: 1rem; cursor: pointer; padding: 0; }
   .cp-close:hover { border-color: color-mix(in srgb, var(--brand) 30%, var(--line)); background: var(--brand-light); color: var(--brand-dark); }
   .cp-pills { display: flex; gap: .4rem; margin-top: .55rem; flex-wrap: wrap; }
@@ -2367,7 +2365,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260804-3000';
+  import { initApp } from './app.js?v=20260804-3100';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

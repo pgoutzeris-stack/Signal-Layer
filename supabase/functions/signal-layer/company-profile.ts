@@ -20,7 +20,7 @@ export const COMPANY_PROFILE_MODEL = "gemini-2.5-flash";
 /** Obergrenze je Verarbeitungspaket, damit ein Lauf nicht in Recherche umkippt. */
 export const COMPANY_PROFILE_MAX_PER_BATCH = 2;
 export const COMPANY_PROFILE_MAX_OUTPUT_TOKENS = 10_000;
-export const COMPANY_LOGO_LOOKUP_VERSION = "2026-08-verified-logo-sources-v4";
+export const COMPANY_LOGO_LOOKUP_VERSION = "2026-08-tier1-logo-registry-v1";
 
 /** Die Karten des Steckbriefs, in der Reihenfolge der Anzeige. */
 export const COMPANY_PROFILE_SECTIONS = [
@@ -92,14 +92,13 @@ Marketing und in der Markenführung, laufende Umbauten.
 
 RECHERCHIERE AUSSERDEM DAS AKTUELLE UNTERNEHMENSLOGO. Nutze diese Quellen in
 genau dieser Priorität:
-A. offizielle Presse-, Brand-, Media- oder Download-Seite des Unternehmens,
-B. das Organization.logo der offiziellen Website,
-C. die Dateiseite auf Wikimedia Commons, wenn dort die aktuelle Identität und
-   Herkunft eindeutig belegt sind,
-D. als letzter Fallback Worldvectorlogo (worldvectorlogo.com/de): Suche dort
-   ausschließlich nach dem exakten Unternehmensnamen und verwende die direkte
-   SVG-Datei von cdn.worldvectorlogo.com. Verwechsle Mutterkonzern, Marke und
-   ähnlich benannte Unternehmen niemals.
+A. Worldvectorlogo: exakte Unternehmensseite plus direkte SVG-Datei von
+   cdn.worldvectorlogo.com,
+B. offizielle Presse-, Brand-, Media- oder Download-Seite des Unternehmens,
+C. das Organization.logo der offiziellen Website,
+D. die Dateiseite auf Wikimedia Commons, wenn dort die aktuelle Identität und
+   Herkunft eindeutig belegt sind.
+Verwechsle Mutterkonzern, Marke und ähnlich benannte Unternehmen niemals.
 Bevorzuge eine direkte, transparente SVG-Datei, sonst PNG oder WebP. Gib neben
 der direkten Bilddatei immer die Herkunftsseite an. Nimm niemals Favicons,
 Google-Ergebnislinks, ZIP/PDF-Dateien, Social-Media-Bilder, andere
@@ -237,7 +236,9 @@ function normalizeSections(raw: unknown): CompanyProfileSection[] {
       byTitle.delete(match);
     }
   }
-  for (const [title, items] of byTitle) ordered.push({ title, items });
+  // Zusätzliche Modellkarten werden nicht übernommen. Insbesondere darf ein
+  // recherchierter Abschnitt "Trigger & Aufhänger" nie neben dem individuellen
+  // Artikel-Trigger erscheinen.
   return ordered;
 }
 
@@ -530,9 +531,9 @@ export async function researchCompanyLogo(
   const model = deps.model || COMPANY_PROFILE_MODEL;
   const prompt = `Recherchiere das aktuelle Unternehmenslogo für exakt dieses Unternehmen: ${company}.
 
-Priorität: 1. offizielle Presse-/Brand-Seite, 2. Organization.logo der
-offiziellen Website, 3. Wikimedia Commons, 4. als letzter Fallback
-worldvectorlogo.com/de mit direkter SVG-Datei von cdn.worldvectorlogo.com.
+Priorität: 1. exakte Worldvectorlogo-Unternehmensseite mit direkter SVG-Datei
+von cdn.worldvectorlogo.com, 2. offizielle Presse-/Brand-Seite,
+3. Organization.logo der offiziellen Website, 4. Wikimedia Commons.
 Verwechsle Mutterkonzern, Marke und ähnlich benannte Unternehmen niemals.
 Bei Worldvectorlogo ist die exakte Seite /de/logo/{slug} der notwendige Beleg.
 Wenn der direkte CDN-Link in der Suche nicht sichtbar ist, gib trotzdem diese

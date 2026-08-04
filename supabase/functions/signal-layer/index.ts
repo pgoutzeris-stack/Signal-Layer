@@ -558,6 +558,23 @@ async function getSimpleRootsPortfolio(): Promise<string> {
 // das Profil abgelaufen ist. Gemini rechnet pro Suchanfrage ab, ein Profil pro
 // Artikel waere um Groessenordnungen teurer als ein Profil pro Unternehmen.
 // ---------------------------------------------------------------------------
+type Tier1CompanyLogo = {
+  logo_url: string;
+  logo_source_url: string;
+  logo_source_kind: "official_media" | "official_structured_data" | "wikimedia_commons" | "worldvectorlogo";
+  logo_format: "svg" | "png" | "webp" | "jpg";
+  logo_verified_at?: string | null;
+};
+
+async function getTier1CompanyLogo(company: string): Promise<Tier1CompanyLogo | null> {
+  const { data, error } = await getAdminClient().schema("signal_layer").from("tier1_companies")
+    .select("logo_url,logo_source_url,logo_source_kind,logo_format,logo_verified_at")
+    .eq("name", company).maybeSingle();
+  if (error) throw error;
+  if (!data?.logo_url || !data.logo_source_url || !data.logo_source_kind || !data.logo_format) return null;
+  return data as Tier1CompanyLogo;
+}
+
 async function ensureCompanyProfile(
   company: string,
   force = false,
@@ -601,7 +618,13 @@ async function ensureCompanyProfile(
       name,
       Array.isArray(hints) ? hints as never[] : [],
     );
-    if (!profile.logo_url) {
+    const registeredLogo = await getTier1CompanyLogo(name);
+    if (registeredLogo) {
+      profile.logo_url = registeredLogo.logo_url;
+      profile.logo_source_url = registeredLogo.logo_source_url;
+      profile.logo_source_kind = registeredLogo.logo_source_kind;
+      profile.logo_format = registeredLogo.logo_format;
+    } else if (!profile.logo_url) {
       try {
         const commonsLogo = await researchWikimediaLogo(name);
         const focused = commonsLogo
@@ -690,14 +713,17 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
   const admin = getAdminClient();
   const { data: existing } = await admin.schema("signal_layer").from("company_profiles")
     .select("company, logo_url, logo_lookup_version").eq("company", name).maybeSingle();
-  if (!existing || existing.logo_url || existing.logo_lookup_version === COMPANY_LOGO_LOOKUP_VERSION) return "fresh";
+  if (!existing || existing.logo_lookup_version === COMPANY_LOGO_LOOKUP_VERSION) return "fresh";
   try {
     const configuredResearchModel = (await getPipelineConfig()).ai.simple_research_model || COMPANY_PROFILE_MODEL;
     const researchModel = configuredResearchModel.startsWith("gemini-")
       ? configuredResearchModel
       : COMPANY_PROFILE_MODEL;
-    let logo = await researchWikimediaLogo(name);
-    let usage = { prompt_tokens: 0, output_tokens: 0, total_tokens: 0 };
+    let logo = await getTier1CompanyLogo(name);
+    let usage: Record<string, number> = { prompt_tokens: 0, output_tokens: 0, total_tokens: 0 };
+    if (!logo) {
+      logo = await researchWikimediaLogo(name);
+    }
     if (!logo) {
       let apiKey = "";
       try { apiKey = await getGeminiKey(); } catch { /* Commons bleibt auch ohne Schlüssel nutzbar */ }
@@ -6408,12 +6434,20 @@ Deno.serve(async (req: Request) => {
         const admin = getAdminClient();
         const wantsRefresh = Boolean((body as { refresh?: boolean })?.refresh);
         const logoPoll = Boolean((body as { logo_poll?: boolean })?.logo_poll);
-        const [{ data, error }, versions] = await Promise.all([
+        const [{ data, error }, versions, registeredLogo] = await Promise.all([
           admin.schema("signal_layer").from("company_profiles")
             .select("*").eq("company", name).maybeSingle(),
           companyProfileVersions(name),
+          getTier1CompanyLogo(name),
         ]);
         if (error) return errorResponse(origin, error.message, 500);
+        const profileData = data && registeredLogo ? {
+          ...data,
+          logo_url: registeredLogo.logo_url,
+          logo_source_url: registeredLogo.logo_source_url,
+          logo_source_kind: registeredLogo.logo_source_kind,
+          logo_format: registeredLogo.logo_format,
+        } : data;
         if (snapshotId) {
           const { data: snapshot, error: snapshotError } = await admin.schema("signal_layer")
             .from("company_profile_history").select("id, profile")
@@ -6427,10 +6461,10 @@ Deno.serve(async (req: Request) => {
           return corsResponse(origin, {
             profile: {
               ...historicalProfile,
-              logo_url: data?.logo_url || historicalProfile.logo_url || null,
-              logo_source_url: data?.logo_source_url || historicalProfile.logo_source_url || null,
-              logo_source_kind: data?.logo_source_kind || historicalProfile.logo_source_kind || null,
-              logo_format: data?.logo_format || historicalProfile.logo_format || null,
+              logo_url: profileData?.logo_url || historicalProfile.logo_url || null,
+              logo_source_url: profileData?.logo_source_url || historicalProfile.logo_source_url || null,
+              logo_source_kind: profileData?.logo_source_kind || historicalProfile.logo_source_kind || null,
+              logo_format: profileData?.logo_format || historicalProfile.logo_format || null,
               snapshot_id: snapshot.id,
             },
             profile_versions: versions,
@@ -6438,17 +6472,17 @@ Deno.serve(async (req: Request) => {
             pending_logo: false,
           });
         }
-        if (data && !wantsRefresh) {
-          const pendingLogo = !data.logo_url && data.logo_lookup_version !== COMPANY_LOGO_LOOKUP_VERSION;
+        if (profileData && !wantsRefresh) {
+          const pendingLogo = profileData.logo_lookup_version !== COMPANY_LOGO_LOOKUP_VERSION;
           const currentVersion = versions.find((entry: { researched_at?: string }) =>
-            new Date(entry.researched_at || 0).getTime() === new Date(data.researched_at || 0).getTime()
+            new Date(entry.researched_at || 0).getTime() === new Date(profileData.researched_at || 0).getTime()
           );
           // Bereits vorhandene Steckbriefe stammen noch aus der Zeit ohne
           // erweiterten Logoquellen. Nur das Logo wird nachgezogen; die
           // recherchierten Details und der Artikel-Trigger bleiben unverändert.
           if (pendingLogo && !logoPoll) EdgeRuntime.waitUntil(ensureCompanyProfileLogo(name));
           return corsResponse(origin, {
-            profile: { ...data, snapshot_id: currentVersion?.id || null },
+            profile: { ...profileData, snapshot_id: currentVersion?.id || null },
             profile_versions: versions,
             pending: false,
             pending_logo: pendingLogo,
