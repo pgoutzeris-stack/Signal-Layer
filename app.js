@@ -2978,11 +2978,8 @@ function renderSimpleHeaderStatusContent() {
     : "–";
   byId("simple-cost-model").textContent = simpleForecast?.model_label || run?.model || "Nur Simple-KI-Aufrufe";
   const simpleForecastText = simpleForecast
-    ? `${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens · ${Number(simpleForecast.remaining_articles || 0).toLocaleString("de-DE")} Artikel offen · Hochrechnung aus den echten Kosten dieses Simple-Laufs.`
+    ? `${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens verbraucht`
     : "";
-  byId("simple-cost-detail").textContent = simpleForecast
-    ? simpleForecastText
-    : "Noch keine Kostendaten für einen Simple-Lauf.";
   const forecastPill = byId("simple-forecast-pill");
   forecastPill.hidden = !simpleForecast;
   byId("simple-forecast-pill-text").textContent = simpleForecastText;
