@@ -510,6 +510,13 @@ function extractSources(candidate: Record<string, unknown>): CompanyProfileSourc
   return out;
 }
 
+function groundingSearchCount(candidate: Record<string, unknown>): number {
+  const meta = candidate.groundingMetadata as Record<string, unknown> | undefined;
+  const queries = Array.isArray(meta?.webSearchQueries) ? meta!.webSearchQueries as unknown[] : [];
+  if (queries.length) return queries.length;
+  return Array.isArray(meta?.groundingChunks) && meta!.groundingChunks.length ? 1 : 0;
+}
+
 export type CompanyProfileDeps = {
   apiKey: string;
   model?: string;
@@ -563,6 +570,7 @@ Wenn kein aktuelles Logo eindeutig belegt ist, setze alle Logo-Felder auf null.`
       prompt_tokens: Number(usageMeta.promptTokenCount || 0),
       output_tokens: Number(usageMeta.candidatesTokenCount || 0),
       total_tokens: Number(usageMeta.totalTokenCount || 0),
+      search_queries: groundingSearchCount(candidate),
     },
   };
 }
@@ -626,6 +634,7 @@ export async function researchCompanyProfile(
       prompt_tokens: Number(usageMeta.promptTokenCount || 0),
       output_tokens: Number(usageMeta.candidatesTokenCount || 0),
       total_tokens: Number(usageMeta.totalTokenCount || 0),
+      search_queries: groundingSearchCount(candidate),
     },
   };
 }

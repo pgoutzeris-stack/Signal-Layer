@@ -52,11 +52,15 @@ export type SimpleModelOption = {
   /** Eingabe mit Cache-Treffer (nur DeepSeek liefert das getrennt aus) */
   cached_input_usd: number;
   output_usd: number;
+  pricing_currency?: "USD" | "CNY";
+  input_native?: number;
+  cached_input_native?: number;
+  output_native?: number;
 };
 
 export const SIMPLE_MODEL_CATALOG: SimpleModelOption[] = [
-  { id: "deepseek-v4-pro", provider: "deepseek", label: "DeepSeek V4 Pro", input_usd: 0.435, cached_input_usd: 0.003625, output_usd: 0.87 },
-  { id: "deepseek-v4-flash", provider: "deepseek", label: "DeepSeek V4 Flash", input_usd: 0.14, cached_input_usd: 0.0028, output_usd: 0.28 },
+  { id: "deepseek-v4-pro", provider: "deepseek", label: "DeepSeek V4 Pro", input_usd: 0.435, cached_input_usd: 0.003625, output_usd: 0.87, pricing_currency: "CNY", input_native: 3, cached_input_native: 0.025, output_native: 6 },
+  { id: "deepseek-v4-flash", provider: "deepseek", label: "DeepSeek V4 Flash", input_usd: 0.14, cached_input_usd: 0.0028, output_usd: 0.28, pricing_currency: "CNY", input_native: 1, cached_input_native: 0.02, output_native: 2 },
   { id: "gemini-2.5-flash-lite", provider: "gemini", label: "Gemini 2.5 Flash-Lite", input_usd: 0.1, cached_input_usd: 0.1, output_usd: 0.4 },
   { id: "gemini-2.5-flash", provider: "gemini", label: "Gemini 2.5 Flash", input_usd: 0.3, cached_input_usd: 0.3, output_usd: 2.5 },
 ];
@@ -510,6 +514,7 @@ export type SimpleDeps = {
   rootsPortfolio?: string;
   /** Tier-1-Zielkunden, identisch zur Advanced-Pipeline. */
   tier1Companies?: SimpleTier1Company[];
+  priceUsage?: (model: string, usage: SimpleUsage, inferenceMode?: "standard" | "batch") => Promise<Record<string, unknown>>;
 };
 
 export type SimpleUsage = {
@@ -541,7 +546,10 @@ async function recordSimpleUsage(
   errorCode?: string,
   errorMessage?: string,
 ): Promise<void> {
-  const cost = simpleUsageCostUsd(model, usage);
+  const fallbackCost = simpleUsageCostUsd(model, usage);
+  const priceFields = deps.priceUsage
+    ? await deps.priceUsage(model, usage, "standard")
+    : { estimated_cost_usd: usage.total > 0 ? fallbackCost : 0 };
   const { error } = await deps.admin.schema("signal_layer").from("ai_usage_events").insert({
     article_id: articleId,
     simple_run_id: deps.runId || null,
@@ -551,11 +559,12 @@ async function recordSimpleUsage(
     attempt: 1,
     prompt_version: SIMPLE_PIPELINE_VERSION,
     input_tokens: usage.input + usage.cachedInput,
+    cached_input_tokens: usage.cachedInput,
     output_tokens: usage.output,
     thinking_tokens: usage.thinking,
     total_tokens: usage.total,
     // Auch eine unbrauchbare Antwort ist bezahlt, sobald Tokens geflossen sind.
-    estimated_cost_usd: usage.total > 0 ? cost : 0,
+    ...priceFields,
     duration_ms: durationMs,
     error_code: errorCode || null,
     error_message: errorMessage ? errorMessage.slice(0, 1000) : null,
@@ -593,13 +602,15 @@ function geminiRequest(model: string, apiKey: string, prompt: string, options: S
         thinkingConfig: { thinkingBudget: 0 },
       },
     }),
-    parse: (payload) => {
-      const meta = payload?.usageMetadata || {};
-      return {
+      parse: (payload) => {
+        const meta = payload?.usageMetadata || {};
+        const cached = Number(meta.cachedContentTokenCount || 0);
+        const prompt = Number(meta.promptTokenCount || 0);
+        return {
         text: payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("") || "",
         usage: {
-          input: Number(meta.promptTokenCount || 0),
-          cachedInput: 0,
+          input: Math.max(prompt - cached, 0),
+          cachedInput: cached,
           output: Number(meta.candidatesTokenCount || 0),
           thinking: Number(meta.thoughtsTokenCount || 0),
           total: Number(meta.totalTokenCount || 0),

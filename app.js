@@ -624,9 +624,8 @@ function simpleModelSelect(path, label, description, researchOnly = false) {
     .map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === value ? "selected" : ""}>${escapeHtml(model.label || model.id)}</option>`)
     .join("");
   const active = catalog.find((model) => model.id === value);
-  const rate = activeUsdEurRate();
-  const price = active && rate !== null
-    ? `Eingabe ${formatCostEur(Number(active.input_usd || 0) * rate)} · Cache ${formatCostEur(Number(active.cached_input_usd || 0) * rate)} · Ausgabe ${formatCostEur(Number(active.output_usd || 0) * rate)} je 1 Mio. Tokens`
+  const price = active && active.input_eur !== null && active.input_eur !== undefined
+    ? `Eingabe ${formatCostEur(active.input_eur)} · Cache ${formatCostEur(active.cached_input_eur)} · Ausgabe ${formatCostEur(active.output_eur)} je 1 Mio. Tokens`
     : "Preisliste im Servercode hinterlegt";
   return `<label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid ${researchOnly ? "fa-magnifying-glass" : "fa-wand-magic-sparkles"}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)} ${escapeHtml(price)}</small><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="${path}" aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
 }
@@ -2944,7 +2943,7 @@ function exchangeRateCopy(summary) {
   const date = snapshot.date
     ? new Date(`${snapshot.date}T12:00:00Z`).toLocaleDateString("de-DE")
     : "heute";
-  return `Automatisch in Euro umgerechnet · USD→EUR ${Number(snapshot.rate).toLocaleString("de-DE", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} · Referenzkurs vom ${date} über ${snapshot.source || "Frankfurter"}.`;
+  return `Historische Kosten behalten den beim Aufruf gespeicherten Euro-Kurs; für neue Prognosen gilt USD→EUR ${Number(snapshot.rate).toLocaleString("de-DE", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} vom ${date} über ${snapshot.source || "Frankfurter"}.`;
 }
 
 function formatCostInt(value) {
@@ -2971,7 +2970,10 @@ function costModelBreakdownHtml(rows, usdEurRate) {
       ? row.operations.map((operation) => `${costOperationLabel(operation.operation)}: ${formatCostInt(operation.calls)}`).join(" · ")
       : row.operation_label || row.operation || "KI-Aufruf";
     const costUsd = Number(row.cost_usd || 0);
-    const costEur = usdEurRate === null || usdEurRate === undefined ? null : costUsd * Number(usdEurRate);
+    const persistedEur = Number(row.cost_eur);
+    const costEur = Number.isFinite(persistedEur) && row.cost_eur !== null && row.cost_eur !== undefined
+      ? persistedEur
+      : usdEurRate === null || usdEurRate === undefined ? null : costUsd * Number(usdEurRate);
     const inputRateEur = usdEurRate === null || usdEurRate === undefined ? null : Number(row.input_rate_per_million || 0) * Number(usdEurRate);
     const outputRateEur = usdEurRate === null || usdEurRate === undefined ? null : Number(row.output_rate_per_million || 0) * Number(usdEurRate);
     const rateCopy = Number(row.input_rate_per_million || 0) || Number(row.output_rate_per_million || 0)
@@ -2991,7 +2993,7 @@ function renderCostLedgerDetail(title, amountEur, breakdown, summary, scopeCopy)
   return `<div class="cost-detail-head"><i class="fa-solid fa-receipt"></i><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(scopeCopy)} · Stand ${calculatedAt}</small></div></div>
     <div class="cost-detail-summary"><span>Ist-Kosten<b>${formatCostEur(amountEur)}</b></span><span>Modelle<b>${formatCostInt(breakdown?.length || 0)}</b></span></div>
     <span class="cost-detail-section"><b>Aufteilung nach KI-Modell</b>${costModelBreakdownHtml(breakdown, summary?.usd_eur_rate)}</span>
-    <small class="cost-detail-foot">Die Beträge stammen aus den unveränderlichen Supabase-Nutzungsereignissen. Gesamt bedeutet: alle seit ${escapeHtml(trackedSince)} protokollierten Aufrufe; erneute Analysen überschreiben diese Kosten nicht. ${escapeHtml(exchangeRateCopy(summary))}</small>`;
+    <small class="cost-detail-foot">Die Beträge stammen aus den unveränderlichen Supabase-Nutzungsereignissen und dem beim Aufruf gespeicherten Anbieterpreis samt Wechselkurs. Gesamt bedeutet: alle seit ${escapeHtml(trackedSince)} protokollierten Aufrufe; erneute Analysen überschreiben diese Kosten nicht.${Number(summary?.search_queries || 0) > 0 ? ` ${formatCostInt(summary.search_queries)} Google-Suchabfragen sind separat gezählt; deren endgültige Abrechnung ist bei Google nur zeitverzögert verfügbar.` : ""} ${escapeHtml(exchangeRateCopy(summary))}</small>`;
 }
 
 function bindCostDetailPopover(anchor, detail) {

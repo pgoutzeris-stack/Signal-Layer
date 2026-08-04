@@ -296,7 +296,7 @@ function summarizeCostModels(rows: Array<Record<string, unknown>>) {
   const models = new Map<string, {
     model: string; calls: number; error_calls: number; input_tokens: number;
     output_tokens: number; thinking_tokens: number; total_tokens: number;
-    cost_usd: number; operations: Map<string, { operation: string; calls: number; cost_usd: number }>;
+    cost_usd: number; cost_eur: number; operations: Map<string, { operation: string; calls: number; cost_usd: number; cost_eur: number }>;
   }>();
   for (const row of rows) {
     const model = String(row.model || "unknown");
@@ -304,7 +304,7 @@ function summarizeCostModels(rows: Array<Record<string, unknown>>) {
     const errors = Number(row.error_count ?? (row.status === "error" ? calls : 0));
     const entry = models.get(model) || {
       model, calls: 0, error_calls: 0, input_tokens: 0, output_tokens: 0,
-      thinking_tokens: 0, total_tokens: 0, cost_usd: 0, operations: new Map(),
+      thinking_tokens: 0, total_tokens: 0, cost_usd: 0, cost_eur: 0, operations: new Map(),
     };
     entry.calls += calls;
     entry.error_calls += errors;
@@ -313,10 +313,12 @@ function summarizeCostModels(rows: Array<Record<string, unknown>>) {
     entry.thinking_tokens += Number(row.thinking_tokens || 0);
     entry.total_tokens += Number(row.total_tokens || 0);
     entry.cost_usd += Number(row.estimated_cost_usd || 0);
+    entry.cost_eur += Number(row.estimated_cost_eur || 0);
     const operation = String(row.operation || "unknown");
-    const operationEntry = entry.operations.get(operation) || { operation, calls: 0, cost_usd: 0 };
+    const operationEntry = entry.operations.get(operation) || { operation, calls: 0, cost_usd: 0, cost_eur: 0 };
     operationEntry.calls += calls;
     operationEntry.cost_usd += Number(row.estimated_cost_usd || 0);
+    operationEntry.cost_eur += Number(row.estimated_cost_eur || 0);
     entry.operations.set(operation, operationEntry);
     models.set(model, entry);
   }
@@ -336,15 +338,21 @@ function summarizeGlobalCosts(
   const monthRows = ledgerRows.filter((row) => String(row.usage_date || "") >= monthKey);
   const monthUsd = monthRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
   const todayUsd = todayRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
+  const totalEur = ledgerRows.reduce((sum, row) => sum + Number(row.estimated_cost_eur || 0), 0);
+  const monthEur = monthRows.reduce((sum, row) => sum + Number(row.estimated_cost_eur || 0), 0);
+  const todayEur = todayRows.reduce((sum, row) => sum + Number(row.estimated_cost_eur || 0), 0);
   const totalRequests = ledgerRows.reduce((sum, row) => sum + Number(row.request_count || 0), 0);
   const totalErrors = ledgerRows.reduce((sum, row) => sum + Number(row.error_count || 0), 0);
+  const searchQueries = ledgerRows.reduce((sum, row) => sum + Number(row.search_query_count || 0), 0);
   const toEur = (value: number) => usdEurRate === null ? null : value * usdEurRate;
   const firstEvent = ledgerRows.map((row) => String(row.first_event_at || "")).filter(Boolean).sort()[0] || null;
   return {
-    total_usd: totalUsd, total_eur: toEur(totalUsd),
-    month_usd: monthUsd, month_eur: toEur(monthUsd),
-    today_usd: todayUsd, today_eur: toEur(todayUsd),
+    total_usd: totalUsd, total_eur: totalEur || toEur(totalUsd),
+    month_usd: monthUsd, month_eur: monthEur || toEur(monthUsd),
+    today_usd: todayUsd, today_eur: todayEur || toEur(todayUsd),
     requests: totalRequests, errors: totalErrors,
+    search_queries: searchQueries,
+    search_cost_status: searchQueries > 0 ? "provider_billing_not_realtime" : "not_used",
     tracking_started_at: firstEvent,
     today_model_breakdown: summarizeCostModels(todayRows),
     total_model_breakdown: summarizeCostModels(ledgerRows),
@@ -357,11 +365,12 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
   const admin = getAdminClient();
   const modelId = String(run.model || SIMPLE_MODEL);
   const { data: events } = await admin.schema("signal_layer").from("ai_usage_events")
-    .select("model, operation, status, estimated_cost_usd, input_tokens, output_tokens, thinking_tokens, total_tokens, created_at")
+    .select("model, operation, status, estimated_cost_usd, estimated_cost_eur, input_tokens, output_tokens, thinking_tokens, total_tokens, created_at")
     .eq("simple_run_id", String(run.id))
     .order("created_at", { ascending: true });
   const rows = events || [];
   const spentUsd = rows.reduce((sum: number, row: Record<string, number>) => sum + Number(row.estimated_cost_usd || 0), 0);
+  const spentEur = rows.reduce((sum: number, row: Record<string, number>) => sum + Number(row.estimated_cost_eur || 0), 0);
   const analysed = rows.filter((row: Record<string, string>) => row.status === "success" && row.operation === "classification").length;
   const total = Number(run.total_count || 0);
   const processed = Number(run.processed_count || 0);
@@ -371,6 +380,8 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
   // fallen kostenlos im Vorfilter, nur ein Teil kostet einen KI-Aufruf.
   const perArticleUsd = processed > 0 ? spentUsd / processed : null;
   const projectedUsd = perArticleUsd === null ? null : spentUsd + perArticleUsd * remaining;
+  const perArticleEur = processed > 0 ? spentEur / processed : null;
+  const projectedEur = perArticleEur === null ? null : spentEur + perArticleEur * remaining;
   const rate = await getUsdEurRate().catch(() => null);
   const toEur = (value: number | null) => value === null || rate === null ? null : value * rate;
   const researchModel = String(run.research_model || COMPANY_PROFILE_MODEL);
@@ -409,12 +420,12 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
       projected_remaining_thinking_tokens: processed > 0 ? tokenTotals.thinking / processed * remaining : 0,
     },
     spent_usd: spentUsd,
-    spent_eur: toEur(spentUsd),
+    spent_eur: spentEur || toEur(spentUsd),
     projected_usd: projectedUsd,
-    projected_eur: toEur(projectedUsd),
+    projected_eur: projectedEur ?? toEur(projectedUsd),
     projected_remaining_usd: projectedUsd === null ? null : Math.max(projectedUsd - spentUsd, 0),
-    projected_remaining_eur: toEur(projectedUsd === null ? null : Math.max(projectedUsd - spentUsd, 0)),
-    cost_per_processed_article_eur: toEur(perArticleUsd),
+    projected_remaining_eur: projectedEur === null ? toEur(projectedUsd === null ? null : Math.max(projectedUsd - spentUsd, 0)) : Math.max(projectedEur - spentEur, 0),
+    cost_per_processed_article_eur: perArticleEur ?? toEur(perArticleUsd),
     calculated_at: new Date().toISOString(),
   };
 }
@@ -601,6 +612,7 @@ async function ensureCompanyProfile(
         usage.prompt_tokens += focused.usage.prompt_tokens;
         usage.output_tokens += focused.usage.output_tokens;
         usage.total_tokens += focused.usage.total_tokens;
+        usage.search_queries = Number(usage.search_queries || 0) + Number(focused.usage.search_queries || 0);
       } catch (logoError) {
         console.warn(`Logo-Recherche ${name} fehlgeschlagen:`, logoError);
       }
@@ -644,6 +656,10 @@ async function ensureCompanyProfile(
     });
     // Kosten mitschreiben, damit die Steckbrief-Recherche in derselben
     // Auswertung sichtbar ist wie die Artikelbewertung.
+    const profileCostFields = await modelCostFields(researchModel, {
+      input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
+      thinking: 0, total: usage.total_tokens,
+    }, "standard", Number(usage.search_queries || 0));
     await admin.schema("signal_layer").from("ai_usage_events").insert({
       operation: "company_profile",
       simple_run_id: runContext.simpleRunId || null,
@@ -653,10 +669,7 @@ async function ensureCompanyProfile(
       input_tokens: usage.prompt_tokens,
       output_tokens: usage.output_tokens,
       total_tokens: usage.total_tokens,
-      estimated_cost_usd: modelCostUsd(researchModel, {
-        input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
-        thinking: 0, total: usage.total_tokens,
-      }),
+      ...profileCostFields,
     }).then(({ error }) => { if (error) console.warn("Steckbrief-Kosten nicht protokolliert:", error.message); });
     console.log(`Steckbrief ${name}: ${profile.kpis.length} KPI, ${profile.sections.length} Karten, ${profile.sources.length} Quellen`);
     return "written";
@@ -709,10 +722,10 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
         input_tokens: usage.prompt_tokens,
         output_tokens: usage.output_tokens,
         total_tokens: usage.total_tokens,
-        estimated_cost_usd: modelCostUsd(researchModel, {
+        ...(await modelCostFields(researchModel, {
           input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
           thinking: 0, total: usage.total_tokens,
-        }),
+        }, "standard", Number(usage.search_queries || 0))),
       }).then(({ error }) => { if (error) console.warn("Logo-Kosten nicht protokolliert:", error.message); });
     }
     return logo ? "written" : "checked: kein eindeutiges Logo";
@@ -896,6 +909,9 @@ type UsdEurRateSnapshot = {
 let usdEurRateCache: UsdEurRateSnapshot = {
   rate: null, date: null, source: "Frankfurter", fetched_at: null, at: 0,
 };
+let cnyEurRateCache: UsdEurRateSnapshot = {
+  rate: null, date: null, source: "Frankfurter", fetched_at: null, at: 0,
+};
 const USD_EUR_RATE_CACHE_TTL = 5 * 60 * 1000;
 
 async function getUsdEurRate(): Promise<number | null> {
@@ -922,6 +938,33 @@ async function getUsdEurRate(): Promise<number | null> {
   } catch (error) {
     console.warn("Could not fetch USD/EUR rate; token and USD totals will still be saved", error);
     return usdEurRateCache.rate;
+  }
+}
+
+async function getCnyEurRate(): Promise<number | null> {
+  const now = Date.now();
+  if (cnyEurRateCache.rate !== null && now - cnyEurRateCache.at < USD_EUR_RATE_CACHE_TTL) {
+    return cnyEurRateCache.rate;
+  }
+  try {
+    const response = await fetch("https://api.frankfurter.dev/v2/rate/CNY/EUR", {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) throw new Error(`FX API returned ${response.status}`);
+    const payload = await response.json();
+    const rate = Number(payload?.rate);
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error("FX API returned an invalid CNY/EUR rate");
+    cnyEurRateCache = {
+      rate,
+      date: typeof payload?.date === "string" ? payload.date : null,
+      source: "Frankfurter",
+      fetched_at: new Date(now).toISOString(),
+      at: now,
+    };
+    return rate;
+  } catch (error) {
+    console.warn("Could not fetch CNY/EUR rate", error);
+    return cnyEurRateCache.rate;
   }
 }
 
@@ -973,6 +1016,7 @@ async function getAvailableGeminiModels(force = false): Promise<GeminiModelOptio
       const id = String(model.name || "").replace(/^models\//, "");
       const methods = Array.isArray(model.supportedGenerationMethods) ? model.supportedGenerationMethods : [];
       return id.startsWith("gemini-") && methods.includes("generateContent")
+        && Boolean(MODEL_PRICES[id])
         && !/(embedding|image|tts|robotics|computer-use|live)/i.test(id);
     })
     .map((model: Record<string, unknown>) => ({
@@ -2361,22 +2405,92 @@ function modelProvider(model: string): "gemini" | "deepseek" {
   return model.startsWith("deepseek") ? "deepseek" : "gemini";
 }
 
-const GEMINI_MODEL_RATES: Record<string, { input: number; output: number }> = {
-  "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
-  "gemini-3.5-flash": { input: 0.75, output: 4.5 },
-  "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
-  "gemini-3.1-pro-preview": { input: 2, output: 12 },
-  "gemini-3-flash-preview": { input: 0.5, output: 3 },
-  "gemini-2.5-flash": { input: 0.3, output: 2.5 },
-  "gemini-2.5-pro": { input: 1.25, output: 10 },
+type ModelPriceTier = { input: number; cachedInput?: number; output: number };
+type ModelPrice = {
+  currency: "USD" | "CNY";
+  standard: ModelPriceTier;
+  batch?: ModelPriceTier;
+  standardLarge?: ModelPriceTier;
+  batchLarge?: ModelPriceTier;
 };
 
-function modelCostUsd(model: string, usage: ModelUsage): number {
-  if (modelProvider(model) === "deepseek") return simpleUsageCostUsd(model, usage);
-  const rates = GEMINI_MODEL_RATES[model] || (model.includes("flash-lite")
-    ? GEMINI_MODEL_RATES["gemini-2.5-flash-lite"]
-    : model.includes("pro") ? GEMINI_MODEL_RATES["gemini-3.1-pro-preview"] : GEMINI_MODEL_RATES["gemini-3-flash-preview"]);
-  return ((usage.input + usage.cachedInput) * rates.input + (usage.output + usage.thinking) * rates.output) / 1_000_000;
+// Versionierte, ausschliesslich aus den offiziellen Anbieterpreislisten
+// uebernommene Preise je 1 Mio. Tokens. Unbekannte Modelle werden nicht
+// geschaetzt: Ohne verifizierten Eintrag darf kein kostenpflichtiger Lauf starten.
+const AI_PRICING_VERSION = "official-2026-08-04";
+const MODEL_PRICES: Record<string, ModelPrice> = {
+  "deepseek-v4-pro": { currency: "CNY", standard: { input: 3, cachedInput: 0.025, output: 6 } },
+  "deepseek-v4-flash": { currency: "CNY", standard: { input: 1, cachedInput: 0.02, output: 2 } },
+  "gemini-2.5-flash-lite": { currency: "USD", standard: { input: 0.1, cachedInput: 0.01, output: 0.4 }, batch: { input: 0.05, cachedInput: 0.01, output: 0.2 } },
+  "gemini-2.5-flash": { currency: "USD", standard: { input: 0.3, cachedInput: 0.03, output: 2.5 }, batch: { input: 0.15, cachedInput: 0.03, output: 1.25 } },
+  "gemini-2.5-pro": { currency: "USD", standard: { input: 1.25, cachedInput: 0.125, output: 10 }, standardLarge: { input: 2.5, cachedInput: 0.25, output: 15 }, batch: { input: 0.625, cachedInput: 0.125, output: 5 }, batchLarge: { input: 1.25, cachedInput: 0.25, output: 7.5 } },
+  "gemini-3.1-flash-lite": { currency: "USD", standard: { input: 0.25, cachedInput: 0.025, output: 1.5 }, batch: { input: 0.125, cachedInput: 0.0125, output: 0.75 } },
+  "gemini-3.1-pro-preview": { currency: "USD", standard: { input: 2, cachedInput: 0.2, output: 12 }, standardLarge: { input: 4, cachedInput: 0.4, output: 18 }, batch: { input: 1, cachedInput: 0.2, output: 6 }, batchLarge: { input: 2, cachedInput: 0.4, output: 9 } },
+  "gemini-3.5-flash": { currency: "USD", standard: { input: 1.5, cachedInput: 0.15, output: 9 }, batch: { input: 0.75, cachedInput: 0.075, output: 4.5 } },
+  "gemini-3.5-flash-lite": { currency: "USD", standard: { input: 0.3, cachedInput: 0.03, output: 2.5 }, batch: { input: 0.15, cachedInput: 0.02, output: 1.25 } },
+  "gemini-3-flash-preview": { currency: "USD", standard: { input: 0.5, cachedInput: 0.05, output: 3 } },
+};
+
+function verifiedModelPrice(model: string, inferenceMode: "standard" | "batch" = "standard", inputTokens = 0) {
+  const price = MODEL_PRICES[model];
+  if (!price) return null;
+  const large = inputTokens > 200_000;
+  const tier = inferenceMode === "batch"
+    ? (large ? price.batchLarge || price.batch : price.batch)
+    : (large ? price.standardLarge || price.standard : price.standard);
+  return tier ? { price, tier } : null;
+}
+
+async function modelCostFields(
+  model: string,
+  usage: ModelUsage,
+  inferenceMode: "standard" | "batch" = "standard",
+  searchQueries = 0,
+): Promise<Record<string, unknown>> {
+  const verified = verifiedModelPrice(model, inferenceMode, usage.input + usage.cachedInput);
+  if (!verified) throw new Error(`Für ${model} (${inferenceMode}) ist kein verifizierter Anbieterpreis hinterlegt`);
+  const { price, tier } = verified;
+  const nativeCost = (usage.input * tier.input
+    + usage.cachedInput * Number(tier.cachedInput ?? tier.input)
+    + (usage.output + usage.thinking) * tier.output) / 1_000_000;
+  const liveUsdEurRate = await getUsdEurRate();
+  const liveNativeEurRate = price.currency === "USD" ? liveUsdEurRate : await getCnyEurRate();
+  // A short FX outage must not create zero-cost events. These are the last
+  // verified ECB reference rates at this pricing version and are only used
+  // until Frankfurter is reachable again.
+  const usdEurRate = liveUsdEurRate ?? 0.86812;
+  const nativeEurRate = liveNativeEurRate ?? (price.currency === "USD" ? 0.86812 : 0.12861);
+  const costEur = nativeCost * nativeEurRate;
+  const costUsd = price.currency === "USD"
+    ? nativeCost
+    : costEur / usdEurRate;
+  return {
+    cached_input_tokens: usage.cachedInput,
+    estimated_cost_usd: costUsd,
+    estimated_cost_eur: costEur,
+    native_cost: nativeCost,
+    pricing_currency: price.currency,
+    native_to_eur_rate: nativeEurRate,
+    usd_to_eur_rate: usdEurRate,
+    pricing_version: AI_PRICING_VERSION,
+    search_query_count: Math.max(0, Math.round(searchQueries)),
+  };
+}
+
+async function pricedSimpleModelCatalog() {
+  const [usdEur, cnyEur] = await Promise.all([getUsdEurRate(), getCnyEurRate()]);
+  return SIMPLE_MODEL_CATALOG.map((model) => {
+    const verified = verifiedModelPrice(model.id);
+    if (!verified) return model;
+    const rate = verified.price.currency === "CNY" ? cnyEur : usdEur;
+    return {
+      ...model,
+      pricing_version: AI_PRICING_VERSION,
+      input_eur: rate === null ? null : verified.tier.input * rate,
+      cached_input_eur: rate === null ? null : Number(verified.tier.cachedInput ?? verified.tier.input) * rate,
+      output_eur: rate === null ? null : verified.tier.output * rate,
+    };
+  });
 }
 
 async function modelApiKey(model: string): Promise<string> {
@@ -2512,7 +2626,8 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
     };
   }
   const meta = payload?.usageMetadata || {};
-  const input = Number(meta.promptTokenCount || 0);
+  const cachedInput = Number(meta.cachedContentTokenCount || 0);
+  const input = Math.max(Number(meta.promptTokenCount || 0) - cachedInput, 0);
   const output = Number(meta.candidatesTokenCount || 0);
   const thinking = Number(meta.thoughtsTokenCount || 0);
   return {
@@ -2520,7 +2635,7 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
     status: response.status,
     error: "",
     text: payload?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("") || "",
-    usage: { input, cachedInput: 0, output, thinking, total: Number(meta.totalTokenCount || input + output + thinking) },
+    usage: { input, cachedInput, output, thinking, total: Number(meta.totalTokenCount || input + cachedInput + output + thinking) },
     attempts: attemptsUsed,
   };
 }
@@ -2570,7 +2685,8 @@ async function callGeminiClassifier(
   }
 
   const usage = result.usage;
-  const estimatedCost = modelCostUsd(model, usage);
+  const costFields = await modelCostFields(model, usage);
+  const estimatedCost = Number(costFields.estimated_cost_usd || 0);
   const articleUsage = {
     inputTokens: usage.input + usage.cachedInput,
     outputTokens: usage.output,
@@ -2582,7 +2698,7 @@ async function callGeminiClassifier(
     article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
     operation, model, attempt: result.attempts, prompt_version: CLASSIFIER_PROMPT_VERSION,
     input_tokens: articleUsage.inputTokens, output_tokens: usage.output, thinking_tokens: usage.thinking,
-    total_tokens: usage.total, estimated_cost_usd: estimatedCost, duration_ms: Date.now() - startedAt,
+    total_tokens: usage.total, ...costFields, duration_ms: Date.now() - startedAt,
   };
   let classification: AiClassification;
   try {
@@ -2660,29 +2776,27 @@ async function recordGeminiBatchUsage(
   payload: Record<string, any>,
 ): Promise<void> {
   const usage = payload?.usageMetadata || {};
-  const inputTokens = Number(usage.promptTokenCount || 0);
+  const cachedInputTokens = Number(usage.cachedContentTokenCount || 0);
+  const promptTokens = Number(usage.promptTokenCount || 0);
+  const inputTokens = Math.max(promptTokens - cachedInputTokens, 0);
   const outputTokens = Number(usage.candidatesTokenCount || 0);
   const thinkingTokens = Number(usage.thoughtsTokenCount || 0);
   const totalTokens = Number(usage.totalTokenCount || inputTokens + outputTokens + thinkingTokens);
-  const rates: Record<string, { input: number; output: number }> = {
-    "gemini-2.5-flash-lite": { input: 0.05, output: 0.2 },
-    "gemini-3.1-flash-lite": { input: 0.125, output: 0.75 },
-    "gemini-3.5-flash": { input: 0.75, output: 4.5 },
-    "gemini-2.5-flash": { input: 0.15, output: 1.25 },
-    "gemini-2.5-pro": { input: 0.625, output: 5 },
-  };
-  const rate = rates[model] || (model.includes("flash-lite") ? rates["gemini-2.5-flash-lite"] : { input: 0.25, output: 1.5 });
-  const estimatedCost = (inputTokens * rate.input + (outputTokens + thinkingTokens) * rate.output) / 1_000_000;
+  const costFields = await modelCostFields(model, {
+    input: inputTokens, cachedInput: cachedInputTokens, output: outputTokens,
+    thinking: thinkingTokens, total: totalTokens,
+  }, "batch");
+  const estimatedCost = Number(costFields.estimated_cost_usd || 0);
   const { error } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
     article_id: articleId, crawl_run_id: crawlRunId,
     operation: "classification", model, status: "success", attempt: 1,
     inference_mode: "batch",
     prompt_version: CLASSIFIER_PROMPT_VERSION,
-    input_tokens: inputTokens, output_tokens: outputTokens, thinking_tokens: thinkingTokens,
-    total_tokens: totalTokens, estimated_cost_usd: estimatedCost,
+    input_tokens: promptTokens, output_tokens: outputTokens, thinking_tokens: thinkingTokens,
+    total_tokens: totalTokens, ...costFields,
   });
   if (error) throw new Error(`Could not persist Gemini Batch usage: ${error.message}`);
-  await recordArticleGeminiUsage(articleId, { inputTokens, outputTokens, thinkingTokens, totalTokens, estimatedCostUsd: estimatedCost });
+  await recordArticleGeminiUsage(articleId, { inputTokens: promptTokens, outputTokens, thinkingTokens, totalTokens, estimatedCostUsd: estimatedCost });
 }
 
 type ClassifierAttempt = {
@@ -2815,12 +2929,13 @@ async function matchRootsOffering(
     if (!result.ok) return null;
     const usage = result.usage;
     const inputTokens = usage.input + usage.cachedInput;
-    const estimatedCostUsd = modelCostUsd(model, usage);
+    const costFields = await modelCostFields(model, usage);
+    const estimatedCostUsd = Number(costFields.estimated_cost_usd || 0);
     const { error: offeringUsageError } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
       operation: "offering_match", model, status: "success", prompt_version: CLASSIFIER_PROMPT_VERSION,
       input_tokens: inputTokens, output_tokens: usage.output, thinking_tokens: usage.thinking,
-      total_tokens: usage.total, estimated_cost_usd: estimatedCostUsd, duration_ms: Date.now() - startedAt,
+      total_tokens: usage.total, ...costFields, duration_ms: Date.now() - startedAt,
     });
     if (offeringUsageError) throw new Error(`Could not persist offering-match usage: ${offeringUsageError.message}`);
     await recordArticleGeminiUsage(telemetry.articleId, {
@@ -2900,13 +3015,14 @@ async function translateArticleToGerman(
       return null;
     }
     const usage = result.usage;
-    const estimatedCost = modelCostUsd(model, usage);
+    const costFields = await modelCostFields(model, usage);
+    const estimatedCost = Number(costFields.estimated_cost_usd || 0);
     const inputTokens = usage.input + usage.cachedInput;
     const { error: translationUsageError } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
       operation: "translation", model, status: "success", prompt_version: CLASSIFIER_PROMPT_VERSION,
       input_tokens: inputTokens, output_tokens: usage.output, thinking_tokens: usage.thinking,
-      total_tokens: usage.total, estimated_cost_usd: estimatedCost, duration_ms: Date.now() - startedAt,
+      total_tokens: usage.total, ...costFields, duration_ms: Date.now() - startedAt,
     });
     if (translationUsageError) throw new Error(`Could not persist translation usage: ${translationUsageError.message}`);
     await recordArticleGeminiUsage(telemetry.articleId, {
@@ -4192,7 +4308,7 @@ Deno.serve(async (req: Request) => {
             prompt_version: CLASSIFIER_PROMPT_VERSION,
             scoring_version: RELEVANCE_SCORING_VERSION,
             rule_manifest: buildPipelineRuleManifest(config),
-            simple_models: SIMPLE_MODEL_CATALOG,
+            simple_models: await pricedSimpleModelCatalog(),
           },
         });
       }
@@ -4217,6 +4333,10 @@ Deno.serve(async (req: Request) => {
         ]);
         if (!allowedModels.has(requested.ai.primary_model) || !allowedModels.has(requested.ai.review_model)) {
           return errorResponse(origin, "Das ausgewählte Modell ist für diesen API-Key nicht verfügbar oder hat keine hinterlegte Preisliste");
+        }
+        if (!verifiedModelPrice(requested.ai.primary_model, requested.ai.batch_enabled ? "batch" : "standard")
+            || !verifiedModelPrice(requested.ai.review_model, "standard")) {
+          return errorResponse(origin, "Für Modell und Ausführungsart fehlt ein verifizierter Anbieterpreis");
         }
         if (!SIMPLE_MODEL_CATALOG.some((model) => model.id === requested.ai.simple_model)) {
           return errorResponse(origin, "Für den einfachen Modus sind nur Modelle mit hinterlegter Preisliste erlaubt");
@@ -5589,7 +5709,7 @@ Deno.serve(async (req: Request) => {
             .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, language, source:sources(company, url, category)")
             .eq("id", articleId).single(),
           admin.schema("signal_layer").from("ai_usage_events")
-            .select("model,operation,status,inference_mode,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,error_code,created_at")
+            .select("model,operation,status,inference_mode,input_tokens,cached_input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,estimated_cost_eur,pricing_currency,native_cost,native_to_eur_rate,usd_to_eur_rate,pricing_version,search_query_count,error_code,created_at")
             .eq("article_id", articleId).eq("prompt_version", SIMPLE_PIPELINE_VERSION)
             .order("created_at", { ascending: true }).limit(20),
           getUsdEurRateSnapshot().catch(() => ({ rate: null, date: null, source: "Frankfurter" as const, fetched_at: null })),
@@ -5906,6 +6026,7 @@ Deno.serve(async (req: Request) => {
         }
         const deps = {
           admin, apiKey: modelKey, model: simpleModel, runId: run.id,
+          priceUsage: modelCostFields,
           rootsPortfolio: await getSimpleRootsPortfolio(),
           tier1Companies: await getSimpleTier1Companies(),
         };
@@ -6128,6 +6249,7 @@ Deno.serve(async (req: Request) => {
         ) || "";
         const trigger = company ? await generateSimpleTrigger({
           admin, apiKey: modelKey, model,
+          priceUsage: modelCostFields,
           rootsPortfolio: await getSimpleRootsPortfolio(),
           tier1Companies: await getSimpleTier1Companies(),
         }, prepared, company) : null;
@@ -6518,7 +6640,7 @@ Deno.serve(async (req: Request) => {
             .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, route_score_details, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classification_audit, manual_review_tracks, manual_review_reason, extraction_diagnostic, duplicate_of, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
             .eq("id", articleId).single(),
           admin.schema("signal_layer").from("ai_usage_events")
-            .select("model,operation,status,inference_mode,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,error_code,created_at")
+            .select("model,operation,status,inference_mode,input_tokens,cached_input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,estimated_cost_eur,pricing_currency,native_cost,native_to_eur_rate,usd_to_eur_rate,pricing_version,search_query_count,error_code,created_at")
             .eq("article_id", articleId).order("created_at", { ascending: true }).limit(50),
           admin.schema("signal_layer").from("article_analysis_jobs")
             .select("status,attempts,error_message,started_at,finished_at,crawl_run_id").eq("article_id", articleId).maybeSingle(),
@@ -6552,10 +6674,10 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("classification_backfill_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("ai_usage_events")
-            .select("article_id, crawl_run_id, model, status, operation, inference_mode, input_tokens, output_tokens, thinking_tokens, total_tokens, estimated_cost_usd, created_at")
+            .select("article_id, crawl_run_id, model, status, operation, inference_mode, input_tokens, cached_input_tokens, output_tokens, thinking_tokens, total_tokens, estimated_cost_usd, estimated_cost_eur, search_query_count, pricing_version, created_at")
             .gte("created_at", monthStart.toISOString()).order("created_at", { ascending: false }).limit(2000),
           admin.schema("signal_layer").from("ai_cost_ledger_daily")
-            .select("usage_date,model,operation,status,request_count,error_count,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,first_event_at,last_event_at")
+            .select("usage_date,model,operation,status,request_count,error_count,input_tokens,cached_input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,estimated_cost_eur,search_query_count,first_event_at,last_event_at")
             .order("usage_date", { ascending: true }),
           admin.schema("signal_layer").rpc("get_ai_usage_aggregate", {
             p_since: berlinDayStartIso(), p_crawl_run_id: null, p_uncrawled_only: false,
@@ -6915,16 +7037,16 @@ Deno.serve(async (req: Request) => {
         const daysInMonth = Math.max(1, (nextMonth.getTime() - monthStart.getTime()) / 86_400_000);
         const averageDailyUsd = costSummary.month_usd / elapsedDays;
         const projectedMonthUsd = averageDailyUsd * daysInMonth;
-        const averageDailyEur = usdEurRate === null ? null : averageDailyUsd * usdEurRate;
-        const projectedMonthEur = usdEurRate === null ? null : projectedMonthUsd * usdEurRate;
+        const averageDailyEur = costSummary.month_eur === null ? null : costSummary.month_eur / elapsedDays;
+        const projectedMonthEur = averageDailyEur === null ? null : averageDailyEur * daysInMonth;
         const warningThresholdEur = Number(pipelineConfig.ai.monthly_warning_eur || 0);
-        const remainingEur = averageDailyEur === null ? null : Math.max(0, warningThresholdEur - costSummary.month_usd * Number(usdEurRate));
+        const remainingEur = averageDailyEur === null ? null : Math.max(0, warningThresholdEur - Number(costSummary.month_eur || 0));
         const daysToLimit = averageDailyEur !== null && averageDailyEur > 0 && warningThresholdEur > 0 && remainingEur !== null ? remainingEur / averageDailyEur : null;
         const projectedLimitDate = daysToLimit !== null && daysToLimit <= (nextMonth.getTime() - now.getTime()) / 86_400_000
           ? new Date(now.getTime() + daysToLimit * 86_400_000).toISOString()
           : null;
         const forecastStatus = warningThresholdEur <= 0 || projectedMonthEur === null ? "disabled"
-          : costSummary.month_usd * Number(usdEurRate) >= warningThresholdEur ? "exceeded"
+          : Number(costSummary.month_eur || 0) >= warningThresholdEur ? "exceeded"
           : projectedMonthEur >= warningThresholdEur ? "risk"
           : "ok";
         const recommendation = pipelineConfig.ai.review_enabled
@@ -7028,17 +7150,18 @@ Deno.serve(async (req: Request) => {
         const avgOutputTokens = tokenSample.reduce((sum, row) => sum + Number(row.output_tokens || 0), 0) / tokenSampleArticles;
         const avgThinkingTokens = tokenSample.reduce((sum, row) => sum + Number(row.thinking_tokens || 0), 0) / tokenSampleArticles;
         const avgTotalTokens = tokenSample.reduce((sum, row) => sum + Number(row.total_tokens || 0), 0) / tokenSampleArticles;
-        const forecastRates: Record<string, { input: number; output: number }> = {
-          "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 }, "gemini-3.5-flash": { input: 0.75, output: 4.5 },
-          "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 }, "gemini-3.1-pro-preview": { input: 2, output: 12 },
-          "gemini-3-flash-preview": { input: 0.5, output: 3 }, "gemini-2.5-flash": { input: 0.3, output: 2.5 },
-          "gemini-2.5-pro": { input: 1.25, output: 10 },
-          "deepseek-v4-pro": { input: 0.435, output: 0.87 }, "deepseek-v4-flash": { input: 0.14, output: 0.28 },
+        const cnyEurRate = await getCnyEurRate();
+        const forecastRateFor = (model: string, inferenceMode: "standard" | "batch") => {
+          const verified = verifiedModelPrice(model, inferenceMode);
+          if (!verified) return { input: 0, output: 0 };
+          const nativeToUsd = verified.price.currency === "USD" ? 1
+            : (cnyEurRate !== null && usdEurRate ? cnyEurRate / usdEurRate : 0);
+          return { input: verified.tier.input * nativeToUsd, output: verified.tier.output * nativeToUsd };
         };
         const modelBreakdownMap = new Map<string, Record<string, number | string>>();
         for (const row of activeAggregateRows) {
           const key = `${row.model}:${row.operation}`;
-          const rates = forecastRates[row.model] || (String(row.model).includes("flash-lite") ? forecastRates["gemini-2.5-flash-lite"] : String(row.model).includes("pro") ? forecastRates["gemini-3.1-pro-preview"] : forecastRates["gemini-3-flash-preview"]);
+          const rates = forecastRateFor(String(row.model), row.inference_mode === "batch" ? "batch" : "standard");
           const entry = modelBreakdownMap.get(key) || { model: row.model, operation: row.operation, operation_label: row.operation === "review" ? "Zweitprüfung" : row.operation === "translation" ? "Übersetzung" : row.operation === "offering_match" ? "ROOTS-Leistungsmatch" : "Klassifizierung", calls: 0, input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cost_usd: 0, input_rate_per_million: rates.input, output_rate_per_million: rates.output };
           entry.calls = Number(entry.calls) + Number(row.request_count || 0);
           entry.input_tokens = Number(entry.input_tokens) + Number(row.input_tokens || 0);
@@ -7068,12 +7191,9 @@ Deno.serve(async (req: Request) => {
             // nicht "Gemini" behaupten, sondern nennt die aktiven Modelle.
             advanced_model: pipelineConfig.ai.primary_model,
             simple_model: pipelineConfig.ai.simple_model || SIMPLE_MODEL,
-            total_eur: usdEurRate === null ? null : costSummary.total_usd * usdEurRate,
-            month_eur: usdEurRate === null ? null : costSummary.month_usd * usdEurRate,
-            today_eur: usdEurRate === null ? null : costSummary.today_usd * usdEurRate,
             usd_eur_rate: usdEurRate,
             exchange_rate: exchangeRate,
-            warning: usdEurRate !== null && costSummary.month_usd * usdEurRate >= pipelineConfig.ai.monthly_warning_eur,
+            warning: costSummary.month_eur !== null && costSummary.month_eur >= pipelineConfig.ai.monthly_warning_eur,
             warning_threshold_eur: pipelineConfig.ai.monthly_warning_eur,
             crawl_forecast: {
               crawl_run_id: currentCrawlId,
