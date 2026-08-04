@@ -113,13 +113,42 @@ REGELN, sie entscheiden über die Brauchbarkeit:
 6. Deutsch, knapp, keine Werbesprache. Kein Satz, der nur Offensichtliches sagt.`;
 }
 
+/**
+ * Steuerzeichen innerhalb von Zeichenketten maskieren. Gemini setzt in
+ * Grounding-Antworten echte Zeilenumbrueche in Werte, was ungueltiges JSON
+ * ergibt - beobachtet am 4.8.2026: "Bad control character in string literal at
+ * position 381". Ein Ersetzen ueber den ganzen Text wuerde die Formatierung
+ * zwischen den Feldern zerstoeren, deshalb wird der Zustand mitgefuehrt.
+ */
+function escapeControlCharsInStrings(raw: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (const char of raw) {
+    if (escaped) { out += char; escaped = false; continue; }
+    if (char === "\\" && inString) { out += char; escaped = true; continue; }
+    if (char === '"') { inString = !inString; out += char; continue; }
+    if (inString && char < " ") {
+      out += char === "\n" ? "\\n" : char === "\r" ? "\\r" : char === "\t" ? "\\t" : " ";
+      continue;
+    }
+    out += char;
+  }
+  return out;
+}
+
 /** Toleranter JSON-Auszug: Grounding-Antworten kommen oft mit Rahmen-Text. */
 function extractJson(text: string): unknown {
   const stripped = text.replace(/```(?:json)?/gi, "").trim();
   const start = stripped.indexOf("{");
   const end = stripped.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("no json object in company profile answer");
-  return JSON.parse(stripped.slice(start, end + 1));
+  const slice = stripped.slice(start, end + 1);
+  try {
+    return JSON.parse(slice);
+  } catch {
+    return JSON.parse(escapeControlCharsInStrings(slice));
+  }
 }
 
 function normalizeKpis(raw: unknown): CompanyProfileKpi[] {
