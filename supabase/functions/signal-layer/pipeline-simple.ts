@@ -34,8 +34,8 @@ import {
 
 export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "1.9";
-export const SIMPLE_UPDATED_AT = "2026-08-02";
+export const SIMPLE_VERSION = "2.0";
+export const SIMPLE_UPDATED_AT = "2026-08-04";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
 // Auswahlbare Modelle des einfachen Modus mit den Preisen, die im Kostenledger
@@ -360,6 +360,7 @@ export type SimpleAiAnswer = {
   evidence: string;
   headline_de: string;
   why_de: string;
+  trigger_de: string;
   company: string;
   summary_de: string;
   article_type: string;
@@ -412,7 +413,7 @@ score ist dein Gesamteindruck von 0 bis 100; der ausgewiesene Prozentwert wird s
 Sales heisst: ein konkretes Unternehmen hat gerade eine Situation, in der ROOTS-Beratung anschlussfähig wäre. Nenne dieses Unternehmen in company.
 Wenn tier1_unternehmen vorhanden ist, sind das die für ROOTS relevanten Zielkunden. Betrifft das Signal eines dieser Unternehmen, nimm genau diesen Namen in company und bewerte den Nutzwert höher.
 Marketing heisst: der Artikel liefert übertragbare Substanz für eigene Inhalte, unabhängig von einem einzelnen Unternehmen.
-headline_de ist eine sachliche deutsche Überschrift ohne neue Fakten, why_de genau ein deutscher Satz zur Begründung.
+headline_de ist eine sachliche deutsche Überschrift ohne neue Fakten, why_de genau ein deutscher Satz zur Begründung. trigger_de ist genau ein Satz, warum gerade jetzt ein Gespräch mit diesem Unternehmen sinnvoll ist - konkret aus diesem Artikel, mit Datum oder Ereignis, kein allgemeiner Satz über die Branche.
 summary_de fasst den Artikel in maximal zwei deutschen Sätzen zusammen, ohne neue Fakten und ohne Wertung. Fülle es immer aus, auch bei lane="keine".
 article_type beschreibt die Textform, nicht das Thema. language ist die Sprache des Artikeltexts.
 roots_offering und roots_link_de sind optionale Hilfsangaben. Nur für signal_id "virale_news" sind sie Pflicht, weil dort sonst kein fachliches Kriterium bleibt.
@@ -421,7 +422,7 @@ buying_center_roles enthält ein bis vier Rollen, die laut Artikeltext von diese
 </rules>
 <answer_format>
 Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
-{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","company":"Unternehmen oder leerer String","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"Leistung oder leerer String","roots_link_de":"ein Satz oder leerer String","person_name":"Name oder leerer String","person_role":"Rolle oder leerer String","buying_center_roles":["Rolle"]}
+{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","trigger_de":"ein Satz warum jetzt","company":"Unternehmen oder leerer String","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"Leistung oder leerer String","roots_link_de":"ein Satz oder leerer String","person_name":"Name oder leerer String","person_role":"Rolle oder leerer String","buying_center_roles":["Rolle"]}
 </answer_format>
 ${tier1.length ? `<tier1_unternehmen>${tier1.join(", ")}</tier1_unternehmen>\n` : ""}<source name="${article.source?.company || "unbekannt"}" category="${article.source?.category || "unbekannt"}" />
 <article_title>${String(article.title || "")}</article_title>
@@ -430,7 +431,7 @@ ${tier1.length ? `<tier1_unternehmen>${tier1.join(", ")}</tier1_unternehmen>\n` 
 
 export const SIMPLE_RESPONSE_SCHEMA = {
   type: "OBJECT",
-  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "company", "summary_de", "article_type", "language", "roots_offering", "roots_link_de", "person_name", "person_role", "buying_center_roles", "relevance"],
+  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "trigger_de", "company", "summary_de", "article_type", "language", "roots_offering", "roots_link_de", "person_name", "person_role", "buying_center_roles", "relevance"],
   properties: {
     lane: { type: "STRING", enum: ["sales", "marketing", "keine"] },
     signal_id: { type: "STRING", description: "Eine id aus candidate_signals oder leer, wenn lane=keine." },
@@ -439,6 +440,7 @@ export const SIMPLE_RESPONSE_SCHEMA = {
     evidence: { type: "STRING", description: "Wörtliches Zitat aus dem Artikel." },
     headline_de: { type: "STRING" },
     why_de: { type: "STRING" },
+    trigger_de: { type: "STRING" },
     company: { type: "STRING", description: "Betroffenes Unternehmen oder leer." },
     summary_de: { type: "STRING", description: "Deutsche Zusammenfassung des Artikels, maximal zwei Sätze." },
     article_type: { type: "STRING", enum: [...SIMPLE_ARTICLE_TYPES] },
@@ -681,6 +683,7 @@ export type SimpleResult = {
   evidence: string | null;
   headline_de: string | null;
   why_de: string | null;
+  trigger_de: string | null;
   company: string | null;
   summary_de: string | null;
   article_type: string | null;
@@ -750,6 +753,7 @@ function rejected(
     evidence: null,
     headline_de: null,
     why_de: null,
+    trigger_de: null,
     company: null,
     summary_de: null,
     article_type: null,
@@ -862,6 +866,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     evidence,
     headline_de: String(answer.headline_de || article.title || "").slice(0, 300),
     why_de: String(answer.why_de || "").slice(0, 600),
+    trigger_de: String(answer.trigger_de || "").slice(0, 400) || null,
     company: String(answer.company || "").slice(0, 200) || null,
     summary_de: String(answer.summary_de || "").slice(0, 800) || null,
     // Der Typ wird für die virale Spur erzwungen, damit die Filterung stimmt.

@@ -28,8 +28,10 @@ export const COMPANY_PROFILE_SECTIONS = [
   "Unternehmensstrategie",
   "Markenstrategie",
   "Themen zur Ansprache",
-  "Trigger & Aufhänger — warum jetzt?",
 ] as const;
+
+/** Kommt nicht aus der Recherche, sondern je Artikel aus dem Bewertungsaufruf. */
+export const COMPANY_PROFILE_ARTICLE_SECTION = "Trigger & Aufhänger — warum jetzt?";
 
 export type CompanyProfileKpi = { label: string; value: string; hint?: string };
 export type CompanyProfileSection = { title: string; items: string[] };
@@ -80,8 +82,8 @@ Marketing und in der Markenführung, laufende Umbauten.
 WAS DIE BERATUNG ANBIETET (für die Karte "Themen zur Ansprache"):
 ${rootsPortfolio || "Markenstrategie, Markenarchitektur, Design-to-Print, Customer Insights"}
 
-SIGNALE AUS DEM EIGENEN ARTIKELBESTAND zu diesem Unternehmen, als Anlass für die
-Karte "Trigger & Aufhänger" nutzbar:
+SIGNALE AUS DEM EIGENEN ARTIKELBESTAND zu diesem Unternehmen, nur als Kontext -
+der aktuelle Anlass kommt aus dem Artikel und wird separat eingesetzt:
 ${historie}
 
 ANTWORTE AUSSCHLIESSLICH MIT JSON in genau dieser Form, ohne Text davor oder
@@ -102,12 +104,10 @@ danach, ohne Code-Zäune:
 REGELN, sie entscheiden über die Brauchbarkeit:
 1. Genau 6 Einträge in "kpis". Jeder mit kurzem "value", der als große Zahl
    lesbar ist. Fehlt eine Zahl belegbar, nimm eine andere Kennzahl statt zu raten.
-2. Genau diese 6 Abschnitte in "sections", in dieser Reihenfolge, jeder mit 3 bis
+2. Genau diese 5 Abschnitte in "sections", in dieser Reihenfolge, jeder mit 3 bis
    5 Einträgen, jeder Eintrag maximal 20 Wörter: ${COMPANY_PROFILE_SECTIONS.join(" | ")}
 3. Bei "Buying Center / Relevante Personen": Name, Rolle, und wenn belegbar seit
    wann. Nur real belegte Personen. Keine erfundenen Namen, kein "vermutlich".
-4. Bei "Trigger & Aufhänger": konkrete, datierte Anlässe, warum ein Gespräch
-   jetzt sinnvoll ist. Nutze auch die Signale aus dem Artikelbestand oben.
 5. Jede Zahl, die du nicht per Suche belegen konntest, gehört nicht in "kpis" oder
    "sections", sondern in "unverified_note". Erfinde niemals eine Quelle.
 6. Deutsch, knapp, keine Werbesprache. Kein Satz, der nur Offensichtliches sagt.

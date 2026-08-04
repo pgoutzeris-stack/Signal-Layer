@@ -2936,7 +2936,7 @@ function companyLogoHtml(company, website) {
     alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml(initials)}'}))"></div>`;
 }
 
-function companyProfileHeadHtml(company, profile) {
+function companyProfileHeadHtml(company, profile, triggerForHead = null) {
   const stand = profile?.researched_at
     ? new Date(profile.researched_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
     : null;
@@ -2946,7 +2946,7 @@ function companyProfileHeadHtml(company, profile) {
       ${profile?.headline ? `<p class="cp-head-sub">${escapeHtml(profile.headline)}</p>` : ""}
       ${profile ? `<div class="cp-pills">
         <span class="cp-pill">Recherchiert: ${escapeHtml(stand || "unbekannt")}</span>
-        <button type="button" class="cp-pill cp-pill--action" data-company-refresh="${escapeHtml(company)}">
+        <button type="button" class="cp-pill cp-pill--action" data-company-refresh="${escapeHtml(company)}" data-company-trigger="${escapeHtml(triggerForHead || "")}">
           <i class="fa-solid fa-rotate"></i> Aktualisieren</button>
       </div>` : ""}
     </div>
@@ -2955,7 +2955,7 @@ function companyProfileHeadHtml(company, profile) {
   </div>`;
 }
 
-function renderCompanyProfile(company, profile, pending) {
+function renderCompanyProfile(company, profile, pending, trigger = null) {
   const card = companyProfileOverlay().querySelector(".cp-card");
   if (!profile) {
     card.innerHTML = companyProfileHeadHtml(company, null) + `<div class="cp-body"><div class="cp-state">${
@@ -2968,14 +2968,17 @@ function renderCompanyProfile(company, profile, pending) {
   const kpis = Array.isArray(profile.kpis) ? profile.kpis : [];
   const sections = Array.isArray(profile.sections) ? profile.sections : [];
   const sources = Array.isArray(profile.sources) ? profile.sources : [];
-  card.innerHTML = companyProfileHeadHtml(company, profile) + `<div class="cp-body">
+  card.innerHTML = companyProfileHeadHtml(company, profile, trigger) + `<div class="cp-body">
     ${kpis.length ? `<div class="cp-kpis">${kpis.map((k) => `<div class="cp-kpi">
       <b>${escapeHtml(k.value || "–")}</b><span>${escapeHtml(k.label || "")}</span>
       ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}</div>`).join("")}</div>` : ""}
-    ${sections.length ? `<div class="cp-grid">${sections.map((sec) => `<div class="cp-sec">
+    ${sections.length || trigger ? `<div class="cp-grid">${sections.map((sec) => `<div class="cp-sec">
       <h3>${escapeHtml(sec.title || "")}</h3>
       <ul>${(Array.isArray(sec.items) ? sec.items : []).map((item) => `<li>${escapeText(item)}</li>`).join("")}</ul>
-    </div>`).join("")}</div>` : ""}
+    </div>`).join("")}${trigger ? `<div class="cp-sec">
+      <h3>Trigger &amp; Aufhänger — warum jetzt?</h3>
+      <ul><li>${escapeText(trigger)}</li></ul>
+    </div>` : ""}</div>` : ""}
     ${profile.unverified_note ? `<div class="cp-note"><i class="fa-solid fa-circle-info"></i> Nicht belegt: ${escapeText(profile.unverified_note)}</div>` : ""}
     ${sources.length ? `<div class="cp-sources"><b>Quellen:</b> ${sources.map((src) =>
       src.uri ? `<a href="${escapeHtml(src.uri)}" target="_blank" rel="noopener">${escapeHtml(src.title)}</a>` : escapeHtml(src.title)
@@ -2983,16 +2986,16 @@ function renderCompanyProfile(company, profile, pending) {
   </div>`;
 }
 
-export async function openCompanyProfile(company, { refresh = false } = {}) {
+export async function openCompanyProfile(company, { refresh = false, trigger = null } = {}) {
   const name = String(company || "").trim();
   if (!name) return;
   const host = companyProfileOverlay();
   host.classList.add("open");
-  renderCompanyProfile(name, null, true);
+  renderCompanyProfile(name, null, true, trigger);
   try {
     const payload = refresh ? { company: name, refresh: true } : { company: name };
     const { profile, pending } = await callApi("get_company_profile", payload);
-    renderCompanyProfile(name, profile, pending);
+    renderCompanyProfile(name, profile, pending, trigger);
   } catch (error) {
     host.querySelector(".cp-card").innerHTML = companyProfileHeadHtml(name, null)
       + `<div class="cp-body"><div class="cp-state">Steckbrief konnte nicht geladen werden: ${escapeHtml(error.message)}</div></div>`;
@@ -3005,7 +3008,9 @@ if (typeof document !== "undefined") document.addEventListener("click", (event) 
   if (refreshBtn) {
     event.preventDefault();
     event.stopPropagation();
-    void openCompanyProfile(refreshBtn.getAttribute("data-company-refresh"), { refresh: true });
+    void openCompanyProfile(refreshBtn.getAttribute("data-company-refresh"), {
+      refresh: true, trigger: refreshBtn.getAttribute("data-company-trigger") || null,
+    });
     return;
   }
   const pill = event.target.closest("[data-company-profile]");
@@ -3014,7 +3019,9 @@ if (typeof document !== "undefined") document.addEventListener("click", (event) 
   // und lief sonst zuerst - dann oeffnete sich der Artikel statt des Steckbriefs.
   event.preventDefault();
   event.stopPropagation();
-  void openCompanyProfile(pill.getAttribute("data-company-profile"));
+  void openCompanyProfile(pill.getAttribute("data-company-profile"), {
+    trigger: pill.getAttribute("data-company-trigger") || null,
+  });
 }, { capture: true });
 
 export function setSimpleRunStatus(run, forecast = null) {
