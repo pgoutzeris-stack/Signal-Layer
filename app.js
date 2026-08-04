@@ -3320,9 +3320,27 @@ export async function openCompanyProfile(company, { refresh = false, snapshotId 
     const payload = refresh ? { company: name, refresh: true }
       : snapshotId ? { company: name, snapshot_id: snapshotId }
         : { company: name };
-    const { profile, profile_versions: versions = [], pending, pending_logo: pendingLogo } = await callApi("get_company_profile", payload);
+    let { profile, profile_versions: versions = [], pending, pending_logo: pendingLogo, profile_error: profileError } = await callApi("get_company_profile", payload);
     renderCompanyProfile(name, profile, pending, trigger, triggerState, versions);
-    if (pendingLogo) {
+    // Ein Steckbrief ist ein eigener dauerhafter Pipeline-Job. Solange er
+    // läuft, fragt das geöffnete Panel den echten Jobstatus ab, statt nach der
+    // ersten leeren Antwort dauerhaft in der Ladeanimation zu bleiben.
+    if (pending && !profile) {
+      for (let attempt = 0; attempt < 36; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        if (!host.classList.contains("open") || host.dataset.company !== name) break;
+        const next = await callApi("get_company_profile", { company: name });
+        profile = next.profile || null;
+        versions = next.profile_versions || versions;
+        pending = Boolean(next.pending);
+        pendingLogo = Boolean(next.pending_logo);
+        profileError = next.profile_error || null;
+        renderCompanyProfile(name, profile, pending, trigger, triggerState, versions);
+        if (profile || !pending) break;
+      }
+    }
+    if (!profile && profileError) throw new Error(profileError);
+    if (pendingLogo && profile) {
       // Bestehende Steckbriefe werden serverseitig einmalig um ein verifiziertes
       // Logo ergänzt. Die Karte bleibt benutzbar und aktualisiert nur den Kopf,
       // sobald der Hintergrundlauf fertig ist.

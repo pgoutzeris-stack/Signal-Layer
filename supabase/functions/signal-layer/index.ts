@@ -76,7 +76,6 @@ import {
 } from "./pipeline-simple.ts";
 import {
   COMPANY_LOGO_LOOKUP_VERSION,
-  COMPANY_PROFILE_MAX_PER_BATCH,
   COMPANY_PROFILE_MODEL,
   companyProfileIsUsable,
   researchCompanyLogo,
@@ -743,11 +742,11 @@ async function companyProfileVersions(company: string) {
   return data || [];
 }
 
-async function researchProfilesForBatch(
+async function enqueueCompanyProfiles(
   rows: Array<Record<string, unknown>>,
   researchModel: string,
   simpleRunId: string,
-): Promise<void> {
+): Promise<number> {
   const companies = new Set<string>();
   for (const row of rows) {
     const list = Array.isArray(row.tier1_companies) ? row.tier1_companies as unknown[] : [];
@@ -756,13 +755,32 @@ async function researchProfilesForBatch(
       if (name) companies.add(name);
     }
   }
-  if (!companies.size) return;
-  let done = 0;
-  for (const company of companies) {
-    if (done >= COMPANY_PROFILE_MAX_PER_BATCH) break;
-    const result = await ensureCompanyProfile(company, false, { researchModel, simpleRunId });
-    if (result === "written" || result.startsWith("failed")) done += 1;
-  }
+  if (!companies.size) return 0;
+  const admin = getAdminClient();
+  const names = [...companies];
+  const { data: existing } = await admin.schema("signal_layer").from("company_profiles")
+    .select("company").in("company", names);
+  const existingNames = new Set((existing || []).map((entry: { company: string }) => entry.company));
+  const missing = names.filter((name) => !existingNames.has(name));
+  if (!missing.length) return 0;
+  const now = new Date().toISOString();
+  const { error } = await admin.schema("signal_layer").from("company_profile_jobs").upsert(
+    missing.map((company) => ({
+      company,
+      simple_run_id: simpleRunId || null,
+      research_model: researchModel,
+      status: "queued",
+      available_at: now,
+      processing_token: null,
+      processing_until: null,
+      finished_at: null,
+      updated_at: now,
+    })),
+    { onConflict: "company", ignoreDuplicates: true },
+  );
+  if (error) throw new Error("Steckbrief-Jobs konnten nicht gespeichert werden: " + error.message);
+  triggerCompanyProfileWorker();
+  return missing.length;
 }
 
 // Dieselbe Tier-1-Liste wie im Advanced-Modus, gecacht.
@@ -812,6 +830,21 @@ function simpleRunRequest(runId: string, timeoutMs: number): Promise<unknown> {
 // remains the fallback and advances the run one batch per tick.
 function triggerSimpleRun(runId: string): void {
   const pending = simpleRunRequest(runId, 120_000);
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  runtime?.waitUntil?.(pending);
+}
+
+function companyProfileWorkerRequest(timeoutMs: number): Promise<unknown> {
+  return fetch(SUPABASE_URL + "/functions/v1/signal-layer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + SUPABASE_SERVICE_ROLE_KEY },
+    body: JSON.stringify({ action: "process_company_profile_jobs" }),
+    signal: AbortSignal.timeout(timeoutMs),
+  }).catch(() => { /* der nächste Statusabruf oder Lauf startet den Worker erneut */ });
+}
+
+function triggerCompanyProfileWorker(): void {
+  const pending = companyProfileWorkerRequest(180_000);
   const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
   runtime?.waitUntil?.(pending);
 }
@@ -3865,7 +3898,7 @@ Deno.serve(async (req: Request) => {
     const workerSecret = await getBrowserBatchSecret();
     const authorization = req.headers.get("authorization") || "";
     if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return errorResponse(origin, "Unauthorized", 401);
-  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill"].includes(action)) {
+  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs"].includes(action)) {
     if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
   } else if (["process_analysis_worker", "process_analysis_batches"].includes(action)) {
     // Queue recovery may be started by the protected pg_cron/watchdog path;
@@ -6190,15 +6223,15 @@ Deno.serve(async (req: Request) => {
         // A newer run may have cancelled this one while its AI request was in
         // flight. Never revive it and never start another self-call.
         if (!updated) return corsResponse(origin, { run, done: true, skipped: "cancelled_during_batch" });
-        // Steckbriefe der erkannten Tier-1-Unternehmen nachziehen. Bewusst nach
-        // dem Fortschritts-Update: scheitert die Recherche, ist der Lauf trotzdem
-        // sauber weitergezaehlt.
-        await researchProfilesForBatch(
+        // Jede erkannte Tier-1-Firma bekommt einen dauerhaften Job. Recherche
+        // und Analyse laufen getrennt, damit ein fast abgelaufenes Artikelpaket
+        // weder Firmen überspringt noch den fertigen Lauf unvollständig lässt.
+        await enqueueCompanyProfiles(
           rows,
           run.research_model || simpleConfig.ai.simple_research_model || COMPANY_PROFILE_MODEL,
           run.id,
         ).catch((error) =>
-          console.error("Steckbrief-Recherche im Paket fehlgeschlagen:", error)
+          console.error("Steckbrief-Jobs konnten nicht angelegt werden:", error)
         );
         // Continue the run in a fresh invocation so no single request runs into
         // the function timeout.
@@ -6304,6 +6337,45 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { run: updated || run, done, trigger_written: Boolean(trigger) });
       }
 
+      case "process_company_profile_jobs": {
+        const admin = getAdminClient();
+        const { data: jobs, error: claimError } = await admin.schema("signal_layer")
+          .rpc("claim_company_profile_job", { p_lease_seconds: 150 });
+        if (claimError) return errorResponse(origin, claimError.message, 500);
+        const job = Array.isArray(jobs) ? jobs[0] : null;
+        if (!job) return corsResponse(origin, { done: true, processed: 0 });
+
+        const result = await ensureCompanyProfile(job.company, false, {
+          researchModel: job.research_model,
+          simpleRunId: job.simple_run_id,
+        });
+        const success = result === "written" || result === "fresh";
+        const retry = !success && Number(job.attempt_count || 0) < 4;
+        const now = new Date().toISOString();
+        const { error: finishError } = await admin.schema("signal_layer").from("company_profile_jobs").update({
+          status: success ? "done" : retry ? "queued" : "error",
+          last_error: success ? null : result.slice(0, 1000),
+          available_at: now,
+          processing_token: null,
+          processing_until: null,
+          finished_at: success || !retry ? now : null,
+          updated_at: now,
+        }).eq("id", job.id).eq("processing_token", job.processing_token);
+        if (finishError) return errorResponse(origin, finishError.message, 500);
+
+        // Genau ein Profil pro Function-Aufruf: volle Laufzeit für Grounding
+        // und danach eine frische Invocation für den nächsten dauerhaften Job.
+        triggerCompanyProfileWorker();
+        return corsResponse(origin, {
+          done: false,
+          processed: 1,
+          company: job.company,
+          success,
+          retry,
+          result,
+        });
+      }
+
       case "get_company_profile": {
         const { company, snapshot_id: snapshotId } = (body || {}) as { company?: string; snapshot_id?: string };
         const name = String(company || "").trim();
@@ -6386,8 +6458,28 @@ Deno.serve(async (req: Request) => {
             .select("*").eq("company", name).maybeSingle();
           return corsResponse(origin, { profile: fresh || null, profile_versions: await companyProfileVersions(name), pending: false, result });
         }
-        EdgeRuntime.waitUntil(ensureCompanyProfile(name));
-        return corsResponse(origin, { profile: null, profile_versions: versions, pending: true });
+        let { data: profileJob } = await admin.schema("signal_layer").from("company_profile_jobs")
+          .select("status,attempt_count,last_error,updated_at").eq("company", name).maybeSingle();
+        if (!profileJob) {
+          const config = await getPipelineConfig();
+          await enqueueCompanyProfiles(
+            [{ tier1_companies: [name] }],
+            config.ai.simple_research_model || COMPANY_PROFILE_MODEL,
+            "",
+          );
+          const { data: queuedJob } = await admin.schema("signal_layer").from("company_profile_jobs")
+            .select("status,attempt_count,last_error,updated_at").eq("company", name).maybeSingle();
+          profileJob = queuedJob;
+        } else if (profileJob.status === "queued" || profileJob.status === "running") {
+          triggerCompanyProfileWorker();
+        }
+        return corsResponse(origin, {
+          profile: null,
+          profile_versions: versions,
+          pending: profileJob?.status === "queued" || profileJob?.status === "running",
+          profile_job_status: profileJob?.status || null,
+          profile_error: profileJob?.status === "error" ? profileJob.last_error : null,
+        });
       }
 
       case "get_simple_run_status": {
