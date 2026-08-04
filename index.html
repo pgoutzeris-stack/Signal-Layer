@@ -2035,12 +2035,9 @@
               <select class="signal-toolbar-select" id="simple-article-type-filter" aria-label="Artikeltyp filtern">
                 <option value="all">Alle Artikeltypen</option>
               </select>
-              <div class="cfilter" id="simple-company-filter">
-                <button type="button" class="roots-select-trigger cfilter-toggle" id="simple-company-toggle" aria-expanded="false">
-                  <span id="simple-company-label">Alle Unternehmen</span><i class="fa-solid fa-chevron-down"></i>
-                </button>
-                <div class="cfilter-panel" id="simple-company-panel" hidden></div>
-              </div>
+              <select class="signal-toolbar-select" id="simple-company-filter" aria-label="Tier-1-Unternehmen filtern">
+                <option value="all">Alle Tier-1-Unternehmen</option>
+              </select>
               <select class="signal-toolbar-select" id="simple-source-filter" aria-label="Quelle filtern">
                 <option value="all">Alle Quellen</option>
               </select>
@@ -2052,6 +2049,54 @@
                 <option value="newest">Neueste zuerst</option>
                 <option value="confidence">Höchste Relevanz</option>
               </select>
+            </div>
+            <div class="crawl-trigger-wrap simple-status-wrap">
+              <button type="button" class="status-pill status-pill--ready" id="simple-status-trigger" aria-label="Simple-Status: Bereit">
+                <span class="status-pill-dot"></span><span>Status</span>
+              </button>
+              <div class="crawl-status-popover simple-status-popover" role="status">
+                <div class="crawl-status-head">
+                  <div><span class="crawl-status-kicker">Letzte Simple-Analyse</span><strong id="simple-status-time">--:--</strong></div>
+                  <span class="crawl-live-state" id="simple-live-state">Bereit</span>
+                </div>
+                <div class="backfill-status">
+                  <div class="article-live-progress" id="simple-article-progress" hidden>
+                    <div class="backfill-status-row"><span>Artikelprüfung</span><b id="simple-progress-text">0 / 0</b></div>
+                    <div class="backfill-progress-track"><span id="simple-progress-bar"></span></div>
+                    <span class="backfill-current-article live-shimmer" id="simple-current-article" hidden></span>
+                    <small id="simple-progress-detail"></small>
+                    <div class="source-health-note simple-run-error" id="simple-run-error" hidden></div>
+                  </div>
+                  <section class="status-disclosure-panel status-cost-panel">
+                    <button type="button" class="status-disclosure-toggle" id="simple-cost-toggle" aria-expanded="false" aria-controls="simple-cost-body">
+                      <span><i class="fa-solid fa-coins"></i><span><b>Kosten ausklappen</b><small id="simple-cost-model">Nur Simple-KI-Aufrufe</small></span></span>
+                      <span><strong id="simple-cost-summary">–</strong><i class="fa-solid fa-chevron-down"></i></span>
+                    </button>
+                    <div class="status-disclosure-body" id="simple-cost-body" hidden>
+                      <div class="telemetry-grid">
+                        <div class="telemetry-stat"><span>Bisheriger Lauf</span><b id="simple-cost-spent">–</b></div>
+                        <div class="telemetry-stat"><span>Hochrechnung</span><b id="simple-cost-projected">–</b></div>
+                        <div class="telemetry-stat"><span>KI-geprüft</span><b id="simple-ai-articles">–</b></div>
+                      </div>
+                      <div class="source-health-note" id="simple-cost-detail">Noch keine Kostendaten.</div>
+                    </div>
+                  </section>
+                  <section class="status-disclosure-panel status-access-panel">
+                    <button type="button" class="status-disclosure-toggle" id="simple-pool-toggle" aria-expanded="false" aria-controls="simple-pool-body">
+                      <span><i class="fa-solid fa-database"></i><span><b>Artikelbestand ausklappen</b><small>Simple crawlt keine Quellen</small></span></span>
+                      <span><strong id="simple-pool-summary">–</strong><i class="fa-solid fa-chevron-down"></i></span>
+                    </button>
+                    <div class="status-disclosure-body" id="simple-pool-body" hidden>
+                      <div class="telemetry-grid">
+                        <div class="telemetry-stat"><span>Artikel im Blick</span><b id="simple-pool-count">–</b></div>
+                        <div class="telemetry-stat"><span>Jüngster Artikel</span><b id="simple-pool-newest">–</b></div>
+                        <div class="telemetry-stat"><span>Pipeline</span><b id="simple-pipeline-version">1.9</b></div>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+                <span class="crawl-status-hint" id="simple-status-hint">Simple analysiert gespeicherte Artikel und startet keinen Crawl.</span>
+              </div>
             </div>
           </nav>
           <div class="track-grid">
@@ -2252,7 +2297,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260804-1830';
+import { initApp } from './app.js?v=20260804-1900';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

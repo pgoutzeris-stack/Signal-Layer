@@ -1,7 +1,7 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-0100";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-1900";
 
 let sb = null;
 let sources = [];
@@ -18,6 +18,7 @@ const pipelineDrilldownState = { stageId: null, editorOpen: false, routeEditor: 
 let statusPollTimer = null;
 let simpleRunStatus = null;
 let simpleForecast = null;
+let simpleTriggerBackfill = null;
 let lastSpendForecastNotice = "";
 let archiveArticles = [];
 let archiveTotalCount = 0;
@@ -32,7 +33,7 @@ const state = {
 // Filter selections are multi-select: empty array = "all". Sort stays single.
 const signalViewState = { articleTypes: [], sources: [], sort: "recommended" };
 const archiveViewState = { articleTypes: [], sources: [], sort: "recommended" };
-const simpleViewState = { articleTypes: [], sources: [], sort: "recommended" };
+const simpleViewState = { articleTypes: [], sources: [], companies: [], sort: "recommended" };
 
 // Maps a filter <select> id to its persistent selection array (mutated in
 // place so closures never hold a stale reference).
@@ -44,6 +45,7 @@ function filterSelectionFor(selectId) {
     case "archive-article-type-filter": return archiveViewState.articleTypes;
     case "simple-source-filter": return simpleViewState.sources;
     case "simple-article-type-filter": return simpleViewState.articleTypes;
+    case "simple-company-filter": return simpleViewState.companies;
     default: return null;
   }
 }
@@ -1727,10 +1729,11 @@ function storedPipelineMode() {
 }
 
 function mountStatusBar(simple) {
-  // Es gibt genau eine Statusleiste. Sie wandert in die Toolbar des aktiven
-  // Modus, damit Pille, Popover, Fehler- und Kostenpanel überall identisch sind.
-  const wrap = document.querySelector(".crawl-trigger-wrap");
-  const toolbar = document.querySelector(simple ? "#view-simple-results .signal-toolbar" : "#view-results .signal-toolbar");
+  // Advanced besitzt den Crawl-Status, Simple einen eigenen Analysestatus.
+  // Nur die Advanced-Leiste wird aus dem alten Dashboard-Header umgesetzt.
+  if (simple) return;
+  const wrap = document.querySelector(".crawl-trigger-wrap:not(.simple-status-wrap)");
+  const toolbar = document.querySelector("#view-results .signal-toolbar");
   if (wrap && toolbar && wrap.parentElement !== toolbar) toolbar.appendChild(wrap);
 }
 
@@ -1841,7 +1844,7 @@ function enhanceHeaderSelects() {
     // single-select column.
     // Mehrfachauswahl nur für Filter, die dafür einen Zustand registriert haben.
     // Ohne diesen Zustand bleibt es ein normaler Einzel-Select.
-    const selection = /source|article-type/.test(select.id) ? filterSelectionFor(select.id) : null;
+    const selection = /source|article-type|company/.test(select.id) ? filterSelectionFor(select.id) : null;
     const isGrid = Boolean(selection);
     menu.classList.toggle("roots-select-menu--grid", isGrid);
     wrapper.classList.toggle("roots-select--grid", isGrid);
@@ -1853,7 +1856,7 @@ function enhanceHeaderSelects() {
       if (values.length === 1) {
         return [...select.options].find((o) => o.value === values[0])?.textContent || values[0];
       }
-      const noun = /source/.test(select.id) ? "Quellen" : "Typen";
+      const noun = /source/.test(select.id) ? "Quellen" : /company/.test(select.id) ? "Unternehmen" : "Typen";
       return `${values.length} ${noun}`;
     };
 
@@ -2770,17 +2773,6 @@ function formatCrawlTime(iso) {
 }
 
 function getLiveStatus(last, backfill, analysisQueue = {}) {
-  // Im einfachen Modus beschreibt dieselbe Pille denselben Zustand, nur bezogen
-  // auf den Backend-Lauf über die gespeicherten Artikel.
-  if (document.body.classList.contains("mode-simple")) {
-    if (simpleRunStatus?.status === "running") {
-      return { tone: "working", label: "Analyse läuft", hint: "Die letzten gespeicherten Artikel werden geprüft." };
-    }
-    if (simpleRunStatus?.status === "error") {
-      return { tone: "error", label: "Aufmerksamkeit nötig", hint: simpleRunStatus.error_message || "Der letzte Lauf wurde mit Fehler beendet." };
-    }
-    return { tone: "ready", label: "Bereit", hint: "Die Analyse wird im Backend gestartet." };
-  }
   if (last?.status === "running" || last?.status === "queued") {
     return { tone: "working", label: "Crawl läuft", hint: "Quellen werden gerade geprüft." };
   }
@@ -2807,98 +2799,91 @@ function setLiveStatus(last, backfill, analysisQueue = {}) {
   return liveStatus.tone === "working";
 }
 
-// Bespielt die geteilten Statuswidgets mit den Zahlen des einfachen Laufs.
-// Es sind bewusst dieselben Elemente wie im Advanced-Modus, inklusive Fehler-
-// und Kostenpanel, die ohnehin modusunabhängig sind.
+// Simple hat eine eigene Statusflaeche. Crawl-, Paywall- und Advanced-Fehler
+// werden hier bewusst nie angezeigt.
 function renderSimpleHeaderStatus() {
   if (!document.body.classList.contains("mode-simple")) return;
   const run = simpleRunStatus;
-  els.crawlStatusKicker.textContent = "Letzte Analyse";
-  els.lastRunText.textContent = run ? formatCrawlTime(run.finished_at || run.last_progress_at || run.started_at) : "--:--";
-  els.crawlSourceProgress.hidden = true;
-  els.crawlLiveState.hidden = false;
-  const total = Number(run?.total_count || 0);
-  const processed = Number(run?.processed_count || 0);
-  els.articleLiveProgress.hidden = !run;
-  if (run) {
-    els.backfillProgressText.textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} Artikel`;
-    els.backfillProgressBar.style.width = total > 0 ? `${Math.round(Math.min(processed / total, 1) * 100)}%` : "0%";
-    // Schimmer-Zeile mit Echtzeit-Info, wie im Advanced-Modus.
-    const modelLabel = simpleForecast?.model_label || run.model || "Modell";
-    const position = Number(run.current_position || processed || 0);
-    if (run.status === "running") {
-      els.backfillCurrentArticle.hidden = false;
-      els.backfillCurrentArticle.textContent = run.current_article
-        ? `${modelLabel} prüft Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}: ${run.current_article}`
-        : `${modelLabel} prüft Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}`;
+  const triggerRun = simpleTriggerBackfill?.status === "running" ? simpleTriggerBackfill : null;
+  const visibleRun = triggerRun || run;
+  const byId = (id) => document.getElementById(id);
+  const trigger = byId("simple-status-trigger");
+  const live = byId("simple-live-state");
+  const time = byId("simple-status-time");
+  const progress = byId("simple-article-progress");
+  if (!trigger || !live || !time || !progress) return;
+
+  const running = ["queued", "running"].includes(visibleRun?.status);
+  const failed = visibleRun?.status === "error";
+  const tone = running ? "working" : failed ? "error" : "ready";
+  const label = running ? "Analyse läuft" : failed ? "Prüfung nötig" : "Bereit";
+  trigger.classList.remove("status-pill--ready", "status-pill--working", "status-pill--error");
+  trigger.classList.add(`status-pill--${tone}`);
+  trigger.setAttribute("aria-label", `Simple-Status: ${label}`);
+  live.textContent = label;
+  time.textContent = visibleRun ? formatCrawlTime(visibleRun.finished_at || visibleRun.last_progress_at || visibleRun.started_at) : "--:--";
+
+  const total = Number(visibleRun?.total_count || 0);
+  const processed = triggerRun
+    ? Number(triggerRun.completed_count || 0) + Number(triggerRun.missing_count || 0) + Number(triggerRun.error_count || 0)
+    : Number(run?.processed_count || 0);
+  progress.hidden = !visibleRun;
+  if (visibleRun) {
+    byId("simple-progress-text").textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} Artikel`;
+    byId("simple-progress-bar").style.width = total > 0 ? `${Math.round(Math.min(processed / total, 1) * 100)}%` : "0%";
+    const modelLabel = simpleForecast?.model_label || visibleRun.model || "Modell";
+    const position = Number(triggerRun ? processed + 1 : visibleRun.current_position || processed || 0);
+    const current = byId("simple-current-article");
+    if (running) {
+      current.hidden = false;
+      current.textContent = visibleRun.current_article
+        ? `${triggerRun ? "Aufhänger-Nachlauf" : modelLabel} · Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}: ${visibleRun.current_article}`
+        : `${triggerRun ? "Aufhänger-Nachlauf" : modelLabel} · Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}`;
     } else {
-      els.backfillCurrentArticle.hidden = true;
+      current.hidden = true;
     }
-    els.backfillProgressDetail.textContent = run.status === "error"
-      ? (run.error_message || "Lauf mit Fehler beendet.")
+    byId("simple-progress-detail").textContent = triggerRun
+      ? `${Number(triggerRun.completed_count || 0)} Aufhänger ergänzt · ${Number(triggerRun.missing_count || 0)} ohne belastbaren Anlass`
       : `${Number(run.signal_count || 0)} Signale · ${Number(run.rejected_count || 0)} aussortiert`;
   }
-  // Dieselbe Kachel wie im Advanced-Modus, nur mit den Zahlen des einfachen
-  // Laufs: gemessene Ausgaben plus Hochrechnung auf die offenen Artikel.
-  const forecastStat = document.getElementById("crawl-cost-forecast-stat");
-  const forecastLabel = forecastStat?.querySelector("span");
-  if (forecastLabel) forecastLabel.textContent = "Analyse-Prognose";
+
+  const runError = byId("simple-run-error");
+  runError.hidden = !failed;
+  if (failed) {
+    const raw = String(visibleRun?.error_message || "");
+    runError.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${escapeHtml(
+      /Hintergrundanalyse blockierte die interaktive Artikelansicht/i.test(raw)
+        ? "Der abgebrochene Testlauf ist beendet. Die gespeicherten Ergebnisse bleiben verfügbar."
+        : raw || "Der letzte Simple-Lauf wurde mit einem Fehler beendet."
+    )}`;
+  }
+
   const eur = (value) => value === null || value === undefined
     ? "–"
     : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  els.geminiRequestCount.textContent = simpleForecast
-    ? eur(simpleForecast.projected_eur ?? simpleForecast.spent_eur)
+  byId("simple-cost-summary").textContent = simpleForecast ? eur(simpleForecast.spent_eur) : "–";
+  byId("simple-cost-spent").textContent = simpleForecast ? eur(simpleForecast.spent_eur) : "–";
+  byId("simple-cost-projected").textContent = simpleForecast ? eur(simpleForecast.projected_eur) : "–";
+  byId("simple-ai-articles").textContent = simpleForecast
+    ? Number(simpleForecast.analysed_articles || 0).toLocaleString("de-DE")
     : "–";
-  const forecastDetail = document.getElementById("crawl-cost-detail");
-  if (forecastDetail && simpleForecast) {
-    forecastDetail.innerHTML = `<b>${escapeHtml(simpleForecast.model_label || simpleForecast.model || "Modell")}</b>
-      <span>${Number(simpleForecast.processed_articles || 0).toLocaleString("de-DE")} Artikel verarbeitet · ${Number(simpleForecast.analysed_articles || 0).toLocaleString("de-DE")} davon per KI (${Math.round((simpleForecast.ai_share || 0) * 100)} %) · ${Number(simpleForecast.remaining_articles || 0).toLocaleString("de-DE")} offen</span>
-      <span>${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens · bisher ${eur(simpleForecast.spent_eur)}</span>
-      <span>Hochrechnung für den ganzen Lauf: ${eur(simpleForecast.projected_eur)}</span>`;
-  }
-  renderSimpleSupplyPanel(run);
-  setLiveStatus(null, null, {});
-}
+  byId("simple-cost-model").textContent = simpleForecast?.model_label || run?.model || "Nur Simple-KI-Aufrufe";
+  byId("simple-cost-detail").textContent = simpleForecast
+    ? `${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens · ${Number(simpleForecast.remaining_articles || 0).toLocaleString("de-DE")} Artikel offen · Hochrechnung aus den echten Kosten dieses Simple-Laufs.`
+    : "Noch keine Kostendaten für einen Simple-Lauf.";
 
-// Der Abrufstatus beschreibt Crawls, und Simple crawlt nie - es liest einen
-// festen Bestand aus Supabase. Dieselbe Aufklappfläche zeigt hier deshalb den
-// Bestand selbst: wie viele Artikel im Blick sind, wie frisch der jüngste ist
-// und wann zuletzt bewertet wurde. Die Frische ist die eigentlich wichtige
-// Zahl - versiegt der Nachschub, bewertet Simple immer denselben Altbestand.
-function renderSimpleSupplyPanel(run) {
-  if (!els.statusAccessPanel) return;
-  els.statusAccessPanel.hidden = false;
-  const pool = Number(run?.total_count || 0);
+  const poolTotal = Number(run?.total_count || 0);
   const newest = run?.pool_newest_at || null;
-  const oldest = run?.pool_oldest_at || null;
-
-  const toggleLabel = els.statusAccessToggle?.querySelector("b");
-  if (toggleLabel) toggleLabel.textContent = "Artikelbestand ausklappen";
-  if (els.statusAccessWindow) {
-    els.statusAccessWindow.textContent = "Fester Bestand aus Supabase, Simple crawlt nicht";
-  }
-  if (els.statusAccessSummary) {
-    els.statusAccessSummary.textContent = pool
-      ? `${pool.toLocaleString("de-DE")} Artikel`
-      : "kein Bestand";
-  }
-  if (!els.statusAccessBody) return;
-
   const ageHours = newest ? (Date.now() - new Date(newest).getTime()) / 3_600_000 : null;
   const freshness = ageHours === null
-    ? { text: "unbekannt", stale: false }
+    ? "unbekannt"
     : ageHours < 24
-      ? { text: `heute, ${formatCrawlTime(newest)}`, stale: false }
-      : { text: `${Math.floor(ageHours / 24)} Tage alt`, stale: ageHours > 48 };
-
-  els.statusAccessBody.innerHTML = `
-    <div class="telemetry-grid">
-      <div class="telemetry-stat"><span>Artikel im Blick</span><b>${pool ? pool.toLocaleString("de-DE") : "–"}</b></div>
-      <div class="telemetry-stat"><span>Jüngster Artikel</span><b>${escapeHtml(freshness.text)}</b></div>
-      <div class="telemetry-stat"><span>Bewertet</span><b>${Number(run?.processed_count || 0).toLocaleString("de-DE")}</b></div>
-    </div>
-    ${oldest ? `<div class="source-health-note">Bestand reicht zurück bis ${escapeHtml(formatFindingDate(oldest).replace(/<[^>]+>/g, ""))}.</div>` : ""}
-    ${freshness.stale ? `<div class="source-health-note"><i class="fa-solid fa-triangle-exclamation"></i> Der Nachschub steht: der jüngste Artikel ist ${escapeHtml(freshness.text)}. Simple bewertet dann immer denselben Bestand.</div>` : ""}`;
+      ? `heute, ${formatCrawlTime(newest)}`
+      : `${Math.floor(ageHours / 24)} Tage alt`;
+  byId("simple-pool-summary").textContent = poolTotal ? `${poolTotal.toLocaleString("de-DE")} Artikel` : "kein Bestand";
+  byId("simple-pool-count").textContent = poolTotal ? poolTotal.toLocaleString("de-DE") : "–";
+  byId("simple-pool-newest").textContent = freshness;
+  byId("simple-pipeline-version").textContent = triggerRun?.pipeline_version || run?.pipeline_version || "1.9";
 }
 
 // ---------------------------------------------------------------------------
@@ -3027,9 +3012,10 @@ if (typeof document !== "undefined") document.addEventListener("click", (event) 
   });
 }, { capture: true });
 
-export function setSimpleRunStatus(run, forecast = null) {
+export function setSimpleRunStatus(run, forecast = null, triggerBackfill = null) {
   simpleRunStatus = run || null;
   simpleForecast = forecast || null;
+  simpleTriggerBackfill = triggerBackfill || null;
   renderSimpleHeaderStatus();
 }
 
@@ -3039,6 +3025,9 @@ function scheduleStatusRefresh(isActive) {
 }
 
 async function loadLastRun() {
+  // Simple aktualisiert seinen eigenen Status ueber get_simple_run_status.
+  // Ein alter Advanced-Timer darf die Simple-Anzeige nicht ueberschreiben.
+  if (document.body.classList.contains("mode-simple")) return;
   try {
     const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, analysis_error_breakdown: analysisErrors = [], error_window: errorWindow = {}, access_window: accessWindow = {}, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
     const formatEur = (value) => value === null || value === undefined
@@ -3251,17 +3240,7 @@ async function loadLastRun() {
     } else {
       els.backfillProgressText.textContent = "Kein Lauf";
       els.backfillProgressDetail.textContent = "Aktuell werden keine Altartikel geprüft.";
-      // Schimmer-Zeile mit Echtzeit-Info, wie im Advanced-Modus.
-    const modelLabel = simpleForecast?.model_label || run.model || "Modell";
-    const position = Number(run.current_position || processed || 0);
-    if (run.status === "running") {
-      els.backfillCurrentArticle.hidden = false;
-      els.backfillCurrentArticle.textContent = run.current_article
-        ? `${modelLabel} prüft Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}: ${run.current_article}`
-        : `${modelLabel} prüft Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}`;
-    } else {
       els.backfillCurrentArticle.hidden = true;
-    }
       els.backfillCurrentArticle.textContent = "";
       document.getElementById("backfill-status")?.classList.remove("is-live");
     }
@@ -3326,17 +3305,10 @@ async function loadLastRun() {
       chip.addEventListener("mouseenter", () => positionErrorPopover(chip));
       chip.addEventListener("focusin", () => positionErrorPopover(chip));
     });
-    // Fehler- und Kostenpanel gelten für beide Modi. Im einfachen Modus
-    // überschreiben danach die Zahlen des einfachen Laufs Kopf und Fortschritt.
-    renderSimpleHeaderStatus();
     scheduleStatusRefresh(isActive || browserPending > 0);
   } catch {
-    if (document.body.classList.contains("mode-simple")) {
-      renderSimpleHeaderStatus();
-    } else {
-      els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
-      setLiveStatus(null, null);
-    }
+    els.lastRunText.textContent = "Noch kein Crawl-Lauf.";
+    setLiveStatus(null, null);
     scheduleStatusRefresh(false);
   }
 }
@@ -3352,6 +3324,8 @@ function bindUi() {
   bindStatusDisclosure(els.statusErrorToggle, els.apiErrorList, "Fehler");
   bindStatusDisclosure(els.statusCostToggle, els.statusCostBody, "Kosten");
   bindStatusDisclosure(els.statusAccessToggle, els.statusAccessBody, "Abrufstatus");
+  bindStatusDisclosure(document.getElementById("simple-cost-toggle"), document.getElementById("simple-cost-body"), "Kosten");
+  bindStatusDisclosure(document.getElementById("simple-pool-toggle"), document.getElementById("simple-pool-body"), "Artikelbestand");
   els.appNav.addEventListener("click", (event) => {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);

@@ -19,6 +19,7 @@ let bound = false;
 let running = false;
 let rulesLoaded = false;
 let lastRun = null;
+let triggerBackfill = null;
 let pollTimer = null;
 let simpleRules = null;
 const signalsByLane = { marketing: [], sales: [] };
@@ -36,9 +37,6 @@ function cacheEls() {
     articleTypeFilter: el("simple-article-type-filter"),
     sourceFilter: el("simple-source-filter"),
     companyFilter: el("simple-company-filter"),
-    companyToggle: el("simple-company-toggle"),
-    companyPanel: el("simple-company-panel"),
-    companyLabel: el("simple-company-label"),
     sort: el("simple-sort"),
     version: el("simple-version"),
     marketingList: el("simple-list-marketing"),
@@ -147,13 +145,9 @@ function signalDate(signal) {
 // Ein Signal passt, wenn seine Einstufung gewaehlt ist und mindestens ein
 // erkanntes Unternehmen in der Mehrfachauswahl steht.
 function companyMatches(signal) {
-  if (companyState.klasse === "all") return true;
-  const tier1 = (signal.tier1_companies || []).filter(Boolean);
-  if (companyState.klasse === "tier1") {
-    return tier1.some((name) => companyState.selected.includes(name));
-  }
-  const plain = signal.company && !tier1.includes(signal.company) ? signal.company : null;
-  return Boolean(plain) && companyState.selected.includes(plain);
+  const selected = ctx.viewState.companies || [];
+  if (selected.length === 0) return true;
+  return (signal.tier1_companies || []).some((name) => selected.includes(name));
 }
 
 function visibleSignals(lane) {
@@ -193,106 +187,13 @@ function refreshFilterOptions() {
       .map((source) => `<option value="${esc(source)}">${esc(source)}</option>`).join("")}`;
     ctx.pruneSelection(ctx.viewState.sources, sources);
   }
-  if (els.companyPanel) {
-    companyIndex.tier1 = [...new Set(all.flatMap((signal) => signal.tier1_companies || []).filter(Boolean))]
+  if (els.companyFilter) {
+    const companies = [...new Set(all.flatMap((signal) => signal.tier1_companies || []).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, "de"));
-    companyIndex.company = [...new Set(all.map((signal) => signal.company).filter(Boolean)
-      .filter((name) => !companyIndex.tier1.includes(name)))].sort((a, b) => a.localeCompare(b, "de"));
-    // Auswahl auf noch vorhandene Namen begrenzen, ohne sie zu leeren.
-    const allowed = companyIndex[companyState.klasse] || [];
-    if (companyState.klasse !== "all") {
-      companyState.selected = companyState.selected.filter((name) => allowed.includes(name));
-      if (!companyState.selected.length) companyState.selected = [...allowed];
-    }
-    renderCompanyFilter();
+    els.companyFilter.innerHTML = `<option value="all">Alle Tier-1-Unternehmen</option>${companies
+      .map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("")}`;
+    ctx.pruneSelection(ctx.viewState.companies, companies);
   }
-}
-
-// Zweistufiger Unternehmensfilter: erst die Einstufung, dann die erkannten
-// Unternehmen dieser Einstufung als Mehrfachauswahl - beim Wechsel sind alle
-// angewählt, damit die Auswahl nichts versteckt, was man nicht abgewählt hat.
-const companyIndex = { tier1: [], company: [] };
-const companyState = { klasse: "all", selected: [] };
-
-function companyFilterLabel() {
-  if (companyState.klasse === "all") return "Alle Unternehmen";
-  const alle = companyIndex[companyState.klasse] || [];
-  const name = companyState.klasse === "tier1" ? "Tier 1 Company" : "Company";
-  if (companyState.selected.length === alle.length) return `${name} · alle`;
-  if (companyState.selected.length === 1) return `${name} · ${companyState.selected[0]}`;
-  return `${name} · ${companyState.selected.length} von ${alle.length}`;
-}
-
-function renderCompanyFilter() {
-  if (!els.companyPanel) return;
-  if (els.companyLabel) els.companyLabel.textContent = companyFilterLabel();
-  const klasse = (key, label) => {
-    const alle = companyIndex[key] || [];
-    const aktiv = companyState.klasse === key;
-    return `<button type="button" class="cfilter-class" data-cfilter-class="${key}" aria-selected="${aktiv}">
-        <i class="fa-solid ${aktiv ? "fa-circle-dot" : "fa-circle"}"></i> ${label}
-        <span class="cfilter-count">${alle.length}</span>
-      </button>
-      ${aktiv && alle.length ? `<div class="cfilter-actions">
-        <button type="button" data-cfilter-all="1">alle</button>
-        <button type="button" data-cfilter-none="1">keine</button>
-      </div>
-      <div class="cfilter-sub">${alle.map((name) => `<label class="cfilter-item">
-        <input type="checkbox" data-cfilter-name="${esc(name)}"${companyState.selected.includes(name) ? " checked" : ""}>
-        <span>${esc(name)}</span></label>`).join("")}</div>` : ""}`;
-  };
-  els.companyPanel.innerHTML = `
-    <button type="button" class="cfilter-class" data-cfilter-class="all" aria-selected="${companyState.klasse === "all"}">
-      <i class="fa-solid ${companyState.klasse === "all" ? "fa-circle-dot" : "fa-circle"}"></i> Alle Unternehmen
-    </button>
-    ${klasse("tier1", "Tier 1 Company")}
-    ${klasse("company", "Company")}`;
-}
-
-function bindCompanyFilter(rerender) {
-  if (!els.companyToggle || !els.companyPanel) return;
-  const close = () => {
-    els.companyPanel.hidden = true;
-    els.companyToggle.setAttribute("aria-expanded", "false");
-  };
-  els.companyToggle.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const open = els.companyPanel.hidden;
-    els.companyPanel.hidden = !open;
-    els.companyToggle.setAttribute("aria-expanded", String(open));
-    if (open) renderCompanyFilter();
-  });
-  document.addEventListener("click", (event) => {
-    if (!els.companyFilter?.contains(event.target)) close();
-  });
-  els.companyPanel.addEventListener("click", (event) => {
-    const klasse = event.target.closest("[data-cfilter-class]");
-    if (klasse) {
-      companyState.klasse = klasse.getAttribute("data-cfilter-class");
-      companyState.selected = companyState.klasse === "all" ? [] : [...(companyIndex[companyState.klasse] || [])];
-      renderCompanyFilter();
-      rerender();
-      return;
-    }
-    if (event.target.closest("[data-cfilter-all]")) {
-      companyState.selected = [...(companyIndex[companyState.klasse] || [])];
-      renderCompanyFilter(); rerender(); return;
-    }
-    if (event.target.closest("[data-cfilter-none]")) {
-      companyState.selected = [];
-      renderCompanyFilter(); rerender(); return;
-    }
-  });
-  els.companyPanel.addEventListener("change", (event) => {
-    const box = event.target.closest("[data-cfilter-name]");
-    if (!box) return;
-    const name = box.getAttribute("data-cfilter-name");
-    companyState.selected = box.checked
-      ? [...new Set([...companyState.selected, name])]
-      : companyState.selected.filter((entry) => entry !== name);
-    if (els.companyLabel) els.companyLabel.textContent = companyFilterLabel();
-    rerender();
-  });
 }
 
 function renderLane(lane) {
@@ -386,8 +287,9 @@ async function loadResults({ keepStatus = false } = {}) {
     renderRejected(rejectedRows, simpleRules?.reject_labels);
     if (!keepStatus) {
       lastRun = status.run || null;
-      running = lastRun?.status === "running";
-      ctx.setSimpleRunStatus(lastRun, status.forecast || null);
+      triggerBackfill = status.trigger_backfill || null;
+      running = lastRun?.status === "running" || triggerBackfill?.status === "running";
+      ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill);
     }
   } catch (error) {
     ctx.toast(error.message || "Ergebnisse konnten nicht geladen werden", "err");
@@ -411,11 +313,15 @@ async function pollStatus() {
   try {
     const status = await ctx.callApi("get_simple_run_status");
     const previous = lastRun;
+    const previousTrigger = triggerBackfill;
     lastRun = status.run || null;
-    running = lastRun?.status === "running";
-    ctx.setSimpleRunStatus(lastRun, status.forecast || null);
-    const advanced = Number(lastRun?.processed_count || 0) !== Number(previous?.processed_count || 0);
-    const finished = previous?.status === "running" && lastRun?.status !== "running";
+    triggerBackfill = status.trigger_backfill || null;
+    running = lastRun?.status === "running" || triggerBackfill?.status === "running";
+    ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill);
+    const advanced = Number(lastRun?.processed_count || 0) !== Number(previous?.processed_count || 0)
+      || Number(triggerBackfill?.cursor || 0) !== Number(previousTrigger?.cursor || 0);
+    const finished = (previous?.status === "running" && lastRun?.status !== "running")
+      || (previousTrigger?.status === "running" && triggerBackfill?.status !== "running");
     if (advanced || finished || lastRun?.id !== previous?.id) await loadResults({ statusOnly: false, keepStatus: true });
   } catch (_error) {
     /* nächster Takt versucht es erneut */
@@ -431,8 +337,7 @@ function bindUi() {
     renderLane("marketing");
     renderLane("sales");
   };
-  [els.articleTypeFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
-  bindCompanyFilter(rerender);
+  [els.articleTypeFilter, els.sourceFilter, els.companyFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
   els.version?.addEventListener("change", () => {
     selectedVersion = els.version.value === "current" ? "" : els.version.value;
     rulesLoaded = false;
@@ -485,13 +390,14 @@ function bindUi() {
 // ---------------------------------------------------------------------------
 async function loadDashboard() {
   try {
-    const { counts, run, forecast } = await ctx.callApi("get_simple_dashboard");
+    const { counts, run, forecast, trigger_backfill: triggerRun } = await ctx.callApi("get_simple_dashboard");
     if (els.dashMarketing) els.dashMarketing.textContent = Number(counts?.marketing || 0).toLocaleString("de-DE");
     if (els.dashSales) els.dashSales.textContent = Number(counts?.sales || 0).toLocaleString("de-DE");
     if (els.dashRejected) els.dashRejected.textContent = Number(counts?.rejected || 0).toLocaleString("de-DE");
     lastRun = run || null;
-    running = lastRun?.status === "running";
-    ctx.setSimpleRunStatus(lastRun, forecast || null);
+    triggerBackfill = triggerRun || null;
+    running = lastRun?.status === "running" || triggerBackfill?.status === "running";
+    ctx.setSimpleRunStatus(lastRun, forecast || null, triggerBackfill);
     if (els.dashRun) {
       const eur = (value) => value === null || value === undefined
         ? "–"

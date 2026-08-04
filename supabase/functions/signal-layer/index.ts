@@ -68,6 +68,7 @@ import {
   SIMPLE_ALL_REJECT_REASONS,
   SIMPLE_REJECT_LABELS,
   classifySimpleArticle,
+  generateSimpleTrigger,
   simpleResultUsedAi,
   simpleModelOption,
   simpleRuleManifest,
@@ -513,6 +514,21 @@ function simpleRunRequest(runId: string, timeoutMs: number): Promise<unknown> {
 // remains the fallback and advances the run one batch per tick.
 function triggerSimpleRun(runId: string): void {
   const pending = simpleRunRequest(runId, 120_000);
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  runtime?.waitUntil?.(pending);
+}
+
+function simpleTriggerBackfillRequest(runId: string, timeoutMs: number): Promise<unknown> {
+  return fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+    body: JSON.stringify({ action: "process_simple_trigger_backfill", run_id: runId }),
+    signal: AbortSignal.timeout(timeoutMs),
+  }).catch(() => { /* watchdog resumes the durable run */ });
+}
+
+function triggerSimpleTriggerBackfill(runId: string): void {
+  const pending = simpleTriggerBackfillRequest(runId, 120_000);
   const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
   runtime?.waitUntil?.(pending);
 }
@@ -3465,6 +3481,13 @@ Deno.serve(async (req: Request) => {
         if (!auth) return errorResponse(origin, "Unauthorized", 401);
       }
     }
+  } else if (action === "process_simple_trigger_backfill") {
+    // Dieser enge Nachlauf wird nur vom Watchdog oder von der Function selbst
+    // gestartet; er ist kein frei aufrufbarer Analyse-Endpunkt.
+    if (!isInternalCall(req)) {
+      isScheduled = await isScheduledTrigger(req);
+      if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
+    }
   } else if (action === "run_crawl") {
     auth = await requireAuth(req);
     if (!auth) {
@@ -5063,6 +5086,13 @@ Deno.serve(async (req: Request) => {
         // ein Paket weiter, auch wenn die Selbstkette abgerissen ist.
         if ((openSimpleRuns || []).length > 0) await simpleRunRequest(openSimpleRuns![0].id, 55_000);
 
+        const { data: openTriggerRuns } = await admin.schema("signal_layer").from("simple_trigger_backfill_runs")
+          .select("id,last_progress_at").eq("status", "running")
+          .lt("last_progress_at", new Date(Date.now() - 45_000).toISOString()).limit(1);
+        if ((openTriggerRuns || []).length > 0) {
+          await simpleTriggerBackfillRequest(openTriggerRuns![0].id, 55_000);
+        }
+
         // Ein Lauf, der laenger als WATCHDOG_MAX_RUN_HOURS laeuft, kommt nicht mehr
         // voran: 2026-08 hing einer 12 Tage bei Quelle 0 und wurde alle 5 Minuten
         // neu gestartet, bis die Schreiblast Anmeldungen blockierte. Solche Laeufe
@@ -5331,7 +5361,7 @@ Deno.serve(async (req: Request) => {
 
       case "get_simple_dashboard": {
         const admin = getAdminClient();
-        const [{ count: marketing }, { count: sales }, { count: rejected }, { data: run }] = await Promise.all([
+        const [{ count: marketing }, { count: sales }, { count: rejected }, { data: run }, { data: triggerBackfill }] = await Promise.all([
           admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "marketing"),
           admin.schema("signal_layer").from("simple_signals")
@@ -5340,10 +5370,13 @@ Deno.serve(async (req: Request) => {
             .select("id", { count: "exact", head: true }).eq("status", "rejected"),
           admin.schema("signal_layer").from("simple_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
+          admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
+            .order("started_at", { ascending: false }).limit(1).maybeSingle(),
         ]);
         return corsResponse(origin, {
           counts: { marketing: marketing || 0, sales: sales || 0, rejected: rejected || 0 },
           run: run || null,
+          trigger_backfill: triggerBackfill || null,
           forecast: await buildSimpleForecast(run),
         });
       }
@@ -5568,6 +5601,7 @@ Deno.serve(async (req: Request) => {
             evidence: result.evidence,
             headline_de: result.headline_de,
             why_de: result.why_de,
+            trigger_de: result.trigger_de,
             company: result.company,
             summary_de: result.summary_de,
             article_type: result.article_type,
@@ -5668,6 +5702,88 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { run: updated, done, processed_now: rows.length, signals_now: signals, ai_calls: aiCalls });
       }
 
+      case "process_simple_trigger_backfill": {
+        const admin = getAdminClient();
+        const runId = String((body as { run_id?: string })?.run_id || "");
+        const baseQuery = admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*");
+        const { data: run, error: runError } = runId
+          ? await baseQuery.eq("id", runId).maybeSingle()
+          : await baseQuery.eq("status", "running").order("started_at", { ascending: true }).limit(1).maybeSingle();
+        if (runError) return errorResponse(origin, runError.message, 500);
+        if (!run || run.status !== "running") return corsResponse(origin, { run: run || null, done: true });
+
+        const articleIds: string[] = Array.isArray(run.article_ids) ? run.article_ids : [];
+        const articleId = articleIds[Number(run.cursor || 0)] || null;
+        if (!articleId) {
+          const { data: finished } = await admin.schema("signal_layer").from("simple_trigger_backfill_runs").update({
+            status: "done", finished_at: new Date().toISOString(), last_progress_at: new Date().toISOString(), current_article: null,
+          }).eq("id", run.id).eq("status", "running").select("*").maybeSingle();
+          return corsResponse(origin, { run: finished || run, done: true });
+        }
+
+        const [{ data: article, error: articleError }, { data: snapshot }] = await Promise.all([
+          admin.schema("signal_layer").from("articles")
+            .select("id,title,url,content,cleaned_content,content_de,excerpt,published_at,source_id,source:sources(company,url,category)")
+            .eq("id", articleId).maybeSingle(),
+          admin.schema("signal_layer").from("simple_signal_history")
+            .select("tier1_companies,trigger_de").eq("article_id", articleId)
+            .eq("pipeline_version", run.pipeline_version || "1.9").maybeSingle(),
+        ]);
+        if (articleError || !article) {
+          const nextCursor = Number(run.cursor || 0) + 1;
+          const done = nextCursor >= articleIds.length;
+          const { data: updated } = await admin.schema("signal_layer").from("simple_trigger_backfill_runs").update({
+            cursor: nextCursor, error_count: Number(run.error_count || 0) + 1,
+            error_message: articleError?.message || "Artikel nicht gefunden.",
+            status: done ? "done" : "running", finished_at: done ? new Date().toISOString() : null,
+            last_progress_at: new Date().toISOString(), current_article: null,
+          }).eq("id", run.id).eq("status", "running").select("*").maybeSingle();
+          if (!done) triggerSimpleTriggerBackfill(run.id);
+          return corsResponse(origin, { run: updated || run, done });
+        }
+
+        await admin.schema("signal_layer").from("simple_trigger_backfill_runs").update({
+          current_article: String(article.title || article.url || "").slice(0, 300),
+          last_progress_at: new Date().toISOString(),
+        }).eq("id", run.id).eq("status", "running");
+
+        const simpleConfig = await getPipelineConfig();
+        const model = run.model || simpleConfig.ai.simple_model || SIMPLE_MODEL;
+        const modelKey = await getSimpleModelKey(model);
+        const prepared = await ensureSimpleArticleText(admin, article);
+        const company = (Array.isArray(snapshot?.tier1_companies) ? snapshot.tier1_companies : [])
+          .map((entry: unknown) => String(entry || "").trim()).find(Boolean) || "";
+        const trigger = company ? await generateSimpleTrigger({
+          admin, apiKey: modelKey, model,
+          rootsPortfolio: await getSimpleRootsPortfolio(),
+          tier1Companies: await getSimpleTier1Companies(),
+        }, prepared, company) : null;
+
+        if (trigger) {
+          await Promise.all([
+            admin.schema("signal_layer").from("simple_signal_history").update({ trigger_de: trigger })
+              .eq("article_id", articleId).eq("pipeline_version", run.pipeline_version || "1.9"),
+            admin.schema("signal_layer").from("simple_signals").update({ trigger_de: trigger, updated_at: new Date().toISOString() })
+              .eq("article_id", articleId).eq("pipeline_version", run.pipeline_version || "1.9"),
+          ]);
+        }
+
+        const nextCursor = Number(run.cursor || 0) + 1;
+        const done = nextCursor >= articleIds.length;
+        const { data: updated, error: updateError } = await admin.schema("signal_layer").from("simple_trigger_backfill_runs").update({
+          cursor: nextCursor,
+          completed_count: Number(run.completed_count || 0) + (trigger ? 1 : 0),
+          missing_count: Number(run.missing_count || 0) + (trigger ? 0 : 1),
+          status: done ? "done" : "running",
+          finished_at: done ? new Date().toISOString() : null,
+          last_progress_at: new Date().toISOString(),
+          current_article: null,
+        }).eq("id", run.id).eq("status", "running").select("*").maybeSingle();
+        if (updateError) return errorResponse(origin, updateError.message, 500);
+        if (!done) triggerSimpleTriggerBackfill(run.id);
+        return corsResponse(origin, { run: updated || run, done, trigger_written: Boolean(trigger) });
+      }
+
       case "get_company_profile": {
         const { company } = (body || {}) as { company?: string };
         const name = String(company || "").trim();
@@ -5705,8 +5821,10 @@ Deno.serve(async (req: Request) => {
 
       case "get_simple_run_status": {
         const admin = getAdminClient();
-        const [{ data: run }, { count: signalCount }, { count: rejectedCount }, { data: usdEurRate }] = await Promise.all([
+        const [{ data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount }, { data: usdEurRate }] = await Promise.all([
           admin.schema("signal_layer").from("simple_runs").select("*")
+            .order("started_at", { ascending: false }).limit(1).maybeSingle(),
+          admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "signal"),
@@ -5716,6 +5834,7 @@ Deno.serve(async (req: Request) => {
         ]);
         return corsResponse(origin, {
           run: run || null,
+          trigger_backfill: triggerBackfill || null,
           batch_size: SIMPLE_BATCH_SIZE,
           totals: { signals: signalCount || 0, rejected: rejectedCount || 0 },
           forecast: await buildSimpleForecast(run),
