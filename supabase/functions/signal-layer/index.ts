@@ -5772,6 +5772,15 @@ Deno.serve(async (req: Request) => {
             admin.schema("signal_layer").from("simple_signals").update({ trigger_de: trigger, updated_at: new Date().toISOString() })
               .eq("article_id", articleId).eq("pipeline_version", run.pipeline_version || "1.9"),
           ]);
+        } else {
+          // Ein alter Ein-Satz-Aufhaenger darf nach einer fehlgeschlagenen
+          // Qualitaetspruefung nicht weiter als belastbarer Trigger erscheinen.
+          await Promise.all([
+            admin.schema("signal_layer").from("simple_signal_history").update({ trigger_de: null })
+              .eq("article_id", articleId).eq("pipeline_version", run.pipeline_version || "1.9"),
+            admin.schema("signal_layer").from("simple_signals").update({ trigger_de: null, updated_at: new Date().toISOString() })
+              .eq("article_id", articleId).eq("pipeline_version", run.pipeline_version || "1.9"),
+          ]);
         }
 
         const nextCursor = Number(run.cursor || 0) + 1;
