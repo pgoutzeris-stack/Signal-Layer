@@ -110,7 +110,8 @@ REGELN, sie entscheiden über die Brauchbarkeit:
    jetzt sinnvoll ist. Nutze auch die Signale aus dem Artikelbestand oben.
 5. Jede Zahl, die du nicht per Suche belegen konntest, gehört nicht in "kpis" oder
    "sections", sondern in "unverified_note". Erfinde niemals eine Quelle.
-6. Deutsch, knapp, keine Werbesprache. Kein Satz, der nur Offensichtliches sagt.`;
+6. Deutsch, knapp, keine Werbesprache. Kein Satz, der nur Offensichtliches sagt.
+7. Keine Zeilenumbrueche innerhalb der Zeichenketten - jeder Eintrag ist eine Zeile.`;
 }
 
 /**
@@ -144,11 +145,26 @@ function extractJson(text: string): unknown {
   const end = stripped.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("no json object in company profile answer");
   const slice = stripped.slice(start, end + 1);
-  try {
-    return JSON.parse(slice);
-  } catch {
-    return JSON.parse(escapeControlCharsInStrings(slice));
+  const attempts: Array<(value: string) => string> = [
+    (value) => value,
+    escapeControlCharsInStrings,
+    // Letzte Stufe ohne Zustand: jedes Steuerzeichen wird zum Leerzeichen. Das
+    // ist ausserhalb von Zeichenketten gueltiger Zwischenraum und innerhalb
+    // gueltiger Inhalt, kann also nicht aus dem Takt geraten - anders als die
+    // Zustandsverfolgung, die ein unmaskiertes Anfuehrungszeichen im Text
+    // aushebelt (beobachtet 4.8.2026, Position 1193).
+    (value) => value.replace(/[\u0000-\u001F]/g, " "),
+  ];
+  let lastError: unknown = null;
+  for (const repair of attempts) {
+    try {
+      return JSON.parse(repair(slice));
+    } catch (error) {
+      lastError = error;
+    }
   }
+  console.error("Steckbrief-JSON unlesbar, Anfang der Antwort:", slice.slice(0, 400));
+  throw lastError instanceof Error ? lastError : new Error("company profile json unreadable");
 }
 
 function normalizeKpis(raw: unknown): CompanyProfileKpi[] {
