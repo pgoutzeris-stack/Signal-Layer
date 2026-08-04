@@ -232,6 +232,10 @@
   .cp-logo span { font-weight: 800; font-size: 1.1rem; color: #16233c; letter-spacing: .02em; }
   .cp-close { background: none; border: 0; color: #aebbd4; font-size: 1.15rem; cursor: pointer; padding: .2rem .35rem; margin-left: .5rem; }
   .cp-close:hover { color: #fff; }
+  .cp-pills { display: flex; gap: .4rem; margin-top: .55rem; flex-wrap: wrap; }
+  .cp-pill { display: inline-flex; align-items: center; gap: .3rem; background: rgba(255,255,255,.12); color: #dce5f5; border: 0; border-radius: 999px; padding: .22rem .6rem; font-size: .72rem; }
+  .cp-pill--action { cursor: pointer; background: rgba(255,255,255,.2); color: #fff; }
+  .cp-pill--action:hover { background: rgba(255,255,255,.32); }
   .cp-body { padding: 1.1rem 1.4rem 1.4rem; background: #fff; }
   .cp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; margin-bottom: 1.1rem; }
   .cp-kpi { border: 1px solid #e2e8f2; border-radius: 10px; padding: .8rem .6rem; text-align: center; }
@@ -2232,7 +2236,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260804-1200';
+import { initApp } from './app.js?v=20260804-1400';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

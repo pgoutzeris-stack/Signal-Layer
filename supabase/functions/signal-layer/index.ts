@@ -76,7 +76,6 @@ import {
 import {
   COMPANY_PROFILE_MAX_PER_BATCH,
   COMPANY_PROFILE_MODEL,
-  COMPANY_PROFILE_TTL_DAYS,
   companyProfileIsUsable,
   researchCompanyProfile,
 } from "./company-profile.ts";
@@ -377,17 +376,17 @@ async function getSimpleRootsPortfolio(): Promise<string> {
 // das Profil abgelaufen ist. Gemini rechnet pro Suchanfrage ab, ein Profil pro
 // Artikel waere um Groessenordnungen teurer als ein Profil pro Unternehmen.
 // ---------------------------------------------------------------------------
-async function ensureCompanyProfile(company: string): Promise<string> {
+async function ensureCompanyProfile(company: string, force = false): Promise<string> {
   const name = String(company || "").trim();
   if (!name) return "skipped";
   const admin = getAdminClient();
 
   const { data: existing } = await admin.schema("signal_layer").from("company_profiles")
-    .select("company, researched_at").eq("company", name).maybeSingle();
-  if (existing?.researched_at) {
-    const ageDays = (Date.now() - new Date(existing.researched_at).getTime()) / 86_400_000;
-    if (ageDays < COMPANY_PROFILE_TTL_DAYS) return "fresh";
-  }
+    .select("company").eq("company", name).maybeSingle();
+  // Die Pipeline recherchiert ein Unternehmen genau einmal. Kein Verfallsdatum:
+  // eine Suche kostet Geld, und ein Steckbrief altert langsamer als ein Lauf
+  // laeuft. Erneuert wird nur, wenn jemand es im Steckbrief anfordert.
+  if (existing && !force) return "fresh";
 
   let apiKey = "";
   try {
@@ -5654,10 +5653,11 @@ Deno.serve(async (req: Request) => {
         const name = String(company || "").trim();
         if (!name) return errorResponse(origin, "company fehlt", 400);
         const admin = getAdminClient();
+        const wantsRefresh = Boolean((body as { refresh?: boolean })?.refresh);
         const { data, error } = await admin.schema("signal_layer").from("company_profiles")
           .select("*").eq("company", name).maybeSingle();
         if (error) return errorResponse(origin, error.message, 500);
-        if (data) return corsResponse(origin, { profile: data, pending: false });
+        if (data && !wantsRefresh) return corsResponse(origin, { profile: data, pending: false });
 
         // Noch nicht recherchiert: der Nutzer soll nicht auf einen Suchlauf
         // warten, deshalb im Hintergrund anstossen und leer antworten.
@@ -5665,7 +5665,13 @@ Deno.serve(async (req: Request) => {
           .select("name").eq("name", name).maybeSingle();
         if (!known) return corsResponse(origin, { profile: null, pending: false });
 
-        const { wait } = (body || {}) as { wait?: boolean };
+        const { wait, refresh } = (body || {}) as { wait?: boolean; refresh?: boolean };
+        if (refresh) {
+          const result = await ensureCompanyProfile(name, true);
+          const { data: fresh } = await admin.schema("signal_layer").from("company_profiles")
+            .select("*").eq("company", name).maybeSingle();
+          return corsResponse(origin, { profile: fresh || null, pending: false, result });
+        }
         if (wait) {
           // Synchron: der Aufrufer bekommt den Grund zurueck, wenn es scheitert.
           const result = await ensureCompanyProfile(name);

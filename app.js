@@ -2939,13 +2939,17 @@ function companyLogoHtml(company, website) {
 
 function companyProfileHeadHtml(company, profile) {
   const stand = profile?.researched_at
-    ? new Date(profile.researched_at).toLocaleDateString("de-DE", { month: "long", year: "numeric" })
+    ? new Date(profile.researched_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
     : null;
-  const parts = [profile?.headline, stand ? `Stand: ${stand}` : null].filter(Boolean);
   return `<div class="cp-head">
     <div>
       <h2 id="cp-title">Unternehmensprofil: ${escapeHtml(company)}</h2>
-      ${parts.length ? `<p class="cp-head-sub">${escapeHtml(parts.join(" · "))}</p>` : ""}
+      ${profile?.headline ? `<p class="cp-head-sub">${escapeHtml(profile.headline)}</p>` : ""}
+      ${profile ? `<div class="cp-pills">
+        <span class="cp-pill">Recherchiert: ${escapeHtml(stand || "unbekannt")}</span>
+        <button type="button" class="cp-pill cp-pill--action" data-company-refresh="${escapeHtml(company)}">
+          <i class="fa-solid fa-rotate"></i> Aktualisieren</button>
+      </div>` : ""}
     </div>
     ${companyLogoHtml(company, profile?.website)}
     <button type="button" class="cp-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
@@ -2957,7 +2961,7 @@ function renderCompanyProfile(company, profile, pending) {
   if (!profile) {
     card.innerHTML = companyProfileHeadHtml(company, null) + `<div class="cp-body"><div class="cp-state">${
       pending
-        ? '<i class="fa-solid fa-circle-notch fa-spin"></i> Steckbrief wird recherchiert. Das dauert etwa eine Minute, danach erneut öffnen.'
+        ? LOADER_HTML + '<p style="margin:.8rem 0 0">Steckbrief wird recherchiert, das dauert etwa eine Minute.</p>'
         : "Für dieses Unternehmen liegt kein Steckbrief vor. Steckbriefe entstehen für Tier-1-Unternehmen während eines Analyselaufs."
     }</div></div>`;
     return;
@@ -2980,14 +2984,15 @@ function renderCompanyProfile(company, profile, pending) {
   </div>`;
 }
 
-export async function openCompanyProfile(company) {
+export async function openCompanyProfile(company, { refresh = false } = {}) {
   const name = String(company || "").trim();
   if (!name) return;
   const host = companyProfileOverlay();
   host.classList.add("open");
   renderCompanyProfile(name, null, true);
   try {
-    const { profile, pending } = await callApi("get_company_profile", { company: name });
+    const payload = refresh ? { company: name, refresh: true } : { company: name };
+    const { profile, pending } = await callApi("get_company_profile", payload);
     renderCompanyProfile(name, profile, pending);
   } catch (error) {
     host.querySelector(".cp-card").innerHTML = companyProfileHeadHtml(name, null)
@@ -2997,6 +3002,13 @@ export async function openCompanyProfile(company) {
 
 // Ein Klickfänger für beide Modi, damit neu gezeichnete Karten ihn nicht verlieren.
 if (typeof document !== "undefined") document.addEventListener("click", (event) => {
+  const refreshBtn = event.target.closest("[data-company-refresh]");
+  if (refreshBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    void openCompanyProfile(refreshBtn.getAttribute("data-company-refresh"), { refresh: true });
+    return;
+  }
   const pill = event.target.closest("[data-company-profile]");
   if (!pill) return;
   // Capture-Phase: der Klick-Handler der Artikelkarte haengt direkt an der Karte
