@@ -159,8 +159,68 @@ async function currentAppRole(userId: string): Promise<AppRole | null> {
     : null;
 }
 
-const ADMIN_ACTIONS = new Set([
+type ToolAccessProfile = {
+  id: string;
+  email?: string | null;
+  full_name?: string | null;
+  first_name?: string | null;
+  app_role?: string | null;
+  app_settings?: { allowed_tools?: unknown } | null;
+};
+
+function profileCanAccessSignalLayer(profile: ToolAccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (profile.app_role === "admin") return true;
+  const allowedTools = profile.app_settings?.allowed_tools;
+  // This mirrors ROOTS Intranet: a missing/null list means access to all tools.
+  if (allowedTools === undefined || allowedTools === null) return true;
+  return Array.isArray(allowedTools) && allowedTools.includes("signal-layer");
+}
+
+async function currentSignalLayerAccess(userId: string): Promise<boolean> {
+  const { data, error } = await getAdminClient().schema("users").from("profiles")
+    .select("id,app_role,app_settings").eq("id", userId).maybeSingle();
+  if (error) throw new Error(`Could not resolve Signal Layer access: ${error.message}`);
+  return profileCanAccessSignalLayer(data as ToolAccessProfile | null);
+}
+
+async function notifySignalLayerSettingsChanged(userId: string, change: string): Promise<void> {
+  const admin = getAdminClient();
+  const { data, error } = await admin.schema("users").from("profiles")
+    .select("id,email,full_name,first_name,app_role,app_settings");
+  if (error) {
+    console.error("Could not resolve Signal Layer notification recipients:", error.message);
+    return;
+  }
+  const profiles = (data || []) as ToolAccessProfile[];
+  const actor = profiles.find((profile) => profile.id === userId);
+  const actorName = String(actor?.first_name || actor?.full_name || "Ein Teammitglied").trim();
+  const recipients = profiles.filter((profile) =>
+    profile.id !== userId
+    && !String(profile.email || "").toLowerCase().startsWith("claude-debug@")
+    && profileCanAccessSignalLayer(profile)
+  );
+  if (!recipients.length) return;
+  const notifications = recipients.map((profile) => ({
+    user_id: profile.id,
+    type: "signal_layer_settings",
+    title: "Signal Layer aktualisiert",
+    message: `${actorName} hat ${change} geändert.`,
+    meta: { tool_id: "signal-layer", changed_by: userId, change },
+  }));
+  const { error: notificationError } = await admin.schema("recruiting").from("notifications").insert(notifications);
+  if (notificationError) console.error("Could not create Signal Layer notifications:", notificationError.message);
+}
+
+const SETTINGS_ACTIONS = new Set([
   "update_pipeline_settings",
+  "add_source", "update_source", "set_source_login", "delete_source",
+  "update_taxonomy",
+  "add_offering", "update_offering", "delete_offering",
+  "add_keyword", "update_keyword", "delete_keyword",
+]);
+
+const ADMIN_ACTIONS = new Set([
   "start_classification_backfill",
   "resume_classification_backfill",
   "reformat_recent_articles",
@@ -172,17 +232,6 @@ const EDITOR_ACTIONS = new Set([
   "classify_test_article",
   "reanalyze_with_configured_model",
   "preview_pipeline_impact",
-  "add_source",
-  "update_source",
-  "set_source_login",
-  "delete_source",
-  "update_taxonomy",
-  "add_offering",
-  "update_offering",
-  "delete_offering",
-  "add_keyword",
-  "update_keyword",
-  "delete_keyword",
   "run_crawl",
   // Simple mode re-analyses stored articles and spends AI budget, so it needs
   // the same clearance as a crawl. Reading simple results stays open to readers.
@@ -3766,7 +3815,16 @@ Deno.serve(async (req: Request) => {
   // bestätigte Neurecherche schreibt jedoch einen neuen Stand und verbraucht
   // KI-Budget; dafür gilt dieselbe Rolle wie für andere Analyseaufrufe.
   const companyProfileRefresh = action === "get_company_profile" && Boolean(body.refresh);
-  if (auth && (ADMIN_ACTIONS.has(action) || EDITOR_ACTIONS.has(action) || companyProfileRefresh)) {
+  if (auth && SETTINGS_ACTIONS.has(action)) {
+    try {
+      if (!(await currentSignalLayerAccess(auth.userId))) {
+        return errorResponse(origin, "Signal Layer access required", 403);
+      }
+    } catch (error) {
+      console.error(error);
+      return errorResponse(origin, "Could not verify Signal Layer access", 500);
+    }
+  } else if (auth && (ADMIN_ACTIONS.has(action) || EDITOR_ACTIONS.has(action) || companyProfileRefresh)) {
     let role: AppRole | null;
     try {
       role = await currentAppRole(auth.userId);
@@ -4191,6 +4249,7 @@ Deno.serve(async (req: Request) => {
         }).eq("id", "active").select("config, version, updated_at").single();
         if (error) return errorResponse(origin, error.message, 500);
         pipelineConfigCache = { value: requested, at: Date.now() };
+        await notifySignalLayerSettingsChanged(auth!.userId, "die Pipeline-Einstellungen");
         return corsResponse(origin, {
           settings: {
             ...data,
@@ -4378,6 +4437,7 @@ Deno.serve(async (req: Request) => {
           updated_by: auth!.userId,
         }).select().single();
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "die Quellen-Einstellungen");
         return corsResponse(origin, { source: data });
       }
 
@@ -4400,6 +4460,7 @@ Deno.serve(async (req: Request) => {
         const { data, error } = await admin.schema("signal_layer").from("sources")
           .update(updates).eq("id", id).select().single();
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "die Quellen-Einstellungen");
         return corsResponse(origin, { source: data });
       }
 
@@ -4432,6 +4493,7 @@ Deno.serve(async (req: Request) => {
           .update({ crawl_config: crawlConfig, updated_at: new Date().toISOString(), updated_by: auth!.userId })
           .eq("id", id).select().single();
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "einen Quellen-Zugang");
         return corsResponse(origin, { source: data });
       }
 
@@ -4441,6 +4503,7 @@ Deno.serve(async (req: Request) => {
         const admin = getAdminClient();
         const { error } = await admin.schema("signal_layer").from("sources").delete().eq("id", id);
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "die Quellen-Einstellungen");
         return corsResponse(origin, { deleted: id });
       }
 
@@ -4476,6 +4539,7 @@ Deno.serve(async (req: Request) => {
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from(kind).update(updates).eq("id", id).select().single();
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "die Themen und Regeln");
         return corsResponse(origin, { item: data });
       }
 
@@ -4496,6 +4560,7 @@ Deno.serve(async (req: Request) => {
           .insert({ id: id.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_"), pillar, label: label.trim(), description: description.trim(), sort_order: Number(sort_order || 0) })
           .select().single();
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "das ROOTS-Leistungsportfolio");
         return corsResponse(origin, { offering: data });
       }
 
@@ -4515,6 +4580,7 @@ Deno.serve(async (req: Request) => {
         const { data, error } = await admin.schema("signal_layer").from("roots_offerings")
           .update(updates).eq("id", id).select().single();
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "das ROOTS-Leistungsportfolio");
         return corsResponse(origin, { offering: data });
       }
 
@@ -4524,6 +4590,7 @@ Deno.serve(async (req: Request) => {
         const admin = getAdminClient();
         const { error } = await admin.schema("signal_layer").from("roots_offerings").delete().eq("id", id);
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "das ROOTS-Leistungsportfolio");
         return corsResponse(origin, { deleted: id });
       }
 
@@ -4548,6 +4615,7 @@ Deno.serve(async (req: Request) => {
           created_by: auth!.userId, updated_by: auth!.userId,
         }).select().single();
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "die Keyword-Regeln");
         return corsResponse(origin, { keyword: data });
       }
 
@@ -4563,6 +4631,7 @@ Deno.serve(async (req: Request) => {
         const { data, error } = await admin.schema("signal_layer").from("keywords")
           .update(updates).eq("id", id).select().single();
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "die Keyword-Regeln");
         return corsResponse(origin, { keyword: data });
       }
 
@@ -4572,6 +4641,7 @@ Deno.serve(async (req: Request) => {
         const admin = getAdminClient();
         const { error } = await admin.schema("signal_layer").from("keywords").delete().eq("id", id);
         if (error) return errorResponse(origin, error.message, 500);
+        await notifySignalLayerSettingsChanged(auth!.userId, "die Keyword-Regeln");
         return corsResponse(origin, { deleted: id });
       }
 
