@@ -20,7 +20,7 @@ export const COMPANY_PROFILE_MODEL = "gemini-2.5-flash";
 /** Obergrenze je Verarbeitungspaket, damit ein Lauf nicht in Recherche umkippt. */
 export const COMPANY_PROFILE_MAX_PER_BATCH = 2;
 export const COMPANY_PROFILE_MAX_OUTPUT_TOKENS = 10_000;
-export const COMPANY_LOGO_LOOKUP_VERSION = "2026-08-worldvectorlogo-v2";
+export const COMPANY_LOGO_LOOKUP_VERSION = "2026-08-verified-logo-sources-v3";
 
 /** Die Karten des Steckbriefs, in der Reihenfolge der Anzeige. */
 export const COMPANY_PROFILE_SECTIONS = [
@@ -294,7 +294,12 @@ type VerifiedLogo = {
 
 const GENERIC_COMPANY_WORDS = new Set([
   "ag", "co", "company", "corporation", "deutschland", "gmbh", "group",
-  "gruppe", "holding", "inc", "kg", "markt", "plc", "se",
+  "gruppe", "holding", "inc", "incorporated", "kg", "markt", "plc", "se",
+]);
+
+const GENERIC_LOGO_TITLE_WORDS = new Set([
+  ...GENERIC_COMPANY_WORDS,
+  "aktuell", "current", "datei", "file", "logo", "new", "neu", "official", "svg",
 ]);
 
 function brandLogoKey(value: string, dropLogoWord = false): string {
@@ -302,6 +307,18 @@ function brandLogoKey(value: string, dropLogoWord = false): string {
     .toLowerCase().replace(/&/g, " und ").split(/[^a-z0-9]+/)
     .filter((word) => word && !GENERIC_COMPANY_WORDS.has(word) && (!dropLogoWord || word !== "logo"))
     .join("");
+}
+
+function commonsLogoTitleKey(value: string): string {
+  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/&/g, " und ").split(/[^a-z0-9]+/)
+    .filter((word) => word && !/^\d{2,4}$/.test(word) && !GENERIC_LOGO_TITLE_WORDS.has(word))
+    .join("");
+}
+
+export function commonsLogoTitleMatchesCompany(company: string, title: string): boolean {
+  const companyKey = brandLogoKey(company);
+  return companyKey.length >= 3 && commonsLogoTitleKey(title) === companyKey;
 }
 
 export function worldVectorLogoMatchesCompany(company: string, source: URL, asset: URL): boolean {
@@ -399,6 +416,72 @@ async function verifyLogoCandidate(company: string, parsed: Record<string, unkno
     logo_source_kind: kind,
     logo_format: actual,
   };
+}
+
+type CommonsPage = {
+  title?: string;
+  imageinfo?: Array<{ url?: string; mime?: string }>;
+};
+
+/**
+ * Kostenlose, deterministische Logo-Suche. Es wird nur ein Commons-Dateiname
+ * akzeptiert, dessen bereinigte Wörter exakt dem Unternehmensnamen entsprechen.
+ * Dadurch fallen Untermarken wie "REWE To Go" oder "Henkel Loctite" heraus.
+ */
+export async function researchWikimediaLogo(company: string): Promise<VerifiedLogo | null> {
+  const params = new URLSearchParams({
+    action: "query",
+    generator: "search",
+    gsrsearch: `${company} logo`,
+    gsrnamespace: "6",
+    gsrlimit: "12",
+    prop: "imageinfo",
+    iiprop: "url|mime",
+    format: "json",
+    origin: "*",
+  });
+  let response: Response;
+  try {
+    response = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
+      signal: AbortSignal.timeout(12_000),
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "ROOTS-Signal-Layer/1.0 (verified company logo; hello@roots-consultants.com)",
+      },
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  const payload = await response.json() as { query?: { pages?: Record<string, CommonsPage> } };
+  const candidates = Object.values(payload.query?.pages || {})
+    .filter((page) => commonsLogoTitleMatchesCompany(company, String(page.title || "")))
+    .map((page) => {
+      const info = page.imageinfo?.[0];
+      const mime = String(info?.mime || "").toLowerCase();
+      const format: CompanyProfileLogoFormat | null = mime === "image/svg+xml" ? "svg"
+        : mime === "image/png" ? "png"
+        : mime === "image/webp" ? "webp"
+        : mime === "image/jpeg" ? "jpg" : null;
+      return { page, info, format, score: format === "svg" ? 2 : format ? 1 : 0 };
+    })
+    .filter((entry) => entry.format && entry.info?.url)
+    .sort((a, b) => b.score - a.score);
+
+  for (const candidate of candidates) {
+    const title = String(candidate.page.title || "").replace(/ /g, "_");
+    const verified = await verifyLogoCandidate(company, {
+      logo_url: candidate.info?.url,
+      logo_source_url: `https://commons.wikimedia.org/wiki/${encodeURIComponent(title)}`,
+      logo_source_kind: "wikimedia_commons",
+      logo_format: candidate.format,
+    });
+    if (verified) return verified;
+  }
+  return null;
 }
 
 /**

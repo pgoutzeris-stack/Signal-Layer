@@ -81,6 +81,7 @@ import {
   companyProfileIsUsable,
   researchCompanyLogo,
   researchCompanyProfile,
+  researchWikimediaLogo,
 } from "./company-profile.ts";
 
 // ---------------------------------------------------------------------------
@@ -410,7 +411,10 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
     );
     if (!profile.logo_url) {
       try {
-        const focused = await researchCompanyLogo({ apiKey, model: COMPANY_PROFILE_MODEL }, name);
+        const commonsLogo = await researchWikimediaLogo(name);
+        const focused = commonsLogo
+          ? { logo: commonsLogo, usage: { prompt_tokens: 0, output_tokens: 0, total_tokens: 0 } }
+          : await researchCompanyLogo({ apiKey, model: COMPANY_PROFILE_MODEL }, name);
         if (focused.logo) {
           profile.logo_url = focused.logo.logo_url;
           profile.logo_source_url = focused.logo.logo_source_url;
@@ -492,11 +496,18 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
   const { data: existing } = await admin.schema("signal_layer").from("company_profiles")
     .select("company, logo_url, logo_lookup_version").eq("company", name).maybeSingle();
   if (!existing || existing.logo_url || existing.logo_lookup_version === COMPANY_LOGO_LOOKUP_VERSION) return "fresh";
-  let apiKey = "";
-  try { apiKey = await getGeminiKey(); } catch { /* ohne Schlüssel kein Hintergrundlauf */ }
-  if (!apiKey) return "skipped: kein Gemini-Schlüssel";
   try {
-    const { logo, usage } = await researchCompanyLogo({ apiKey, model: COMPANY_PROFILE_MODEL }, name);
+    let logo = await researchWikimediaLogo(name);
+    let usage = { prompt_tokens: 0, output_tokens: 0, total_tokens: 0 };
+    if (!logo) {
+      let apiKey = "";
+      try { apiKey = await getGeminiKey(); } catch { /* Commons bleibt auch ohne Schlüssel nutzbar */ }
+      if (apiKey) {
+        const focused = await researchCompanyLogo({ apiKey, model: COMPANY_PROFILE_MODEL }, name);
+        logo = focused.logo;
+        usage = focused.usage;
+      }
+    }
     const checkedAt = new Date().toISOString();
     await admin.schema("signal_layer").from("company_profiles").update({
       logo_url: logo?.logo_url || null,
@@ -507,19 +518,21 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
       logo_lookup_version: COMPANY_LOGO_LOOKUP_VERSION,
       updated_at: checkedAt,
     }).eq("company", name);
-    await admin.schema("signal_layer").from("ai_usage_events").insert({
-      operation: "company_logo",
-      model: COMPANY_PROFILE_MODEL,
-      status: "success",
-      attempt: 1,
-      input_tokens: usage.prompt_tokens,
-      output_tokens: usage.output_tokens,
-      total_tokens: usage.total_tokens,
-      estimated_cost_usd: modelCostUsd(COMPANY_PROFILE_MODEL, {
-        input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
-        thinking: 0, total: usage.total_tokens,
-      }),
-    }).then(({ error }) => { if (error) console.warn("Logo-Kosten nicht protokolliert:", error.message); });
+    if (usage.total_tokens > 0) {
+      await admin.schema("signal_layer").from("ai_usage_events").insert({
+        operation: "company_logo",
+        model: COMPANY_PROFILE_MODEL,
+        status: "success",
+        attempt: 1,
+        input_tokens: usage.prompt_tokens,
+        output_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+        estimated_cost_usd: modelCostUsd(COMPANY_PROFILE_MODEL, {
+          input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
+          thinking: 0, total: usage.total_tokens,
+        }),
+      }).then(({ error }) => { if (error) console.warn("Logo-Kosten nicht protokolliert:", error.message); });
+    }
     return logo ? "written" : "checked: kein eindeutiges Logo";
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
