@@ -5456,15 +5456,26 @@ Deno.serve(async (req: Request) => {
         if (slice.length === 0) {
           const { data: finished } = await admin.schema("signal_layer").from("simple_runs").update({
             status: "done", finished_at: new Date().toISOString(), last_progress_at: new Date().toISOString(),
-          }).eq("id", run.id).select("*").single();
+          }).eq("id", run.id).eq("status", "running").select("*").maybeSingle();
           return corsResponse(origin, { run: finished || run, done: true });
         }
 
-        // Optimistic claim on the current cursor: if the self-call chain and the
-        // watchdog fire at the same time, only one of them pays for the batch.
+        // Atomic short lease: both the self-call chain and the watchdog can
+        // arrive with the same cursor. Changing only last_progress_at was not a
+        // lock, so both workers used to pay for the same AI call. PostgreSQL
+        // re-checks this lease predicate after a concurrent row update.
+        const processingToken = crypto.randomUUID();
+        const leaseStartedAt = new Date().toISOString();
+        const leaseUntil = new Date(Date.now() + 3 * 60_000).toISOString();
         const { data: claimed } = await admin.schema("signal_layer").from("simple_runs")
-          .update({ last_progress_at: new Date().toISOString() })
-          .eq("id", run.id).eq("cursor", run.cursor).eq("status", "running").select("id");
+          .update({
+            processing_token: processingToken,
+            processing_until: leaseUntil,
+            last_progress_at: leaseStartedAt,
+          })
+          .eq("id", run.id).eq("cursor", run.cursor).eq("status", "running")
+          .or(`processing_until.is.null,processing_until.lt.${leaseStartedAt}`)
+          .select("id");
         if (!claimed || claimed.length === 0) return corsResponse(origin, { run, done: false, skipped: "already_running" });
 
         const { data: articles, error: articlesError } = await admin.schema("signal_layer").from("articles")
@@ -5526,7 +5537,7 @@ Deno.serve(async (req: Request) => {
             current_article: String(article.title || article.url || "").slice(0, 300),
             current_position: run.cursor + consumed,
             last_progress_at: new Date().toISOString(),
-          }).eq("id", run.id);
+          }).eq("id", run.id).eq("status", "running").eq("processing_token", processingToken);
           const prepared = await ensureSimpleArticleText(admin, article);
           const result = await classifySimpleArticle(deps, prepared);
           if (simpleResultUsedAi(result)) aiCalls += 1;
@@ -5590,7 +5601,7 @@ Deno.serve(async (req: Request) => {
             signal_count: run.signal_count + signals,
             rejected_count: run.rejected_count + (rows.length - signals),
             last_progress_at: new Date().toISOString(),
-          }).eq("id", run.id);
+          }).eq("id", run.id).eq("status", "running").eq("processing_token", processingToken);
         }
         // A batch whose AI calls all failed technically (spending cap, empty
         // balance, rate limit, timeout) must not look like a finished check.
@@ -5619,7 +5630,9 @@ Deno.serve(async (req: Request) => {
             error_message: "KI-Prüfung nicht möglich (siehe ai_usage_events). Lauf gestoppt, die betroffenen Artikel bleiben unbewertet.",
             last_progress_at: new Date().toISOString(),
             finished_at: new Date().toISOString(),
-          }).eq("id", run.id);
+            processing_token: null,
+            processing_until: null,
+          }).eq("id", run.id).eq("status", "running").eq("processing_token", processingToken);
           return corsResponse(origin, { run: { ...run, status: "error" }, done: true, ai_unavailable: true });
         }
 
@@ -5635,8 +5648,14 @@ Deno.serve(async (req: Request) => {
           last_progress_at: new Date().toISOString(),
           current_article: done ? null : undefined,
           finished_at: done ? new Date().toISOString() : null,
-        }).eq("id", run.id).select("*").single();
+          processing_token: null,
+          processing_until: null,
+        }).eq("id", run.id).eq("status", "running").eq("processing_token", processingToken)
+          .select("*").maybeSingle();
         if (updateError) return errorResponse(origin, updateError.message, 500);
+        // A newer run may have cancelled this one while its AI request was in
+        // flight. Never revive it and never start another self-call.
+        if (!updated) return corsResponse(origin, { run, done: true, skipped: "cancelled_during_batch" });
         // Steckbriefe der erkannten Tier-1-Unternehmen nachziehen. Bewusst nach
         // dem Fortschritts-Update: scheitert die Recherche, ist der Lauf trotzdem
         // sauber weitergezaehlt.
