@@ -34,6 +34,9 @@ const state = {
 const signalViewState = { articleTypes: [], sources: [], sort: "recommended" };
 const archiveViewState = { articleTypes: [], sources: [], sort: "recommended" };
 const simpleViewState = { articleTypes: [], sources: [], sort: "recommended" };
+const signalCompanyFilterState = { kind: "tier1", selected: [] };
+const signalCompanyFilterIndex = { tier1: [], company: [] };
+let signalSelectedVersion = "";
 
 // Maps a filter <select> id to its persistent selection array (mutated in
 // place so closures never hold a stale reference).
@@ -371,7 +374,15 @@ function cacheEls() {
   els.findingsListSales = document.getElementById("findings-list-sales");
   els.reviewList = document.getElementById("results-review-list");
   els.signalArticleTypeFilter = document.getElementById("signal-article-type-filter");
+  els.signalCompanyFilter = document.getElementById("signal-company-filter");
+  els.signalCompanyFilterTrigger = document.getElementById("signal-company-filter-trigger");
+  els.signalCompanyFilterLabel = document.getElementById("signal-company-filter-label");
+  els.signalCompanyFilterMenu = document.getElementById("signal-company-filter-menu");
+  els.signalCompanyFilterHelp = document.getElementById("signal-company-filter-help");
+  els.signalCompanyFilterOptions = document.getElementById("signal-company-filter-options");
+  els.signalCompanyFilterReset = document.getElementById("signal-company-filter-reset");
   els.signalSourceFilter = document.getElementById("signal-source-filter");
+  els.signalVersion = document.getElementById("signal-version");
   els.signalSort = document.getElementById("signal-sort");
   els.marketingCount = document.getElementById("marketing-count");
   els.salesCount = document.getElementById("sales-count");
@@ -1402,11 +1413,72 @@ function isToday(iso) {
     && date.getDate() === now.getDate();
 }
 
-function articleCompanies(article) {
-  const candidates = [...(article.matched_companies || []), article.primary_company].filter(Boolean);
-  return candidates.filter((company, index) =>
-    candidates.findIndex((candidate) => candidate.toLowerCase() === company.toLowerCase()) === index
+function uniqueCompanyNames(values) {
+  return values.filter(Boolean).filter((name, index, all) =>
+    all.findIndex((candidate) => String(candidate).toLocaleLowerCase("de-DE") === String(name).toLocaleLowerCase("de-DE")) === index
   );
+}
+
+// Advanced speichert Tier-1-Treffer in matched_companies. Weitere Unternehmen
+// kommen nur dann in "Company", wenn die KI sie als echten Gegenstand und nicht
+// lediglich als beiläufige Erwähnung eingeordnet hat.
+function advancedCompanyGroups(article = {}) {
+  const tier1 = uniqueCompanyNames([...(article.matched_companies || [])]);
+  const tier1Keys = new Set(tier1.map((name) => String(name).toLocaleLowerCase("de-DE")));
+  const company = uniqueCompanyNames([
+    article.primary_company,
+    ...(article.company_mentions || [])
+      .filter((mention) => mention?.name && mention.role !== "incidental_mention")
+      .map((mention) => mention.name),
+  ])
+    .filter((name) => !tier1Keys.has(String(name).toLocaleLowerCase("de-DE")));
+  return { tier1, company };
+}
+
+function advancedCompanyMatches(finding) {
+  const selected = signalCompanyFilterState.selected;
+  if (selected.length === 0) return true;
+  const names = advancedCompanyGroups(finding.article)[signalCompanyFilterState.kind];
+  return names.some((name) => selected.includes(name));
+}
+
+function renderAdvancedCompanyFilter() {
+  if (!els.signalCompanyFilterOptions) return;
+  const kind = signalCompanyFilterState.kind;
+  const options = signalCompanyFilterIndex[kind];
+  els.signalCompanyFilter.querySelectorAll("[data-advanced-company-class]").forEach((button) => {
+    const active = button.dataset.advancedCompanyClass === kind;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  els.signalCompanyFilterHelp.textContent = kind === "tier1"
+    ? "Tier-1-Unternehmen mehrfach auswählen"
+    : "Weitere erkannte Unternehmen mehrfach auswählen";
+  els.signalCompanyFilterLabel.textContent = signalCompanyFilterState.selected.length === 0
+    ? "Unternehmen"
+    : signalCompanyFilterState.selected.length === 1
+      ? signalCompanyFilterState.selected[0]
+      : `${signalCompanyFilterState.selected.length} Unternehmen`;
+  els.signalCompanyFilterOptions.innerHTML = options.length
+    ? options.map((name) => {
+      const selected = signalCompanyFilterState.selected.includes(name);
+      return `<button type="button" class="company-filter-option${selected ? " selected" : ""}" data-advanced-company-option="${escapeHtml(name)}" aria-pressed="${selected}">
+        <i class="fa-${selected ? "solid fa-square-check" : "regular fa-square"}"></i><span>${escapeHtml(name)}</span>
+      </button>`;
+    }).join("")
+    : `<div class="company-filter-empty">Für diese Klasse wurden im geladenen Bestand noch keine Unternehmen erkannt.</div>`;
+}
+
+function refreshAdvancedCompanyFilter() {
+  const all = [...findingsByTrack.marketing, ...findingsByTrack.sales];
+  for (const kind of ["tier1", "company"]) {
+    signalCompanyFilterIndex[kind] = uniqueCompanyNames(all.flatMap((finding) =>
+      advancedCompanyGroups(finding.article)[kind]
+    )).sort((a, b) => a.localeCompare(b, "de"));
+  }
+  const allowed = new Set(signalCompanyFilterIndex[signalCompanyFilterState.kind]);
+  signalCompanyFilterState.selected = signalCompanyFilterState.selected.filter((name) => allowed.has(name));
+  renderAdvancedCompanyFilter();
 }
 
 function findingConfidence(finding) {
@@ -1473,7 +1545,7 @@ function visibleFindings(track) {
     const article = finding.article || {};
     const articleTypeMatches = typeSel.length === 0 || typeSel.includes(article.article_type);
     const sourceMatches = sourceSel.length === 0 || sourceSel.includes(findingSourceName(finding));
-    return articleTypeMatches && sourceMatches;
+    return articleTypeMatches && sourceMatches && advancedCompanyMatches(finding);
   });
   return [...filtered].sort((a, b) => {
     if (signalViewState.sort === "newest") return findingDate(b) - findingDate(a) || findingConfidence(b) - findingConfidence(a);
@@ -1501,7 +1573,7 @@ function renderFindings(track) {
     listEl.innerHTML = findings.map((f) => {
       const article = f.article || {};
       const articleTypeLabel = ARTICLE_TYPE_LABELS[article.article_type] || article.article_type || "Sonstiger Inhalt";
-      const companies = articleCompanies(article);
+      const companyGroups = advancedCompanyGroups(article);
       const source = Array.isArray(article.source) ? article.source[0] : article.source;
       const confidence = formatConfidence(f.confidence ?? 0);
       const relevanceLabel = track === "sales" ? "Sales-Relevanz" : "Marketing-Relevanz";
@@ -1534,7 +1606,8 @@ function renderFindings(track) {
             ${article.matched_offering_reasoning ? `<div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escapeText(article.matched_offering_reasoning)}</p></div>` : ""}
           </div>` : ""}
           <div class="finding-meta">
-            ${companies.map((c) => `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
+            ${companyGroups.tier1.map((c) => `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
+            ${companyGroups.company.map((c) => `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
             ${source?.company ? `<span class="tag tag--source" title="Quelle: ${escapeHtml(source.company)}"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
           </div>
@@ -1597,14 +1670,29 @@ async function loadFindings(track) {
   const listEl = track === "marketing" ? els.findingsListMarketing : els.findingsListSales;
   if (listEl) listEl.innerHTML = LOADER_HTML;
   try {
-    const { findings } = await callApi("list_findings", { track, limit: 250 });
+    const versionFilter = signalSelectedVersion ? { prompt_version: signalSelectedVersion } : {};
+    const { findings } = await callApi("list_findings", { track, limit: 250, ...versionFilter });
     findingsByTrack[track] = findings || [];
     refreshSignalSourceOptions();
     refreshSignalArticleTypeOptions();
+    refreshAdvancedCompanyFilter();
     renderFindings(track === "marketing" ? "sales" : "marketing");
     renderFindings(track);
   } catch (err) {
     listEl.innerHTML = `<div class="track-card-empty">Fehler beim Laden: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function loadAdvancedVersions() {
+  try {
+    const { versions, current } = await callApi("list_advanced_versions");
+    const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
+    els.signalVersion.innerHTML = `<option value="current">Aktueller Stand (alle Versionen)</option>${(versions || [])
+      .map((entry) => `<option value="${escapeHtml(entry.version)}" ${entry.version === signalSelectedVersion ? "selected" : ""}>${entry.version === current ? "Aktive Version" : "Version"} ${escapeHtml(entry.version)} · ${Number(entry.article_count || 0).toLocaleString("de-DE")} Artikel · ${escapeHtml(date(entry.last_seen_at))}</option>`)
+      .join("")}`;
+    enhanceHeaderSelects();
+  } catch (_error) {
+    /* Aktueller Stand bleibt auch ohne historische Liste nutzbar. */
   }
 }
 
@@ -2867,9 +2955,15 @@ function renderSimpleHeaderStatus() {
     ? Number(simpleForecast.analysed_articles || 0).toLocaleString("de-DE")
     : "–";
   byId("simple-cost-model").textContent = simpleForecast?.model_label || run?.model || "Nur Simple-KI-Aufrufe";
-  byId("simple-cost-detail").textContent = simpleForecast
+  const simpleForecastText = simpleForecast
     ? `${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens · ${Number(simpleForecast.remaining_articles || 0).toLocaleString("de-DE")} Artikel offen · Hochrechnung aus den echten Kosten dieses Simple-Laufs.`
+    : "";
+  byId("simple-cost-detail").textContent = simpleForecast
+    ? simpleForecastText
     : "Noch keine Kostendaten für einen Simple-Lauf.";
+  const forecastPill = byId("simple-forecast-pill");
+  forecastPill.hidden = !simpleForecast;
+  byId("simple-forecast-pill-text").textContent = simpleForecastText;
 
   const poolTotal = Number(run?.total_count || 0);
   const newest = run?.pool_newest_at || null;
@@ -3377,6 +3471,55 @@ function bindUi() {
   [els.signalArticleTypeFilter, els.signalSourceFilter, els.signalSort].forEach((control) =>
     control.addEventListener("change", updateSignalView)
   );
+  els.signalCompanyFilterTrigger?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    document.querySelectorAll(".roots-select.open").forEach((item) => item !== els.signalCompanyFilter && item.classList.remove("open"));
+    const open = els.signalCompanyFilter.classList.toggle("open");
+    els.signalCompanyFilterTrigger.setAttribute("aria-expanded", String(open));
+  });
+  els.signalCompanyFilterMenu?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const classButton = event.target.closest("[data-advanced-company-class]");
+    if (classButton) {
+      const next = classButton.dataset.advancedCompanyClass;
+      if (next !== signalCompanyFilterState.kind) {
+        signalCompanyFilterState.kind = next;
+        signalCompanyFilterState.selected = [];
+        renderAdvancedCompanyFilter();
+        updateSignalView();
+      }
+      return;
+    }
+    const option = event.target.closest("[data-advanced-company-option]");
+    if (!option) return;
+    const name = option.dataset.advancedCompanyOption;
+    const index = signalCompanyFilterState.selected.indexOf(name);
+    if (index >= 0) signalCompanyFilterState.selected.splice(index, 1);
+    else signalCompanyFilterState.selected.push(name);
+    renderAdvancedCompanyFilter();
+    updateSignalView();
+  });
+  els.signalCompanyFilterReset?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    signalCompanyFilterState.selected = [];
+    renderAdvancedCompanyFilter();
+    updateSignalView();
+  });
+  els.signalCompanyFilter?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    els.signalCompanyFilter.classList.remove("open");
+    els.signalCompanyFilterTrigger.setAttribute("aria-expanded", "false");
+  });
+  document.addEventListener("click", () => {
+    els.signalCompanyFilter?.classList.remove("open");
+    els.signalCompanyFilterTrigger?.setAttribute("aria-expanded", "false");
+  });
+  els.signalVersion?.addEventListener("change", () => {
+    signalSelectedVersion = els.signalVersion.value === "current" ? "" : els.signalVersion.value;
+    els.findingsListMarketing.innerHTML = LOADER_HTML;
+    els.findingsListSales.innerHTML = LOADER_HTML;
+    void Promise.all([loadFindings("marketing"), loadFindings("sales")]);
+  });
   const openCardDetail = (event) => {
     if (event.target.closest("[data-audit-article-id]")) return;
     const card = event.target.closest("[data-article-id]");
@@ -3711,6 +3854,7 @@ export function initApp(client) {
     applyPipelineMode(storedPipelineMode(), { persist: false });
   }
   void loadLastRun();
+  void loadAdvancedVersions();
   void loadFindings("marketing");
   void loadFindings("sales");
   void loadReviewArticles();

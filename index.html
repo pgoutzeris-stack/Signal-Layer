@@ -350,6 +350,10 @@
   body.cost-detail-open .crawl-status-popover { opacity: 1; visibility: visible; pointer-events: auto; }
   .crawl-trigger-wrap:has(.crawl-dropdown.show) .crawl-status-popover { opacity: 0; visibility: hidden; }
   .crawl-status-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 2px 9px; }
+  .simple-forecast-pill { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 9px; padding: 8px 10px; border: 1px solid #bfdbfe; border-radius: 10px; background: var(--brand-light); color: var(--brand-dark); font-size: .61rem; font-weight: 700; line-height: 1.4; }
+  .simple-forecast-pill[hidden] { display: none; }
+  .simple-forecast-pill i { flex: none; margin-top: 2px; }
+  .simple-forecast-pill span { min-width: 0; overflow-wrap: anywhere; }
   .crawl-status-kicker { display: block; margin-bottom: 3px; color: var(--muted); font-size: .58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
   .crawl-status-popover strong { display: block; color: var(--ink); font-size: .9rem; line-height: 1.2; }
   .crawl-live-state { display: inline-flex; align-items: center; gap: 5px; color: var(--brand-dark); font-size: .65rem; font-weight: 750; white-space: nowrap; }
@@ -1986,13 +1990,29 @@
 
         <section class="app-view" id="view-results">
         <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
-          <span class="signal-toolbar-label"><i class="fa-solid fa-sliders"></i> Ansicht</span>
+          <span class="signal-toolbar-label"><i class="fa-solid fa-broadcast-tower"></i> Signal Layer</span>
           <div class="signal-toolbar-controls">
             <select class="signal-toolbar-select" id="signal-article-type-filter" aria-label="Artikeltyp filtern">
               <option value="all">Alle Artikeltypen</option>
             </select>
+            <div class="roots-select company-filter" id="signal-company-filter">
+              <button type="button" class="roots-select-trigger" id="signal-company-filter-trigger" aria-haspopup="dialog" aria-expanded="false">
+                <span id="signal-company-filter-label">Unternehmen</span><i class="fa-solid fa-chevron-down"></i>
+              </button>
+              <div class="roots-select-menu" id="signal-company-filter-menu" role="dialog" aria-label="Unternehmen filtern">
+                <div class="company-filter-tabs" role="tablist" aria-label="Unternehmensklasse">
+                  <button type="button" class="company-filter-tab active" data-advanced-company-class="tier1" role="tab" aria-selected="true">Tier 1</button>
+                  <button type="button" class="company-filter-tab" data-advanced-company-class="company" role="tab" aria-selected="false">Company</button>
+                </div>
+                <div class="company-filter-help"><span id="signal-company-filter-help">Tier-1-Unternehmen mehrfach auswählen</span><button type="button" class="company-filter-reset" id="signal-company-filter-reset">Auswahl löschen</button></div>
+                <div class="company-filter-grid" id="signal-company-filter-options"></div>
+              </div>
+            </div>
             <select class="signal-toolbar-select" id="signal-source-filter" aria-label="Quelle filtern">
               <option value="all">Alle Quellen</option>
+            </select>
+            <select class="signal-toolbar-select" id="signal-version" aria-label="Advanced-Regelstand filtern">
+              <option value="current">Aktueller Stand (alle Versionen)</option>
             </select>
             <select class="signal-toolbar-select" id="signal-sort" aria-label="Signale sortieren">
               <option value="recommended">Empfohlen</option>
@@ -2022,7 +2042,7 @@
         <section class="app-view" id="view-archive">
           <div class="view-header"><div><h2>Archiv <span class="track-count" id="archive-count">0</span></h2></div></div>
           <nav class="signal-toolbar" aria-label="Archiv sortieren und filtern">
-            <span class="signal-toolbar-label"><i class="fa-solid fa-sliders"></i> Ansicht</span>
+            <span class="signal-toolbar-label"><i class="fa-solid fa-broadcast-tower"></i> Signal Layer</span>
             <div class="signal-toolbar-controls">
               <select class="signal-toolbar-select" id="archive-article-type-filter" aria-label="Artikeltyp filtern"><option value="all">Alle Artikeltypen</option></select>
               <select class="signal-toolbar-select" id="archive-source-filter" aria-label="Quelle filtern"><option value="all">Alle Quellen</option></select>
@@ -2048,7 +2068,7 @@
         <section class="app-view" id="view-simple-archive">
           <div class="view-header"><div><h2>Archiv <span class="track-count" id="simple-archive-count">0</span></h2></div></div>
           <nav class="signal-toolbar" aria-label="Archiv sortieren und filtern">
-            <span class="signal-toolbar-label"><i class="fa-solid fa-sliders"></i> Ansicht</span>
+            <span class="signal-toolbar-label"><i class="fa-solid fa-broadcast-tower"></i> Signal Layer</span>
             <div class="signal-toolbar-controls">
               <select class="signal-toolbar-select" id="simple-archive-reason-filter" aria-label="Grund filtern"><option value="all">Alle Gründe</option></select>
               <select class="signal-toolbar-select" id="simple-archive-source-filter" aria-label="Quelle filtern"><option value="all">Alle Quellen</option></select>
@@ -2062,7 +2082,7 @@
         <!-- Einfacher Modus: Ergebnisse -->
         <section class="app-view" id="view-simple-results">
           <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
-            <span class="signal-toolbar-label"><i class="fa-solid fa-sliders"></i> Ansicht</span>
+            <span class="signal-toolbar-label"><i class="fa-solid fa-broadcast-tower"></i> Signal Layer</span>
             <div class="signal-toolbar-controls">
               <select class="signal-toolbar-select" id="simple-article-type-filter" aria-label="Artikeltyp filtern">
                 <option value="all">Alle Artikeltypen</option>
@@ -2101,6 +2121,7 @@
                   <div><span class="crawl-status-kicker">Letzte Simple-Analyse</span><strong id="simple-status-time">--:--</strong></div>
                   <span class="crawl-live-state" id="simple-live-state">Bereit</span>
                 </div>
+                <div class="simple-forecast-pill" id="simple-forecast-pill" hidden><i class="fa-solid fa-coins"></i><span id="simple-forecast-pill-text"></span></div>
                 <div class="backfill-status">
                   <div class="article-live-progress" id="simple-article-progress" hidden>
                     <div class="backfill-status-row"><span>Artikelprüfung</span><b id="simple-progress-text">0 / 0</b></div>
@@ -2339,7 +2360,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260804-2035';
+  import { initApp } from './app.js?v=20260804-2100';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

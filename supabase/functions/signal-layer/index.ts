@@ -5927,9 +5927,25 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      case "list_advanced_versions": {
+        const { data, error } = await getAdminClient().schema("signal_layer")
+          .rpc("list_advanced_pipeline_versions");
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, {
+          current: CLASSIFIER_PROMPT_VERSION,
+          versions: data || [],
+        });
+      }
+
       case "list_findings": {
-        const { track, limit } = body as { track?: string; limit?: number };
+        const { track, limit, prompt_version: requestedPromptVersion } = body as {
+          track?: string;
+          limit?: number;
+          prompt_version?: string;
+        };
         if (track && !["marketing", "sales"].includes(track)) return errorResponse(origin, "invalid track");
+        const promptVersion = String(requestedPromptVersion || "").trim();
+        if (promptVersion.length > 80) return errorResponse(origin, "invalid prompt_version");
         const admin = getAdminClient();
         const pipelineConfig = await getPipelineConfig();
         const cutoff = new Date();
@@ -5940,11 +5956,12 @@ Deno.serve(async (req: Request) => {
         // Routing is the canonical result of the current pipeline. Findings is
         // retained for audit/history, but must not hide newly classified cards.
         let query = admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
+          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, prompt_version, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "reliable")
           .or(activeWindowFilter)
           .order("classified_at", { ascending: false, nullsFirst: false }).limit(fetchLimit);
         if (track) query = query.contains("routing", [track]);
+        if (promptVersion) query = query.eq("prompt_version", promptVersion);
         const { data, error } = await query;
         if (error) return errorResponse(origin, error.message, 500);
 
@@ -5960,12 +5977,15 @@ Deno.serve(async (req: Request) => {
         // Uncertain articles no longer live in a separate dashboard section.
         // Surface them in the same card structure when validated topic/company
         // evidence already provides a meaningful Marketing or Sales route.
-        const { data: uncertain, error: uncertainError } = await admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, classified_at, source:sources(company, url, category)")
+        let uncertainQuery = admin.schema("signal_layer").from("articles")
+          .select("id, title, title_de, url, excerpt, published_at, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, tag_status, source_id, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, primary_company, company_mentions, person_mentions, ai_summary, ai_rationale, language, rejection_reasons, tag_confidence, tag_evidence, event_cluster_key, prompt_version, classified_at, source:sources(company, url, category)")
           .eq("classification_status", "uncertain")
           .or(activeWindowFilter)
           .order("classified_at", { ascending: false, nullsFirst: false })
           .limit(limit || 50);
+        if (track) uncertainQuery = uncertainQuery.contains("routing", [track]);
+        if (promptVersion) uncertainQuery = uncertainQuery.eq("prompt_version", promptVersion);
+        const { data: uncertain, error: uncertainError } = await uncertainQuery;
         if (uncertainError) return errorResponse(origin, uncertainError.message, 500);
         const reviewFindings = (uncertain || []).flatMap((article: Record<string, unknown>) => {
           const topics = Array.isArray(article.topics) ? article.topics as string[] : [];
