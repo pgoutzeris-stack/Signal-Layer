@@ -421,7 +421,7 @@ async function ensureCompanyProfile(company: string): Promise<string> {
       unverified_note: profile.unverified_note,
       article_count: Array.isArray(hints) ? hints.length : 0,
       model: COMPANY_PROFILE_MODEL,
-      pipeline_version: SIMPLE_VERSION,
+      pipeline_version: SIMPLE_PIPELINE_VERSION,
       researched_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: "company" });
