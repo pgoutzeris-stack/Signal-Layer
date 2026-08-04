@@ -19,7 +19,7 @@ export const COMPANY_PROFILE_MODEL = "gemini-2.5-flash";
 export const COMPANY_PROFILE_TTL_DAYS = 30;
 /** Obergrenze je Verarbeitungspaket, damit ein Lauf nicht in Recherche umkippt. */
 export const COMPANY_PROFILE_MAX_PER_BATCH = 2;
-export const COMPANY_PROFILE_MAX_OUTPUT_TOKENS = 4096;
+export const COMPANY_PROFILE_MAX_OUTPUT_TOKENS = 10_000;
 
 /** Die Karten des Steckbriefs, in der Reihenfolge der Anzeige. */
 export const COMPANY_PROFILE_SECTIONS = [
@@ -103,7 +103,7 @@ REGELN, sie entscheiden über die Brauchbarkeit:
 1. Genau 6 Einträge in "kpis". Jeder mit kurzem "value", der als große Zahl
    lesbar ist. Fehlt eine Zahl belegbar, nimm eine andere Kennzahl statt zu raten.
 2. Genau diese 6 Abschnitte in "sections", in dieser Reihenfolge, jeder mit 3 bis
-   6 Einträgen: ${COMPANY_PROFILE_SECTIONS.join(" | ")}
+   5 Einträgen, jeder Eintrag maximal 20 Wörter: ${COMPANY_PROFILE_SECTIONS.join(" | ")}
 3. Bei "Buying Center / Relevante Personen": Name, Rolle, und wenn belegbar seit
    wann. Nur real belegte Personen. Keine erfundenen Namen, kein "vermutlich".
 4. Bei "Trigger & Aufhänger": konkrete, datierte Anlässe, warum ein Gespräch
@@ -262,6 +262,12 @@ export async function researchCompanyProfile(
   const candidate = (Array.isArray(payload.candidates) ? payload.candidates[0] : null) as Record<string, unknown> | null;
   if (!candidate) throw new Error("gemini grounding returned no candidate");
 
+  const finish = String(candidate.finishReason ?? "");
+  if (finish && finish !== "STOP") {
+    // MAX_TOKENS liefert abgeschnittenes JSON und damit einen irrefuehrenden
+    // Parser-Fehler. Beobachtet 4.8.2026 bei 4096 Token Ausgabegrenze.
+    throw new Error(`gemini grounding endete mit ${finish}, Antwort unvollstaendig`);
+  }
   const parts = ((candidate.content as Record<string, unknown> | undefined)?.parts ?? []) as Array<Record<string, unknown>>;
   const text = parts.map((part) => String(part.text ?? "")).join("\n");
   const parsed = extractJson(text) as Record<string, unknown>;
