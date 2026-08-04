@@ -132,7 +132,6 @@ function signalCard(signal) {
       </div>
       <span class="finding-title">${escText(title)}</span>
       ${signal.why_de ? `<p class="simple-signal-why">${escText(signal.why_de)}</p>` : ""}
-      ${signal.evidence ? `<q class="simple-signal-evidence">${escText(signal.evidence)}</q>` : ""}
       ${signal.roots_link_de ? `<div class="finding-offering">
         <div class="finding-offering-head"><span><i class="fa-solid fa-puzzle-piece"></i> Passende ROOTS-Leistung</span></div>
         <strong>${escText(signal.roots_offering || "")}</strong>

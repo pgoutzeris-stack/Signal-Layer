@@ -329,7 +329,6 @@
   .tag[data-pill-info]:hover::after, .tag[data-pill-info]:focus-visible::after { opacity: 1; visibility: visible; }
   @media (max-width: 720px) { .pipeline-detail-row { grid-template-columns: 1fr; gap: 2px; } }
   .simple-signal-why { margin: .45rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
-  .simple-signal-evidence { display: block; margin: .55rem 0 0; padding: .5rem .7rem; border-left: 2px solid var(--brand); border-radius: 0 8px 8px 0; background: var(--surface); color: var(--ink); font-size: .72rem; line-height: 1.45; }
   .simple-rejected-item { padding: .7rem .85rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
   .simple-rejected-item strong { display: block; font-size: .78rem; font-weight: 650; }
   .simple-rejected-item small { display: block; margin-top: 3px; color: var(--muted); font-size: .68rem; }
@@ -374,10 +373,6 @@
   body.cost-detail-open .crawl-status-popover { opacity: 1; visibility: visible; pointer-events: auto; }
   .crawl-trigger-wrap:has(.crawl-dropdown.show) .crawl-status-popover { opacity: 0; visibility: hidden; }
   .crawl-status-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 2px 9px; }
-  .simple-forecast-pill { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 9px; padding: 8px 10px; border: 1px solid #bfdbfe; border-radius: 10px; background: var(--brand-light); color: var(--brand-dark); font-size: .61rem; font-weight: 700; line-height: 1.4; }
-  .simple-forecast-pill[hidden] { display: none; }
-  .simple-forecast-pill i { flex: none; margin-top: 2px; }
-  .simple-forecast-pill span { min-width: 0; overflow-wrap: anywhere; }
   .crawl-status-kicker { display: block; margin-bottom: 3px; color: var(--muted); font-size: .58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
   .crawl-status-popover strong { display: block; color: var(--ink); font-size: .9rem; line-height: 1.2; }
   .crawl-live-state { display: inline-flex; align-items: center; gap: 5px; color: var(--brand-dark); font-size: .65rem; font-weight: 750; white-space: nowrap; }
@@ -2146,7 +2141,6 @@
                   <div><span class="crawl-status-kicker">Letzte Simple-Analyse</span><strong id="simple-status-time">--:--</strong></div>
                   <span class="crawl-live-state" id="simple-live-state">Kein Lauf aktiv</span>
                 </div>
-                <div class="simple-forecast-pill" id="simple-forecast-pill" hidden><i class="fa-solid fa-coins"></i><span id="simple-forecast-pill-text"></span></div>
                 <div class="backfill-status">
                   <div class="article-live-progress" id="simple-article-progress" hidden>
                     <div class="backfill-status-row"><span>Artikelprüfung</span><b id="simple-progress-text">0 / 0</b></div>
@@ -2165,19 +2159,6 @@
                         <div class="telemetry-stat telemetry-stat--interactive" id="simple-today-cost-stat" tabindex="0"><span>Heute</span><b id="simple-cost-today">–</b><div class="cost-detail-popover" id="simple-today-cost-detail" role="tooltip"></div></div>
                         <div class="telemetry-stat telemetry-stat--interactive" id="simple-total-cost-stat" tabindex="0"><span>Kosten gesamt</span><b id="simple-cost-total">–</b><div class="cost-detail-popover" id="simple-total-cost-detail" role="tooltip"></div></div>
                         <div class="telemetry-stat telemetry-stat--interactive" id="simple-forecast-cost-stat" tabindex="0"><span>Lauf-Prognose</span><b id="simple-cost-projected">–</b><div class="cost-detail-popover" id="simple-forecast-cost-detail" role="tooltip"></div></div>
-                      </div>
-                    </div>
-                  </section>
-                  <section class="status-disclosure-panel status-access-panel">
-                    <button type="button" class="status-disclosure-toggle" id="simple-pool-toggle" aria-expanded="false" aria-controls="simple-pool-body">
-                      <span><i class="fa-solid fa-database"></i><span><b>Artikelbestand ausklappen</b><small>Simple crawlt keine Quellen</small></span></span>
-                      <span><strong id="simple-pool-summary">–</strong><i class="fa-solid fa-chevron-down"></i></span>
-                    </button>
-                    <div class="status-disclosure-body" id="simple-pool-body" hidden>
-                      <div class="telemetry-grid">
-                        <div class="telemetry-stat"><span>Artikel im Blick</span><b id="simple-pool-count">–</b></div>
-                        <div class="telemetry-stat"><span>Jüngster Artikel</span><b id="simple-pool-newest">–</b></div>
-                        <div class="telemetry-stat"><span>Pipeline</span><b id="simple-pipeline-version">2.0</b></div>
                       </div>
                     </div>
                   </section>
@@ -2384,7 +2365,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260804-2800';
+  import { initApp } from './app.js?v=20260804-2900';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

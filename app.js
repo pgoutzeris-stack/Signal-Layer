@@ -2,7 +2,7 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts } from "./status-state.mjs?v=20260804-2330";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2700";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2900";
 
 let sb = null;
 let sources = [];
@@ -3152,25 +3152,6 @@ function renderSimpleHeaderStatusContent() {
     ` : '<div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Keine laufende Prognose</strong><small>Sobald eine Simple-Analyse läuft, erscheint hier ihre Live-Kalkulation.</small></div></div>';
   }
   bindCostDetailPopover(byId("simple-forecast-cost-stat"), simpleForecastDetail);
-  const simpleForecastText = simpleForecast
-    ? `${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens verbraucht`
-    : "";
-  const forecastPill = byId("simple-forecast-pill");
-  forecastPill.hidden = !simpleForecast;
-  byId("simple-forecast-pill-text").textContent = simpleForecastText;
-
-  const poolTotal = Number(run?.total_count || 0);
-  const newest = run?.pool_newest_at || null;
-  const ageHours = newest ? (Date.now() - new Date(newest).getTime()) / 3_600_000 : null;
-  const freshness = ageHours === null
-    ? "unbekannt"
-    : ageHours < 24
-      ? `heute, ${formatCrawlTime(newest)}`
-      : `${Math.floor(ageHours / 24)} Tage alt`;
-  byId("simple-pool-summary").textContent = poolTotal ? `${poolTotal.toLocaleString("de-DE")} Artikel` : "kein Bestand";
-  byId("simple-pool-count").textContent = poolTotal ? poolTotal.toLocaleString("de-DE") : "–";
-  byId("simple-pool-newest").textContent = freshness;
-  byId("simple-pipeline-version").textContent = triggerRun?.pipeline_version || run?.pipeline_version || "2.0";
 }
 
 // ---------------------------------------------------------------------------
@@ -3679,7 +3660,6 @@ function bindUi() {
   bindStatusDisclosure(els.statusCostToggle, els.statusCostBody, "Kosten");
   bindStatusDisclosure(els.statusAccessToggle, els.statusAccessBody, "Abrufstatus");
   bindStatusDisclosure(document.getElementById("simple-cost-toggle"), document.getElementById("simple-cost-body"), "Kosten");
-  bindStatusDisclosure(document.getElementById("simple-pool-toggle"), document.getElementById("simple-pool-body"), "Artikelbestand");
   els.appNav.addEventListener("click", (event) => {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);
