@@ -220,7 +220,11 @@
   .pipeline-version-line b { color: var(--ink); font-weight: 700; }
   /* Zweistufiger Unternehmensfilter im selben visuellen System wie die
      übrigen Header-Filter: erst Klasse, danach Mehrfachauswahl. */
-  .company-filter { position: static; min-width: 154px; }
+  /* Zwei Klassen geben der Regel Vorrang vor der spaeter definierten
+     .roots-select-Basis. Ohne diese Spezifitaet wurde der Filter wieder zum
+     schmalen Bezugspunkt seines Fly-outs und quetschte das gesamte Raster. */
+  .roots-select.company-filter { position: static; min-width: 154px; flex: 0 1 180px; }
+  .company-filter .roots-select-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .company-filter .roots-select-menu { left: 0; right: 0; width: auto; max-width: none; padding: 10px; transform-origin: top center; }
   .company-filter-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
   .company-filter-tab { min-height: 31px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: .69rem; font-weight: 750; cursor: pointer; }
@@ -232,7 +236,8 @@
   .company-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; max-height: 290px; overflow-y: auto; scrollbar-width: thin; }
   .company-filter-option { min-height: 34px; padding: 6px 9px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--status-text); display: flex; align-items: center; gap: 8px; font: inherit; font-size: .69rem; text-align: left; cursor: pointer; }
   .company-filter-option:hover { border-color: var(--line); background: var(--surface); color: var(--ink); }
-  .company-filter-option i { width: 14px; color: var(--muted); text-align: center; }
+  .company-filter-option i { width: 14px; flex: none; color: var(--muted); text-align: center; }
+  .company-filter-option span { min-width: 0; overflow-wrap: anywhere; }
   .company-filter-option.selected { border-color: color-mix(in srgb, var(--brand) 26%, var(--line)); background: var(--brand-light); color: var(--brand-dark); font-weight: 700; }
   .company-filter-option.selected i { color: var(--brand); }
   .company-filter-empty { grid-column: 1 / -1; padding: 1.2rem; color: var(--muted); font-size: .72rem; text-align: center; }
