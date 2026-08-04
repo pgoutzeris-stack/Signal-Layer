@@ -1225,7 +1225,7 @@ function offeringRow(item) {
     <select class="taxonomy-input taxonomy-pillar offering-pillar" aria-label="6P-Bereich">${ROOTS_PILLARS.map(([id, label]) => `<option value="${id}" ${item.pillar === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select>
     <input class="taxonomy-input taxonomy-label" value="${escapeHtml(item.label || "")}" placeholder="Bezeichnung">
     <textarea class="taxonomy-input taxonomy-desc" rows="4" placeholder="Was ROOTS konkret macht und wie ROOTS dabei vorgeht">${escapeHtml(item.description || "")}</textarea>
-    ${item.source_url ? `<a class="offering-source-link" href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> ROOTS-Leistungsseite · geprüft ${escapeHtml(item.source_checked_at || "")}</a>` : ""}
+    ${item.source_url ? `<a class="offering-source-link" href="${escapeHtml(item.source_url)}" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> ROOTS-Leistungsseite · geprüft ${escapeHtml(item.source_checked_at || "")}</a>` : ""}
     <label class="taxonomy-active"><input type="checkbox" ${item.active ? "checked" : ""}> aktiv</label>
     <button type="button" class="icon-btn taxonomy-delete" title="Löschen"><i class="fa-solid fa-trash"></i></button>
   </div>`;
@@ -3283,7 +3283,7 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
     </section>` : ""}</div>` : ""}
     ${profile.unverified_note ? `<div class="cp-note"><i class="fa-solid fa-circle-info"></i> Nicht belegt: ${escapeText(profile.unverified_note)}</div>` : ""}
     ${sources.length ? `<div class="cp-sources"><b>Quellen:</b> ${sources.map((src) =>
-      src.uri ? `<a href="${escapeHtml(src.uri)}" target="_blank" rel="noopener">${escapeHtml(src.title)}</a>` : escapeHtml(src.title)
+      src.uri ? `<a href="${escapeHtml(src.uri)}" data-external target="_blank" rel="noopener noreferrer">${escapeHtml(src.title)}</a>` : escapeHtml(src.title)
     ).join(" · ")}${profile.article_count ? ` &nbsp;·&nbsp; ${Number(profile.article_count)} eigene Artikel im Bestand` : ""}</div>` : ""}
   </div>`;
 }
