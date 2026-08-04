@@ -3422,6 +3422,15 @@ Deno.serve(async (req: Request) => {
         if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
       }
     }
+  } else if (action === "get_company_profile") {
+    // Liest nur und stoesst hoechstens eine Recherche an, die die Pipeline
+    // ohnehin machen wuerde. Neben dem User-JWT auch per Cron-Secret bedienbar,
+    // damit Profile vom Betrieb aus vorgewaermt und geprueft werden koennen.
+    isScheduled = await isScheduledTrigger(req);
+    if (!isScheduled) {
+      auth = await requireAuth(req);
+      if (!auth) return errorResponse(origin, "Unauthorized", 401);
+    }
   } else if (action === "set_ops_guard") {
     // Wird vom externen Waechter in GitHub Actions aufgerufen, der Anmeldung und
     // Recruiting von aussen prueft. Muss auch dann funktionieren, wenn in der
