@@ -96,7 +96,7 @@ export type PipelineConfig = {
   filters: { minimum_text_length: number; require_professional_signal: boolean; reject_career_pages: boolean; reject_faq_pages: boolean; reject_event_programs: boolean; reject_future_dates: boolean; deduplicate: boolean };
   // Die beiden Simple-Modelle liegen in der gemeinsamen Einstellungszeile:
   // Analyse bewertet Artikel, Recherche erstellt nur fehlende Steckbriefe.
-  ai: { primary_model: string; review_model: string; simple_model: string; simple_research_model: string; review_enabled: boolean; review_confidence_below: number; review_rejected_articles: boolean; batch_enabled: boolean; batch_size: number; thinking_level: "minimal" | "low" | "medium" | "high"; max_output_tokens: number; monthly_warning_usd: number };
+  ai: { primary_model: string; review_model: string; simple_model: string; simple_research_model: string; review_enabled: boolean; review_confidence_below: number; review_rejected_articles: boolean; batch_enabled: boolean; batch_size: number; thinking_level: "minimal" | "low" | "medium" | "high"; max_output_tokens: number; monthly_warning_eur: number; monthly_warning_usd?: number };
   quality: { topic_confidence: number; territory_confidence: number; company_confidence: number; person_confidence: number; sales_trigger_confidence: number; routing_confidence: number; reliable_confidence: number };
   routing: { marketing_enabled: boolean; sales_enabled: boolean; buying_center_enabled: boolean; sales_requires_tier1: boolean; sales_requires_trigger: boolean; buying_center_requires_person: boolean; subsector_alone_is_marketing: boolean };
 };
@@ -116,7 +116,7 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
   },
   crawl: { freshness_days: 183, future_tolerance_hours: 24, article_batch_size: 1, default_max_depth: 2, default_max_pages: 40, event_max_depth: 1, event_max_pages: 24 },
   filters: { minimum_text_length: EDITORIAL_TEXT_REQUIREMENTS.minimumCharacters, require_professional_signal: true, reject_career_pages: true, reject_faq_pages: true, reject_event_programs: true, reject_future_dates: true, deduplicate: true },
-  ai: { primary_model: GEMINI_PRIMARY_MODEL, review_model: GEMINI_REVIEW_MODEL, simple_model: "deepseek-v4-pro", simple_research_model: "gemini-2.5-flash", review_enabled: true, review_confidence_below: 0.9, review_rejected_articles: false, batch_enabled: true, batch_size: 8, thinking_level: "low", max_output_tokens: 4096, monthly_warning_usd: 10 },
+  ai: { primary_model: GEMINI_PRIMARY_MODEL, review_model: GEMINI_REVIEW_MODEL, simple_model: "deepseek-v4-pro", simple_research_model: "gemini-2.5-flash", review_enabled: true, review_confidence_below: 0.9, review_rejected_articles: false, batch_enabled: true, batch_size: 8, thinking_level: "low", max_output_tokens: 4096, monthly_warning_eur: 10 },
   quality: { topic_confidence: 0.82, territory_confidence: 0.84, company_confidence: 0.86, person_confidence: 0.86, sales_trigger_confidence: 0.86, routing_confidence: 0.88, reliable_confidence: 0.9 },
   routing: { marketing_enabled: true, sales_enabled: true, buying_center_enabled: true, sales_requires_tier1: true, sales_requires_trigger: true, buying_center_requires_person: true, subsector_alone_is_marketing: false },
 };

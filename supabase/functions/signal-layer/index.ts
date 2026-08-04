@@ -364,6 +364,8 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
     projected_usd: projectedUsd,
     projected_eur: toEur(projectedUsd),
     projected_remaining_usd: projectedUsd === null ? null : Math.max(projectedUsd - spentUsd, 0),
+    projected_remaining_eur: toEur(projectedUsd === null ? null : Math.max(projectedUsd - spentUsd, 0)),
+    cost_per_processed_article_eur: toEur(perArticleUsd),
     calculated_at: new Date().toISOString(),
   };
 }
@@ -831,10 +833,21 @@ type GeminiModelOption = {
 let geminiModelsCache: { models: GeminiModelOption[]; at: number } = { models: [], at: 0 };
 const GEMINI_MODELS_CACHE_TTL = 10 * 60 * 1000;
 
-// Gemini returns exact token counts, but no per-request invoice amount. Keep the
-// USD/EUR conversion rate short-lived and store the rate used with each article.
-let usdEurRateCache: { rate: number | null; at: number } = { rate: null, at: 0 };
-const USD_EUR_RATE_CACHE_TTL = 60 * 60 * 1000;
+// Anbieterpreise bleiben intern in USD. Sichtbare Beträge werden mit dem
+// aktuellen täglichen Referenzkurs von Frankfurter dynamisch in EUR
+// umgerechnet. Der kurze Cache schützt die kostenlose API vor Status-Polling.
+type UsdEurRateSnapshot = {
+  rate: number | null;
+  date: string | null;
+  source: "Frankfurter";
+  fetched_at: string | null;
+  at: number;
+};
+
+let usdEurRateCache: UsdEurRateSnapshot = {
+  rate: null, date: null, source: "Frankfurter", fetched_at: null, at: 0,
+};
+const USD_EUR_RATE_CACHE_TTL = 5 * 60 * 1000;
 
 async function getUsdEurRate(): Promise<number | null> {
   const now = Date.now();
@@ -842,19 +855,35 @@ async function getUsdEurRate(): Promise<number | null> {
     return usdEurRateCache.rate;
   }
   try {
-    const response = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR", {
+    const response = await fetch("https://api.frankfurter.dev/v2/rate/USD/EUR", {
       signal: AbortSignal.timeout(5_000),
     });
     if (!response.ok) throw new Error(`FX API returned ${response.status}`);
     const payload = await response.json();
-    const rate = Number(payload?.rates?.EUR);
+    const rate = Number(payload?.rate);
     if (!Number.isFinite(rate) || rate <= 0) throw new Error("FX API returned an invalid USD/EUR rate");
-    usdEurRateCache = { rate, at: now };
+    usdEurRateCache = {
+      rate,
+      date: typeof payload?.date === "string" ? payload.date : null,
+      source: "Frankfurter",
+      fetched_at: new Date(now).toISOString(),
+      at: now,
+    };
     return rate;
   } catch (error) {
     console.warn("Could not fetch USD/EUR rate; token and USD totals will still be saved", error);
     return usdEurRateCache.rate;
   }
+}
+
+async function getUsdEurRateSnapshot(): Promise<Omit<UsdEurRateSnapshot, "at">> {
+  await getUsdEurRate();
+  return {
+    rate: usdEurRateCache.rate,
+    date: usdEurRateCache.date,
+    source: usdEurRateCache.source,
+    fetched_at: usdEurRateCache.fetched_at,
+  };
 }
 
 async function recordArticleGeminiUsage(
@@ -4149,7 +4178,7 @@ Deno.serve(async (req: Request) => {
         requested.ai.review_confidence_below = clamp(requested.ai.review_confidence_below, 0.5, 1);
         requested.ai.batch_size = Math.round(clamp(requested.ai.batch_size, 1, 32));
         requested.ai.max_output_tokens = Math.round(clamp(requested.ai.max_output_tokens, 512, 8192));
-        requested.ai.monthly_warning_usd = clamp(requested.ai.monthly_warning_usd, 0, 10000);
+        requested.ai.monthly_warning_eur = clamp(requested.ai.monthly_warning_eur, 0, 10000);
         for (const key of Object.keys(requested.quality) as Array<keyof PipelineConfig["quality"]>) {
           requested.quality[key] = clamp(requested.quality[key], 0.5, 1);
         }
@@ -5484,7 +5513,7 @@ Deno.serve(async (req: Request) => {
         const articleId = String(body.article_id || "");
         if (!articleId) return errorResponse(origin, "article_id is required");
         const admin = getAdminClient();
-        const [{ data: signal }, { data: article, error }, { data: usageEvents }] = await Promise.all([
+        const [{ data: signal }, { data: article, error }, { data: usageEvents }, exchangeRate] = await Promise.all([
           admin.schema("signal_layer").from("simple_signals").select("*").eq("article_id", articleId).maybeSingle(),
           admin.schema("signal_layer").from("articles")
             .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, language, source:sources(company, url, category)")
@@ -5493,6 +5522,7 @@ Deno.serve(async (req: Request) => {
             .select("model,operation,status,inference_mode,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,error_code,created_at")
             .eq("article_id", articleId).eq("prompt_version", SIMPLE_PIPELINE_VERSION)
             .order("created_at", { ascending: true }).limit(20),
+          getUsdEurRateSnapshot().catch(() => ({ rate: null, date: null, source: "Frankfurter" as const, fetched_at: null })),
         ]);
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
 
@@ -5563,6 +5593,7 @@ Deno.serve(async (req: Request) => {
             reviewer_model: null,
             prompt_version: signal?.prompt_version || SIMPLE_PIPELINE_VERSION,
             classified_at: signal?.updated_at || null,
+            current_exchange_rate: exchangeRate,
             classification_payload: {},
             // Derselbe Aufbau wie der Advanced-Prüfpfad, gefüllt mit den
             // Stufen der einfachen Pipeline.
@@ -6153,7 +6184,7 @@ Deno.serve(async (req: Request) => {
 
       case "get_simple_run_status": {
         const admin = getAdminClient();
-        const [{ data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount }, { data: usdEurRate }, { data: costLedger }, { data: todayCostRows }] = await Promise.all([
+        const [{ data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount }, { data: exchangeRate }, { data: costLedger }, { data: todayCostRows }] = await Promise.all([
           admin.schema("signal_layer").from("simple_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
@@ -6162,7 +6193,7 @@ Deno.serve(async (req: Request) => {
             .select("id", { count: "exact", head: true }).eq("status", "signal"),
           admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "rejected"),
-          getUsdEurRate().then((rate) => ({ data: rate })).catch(() => ({ data: null })),
+          getUsdEurRateSnapshot().then((snapshot) => ({ data: snapshot })).catch(() => ({ data: null })),
           admin.schema("signal_layer").from("ai_cost_ledger_daily")
             .select("usage_date,model,operation,status,request_count,error_count,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,first_event_at,last_event_at")
             .order("usage_date", { ascending: true }),
@@ -6170,6 +6201,7 @@ Deno.serve(async (req: Request) => {
             p_since: berlinDayStartIso(), p_crawl_run_id: null, p_uncrawled_only: false,
           }),
         ]);
+        const usdEurRate = exchangeRate?.rate ?? null;
         const costSummary = summarizeGlobalCosts(costLedger || [], todayCostRows || [], usdEurRate);
         return corsResponse(origin, {
           run: run || null,
@@ -6177,7 +6209,7 @@ Deno.serve(async (req: Request) => {
           batch_size: SIMPLE_BATCH_SIZE,
           totals: { signals: signalCount || 0, rejected: rejectedCount || 0 },
           forecast: await buildSimpleForecast(run),
-          cost_summary: { ...costSummary, usd_eur_rate: usdEurRate },
+          cost_summary: { ...costSummary, usd_eur_rate: usdEurRate, exchange_rate: exchangeRate },
           usd_eur_rate: usdEurRate,
         });
       }
@@ -6409,7 +6441,7 @@ Deno.serve(async (req: Request) => {
         const articleId = String(body.article_id || "");
         if (!articleId) return errorResponse(origin, "article_id is required");
         const admin = getAdminClient();
-        const [{ data, error }, { data: usageEvents }, { data: analysisJob }, { data: browserJob }] = await Promise.all([
+        const [{ data, error }, { data: usageEvents }, { data: analysisJob }, { data: browserJob }, exchangeRate] = await Promise.all([
           admin.schema("signal_layer").from("articles")
             .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, route_score_details, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classification_audit, manual_review_tracks, manual_review_reason, extraction_diagnostic, duplicate_of, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
             .eq("id", articleId).single(),
@@ -6420,6 +6452,7 @@ Deno.serve(async (req: Request) => {
             .select("status,attempts,error_message,started_at,finished_at,crawl_run_id").eq("article_id", articleId).maybeSingle(),
           admin.schema("signal_layer").from("browser_render_jobs")
             .select("status,attempts,last_error,created_at,started_at,finished_at,updated_at").eq("article_id", articleId).maybeSingle(),
+          getUsdEurRateSnapshot().catch(() => ({ rate: null, date: null, source: "Frankfurter" as const, fetched_at: null })),
         ]);
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
         // Dieselbe Einstufung wie im einfachen Modus: Tier-1-Zielkunde oder nur
@@ -6428,7 +6461,7 @@ Deno.serve(async (req: Request) => {
         const tier1Names = new Set(tier1List.map((company) => normalizeMatchText(company.name)));
         const companyTiers = Object.fromEntries(((data.matched_companies || []) as string[])
           .map((name) => [name, tier1Names.has(normalizeMatchText(name)) ? "tier1" : "company"]));
-        return corsResponse(origin, { article: { ...data, company_tiers: companyTiers, technical_trace: { usage_events: usageEvents || [], analysis_job: analysisJob || null, browser_job: browserJob || null } } });
+        return corsResponse(origin, { article: { ...data, current_exchange_rate: exchangeRate, company_tiers: companyTiers, technical_trace: { usage_events: usageEvents || [], analysis_job: analysisJob || null, browser_job: browserJob || null } } });
       }
 
       case "get_dashboard_status": {
@@ -6645,7 +6678,8 @@ Deno.serve(async (req: Request) => {
         sourceHealth.browser_running = Number(browserRunningExact || 0);
         sourceHealth.browser_recovered = Number(browserRecoveredExact || 0);
         sourceHealth.browser_failed = Number(browserFailedExact || 0);
-        const usdEurRate = await getUsdEurRate();
+        const exchangeRate = await getUsdEurRateSnapshot();
+        const usdEurRate = exchangeRate.rate;
         const failureDefinitions = {
           content_extraction: {
             label: "Artikeltext nicht verfügbar",
@@ -6809,21 +6843,24 @@ Deno.serve(async (req: Request) => {
         const daysInMonth = Math.max(1, (nextMonth.getTime() - monthStart.getTime()) / 86_400_000);
         const averageDailyUsd = costSummary.month_usd / elapsedDays;
         const projectedMonthUsd = averageDailyUsd * daysInMonth;
-        const warningThresholdUsd = Number(pipelineConfig.ai.monthly_warning_usd || 0);
-        const remainingUsd = Math.max(0, warningThresholdUsd - costSummary.month_usd);
-        const daysToLimit = averageDailyUsd > 0 && warningThresholdUsd > 0 ? remainingUsd / averageDailyUsd : null;
+        const averageDailyEur = usdEurRate === null ? null : averageDailyUsd * usdEurRate;
+        const projectedMonthEur = usdEurRate === null ? null : projectedMonthUsd * usdEurRate;
+        const warningThresholdEur = Number(pipelineConfig.ai.monthly_warning_eur || 0);
+        const remainingEur = averageDailyEur === null ? null : Math.max(0, warningThresholdEur - costSummary.month_usd * Number(usdEurRate));
+        const daysToLimit = averageDailyEur !== null && averageDailyEur > 0 && warningThresholdEur > 0 && remainingEur !== null ? remainingEur / averageDailyEur : null;
         const projectedLimitDate = daysToLimit !== null && daysToLimit <= (nextMonth.getTime() - now.getTime()) / 86_400_000
           ? new Date(now.getTime() + daysToLimit * 86_400_000).toISOString()
           : null;
-        const forecastStatus = warningThresholdUsd <= 0 ? "disabled"
-          : costSummary.month_usd >= warningThresholdUsd ? "exceeded"
-          : projectedMonthUsd >= warningThresholdUsd ? "risk"
+        const forecastStatus = warningThresholdEur <= 0 || projectedMonthEur === null ? "disabled"
+          : costSummary.month_usd * Number(usdEurRate) >= warningThresholdEur ? "exceeded"
+          : projectedMonthEur >= warningThresholdEur ? "risk"
           : "ok";
         const recommendation = pipelineConfig.ai.review_enabled
           ? "Bei weiter steigendem Verbrauch den zweiten KI-Review pausieren oder Gemini Batch API nutzen."
           : "Für zeitunkritische Analysen kann Gemini Batch API die Modellkosten weiter reduzieren.";
+        const warningThresholdCopy = `Der interne Warnwert von ${new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(warningThresholdEur)}`;
         const forecastMessage = forecastStatus === "exceeded"
-          ? `Der interne Warnwert von $${warningThresholdUsd.toFixed(2)} ist erreicht. ${recommendation}`
+          ? `${warningThresholdCopy} ist erreicht. ${recommendation}`
           : forecastStatus === "risk"
             ? `Bei aktuellem Verbrauch wird der Warnwert voraussichtlich${projectedLimitDate ? ` am ${new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeZone: "Europe/Berlin" }).format(new Date(projectedLimitDate))}` : " noch in diesem Monat"} erreicht. ${recommendation}`
             : "Der aktuelle Verbrauch bleibt in der Monatsprognose unter dem Warnwert.";
@@ -6963,8 +7000,9 @@ Deno.serve(async (req: Request) => {
             month_eur: usdEurRate === null ? null : costSummary.month_usd * usdEurRate,
             today_eur: usdEurRate === null ? null : costSummary.today_usd * usdEurRate,
             usd_eur_rate: usdEurRate,
-            warning: costSummary.month_usd >= pipelineConfig.ai.monthly_warning_usd,
-            warning_threshold_usd: pipelineConfig.ai.monthly_warning_usd,
+            exchange_rate: exchangeRate,
+            warning: usdEurRate !== null && costSummary.month_usd * usdEurRate >= pipelineConfig.ai.monthly_warning_eur,
+            warning_threshold_eur: pipelineConfig.ai.monthly_warning_eur,
             crawl_forecast: {
               crawl_run_id: currentCrawlId,
               run_id: forecastRunId,
@@ -6977,7 +7015,9 @@ Deno.serve(async (req: Request) => {
               analyzed_articles: activeRunAnalyzedArticles,
               remaining_articles: activeRunRemainingArticles,
               estimated_cost_per_article_usd: estimatedCostPerArticleUsd,
+              estimated_cost_per_article_eur: usdEurRate === null ? null : estimatedCostPerArticleUsd * usdEurRate,
               projected_remaining_usd: activeRunRemainingArticles * estimatedCostPerArticleUsd,
+              projected_remaining_eur: usdEurRate === null ? null : activeRunRemainingArticles * estimatedCostPerArticleUsd * usdEurRate,
               estimation_basis: estimationBasis,
               token_projection: {
                 avg_input_tokens: avgInputTokens, avg_output_tokens: avgOutputTokens,
@@ -7005,7 +7045,8 @@ Deno.serve(async (req: Request) => {
               is_estimate: true,
               average_daily_usd: averageDailyUsd,
               projected_month_usd: projectedMonthUsd,
-              projected_month_eur: usdEurRate === null ? null : projectedMonthUsd * usdEurRate,
+              average_daily_eur: averageDailyEur,
+              projected_month_eur: projectedMonthEur,
               days_to_warning: daysToLimit,
               projected_limit_date: projectedLimitDate,
               recommendation,

@@ -427,7 +427,8 @@ const PIPELINE_FIELDS = {
     ["ai.batch_size", "number", "Artikel pro KI-Batch", "Kleine Gruppen halten Status und Fehler je Artikel nachvollziehbar.", 1, 32],
     ["ai.thinking_level", "thinking", "Prüftiefe", "Mehr Tiefe kann Qualität und Kosten erhöhen."],
     ["ai.max_output_tokens", "number", "Maximale Antwortlänge", "Begrenzt Analyse, Übersetzung und Begründung.", 512, 8192],
-    ["ai.monthly_warning_usd", "number", "Kostenwarnung in USD", "Zeigt eine Warnung, stoppt die Pipeline aber nicht.", 0, 10000],
+    ["ai.monthly_warning_usd", "number", "Kostenwarnung in Euro", "Wird zum aktuellen täglichen Referenzkurs gespeichert; die Warnung stoppt die Pipeline nicht.", 0, 10000],
+    ["ai.monthly_warning_eur", "number", "Kostenwarnung in Euro", "Fester Euro-Warnwert; die Warnung stoppt die Pipeline nicht.", 0, 10000],
   ],
   quality: [
     ["quality.topic_confidence", "decimal", "Themen-Konfidenz", "Mindestwert für Marketing-, Customer-, Retail- und KI-Tags.", .5, 1],
@@ -623,8 +624,9 @@ function simpleModelSelect(path, label, description, researchOnly = false) {
     .map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === value ? "selected" : ""}>${escapeHtml(model.label || model.id)}</option>`)
     .join("");
   const active = catalog.find((model) => model.id === value);
-  const price = active
-    ? `Eingabe ${active.input_usd} $ · Cache ${active.cached_input_usd} $ · Ausgabe ${active.output_usd} $ je 1 Mio. Tokens`
+  const rate = activeUsdEurRate();
+  const price = active && rate !== null
+    ? `Eingabe ${formatCostEur(Number(active.input_usd || 0) * rate)} · Cache ${formatCostEur(Number(active.cached_input_usd || 0) * rate)} · Ausgabe ${formatCostEur(Number(active.output_usd || 0) * rate)} je 1 Mio. Tokens`
     : "Preisliste im Servercode hinterlegt";
   return `<label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid ${researchOnly ? "fa-magnifying-glass" : "fa-wand-magic-sparkles"}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)} ${escapeHtml(price)}</small><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="${path}" aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
 }
@@ -670,7 +672,7 @@ function renderOperationsPanel(telemetry) {
 
     <section class="operations-card operations-card--compact">
       <div class="operations-card-head"><div><span>Kostenkontrolle</span><h4>Monatliche Warnung</h4><p>Du erhältst einen Hinweis, sobald die geschätzten KI-Kosten diesen Wert erreichen. Die Pipeline wird nicht gestoppt.</p></div><i class="fa-solid fa-bell operations-card-symbol"></i></div>
-      ${pipelineFields(["ai.monthly_warning_usd"])}
+      ${pipelineFields(["ai.monthly_warning_eur"])}
     </section>
 
     <div class="pipeline-savebar operations-savebar"><span>Gespeicherte Änderungen gelten automatisch für alle zukünftigen Artikel.</span><button class="btn-primary" type="button" data-pipeline-save><i class="fa-solid fa-floppy-disk"></i> Änderungen speichern</button></div>
@@ -2367,9 +2369,12 @@ const AUDIT_FIELD_META = {
   output_tokens: ["Output-Token", "Token der sichtbaren strukturierten Modellantwort."],
   thinking_tokens: ["Thinking-Token", "Zusätzlicher interner Modellaufwand, sofern vom Anbieter ausgewiesen."],
   total_tokens: ["Token gesamt", "Summe des ausgewiesenen Modellverbrauchs."],
-  cost_usd: ["Kosten in USD", "Aus Tokenmenge und hinterlegtem Modellpreis berechnete Kosten."],
-  cost_eur: ["Kosten in EUR", "Kosten mit dem zum Buchungszeitpunkt gespeicherten Wechselkurs."],
-  estimated_cost_usd: ["Kosten in USD", "Für diesen konkreten KI-Aufruf berechnete Kosten."],
+  cost_eur: ["Kosten in Euro", "Aus Tokenmenge, Modellpreis und dem aktuellen Referenzkurs berechnete Kosten."],
+  estimated_cost_eur: ["Kosten in Euro", "Für diesen konkreten KI-Aufruf zum aktuellen Referenzkurs berechnete Kosten."],
+  exchange_rate: ["Wechselkurs", "Automatisch geladener USD→EUR-Referenzkurs samt Kursdatum und Quelle."],
+  rate: ["USD→EUR-Kurs", "Mit diesem aktuellen Referenzkurs werden die internen Anbieterpreise in Euro umgerechnet."],
+  date: ["Kursdatum", "Datum des verwendeten täglichen Referenzkurses."],
+  source: ["Kursquelle", "Dienst, über den der tägliche Referenzkurs automatisch geladen wurde."],
   operation: ["KI-Schritt", "Art des Aufrufs, zum Beispiel Klassifikation, Review, Übersetzung oder Leistungsmatch."],
   model: ["Modell", "Tatsächlich verwendetes KI-Modell."],
   analysis_job: ["Analyse-Worker", "Technischer Auftrag, der die Artikelanalyse ausgeführt hat."],
@@ -2434,8 +2439,18 @@ async function openTechnicalAudit(articleId) {
     const audit = article.classification_audit || {};
     const trace = article.technical_trace || {};
     const usage = trace.usage_events || [];
+    const exchangeRate = article.current_exchange_rate || currentExchangeRateSummary();
+    const usdEurRate = Number(exchangeRate?.rate || activeUsdEurRate());
+    const hasCurrentEuroRate = Number.isFinite(usdEurRate) && usdEurRate > 0;
+    const usageInEuro = usage.map((event) => {
+      const { estimated_cost_usd: costUsd, ...rest } = event;
+      return {
+        ...rest,
+        estimated_cost_eur: hasCurrentEuroRate ? Number(costUsd || 0) * usdEurRate : null,
+      };
+    });
     const totalTokens = usage.reduce((sum, event) => sum + Number(event.total_tokens || 0), 0);
-    const totalCost = usage.reduce((sum, event) => sum + Number(event.estimated_cost_usd || 0), 0);
+    const totalCostEur = usage.reduce((sum, event) => sum + Number(event.estimated_cost_usd || 0), 0) * (hasCurrentEuroRate ? usdEurRate : 0);
     const tracks = article.manual_review_tracks || [];
     const modelAudit = audit.models || {};
     const fallbackUsed = Boolean(modelAudit.fallback_used);
@@ -2451,7 +2466,7 @@ async function openTechnicalAudit(articleId) {
           <div class="audit-summary-card"><span>Ergebnis</span><b>${escapeHtml(STATUS_LABELS[article.classification_status] || article.classification_status || "–")}</b></div>
           <div class="audit-summary-card"><span>Review-Track</span><b>${escapeHtml(tracks.length ? tracks.map((track) => track === "sales" ? "Sales" : "Marketing").join(" + ") : "Keiner")}</b></div>
           <div class="audit-summary-card"><span>Tatsächliches Modell</span><b>${escapeHtml([actualModel, article.reviewer_model].filter(Boolean).join(" + "))}</b></div>
-          <div class="audit-summary-card"><span>KI-Verbrauch</span><b>${totalTokens.toLocaleString("de-DE")} Token · $${totalCost.toFixed(6)}</b></div>
+          <div class="audit-summary-card"><span>KI-Verbrauch</span><b>${totalTokens.toLocaleString("de-DE")} Token · ${formatCostEur(hasCurrentEuroRate ? totalCostEur : null)}</b></div>
         </div>
         <div class="audit-model-status ${fallbackUsed ? "audit-model-status--fallback" : "audit-model-status--original"}">
           <span class="audit-model-status-icon"><i class="fa-solid ${fallbackUsed ? "fa-shuffle" : aiModelWasUsed ? "fa-circle-check" : "fa-code-branch"}"></i></span>
@@ -2463,7 +2478,7 @@ async function openTechnicalAudit(articleId) {
         ${auditSection("models", "3 · KI-Modelle und validierte Ausgaben", "fa-solid fa-wand-magic-sparkles", audit.models || { final_validated_output: article.classification_payload })}
         ${auditSection("gates", "4 · Marketing-/Sales-Gates und Regeln", "fa-solid fa-code-branch", audit.gates || article.routing_evidence)}
         ${auditSection("scores", "5 · Relevanzscore und finale Entscheidung", "fa-solid fa-chart-line", { scores: audit.scores || article.route_score_details, outcome: audit.outcome || { status: article.classification_status, routing: article.routing, manual_review_tracks: tracks }, rationale: article.ai_rationale, rejection_reasons: article.rejection_reasons })}
-        ${auditSection("operations", "6 · Token, Kosten und Worker-Läufe", "fa-solid fa-coins", { usage_events: usage, article_totals: { requests: article.gemini_request_count, input_tokens: article.gemini_input_tokens, output_tokens: article.gemini_output_tokens, thinking_tokens: article.gemini_thinking_tokens, total_tokens: article.gemini_total_tokens, cost_usd: article.gemini_cost_usd, cost_eur: article.gemini_cost_eur }, analysis_job: trace.analysis_job, browser_job: trace.browser_job })}
+        ${auditSection("operations", "6 · Token, Kosten und Worker-Läufe", "fa-solid fa-coins", { usage_events: usageInEuro, article_totals: { requests: article.gemini_request_count, input_tokens: article.gemini_input_tokens, output_tokens: article.gemini_output_tokens, thinking_tokens: article.gemini_thinking_tokens, total_tokens: article.gemini_total_tokens, cost_eur: hasCurrentEuroRate ? Number(article.gemini_cost_usd || 0) * usdEurRate : null }, exchange_rate: exchangeRate, analysis_job: trace.analysis_job, browser_job: trace.browser_job })}
       </div>`;
   } catch (error) {
     els.technicalAuditContent.innerHTML = `<button type="button" class="article-detail-close technical-audit-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button><div class="detail-loading">Technische Prüfung konnte nicht geladen werden: ${escapeHtml(error.message)}</div>`;
@@ -2914,8 +2929,23 @@ function formatCostEur(value) {
     : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 4 });
 }
 
-function formatCostUsd(value) {
-  return Number(value || 0).toLocaleString("de-DE", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 6 });
+function activeUsdEurRate() {
+  const value = pipelineOperationsTelemetry?.costs?.usd_eur_rate ?? simpleCostSummary?.usd_eur_rate;
+  const rate = Number(value);
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+
+function currentExchangeRateSummary(summary) {
+  return summary?.exchange_rate || pipelineOperationsTelemetry?.costs?.exchange_rate || simpleCostSummary?.exchange_rate || null;
+}
+
+function exchangeRateCopy(summary) {
+  const snapshot = currentExchangeRateSummary(summary);
+  if (!snapshot?.rate) return "Euro-Umrechnung wird automatisch geladen.";
+  const date = snapshot.date
+    ? new Date(`${snapshot.date}T12:00:00Z`).toLocaleDateString("de-DE")
+    : "heute";
+  return `Automatisch in Euro umgerechnet · USD→EUR ${Number(snapshot.rate).toLocaleString("de-DE", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} · Referenzkurs vom ${date} über ${snapshot.source || "Frankfurter"}.`;
 }
 
 function formatCostInt(value) {
@@ -2943,10 +2973,12 @@ function costModelBreakdownHtml(rows, usdEurRate) {
       : row.operation_label || row.operation || "KI-Aufruf";
     const costUsd = Number(row.cost_usd || 0);
     const costEur = usdEurRate === null || usdEurRate === undefined ? null : costUsd * Number(usdEurRate);
+    const inputRateEur = usdEurRate === null || usdEurRate === undefined ? null : Number(row.input_rate_per_million || 0) * Number(usdEurRate);
+    const outputRateEur = usdEurRate === null || usdEurRate === undefined ? null : Number(row.output_rate_per_million || 0) * Number(usdEurRate);
     const rateCopy = Number(row.input_rate_per_million || 0) || Number(row.output_rate_per_million || 0)
-      ? `<small>Preis je 1 Mio. Tokens: Input $${Number(row.input_rate_per_million || 0).toLocaleString("de-DE")} · Output/Thinking $${Number(row.output_rate_per_million || 0).toLocaleString("de-DE")}</small>`
+      ? `<small>Preis je 1 Mio. Tokens: Input ${formatCostEur(inputRateEur)} · Output/Thinking ${formatCostEur(outputRateEur)}</small>`
       : "";
-    return `<div class="cost-detail-model"><b>${escapeHtml(row.model || "Unbekanntes Modell")}</b><small>${escapeHtml(operations)} · ${formatCostInt(row.calls)} Aufrufe${Number(row.error_calls || 0) ? ` · ${formatCostInt(row.error_calls)} Fehler` : ""}</small><small>Input ${formatCostInt(row.input_tokens)} · Output ${formatCostInt(row.output_tokens)} · Thinking ${formatCostInt(row.thinking_tokens)} Tokens</small>${rateCopy}<small>Ist-Kosten ${formatCostEur(costEur)} · ${formatCostUsd(costUsd)}</small></div>`;
+    return `<div class="cost-detail-model"><b>${escapeHtml(row.model || "Unbekanntes Modell")}</b><small>${escapeHtml(operations)} · ${formatCostInt(row.calls)} Aufrufe${Number(row.error_calls || 0) ? ` · ${formatCostInt(row.error_calls)} Fehler` : ""}</small><small>Input ${formatCostInt(row.input_tokens)} · Output ${formatCostInt(row.output_tokens)} · Thinking ${formatCostInt(row.thinking_tokens)} Tokens</small>${rateCopy}<small>Ist-Kosten ${formatCostEur(costEur)}</small></div>`;
   }).join("");
 }
 
@@ -2960,7 +2992,7 @@ function renderCostLedgerDetail(title, amountEur, breakdown, summary, scopeCopy)
   return `<div class="cost-detail-head"><i class="fa-solid fa-receipt"></i><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(scopeCopy)} · Stand ${calculatedAt}</small></div></div>
     <div class="cost-detail-summary"><span>Ist-Kosten<b>${formatCostEur(amountEur)}</b></span><span>Modelle<b>${formatCostInt(breakdown?.length || 0)}</b></span></div>
     <span class="cost-detail-section"><b>Aufteilung nach KI-Modell</b>${costModelBreakdownHtml(breakdown, summary?.usd_eur_rate)}</span>
-    <small class="cost-detail-foot">Die Beträge stammen aus den unveränderlichen Supabase-Nutzungsereignissen. Gesamt bedeutet: alle seit ${escapeHtml(trackedSince)} protokollierten Aufrufe; erneute Analysen überschreiben diese Kosten nicht.</small>`;
+    <small class="cost-detail-foot">Die Beträge stammen aus den unveränderlichen Supabase-Nutzungsereignissen. Gesamt bedeutet: alle seit ${escapeHtml(trackedSince)} protokollierten Aufrufe; erneute Analysen überschreiben diese Kosten nicht. ${escapeHtml(exchangeRateCopy(summary))}</small>`;
 }
 
 function bindCostDetailPopover(anchor, detail) {
@@ -3114,9 +3146,9 @@ function renderSimpleHeaderStatusContent() {
       <div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Simple-Laufkostenprognose</strong><small>Live aus Supabase · Stand ${calculatedAt}</small></div></div>
       <div class="cost-detail-summary"><span>Bereits angefallen<b>${formatCostEur(simpleForecast.spent_eur)}</b></span><span>Voraussichtlich gesamt<b>${formatCostEur(simpleForecast.projected_eur)}</b></span><span>Verarbeitet<b>${formatCostInt(simpleForecast.processed_articles)}</b></span><span>Noch offen<b>${formatCostInt(simpleForecast.remaining_articles)}</b></span></div>
       <span class="cost-detail-section"><b>Modell-Snapshot dieses Laufs</b><span class="cost-detail-row"><span>Analysemodell</span><b>${escapeHtml(analysisModel)}</b></span><span class="cost-detail-row"><span>Recherchemodell</span><b>${escapeHtml(researchModel)}</b></span><span class="cost-detail-row"><span>Abgleich mit echten Aufrufen</span><b>${simpleForecast.model_alignment ? "stimmt überein" : "Abweichung erkannt"}</b></span></span>
-      <span class="cost-detail-section"><b>Tokens & Restmenge</b><span class="cost-detail-row"><span>Bisherige Tokens</span><b>${formatCostInt(simpleForecast.tokens)}</b></span><span class="cost-detail-row"><span>Ø Input je verarbeitetem Artikel</span><b>${formatCostInt(simpleForecast.token_projection?.avg_input_tokens)}</b></span><span class="cost-detail-row"><span>Ø Output je verarbeitetem Artikel</span><b>${formatCostInt(simpleForecast.token_projection?.avg_output_tokens)}</b></span><span class="cost-detail-row"><span>Voraussichtliche Restkosten</span><b>${formatCostUsd(simpleForecast.projected_remaining_usd)}</b></span></span>
+      <span class="cost-detail-section"><b>Tokens & Restmenge</b><span class="cost-detail-row"><span>Bisherige Tokens</span><b>${formatCostInt(simpleForecast.tokens)}</b></span><span class="cost-detail-row"><span>Ø Input je verarbeitetem Artikel</span><b>${formatCostInt(simpleForecast.token_projection?.avg_input_tokens)}</b></span><span class="cost-detail-row"><span>Ø Output je verarbeitetem Artikel</span><b>${formatCostInt(simpleForecast.token_projection?.avg_output_tokens)}</b></span><span class="cost-detail-row"><span>Voraussichtliche Restkosten</span><b>${formatCostEur(simpleForecast.projected_remaining_eur)}</b></span></span>
       <span class="cost-detail-section"><b>Tatsächlich verwendete KI-Modelle</b>${costModelBreakdownHtml(simpleForecast.model_breakdown, simpleCostSummary?.usd_eur_rate)}</span>
-      <small class="cost-detail-foot">Formel: echte Kosten dieses Laufs + offene Artikel × bisherige Kosten je verarbeitetem Artikel. Vorfilter ohne KI-Aufruf sind im Durchschnitt enthalten. Die Modelle wurden beim Start des Laufs im Backend festgeschrieben.</small>
+      <small class="cost-detail-foot">Formel: echte Kosten dieses Laufs + offene Artikel × bisherige Kosten je verarbeitetem Artikel. Vorfilter ohne KI-Aufruf sind im Durchschnitt enthalten. Die Modelle wurden beim Start des Laufs im Backend festgeschrieben. ${escapeHtml(exchangeRateCopy(simpleCostSummary))}</small>
     ` : '<div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Keine laufende Prognose</strong><small>Sobald eine Simple-Analyse läuft, erscheint hier ihre Live-Kalkulation.</small></div></div>';
   }
   bindCostDetailPopover(byId("simple-forecast-cost-stat"), simpleForecastDetail);
@@ -3393,6 +3425,7 @@ async function loadLastRun() {
   if (document.body.classList.contains("mode-simple")) return;
   try {
     const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, analysis_error_breakdown: analysisErrors = [], error_window: errorWindow = {}, access_window: accessWindow = {}, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
+    pipelineOperationsTelemetry = { costs, health };
     const formatEur = formatCostEur;
     const monthLabel = document.getElementById("cost-month-label");
     if (monthLabel) monthLabel.textContent = "Kosten gesamt";
@@ -3434,10 +3467,10 @@ async function loadLastRun() {
         <div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>${runLabel}-Kostenprognose</strong><small>Live aus Supabase · Stand ${new Date(crawlForecast.calculated_at || Date.now()).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</small></div></div>
         <div class="cost-detail-summary"><span>Bereits angefallen<b>${formatEur(crawlForecast.actual_eur)}</b></span><span>Voraussichtlich gesamt<b>${formatEur(crawlForecast.projected_eur)}</b></span><span>Verarbeitet<b>${formatCostInt(crawlForecast.analyzed_articles)}</b></span><span>Noch offen<b>${formatCostInt(crawlForecast.remaining_articles)}</b></span></div>
         <span class="cost-detail-section"><b>Backend-Abgleich</b><span class="cost-detail-row"><span>Backend aktuell</span><b>${escapeHtml(configuredModels || "nicht gesetzt")}</b></span><span class="cost-detail-row"><span>In diesem Lauf aufgerufen</span><b>${escapeHtml(actualModels || "noch kein KI-Aufruf")}</b></span><span class="cost-detail-row"><span>Übereinstimmung</span><b>${crawlForecast.model_alignment ? "stimmt überein" : "Abweichung erkannt"}</b></span></span>
-        <span class="cost-detail-section"><b>Durchschnitt pro verarbeitetem Artikel</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${formatCostInt(tokens.avg_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${formatCostInt(tokens.avg_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${formatCostInt(tokens.avg_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Gesamt-Tokens</span><b>${formatCostInt(tokens.avg_total_tokens)}</b></span><span class="cost-detail-row"><span>Artikelumfang</span><b>Ø ${formatCostInt(tokens.avg_words)} Wörter · ${formatCostInt(tokens.avg_characters)} Zeichen</b></span><span class="cost-detail-row"><span>Kosten</span><b>${formatCostUsd(crawlForecast.estimated_cost_per_article_usd)}</b></span></span>
-        <span class="cost-detail-section"><b>Hochrechnung Restmenge</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${formatCostInt(tokens.projected_remaining_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${formatCostInt(tokens.projected_remaining_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${formatCostInt(tokens.projected_remaining_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Restkosten</span><b>${formatCostUsd(crawlForecast.projected_remaining_usd)}</b></span></span>
+        <span class="cost-detail-section"><b>Durchschnitt pro verarbeitetem Artikel</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${formatCostInt(tokens.avg_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${formatCostInt(tokens.avg_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${formatCostInt(tokens.avg_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Gesamt-Tokens</span><b>${formatCostInt(tokens.avg_total_tokens)}</b></span><span class="cost-detail-row"><span>Artikelumfang</span><b>Ø ${formatCostInt(tokens.avg_words)} Wörter · ${formatCostInt(tokens.avg_characters)} Zeichen</b></span><span class="cost-detail-row"><span>Kosten</span><b>${formatCostEur(crawlForecast.estimated_cost_per_article_eur)}</b></span></span>
+        <span class="cost-detail-section"><b>Hochrechnung Restmenge</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${formatCostInt(tokens.projected_remaining_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${formatCostInt(tokens.projected_remaining_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${formatCostInt(tokens.projected_remaining_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Restkosten</span><b>${formatCostEur(crawlForecast.projected_remaining_eur)}</b></span></span>
         <span class="cost-detail-section"><b>Tatsächlich verwendete Modelle</b>${costModelBreakdownHtml(crawlForecast.model_breakdown, costs?.usd_eur_rate)}</span>
-        <small class="cost-detail-foot">Formel: bisherige echte Kosten + offene Artikel × ${crawlForecast.estimation_basis === "current_run" ? "bisherige Durchschnittskosten dieses Laufs" : "historische Durchschnittskosten der aktuell im Backend gewählten Modelle"}. Tracking-Abdeckung: ${Number(crawlForecast.tracking_coverage_percent || 0).toLocaleString("de-DE")} %.</small>
+        <small class="cost-detail-foot">Formel: bisherige echte Kosten + offene Artikel × ${crawlForecast.estimation_basis === "current_run" ? "bisherige Durchschnittskosten dieses Laufs" : "historische Durchschnittskosten der aktuell im Backend gewählten Modelle"}. Tracking-Abdeckung: ${Number(crawlForecast.tracking_coverage_percent || 0).toLocaleString("de-DE")} %. ${escapeHtml(exchangeRateCopy(costs))}</small>
       ` : `<div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Keine laufende Prognose</strong><small>Sobald ein Crawl oder eine Neubewertung läuft, erscheint hier die Live-Kalkulation.</small></div></div>`;
       bindCostDetailPopover(crawlForecastStat, detail);
     }
