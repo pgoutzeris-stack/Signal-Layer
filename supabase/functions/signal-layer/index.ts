@@ -75,9 +75,11 @@ import {
   simpleUsageCostUsd,
 } from "./pipeline-simple.ts";
 import {
+  COMPANY_LOGO_LOOKUP_VERSION,
   COMPANY_PROFILE_MAX_PER_BATCH,
   COMPANY_PROFILE_MODEL,
   companyProfileIsUsable,
+  researchCompanyLogo,
   researchCompanyProfile,
 } from "./company-profile.ts";
 
@@ -406,19 +408,37 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
       name,
       Array.isArray(hints) ? hints as never[] : [],
     );
+    if (!profile.logo_url) {
+      try {
+        const focused = await researchCompanyLogo({ apiKey, model: COMPANY_PROFILE_MODEL }, name);
+        if (focused.logo) {
+          profile.logo_url = focused.logo.logo_url;
+          profile.logo_source_url = focused.logo.logo_source_url;
+          profile.logo_source_kind = focused.logo.logo_source_kind;
+          profile.logo_format = focused.logo.logo_format;
+        }
+        usage.prompt_tokens += focused.usage.prompt_tokens;
+        usage.output_tokens += focused.usage.output_tokens;
+        usage.total_tokens += focused.usage.total_tokens;
+      } catch (logoError) {
+        console.warn(`Logo-Recherche ${name} fehlgeschlagen:`, logoError);
+      }
+    }
     if (!companyProfileIsUsable(profile)) {
       const detail = `unbrauchbar: ${profile.kpis.length} KPI, ${profile.sections.length} Karten, ${profile.sources.length} Quellen`;
       console.warn(`Steckbrief ${name}: ${detail}`);
       return `failed: ${detail}`;
     }
-    await admin.schema("signal_layer").from("company_profiles").upsert({
+    const researchedAt = new Date().toISOString();
+    const profileRow = {
       company: name,
       website: profile.website,
       logo_url: profile.logo_url,
       logo_source_url: profile.logo_source_url,
       logo_source_kind: profile.logo_source_kind,
       logo_format: profile.logo_format,
-      logo_checked_at: new Date().toISOString(),
+      logo_checked_at: researchedAt,
+      logo_lookup_version: COMPANY_LOGO_LOOKUP_VERSION,
       headline: profile.headline,
       kpis: profile.kpis,
       sections: profile.sections,
@@ -427,9 +447,20 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
       article_count: Array.isArray(hints) ? hints.length : 0,
       model: COMPANY_PROFILE_MODEL,
       pipeline_version: SIMPLE_PIPELINE_VERSION,
-      researched_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "company" });
+      researched_at: researchedAt,
+      updated_at: researchedAt,
+    };
+    await admin.schema("signal_layer").from("company_profiles")
+      .upsert(profileRow, { onConflict: "company" });
+    await admin.schema("signal_layer").from("company_profile_history").insert({
+      company: name,
+      researched_at: researchedAt,
+      profile: profileRow,
+      model: COMPANY_PROFILE_MODEL,
+      pipeline_version: SIMPLE_PIPELINE_VERSION,
+    }).then(({ error }) => {
+      if (error) console.warn(`Steckbrief-Historie ${name} nicht geschrieben:`, error.message);
+    });
     // Kosten mitschreiben, damit die Steckbrief-Recherche in derselben
     // Auswertung sichtbar ist wie die Artikelbewertung.
     await admin.schema("signal_layer").from("ai_usage_events").insert({
@@ -452,6 +483,56 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
     console.error(`Steckbrief ${name} fehlgeschlagen:`, detail);
     return `failed: ${detail.slice(0, 400)}`;
   }
+}
+
+async function ensureCompanyProfileLogo(company: string): Promise<string> {
+  const name = String(company || "").trim();
+  if (!name) return "skipped";
+  const admin = getAdminClient();
+  const { data: existing } = await admin.schema("signal_layer").from("company_profiles")
+    .select("company, logo_url, logo_lookup_version").eq("company", name).maybeSingle();
+  if (!existing || existing.logo_url || existing.logo_lookup_version === COMPANY_LOGO_LOOKUP_VERSION) return "fresh";
+  let apiKey = "";
+  try { apiKey = await getGeminiKey(); } catch { /* ohne Schlüssel kein Hintergrundlauf */ }
+  if (!apiKey) return "skipped: kein Gemini-Schlüssel";
+  try {
+    const { logo, usage } = await researchCompanyLogo({ apiKey, model: COMPANY_PROFILE_MODEL }, name);
+    const checkedAt = new Date().toISOString();
+    await admin.schema("signal_layer").from("company_profiles").update({
+      logo_url: logo?.logo_url || null,
+      logo_source_url: logo?.logo_source_url || null,
+      logo_source_kind: logo?.logo_source_kind || null,
+      logo_format: logo?.logo_format || null,
+      logo_checked_at: checkedAt,
+      logo_lookup_version: COMPANY_LOGO_LOOKUP_VERSION,
+      updated_at: checkedAt,
+    }).eq("company", name);
+    await admin.schema("signal_layer").from("ai_usage_events").insert({
+      operation: "company_logo",
+      model: COMPANY_PROFILE_MODEL,
+      status: "success",
+      attempt: 1,
+      input_tokens: usage.prompt_tokens,
+      output_tokens: usage.output_tokens,
+      total_tokens: usage.total_tokens,
+      estimated_cost_usd: modelCostUsd(COMPANY_PROFILE_MODEL, {
+        input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
+        thinking: 0, total: usage.total_tokens,
+      }),
+    }).then(({ error }) => { if (error) console.warn("Logo-Kosten nicht protokolliert:", error.message); });
+    return logo ? "written" : "checked: kein eindeutiges Logo";
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`Logo-Recherche ${name} fehlgeschlagen:`, detail);
+    return `failed: ${detail.slice(0, 300)}`;
+  }
+}
+
+async function companyProfileVersions(company: string) {
+  const { data } = await getAdminClient().schema("signal_layer").from("company_profile_history")
+    .select("id, researched_at, model, pipeline_version")
+    .eq("company", company).order("researched_at", { ascending: false }).limit(20);
+  return data || [];
 }
 
 async function researchProfilesForBatch(rows: Array<Record<string, unknown>>): Promise<void> {
@@ -3504,7 +3585,11 @@ Deno.serve(async (req: Request) => {
     if (!auth) return errorResponse(origin, "Unauthorized", 401);
   }
 
-  if (auth && (ADMIN_ACTIONS.has(action) || EDITOR_ACTIONS.has(action))) {
+  // Das normale Laden eines Steckbriefs bleibt lesbar. Eine ausdrücklich
+  // bestätigte Neurecherche schreibt jedoch einen neuen Stand und verbraucht
+  // KI-Budget; dafür gilt dieselbe Rolle wie für andere Analyseaufrufe.
+  const companyProfileRefresh = action === "get_company_profile" && Boolean(body.refresh);
+  if (auth && (ADMIN_ACTIONS.has(action) || EDITOR_ACTIONS.has(action) || companyProfileRefresh)) {
     let role: AppRole | null;
     try {
       role = await currentAppRole(auth.userId);
@@ -3517,6 +3602,9 @@ Deno.serve(async (req: Request) => {
       return errorResponse(origin, "Admin permission required", 403);
     }
     if (EDITOR_ACTIONS.has(action) && !["editor", "admin"].includes(role)) {
+      return errorResponse(origin, "Editor permission required", 403);
+    }
+    if (companyProfileRefresh && !["editor", "admin"].includes(role)) {
       return errorResponse(origin, "Editor permission required", 403);
     }
   }
@@ -5805,22 +5893,46 @@ Deno.serve(async (req: Request) => {
       }
 
       case "get_company_profile": {
-        const { company } = (body || {}) as { company?: string };
+        const { company, snapshot_id: snapshotId } = (body || {}) as { company?: string; snapshot_id?: string };
         const name = String(company || "").trim();
         if (!name) return errorResponse(origin, "company fehlt", 400);
         const admin = getAdminClient();
         const wantsRefresh = Boolean((body as { refresh?: boolean })?.refresh);
         const logoPoll = Boolean((body as { logo_poll?: boolean })?.logo_poll);
-        const { data, error } = await admin.schema("signal_layer").from("company_profiles")
-          .select("*").eq("company", name).maybeSingle();
+        const [{ data, error }, versions] = await Promise.all([
+          admin.schema("signal_layer").from("company_profiles")
+            .select("*").eq("company", name).maybeSingle(),
+          companyProfileVersions(name),
+        ]);
         if (error) return errorResponse(origin, error.message, 500);
+        if (snapshotId) {
+          const { data: snapshot, error: snapshotError } = await admin.schema("signal_layer")
+            .from("company_profile_history").select("id, profile")
+            .eq("id", snapshotId).eq("company", name).maybeSingle();
+          if (snapshotError) return errorResponse(origin, snapshotError.message, 500);
+          if (!snapshot) return errorResponse(origin, "Recherche-Stand nicht gefunden", 404);
+          return corsResponse(origin, {
+            profile: { ...(snapshot.profile as Record<string, unknown>), snapshot_id: snapshot.id },
+            profile_versions: versions,
+            pending: false,
+            pending_logo: false,
+          });
+        }
         if (data && !wantsRefresh) {
-          const pendingLogo = !data.logo_checked_at;
+          const pendingLogo = !data.logo_url && data.logo_lookup_version !== COMPANY_LOGO_LOOKUP_VERSION;
+          const currentVersion = versions.find((entry: { researched_at?: string }) =>
+            new Date(entry.researched_at || 0).getTime() === new Date(data.researched_at || 0).getTime()
+          );
           // Bereits vorhandene Steckbriefe stammen noch aus der Zeit ohne
-          // verifizierte Logos. Einmalig im Hintergrund nachziehen; Poll-Aufrufe
-          // dürfen dabei keinen zweiten parallelen Suchlauf starten.
-          if (pendingLogo && !logoPoll) EdgeRuntime.waitUntil(ensureCompanyProfile(name, true));
-          return corsResponse(origin, { profile: data, pending: false, pending_logo: pendingLogo });
+          // erweiterten Logoquellen. Nur das Logo wird nachgezogen; die
+          // recherchierten Details und der Artikel-Trigger bleiben unverändert.
+          if (pendingLogo && !logoPoll) EdgeRuntime.waitUntil(ensureCompanyProfileLogo(name));
+          return corsResponse(origin, {
+            profile: { ...data, snapshot_id: currentVersion?.id || null },
+            profile_versions: versions,
+            pending: false,
+            pending_logo: pendingLogo,
+          });
         }
 
         // Noch nicht recherchiert: der Nutzer soll nicht auf einen Suchlauf
@@ -5832,19 +5944,27 @@ Deno.serve(async (req: Request) => {
         const { wait, refresh } = (body || {}) as { wait?: boolean; refresh?: boolean };
         if (refresh) {
           const result = await ensureCompanyProfile(name, true);
-          const { data: fresh } = await admin.schema("signal_layer").from("company_profiles")
-            .select("*").eq("company", name).maybeSingle();
-          return corsResponse(origin, { profile: fresh || null, pending: false, result });
+          const [{ data: fresh }, freshVersions] = await Promise.all([
+            admin.schema("signal_layer").from("company_profiles")
+              .select("*").eq("company", name).maybeSingle(),
+            companyProfileVersions(name),
+          ]);
+          return corsResponse(origin, {
+            profile: fresh ? { ...fresh, snapshot_id: freshVersions[0]?.id || null } : null,
+            profile_versions: freshVersions,
+            pending: false,
+            result,
+          });
         }
         if (wait) {
           // Synchron: der Aufrufer bekommt den Grund zurueck, wenn es scheitert.
           const result = await ensureCompanyProfile(name);
           const { data: fresh } = await admin.schema("signal_layer").from("company_profiles")
             .select("*").eq("company", name).maybeSingle();
-          return corsResponse(origin, { profile: fresh || null, pending: false, result });
+          return corsResponse(origin, { profile: fresh || null, profile_versions: await companyProfileVersions(name), pending: false, result });
         }
         EdgeRuntime.waitUntil(ensureCompanyProfile(name));
-        return corsResponse(origin, { profile: null, pending: true });
+        return corsResponse(origin, { profile: null, profile_versions: versions, pending: true });
       }
 
       case "get_simple_run_status": {

@@ -2,7 +2,7 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts } from "./status-state.mjs?v=20260804-2330";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2355";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2400";
 
 let sb = null;
 let sources = [];
@@ -1470,8 +1470,8 @@ function renderAdvancedCompanyFilter() {
   els.signalCompanyFilterOptions.innerHTML = options.length
     ? options.map((name) => {
       const selected = signalCompanyFilterState.selected.includes(name);
-      return `<button type="button" class="company-filter-option${selected ? " selected" : ""}" data-advanced-company-option="${escapeHtml(name)}" aria-pressed="${selected}">
-        <i class="fa-${selected ? "solid fa-square-check" : "regular fa-square"}"></i><span>${escapeHtml(name)}</span>
+      return `<button type="button" class="roots-select-option${selected ? " selected" : ""}" data-advanced-company-option="${escapeHtml(name)}" aria-pressed="${selected}">
+        <span>${escapeHtml(name)}</span>
       </button>`;
     }).join("")
     : `<div class="company-filter-empty">Für diese Klasse wurden im geladenen Bestand noch keine Unternehmen erkannt.</div>`;
@@ -1614,7 +1614,10 @@ function renderFindings(track) {
             ${article.matched_offering_reasoning ? `<div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escapeText(article.matched_offering_reasoning)}</p></div>` : ""}
           </div>` : ""}
           <div class="finding-meta">
-            ${companyGroups.tier1.map((c) => `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-company-trigger-state="${sameCompanyName(article.primary_company, c) ? "target" : "mention"}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
+            ${companyGroups.tier1.map((c) => {
+              const isTarget = sameCompanyName(article.primary_company, c);
+              return `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-company-trigger="${escapeHtml(isTarget ? article.trigger_de || "" : "")}" data-company-trigger-state="${isTarget ? "target" : "mention"}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`;
+            }).join("")}
             ${companyGroups.company.map((c) => `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
             ${source?.company ? `<span class="tag tag--source" title="Quelle: ${escapeHtml(source.company)}"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
@@ -2120,7 +2123,11 @@ function renderDetailTags(article) {
     // beim Überfahren in einer kleinen Box.
     ...companies.map((company) => {
       const tier = (article.company_tiers || {})[company] === "tier1" ? "tier1" : "company";
-      return `<span class="tag tag--${tier === "tier1" ? "kunde" : "company"}" data-pill-info="Einstufung: ${tier === "tier1" ? "Tier-1-Unternehmen" : "Company"}" tabindex="0"><i class="fa-solid fa-building"></i> ${escapeHtml(company)}</span>`;
+      const isTarget = tier === "tier1" && sameCompanyName(article.primary_company, company);
+      const profileAttrs = tier === "tier1"
+        ? ` data-company-profile="${escapeHtml(company)}" data-company-trigger="${escapeHtml(isTarget ? article.trigger_de || "" : "")}" data-company-trigger-state="${isTarget ? "target" : "mention"}" role="button"`
+        : "";
+      return `<span class="tag tag--${tier === "tier1" ? "kunde" : "company"}"${profileAttrs} data-pill-info="Einstufung: ${tier === "tier1" ? "Tier-1-Unternehmen" : "Company"}" tabindex="0"><i class="fa-solid fa-building"></i> ${escapeHtml(company)}</span>`;
     }),
     ...people.map((person) => {
       const mention = (article.person_mentions || []).find((entry) => entry?.name === person);
@@ -3002,7 +3009,8 @@ function renderSimpleHeaderStatusContent() {
 // Steckbrief eines Tier-1-Unternehmens. Klick auf die blaue Pille oeffnet das
 // Account-Blatt: Kennzahlen, Unternehmensdaten, Buying Center, Strategie,
 // Themen zur Ansprache und Trigger - recherchiert von Gemini mit Google-Suche,
-// mit echten Quellen. Ein Profil pro Unternehmen, 30 Tage gueltig.
+// mit echten Quellen. Ein Profil pro Unternehmen, weitere Recherchen nur nach
+// ausdruecklicher Bestaetigung und als auswählbarer neuer Stand.
 // ---------------------------------------------------------------------------
 function companyProfileOverlay() {
   let host = document.getElementById("company-profile-overlay");
@@ -3025,6 +3033,39 @@ function closeCompanyProfile() {
   document.getElementById("company-profile-overlay")?.classList.remove("open");
 }
 
+let companyProfileViewState = {
+  company: "", profile: null, versions: [], trigger: null, triggerState: "",
+};
+
+function companyProfileVersionLabel(value, withTime = false) {
+  if (!value) return "Stand unbekannt";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Stand unbekannt";
+  return date.toLocaleString("de-DE", withTime
+    ? { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }
+    : { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function companyProfileHistoryHtml(profile, versions = []) {
+  const stand = companyProfileVersionLabel(profile?.researched_at);
+  if (!versions.length) return `<span class="cp-pill">Recherchiert: ${escapeHtml(stand)}</span>`;
+  return `<div class="cp-history-picker">
+    <button type="button" class="cp-pill cp-history-trigger" aria-haspopup="listbox" aria-label="Recherche-Stand auswählen">
+      <i class="fa-solid fa-clock-rotate-left"></i> Recherchiert: ${escapeHtml(stand)} <i class="fa-solid fa-chevron-down"></i>
+    </button>
+    <div class="cp-history-menu" role="listbox" aria-label="Gespeicherte Recherche-Stände">
+      <span class="cp-history-kicker">Recherche-Stand auswählen</span>
+      ${versions.map((entry, index) => {
+        const selected = String(entry.id || "") === String(profile?.snapshot_id || "");
+        return `<button type="button" class="cp-history-option${selected ? " selected" : ""}" data-company-snapshot="${escapeHtml(entry.id || "")}" role="option" aria-selected="${selected}">
+          <span>${escapeHtml(companyProfileVersionLabel(entry.researched_at, true))}</span>
+          <small>${index === 0 ? "Aktueller Stand" : `Version ${versions.length - index}`}</small>
+        </button>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
 function companyLogoHtml(company, profile) {
   const initials = String(company || "?").replace(/[^A-Za-zÄÖÜäöü0-9 ]/g, "").split(/\s+/)
     .filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join("") || "?";
@@ -3034,6 +3075,7 @@ function companyLogoHtml(company, profile) {
     official_media: "Offizielle Logoquelle",
     official_structured_data: "Offizielle Website",
     wikimedia_commons: "Wikimedia Commons",
+    worldvectorlogo: "Worldvectorlogo",
   };
   if (!logoUrl) return `<div class="cp-logo-wrap"><div class="cp-logo cp-logo--fallback"><span>${escapeHtml(initials)}</span></div></div>`;
   return `<div class="cp-logo-wrap">
@@ -3043,19 +3085,16 @@ function companyLogoHtml(company, profile) {
   </div>`;
 }
 
-function companyProfileHeadHtml(company, profile, triggerForHead = null, triggerState = "") {
-  const stand = profile?.researched_at
-    ? new Date(profile.researched_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
-    : null;
+function companyProfileHeadHtml(company, profile, triggerForHead = null, triggerState = "", versions = [], allowRefresh = true) {
   return `<div class="cp-head">
     <div class="cp-head-main">
       <span class="cp-eyebrow"><i class="fa-solid fa-building"></i> Tier-1-Steckbrief</span>
       <h2 id="cp-title">Unternehmensprofil: ${escapeHtml(company)}</h2>
       ${profile?.headline ? `<p class="cp-head-sub">${escapeHtml(profile.headline)}</p>` : ""}
       ${profile ? `<div class="cp-pills">
-        <span class="cp-pill">Recherchiert: ${escapeHtml(stand || "unbekannt")}</span>
-        <button type="button" class="cp-pill cp-pill--action" data-company-refresh="${escapeHtml(company)}" data-company-trigger="${escapeHtml(triggerForHead || "")}" data-company-trigger-state="${escapeHtml(triggerState)}">
-          <i class="fa-solid fa-rotate"></i> Aktualisieren</button>
+        ${companyProfileHistoryHtml(profile, versions)}
+        ${allowRefresh ? `<button type="button" class="cp-pill cp-pill--action" data-company-refresh="${escapeHtml(company)}" data-company-trigger="${escapeHtml(triggerForHead || "")}" data-company-trigger-state="${escapeHtml(triggerState)}">
+          <i class="fa-solid fa-rotate"></i> Aktualisieren</button>` : ""}
       </div>` : ""}
     </div>
     ${companyLogoHtml(company, profile)}
@@ -3063,16 +3102,17 @@ function companyProfileHeadHtml(company, profile, triggerForHead = null, trigger
   </div>`;
 }
 
-function renderCompanyProfile(company, profile, pending, trigger = null, triggerState = "") {
+function renderCompanyProfile(company, profile, pending, trigger = null, triggerState = "", versions = [], refreshing = false) {
   const card = companyProfileOverlay().querySelector(".cp-card");
   if (!profile) {
-    card.innerHTML = companyProfileHeadHtml(company, null, trigger, triggerState) + `<div class="cp-body"><div class="cp-state">${
+    card.innerHTML = companyProfileHeadHtml(company, null, trigger, triggerState, versions) + `<div class="cp-body"><div class="cp-state">${
       pending
-        ? LOADER_HTML + '<p style="margin:.8rem 0 0">Steckbrief wird recherchiert, das dauert etwa eine Minute.</p>'
+        ? LOADER_HTML + `<p style="margin:.8rem 0 0">${refreshing ? "Tier-1-Details werden neu recherchiert. Der individuelle Artikel-Trigger bleibt unverändert." : "Steckbrief wird recherchiert, das dauert etwa eine Minute."}</p>`
         : "Für dieses Unternehmen liegt kein Steckbrief vor. Steckbriefe entstehen für Tier-1-Unternehmen während eines Analyselaufs."
     }</div></div>`;
     return;
   }
+  companyProfileViewState = { company, profile, versions, trigger, triggerState };
   const kpis = Array.isArray(profile.kpis) ? profile.kpis : [];
   const sections = Array.isArray(profile.sections) ? profile.sections : [];
   const sources = Array.isArray(profile.sources) ? profile.sources : [];
@@ -3082,7 +3122,7 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
       ? `Für ${company} ist in diesem Artikel kein ausreichend belegter Gesprächsaufhänger vorhanden. Der KI-Nachlauf erfindet deshalb weder Anlass noch Beratungsbedarf.`
       : "");
   const triggerMuted = !trigger;
-  card.innerHTML = companyProfileHeadHtml(company, profile, trigger, triggerState) + `<div class="cp-body">
+  card.innerHTML = companyProfileHeadHtml(company, profile, trigger, triggerState, versions) + `<div class="cp-body">
     ${kpis.length ? `<div class="cp-kpis">${kpis.map((k) => `<div class="cp-kpi">
       <b>${escapeHtml(k.value || "–")}</b><span>${escapeHtml(k.label || "")}</span>
       ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}</div>`).join("")}</div>` : ""}
@@ -3100,17 +3140,38 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
   </div>`;
 }
 
-export async function openCompanyProfile(company, { refresh = false, trigger = null, triggerState = "" } = {}) {
+function renderCompanyRefreshConfirmation(company) {
+  const state = companyProfileViewState;
+  if (!state.profile || state.company !== company) return;
+  const card = companyProfileOverlay().querySelector(".cp-card");
+  card.innerHTML = companyProfileHeadHtml(company, state.profile, state.trigger, state.triggerState, state.versions, false) + `<div class="cp-confirm-wrap">
+    <div class="cp-confirm-icon"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+    <div class="cp-confirm-copy">
+      <span>KI-Neurecherche</span>
+      <h3>Tier-1-Details neu recherchieren?</h3>
+      <p>Unternehmensdaten, Kennzahlen, Buying Center, Strategie, Themen und Logo werden mit aktuellen Quellen neu recherchiert und als neuer Stand gespeichert.</p>
+      <div class="cp-confirm-safe"><i class="fa-solid fa-shield-check"></i><span><b>Der individuelle Trigger bleibt unberührt.</b> „Trigger &amp; Aufhänger“ stammt weiterhin ausschließlich aus dem geöffneten Artikel.</span></div>
+    </div>
+    <div class="cp-confirm-actions">
+      <button type="button" class="btn-secondary" data-company-refresh-cancel>Abbrechen</button>
+      <button type="button" class="btn-primary" data-company-refresh-confirm="${escapeHtml(company)}"><i class="fa-solid fa-magnifying-glass"></i> Recherche starten</button>
+    </div>
+  </div>`;
+}
+
+export async function openCompanyProfile(company, { refresh = false, snapshotId = "", trigger = null, triggerState = "" } = {}) {
   const name = String(company || "").trim();
   if (!name) return;
   const host = companyProfileOverlay();
   host.dataset.company = name;
   host.classList.add("open");
-  renderCompanyProfile(name, null, true, trigger, triggerState);
+  renderCompanyProfile(name, null, true, trigger, triggerState, companyProfileViewState.versions, refresh);
   try {
-    const payload = refresh ? { company: name, refresh: true } : { company: name };
-    const { profile, pending, pending_logo: pendingLogo } = await callApi("get_company_profile", payload);
-    renderCompanyProfile(name, profile, pending, trigger, triggerState);
+    const payload = refresh ? { company: name, refresh: true }
+      : snapshotId ? { company: name, snapshot_id: snapshotId }
+        : { company: name };
+    const { profile, profile_versions: versions = [], pending, pending_logo: pendingLogo } = await callApi("get_company_profile", payload);
+    renderCompanyProfile(name, profile, pending, trigger, triggerState, versions);
     if (pendingLogo) {
       // Bestehende Steckbriefe werden serverseitig einmalig um ein verifiziertes
       // Logo ergänzt. Die Karte bleibt benutzbar und aktualisiert nur den Kopf,
@@ -3119,25 +3180,49 @@ export async function openCompanyProfile(company, { refresh = false, trigger = n
         await new Promise((resolve) => setTimeout(resolve, 5_000));
         if (!host.classList.contains("open") || host.dataset.company !== name) break;
         const next = await callApi("get_company_profile", { company: name, logo_poll: true });
-        renderCompanyProfile(name, next.profile || profile, false, trigger, triggerState);
+        renderCompanyProfile(name, next.profile || profile, false, trigger, triggerState, next.profile_versions || versions);
         if (!next.pending_logo) break;
       }
     }
   } catch (error) {
-    host.querySelector(".cp-card").innerHTML = companyProfileHeadHtml(name, null, trigger, triggerState)
+    host.querySelector(".cp-card").innerHTML = companyProfileHeadHtml(name, null, trigger, triggerState, companyProfileViewState.versions)
       + `<div class="cp-body"><div class="cp-state">Steckbrief konnte nicht geladen werden: ${escapeHtml(error.message)}</div></div>`;
   }
 }
 
 // Ein Klickfänger für beide Modi, damit neu gezeichnete Karten ihn nicht verlieren.
 if (typeof document !== "undefined") document.addEventListener("click", (event) => {
+  const cancelRefresh = event.target.closest("[data-company-refresh-cancel]");
+  if (cancelRefresh) {
+    event.preventDefault();
+    const state = companyProfileViewState;
+    renderCompanyProfile(state.company, state.profile, false, state.trigger, state.triggerState, state.versions);
+    return;
+  }
+  const confirmRefresh = event.target.closest("[data-company-refresh-confirm]");
+  if (confirmRefresh) {
+    event.preventDefault();
+    const state = companyProfileViewState;
+    void openCompanyProfile(confirmRefresh.getAttribute("data-company-refresh-confirm"), {
+      refresh: true, trigger: state.trigger, triggerState: state.triggerState,
+    });
+    return;
+  }
   const refreshBtn = event.target.closest("[data-company-refresh]");
   if (refreshBtn) {
     event.preventDefault();
     event.stopPropagation();
-    void openCompanyProfile(refreshBtn.getAttribute("data-company-refresh"), {
-      refresh: true, trigger: refreshBtn.getAttribute("data-company-trigger") || null,
-      triggerState: refreshBtn.getAttribute("data-company-trigger-state") || "",
+    renderCompanyRefreshConfirmation(refreshBtn.getAttribute("data-company-refresh"));
+    return;
+  }
+  const snapshotBtn = event.target.closest("[data-company-snapshot]");
+  if (snapshotBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const state = companyProfileViewState;
+    void openCompanyProfile(state.company, {
+      snapshotId: snapshotBtn.getAttribute("data-company-snapshot") || "",
+      trigger: state.trigger, triggerState: state.triggerState,
     });
     return;
   }

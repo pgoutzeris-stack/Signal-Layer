@@ -223,34 +223,27 @@
   /* Zwei Klassen geben der Regel Vorrang vor der spaeter definierten
      .roots-select-Basis. Ohne diese Spezifitaet wurde der Filter wieder zum
      schmalen Bezugspunkt seines Fly-outs und quetschte das gesamte Raster. */
-  .roots-select.company-filter { position: static; min-width: 154px; flex: 0 1 180px; }
+  .roots-select.company-filter { position: static; min-width: 142px; flex: 0 0 154px; }
   .company-filter .roots-select-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .company-filter .roots-select-menu { left: 0; right: 0; width: auto; max-width: none; padding: 10px; transform-origin: top center; }
-  .company-filter-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
-  .company-filter-tab { min-height: 31px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: .69rem; font-weight: 750; cursor: pointer; }
-  .company-filter-tab:hover { color: var(--ink); }
-  .company-filter-tab.active { background: var(--bg); color: var(--brand-dark); box-shadow: 0 2px 8px rgba(15,23,42,.08); }
-  .company-filter-help { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 4px 6px; color: var(--muted); font-size: .63rem; }
+  .company-filter .roots-select-menu { left: 0; right: 0; width: auto; max-width: none; padding: 7px; transform-origin: top center; }
+  .company-filter-tabs { display: flex; gap: 5px; padding: 0 0 7px; border-bottom: 1px solid var(--line); }
+  .company-filter-tab { min-height: 29px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--muted); font: inherit; font-size: .67rem; font-weight: 700; cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
+  .company-filter-tab:hover { color: var(--ink); border-color: color-mix(in srgb, var(--brand) 34%, var(--line)); }
+  .company-filter-tab.active { border-color: color-mix(in srgb, var(--brand) 32%, var(--line)); background: var(--brand-light); color: var(--brand-dark); }
+  .company-filter-help { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 5px; color: var(--muted); font-size: .6rem; }
   .company-filter-reset { border: 0; background: transparent; color: var(--brand); font: inherit; font-size: .63rem; font-weight: 750; cursor: pointer; }
   .company-filter-reset:hover { text-decoration: underline; }
-  .company-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; max-height: 290px; overflow-y: auto; scrollbar-width: thin; }
-  .company-filter-option { min-height: 34px; padding: 6px 9px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--status-text); display: flex; align-items: center; gap: 8px; font: inherit; font-size: .69rem; text-align: left; cursor: pointer; }
-  .company-filter-option:hover { border-color: var(--line); background: var(--surface); color: var(--ink); }
-  .company-filter-option i { width: 14px; flex: none; color: var(--muted); text-align: center; }
-  .company-filter-option span { min-width: 0; overflow-wrap: anywhere; }
-  .company-filter-option.selected { border-color: color-mix(in srgb, var(--brand) 26%, var(--line)); background: var(--brand-light); color: var(--brand-dark); font-weight: 700; }
-  .company-filter-option.selected i { color: var(--brand); }
+  .company-filter-grid { max-height: 290px; }
+  .company-filter-grid .roots-select-option { white-space: normal; }
   .company-filter-empty { grid-column: 1 / -1; padding: 1.2rem; color: var(--muted); font-size: .72rem; text-align: center; }
-  @media (min-width: 760px) { .company-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (min-width: 1080px) { .company-filter-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
   /* Tier-1-Steckbrief in der Design-DNA des Signal Layers. */
-  .cp-overlay { position: fixed; inset: 0; background: rgba(13,24,43,.62); backdrop-filter: blur(7px); display: none; z-index: 120; padding: 2.5vh 2vw; overflow: auto; }
+  .cp-overlay { position: fixed; inset: 0; background: rgba(13,24,43,.62); backdrop-filter: blur(7px); display: none; z-index: 100100; padding: 2.5vh 2vw; overflow: auto; }
   .cp-overlay.open { display: block; }
   .cp-card { max-width: 1120px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); overflow: hidden; box-shadow: 0 28px 72px rgba(5,15,35,.28); }
   .cp-head { position: relative; border-bottom: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 1.2rem 1.3rem; display: grid; grid-template-columns: minmax(0, 1fr) 154px; align-items: center; gap: 1.25rem; }
   .cp-head-main { min-width: 0; grid-column: 1; }
-  .cp-eyebrow { display: inline-flex; align-items: center; gap: 6px; margin-bottom: .42rem; padding-left: .55rem; border-left: 3px solid var(--brand); color: var(--brand-dark); font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .cp-eyebrow { display: inline-flex; align-items: center; gap: 6px; margin-bottom: .42rem; color: var(--brand-dark); font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .cp-head h2 { margin: 0; color: var(--ink); font-size: clamp(1.2rem, 2vw, 1.55rem); font-weight: 730; letter-spacing: -.025em; }
   .cp-head-sub { margin: .32rem 0 0; max-width: 720px; font-size: .8rem; line-height: 1.45; color: var(--muted); }
   .cp-logo-wrap { width: 154px; grid-column: 2; padding-top: 1.35rem; display: flex; flex-direction: column; align-items: center; gap: .36rem; }
@@ -266,6 +259,29 @@
   .cp-pill { display: inline-flex; align-items: center; gap: .3rem; background: var(--surface); color: var(--status-text); border: 1px solid var(--line); border-radius: 8px; padding: .27rem .58rem; font-size: .68rem; font-weight: 650; }
   .cp-pill--action { cursor: pointer; background: var(--brand-light); border-color: color-mix(in srgb, var(--brand) 22%, var(--line)); color: var(--brand-dark); }
   .cp-pill--action:hover { border-color: var(--brand); background: color-mix(in srgb, var(--brand-light) 78%, #fff); }
+  .cp-history-picker { position: relative; }
+  .cp-history-trigger { cursor: pointer; }
+  .cp-history-trigger > i:last-child { margin-left: 2px; color: var(--brand); font-size: .58rem; transition: transform .16s; }
+  .cp-history-picker:hover .cp-history-trigger > i:last-child, .cp-history-picker:focus-within .cp-history-trigger > i:last-child { transform: rotate(180deg); }
+  .cp-history-menu { position: absolute; left: 0; top: calc(100% + 6px); z-index: 8; width: min(270px, calc(100vw - 40px)); max-height: 260px; overflow: auto; padding: 7px; border: 1px solid var(--line); border-radius: 13px; background: #fff; box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-4px); transition: opacity .14s, visibility .14s, transform .14s; }
+  .cp-history-picker:hover .cp-history-menu, .cp-history-picker:focus-within .cp-history-menu { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0); }
+  .cp-history-kicker { display: block; padding: 4px 7px 7px; color: var(--muted); font-size: .56rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+  .cp-history-option { width: 100%; min-height: 38px; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); display: flex; align-items: center; justify-content: space-between; gap: 12px; font: inherit; text-align: left; cursor: pointer; }
+  .cp-history-option:hover { background: var(--surface); }
+  .cp-history-option.selected { background: var(--brand-light); color: var(--brand-dark); }
+  .cp-history-option span { font-size: .66rem; font-weight: 700; }
+  .cp-history-option small { color: var(--muted); font-size: .56rem; white-space: nowrap; }
+  .cp-history-option.selected::after { content: "✓"; color: var(--brand); font-size: .7rem; }
+  .cp-history-option.selected small { display: none; }
+  .cp-confirm-wrap { padding: 1.6rem; background: var(--surface); display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 14px; }
+  .cp-confirm-icon { width: 42px; height: 42px; border-radius: 12px; background: var(--brand-light); color: var(--brand); display: grid; place-items: center; }
+  .cp-confirm-copy > span { color: var(--brand); font-size: .6rem; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
+  .cp-confirm-copy h3 { margin: .25rem 0 .45rem; color: var(--ink); font-size: 1rem; }
+  .cp-confirm-copy > p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.55; }
+  .cp-confirm-safe { display: flex; gap: 9px; margin-top: .85rem; padding: .75rem .85rem; border: 1px solid color-mix(in srgb, var(--brand) 20%, var(--line)); border-radius: 11px; background: var(--bg); color: var(--status-text); font-size: .72rem; line-height: 1.45; }
+  .cp-confirm-safe i { flex: none; margin-top: 2px; color: var(--brand); }
+  .cp-confirm-safe b { display: block; color: var(--ink); }
+  .cp-confirm-actions { grid-column: 2; display: flex; justify-content: flex-end; gap: 7px; margin-top: .2rem; }
   .cp-body { padding: 1.25rem 1.4rem 1.5rem; background: var(--surface); }
   .cp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; margin-bottom: 1.1rem; }
   .cp-kpi { border: 1px solid var(--line); border-radius: 14px; padding: .9rem .7rem; background: var(--bg); text-align: center; box-shadow: var(--shadow-dash); }
@@ -299,12 +315,16 @@
     .cp-close { top: .55rem; right: .55rem; }
     .cp-body { padding: 1rem; }
     .cp-grid { grid-template-columns: 1fr; }
+    .cp-confirm-wrap { grid-template-columns: 1fr; padding: 1.15rem; }
+    .cp-confirm-actions { grid-column: 1; display: grid; grid-template-columns: 1fr; }
+    .cp-confirm-actions button { width: 100%; justify-content: center; }
   }
   .tag[data-company-profile] { cursor: pointer; }
   .tag[data-company-profile]:hover { filter: brightness(.95); }
   .tag--company { border-color: var(--line); background: var(--bg); color: var(--ink); }
   .tag--company i { color: var(--muted); }
   .tag[data-pill-info] { position: relative; cursor: default; }
+  .tag[data-pill-info][data-company-profile] { cursor: pointer; }
   .tag[data-pill-info]::after { content: attr(data-pill-info); position: absolute; left: 50%; bottom: calc(100% + 6px); z-index: 60; transform: translateX(-50%); padding: .35rem .55rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font-size: .64rem; font-weight: 650; white-space: nowrap; box-shadow: 0 8px 20px rgba(15,23,42,.14); opacity: 0; visibility: hidden; transition: opacity .14s ease; }
   .tag[data-pill-info]:hover::after, .tag[data-pill-info]:focus-visible::after { opacity: 1; visibility: visible; }
   @media (max-width: 720px) { .pipeline-detail-row { grid-template-columns: 1fr; gap: 2px; } }
@@ -2004,13 +2024,13 @@
               <button type="button" class="roots-select-trigger" id="signal-company-filter-trigger" aria-haspopup="dialog" aria-expanded="false">
                 <span id="signal-company-filter-label">Unternehmen</span><i class="fa-solid fa-chevron-down"></i>
               </button>
-              <div class="roots-select-menu" id="signal-company-filter-menu" role="dialog" aria-label="Unternehmen filtern">
+              <div class="roots-select-menu roots-select-menu--grid" id="signal-company-filter-menu" role="dialog" aria-label="Unternehmen filtern">
                 <div class="company-filter-tabs" role="tablist" aria-label="Unternehmensklasse">
                   <button type="button" class="company-filter-tab active" data-advanced-company-class="tier1" role="tab" aria-selected="true">Tier 1</button>
                   <button type="button" class="company-filter-tab" data-advanced-company-class="company" role="tab" aria-selected="false">Company</button>
                 </div>
                 <div class="company-filter-help"><span id="signal-company-filter-help">Tier-1-Unternehmen mehrfach auswählen</span><button type="button" class="company-filter-reset" id="signal-company-filter-reset">Auswahl löschen</button></div>
-                <div class="company-filter-grid" id="signal-company-filter-options"></div>
+                <div class="company-filter-grid roots-select-grid" id="signal-company-filter-options"></div>
               </div>
             </div>
             <select class="signal-toolbar-select" id="signal-source-filter" aria-label="Quelle filtern">
@@ -2096,13 +2116,13 @@
                 <button type="button" class="roots-select-trigger" id="simple-company-filter-trigger" aria-haspopup="dialog" aria-expanded="false">
                   <span id="simple-company-filter-label">Unternehmen</span><i class="fa-solid fa-chevron-down"></i>
                 </button>
-                <div class="roots-select-menu" id="simple-company-filter-menu" role="dialog" aria-label="Unternehmen filtern">
+                <div class="roots-select-menu roots-select-menu--grid" id="simple-company-filter-menu" role="dialog" aria-label="Unternehmen filtern">
                   <div class="company-filter-tabs" role="tablist" aria-label="Unternehmensklasse">
                     <button type="button" class="company-filter-tab active" data-company-class="tier1" role="tab" aria-selected="true">Tier 1</button>
                     <button type="button" class="company-filter-tab" data-company-class="company" role="tab" aria-selected="false">Company</button>
                   </div>
                   <div class="company-filter-help"><span id="simple-company-filter-help">Tier-1-Unternehmen mehrfach auswählen</span><button type="button" class="company-filter-reset" id="simple-company-filter-reset">Auswahl löschen</button></div>
-                  <div class="company-filter-grid" id="simple-company-filter-options"></div>
+                  <div class="company-filter-grid roots-select-grid" id="simple-company-filter-options"></div>
                 </div>
               </div>
               <select class="signal-toolbar-select" id="simple-source-filter" aria-label="Quelle filtern">
@@ -2364,7 +2384,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260804-2355';
+  import { initApp } from './app.js?v=20260804-2400';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

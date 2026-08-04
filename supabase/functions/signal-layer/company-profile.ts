@@ -13,13 +13,14 @@
 // einen anderen Endpunkt und passt hier nicht.
 //
 // Gerechnet wird pro Suchanfrage, die das Modell absetzt. Deshalb ein Profil pro
-// Unternehmen mit Verfallsdatum, nicht ein Profil pro Artikel.
+// Unternehmen und weitere Stände nur nach ausdrücklicher Aktualisierung, nicht
+// ein Profil pro Artikel.
 
 export const COMPANY_PROFILE_MODEL = "gemini-2.5-flash";
-export const COMPANY_PROFILE_TTL_DAYS = 30;
 /** Obergrenze je Verarbeitungspaket, damit ein Lauf nicht in Recherche umkippt. */
 export const COMPANY_PROFILE_MAX_PER_BATCH = 2;
 export const COMPANY_PROFILE_MAX_OUTPUT_TOKENS = 10_000;
+export const COMPANY_LOGO_LOOKUP_VERSION = "2026-08-worldvectorlogo-v1";
 
 /** Die Karten des Steckbriefs, in der Reihenfolge der Anzeige. */
 export const COMPANY_PROFILE_SECTIONS = [
@@ -39,7 +40,8 @@ export type CompanyProfileSource = { title: string; uri: string };
 export type CompanyProfileLogoSourceKind =
   | "official_media"
   | "official_structured_data"
-  | "wikimedia_commons";
+  | "wikimedia_commons"
+  | "worldvectorlogo";
 export type CompanyProfileLogoFormat = "svg" | "png" | "webp" | "jpg";
 
 export type CompanyProfile = {
@@ -93,12 +95,17 @@ genau dieser Priorität:
 A. offizielle Presse-, Brand-, Media- oder Download-Seite des Unternehmens,
 B. das Organization.logo der offiziellen Website,
 C. die Dateiseite auf Wikimedia Commons, wenn dort die aktuelle Identität und
-   Herkunft eindeutig belegt sind.
+   Herkunft eindeutig belegt sind,
+D. als letzter Fallback Worldvectorlogo (worldvectorlogo.com/de): Suche dort
+   ausschließlich nach dem exakten Unternehmensnamen und verwende die direkte
+   SVG-Datei von cdn.worldvectorlogo.com. Verwechsle Mutterkonzern, Marke und
+   ähnlich benannte Unternehmen niemals.
 Bevorzuge eine direkte, transparente SVG-Datei, sonst PNG oder WebP. Gib neben
 der direkten Bilddatei immer die Herkunftsseite an. Nimm niemals Favicons,
-Google-Ergebnislinks, ZIP/PDF-Dateien, Social-Media-Bilder, Logo-Aggregatoren
-oder ein Produkt-/Shop-Logo, wenn das Profil den Mutterkonzern meint. Wenn die
-aktuelle Identität nicht sicher belegt ist, lasse alle Logo-Felder leer.
+Google-Ergebnislinks, ZIP/PDF-Dateien, Social-Media-Bilder, andere
+Logo-Aggregatoren oder ein Produkt-/Shop-Logo, wenn das Profil den Mutterkonzern
+meint. Wenn die aktuelle Identität nicht sicher belegt ist, lasse alle
+Logo-Felder leer.
 
 WAS DIE BERATUNG ANBIETET (für die Karte "Themen zur Ansprache"):
 ${rootsPortfolio || "Markenstrategie, Markenarchitektur, Design-to-Print, Customer Insights"}
@@ -114,7 +121,7 @@ danach, ohne Code-Zäune:
   "website": "hauptdomain.de",
   "logo_url": "https://.../aktuelles-logo.svg",
   "logo_source_url": "https://.../presse-oder-dateiseite",
-  "logo_source_kind": "official_media | official_structured_data | wikimedia_commons",
+  "logo_source_kind": "official_media | official_structured_data | wikimedia_commons | worldvectorlogo",
   "logo_format": "svg | png | webp | jpg",
   "headline": "Branche · Kurzcharakterisierung in maximal 8 Wörtern",
   "kpis": [
@@ -135,7 +142,8 @@ REGELN, sie entscheiden über die Brauchbarkeit:
    wann. Nur real belegte Personen. Keine erfundenen Namen, kein "vermutlich".
 4. Ein Logo ist nur gültig, wenn "logo_url" direkt eine öffentliche Bilddatei
    lädt und "logo_source_url" die überprüfbare Herkunftsseite ist. Die angegebene
-   Quelle und Datei müssen zum aktuellen Unternehmen passen.
+   Quelle und Datei müssen zum aktuellen Unternehmen passen. Bei Worldvectorlogo
+   müssen Seiten- und SVG-Slug den exakten Unternehmensnamen eindeutig abbilden.
 5. Jede Zahl, die du nicht per Suche belegen konntest, gehört nicht in "kpis" oder
    "sections", sondern in "unverified_note". Erfinde niemals eine Quelle.
 6. Deutsch, knapp, keine Werbesprache. Kein Satz, der nur Offensichtliches sagt.
@@ -234,7 +242,7 @@ function normalizeSections(raw: unknown): CompanyProfileSection[] {
 }
 
 const LOGO_KINDS = new Set<CompanyProfileLogoSourceKind>([
-  "official_media", "official_structured_data", "wikimedia_commons",
+  "official_media", "official_structured_data", "wikimedia_commons", "worldvectorlogo",
 ]);
 const LOGO_FORMATS = new Set<CompanyProfileLogoFormat>(["svg", "png", "webp", "jpg"]);
 const BLOCKED_LOGO_HOST_PARTS = [
@@ -284,12 +292,37 @@ type VerifiedLogo = {
   logo_format: CompanyProfileLogoFormat;
 };
 
+const GENERIC_COMPANY_WORDS = new Set([
+  "ag", "co", "company", "corporation", "deutschland", "gmbh", "group",
+  "gruppe", "holding", "inc", "kg", "markt", "plc", "se",
+]);
+
+function brandLogoKey(value: string, dropLogoWord = false): string {
+  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/&/g, " und ").split(/[^a-z0-9]+/)
+    .filter((word) => word && !GENERIC_COMPANY_WORDS.has(word) && (!dropLogoWord || word !== "logo"))
+    .join("");
+}
+
+export function worldVectorLogoMatchesCompany(company: string, source: URL, asset: URL): boolean {
+  const companyKey = brandLogoKey(company);
+  if (companyKey.length < 3) return false;
+  const sourceSlug = decodeURIComponent(source.pathname.split("/").filter(Boolean).pop() || "");
+  const assetSlug = decodeURIComponent(asset.pathname.split("/").pop() || "").replace(/\.[a-z0-9]+$/i, "");
+  const matches = (slug: string) => {
+    const key = brandLogoKey(slug, true);
+    if (key.length < 3) return false;
+    return key === companyKey || key.startsWith(companyKey) || companyKey.startsWith(key);
+  };
+  return matches(sourceSlug) && matches(assetSlug);
+}
+
 /**
  * Das Modell darf eine Quelle vorschlagen, aber nur der Server entscheidet, ob
  * sie gespeichert wird. So landen weder erfundene Links noch HTML-Seiten,
  * Favicons oder Logo-Farmen im Steckbrief.
  */
-async function verifyLogoCandidate(parsed: Record<string, unknown>): Promise<VerifiedLogo | null> {
+async function verifyLogoCandidate(company: string, parsed: Record<string, unknown>): Promise<VerifiedLogo | null> {
   const asset = safeHttpsUrl(parsed.logo_url);
   const source = safeHttpsUrl(parsed.logo_source_url);
   const kind = logoKind(parsed.logo_source_kind);
@@ -301,6 +334,10 @@ async function verifyLogoCandidate(parsed: Record<string, unknown>): Promise<Ver
   const officialHost = websiteHost(parsed.website);
   if (kind === "wikimedia_commons") {
     if (source.hostname !== "commons.wikimedia.org" || asset.hostname !== "upload.wikimedia.org") return null;
+  } else if (kind === "worldvectorlogo") {
+    if (!["worldvectorlogo.com", "www.worldvectorlogo.com"].includes(source.hostname) ||
+      asset.hostname !== "cdn.worldvectorlogo.com" ||
+      !worldVectorLogoMatchesCompany(company, source, asset)) return null;
   } else if (!officialHost || !sameDomain(source.hostname, officialHost)) {
     return null;
   }
@@ -377,6 +414,53 @@ export type CompanyProfileDeps = {
   rootsPortfolio: string;
 };
 
+export async function researchCompanyLogo(
+  deps: Pick<CompanyProfileDeps, "apiKey" | "model">,
+  company: string,
+): Promise<{ logo: VerifiedLogo | null; usage: Record<string, number> }> {
+  const model = deps.model || COMPANY_PROFILE_MODEL;
+  const prompt = `Recherchiere das aktuelle Unternehmenslogo für exakt dieses Unternehmen: ${company}.
+
+Priorität: 1. offizielle Presse-/Brand-Seite, 2. Organization.logo der
+offiziellen Website, 3. Wikimedia Commons, 4. als letzter Fallback
+worldvectorlogo.com/de mit direkter SVG-Datei von cdn.worldvectorlogo.com.
+Verwechsle Mutterkonzern, Marke und ähnlich benannte Unternehmen niemals.
+
+Antworte ausschließlich als JSON:
+{"website":"hauptdomain.de","logo_url":"https://...","logo_source_url":"https://...","logo_source_kind":"official_media | official_structured_data | wikimedia_commons | worldvectorlogo","logo_format":"svg | png | webp | jpg"}
+
+Wenn kein aktuelles Logo eindeutig belegt ist, setze alle Logo-Felder auf null.`;
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(deps.apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ google_search: {} }],
+        generationConfig: { temperature: 0, maxOutputTokens: 1_200 },
+      }),
+    },
+  );
+  if (!response.ok) throw new Error(`gemini logo grounding failed (${response.status})`);
+  const payload = await response.json() as Record<string, unknown>;
+  const candidate = (Array.isArray(payload.candidates) ? payload.candidates[0] : null) as Record<string, unknown> | null;
+  if (!candidate) throw new Error("gemini logo grounding returned no candidate");
+  const finish = String(candidate.finishReason ?? "");
+  if (finish && finish !== "STOP") throw new Error(`gemini logo grounding endete mit ${finish}`);
+  const parts = ((candidate.content as Record<string, unknown> | undefined)?.parts ?? []) as Array<Record<string, unknown>>;
+  const parsed = extractJson(parts.map((part) => String(part.text ?? "")).join("\n")) as Record<string, unknown>;
+  const usageMeta = (payload.usageMetadata ?? {}) as Record<string, number>;
+  return {
+    logo: await verifyLogoCandidate(company, parsed),
+    usage: {
+      prompt_tokens: Number(usageMeta.promptTokenCount || 0),
+      output_tokens: Number(usageMeta.candidatesTokenCount || 0),
+      total_tokens: Number(usageMeta.totalTokenCount || 0),
+    },
+  };
+}
+
 export async function researchCompanyProfile(
   deps: CompanyProfileDeps,
   company: string,
@@ -415,7 +499,7 @@ export async function researchCompanyProfile(
   const parts = ((candidate.content as Record<string, unknown> | undefined)?.parts ?? []) as Array<Record<string, unknown>>;
   const text = parts.map((part) => String(part.text ?? "")).join("\n");
   const parsed = extractJson(text) as Record<string, unknown>;
-  const verifiedLogo = await verifyLogoCandidate(parsed);
+  const verifiedLogo = await verifyLogoCandidate(company, parsed);
 
   const usageMeta = (payload.usageMetadata ?? {}) as Record<string, number>;
   return {

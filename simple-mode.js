@@ -197,8 +197,8 @@ function renderCompanyFilter() {
   els.companyFilterOptions.innerHTML = options.length
     ? options.map((name) => {
       const selected = companyFilterState.selected.includes(name);
-      return `<button type="button" class="company-filter-option${selected ? " selected" : ""}" data-company-option="${esc(name)}" aria-pressed="${selected}">
-        <i class="fa-${selected ? "solid fa-square-check" : "regular fa-square"}"></i><span>${esc(name)}</span>
+      return `<button type="button" class="roots-select-option${selected ? " selected" : ""}" data-company-option="${esc(name)}" aria-pressed="${selected}">
+        <span>${esc(name)}</span>
       </button>`;
     }).join("")
     : `<div class="company-filter-empty">Für diese Klasse wurden im geladenen Bestand noch keine Unternehmen erkannt.</div>`;
