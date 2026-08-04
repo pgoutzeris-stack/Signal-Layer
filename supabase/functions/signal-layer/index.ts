@@ -2431,6 +2431,20 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
   "gemini-3-flash-preview": { currency: "USD", standard: { input: 0.5, cachedInput: 0.05, output: 3 } },
 };
 
+function zeroCostFields(model: string): Record<string, unknown> {
+  return {
+    cached_input_tokens: 0,
+    estimated_cost_usd: 0,
+    estimated_cost_eur: 0,
+    native_cost: 0,
+    pricing_currency: MODEL_PRICES[model]?.currency || null,
+    native_to_eur_rate: null,
+    usd_to_eur_rate: null,
+    pricing_version: AI_PRICING_VERSION,
+    search_query_count: 0,
+  };
+}
+
 function verifiedModelPrice(model: string, inferenceMode: "standard" | "batch" = "standard", inputTokens = 0) {
   const price = MODEL_PRICES[model];
   if (!price) return null;
@@ -2679,6 +2693,7 @@ async function callGeminiClassifier(
       operation, model, status: "error", prompt_version: CLASSIFIER_PROMPT_VERSION,
       attempt: result.attempts,
       duration_ms: Date.now() - startedAt, error_code: errorCode, error_message: result.error.slice(0, 1000),
+      ...zeroCostFields(model),
     });
     if (failedUsageEventError) throw new Error(`Could not persist failed model usage: ${failedUsageEventError.message}`);
     throw new Error(`${model} failed: ${status} ${result.error}`);
@@ -3010,6 +3025,7 @@ async function translateArticleToGerman(
         article_id: telemetry.articleId || null, crawl_run_id: telemetry.crawlRunId || null,
         operation: "translation", model, status: "error", prompt_version: CLASSIFIER_PROMPT_VERSION,
         attempt: result.attempts, duration_ms: Date.now() - startedAt,
+        ...zeroCostFields(model),
         error_code: `http_${result.status || "network"}`, error_message: result.error.slice(0, 1000),
       });
       return null;

@@ -23,6 +23,7 @@ test("uses verified standard and batch model prices without a guessed fallback",
   assert.match(backend, /"gemini-3\.5-flash":\s*\{[^\n]*standard:\s*\{ input: 1\.5, cachedInput: 0\.15, output: 9 \}, batch:\s*\{ input: 0\.75, cachedInput: 0\.075, output: 4\.5 \}/);
   assert.match(backend, /"deepseek-v4-pro":\s*\{ currency: "CNY", standard:\s*\{ input: 3, cachedInput: 0\.025, output: 6 \}/);
   assert.match(backend, /if \(!verified\) throw new Error\(/);
+  assert.match(backend, /function zeroCostFields\(model: string\)/);
   assert.doesNotMatch(backend, /fallbackRate|defaultRate|estimatedModelRate/i);
 });
 
