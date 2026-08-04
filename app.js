@@ -1809,7 +1809,10 @@ function mountResultsHeader() {
 }
 
 function enhanceHeaderSelects() {
-  document.querySelectorAll(".signal-toolbar-select").forEach((select) => {
+  // Only native selects can expose options/selectedOptions. The company filter
+  // is an independent button and used to share this styling class, which made
+  // app startup crash before any article request was sent.
+  document.querySelectorAll("select.signal-toolbar-select").forEach((select) => {
     if (select.dataset.enhanced === "true") return;
     select.dataset.enhanced = "true";
     const wrapper = document.createElement("div");
@@ -1893,7 +1896,7 @@ function enhanceHeaderSelects() {
       return button;
     };
     const render = () => {
-      label.textContent = isGrid ? summaryLabel() : (select.selectedOptions[0]?.textContent || "Auswählen");
+      label.textContent = isGrid ? summaryLabel() : (select.selectedOptions?.[0]?.textContent || "Auswählen");
       const options = [...select.options];
       if (!isGrid) { menu.replaceChildren(...options.map(makeOption)); return; }
       menu.replaceChildren();
