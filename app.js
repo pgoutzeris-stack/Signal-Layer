@@ -633,9 +633,7 @@ function simpleModelSelect(path, label, description, researchOnly = false) {
 
 function renderOperationsPanel(telemetry) {
   const simpleMode = document.body.classList.contains("mode-simple");
-  const euro = (value) => value === null || value === undefined
-    ? "–"
-    : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+  const euro = formatCostEur;
   const modelState = geminiModelCatalogState.status === "loading"
     ? `<span class="operations-inline-status"><i class="fa-solid fa-spinner fa-spin"></i> Modelle werden geladen</span>`
     : geminiModelCatalogState.status === "error"
@@ -2386,9 +2384,10 @@ function humanizeAuditKey(key) {
   return String(key || "Wert").replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function auditFriendlyValue(value) {
+function auditFriendlyValue(value, key = "") {
   if (value === null || value === undefined || value === "") return "Nicht vorhanden";
   if (typeof value === "boolean") return value ? "Ja" : "Nein";
+  if (typeof value === "number" && /(?:^|_)cost_eur$/.test(String(key))) return formatCostEur(value);
   if (typeof value === "number") return Number.isInteger(value) ? value.toLocaleString("de-DE") : value.toLocaleString("de-DE", { maximumFractionDigits: 6 });
   const text = String(value);
   if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
@@ -2401,7 +2400,7 @@ function auditFriendlyValue(value) {
 function flattenAuditValue(value, path = [], entries = []) {
   if (Array.isArray(value)) {
     if (!value.length) entries.push({ path, value: "Keine Einträge" });
-    else if (value.every((item) => item === null || ["string", "number", "boolean"].includes(typeof item))) entries.push({ path, value: value.map(auditFriendlyValue).join(" · ") });
+    else if (value.every((item) => item === null || ["string", "number", "boolean"].includes(typeof item))) entries.push({ path, value: value.map((item) => auditFriendlyValue(item, path.at(-1))).join(" · ") });
     else value.forEach((item, index) => flattenAuditValue(item, [...path, `Eintrag ${index + 1}`], entries));
     return entries;
   }
@@ -2411,7 +2410,7 @@ function flattenAuditValue(value, path = [], entries = []) {
     else pairs.forEach(([key, child]) => flattenAuditValue(child, [...path, key], entries));
     return entries;
   }
-  entries.push({ path, value: auditFriendlyValue(value) });
+  entries.push({ path, value: auditFriendlyValue(value, path.at(-1)) });
   return entries;
 }
 
@@ -2926,7 +2925,7 @@ const costDetailTimers = new WeakMap();
 function formatCostEur(value) {
   return value === null || value === undefined
     ? "–"
-    : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 function activeUsdEurRate() {

@@ -525,7 +525,7 @@ async function loadDashboard() {
     if (els.dashRun) {
       const eur = (value) => value === null || value === undefined
         ? "–"
-        : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+        : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
       els.dashRun.innerHTML = lastRun
         ? `Letzter Lauf: <b>${escText(lastRun.status === "running" ? "läuft" : lastRun.status === "error" ? "mit Fehler beendet" : "abgeschlossen")}</b> ·
            <b>${Number(lastRun.processed_count || 0).toLocaleString("de-DE")} / ${Number(lastRun.total_count || 0).toLocaleString("de-DE")}</b> Artikel geprüft ·

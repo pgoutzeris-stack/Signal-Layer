@@ -6930,7 +6930,7 @@ Deno.serve(async (req: Request) => {
         const recommendation = pipelineConfig.ai.review_enabled
           ? "Bei weiter steigendem Verbrauch den zweiten KI-Review pausieren oder Gemini Batch API nutzen."
           : "Für zeitunkritische Analysen kann Gemini Batch API die Modellkosten weiter reduzieren.";
-        const warningThresholdCopy = `Der interne Warnwert von ${new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(warningThresholdEur)}`;
+        const warningThresholdCopy = `Der interne Warnwert von ${new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(warningThresholdEur)}`;
         const forecastMessage = forecastStatus === "exceeded"
           ? `${warningThresholdCopy} ist erreicht. ${recommendation}`
           : forecastStatus === "risk"
