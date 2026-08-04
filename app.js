@@ -1,7 +1,7 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260803-1000";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-0100";
 
 let sb = null;
 let sources = [];
@@ -1533,7 +1533,7 @@ function renderFindings(track) {
             ${article.matched_offering_reasoning ? `<div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escapeText(article.matched_offering_reasoning)}</p></div>` : ""}
           </div>` : ""}
           <div class="finding-meta">
-            ${companies.map((c) => `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
+            ${companies.map((c) => `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-pill-info="Einstufung: Tier-1-Unternehmen · Klick öffnet Steckbrief" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
             ${source?.company ? `<span class="tag tag--source" title="Quelle: ${escapeHtml(source.company)}"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
           </div>
@@ -1986,7 +1986,7 @@ async function loadReviewArticles() {
           <p class="finding-rationale"><i class="fa-solid fa-scale-balanced"></i><span>${escapeText(article.manual_review_reason || "Mindestens ein fachliches Pflichtkriterium ist noch offen.")}</span></p>
           <div class="finding-meta">
             ${reviewTrackPill(tracks)}
-            ${article.primary_company ? `<span class="tag tag--kunde"><i class="fa-solid fa-building"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
+            ${article.primary_company ? `<span class="tag tag--kunde" data-company-profile="${escapeHtml(article.primary_company)}" data-pill-info="Einstufung: Tier-1-Unternehmen · Klick öffnet Steckbrief" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
             ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
           </div>
@@ -2897,6 +2897,111 @@ function renderSimpleSupplyPanel(run) {
     ${oldest ? `<div class="source-health-note">Bestand reicht zurück bis ${escapeHtml(formatFindingDate(oldest).replace(/<[^>]+>/g, ""))}.</div>` : ""}
     ${freshness.stale ? `<div class="source-health-note"><i class="fa-solid fa-triangle-exclamation"></i> Der Nachschub steht: der jüngste Artikel ist ${escapeHtml(freshness.text)}. Simple bewertet dann immer denselben Bestand.</div>` : ""}`;
 }
+
+// ---------------------------------------------------------------------------
+// Steckbrief eines Tier-1-Unternehmens. Klick auf die blaue Pille oeffnet das
+// Account-Blatt: Kennzahlen, Unternehmensdaten, Buying Center, Strategie,
+// Themen zur Ansprache und Trigger - recherchiert von Gemini mit Google-Suche,
+// mit echten Quellen. Ein Profil pro Unternehmen, 30 Tage gueltig.
+// ---------------------------------------------------------------------------
+function companyProfileOverlay() {
+  let host = document.getElementById("company-profile-overlay");
+  if (host) return host;
+  host = document.createElement("div");
+  host.id = "company-profile-overlay";
+  host.className = "cp-overlay";
+  host.innerHTML = `<div class="cp-card" role="dialog" aria-modal="true" aria-labelledby="cp-title"></div>`;
+  document.body.appendChild(host);
+  host.addEventListener("click", (event) => {
+    if (event.target === host || event.target.closest(".cp-close")) closeCompanyProfile();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && host.classList.contains("open")) closeCompanyProfile();
+  });
+  return host;
+}
+
+function closeCompanyProfile() {
+  document.getElementById("company-profile-overlay")?.classList.remove("open");
+}
+
+function companyLogoHtml(company, website) {
+  const initials = String(company || "?").replace(/[^A-Za-zÄÖÜäöü0-9 ]/g, "").split(/\s+/)
+    .filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join("") || "?";
+  if (!website) return `<div class="cp-logo"><span>${escapeHtml(initials)}</span></div>`;
+  const domain = String(website).replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  // Favicon der Unternehmensdomain, mit Rueckfall auf Initialen. Bewusst kein
+  // Logo-Dienst mit Schluessel oder Kontingent.
+  return `<div class="cp-logo"><img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128"
+    alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml(initials)}'}))"></div>`;
+}
+
+function companyProfileHeadHtml(company, profile) {
+  const stand = profile?.researched_at
+    ? new Date(profile.researched_at).toLocaleDateString("de-DE", { month: "long", year: "numeric" })
+    : null;
+  const parts = [profile?.headline, stand ? `Stand: ${stand}` : null].filter(Boolean);
+  return `<div class="cp-head">
+    <div>
+      <h2 id="cp-title">Unternehmensprofil: ${escapeHtml(company)}</h2>
+      ${parts.length ? `<p class="cp-head-sub">${escapeHtml(parts.join(" · "))}</p>` : ""}
+    </div>
+    ${companyLogoHtml(company, profile?.website)}
+    <button type="button" class="cp-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
+  </div>`;
+}
+
+function renderCompanyProfile(company, profile, pending) {
+  const card = companyProfileOverlay().querySelector(".cp-card");
+  if (!profile) {
+    card.innerHTML = companyProfileHeadHtml(company, null) + `<div class="cp-body"><div class="cp-state">${
+      pending
+        ? '<i class="fa-solid fa-circle-notch fa-spin"></i> Steckbrief wird recherchiert. Das dauert etwa eine Minute, danach erneut öffnen.'
+        : "Für dieses Unternehmen liegt kein Steckbrief vor. Steckbriefe entstehen für Tier-1-Unternehmen während eines Analyselaufs."
+    }</div></div>`;
+    return;
+  }
+  const kpis = Array.isArray(profile.kpis) ? profile.kpis : [];
+  const sections = Array.isArray(profile.sections) ? profile.sections : [];
+  const sources = Array.isArray(profile.sources) ? profile.sources : [];
+  card.innerHTML = companyProfileHeadHtml(company, profile) + `<div class="cp-body">
+    ${kpis.length ? `<div class="cp-kpis">${kpis.map((k) => `<div class="cp-kpi">
+      <b>${escapeHtml(k.value || "–")}</b><span>${escapeHtml(k.label || "")}</span>
+      ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}</div>`).join("")}</div>` : ""}
+    ${sections.length ? `<div class="cp-grid">${sections.map((sec) => `<div class="cp-sec">
+      <h3>${escapeHtml(sec.title || "")}</h3>
+      <ul>${(Array.isArray(sec.items) ? sec.items : []).map((item) => `<li>${escapeText(item)}</li>`).join("")}</ul>
+    </div>`).join("")}</div>` : ""}
+    ${profile.unverified_note ? `<div class="cp-note"><i class="fa-solid fa-circle-info"></i> Nicht belegt: ${escapeText(profile.unverified_note)}</div>` : ""}
+    ${sources.length ? `<div class="cp-sources"><b>Quellen:</b> ${sources.map((src) =>
+      src.uri ? `<a href="${escapeHtml(src.uri)}" target="_blank" rel="noopener">${escapeHtml(src.title)}</a>` : escapeHtml(src.title)
+    ).join(" · ")}${profile.article_count ? ` &nbsp;·&nbsp; ${Number(profile.article_count)} eigene Artikel im Bestand` : ""}</div>` : ""}
+  </div>`;
+}
+
+export async function openCompanyProfile(company) {
+  const name = String(company || "").trim();
+  if (!name) return;
+  const host = companyProfileOverlay();
+  host.classList.add("open");
+  renderCompanyProfile(name, null, true);
+  try {
+    const { profile, pending } = await callApi("get_company_profile", { company: name });
+    renderCompanyProfile(name, profile, pending);
+  } catch (error) {
+    host.querySelector(".cp-card").innerHTML = companyProfileHeadHtml(name, null)
+      + `<div class="cp-body"><div class="cp-state">Steckbrief konnte nicht geladen werden: ${escapeHtml(error.message)}</div></div>`;
+  }
+}
+
+// Ein Klickfänger für beide Modi, damit neu gezeichnete Karten ihn nicht verlieren.
+if (typeof document !== "undefined") document.addEventListener("click", (event) => {
+  const pill = event.target.closest("[data-company-profile]");
+  if (!pill) return;
+  event.preventDefault();
+  event.stopPropagation();
+  void openCompanyProfile(pill.getAttribute("data-company-profile"));
+});
 
 export function setSimpleRunStatus(run, forecast = null) {
   simpleRunStatus = run || null;

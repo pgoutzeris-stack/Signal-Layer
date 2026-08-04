@@ -73,6 +73,13 @@ import {
   simpleRuleManifest,
   simpleUsageCostUsd,
 } from "./pipeline-simple.ts";
+import {
+  COMPANY_PROFILE_MAX_PER_BATCH,
+  COMPANY_PROFILE_MODEL,
+  COMPANY_PROFILE_TTL_DAYS,
+  companyProfileIsUsable,
+  researchCompanyProfile,
+} from "./company-profile.ts";
 
 // ---------------------------------------------------------------------------
 // CORS
@@ -362,6 +369,100 @@ async function getSimpleRootsPortfolio(): Promise<string> {
   simplePortfolioCache.value = text;
   simplePortfolioCache.at = now;
   return text;
+}
+
+// ---------------------------------------------------------------------------
+// Steckbrief eines Tier-1-Unternehmens. Wird im selben Lauf erzeugt, in dem ein
+// Artikel bewertet wurde - aber nur einmal je Unternehmen und erst wieder, wenn
+// das Profil abgelaufen ist. Gemini rechnet pro Suchanfrage ab, ein Profil pro
+// Artikel waere um Groessenordnungen teurer als ein Profil pro Unternehmen.
+// ---------------------------------------------------------------------------
+async function ensureCompanyProfile(company: string): Promise<"fresh" | "written" | "failed" | "skipped"> {
+  const name = String(company || "").trim();
+  if (!name) return "skipped";
+  const admin = getAdminClient();
+
+  const { data: existing } = await admin.schema("signal_layer").from("company_profiles")
+    .select("company, researched_at").eq("company", name).maybeSingle();
+  if (existing?.researched_at) {
+    const ageDays = (Date.now() - new Date(existing.researched_at).getTime()) / 86_400_000;
+    if (ageDays < COMPANY_PROFILE_TTL_DAYS) return "fresh";
+  }
+
+  let apiKey = "";
+  try {
+    apiKey = await getGeminiKey();
+  } catch { /* Schluessel fehlt: still ueberspringen, der Lauf ist wichtiger */ }
+  if (!apiKey) return "skipped";
+
+  // Belegartikel aus dem eigenen Bestand, mit Wortgrenzen - ein einfaches
+  // ilike '%Action%' trifft auch "Aktion" und macht die Liste unbrauchbar.
+  const { data: hints } = await admin.schema("signal_layer")
+    .rpc("company_article_matches", { p_company: name, p_limit: 12 });
+
+  try {
+    const { profile, usage } = await researchCompanyProfile(
+      { apiKey, model: COMPANY_PROFILE_MODEL, rootsPortfolio: await getSimpleRootsPortfolio() },
+      name,
+      Array.isArray(hints) ? hints as never[] : [],
+    );
+    if (!companyProfileIsUsable(profile)) {
+      console.warn(`Steckbrief ${name}: unbrauchbar (${profile.kpis.length} KPI, ${profile.sections.length} Karten, ${profile.sources.length} Quellen)`);
+      return "failed";
+    }
+    await admin.schema("signal_layer").from("company_profiles").upsert({
+      company: name,
+      website: profile.website,
+      headline: profile.headline,
+      kpis: profile.kpis,
+      sections: profile.sections,
+      sources: profile.sources,
+      unverified_note: profile.unverified_note,
+      article_count: Array.isArray(hints) ? hints.length : 0,
+      model: COMPANY_PROFILE_MODEL,
+      pipeline_version: SIMPLE_VERSION,
+      researched_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "company" });
+    // Kosten mitschreiben, damit die Steckbrief-Recherche in derselben
+    // Auswertung sichtbar ist wie die Artikelbewertung.
+    await admin.schema("signal_layer").from("ai_usage_events").insert({
+      operation: "company_profile",
+      model: COMPANY_PROFILE_MODEL,
+      status: "success",
+      attempt: 1,
+      input_tokens: usage.prompt_tokens,
+      output_tokens: usage.output_tokens,
+      total_tokens: usage.total_tokens,
+      estimated_cost_usd: modelCostUsd(COMPANY_PROFILE_MODEL, {
+        input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
+        thinking: 0, total: usage.total_tokens,
+      }),
+    }).then(({ error }) => { if (error) console.warn("Steckbrief-Kosten nicht protokolliert:", error.message); });
+    console.log(`Steckbrief ${name}: ${profile.kpis.length} KPI, ${profile.sections.length} Karten, ${profile.sources.length} Quellen`);
+    return "written";
+  } catch (error) {
+    console.error(`Steckbrief ${name} fehlgeschlagen:`, error instanceof Error ? error.message : error);
+    return "failed";
+  }
+}
+
+async function researchProfilesForBatch(rows: Array<Record<string, unknown>>): Promise<void> {
+  const companies = new Set<string>();
+  for (const row of rows) {
+    const list = Array.isArray(row.tier1_companies) ? row.tier1_companies as unknown[] : [];
+    for (const entry of list) {
+      const name = String(entry || "").trim();
+      if (name) companies.add(name);
+    }
+  }
+  if (!companies.size) return;
+  let done = 0;
+  for (const company of companies) {
+    if (done >= COMPANY_PROFILE_MAX_PER_BATCH) break;
+    const result = await ensureCompanyProfile(company);
+    if (result === "written" || result === "failed") done += 1;
+  }
 }
 
 // Dieselbe Tier-1-Liste wie im Advanced-Modus, gecacht.
@@ -5525,10 +5626,34 @@ Deno.serve(async (req: Request) => {
           finished_at: done ? new Date().toISOString() : null,
         }).eq("id", run.id).select("*").single();
         if (updateError) return errorResponse(origin, updateError.message, 500);
+        // Steckbriefe der erkannten Tier-1-Unternehmen nachziehen. Bewusst nach
+        // dem Fortschritts-Update: scheitert die Recherche, ist der Lauf trotzdem
+        // sauber weitergezaehlt.
+        await researchProfilesForBatch(rows).catch((error) =>
+          console.error("Steckbrief-Recherche im Paket fehlgeschlagen:", error)
+        );
         // Continue the run in a fresh invocation so no single request runs into
         // the function timeout.
         if (!done) triggerSimpleRun(run.id);
         return corsResponse(origin, { run: updated, done, processed_now: rows.length, signals_now: signals, ai_calls: aiCalls });
+      }
+
+      case "get_company_profile": {
+        const { company } = (body || {}) as { company?: string };
+        const name = String(company || "").trim();
+        if (!name) return errorResponse(origin, "company fehlt", 400);
+        const admin = getAdminClient();
+        const { data, error } = await admin.schema("signal_layer").from("company_profiles")
+          .select("*").eq("company", name).maybeSingle();
+        if (error) return errorResponse(origin, error.message, 500);
+        if (data) return corsResponse(origin, { profile: data, pending: false });
+
+        // Noch nicht recherchiert: der Nutzer soll nicht auf einen Suchlauf
+        // warten, deshalb im Hintergrund anstossen und leer antworten.
+        const { data: known } = await admin.schema("signal_layer").from("tier1_companies")
+          .select("name").eq("name", name).maybeSingle();
+        if (known) EdgeRuntime.waitUntil(ensureCompanyProfile(name));
+        return corsResponse(origin, { profile: null, pending: Boolean(known) });
       }
 
       case "get_simple_run_status": {
