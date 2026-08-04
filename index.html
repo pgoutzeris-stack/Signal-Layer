@@ -221,6 +221,19 @@
   /* Einstufung der Pills: Tier-1 blau, alles andere neutral weiss. */
   /* Steckbrief eines Tier-1-Unternehmens, Aufbau wie das Account-Blatt:
      dunkler Kopf, Kennzahlenreihe, danach Karten mit hellblauem Titelbalken. */
+  .cfilter { position: relative; }
+  .cfilter-toggle { display: inline-flex; align-items: center; gap: .45rem; cursor: pointer; }
+  .cfilter-panel { position: absolute; z-index: 60; top: calc(100% + .3rem); left: 0; min-width: 250px; max-height: 60vh; overflow: auto; background: #fff; border: 1px solid var(--line, #e2e8f2); border-radius: 10px; box-shadow: 0 14px 34px rgba(15,23,42,.16); padding: .4rem; }
+  .cfilter-class { display: flex; align-items: center; gap: .5rem; width: 100%; background: none; border: 0; border-radius: 7px; padding: .45rem .55rem; font: inherit; text-align: left; cursor: pointer; }
+  .cfilter-class:hover { background: #f3f5f8; }
+  .cfilter-class[aria-selected="true"] { background: #e9f1fc; color: #1d4ed8; font-weight: 600; }
+  .cfilter-class .cfilter-count { margin-left: auto; font-size: .74rem; color: #8a93a1; }
+  .cfilter-sub { padding: .1rem .2rem .5rem 1.5rem; }
+  .cfilter-item { display: flex; align-items: center; gap: .45rem; padding: .22rem .3rem; font-size: .82rem; border-radius: 6px; cursor: pointer; }
+  .cfilter-item:hover { background: #f3f5f8; }
+  .cfilter-actions { display: flex; gap: .4rem; padding: .2rem .3rem .3rem 1.5rem; }
+  .cfilter-actions button { background: none; border: 0; color: #2563eb; font-size: .74rem; cursor: pointer; padding: .1rem .2rem; }
+  .cfilter-actions button:hover { text-decoration: underline; }
   .cp-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: none; z-index: 120; padding: 2.5vh 2vw; overflow: auto; }
   .cp-overlay.open { display: block; }
   .cp-card { max-width: 1180px; margin: 0 auto; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 60px rgba(15,23,42,.28); }
@@ -2022,9 +2035,12 @@
               <select class="signal-toolbar-select" id="simple-article-type-filter" aria-label="Artikeltyp filtern">
                 <option value="all">Alle Artikeltypen</option>
               </select>
-              <select class="signal-toolbar-select" id="simple-company-filter" aria-label="Unternehmen filtern">
-                <option value="all">Alle Unternehmen</option>
-              </select>
+              <div class="cfilter" id="simple-company-filter">
+                <button type="button" class="signal-toolbar-select cfilter-toggle" id="simple-company-toggle" aria-expanded="false">
+                  <span id="simple-company-label">Alle Unternehmen</span><i class="fa-solid fa-chevron-down"></i>
+                </button>
+                <div class="cfilter-panel" id="simple-company-panel" hidden></div>
+              </div>
               <select class="signal-toolbar-select" id="simple-source-filter" aria-label="Quelle filtern">
                 <option value="all">Alle Quellen</option>
               </select>
@@ -2236,7 +2252,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260804-1400';
+import { initApp } from './app.js?v=20260804-1600';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

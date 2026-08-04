@@ -36,6 +36,9 @@ function cacheEls() {
     articleTypeFilter: el("simple-article-type-filter"),
     sourceFilter: el("simple-source-filter"),
     companyFilter: el("simple-company-filter"),
+    companyToggle: el("simple-company-toggle"),
+    companyPanel: el("simple-company-panel"),
+    companyLabel: el("simple-company-label"),
     sort: el("simple-sort"),
     version: el("simple-version"),
     marketingList: el("simple-list-marketing"),
@@ -58,8 +61,6 @@ function cacheEls() {
   };
 }
 
-const COMPANY_FILTER_TIER1 = "__tier1";
-const COMPANY_FILTER_PLAIN = "__company";
 const LOADER = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
 
 function esc(value) {
@@ -143,20 +144,16 @@ function signalDate(signal) {
 
 // Gleiche Filter- und Sortierlogik wie im Advanced-Modus, nur auf den Feldern
 // des einfachen Modus (Nutzwert statt Relevanzscore).
-// Einstufung und einzelne Unternehmen aus demselben Auswahlfeld. Ohne Auswahl
-// bleibt alles sichtbar; mehrere Einträge wirken als "oder".
-function companyMatches(signal, selected) {
-  if (!selected.length) return true;
+// Ein Signal passt, wenn seine Einstufung gewaehlt ist und mindestens ein
+// erkanntes Unternehmen in der Mehrfachauswahl steht.
+function companyMatches(signal) {
+  if (companyState.klasse === "all") return true;
   const tier1 = (signal.tier1_companies || []).filter(Boolean);
-  const named = signal.company ? [signal.company] : [];
-  const isTier1 = tier1.length > 0;
-  const hasCompany = named.length > 0 || isTier1;
-  for (const entry of selected) {
-    if (entry === COMPANY_FILTER_TIER1 && isTier1) return true;
-    if (entry === COMPANY_FILTER_PLAIN && hasCompany && !isTier1) return true;
-    if (tier1.includes(entry) || named.includes(entry)) return true;
+  if (companyState.klasse === "tier1") {
+    return tier1.some((name) => companyState.selected.includes(name));
   }
-  return false;
+  const plain = signal.company && !tier1.includes(signal.company) ? signal.company : null;
+  return Boolean(plain) && companyState.selected.includes(plain);
 }
 
 function visibleSignals(lane) {
@@ -164,7 +161,7 @@ function visibleSignals(lane) {
   const filtered = signalsByLane[lane].filter((signal) => {
     const typeOk = state.articleTypes.length === 0 || state.articleTypes.includes(signal.article?.article_type);
     const sourceOk = state.sources.length === 0 || state.sources.includes(signalSourceName(signal));
-    const companyOk = companyMatches(signal, state.companies || []);
+    const companyOk = companyMatches(signal);
     return typeOk && sourceOk && companyOk;
   });
   return [...filtered].sort((a, b) => {
@@ -196,22 +193,106 @@ function refreshFilterOptions() {
       .map((source) => `<option value="${esc(source)}">${esc(source)}</option>`).join("")}`;
     ctx.pruneSelection(ctx.viewState.sources, sources);
   }
-  if (els.companyFilter) {
-    // Ein Feld für beides: die Einstufung und die einzelnen Unternehmen. Die
-    // zwei Einstufungen tragen Sonderwerte, damit sie sich mit einzelnen
-    // Unternehmen kombinieren lassen, ohne ein zweites Auswahlfeld zu brauchen.
-    const tier1 = [...new Set(all.flatMap((signal) => signal.tier1_companies || []).filter(Boolean))]
+  if (els.companyPanel) {
+    companyIndex.tier1 = [...new Set(all.flatMap((signal) => signal.tier1_companies || []).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, "de"));
-    const plain = [...new Set(all.map((signal) => signal.company).filter(Boolean)
-      .filter((name) => !tier1.includes(name)))].sort((a, b) => a.localeCompare(b, "de"));
-    const values = [COMPANY_FILTER_TIER1, COMPANY_FILTER_PLAIN, ...tier1, ...plain];
-    els.companyFilter.innerHTML = `<option value="all">Alle Unternehmen</option>`
-      + `<option value="${COMPANY_FILTER_TIER1}">Nur Tier 1 Company</option>`
-      + `<option value="${COMPANY_FILTER_PLAIN}">Nur Company</option>`
-      + tier1.map((name) => `<option value="${esc(name)}">${esc(name)} · Tier 1</option>`).join("")
-      + plain.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
-    ctx.pruneSelection(ctx.viewState.companies, values);
+    companyIndex.company = [...new Set(all.map((signal) => signal.company).filter(Boolean)
+      .filter((name) => !companyIndex.tier1.includes(name)))].sort((a, b) => a.localeCompare(b, "de"));
+    // Auswahl auf noch vorhandene Namen begrenzen, ohne sie zu leeren.
+    const allowed = companyIndex[companyState.klasse] || [];
+    if (companyState.klasse !== "all") {
+      companyState.selected = companyState.selected.filter((name) => allowed.includes(name));
+      if (!companyState.selected.length) companyState.selected = [...allowed];
+    }
+    renderCompanyFilter();
   }
+}
+
+// Zweistufiger Unternehmensfilter: erst die Einstufung, dann die erkannten
+// Unternehmen dieser Einstufung als Mehrfachauswahl - beim Wechsel sind alle
+// angewählt, damit die Auswahl nichts versteckt, was man nicht abgewählt hat.
+const companyIndex = { tier1: [], company: [] };
+const companyState = { klasse: "all", selected: [] };
+
+function companyFilterLabel() {
+  if (companyState.klasse === "all") return "Alle Unternehmen";
+  const alle = companyIndex[companyState.klasse] || [];
+  const name = companyState.klasse === "tier1" ? "Tier 1 Company" : "Company";
+  if (companyState.selected.length === alle.length) return `${name} · alle`;
+  if (companyState.selected.length === 1) return `${name} · ${companyState.selected[0]}`;
+  return `${name} · ${companyState.selected.length} von ${alle.length}`;
+}
+
+function renderCompanyFilter() {
+  if (!els.companyPanel) return;
+  if (els.companyLabel) els.companyLabel.textContent = companyFilterLabel();
+  const klasse = (key, label) => {
+    const alle = companyIndex[key] || [];
+    const aktiv = companyState.klasse === key;
+    return `<button type="button" class="cfilter-class" data-cfilter-class="${key}" aria-selected="${aktiv}">
+        <i class="fa-solid ${aktiv ? "fa-circle-dot" : "fa-circle"}"></i> ${label}
+        <span class="cfilter-count">${alle.length}</span>
+      </button>
+      ${aktiv && alle.length ? `<div class="cfilter-actions">
+        <button type="button" data-cfilter-all="1">alle</button>
+        <button type="button" data-cfilter-none="1">keine</button>
+      </div>
+      <div class="cfilter-sub">${alle.map((name) => `<label class="cfilter-item">
+        <input type="checkbox" data-cfilter-name="${esc(name)}"${companyState.selected.includes(name) ? " checked" : ""}>
+        <span>${esc(name)}</span></label>`).join("")}</div>` : ""}`;
+  };
+  els.companyPanel.innerHTML = `
+    <button type="button" class="cfilter-class" data-cfilter-class="all" aria-selected="${companyState.klasse === "all"}">
+      <i class="fa-solid ${companyState.klasse === "all" ? "fa-circle-dot" : "fa-circle"}"></i> Alle Unternehmen
+    </button>
+    ${klasse("tier1", "Tier 1 Company")}
+    ${klasse("company", "Company")}`;
+}
+
+function bindCompanyFilter(rerender) {
+  if (!els.companyToggle || !els.companyPanel) return;
+  const close = () => {
+    els.companyPanel.hidden = true;
+    els.companyToggle.setAttribute("aria-expanded", "false");
+  };
+  els.companyToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = els.companyPanel.hidden;
+    els.companyPanel.hidden = !open;
+    els.companyToggle.setAttribute("aria-expanded", String(open));
+    if (open) renderCompanyFilter();
+  });
+  document.addEventListener("click", (event) => {
+    if (!els.companyFilter?.contains(event.target)) close();
+  });
+  els.companyPanel.addEventListener("click", (event) => {
+    const klasse = event.target.closest("[data-cfilter-class]");
+    if (klasse) {
+      companyState.klasse = klasse.getAttribute("data-cfilter-class");
+      companyState.selected = companyState.klasse === "all" ? [] : [...(companyIndex[companyState.klasse] || [])];
+      renderCompanyFilter();
+      rerender();
+      return;
+    }
+    if (event.target.closest("[data-cfilter-all]")) {
+      companyState.selected = [...(companyIndex[companyState.klasse] || [])];
+      renderCompanyFilter(); rerender(); return;
+    }
+    if (event.target.closest("[data-cfilter-none]")) {
+      companyState.selected = [];
+      renderCompanyFilter(); rerender(); return;
+    }
+  });
+  els.companyPanel.addEventListener("change", (event) => {
+    const box = event.target.closest("[data-cfilter-name]");
+    if (!box) return;
+    const name = box.getAttribute("data-cfilter-name");
+    companyState.selected = box.checked
+      ? [...new Set([...companyState.selected, name])]
+      : companyState.selected.filter((entry) => entry !== name);
+    if (els.companyLabel) els.companyLabel.textContent = companyFilterLabel();
+    rerender();
+  });
 }
 
 function renderLane(lane) {
@@ -350,7 +431,8 @@ function bindUi() {
     renderLane("marketing");
     renderLane("sales");
   };
-  [els.articleTypeFilter, els.sourceFilter, els.companyFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  [els.articleTypeFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  bindCompanyFilter(rerender);
   els.version?.addEventListener("change", () => {
     selectedVersion = els.version.value === "current" ? "" : els.version.value;
     rulesLoaded = false;

@@ -32,7 +32,7 @@ const state = {
 // Filter selections are multi-select: empty array = "all". Sort stays single.
 const signalViewState = { articleTypes: [], sources: [], sort: "recommended" };
 const archiveViewState = { articleTypes: [], sources: [], sort: "recommended" };
-const simpleViewState = { articleTypes: [], sources: [], companies: [], sort: "recommended" };
+const simpleViewState = { articleTypes: [], sources: [], sort: "recommended" };
 
 // Maps a filter <select> id to its persistent selection array (mutated in
 // place so closures never hold a stale reference).
@@ -44,7 +44,6 @@ function filterSelectionFor(selectId) {
     case "archive-article-type-filter": return archiveViewState.articleTypes;
     case "simple-source-filter": return simpleViewState.sources;
     case "simple-article-type-filter": return simpleViewState.articleTypes;
-    case "simple-company-filter": return simpleViewState.companies;
     default: return null;
   }
 }
@@ -1839,7 +1838,7 @@ function enhanceHeaderSelects() {
     // single-select column.
     // Mehrfachauswahl nur für Filter, die dafür einen Zustand registriert haben.
     // Ohne diesen Zustand bleibt es ein normaler Einzel-Select.
-    const selection = /source|article-type|company-filter/.test(select.id) ? filterSelectionFor(select.id) : null;
+    const selection = /source|article-type/.test(select.id) ? filterSelectionFor(select.id) : null;
     const isGrid = Boolean(selection);
     menu.classList.toggle("roots-select-menu--grid", isGrid);
     wrapper.classList.toggle("roots-select--grid", isGrid);
