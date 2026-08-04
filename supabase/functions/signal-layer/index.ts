@@ -377,7 +377,7 @@ async function getSimpleRootsPortfolio(): Promise<string> {
 // das Profil abgelaufen ist. Gemini rechnet pro Suchanfrage ab, ein Profil pro
 // Artikel waere um Groessenordnungen teurer als ein Profil pro Unternehmen.
 // ---------------------------------------------------------------------------
-async function ensureCompanyProfile(company: string): Promise<"fresh" | "written" | "failed" | "skipped"> {
+async function ensureCompanyProfile(company: string): Promise<string> {
   const name = String(company || "").trim();
   if (!name) return "skipped";
   const admin = getAdminClient();
@@ -393,7 +393,7 @@ async function ensureCompanyProfile(company: string): Promise<"fresh" | "written
   try {
     apiKey = await getGeminiKey();
   } catch { /* Schluessel fehlt: still ueberspringen, der Lauf ist wichtiger */ }
-  if (!apiKey) return "skipped";
+  if (!apiKey) return "skipped: kein Gemini-Schluessel";
 
   // Belegartikel aus dem eigenen Bestand, mit Wortgrenzen - ein einfaches
   // ilike '%Action%' trifft auch "Aktion" und macht die Liste unbrauchbar.
@@ -407,8 +407,9 @@ async function ensureCompanyProfile(company: string): Promise<"fresh" | "written
       Array.isArray(hints) ? hints as never[] : [],
     );
     if (!companyProfileIsUsable(profile)) {
-      console.warn(`Steckbrief ${name}: unbrauchbar (${profile.kpis.length} KPI, ${profile.sections.length} Karten, ${profile.sources.length} Quellen)`);
-      return "failed";
+      const detail = `unbrauchbar: ${profile.kpis.length} KPI, ${profile.sections.length} Karten, ${profile.sources.length} Quellen`;
+      console.warn(`Steckbrief ${name}: ${detail}`);
+      return `failed: ${detail}`;
     }
     await admin.schema("signal_layer").from("company_profiles").upsert({
       company: name,
@@ -442,8 +443,9 @@ async function ensureCompanyProfile(company: string): Promise<"fresh" | "written
     console.log(`Steckbrief ${name}: ${profile.kpis.length} KPI, ${profile.sections.length} Karten, ${profile.sources.length} Quellen`);
     return "written";
   } catch (error) {
-    console.error(`Steckbrief ${name} fehlgeschlagen:`, error instanceof Error ? error.message : error);
-    return "failed";
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`Steckbrief ${name} fehlgeschlagen:`, detail);
+    return `failed: ${detail.slice(0, 400)}`;
   }
 }
 
@@ -461,7 +463,7 @@ async function researchProfilesForBatch(rows: Array<Record<string, unknown>>): P
   for (const company of companies) {
     if (done >= COMPANY_PROFILE_MAX_PER_BATCH) break;
     const result = await ensureCompanyProfile(company);
-    if (result === "written" || result === "failed") done += 1;
+    if (result === "written" || result.startsWith("failed")) done += 1;
   }
 }
 
@@ -5661,8 +5663,18 @@ Deno.serve(async (req: Request) => {
         // warten, deshalb im Hintergrund anstossen und leer antworten.
         const { data: known } = await admin.schema("signal_layer").from("tier1_companies")
           .select("name").eq("name", name).maybeSingle();
-        if (known) EdgeRuntime.waitUntil(ensureCompanyProfile(name));
-        return corsResponse(origin, { profile: null, pending: Boolean(known) });
+        if (!known) return corsResponse(origin, { profile: null, pending: false });
+
+        const { wait } = (body || {}) as { wait?: boolean };
+        if (wait) {
+          // Synchron: der Aufrufer bekommt den Grund zurueck, wenn es scheitert.
+          const result = await ensureCompanyProfile(name);
+          const { data: fresh } = await admin.schema("signal_layer").from("company_profiles")
+            .select("*").eq("company", name).maybeSingle();
+          return corsResponse(origin, { profile: fresh || null, pending: false, result });
+        }
+        EdgeRuntime.waitUntil(ensureCompanyProfile(name));
+        return corsResponse(origin, { profile: null, pending: true });
       }
 
       case "get_simple_run_status": {
