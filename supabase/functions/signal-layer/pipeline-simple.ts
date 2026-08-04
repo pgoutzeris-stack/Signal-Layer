@@ -36,7 +36,10 @@ export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
 export const SIMPLE_VERSION = "2.0";
 export const SIMPLE_UPDATED_AT = "2026-08-04";
-export const SIMPLE_MODEL = "deepseek-v4-pro";
+// Flash-Lite ist fuer den kompakten strukturierten Simple-Aufruf der robuste
+// Standard. DeepSeek bleibt im Dropdown waehlbar, seine Reasoning-Antworten
+// liefen in Edge Functions jedoch wiederholt in das 60-Sekunden-Limit.
+export const SIMPLE_MODEL = "gemini-2.5-flash-lite";
 
 // Auswahlbare Modelle des einfachen Modus mit den Preisen, die im Kostenledger
 // und in der Prognose verwendet werden. Preise sind USD pro 1 Mio. Tokens laut
@@ -540,7 +543,7 @@ async function recordSimpleUsage(
   errorMessage?: string,
 ): Promise<void> {
   const cost = simpleUsageCostUsd(model, usage);
-  await deps.admin.schema("signal_layer").from("ai_usage_events").insert({
+  const { error } = await deps.admin.schema("signal_layer").from("ai_usage_events").insert({
     article_id: articleId,
     operation: "classification",
     model,
@@ -557,6 +560,9 @@ async function recordSimpleUsage(
     error_code: errorCode || null,
     error_message: errorMessage ? errorMessage.slice(0, 1000) : null,
   });
+  // Ein fehlender Ledger-Eintrag darf den Klassifizierer nicht verdeckt
+  // stoppen, muss aber in den Function-Logs sichtbar sein.
+  if (error) console.error("simple usage ledger insert failed", error.message);
 }
 
 type ProviderRequest = {
@@ -1014,7 +1020,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     // Ebenso ein abgebrochener Aufruf: ein Deploy oder ein Neustart der Runtime
     // beendet laufende Isolate mitten im Aufruf. Am 3.8.2026 hat genau das einen
     // Lauf nach 72 von 1000 Artikeln gestoppt, obwohl DeepSeek einwandfrei lief.
-    const singleCase = /no valid simple classification|aborted|abort|connection closed|error sending request|closed before message completed|stream closed|broken pipe/i;
+    const singleCase = /no valid simple classification|aborted|abort|timeout|timed out|connection closed|error sending request|closed before message completed|stream closed|broken pipe/i;
     const kind = singleCase.test(message) ? "response" : "provider";
     return { ...rejected(article, "modellfehler", prefilter.families, model), error_kind: kind };
   }
