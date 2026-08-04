@@ -6184,7 +6184,7 @@ Deno.serve(async (req: Request) => {
 
       case "get_simple_run_status": {
         const admin = getAdminClient();
-        const [{ data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount }, { data: exchangeRate }, { data: costLedger }, { data: todayCostRows }] = await Promise.all([
+        const [{ data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount }, { data: exchangeRate }, { data: costLedger }] = await Promise.all([
           admin.schema("signal_layer").from("simple_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
@@ -6194,14 +6194,10 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "rejected"),
           getUsdEurRateSnapshot().then((snapshot) => ({ data: snapshot })).catch(() => ({ data: null })),
-          admin.schema("signal_layer").from("ai_cost_ledger_daily")
-            .select("usage_date,model,operation,status,request_count,error_count,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,first_event_at,last_event_at")
-            .order("usage_date", { ascending: true }),
-          admin.schema("signal_layer").rpc("get_ai_usage_aggregate", {
-            p_since: berlinDayStartIso(), p_crawl_run_id: null, p_uncrawled_only: false,
-          }),
+          admin.schema("signal_layer").rpc("get_simple_cost_ledger"),
         ]);
         const usdEurRate = exchangeRate?.rate ?? null;
+        const todayCostRows = (costLedger || []).filter((row: { usage_date?: string }) => row.usage_date === berlinDateKey());
         const costSummary = summarizeGlobalCosts(costLedger || [], todayCostRows || [], usdEurRate);
         return corsResponse(origin, {
           run: run || null,
@@ -6209,7 +6205,13 @@ Deno.serve(async (req: Request) => {
           batch_size: SIMPLE_BATCH_SIZE,
           totals: { signals: signalCount || 0, rejected: rejectedCount || 0 },
           forecast: await buildSimpleForecast(run),
-          cost_summary: { ...costSummary, usd_eur_rate: usdEurRate, exchange_rate: exchangeRate },
+          cost_summary: {
+            ...costSummary,
+            scope: "simple_since_v1.0",
+            scope_label: "Alle Simple-Kosten seit Version 1.0",
+            usd_eur_rate: usdEurRate,
+            exchange_rate: exchangeRate,
+          },
           usd_eur_rate: usdEurRate,
         });
       }

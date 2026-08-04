@@ -3133,8 +3133,8 @@ function renderSimpleHeaderStatusContent() {
     simpleCostSummary, "Alle heute in Europe/Berlin protokollierten Aufrufe",
   );
   if (simpleTotalDetail) simpleTotalDetail.innerHTML = renderCostLedgerDetail(
-    "KI-Kosten gesamt", simpleCostSummary?.total_eur, simpleCostSummary?.total_model_breakdown,
-    simpleCostSummary, "Alle dauerhaft protokollierten Aufrufe",
+    "Simple-Kosten seit Version 1.0", simpleCostSummary?.total_eur, simpleCostSummary?.total_model_breakdown,
+    simpleCostSummary, simpleCostSummary?.scope_label || "Alle Simple-Aufrufe seit Version 1.0",
   );
   bindCostDetailPopover(byId("simple-today-cost-stat"), simpleTodayDetail);
   bindCostDetailPopover(byId("simple-total-cost-stat"), simpleTotalDetail);
