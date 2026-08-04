@@ -20,7 +20,7 @@ export const COMPANY_PROFILE_MODEL = "gemini-2.5-flash";
 /** Obergrenze je Verarbeitungspaket, damit ein Lauf nicht in Recherche umkippt. */
 export const COMPANY_PROFILE_MAX_PER_BATCH = 2;
 export const COMPANY_PROFILE_MAX_OUTPUT_TOKENS = 10_000;
-export const COMPANY_LOGO_LOOKUP_VERSION = "2026-08-verified-logo-sources-v3";
+export const COMPANY_LOGO_LOOKUP_VERSION = "2026-08-verified-logo-sources-v4";
 
 /** Die Karten des Steckbriefs, in der Reihenfolge der Anzeige. */
 export const COMPANY_PROFILE_SECTIONS = [
@@ -299,14 +299,17 @@ const GENERIC_COMPANY_WORDS = new Set([
 
 const GENERIC_LOGO_TITLE_WORDS = new Set([
   ...GENERIC_COMPANY_WORDS,
-  "aktuell", "current", "datei", "file", "logo", "new", "neu", "official", "svg",
+  "aktuell", "current", "datei", "file", "jpeg", "jpg", "logo", "new", "neu", "official", "png", "svg", "webp",
 ]);
 
-function brandLogoKey(value: string, dropLogoWord = false): string {
+function brandLogoWords(value: string, dropLogoWord = false): string[] {
   return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/&/g, " und ").split(/[^a-z0-9]+/)
-    .filter((word) => word && !GENERIC_COMPANY_WORDS.has(word) && (!dropLogoWord || word !== "logo"))
-    .join("");
+    .filter((word) => word && !GENERIC_COMPANY_WORDS.has(word) && (!dropLogoWord || word !== "logo"));
+}
+
+function brandLogoKey(value: string, dropLogoWord = false): string {
+  return brandLogoWords(value, dropLogoWord).join("");
 }
 
 function commonsLogoTitleKey(value: string): string {
@@ -429,10 +432,11 @@ type CommonsPage = {
  * Dadurch fallen Untermarken wie "REWE To Go" oder "Henkel Loctite" heraus.
  */
 export async function researchWikimediaLogo(company: string): Promise<VerifiedLogo | null> {
+  const searchName = brandLogoWords(company).join(" ") || company;
   const params = new URLSearchParams({
     action: "query",
     generator: "search",
-    gsrsearch: `${company} logo`,
+    gsrsearch: `${searchName} logo`,
     gsrnamespace: "6",
     gsrlimit: "12",
     prop: "imageinfo",
