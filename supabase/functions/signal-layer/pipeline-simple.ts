@@ -504,6 +504,8 @@ export type SimpleDeps = {
   /** Schlüssel des Anbieters, der zum gewählten Modell gehört. */
   apiKey: string;
   model?: string;
+  /** Unveraenderliche Zuordnung fuer Kosten und Tokens dieses Simple-Laufs. */
+  runId?: string;
   /** Kompakte Liste der ROOTS-Leistungen; nur für die virale Spur gebraucht. */
   rootsPortfolio?: string;
   /** Tier-1-Zielkunden, identisch zur Advanced-Pipeline. */
@@ -542,6 +544,7 @@ async function recordSimpleUsage(
   const cost = simpleUsageCostUsd(model, usage);
   const { error } = await deps.admin.schema("signal_layer").from("ai_usage_events").insert({
     article_id: articleId,
+    simple_run_id: deps.runId || null,
     operation: "classification",
     model,
     status,

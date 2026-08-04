@@ -220,17 +220,100 @@ function isInternalCall(req: Request): boolean {
 // Kostenprognose des einfachen Modus: gemessene Ausgaben des laufenden Laufs
 // (aus ai_usage_events, also echten Tokens) hochgerechnet auf die noch offenen
 // Artikel. Ohne Messwerte wird nichts geschätzt.
+function berlinDateKey(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function berlinDayStartIso(date = new Date()): string {
+  const key = berlinDateKey(date);
+  const utcMidnight = new Date(`${key}T00:00:00.000Z`);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin", hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(utcMidnight);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const berlinAsUtc = Date.UTC(
+    Number(value.year), Number(value.month) - 1, Number(value.day),
+    Number(value.hour) % 24, Number(value.minute), Number(value.second),
+  );
+  return new Date(utcMidnight.getTime() - (berlinAsUtc - utcMidnight.getTime())).toISOString();
+}
+
+function summarizeCostModels(rows: Array<Record<string, unknown>>) {
+  const models = new Map<string, {
+    model: string; calls: number; error_calls: number; input_tokens: number;
+    output_tokens: number; thinking_tokens: number; total_tokens: number;
+    cost_usd: number; operations: Map<string, { operation: string; calls: number; cost_usd: number }>;
+  }>();
+  for (const row of rows) {
+    const model = String(row.model || "unknown");
+    const calls = Number(row.request_count ?? 1);
+    const errors = Number(row.error_count ?? (row.status === "error" ? calls : 0));
+    const entry = models.get(model) || {
+      model, calls: 0, error_calls: 0, input_tokens: 0, output_tokens: 0,
+      thinking_tokens: 0, total_tokens: 0, cost_usd: 0, operations: new Map(),
+    };
+    entry.calls += calls;
+    entry.error_calls += errors;
+    entry.input_tokens += Number(row.input_tokens || 0);
+    entry.output_tokens += Number(row.output_tokens || 0);
+    entry.thinking_tokens += Number(row.thinking_tokens || 0);
+    entry.total_tokens += Number(row.total_tokens || 0);
+    entry.cost_usd += Number(row.estimated_cost_usd || 0);
+    const operation = String(row.operation || "unknown");
+    const operationEntry = entry.operations.get(operation) || { operation, calls: 0, cost_usd: 0 };
+    operationEntry.calls += calls;
+    operationEntry.cost_usd += Number(row.estimated_cost_usd || 0);
+    entry.operations.set(operation, operationEntry);
+    models.set(model, entry);
+  }
+  return [...models.values()]
+    .map((entry) => ({ ...entry, operations: [...entry.operations.values()].sort((a, b) => b.cost_usd - a.cost_usd) }))
+    .sort((a, b) => b.cost_usd - a.cost_usd);
+}
+
+function summarizeGlobalCosts(
+  ledgerRows: Array<Record<string, unknown>>,
+  todayRows: Array<Record<string, unknown>>,
+  usdEurRate: number | null,
+) {
+  const todayKey = berlinDateKey();
+  const monthKey = `${todayKey.slice(0, 7)}-01`;
+  const totalUsd = ledgerRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
+  const monthRows = ledgerRows.filter((row) => String(row.usage_date || "") >= monthKey);
+  const monthUsd = monthRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
+  const todayUsd = todayRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
+  const totalRequests = ledgerRows.reduce((sum, row) => sum + Number(row.request_count || 0), 0);
+  const totalErrors = ledgerRows.reduce((sum, row) => sum + Number(row.error_count || 0), 0);
+  const toEur = (value: number) => usdEurRate === null ? null : value * usdEurRate;
+  const firstEvent = ledgerRows.map((row) => String(row.first_event_at || "")).filter(Boolean).sort()[0] || null;
+  return {
+    total_usd: totalUsd, total_eur: toEur(totalUsd),
+    month_usd: monthUsd, month_eur: toEur(monthUsd),
+    today_usd: todayUsd, today_eur: toEur(todayUsd),
+    requests: totalRequests, errors: totalErrors,
+    tracking_started_at: firstEvent,
+    today_model_breakdown: summarizeCostModels(todayRows),
+    total_model_breakdown: summarizeCostModels(ledgerRows),
+    calculated_at: new Date().toISOString(),
+  };
+}
+
 async function buildSimpleForecast(run: Record<string, unknown> | null | undefined) {
   if (!run?.id) return null;
   const admin = getAdminClient();
   const modelId = String(run.model || SIMPLE_MODEL);
   const { data: events } = await admin.schema("signal_layer").from("ai_usage_events")
-    .select("estimated_cost_usd, input_tokens, output_tokens, total_tokens, status")
-    .eq("prompt_version", SIMPLE_PIPELINE_VERSION)
-    .gte("created_at", String(run.started_at || new Date(0).toISOString()));
+    .select("model, operation, status, estimated_cost_usd, input_tokens, output_tokens, thinking_tokens, total_tokens, created_at")
+    .eq("simple_run_id", String(run.id))
+    .order("created_at", { ascending: true });
   const rows = events || [];
   const spentUsd = rows.reduce((sum: number, row: Record<string, number>) => sum + Number(row.estimated_cost_usd || 0), 0);
-  const analysed = rows.filter((row: Record<string, string>) => row.status === "success").length;
+  const analysed = rows.filter((row: Record<string, string>) => row.status === "success" && row.operation === "classification").length;
   const total = Number(run.total_count || 0);
   const processed = Number(run.processed_count || 0);
   const remaining = Math.max(total - processed, 0);
@@ -241,18 +324,47 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
   const projectedUsd = perArticleUsd === null ? null : spentUsd + perArticleUsd * remaining;
   const rate = await getUsdEurRate().catch(() => null);
   const toEur = (value: number | null) => value === null || rate === null ? null : value * rate;
+  const researchModel = String(run.research_model || COMPANY_PROFILE_MODEL);
+  const modelBreakdown = summarizeCostModels(rows);
+  const usedModels = [...new Set(rows.map((row: Record<string, unknown>) => String(row.model || "unknown")))];
+  const tokenTotals = rows.reduce((totals, row: Record<string, number>) => ({
+    input: totals.input + Number(row.input_tokens || 0),
+    output: totals.output + Number(row.output_tokens || 0),
+    thinking: totals.thinking + Number(row.thinking_tokens || 0),
+    total: totals.total + Number(row.total_tokens || 0),
+  }), { input: 0, output: 0, thinking: 0, total: 0 });
   return {
     model: modelId,
     model_label: simpleModelOption(modelId).label,
+    analysis_model: modelId,
+    research_model: researchModel,
+    used_models: usedModels,
+    model_breakdown: modelBreakdown,
+    model_alignment: rows.every((row: Record<string, string>) =>
+      row.operation === "classification" ? row.model === modelId
+        : ["company_profile", "company_logo"].includes(row.operation) ? row.model === researchModel : true
+    ),
     analysed_articles: analysed,
     processed_articles: processed,
     ai_share: aiShare,
     remaining_articles: remaining,
-    tokens: rows.reduce((sum: number, row: Record<string, number>) => sum + Number(row.total_tokens || 0), 0),
+    tokens: tokenTotals.total,
+    token_projection: {
+      input_tokens: tokenTotals.input, output_tokens: tokenTotals.output,
+      thinking_tokens: tokenTotals.thinking, total_tokens: tokenTotals.total,
+      avg_input_tokens: processed > 0 ? tokenTotals.input / processed : 0,
+      avg_output_tokens: processed > 0 ? tokenTotals.output / processed : 0,
+      avg_thinking_tokens: processed > 0 ? tokenTotals.thinking / processed : 0,
+      projected_remaining_input_tokens: processed > 0 ? tokenTotals.input / processed * remaining : 0,
+      projected_remaining_output_tokens: processed > 0 ? tokenTotals.output / processed * remaining : 0,
+      projected_remaining_thinking_tokens: processed > 0 ? tokenTotals.thinking / processed * remaining : 0,
+    },
     spent_usd: spentUsd,
     spent_eur: toEur(spentUsd),
     projected_usd: projectedUsd,
     projected_eur: toEur(projectedUsd),
+    projected_remaining_usd: projectedUsd === null ? null : Math.max(projectedUsd - spentUsd, 0),
+    calculated_at: new Date().toISOString(),
   };
 }
 
@@ -380,7 +492,11 @@ async function getSimpleRootsPortfolio(): Promise<string> {
 // das Profil abgelaufen ist. Gemini rechnet pro Suchanfrage ab, ein Profil pro
 // Artikel waere um Groessenordnungen teurer als ein Profil pro Unternehmen.
 // ---------------------------------------------------------------------------
-async function ensureCompanyProfile(company: string, force = false): Promise<string> {
+async function ensureCompanyProfile(
+  company: string,
+  force = false,
+  runContext: { researchModel?: string | null; simpleRunId?: string | null } = {},
+): Promise<string> {
   const name = String(company || "").trim();
   if (!name) return "skipped";
   const admin = getAdminClient();
@@ -392,7 +508,9 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
   // laeuft. Erneuert wird nur, wenn jemand es im Steckbrief anfordert.
   if (existing && !force) return "fresh";
 
-  const configuredResearchModel = (await getPipelineConfig()).ai.simple_research_model || COMPANY_PROFILE_MODEL;
+  const configuredResearchModel = runContext.researchModel
+    || (await getPipelineConfig()).ai.simple_research_model
+    || COMPANY_PROFILE_MODEL;
   // Die Steckbrief-Implementierung braucht natives Google-Search-Grounding.
   // Eine alte oder manipulierte Konfiguration darf hier kein Analysemodell
   // ohne Websuche einschleusen.
@@ -477,6 +595,7 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
     // Auswertung sichtbar ist wie die Artikelbewertung.
     await admin.schema("signal_layer").from("ai_usage_events").insert({
       operation: "company_profile",
+      simple_run_id: runContext.simpleRunId || null,
       model: researchModel,
       status: "success",
       attempt: 1,
@@ -560,7 +679,11 @@ async function companyProfileVersions(company: string) {
   return data || [];
 }
 
-async function researchProfilesForBatch(rows: Array<Record<string, unknown>>): Promise<void> {
+async function researchProfilesForBatch(
+  rows: Array<Record<string, unknown>>,
+  researchModel: string,
+  simpleRunId: string,
+): Promise<void> {
   const companies = new Set<string>();
   for (const row of rows) {
     const list = Array.isArray(row.tier1_companies) ? row.tier1_companies as unknown[] : [];
@@ -573,7 +696,7 @@ async function researchProfilesForBatch(rows: Array<Record<string, unknown>>): P
   let done = 0;
   for (const company of companies) {
     if (done >= COMPANY_PROFILE_MAX_PER_BATCH) break;
-    const result = await ensureCompanyProfile(company);
+    const result = await ensureCompanyProfile(company, false, { researchModel, simpleRunId });
     if (result === "written" || result.startsWith("failed")) done += 1;
   }
 }
@@ -5582,13 +5705,15 @@ Deno.serve(async (req: Request) => {
         await admin.schema("signal_layer").from("simple_runs")
           .update({ status: "error", error_message: "Durch neuen Lauf ersetzt.", finished_at: new Date().toISOString() })
           .eq("status", "running");
+        const simpleConfig = await getPipelineConfig();
         const { data: run, error: runError } = await admin.schema("signal_layer").from("simple_runs").insert({
           status: articleIds.length ? "running" : "done",
           article_limit: articleLimit,
           article_ids: articleIds,
           total_count: articleIds.length,
           prompt_version: SIMPLE_PIPELINE_VERSION,
-          model: (await getPipelineConfig()).ai.simple_model || SIMPLE_MODEL,
+          model: simpleConfig.ai.simple_model || SIMPLE_MODEL,
+          research_model: simpleConfig.ai.simple_research_model || COMPANY_PROFILE_MODEL,
           triggered_by: auth?.userId || null,
           finished_at: articleIds.length ? null : new Date().toISOString(),
         }).select("*").single();
@@ -5679,7 +5804,7 @@ Deno.serve(async (req: Request) => {
             .update({ pipeline_version: versionInfo.version }).eq("id", run.id);
         }
         const deps = {
-          admin, apiKey: modelKey, model: simpleModel,
+          admin, apiKey: modelKey, model: simpleModel, runId: run.id,
           rootsPortfolio: await getSimpleRootsPortfolio(),
           tier1Companies: await getSimpleTier1Companies(),
         };
@@ -5830,7 +5955,11 @@ Deno.serve(async (req: Request) => {
         // Steckbriefe der erkannten Tier-1-Unternehmen nachziehen. Bewusst nach
         // dem Fortschritts-Update: scheitert die Recherche, ist der Lauf trotzdem
         // sauber weitergezaehlt.
-        await researchProfilesForBatch(rows).catch((error) =>
+        await researchProfilesForBatch(
+          rows,
+          run.research_model || simpleConfig.ai.simple_research_model || COMPANY_PROFILE_MODEL,
+          run.id,
+        ).catch((error) =>
           console.error("Steckbrief-Recherche im Paket fehlgeschlagen:", error)
         );
         // Continue the run in a fresh invocation so no single request runs into
@@ -6024,7 +6153,7 @@ Deno.serve(async (req: Request) => {
 
       case "get_simple_run_status": {
         const admin = getAdminClient();
-        const [{ data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount }, { data: usdEurRate }] = await Promise.all([
+        const [{ data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount }, { data: usdEurRate }, { data: costLedger }, { data: todayCostRows }] = await Promise.all([
           admin.schema("signal_layer").from("simple_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
@@ -6034,13 +6163,21 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "rejected"),
           getUsdEurRate().then((rate) => ({ data: rate })).catch(() => ({ data: null })),
+          admin.schema("signal_layer").from("ai_cost_ledger_daily")
+            .select("usage_date,model,operation,status,request_count,error_count,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,first_event_at,last_event_at")
+            .order("usage_date", { ascending: true }),
+          admin.schema("signal_layer").rpc("get_ai_usage_aggregate", {
+            p_since: berlinDayStartIso(), p_crawl_run_id: null, p_uncrawled_only: false,
+          }),
         ]);
+        const costSummary = summarizeGlobalCosts(costLedger || [], todayCostRows || [], usdEurRate);
         return corsResponse(origin, {
           run: run || null,
           trigger_backfill: triggerBackfill || null,
           batch_size: SIMPLE_BATCH_SIZE,
           totals: { signals: signalCount || 0, rejected: rejectedCount || 0 },
           forecast: await buildSimpleForecast(run),
+          cost_summary: { ...costSummary, usd_eur_rate: usdEurRate },
           usd_eur_rate: usdEurRate,
         });
       }
@@ -6301,7 +6438,7 @@ Deno.serve(async (req: Request) => {
         monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
-        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: costLedger }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { count: queuedAnalysisCountExact }, { count: runningAnalysisCountExact }, { data: currentPromptFirst }, { data: sourceConfigs }, { data: browserJobs }] = await Promise.all([
+        const [{ data: crawl }, { data: completedCrawls }, { data: backfill }, { data: usage }, { data: costLedger }, { data: todayCostRows }, { data: crawlHealth }, { data: crawlJobs }, { data: analysisJobs }, { count: queuedAnalysisCountExact }, { count: runningAnalysisCountExact }, { data: currentPromptFirst }, { data: sourceConfigs }, { data: browserJobs }] = await Promise.all([
           admin.schema("signal_layer").from("crawl_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("crawl_runs").select("id, started_at, finished_at, current_index, source_ids")
@@ -6313,8 +6450,11 @@ Deno.serve(async (req: Request) => {
             .select("article_id, crawl_run_id, model, status, operation, inference_mode, input_tokens, output_tokens, thinking_tokens, total_tokens, estimated_cost_usd, created_at")
             .gte("created_at", monthStart.toISOString()).order("created_at", { ascending: false }).limit(2000),
           admin.schema("signal_layer").from("ai_cost_ledger_daily")
-            .select("usage_date,request_count,error_count,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd")
-            .gte("usage_date", monthStart.toISOString().slice(0, 10)),
+            .select("usage_date,model,operation,status,request_count,error_count,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,first_event_at,last_event_at")
+            .order("usage_date", { ascending: true }),
+          admin.schema("signal_layer").rpc("get_ai_usage_aggregate", {
+            p_since: berlinDayStartIso(), p_crawl_run_id: null, p_uncrawled_only: false,
+          }),
           admin.schema("signal_layer").from("source_crawl_attempts")
             .select("crawl_run_id, source_id, feed_type, status, discovered_count, candidate_count, inserted_count, error_code, error_message, started_at")
             .order("started_at", { ascending: false }).limit(1000),
@@ -6369,17 +6509,7 @@ Deno.serve(async (req: Request) => {
         // is intentionally used instead of fetching raw events: PostgREST's
         // row cap previously truncated the month to the newest rows and made
         // real accumulated spend appear far too low.
-        const costSummary = (costLedger || []).reduce((summary, row) => {
-          const cost = Number(row.estimated_cost_usd || 0);
-          summary.month_usd += cost;
-          if (String(row.usage_date) === dayStart.toISOString().slice(0, 10)) summary.today_usd += cost;
-          summary.input_tokens += Number(row.input_tokens || 0);
-          summary.output_tokens += Number(row.output_tokens || 0);
-          summary.thinking_tokens += Number(row.thinking_tokens || 0);
-          summary.requests += Number(row.request_count || 0);
-          summary.errors += Number(row.error_count || 0);
-          return summary;
-        }, { month_usd: 0, today_usd: 0, input_tokens: 0, output_tokens: 0, thinking_tokens: 0, requests: 0, errors: 0 });
+        const costSummary = summarizeGlobalCosts(costLedger || [], todayCostRows || [], null);
         const latestAttemptBySource = new Map<string, Record<string, unknown>>();
         for (const row of (crawlHealth || []).filter((item) => !crawl?.id || item.crawl_run_id === crawl.id)) {
           if (!latestAttemptBySource.has(row.source_id)) latestAttemptBySource.set(row.source_id, row);
@@ -6730,10 +6860,15 @@ Deno.serve(async (req: Request) => {
           : averageStandardPrimaryUsd;
         const averageReviewUsd = successfulReviewRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0) / Math.max(reviewArticleCount, 1);
         const reviewRate = pipelineConfig.ai.review_enabled ? Math.min(1, reviewArticleCount / Math.max(primaryArticleCount, 1)) : 0;
-        const estimatedCostPerArticleUsd = averagePrimaryUsd + averageReviewUsd * reviewRate;
-        const currentCrawlJobs = currentCrawlId ? (analysisJobs || []).filter((job) => job.crawl_run_id === currentCrawlId) : [];
-        const remainingCrawlArticles = currentCrawlJobs.filter((job) => ["queued", "running"].includes(job.status)).length;
-        const analyzedCrawlArticles = new Set(currentCrawlUsage.filter((row) => row.article_id && Number(row.total_tokens || 0) > 0).map((row) => row.article_id)).size;
+        const historicalEstimatedCostPerArticleUsd = averagePrimaryUsd + averageReviewUsd * reviewRate;
+        const [{ count: remainingCrawlArticles }, { count: processedCrawlArticles }] = currentCrawlId
+          ? await Promise.all([
+              admin.schema("signal_layer").from("article_analysis_jobs")
+                .select("article_id", { count: "exact", head: true }).eq("crawl_run_id", currentCrawlId).in("status", ["queued", "running"]),
+              admin.schema("signal_layer").from("article_analysis_jobs")
+                .select("article_id", { count: "exact", head: true }).eq("crawl_run_id", currentCrawlId).in("status", ["done", "error"]),
+            ])
+          : [{ count: 0 }, { count: 0 }];
         // Backfills deliberately have no crawl_run_id. Attribute their usage
         // by their persisted start time and use the run counters for the
         // remaining workload, otherwise the live status shows no estimate.
@@ -6742,14 +6877,23 @@ Deno.serve(async (req: Request) => {
           : currentCrawlUsage;
         const activeAggregateRows = exactActiveUsage || [];
         const activeRunActualUsd = activeAggregateRows.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
+        const { count: directAnalysisRemaining } = directAnalysisActive
+          ? await admin.schema("signal_layer").from("article_analysis_jobs")
+              .select("article_id", { count: "exact", head: true }).is("crawl_run_id", null).in("status", ["queued", "running"])
+          : { count: 0 };
         const activeRunAnalyzedArticles = activeBackfill
           ? Number(activeBackfill.processed_count || 0)
           : directAnalysisActive ? Math.max(...activeAggregateRows.map((row) => Number(row.article_count || 0)), 0)
-          : analyzedCrawlArticles;
+          : Number(processedCrawlArticles || 0);
         const activeRunRemainingArticles = activeBackfill
           ? Math.max(0, Number(activeBackfill.total_count || 0) - Number(activeBackfill.processed_count || 0))
-          : directAnalysisActive ? directAnalysisJobs.length
-          : remainingCrawlArticles;
+          : directAnalysisActive ? Number(directAnalysisRemaining || 0)
+          : Number(remainingCrawlArticles || 0);
+        const liveEstimatedCostPerArticleUsd = activeRunAnalyzedArticles > 0 && activeAggregateRows.length > 0
+          ? activeRunActualUsd / activeRunAnalyzedArticles
+          : null;
+        const estimatedCostPerArticleUsd = liveEstimatedCostPerArticleUsd ?? historicalEstimatedCostPerArticleUsd;
+        const estimationBasis = liveEstimatedCostPerArticleUsd === null ? "configured_model_history" : "current_run";
         const projectedCrawlUsd = activeRunActualUsd + activeRunRemainingArticles * estimatedCostPerArticleUsd;
         const liveSuccessfulUsage = activeRunUsage.filter((row) => row.status === "success" && row.article_id && Number(row.total_tokens || 0) > 0);
         const liveArticleIds = [...new Set(liveSuccessfulUsage.map((row) => row.article_id).filter(Boolean))].slice(0, 1000);
@@ -6780,6 +6924,7 @@ Deno.serve(async (req: Request) => {
           "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 }, "gemini-3.1-pro-preview": { input: 2, output: 12 },
           "gemini-3-flash-preview": { input: 0.5, output: 3 }, "gemini-2.5-flash": { input: 0.3, output: 2.5 },
           "gemini-2.5-pro": { input: 1.25, output: 10 },
+          "deepseek-v4-pro": { input: 0.435, output: 0.87 }, "deepseek-v4-flash": { input: 0.14, output: 0.28 },
         };
         const modelBreakdownMap = new Map<string, Record<string, number | string>>();
         for (const row of activeAggregateRows) {
@@ -6793,6 +6938,13 @@ Deno.serve(async (req: Request) => {
           entry.cost_usd = Number(entry.cost_usd) + Number(row.estimated_cost_usd || 0);
           modelBreakdownMap.set(key, entry);
         }
+        const actualModels = [...new Set(activeAggregateRows.map((row) => String(row.model || "unknown")))];
+        const modelAlignment = activeAggregateRows.every((row) => {
+          const expectedModel = row.operation === "review" && pipelineConfig.ai.review_enabled
+            ? pipelineConfig.ai.review_model
+            : pipelineConfig.ai.primary_model;
+          return String(row.model || "") === String(expectedModel || "");
+        });
         const trackedSuccessCalls = usageRows.filter((row) => row.status === "success" && ["classification", "review", "offering_match", "translation"].includes(row.operation));
         const fullyTrackedSuccessCalls = trackedSuccessCalls.filter((row) => row.article_id && Number(row.total_tokens || 0) > 0 && row.estimated_cost_usd !== null).length;
         return corsResponse(origin, {
@@ -6807,6 +6959,7 @@ Deno.serve(async (req: Request) => {
             // nicht "Gemini" behaupten, sondern nennt die aktiven Modelle.
             advanced_model: pipelineConfig.ai.primary_model,
             simple_model: pipelineConfig.ai.simple_model || SIMPLE_MODEL,
+            total_eur: usdEurRate === null ? null : costSummary.total_usd * usdEurRate,
             month_eur: usdEurRate === null ? null : costSummary.month_usd * usdEurRate,
             today_eur: usdEurRate === null ? null : costSummary.today_usd * usdEurRate,
             usd_eur_rate: usdEurRate,
@@ -6825,6 +6978,7 @@ Deno.serve(async (req: Request) => {
               remaining_articles: activeRunRemainingArticles,
               estimated_cost_per_article_usd: estimatedCostPerArticleUsd,
               projected_remaining_usd: activeRunRemainingArticles * estimatedCostPerArticleUsd,
+              estimation_basis: estimationBasis,
               token_projection: {
                 avg_input_tokens: avgInputTokens, avg_output_tokens: avgOutputTokens,
                 avg_thinking_tokens: avgThinkingTokens, avg_total_tokens: avgTotalTokens,
@@ -6834,10 +6988,17 @@ Deno.serve(async (req: Request) => {
                 projected_remaining_thinking_tokens: avgThinkingTokens * activeRunRemainingArticles,
               },
               model_breakdown: [...modelBreakdownMap.values()],
+              configured_models: {
+                primary: pipelineConfig.ai.primary_model,
+                review: pipelineConfig.ai.review_enabled ? pipelineConfig.ai.review_model : null,
+              },
+              actual_models: actualModels,
+              model_alignment: modelAlignment,
               primary_model: pipelineConfig.ai.primary_model,
               review_model: pipelineConfig.ai.review_enabled ? pipelineConfig.ai.review_model : null,
               review_enabled: pipelineConfig.ai.review_enabled,
               tracking_coverage_percent: trackedSuccessCalls.length ? Math.round((fullyTrackedSuccessCalls / trackedSuccessCalls.length) * 10000) / 100 : 100,
+              calculated_at: new Date().toISOString(),
             },
             forecast: {
               status: forecastStatus,

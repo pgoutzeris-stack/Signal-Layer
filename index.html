@@ -1966,8 +1966,8 @@
                   </button>
                   <div class="status-disclosure-body" id="status-cost-body" hidden>
                     <div class="telemetry-grid">
-                      <div class="telemetry-stat" id="gemini-cost-stat"><span id="cost-month-label">KI-Kosten im Monat</span><b id="gemini-cost-month">–</b></div>
-                      <div class="telemetry-stat"><span>Heute</span><b id="gemini-cost-today">–</b></div>
+                      <div class="telemetry-stat telemetry-stat--interactive" id="gemini-cost-stat" tabindex="0"><span id="cost-month-label">Kosten gesamt</span><b id="gemini-cost-month">–</b><div class="cost-detail-popover" id="total-cost-detail" role="tooltip"></div></div>
+                      <div class="telemetry-stat telemetry-stat--interactive" id="today-cost-stat" tabindex="0"><span>Heute</span><b id="gemini-cost-today">–</b><div class="cost-detail-popover" id="today-cost-detail" role="tooltip"></div></div>
                       <div class="telemetry-stat telemetry-stat--interactive" id="crawl-cost-forecast-stat" tabindex="0"><span>Crawl-Prognose</span><b id="gemini-request-count">–</b><div class="cost-detail-popover" id="crawl-cost-detail" role="tooltip"></div></div>
                     </div>
                     <div class="spend-forecast" id="spend-forecast" hidden><i class="fa-solid fa-chart-line"></i><div><b id="spend-forecast-title"></b><span id="spend-forecast-copy"></span></div></div>
@@ -2162,9 +2162,9 @@
                     </button>
                     <div class="status-disclosure-body" id="simple-cost-body" hidden>
                       <div class="telemetry-grid">
-                        <div class="telemetry-stat"><span>Bisheriger Lauf</span><b id="simple-cost-spent">–</b></div>
-                        <div class="telemetry-stat"><span>Hochrechnung</span><b id="simple-cost-projected">–</b></div>
-                        <div class="telemetry-stat"><span>KI-geprüft</span><b id="simple-ai-articles">–</b></div>
+                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-today-cost-stat" tabindex="0"><span>Heute</span><b id="simple-cost-today">–</b><div class="cost-detail-popover" id="simple-today-cost-detail" role="tooltip"></div></div>
+                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-total-cost-stat" tabindex="0"><span>Kosten gesamt</span><b id="simple-cost-total">–</b><div class="cost-detail-popover" id="simple-total-cost-detail" role="tooltip"></div></div>
+                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-forecast-cost-stat" tabindex="0"><span>Lauf-Prognose</span><b id="simple-cost-projected">–</b><div class="cost-detail-popover" id="simple-forecast-cost-detail" role="tooltip"></div></div>
                       </div>
                     </div>
                   </section>
@@ -2384,7 +2384,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260804-2600';
+  import { initApp } from './app.js?v=20260804-2700';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

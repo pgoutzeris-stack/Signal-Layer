@@ -2,7 +2,7 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts } from "./status-state.mjs?v=20260804-2330";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2500";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2700";
 
 let sb = null;
 let sources = [];
@@ -19,6 +19,7 @@ const pipelineDrilldownState = { stageId: null, editorOpen: false, routeEditor: 
 let statusPollTimer = null;
 let simpleRunStatus = null;
 let simpleForecast = null;
+let simpleCostSummary = null;
 let simpleTriggerBackfill = null;
 let lastSpendForecastNotice = "";
 let archiveArticles = [];
@@ -643,8 +644,8 @@ function renderOperationsPanel(telemetry) {
   return `<div class="operations-layout">
     <section class="operations-metrics" aria-label="Betriebskosten im Überblick">
       <article><span class="operations-metric-icon operations-metric-icon--blue"><i class="fa-solid fa-calendar-day"></i></span><div><small>KI-Kosten heute</small><b>${euro(telemetry?.costs?.today_eur)}</b></div></article>
-      <article class="${telemetry?.costs?.warning ? "operations-metric--warning" : ""}"><span class="operations-metric-icon operations-metric-icon--violet"><i class="fa-solid fa-calendar"></i></span><div><small>KI-Kosten diesen Monat</small><b>${euro(telemetry?.costs?.month_eur)}</b></div></article>
-      <article><span class="operations-metric-icon operations-metric-icon--green"><i class="fa-solid fa-wand-magic-sparkles"></i></span><div><small>KI-Analysen</small><b>${Number(telemetry?.costs?.requests || 0).toLocaleString("de-DE")}</b></div></article>
+      <article><span class="operations-metric-icon operations-metric-icon--violet"><i class="fa-solid fa-receipt"></i></span><div><small>KI-Kosten gesamt</small><b>${euro(telemetry?.costs?.total_eur)}</b></div></article>
+      <article><span class="operations-metric-icon operations-metric-icon--green"><i class="fa-solid fa-wand-magic-sparkles"></i></span><div><small>KI-Aufrufe gesamt</small><b>${Number(telemetry?.costs?.requests || 0).toLocaleString("de-DE")}</b></div></article>
     </section>
 
     ${simpleMode ? "" : `<section class="operations-card">
@@ -2905,6 +2906,112 @@ function setLiveStatus(last, backfill, analysisQueue = {}) {
   return liveStatus.tone === "working";
 }
 
+const costDetailTimers = new WeakMap();
+
+function formatCostEur(value) {
+  return value === null || value === undefined
+    ? "–"
+    : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+function formatCostUsd(value) {
+  return Number(value || 0).toLocaleString("de-DE", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 6 });
+}
+
+function formatCostInt(value) {
+  return Math.round(Number(value || 0)).toLocaleString("de-DE");
+}
+
+function costOperationLabel(operation) {
+  return ({
+    classification: "Artikelanalyse",
+    review: "Zweitprüfung",
+    translation: "Übersetzung",
+    offering_match: "ROOTS-Leistungsmatch",
+    company_profile: "Steckbrief-Recherche",
+    company_logo: "Logo-Recherche",
+  })[operation] || operation || "KI-Aufruf";
+}
+
+function costModelBreakdownHtml(rows, usdEurRate) {
+  if (!Array.isArray(rows) || !rows.length) {
+    return '<span class="cost-detail-row"><span>Noch keine protokollierten KI-Aufrufe</span><b>0</b></span>';
+  }
+  return rows.map((row) => {
+    const operations = Array.isArray(row.operations)
+      ? row.operations.map((operation) => `${costOperationLabel(operation.operation)}: ${formatCostInt(operation.calls)}`).join(" · ")
+      : row.operation_label || row.operation || "KI-Aufruf";
+    const costUsd = Number(row.cost_usd || 0);
+    const costEur = usdEurRate === null || usdEurRate === undefined ? null : costUsd * Number(usdEurRate);
+    const rateCopy = Number(row.input_rate_per_million || 0) || Number(row.output_rate_per_million || 0)
+      ? `<small>Preis je 1 Mio. Tokens: Input $${Number(row.input_rate_per_million || 0).toLocaleString("de-DE")} · Output/Thinking $${Number(row.output_rate_per_million || 0).toLocaleString("de-DE")}</small>`
+      : "";
+    return `<div class="cost-detail-model"><b>${escapeHtml(row.model || "Unbekanntes Modell")}</b><small>${escapeHtml(operations)} · ${formatCostInt(row.calls)} Aufrufe${Number(row.error_calls || 0) ? ` · ${formatCostInt(row.error_calls)} Fehler` : ""}</small><small>Input ${formatCostInt(row.input_tokens)} · Output ${formatCostInt(row.output_tokens)} · Thinking ${formatCostInt(row.thinking_tokens)} Tokens</small>${rateCopy}<small>Ist-Kosten ${formatCostEur(costEur)} · ${formatCostUsd(costUsd)}</small></div>`;
+  }).join("");
+}
+
+function renderCostLedgerDetail(title, amountEur, breakdown, summary, scopeCopy) {
+  const trackedSince = summary?.tracking_started_at
+    ? new Date(summary.tracking_started_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })
+    : "Beginn der Kostenerfassung";
+  const calculatedAt = summary?.calculated_at
+    ? new Date(summary.calculated_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "jetzt";
+  return `<div class="cost-detail-head"><i class="fa-solid fa-receipt"></i><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(scopeCopy)} · Stand ${calculatedAt}</small></div></div>
+    <div class="cost-detail-summary"><span>Ist-Kosten<b>${formatCostEur(amountEur)}</b></span><span>Modelle<b>${formatCostInt(breakdown?.length || 0)}</b></span></div>
+    <span class="cost-detail-section"><b>Aufteilung nach KI-Modell</b>${costModelBreakdownHtml(breakdown, summary?.usd_eur_rate)}</span>
+    <small class="cost-detail-foot">Die Beträge stammen aus den unveränderlichen Supabase-Nutzungsereignissen. Gesamt bedeutet: alle seit ${escapeHtml(trackedSince)} protokollierten Aufrufe; erneute Analysen überschreiben diese Kosten nicht.</small>`;
+}
+
+function bindCostDetailPopover(anchor, detail) {
+  if (!anchor || !detail) return;
+  if (detail.parentElement !== document.body) document.body.appendChild(detail);
+  const position = () => {
+    const rect = anchor.getBoundingClientRect();
+    const margin = 12;
+    const width = Math.min(360, window.innerWidth - margin * 2);
+    detail.style.width = `${width}px`;
+    const height = Math.min(detail.scrollHeight, window.innerHeight - margin * 2, 520);
+    detail.style.left = `${Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin))}px`;
+    detail.style.top = `${window.innerHeight - rect.bottom >= height ? rect.bottom : Math.max(margin, rect.top - height)}px`;
+  };
+  const open = () => {
+    clearTimeout(costDetailTimers.get(detail));
+    document.querySelectorAll(".cost-detail-popover.is-open").forEach((popover) => {
+      if (popover !== detail && popover.dataset.pinned !== "1") popover.classList.remove("is-open");
+    });
+    position();
+    detail.classList.add("is-open");
+    document.body.classList.add("cost-detail-open");
+  };
+  const close = () => {
+    detail.classList.remove("is-open");
+    detail.removeAttribute("data-pinned");
+    if (!document.querySelector(".cost-detail-popover.is-open")) document.body.classList.remove("cost-detail-open");
+  };
+  const scheduleClose = () => {
+    clearTimeout(costDetailTimers.get(detail));
+    costDetailTimers.set(detail, setTimeout(() => {
+      if (detail.dataset.pinned === "1") return;
+      if (!anchor.matches(":hover, :focus-within") && !detail.matches(":hover, :focus-within")) close();
+    }, 450));
+  };
+  anchor.onmouseenter = open;
+  anchor.onmouseleave = scheduleClose;
+  anchor.onfocusin = open;
+  anchor.onfocusout = scheduleClose;
+  anchor.onclick = (event) => {
+    event.stopPropagation();
+    if (detail.dataset.pinned === "1") close();
+    else { open(); detail.dataset.pinned = "1"; }
+  };
+  detail.onmouseenter = open;
+  detail.onmouseleave = scheduleClose;
+  detail.onfocusin = open;
+  detail.onfocusout = scheduleClose;
+  detail.onclick = (event) => event.stopPropagation();
+}
+
 // Simple hat eine eigene Statusflaeche. Crawl-, Paywall- und Advanced-Fehler
 // werden hier bewusst nie angezeigt.
 function renderSimpleHeaderStatus() {
@@ -2978,16 +3085,41 @@ function renderSimpleHeaderStatusContent() {
     )}`;
   }
 
-  const eur = (value) => value === null || value === undefined
-    ? "–"
-    : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  byId("simple-cost-summary").textContent = simpleForecast ? eur(simpleForecast.spent_eur) : "–";
-  byId("simple-cost-spent").textContent = simpleForecast ? eur(simpleForecast.spent_eur) : "–";
-  byId("simple-cost-projected").textContent = simpleForecast ? eur(simpleForecast.projected_eur) : "–";
-  byId("simple-ai-articles").textContent = simpleForecast
-    ? Number(simpleForecast.analysed_articles || 0).toLocaleString("de-DE")
-    : "–";
-  byId("simple-cost-model").textContent = simpleForecast?.model_label || run?.model || "Nur Simple-KI-Aufrufe";
+  const activeSimpleRun = Boolean(run && ["queued", "running"].includes(run.status));
+  byId("simple-cost-summary").textContent = formatCostEur(simpleCostSummary?.total_eur);
+  byId("simple-cost-today").textContent = formatCostEur(simpleCostSummary?.today_eur);
+  byId("simple-cost-total").textContent = formatCostEur(simpleCostSummary?.total_eur);
+  byId("simple-cost-projected").textContent = activeSimpleRun ? formatCostEur(simpleForecast?.projected_eur) : "–";
+  const analysisModel = simpleForecast?.analysis_model || run?.model || "nicht gesetzt";
+  const researchModel = simpleForecast?.research_model || run?.research_model || "nicht gesetzt";
+  byId("simple-cost-model").textContent = `Backend: Analyse ${analysisModel} · Recherche ${researchModel}`;
+  const simpleTodayDetail = byId("simple-today-cost-detail");
+  const simpleTotalDetail = byId("simple-total-cost-detail");
+  const simpleForecastDetail = byId("simple-forecast-cost-detail");
+  if (simpleTodayDetail) simpleTodayDetail.innerHTML = renderCostLedgerDetail(
+    "KI-Kosten heute", simpleCostSummary?.today_eur, simpleCostSummary?.today_model_breakdown,
+    simpleCostSummary, "Alle heute in Europe/Berlin protokollierten Aufrufe",
+  );
+  if (simpleTotalDetail) simpleTotalDetail.innerHTML = renderCostLedgerDetail(
+    "KI-Kosten gesamt", simpleCostSummary?.total_eur, simpleCostSummary?.total_model_breakdown,
+    simpleCostSummary, "Alle dauerhaft protokollierten Aufrufe",
+  );
+  bindCostDetailPopover(byId("simple-today-cost-stat"), simpleTodayDetail);
+  bindCostDetailPopover(byId("simple-total-cost-stat"), simpleTotalDetail);
+  if (simpleForecastDetail) {
+    const calculatedAt = simpleForecast?.calculated_at
+      ? new Date(simpleForecast.calculated_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      : "jetzt";
+    simpleForecastDetail.innerHTML = activeSimpleRun && simpleForecast ? `
+      <div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Simple-Laufkostenprognose</strong><small>Live aus Supabase · Stand ${calculatedAt}</small></div></div>
+      <div class="cost-detail-summary"><span>Bereits angefallen<b>${formatCostEur(simpleForecast.spent_eur)}</b></span><span>Voraussichtlich gesamt<b>${formatCostEur(simpleForecast.projected_eur)}</b></span><span>Verarbeitet<b>${formatCostInt(simpleForecast.processed_articles)}</b></span><span>Noch offen<b>${formatCostInt(simpleForecast.remaining_articles)}</b></span></div>
+      <span class="cost-detail-section"><b>Modell-Snapshot dieses Laufs</b><span class="cost-detail-row"><span>Analysemodell</span><b>${escapeHtml(analysisModel)}</b></span><span class="cost-detail-row"><span>Recherchemodell</span><b>${escapeHtml(researchModel)}</b></span><span class="cost-detail-row"><span>Abgleich mit echten Aufrufen</span><b>${simpleForecast.model_alignment ? "stimmt überein" : "Abweichung erkannt"}</b></span></span>
+      <span class="cost-detail-section"><b>Tokens & Restmenge</b><span class="cost-detail-row"><span>Bisherige Tokens</span><b>${formatCostInt(simpleForecast.tokens)}</b></span><span class="cost-detail-row"><span>Ø Input je verarbeitetem Artikel</span><b>${formatCostInt(simpleForecast.token_projection?.avg_input_tokens)}</b></span><span class="cost-detail-row"><span>Ø Output je verarbeitetem Artikel</span><b>${formatCostInt(simpleForecast.token_projection?.avg_output_tokens)}</b></span><span class="cost-detail-row"><span>Voraussichtliche Restkosten</span><b>${formatCostUsd(simpleForecast.projected_remaining_usd)}</b></span></span>
+      <span class="cost-detail-section"><b>Tatsächlich verwendete KI-Modelle</b>${costModelBreakdownHtml(simpleForecast.model_breakdown, simpleCostSummary?.usd_eur_rate)}</span>
+      <small class="cost-detail-foot">Formel: echte Kosten dieses Laufs + offene Artikel × bisherige Kosten je verarbeitetem Artikel. Vorfilter ohne KI-Aufruf sind im Durchschnitt enthalten. Die Modelle wurden beim Start des Laufs im Backend festgeschrieben.</small>
+    ` : '<div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Keine laufende Prognose</strong><small>Sobald eine Simple-Analyse läuft, erscheint hier ihre Live-Kalkulation.</small></div></div>';
+  }
+  bindCostDetailPopover(byId("simple-forecast-cost-stat"), simpleForecastDetail);
   const simpleForecastText = simpleForecast
     ? `${Number(simpleForecast.tokens || 0).toLocaleString("de-DE")} Tokens verbraucht`
     : "";
@@ -3242,9 +3374,10 @@ if (typeof document !== "undefined") document.addEventListener("click", (event) 
   });
 }, { capture: true });
 
-export function setSimpleRunStatus(run, forecast = null, triggerBackfill = null) {
+export function setSimpleRunStatus(run, forecast = null, triggerBackfill = null, costSummary = undefined) {
   simpleRunStatus = run || null;
   simpleForecast = forecast || null;
+  if (costSummary !== undefined) simpleCostSummary = costSummary || null;
   simpleTriggerBackfill = triggerBackfill || null;
   renderSimpleHeaderStatus();
 }
@@ -3260,98 +3393,56 @@ async function loadLastRun() {
   if (document.body.classList.contains("mode-simple")) return;
   try {
     const { crawl_run: last, last_completed_crawl: lastCompleted, backfill_run: backfill, analysis_queue: analysisQueue = {}, analysis_error_breakdown: analysisErrors = [], error_window: errorWindow = {}, access_window: accessWindow = {}, cost_summary: costs, source_health: health } = await callApi("get_dashboard_status");
-    const formatEur = (value) => value === null || value === undefined
-      ? "Kurs wird geladen"
-      : `${Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const simpleMode = document.body.classList.contains("mode-simple");
-    const activeModel = simpleMode ? costs?.simple_model : costs?.advanced_model;
+    const formatEur = formatCostEur;
     const monthLabel = document.getElementById("cost-month-label");
-    if (monthLabel) monthLabel.textContent = "KI-Kosten im Monat";
+    if (monthLabel) monthLabel.textContent = "Kosten gesamt";
     const costModelNote = document.getElementById("cost-panel-model");
     if (costModelNote) {
-      costModelNote.textContent = activeModel
-        ? `Live aus dem Kostenledger · aktives Modell ${activeModel}`
-        : "Live aus dem Kostenledger";
+      const reviewModel = costs?.crawl_forecast?.configured_models?.review;
+      costModelNote.textContent = costs?.advanced_model
+        ? `Backend: Hauptmodell ${costs.advanced_model}${reviewModel ? ` · Zweitprüfung ${reviewModel}` : ""}`
+        : "Live aus dem Supabase-Kostenledger";
     }
-    els.geminiCostMonth.textContent = formatEur(costs?.month_eur);
+    els.geminiCostMonth.textContent = formatEur(costs?.total_eur);
     els.geminiCostToday.textContent = formatEur(costs?.today_eur);
-    els.statusCostSummary.textContent = formatEur(costs?.month_eur);
+    els.statusCostSummary.textContent = formatEur(costs?.total_eur);
+    const totalCostDetail = document.getElementById("total-cost-detail");
+    const todayCostDetail = document.getElementById("today-cost-detail");
+    if (totalCostDetail) totalCostDetail.innerHTML = renderCostLedgerDetail(
+      "KI-Kosten gesamt", costs?.total_eur, costs?.total_model_breakdown,
+      costs, "Alle dauerhaft protokollierten Aufrufe",
+    );
+    if (todayCostDetail) todayCostDetail.innerHTML = renderCostLedgerDetail(
+      "KI-Kosten heute", costs?.today_eur, costs?.today_model_breakdown,
+      costs, "Alle heute in Europe/Berlin protokollierten Aufrufe",
+    );
+    bindCostDetailPopover(document.getElementById("gemini-cost-stat"), totalCostDetail);
+    bindCostDetailPopover(document.getElementById("today-cost-stat"), todayCostDetail);
     const crawlForecast = costs?.crawl_forecast;
     const forecastRunId = crawlForecast?.run_id || crawlForecast?.crawl_run_id;
     els.geminiRequestCount.textContent = forecastRunId ? formatEur(crawlForecast.projected_eur) : "–";
     const crawlForecastStat = document.getElementById("crawl-cost-forecast-stat");
     if (crawlForecastStat) {
-      const models = [crawlForecast?.primary_model, crawlForecast?.review_model].filter(Boolean).join(" + ");
-      const runLabel = crawlForecast?.run_type === "backfill" ? "Neubewertung" : "Crawl";
+      const configuredModels = [crawlForecast?.configured_models?.primary, crawlForecast?.configured_models?.review].filter(Boolean).join(" + ");
+      const actualModels = (crawlForecast?.actual_models || []).join(" + ");
+      const runLabel = crawlForecast?.run_type === "backfill" ? "Neubewertung"
+        : crawlForecast?.run_type === "analysis_queue" ? "Artikelanalyse" : "Crawl";
       crawlForecastStat.removeAttribute("title");
       const detail = document.getElementById("crawl-cost-detail");
-      // A fixed popover inside the scrollable status panel is clipped by the
-      // panel's overflow boundary in Chromium/Tauri. Portal it to body and
-      // keep hover/focus state explicitly so the user can move into it.
-      if (detail && detail.parentElement !== document.body) document.body.appendChild(detail);
       const tokens = crawlForecast?.token_projection || {};
-      const fmtInt = (value) => Math.round(Number(value || 0)).toLocaleString("de-DE");
-      const fmtUsd = (value) => Number(value || 0).toLocaleString("de-DE", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 4 });
-      const modelRows = (crawlForecast?.model_breakdown || []).map((model) => `<div class="cost-detail-model"><b>${escapeHtml(model.model)}</b><small>${escapeHtml(model.operation_label)} · ${fmtInt(model.calls)} Aufrufe</small><small>Input ${fmtInt(model.input_tokens)} × $${Number(model.input_rate_per_million || 0).toLocaleString("de-DE")}/M · Output/Thinking ${fmtInt(Number(model.output_tokens || 0) + Number(model.thinking_tokens || 0))} × $${Number(model.output_rate_per_million || 0).toLocaleString("de-DE")}/M</small><small>Ist-Kosten ${fmtUsd(model.cost_usd)}</small></div>`).join("");
       if (detail) detail.innerHTML = forecastRunId ? `
-        <div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>${runLabel}-Kostenprognose</strong><small>Live aus Supabase · ${escapeHtml(models)} · Aktualisierung alle 8 Sekunden</small></div></div>
-        <div class="cost-detail-summary"><span>Bereits angefallen<b>${formatEur(crawlForecast.actual_eur)}</b></span><span>Voraussichtlich gesamt<b>${formatEur(crawlForecast.projected_eur)}</b></span><span>Analysiert<b>${fmtInt(crawlForecast.analyzed_articles)}</b></span><span>Noch offen<b>${fmtInt(crawlForecast.remaining_articles)}</b></span></div>
-        <span class="cost-detail-section"><b>Durchschnitt pro Artikel</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${fmtInt(tokens.avg_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${fmtInt(tokens.avg_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${fmtInt(tokens.avg_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Gesamt-Tokens</span><b>${fmtInt(tokens.avg_total_tokens)}</b></span><span class="cost-detail-row"><span>Artikelumfang</span><b>Ø ${fmtInt(tokens.avg_words)} Wörter · ${fmtInt(tokens.avg_characters)} Zeichen</b></span><span class="cost-detail-row"><span>Kosten</span><b>${fmtUsd(crawlForecast.estimated_cost_per_article_usd)}</b></span></span>
-        <span class="cost-detail-section"><b>Hochrechnung Restmenge</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${fmtInt(tokens.projected_remaining_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${fmtInt(tokens.projected_remaining_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${fmtInt(tokens.projected_remaining_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Restkosten</span><b>${fmtUsd(crawlForecast.projected_remaining_usd)}</b></span></span>
-        <span class="cost-detail-section"><b>Modelle & Preise</b>${modelRows || '<span class="cost-detail-row"><span>Noch keine Live-Aufrufe</span><b>Historischer Modellmittelwert</b></span>'}</span>
-        <small class="cost-detail-foot">Formel: bisherige echte Kosten + offene Artikel × gemessene Durchschnittskosten pro Artikel. Input wird zum Inputpreis berechnet; Output und Thinking zum Outputpreis. Tracking-Abdeckung: ${Number(crawlForecast.tracking_coverage_percent || 0).toLocaleString("de-DE")} %.</small>
+        <div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>${runLabel}-Kostenprognose</strong><small>Live aus Supabase · Stand ${new Date(crawlForecast.calculated_at || Date.now()).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</small></div></div>
+        <div class="cost-detail-summary"><span>Bereits angefallen<b>${formatEur(crawlForecast.actual_eur)}</b></span><span>Voraussichtlich gesamt<b>${formatEur(crawlForecast.projected_eur)}</b></span><span>Verarbeitet<b>${formatCostInt(crawlForecast.analyzed_articles)}</b></span><span>Noch offen<b>${formatCostInt(crawlForecast.remaining_articles)}</b></span></div>
+        <span class="cost-detail-section"><b>Backend-Abgleich</b><span class="cost-detail-row"><span>Backend aktuell</span><b>${escapeHtml(configuredModels || "nicht gesetzt")}</b></span><span class="cost-detail-row"><span>In diesem Lauf aufgerufen</span><b>${escapeHtml(actualModels || "noch kein KI-Aufruf")}</b></span><span class="cost-detail-row"><span>Übereinstimmung</span><b>${crawlForecast.model_alignment ? "stimmt überein" : "Abweichung erkannt"}</b></span></span>
+        <span class="cost-detail-section"><b>Durchschnitt pro verarbeitetem Artikel</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${formatCostInt(tokens.avg_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${formatCostInt(tokens.avg_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${formatCostInt(tokens.avg_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Gesamt-Tokens</span><b>${formatCostInt(tokens.avg_total_tokens)}</b></span><span class="cost-detail-row"><span>Artikelumfang</span><b>Ø ${formatCostInt(tokens.avg_words)} Wörter · ${formatCostInt(tokens.avg_characters)} Zeichen</b></span><span class="cost-detail-row"><span>Kosten</span><b>${formatCostUsd(crawlForecast.estimated_cost_per_article_usd)}</b></span></span>
+        <span class="cost-detail-section"><b>Hochrechnung Restmenge</b><span class="cost-detail-row"><span>Input-Tokens</span><b>${formatCostInt(tokens.projected_remaining_input_tokens)}</b></span><span class="cost-detail-row"><span>Output-Tokens</span><b>${formatCostInt(tokens.projected_remaining_output_tokens)}</b></span><span class="cost-detail-row"><span>Thinking-Tokens</span><b>${formatCostInt(tokens.projected_remaining_thinking_tokens)}</b></span><span class="cost-detail-row"><span>Restkosten</span><b>${formatCostUsd(crawlForecast.projected_remaining_usd)}</b></span></span>
+        <span class="cost-detail-section"><b>Tatsächlich verwendete Modelle</b>${costModelBreakdownHtml(crawlForecast.model_breakdown, costs?.usd_eur_rate)}</span>
+        <small class="cost-detail-foot">Formel: bisherige echte Kosten + offene Artikel × ${crawlForecast.estimation_basis === "current_run" ? "bisherige Durchschnittskosten dieses Laufs" : "historische Durchschnittskosten der aktuell im Backend gewählten Modelle"}. Tracking-Abdeckung: ${Number(crawlForecast.tracking_coverage_percent || 0).toLocaleString("de-DE")} %.</small>
       ` : `<div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Keine laufende Prognose</strong><small>Sobald ein Crawl oder eine Neubewertung läuft, erscheint hier die Live-Kalkulation.</small></div></div>`;
-      const positionCostDetail = () => {
-        if (!detail) return;
-        const rect = crawlForecastStat.getBoundingClientRect();
-        const margin = 12;
-        const width = Math.min(360, window.innerWidth - margin * 2);
-        detail.style.width = `${width}px`;
-        const height = Math.min(detail.scrollHeight, window.innerHeight - margin * 2, 520);
-        detail.style.left = `${Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin))}px`;
-        detail.style.top = `${window.innerHeight - rect.bottom >= height ? rect.bottom : Math.max(margin, rect.top - height)}px`;
-      };
-      let closeCostDetailTimer;
-      const openCostDetail = () => {
-        clearTimeout(closeCostDetailTimer);
-        positionCostDetail();
-        detail?.classList.add("is-open");
-        document.body.classList.add("cost-detail-open");
-      };
-      const closeCostDetail = () => {
-        detail?.classList.remove("is-open");
-        detail?.removeAttribute("data-pinned");
-        document.body.classList.remove("cost-detail-open");
-      };
-      const scheduleCostDetailClose = () => {
-        clearTimeout(closeCostDetailTimer);
-        closeCostDetailTimer = setTimeout(() => {
-          if (detail?.dataset.pinned === "1") return;
-          if (!crawlForecastStat.matches(":hover, :focus-within") && !detail?.matches(":hover, :focus-within")) closeCostDetail();
-        }, 450);
-      };
-      crawlForecastStat.onmouseenter = openCostDetail;
-      crawlForecastStat.onmouseleave = scheduleCostDetailClose;
-      crawlForecastStat.onfocusin = openCostDetail;
-      crawlForecastStat.onfocusout = scheduleCostDetailClose;
-      crawlForecastStat.onclick = (event) => {
-        event.stopPropagation();
-        if (detail?.dataset.pinned === "1") closeCostDetail();
-        else {
-          openCostDetail();
-          if (detail) detail.dataset.pinned = "1";
-        }
-      };
-      if (detail) {
-        detail.onmouseenter = openCostDetail;
-        detail.onmouseleave = scheduleCostDetailClose;
-        detail.onfocusin = openCostDetail;
-        detail.onfocusout = scheduleCostDetailClose;
-        detail.onclick = (event) => event.stopPropagation();
-      }
+      bindCostDetailPopover(crawlForecastStat, detail);
     }
     els.sourceAttemptCount.textContent = Number(health?.attempts || 0).toLocaleString("de-DE");
-    els.geminiCostStat.classList.toggle("telemetry-stat--warning", Boolean(costs?.warning));
+    els.geminiCostStat.classList.remove("telemetry-stat--warning");
     const forecast = costs?.forecast;
     const forecastRisk = ["risk", "exceeded"].includes(forecast?.status);
     els.spendForecast.hidden = !forecastRisk;
