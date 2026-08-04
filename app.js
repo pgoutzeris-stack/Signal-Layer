@@ -2912,16 +2912,22 @@ function closeCompanyProfile() {
   document.getElementById("company-profile-overlay")?.classList.remove("open");
 }
 
-function companyLogoHtml(company, website) {
+function companyLogoHtml(company, profile) {
   const initials = String(company || "?").replace(/[^A-Za-zÄÖÜäöü0-9 ]/g, "").split(/\s+/)
     .filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join("") || "?";
-  if (!website) return `<div class="cp-logo"><span>${escapeHtml(initials)}</span></div>`;
-  const domain = String(website).replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-  // Favicon der Unternehmensdomain, mit Rueckfall auf Initialen. Bewusst kein
-  // Logo-Dienst mit Schluessel oder Kontingent.
-  return `<div class="cp-logo"><img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128"
-    alt="Logo von ${escapeHtml(company)}" loading="lazy" decoding="async"
-    onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml(initials)}'}))"></div>`;
+  const logoUrl = /^https:\/\//i.test(String(profile?.logo_url || "")) ? String(profile.logo_url) : "";
+  const sourceUrl = /^https:\/\//i.test(String(profile?.logo_source_url || "")) ? String(profile.logo_source_url) : "";
+  const sourceLabels = {
+    official_media: "Offizielle Logoquelle",
+    official_structured_data: "Offizielle Website",
+    wikimedia_commons: "Wikimedia Commons",
+  };
+  if (!logoUrl) return `<div class="cp-logo-wrap"><div class="cp-logo cp-logo--fallback"><span>${escapeHtml(initials)}</span></div></div>`;
+  return `<div class="cp-logo-wrap">
+    <div class="cp-logo"><img src="${escapeHtml(logoUrl)}" alt="Logo von ${escapeHtml(company)}" loading="eager" decoding="async"
+      onerror="this.parentElement.classList.add('cp-logo--fallback');this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml(initials)}'}))"></div>
+    ${sourceUrl ? `<a class="cp-logo-source" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(sourceLabels[profile?.logo_source_kind] || "Logoquelle")}</a>` : ""}
+  </div>`;
 }
 
 function companyProfileHeadHtml(company, profile, triggerForHead = null) {
@@ -2929,6 +2935,7 @@ function companyProfileHeadHtml(company, profile, triggerForHead = null) {
     ? new Date(profile.researched_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
     : null;
   return `<div class="cp-head">
+    ${companyLogoHtml(company, profile)}
     <div class="cp-head-main">
       <span class="cp-eyebrow"><i class="fa-solid fa-building"></i> Tier-1-Steckbrief</span>
       <h2 id="cp-title">Unternehmensprofil: ${escapeHtml(company)}</h2>
@@ -2939,7 +2946,6 @@ function companyProfileHeadHtml(company, profile, triggerForHead = null) {
           <i class="fa-solid fa-rotate"></i> Aktualisieren</button>
       </div>` : ""}
     </div>
-    ${companyLogoHtml(company, profile?.website)}
     <button type="button" class="cp-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
   </div>`;
 }
@@ -2979,12 +2985,25 @@ export async function openCompanyProfile(company, { refresh = false, trigger = n
   const name = String(company || "").trim();
   if (!name) return;
   const host = companyProfileOverlay();
+  host.dataset.company = name;
   host.classList.add("open");
   renderCompanyProfile(name, null, true, trigger);
   try {
     const payload = refresh ? { company: name, refresh: true } : { company: name };
-    const { profile, pending } = await callApi("get_company_profile", payload);
+    const { profile, pending, pending_logo: pendingLogo } = await callApi("get_company_profile", payload);
     renderCompanyProfile(name, profile, pending, trigger);
+    if (pendingLogo) {
+      // Bestehende Steckbriefe werden serverseitig einmalig um ein verifiziertes
+      // Logo ergänzt. Die Karte bleibt benutzbar und aktualisiert nur den Kopf,
+      // sobald der Hintergrundlauf fertig ist.
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        if (!host.classList.contains("open") || host.dataset.company !== name) break;
+        const next = await callApi("get_company_profile", { company: name, logo_poll: true });
+        renderCompanyProfile(name, next.profile || profile, false, trigger);
+        if (!next.pending_logo) break;
+      }
+    }
   } catch (error) {
     host.querySelector(".cp-card").innerHTML = companyProfileHeadHtml(name, null)
       + `<div class="cp-body"><div class="cp-state">Steckbrief konnte nicht geladen werden: ${escapeHtml(error.message)}</div></div>`;

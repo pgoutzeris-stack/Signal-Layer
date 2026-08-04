@@ -36,10 +36,19 @@ export const COMPANY_PROFILE_ARTICLE_SECTION = "Trigger & Aufhänger — warum j
 export type CompanyProfileKpi = { label: string; value: string; hint?: string };
 export type CompanyProfileSection = { title: string; items: string[] };
 export type CompanyProfileSource = { title: string; uri: string };
+export type CompanyProfileLogoSourceKind =
+  | "official_media"
+  | "official_structured_data"
+  | "wikimedia_commons";
+export type CompanyProfileLogoFormat = "svg" | "png" | "webp" | "jpg";
 
 export type CompanyProfile = {
   company: string;
   website: string | null;
+  logo_url: string | null;
+  logo_source_url: string | null;
+  logo_source_kind: CompanyProfileLogoSourceKind | null;
+  logo_format: CompanyProfileLogoFormat | null;
   headline: string | null;
   kpis: CompanyProfileKpi[];
   sections: CompanyProfileSection[];
@@ -79,6 +88,18 @@ Hauptsitz, Anzahl Märkte, Marktanteil, Eigenmarkenanteil, Mediabudget,
 Agenturbeziehungen, aktuelle Strategie, Markenportfolio, Personalwechsel im
 Marketing und in der Markenführung, laufende Umbauten.
 
+RECHERCHIERE AUSSERDEM DAS AKTUELLE UNTERNEHMENSLOGO. Nutze diese Quellen in
+genau dieser Priorität:
+A. offizielle Presse-, Brand-, Media- oder Download-Seite des Unternehmens,
+B. das Organization.logo der offiziellen Website,
+C. die Dateiseite auf Wikimedia Commons, wenn dort die aktuelle Identität und
+   Herkunft eindeutig belegt sind.
+Bevorzuge eine direkte, transparente SVG-Datei, sonst PNG oder WebP. Gib neben
+der direkten Bilddatei immer die Herkunftsseite an. Nimm niemals Favicons,
+Google-Ergebnislinks, ZIP/PDF-Dateien, Social-Media-Bilder, Logo-Aggregatoren
+oder ein Produkt-/Shop-Logo, wenn das Profil den Mutterkonzern meint. Wenn die
+aktuelle Identität nicht sicher belegt ist, lasse alle Logo-Felder leer.
+
 WAS DIE BERATUNG ANBIETET (für die Karte "Themen zur Ansprache"):
 ${rootsPortfolio || "Markenstrategie, Markenarchitektur, Design-to-Print, Customer Insights"}
 
@@ -91,6 +112,10 @@ danach, ohne Code-Zäune:
 
 {
   "website": "hauptdomain.de",
+  "logo_url": "https://.../aktuelles-logo.svg",
+  "logo_source_url": "https://.../presse-oder-dateiseite",
+  "logo_source_kind": "official_media | official_structured_data | wikimedia_commons",
+  "logo_format": "svg | png | webp | jpg",
   "headline": "Branche · Kurzcharakterisierung in maximal 8 Wörtern",
   "kpis": [
     {"label": "Umsatz GJ 2025", "value": "8,9 Mrd. €", "hint": "Konzern, brutto"}
@@ -108,6 +133,9 @@ REGELN, sie entscheiden über die Brauchbarkeit:
    5 Einträgen, jeder Eintrag maximal 20 Wörter: ${COMPANY_PROFILE_SECTIONS.join(" | ")}
 3. Bei "Buying Center / Relevante Personen": Name, Rolle, und wenn belegbar seit
    wann. Nur real belegte Personen. Keine erfundenen Namen, kein "vermutlich".
+4. Ein Logo ist nur gültig, wenn "logo_url" direkt eine öffentliche Bilddatei
+   lädt und "logo_source_url" die überprüfbare Herkunftsseite ist. Die angegebene
+   Quelle und Datei müssen zum aktuellen Unternehmen passen.
 5. Jede Zahl, die du nicht per Suche belegen konntest, gehört nicht in "kpis" oder
    "sections", sondern in "unverified_note". Erfinde niemals eine Quelle.
 6. Deutsch, knapp, keine Werbesprache. Kein Satz, der nur Offensichtliches sagt.
@@ -205,6 +233,122 @@ function normalizeSections(raw: unknown): CompanyProfileSection[] {
   return ordered;
 }
 
+const LOGO_KINDS = new Set<CompanyProfileLogoSourceKind>([
+  "official_media", "official_structured_data", "wikimedia_commons",
+]);
+const LOGO_FORMATS = new Set<CompanyProfileLogoFormat>(["svg", "png", "webp", "jpg"]);
+const BLOCKED_LOGO_HOST_PARTS = [
+  "google.com", "gstatic.com", "clearbit.com", "brandfetch.io", "logo.dev",
+  "seeklogo.com", "logos-world.net", "freepik.com", "vectorlogo.zone",
+];
+
+function safeHttpsUrl(value: unknown): URL | null {
+  try {
+    const url = new URL(String(value ?? "").trim());
+    if (url.protocol !== "https:" || !url.hostname || url.username || url.password) return null;
+    const host = url.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1" ||
+      host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function websiteHost(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return safeHttpsUrl(/^https:\/\//i.test(raw) ? raw : `https://${raw}`)?.hostname.replace(/^www\./, "") || "";
+}
+
+function sameDomain(a: string, b: string): boolean {
+  const left = a.replace(/^www\./, "").toLowerCase();
+  const right = b.replace(/^www\./, "").toLowerCase();
+  return Boolean(left && right && (left === right || left.endsWith(`.${right}`) || right.endsWith(`.${left}`)));
+}
+
+function logoKind(value: unknown): CompanyProfileLogoSourceKind | null {
+  const normalized = clean(value, 40) as CompanyProfileLogoSourceKind;
+  return LOGO_KINDS.has(normalized) ? normalized : null;
+}
+
+function declaredLogoFormat(value: unknown): CompanyProfileLogoFormat | null {
+  const normalized = clean(value, 10).toLowerCase().replace("jpeg", "jpg") as CompanyProfileLogoFormat;
+  return LOGO_FORMATS.has(normalized) ? normalized : null;
+}
+
+type VerifiedLogo = {
+  logo_url: string;
+  logo_source_url: string;
+  logo_source_kind: CompanyProfileLogoSourceKind;
+  logo_format: CompanyProfileLogoFormat;
+};
+
+/**
+ * Das Modell darf eine Quelle vorschlagen, aber nur der Server entscheidet, ob
+ * sie gespeichert wird. So landen weder erfundene Links noch HTML-Seiten,
+ * Favicons oder Logo-Farmen im Steckbrief.
+ */
+async function verifyLogoCandidate(parsed: Record<string, unknown>): Promise<VerifiedLogo | null> {
+  const asset = safeHttpsUrl(parsed.logo_url);
+  const source = safeHttpsUrl(parsed.logo_source_url);
+  const kind = logoKind(parsed.logo_source_kind);
+  const declared = declaredLogoFormat(parsed.logo_format);
+  if (!asset || !source || !kind || !declared) return null;
+
+  const assetHost = asset.hostname.toLowerCase();
+  if (BLOCKED_LOGO_HOST_PARTS.some((part) => assetHost === part || assetHost.endsWith(`.${part}`))) return null;
+  const officialHost = websiteHost(parsed.website);
+  if (kind === "wikimedia_commons") {
+    if (source.hostname !== "commons.wikimedia.org" || asset.hostname !== "upload.wikimedia.org") return null;
+  } else if (!officialHost || !sameDomain(source.hostname, officialHost)) {
+    return null;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(asset.toString(), {
+      redirect: "follow",
+      signal: AbortSignal.timeout(12_000),
+      headers: {
+        "Accept": "image/svg+xml,image/png,image/webp,image/jpeg;q=0.9,*/*;q=0.2",
+        "User-Agent": "ROOTS-Signal-Layer/1.0 (verified company logo)",
+      },
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  const length = Number(response.headers.get("content-length") || 0);
+  if (length > 2_500_000) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  const mime = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  let actual: CompanyProfileLogoFormat | null = mime === "image/svg+xml" ? "svg"
+    : mime === "image/png" ? "png"
+    : mime === "image/webp" ? "webp"
+    : (mime === "image/jpeg" || mime === "image/jpg") ? "jpg" : null;
+
+  if (actual === "svg" || (!actual && asset.pathname.toLowerCase().endsWith(".svg"))) {
+    const body = (await response.text()).slice(0, 200_000).replace(/^\uFEFF/, "").trimStart();
+    if (!/(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(body)) return null;
+    actual = "svg";
+  } else {
+    await response.body?.cancel().catch(() => undefined);
+  }
+  if (!actual || actual !== declared) return null;
+  return {
+    logo_url: response.url || asset.toString(),
+    logo_source_url: source.toString(),
+    logo_source_kind: kind,
+    logo_format: actual,
+  };
+}
+
 /**
  * Belege aus groundingMetadata. Google liefert Weiterleitungen ueber
  * vertexaisearch statt Direktlinks; der Anzeigename ist die Domain, deshalb
@@ -271,12 +415,17 @@ export async function researchCompanyProfile(
   const parts = ((candidate.content as Record<string, unknown> | undefined)?.parts ?? []) as Array<Record<string, unknown>>;
   const text = parts.map((part) => String(part.text ?? "")).join("\n");
   const parsed = extractJson(text) as Record<string, unknown>;
+  const verifiedLogo = await verifyLogoCandidate(parsed);
 
   const usageMeta = (payload.usageMetadata ?? {}) as Record<string, number>;
   return {
     profile: {
       company,
       website: clean(parsed.website, 120) || null,
+      logo_url: verifiedLogo?.logo_url || null,
+      logo_source_url: verifiedLogo?.logo_source_url || null,
+      logo_source_kind: verifiedLogo?.logo_source_kind || null,
+      logo_format: verifiedLogo?.logo_format || null,
       headline: clean(parsed.headline, 160) || null,
       kpis: normalizeKpis(parsed.kpis),
       sections: normalizeSections(parsed.sections),

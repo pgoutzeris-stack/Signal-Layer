@@ -247,22 +247,25 @@
   /* Tier-1-Steckbrief in der Design-DNA des Signal Layers. */
   .cp-overlay { position: fixed; inset: 0; background: rgba(13,24,43,.62); backdrop-filter: blur(7px); display: none; z-index: 120; padding: 2.5vh 2vw; overflow: auto; }
   .cp-overlay.open { display: block; }
-  .cp-card { max-width: 1120px; margin: 0 auto; border: 1px solid rgba(255,255,255,.45); border-radius: 22px; background: var(--surface); overflow: hidden; box-shadow: 0 30px 80px rgba(5,15,35,.35); }
-  .cp-head { position: relative; background: linear-gradient(132deg, var(--brand-dark) 0%, var(--brand) 100%); color: #fff; padding: 1.35rem 1.45rem; display: flex; align-items: center; gap: 1rem; }
-  .cp-head::after { content: ""; position: absolute; inset: auto -30px -70px auto; width: 190px; height: 190px; border-radius: 50%; background: rgba(255,255,255,.07); pointer-events: none; }
-  .cp-head-main { min-width: 0; flex: 1 1 auto; position: relative; z-index: 1; }
-  .cp-eyebrow { display: inline-flex; align-items: center; gap: 6px; margin-bottom: .42rem; color: rgba(255,255,255,.76); font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-  .cp-head h2 { margin: 0; font-size: clamp(1.2rem, 2vw, 1.55rem); font-weight: 730; letter-spacing: -.025em; }
-  .cp-head-sub { margin: .32rem 0 0; max-width: 720px; font-size: .8rem; line-height: 1.45; color: rgba(255,255,255,.74); }
-  .cp-logo { position: relative; z-index: 1; margin-left: auto; width: 92px; height: 70px; padding: 11px; border: 1px solid rgba(255,255,255,.7); border-radius: 14px; background: #fff; display: grid; place-items: center; overflow: hidden; flex: 0 0 92px; box-sizing: border-box; box-shadow: 0 8px 24px rgba(5,15,35,.18); }
+  .cp-card { max-width: 1120px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); overflow: hidden; box-shadow: 0 28px 72px rgba(5,15,35,.28); }
+  .cp-head { position: relative; border-top: 4px solid var(--brand); border-bottom: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 1.2rem 1.3rem; display: flex; align-items: center; gap: 1.05rem; }
+  .cp-head-main { min-width: 0; flex: 1 1 auto; }
+  .cp-eyebrow { display: inline-flex; align-items: center; gap: 6px; margin-bottom: .42rem; padding-left: .55rem; border-left: 3px solid var(--brand); color: var(--brand-dark); font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .cp-head h2 { margin: 0; color: var(--ink); font-size: clamp(1.2rem, 2vw, 1.55rem); font-weight: 730; letter-spacing: -.025em; }
+  .cp-head-sub { margin: .32rem 0 0; max-width: 720px; font-size: .8rem; line-height: 1.45; color: var(--muted); }
+  .cp-logo-wrap { width: 154px; flex: 0 0 154px; display: flex; flex-direction: column; align-items: center; gap: .36rem; }
+  .cp-logo { width: 154px; height: 74px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: #fff; display: grid; place-items: center; overflow: hidden; box-sizing: border-box; box-shadow: 0 5px 16px rgba(15,23,42,.07); }
   .cp-logo img { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; object-position: center; }
-  .cp-logo span { font-weight: 800; font-size: 1.1rem; color: #16233c; letter-spacing: .02em; }
-  .cp-close { position: relative; z-index: 1; width: 34px; height: 34px; border: 1px solid rgba(255,255,255,.2); border-radius: 50%; background: rgba(255,255,255,.08); color: rgba(255,255,255,.78); font-size: 1rem; cursor: pointer; padding: 0; margin-left: .15rem; flex: none; }
-  .cp-close:hover { color: #fff; }
+  .cp-logo span { font-weight: 800; font-size: 1.05rem; color: var(--brand-dark); letter-spacing: .04em; }
+  .cp-logo--fallback { background: var(--brand-light); border-color: color-mix(in srgb, var(--brand) 22%, var(--line)); }
+  .cp-logo-source { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: .6rem; font-weight: 650; text-decoration: none; }
+  .cp-logo-source:hover { color: var(--brand); text-decoration: underline; }
+  .cp-close { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); font-size: 1rem; cursor: pointer; padding: 0; margin-left: .15rem; flex: none; }
+  .cp-close:hover { border-color: color-mix(in srgb, var(--brand) 30%, var(--line)); background: var(--brand-light); color: var(--brand-dark); }
   .cp-pills { display: flex; gap: .4rem; margin-top: .55rem; flex-wrap: wrap; }
-  .cp-pill { display: inline-flex; align-items: center; gap: .3rem; background: rgba(255,255,255,.12); color: #eef5ff; border: 1px solid rgba(255,255,255,.14); border-radius: 999px; padding: .25rem .62rem; font-size: .68rem; font-weight: 650; }
-  .cp-pill--action { cursor: pointer; background: rgba(255,255,255,.2); color: #fff; }
-  .cp-pill--action:hover { background: rgba(255,255,255,.32); }
+  .cp-pill { display: inline-flex; align-items: center; gap: .3rem; background: var(--surface); color: var(--status-text); border: 1px solid var(--line); border-radius: 8px; padding: .27rem .58rem; font-size: .68rem; font-weight: 650; }
+  .cp-pill--action { cursor: pointer; background: var(--brand-light); border-color: color-mix(in srgb, var(--brand) 22%, var(--line)); color: var(--brand-dark); }
+  .cp-pill--action:hover { border-color: var(--brand); background: color-mix(in srgb, var(--brand-light) 78%, #fff); }
   .cp-body { padding: 1.25rem 1.4rem 1.5rem; background: var(--surface); }
   .cp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; margin-bottom: 1.1rem; }
   .cp-kpi { border: 1px solid var(--line); border-radius: 14px; padding: .9rem .7rem; background: var(--bg); text-align: center; box-shadow: var(--shadow-dash); }
@@ -286,7 +289,10 @@
     .cp-overlay { padding: 0; }
     .cp-card { min-height: 100%; border-radius: 0; }
     .cp-head { align-items: flex-start; padding: 1rem; flex-wrap: wrap; }
-    .cp-logo { order: 3; margin: .15rem 0 0; width: 76px; height: 58px; flex-basis: 76px; }
+    .cp-logo-wrap { width: 110px; flex-basis: 110px; order: 2; }
+    .cp-logo { width: 110px; height: 58px; }
+    .cp-head-main { order: 1; flex-basis: calc(100% - 160px); }
+    .cp-close { order: 3; }
     .cp-close { margin-left: auto; }
     .cp-body { padding: 1rem; }
     .cp-grid { grid-template-columns: 1fr; }
@@ -2333,7 +2339,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-import { initApp } from './app.js?v=20260804-2010';
+  import { initApp } from './app.js?v=20260804-2035';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

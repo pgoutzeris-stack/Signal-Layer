@@ -414,6 +414,11 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
     await admin.schema("signal_layer").from("company_profiles").upsert({
       company: name,
       website: profile.website,
+      logo_url: profile.logo_url,
+      logo_source_url: profile.logo_source_url,
+      logo_source_kind: profile.logo_source_kind,
+      logo_format: profile.logo_format,
+      logo_checked_at: new Date().toISOString(),
       headline: profile.headline,
       kpis: profile.kpis,
       sections: profile.sections,
@@ -5805,10 +5810,18 @@ Deno.serve(async (req: Request) => {
         if (!name) return errorResponse(origin, "company fehlt", 400);
         const admin = getAdminClient();
         const wantsRefresh = Boolean((body as { refresh?: boolean })?.refresh);
+        const logoPoll = Boolean((body as { logo_poll?: boolean })?.logo_poll);
         const { data, error } = await admin.schema("signal_layer").from("company_profiles")
           .select("*").eq("company", name).maybeSingle();
         if (error) return errorResponse(origin, error.message, 500);
-        if (data && !wantsRefresh) return corsResponse(origin, { profile: data, pending: false });
+        if (data && !wantsRefresh) {
+          const pendingLogo = !data.logo_checked_at;
+          // Bereits vorhandene Steckbriefe stammen noch aus der Zeit ohne
+          // verifizierte Logos. Einmalig im Hintergrund nachziehen; Poll-Aufrufe
+          // dürfen dabei keinen zweiten parallelen Suchlauf starten.
+          if (pendingLogo && !logoPoll) EdgeRuntime.waitUntil(ensureCompanyProfile(name, true));
+          return corsResponse(origin, { profile: data, pending: false, pending_logo: pendingLogo });
+        }
 
         // Noch nicht recherchiert: der Nutzer soll nicht auf einen Suchlauf
         // warten, deshalb im Hintergrund anstossen und leer antworten.
