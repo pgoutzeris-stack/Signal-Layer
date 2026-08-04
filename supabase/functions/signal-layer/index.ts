@@ -543,7 +543,7 @@ async function getSimpleRootsPortfolio(): Promise<string> {
   // Familienauswahl in pipeline-simple.ts.
   const text = (data || [])
     .map((offering: Record<string, string>) => {
-      const description = String(offering.description || "").replace(/\s+/g, " ").trim().slice(0, 420);
+      const description = String(offering.description || "").replace(/\s+/g, " ").trim().slice(0, 620);
       return `- ${offering.id} | [${offering.pillar || "sonstige"}] ${offering.label}: ${description}`;
     })
     .join("\n");

@@ -3,6 +3,11 @@ import test from "node:test";
 
 const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
 
+test("the enriched portfolio runs as a separate v2.2 ruleset", () => {
+  assert.equal(pipeline.SIMPLE_VERSION, "2.2");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.2");
+});
+
 test("v2.1 keeps a complete CMO-change article and removes a known paywall tail", () => {
   const core = [
     "Christian Wiegand wird Marketing-Chef von Xpeng.",
@@ -39,4 +44,19 @@ test("the prompt receives descriptions only for family-relevant ROOTS services",
   assert.match(selected, /Die ersten 100 Tage als CMO: ROOTS priorisiert/);
   assert.match(selected, /Marketing Audit: ROOTS analysiert/);
   assert.doesNotMatch(selected, /D2P & Artwork Management/);
+});
+
+test("all six-pillar services remain dynamically reachable", () => {
+  const marketing = pipeline.SIMPLE_FAMILIES.filter((family) => family.id === "marketing_strategie");
+  const portfolio = [
+    "- planning_marketingstrategie | [planning] Marketingstrategie: ROOTS übersetzt Ziele in einen Marketingrahmen.",
+    "- people_marketing_academy | [people] Marketing Academy Entwicklung: ROOTS entwickelt Curriculum, Kompetenzmodell und Lernpfade.",
+    "- performance_kpi_dashboards_reportings | [performance] KPI-Dashboards & Reportings: ROOTS entwickelt Dashboards und Reports.",
+  ].join("\n");
+  const selected = pipeline.selectRootsPortfolio(
+    portfolio,
+    marketing,
+    "Das Unternehmen baut eine Marketing Academy mit Curriculum, Kompetenzmodell und Lernpfaden auf.",
+  );
+  assert.match(selected, /Marketing Academy Entwicklung/);
 });

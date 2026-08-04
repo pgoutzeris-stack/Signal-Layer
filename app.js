@@ -1224,7 +1224,8 @@ function offeringRow(item) {
   return `<div class="taxonomy-row offering-row" data-kind="offering" data-id="${escapeHtml(item.id)}">
     <select class="taxonomy-input taxonomy-pillar offering-pillar" aria-label="6P-Bereich">${ROOTS_PILLARS.map(([id, label]) => `<option value="${id}" ${item.pillar === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select>
     <input class="taxonomy-input taxonomy-label" value="${escapeHtml(item.label || "")}" placeholder="Bezeichnung">
-    <textarea class="taxonomy-input taxonomy-desc" rows="2" placeholder="Was ROOTS bei dieser Leistung konkret macht">${escapeHtml(item.description || "")}</textarea>
+    <textarea class="taxonomy-input taxonomy-desc" rows="4" placeholder="Was ROOTS konkret macht und wie ROOTS dabei vorgeht">${escapeHtml(item.description || "")}</textarea>
+    ${item.source_url ? `<a class="offering-source-link" href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> ROOTS-Leistungsseite · geprüft ${escapeHtml(item.source_checked_at || "")}</a>` : ""}
     <label class="taxonomy-active"><input type="checkbox" ${item.active ? "checked" : ""}> aktiv</label>
     <button type="button" class="icon-btn taxonomy-delete" title="Löschen"><i class="fa-solid fa-trash"></i></button>
   </div>`;
@@ -1246,7 +1247,7 @@ function taxonomyEditor(kind, title, description) {
 }
 
 function offeringsEditor() {
-  return `<section class="pipeline-taxonomy-editor"><div class="pipeline-edit-head"><div><strong>ROOTS-Leistungskatalog · 6P</strong><small>Nach einem bestätigten Sales-Anlass wählt Gemini die spezifischste passende ROOTS-Leistung.</small></div><span><i class="fa-solid fa-pen"></i> Wirkt auf neue Sales-Analysen</span></div>${offeringGroups(pipelineTaxonomy.offerings)}</section>`;
+  return `<section class="pipeline-taxonomy-editor"><div class="pipeline-edit-head"><div><strong>ROOTS-Leistungskatalog · alle 6P</strong><small>Alle Unterleistungen enthalten Beschreibung und typisches ROOTS-Vorgehen. Der kostenlose Vorfilter wählt daraus je Artikel höchstens zehn fachlich passende Kandidaten für den einzigen KI-Lauf.</small></div><span><i class="fa-solid fa-pen"></i> Wirkt auf neue Analysen</span></div>${offeringGroups(pipelineTaxonomy.offerings)}</section>`;
 }
 
 async function savePipelineTaxonomyRow(row) {

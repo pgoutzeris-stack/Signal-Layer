@@ -32,9 +32,9 @@ import {
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
-export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.1";
+export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.2";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "2.1";
+export const SIMPLE_VERSION = "2.2";
 export const SIMPLE_UPDATED_AT = "2026-08-04";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -453,14 +453,42 @@ const SIMPLE_FAMILY_OFFERINGS: Record<string, string[]> = {
   ],
 };
 
-export function selectRootsPortfolio(rootsPortfolio: string, families: SimpleFamily[], limit = 10): string {
-  const ids = new Set(families.flatMap((family) => SIMPLE_FAMILY_OFFERINGS[family.id] || []));
-  const lines = String(rootsPortfolio || "").split("\n").map((line) => line.trim()).filter(Boolean);
-  const selected = lines.filter((line) => {
-    const id = line.match(/^-\s*([^|]+)\|/)?.[1]?.trim();
-    return id ? ids.has(id) : false;
-  });
-  return selected.slice(0, Math.max(1, limit)).join("\n");
+export function selectRootsPortfolio(
+  rootsPortfolio: string,
+  families: SimpleFamily[],
+  articleContext = "",
+  limit = 10,
+): string {
+  const preferredIds = families.flatMap((family) => SIMPLE_FAMILY_OFFERINGS[family.id] || []);
+  const preferredRank = new Map(preferredIds.map((id, index) => [id, Math.max(40 - index, 20)]));
+  const normalizedContext = normalizeMatchText(articleContext);
+  const contextTokens = new Set(normalizedContext.split(/\s+/).filter((token) => token.length >= 5));
+  const stop = new Set([
+    "roots", "entwickelt", "analysiert", "definiert", "unterstuetzt", "begleitet", "marketing",
+    "strategie", "strategisch", "unternehmen", "relevant", "relevante", "passende", "konkrete",
+  ]);
+  const ranked = String(rootsPortfolio || "").split("\n").map((line) => line.trim()).filter(Boolean)
+    .map((line, sourceIndex) => {
+      const match = line.match(/^-\s*([^|]+)\|\s*\[[^\]]+\]\s*([^:]+):\s*(.*)$/);
+      if (!match) return { line, score: -1, sourceIndex };
+      const [, id, label, description] = match;
+      const labelPhrase = normalizeMatchText(label);
+      const offeringTokens = new Set(normalizeMatchText(`${label} ${description}`).split(/\s+/)
+        .filter((token) => token.length >= 5 && !stop.has(token)));
+      const overlap = [...offeringTokens].filter((token) => contextTokens.has(token)).length;
+      const exactLabel = labelPhrase.length >= 6 && normalizedContext.includes(labelPhrase);
+      const preferred = preferredRank.get(id.trim()) || 0;
+      return {
+        line,
+        sourceIndex,
+        score: preferred + Math.min(overlap, 8) * 5 + (exactLabel ? 60 : 0),
+      };
+    })
+    // Die Familienliste garantiert ein solides Grundset. Darueber hinaus kann
+    // jede der 49 Leistungen durch eindeutige Begriffe des Artikels aufsteigen.
+    .filter((entry) => entry.score >= 10)
+    .sort((a, b) => b.score - a.score || a.sourceIndex - b.sourceIndex);
+  return ranked.slice(0, Math.max(1, limit)).map((entry) => entry.line).join("\n");
 }
 
 function rootsPortfolioLabels(portfolio: string): string[] {
@@ -485,7 +513,7 @@ export function buildSimplePrompt(
 ): string {
   // Im Prompt stehen nur zur Kandidatenlage passende Leistungen, dafuer mit
   // ihrer echten Beschreibung. Das ist zugleich praeziser und tokenaermer.
-  const selectedPortfolio = selectRootsPortfolio(rootsPortfolio, families);
+  const selectedPortfolio = selectRootsPortfolio(rootsPortfolio, families, articleText(article));
   const hasViralCandidate = families.some((family) => family.id === SIMPLE_VIRAL_FAMILY_ID);
   const candidates = families
     .map((family) => `- ${family.id} (${family.lane}): ${family.definition}`)
@@ -1236,7 +1264,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   // Der ROOTS-Bezug ist eine Zusatzinformation: er hilft bei der Einordnung,
   // entscheidet aber nicht über Annahme oder Ablehnung. Nur die virale Spur
   // braucht ihn, weil sie sonst kein fachliches Kriterium hätte.
-  const selectedPortfolio = selectRootsPortfolio(deps.rootsPortfolio || "", prefilter.families);
+  const selectedPortfolio = selectRootsPortfolio(deps.rootsPortfolio || "", prefilter.families, prefilter.text);
   const rootsLinkCandidate = String(answer.roots_link_de || "").trim();
   const rootsOffering = validatedRootsOffering(answer.roots_offering, selectedPortfolio);
   if (family.id === SIMPLE_VIRAL_FAMILY_ID && (!rootsOffering || !isConcreteRootsLink(rootsLinkCandidate, family.lane))) {
@@ -1436,7 +1464,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL, research
       steps: [
         { title: "Prompt bauen", copy: "Enthalten sind: die bestätigten Familien mit Definition, mögliche Tier-1-Namensfunde, Quelle, Titel und der ausgewählte Artikeltext. Namensfunde sind ausdrücklich noch keine erkannten Unternehmen.", kind: "Server" },
         { title: "Redaktionellen Kern abgrenzen", copy: "Im selben Aufruf erkennt das Modell angehängte Empfehlungen, Navigation und fremde Teaser. Bei einem Fremdblock liefert es den letzten echten Artikelsatz als wörtliche Schnittmarke.", kind: "KI + Schutzregel" },
-        { title: "Passende ROOTS-Leistungen mitgeben", copy: "Der kostenlose Vorfilter wählt je Signalfamilie höchstens zehn passende Leistungen aus. Im selben KI-Aufruf erhält das Modell deren exakte Namen und Beschreibungen von ROOTS statt des gesamten Portfolios.", kind: "Server" },
+        { title: "Passende ROOTS-Leistungen mitgeben", copy: "Alle 49 Unterleistungen aus den sechs ROOTS-Säulen sind verfügbar. Der kostenlose Vorfilter kombiniert je Artikel Familienpassung und konkrete Artikelbegriffe und gibt höchstens zehn Kandidaten samt Beschreibung und typischem ROOTS-Vorgehen in denselben KI-Aufruf.", kind: "Server" },
         { title: "Semantische Entscheidung", copy: `${option.label} wählt genau eine Familie, vergibt Konfidenz und Nutzwert, kopiert ein wörtliches Zitat und schreibt Überschrift, Begründung und Zusammenfassung auf Deutsch.`, kind: "KI" },
         { title: "Zielunternehmen bestimmen", copy: "Ein Tier-1-Name wird nur mit wörtlichem Beleg und zentraler Rolle übernommen: Hauptakteur, Entscheider, direkt betroffen oder zentraler Gegenstand. Neben-, Listen-, Teaser-, Award-, Navigations- und Vergleichserwähnungen reichen nicht.", kind: "KI + Schutzregel" },
         { title: "Trigger & Aufhänger vertiefen", copy: "Im selben Hauptlauf formuliert das Modell zwei bis drei belegte Sätze: aktueller Anlass, strategische Spannung und optional ein passender ROOTS-Gesprächseinstieg. Allgemeine Insight-Floskeln sind verboten.", kind: "KI + Schutzregel" },
@@ -1447,7 +1475,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL, research
       details: [
         { label: "Modell", value: `${option.label} (in Kosten & Betrieb einstellbar)` },
         { label: "Antwortform", value: "Ein JSON-Objekt: redaktionelle Schnittmarke, Spur, Familie, Konfidenz, vier Relevanz-Teilwerte, Zitat, Überschrift, Begründung, Zusammenfassung, Zielunternehmen mit Beleg, bestätigte Tier-1-Hauptakteure, Trigger & Aufhänger, Artikeltyp, Sprache, Person und Buying Center" },
-        { label: "ROOTS-Portfolio im Prompt", value: "Je Signalfamilie maximal zehn vorausgewählte Leistungen mit exaktem Namen und ROOTS-Beschreibung. Kombinationen aus bis zu drei Leistungen sind möglich." },
+        { label: "ROOTS-Portfolio im Prompt", value: "49 Unterleistungen aus Planning, Purpose, Presence, People, Productivity und Performance; je Artikel maximal zehn dynamisch passende Kandidaten mit Beschreibung und Vorgehen. Kombinationen aus bis zu drei Leistungen sind möglich." },
         { label: "Durchläufe", value: "Genau ein Analyseaufruf pro vorgefiltertem Artikel; kein automatischer Feld-Nachlauf" },
       ],
     },
