@@ -32,9 +32,9 @@ import {
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
-export const SIMPLE_PIPELINE_VERSION = "roots-simple-v1.0";
+export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "1.9";
+export const SIMPLE_VERSION = "2.0";
 export const SIMPLE_UPDATED_AT = "2026-08-04";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -263,7 +263,8 @@ export const SIMPLE_GUARDRAILS: SimpleGuardrail[] = [
   { id: "sensitive_topics", label: "Politik, Religion, sensible Themen aus", description: "Sensible Themen im Titel schliessen den Artikel komplett aus; im Text schliessen sie die bild.de-News-Spur aus." },
   { id: "news_domain_lock", label: "News nur von bild.de", description: `Die Marketing-Spur "Aktuelle News & Topics" akzeptiert ausschliesslich Artikel von ${SIMPLE_NEWS_DOMAINS.join(", ")}.` },
   { id: "roots_link", label: "ROOTS-Bezug als Zusatz", description: "Passt eine ROOTS-Leistung inhaltlich, wird sie mit Anschlusssatz ausgewiesen. Fehlt der Bezug, bleibt das Signal bestehen - nur die virale Spur verlangt ihn zwingend." },
-  { id: "tier1", label: "Tier-1-Zielkunden erkannt", description: "Namen und Aliase aus derselben Tier-1-Liste wie im Advanced-Modus werden deterministisch im Artikel gesucht und dem Modell als Zielkunden mitgegeben." },
+  { id: "editorial_core", label: "Nur der redaktionelle Kern", description: "Die KI markiert im selben Analyseaufruf angehängte Empfehlungen, Navigation und fremde Teaser. Der Server schneidet sie nur an einem belegten wörtlichen Endzitat ab." },
+  { id: "tier1", label: "Tier-1 nur als Hauptakteur", description: "Die Namenssuche erzeugt nur Kandidaten. Gespeichert wird ein Tier-1-Unternehmen erst, wenn die KI im selben Aufruf Rolle und wörtlichen Beleg aus dem redaktionellen Kern liefert." },
   { id: "min_text", label: "Mindestlänge", description: `Artikel unter ${SIMPLE_MIN_TEXT_CHARS} Zeichen Text gehen nicht an das Modell.` },
   { id: "min_confidence", label: "Mindestsicherheit", description: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder Score ${SIMPLE_MIN_SCORE} landen nicht in den Ergebnissen.` },
 ];
@@ -362,6 +363,14 @@ export type SimpleAiAnswer = {
   why_de: string;
   trigger_de: string;
   company: string;
+  company_evidence: string;
+  tier1_companies: Array<{
+    name: string;
+    evidence: string;
+    role: "primary_actor" | "decision_maker" | "directly_affected" | "central_subject";
+  }>;
+  has_unrelated_tail: boolean;
+  editorial_end_quote: string;
   summary_de: string;
   article_type: string;
   language: string;
@@ -403,6 +412,8 @@ Für signal_id "virale_news" gilt zusätzlich: Das Thema muss breit diskutiert s
 Sport-, Promi- oder Unterhaltungsberichte ohne übertragbare Aussage zu Führung, Haltung, Kultur, Marke, Kunden oder Zusammenarbeit sind kein Signal.
 </viral_rules>` : ""}` : ""}
 <rules>
+Trenne zuerst den redaktionellen Kernartikel von fremden Seitenelementen. Angehaengte Empfehlungen, "Mehr zum Thema"-Karten, weitere Ueberschriften, Navigation, Bild-/Copyrightzeilen, Eventlisten und Teaser zu anderen Themen oder Unternehmen gehoeren nicht zum Artikel. Ein abrupter Themen- oder Unternehmenswechsel nach dem eigentlichen Schluss ist ein starkes Zeichen fuer einen solchen Fremdblock. Klassifiziere, bewerte, fasse zusammen und erkenne Unternehmen ausschliesslich auf Basis des redaktionellen Kernartikels.
+Wenn nach dem Kernartikel fremde Bloecke folgen, setze has_unrelated_tail=true und kopiere in editorial_end_quote den letzten vollstaendigen Satz des echten Kernartikels wortwoertlich. Sonst setze has_unrelated_tail=false und editorial_end_quote="". Das Endzitat darf niemals aus dem fremden Block stammen.
 Entscheide, ob der Artikel genau eine dieser Signalfamilien wirklich belegt.
 Wähle nur eine Familie aus der Liste; erfinde keine neue und wähle keine, die nicht oben steht.
 evidence muss ein wörtlich aus article_title oder article_text kopierter Satz sein, der genau dieses Signal belegt.
@@ -411,10 +422,11 @@ Politik, Religion, Krieg, Kriminalität, Unglücke, Krankheit und andere sensibl
 Bewerte die Relevanz in vier Teilwerten von 0 bis 100. Für lane="marketing": a Neuheit, b strategischer Wert, c Übertragbarkeit auf andere Marken, d Evidenzstärke. Für lane="sales": a Problemstärke des Unternehmens, b Passung zu strategischer Marketingberatung, c erkennbare Kaufabsicht oder Bedarf, d Timing. 80+ nur bei konkretem, belegtem Anlass; ein blosses Thema ohne Beleg bleibt unter 50. relevance.reason ist ein deutscher Satz.
 score ist dein Gesamteindruck von 0 bis 100; der ausgewiesene Prozentwert wird serverseitig aus den vier Teilwerten berechnet.
 Sales heisst: ein konkretes Unternehmen hat gerade eine Situation, in der ROOTS-Beratung anschlussfähig wäre. Nenne dieses Unternehmen in company.
-Wenn tier1_unternehmen vorhanden ist, sind das die für ROOTS relevanten Zielkunden. Nimm einen Namen daraus nur dann in company, wenn dieses Unternehmen selbst handelnder Akteur, Entscheider oder nachweislich Betroffener des Signals ist. Eine Neben-, Listen-, Navigations- oder Vergleichserwähnung reicht niemals. Diese Regel gilt auch für Marketing. Ist kein Unternehmen eindeutig Gegenstand des Artikels, bleibt company leer.
+Wenn tier1_unternehmen vorhanden ist, sind das nur durch eine kostenlose Namenssuche gefundene Kandidaten, noch keine erkannten Zielkunden. Schreibe in tier1_companies ausschliesslich Unternehmen, die im redaktionellen Kern selbst handelnder Hauptakteur, Entscheider, direkt Betroffener oder zentraler Gegenstand sind. Liefere fuer jedes Unternehmen ein wörtliches evidence-Zitat aus dem Kern und die passende role. Eine Neben-, Listen-, Navigations-, Empfehlungs-, Teaser-, Award-, Filiallisten- oder Vergleichserwaehnung reicht niemals. Eine Nennung in einem fremden Block darf niemals in tier1_companies oder company landen.
+company ist das eine primaere Unternehmen, um dessen konkrete Situation es im Signal geht. company_evidence ist ein wörtliches Zitat aus dem redaktionellen Kern, das company namentlich nennt und seine zentrale Rolle belegt. Ist kein Unternehmen eindeutig Gegenstand des Artikels, bleiben company und company_evidence leer. Bei Sales sind ein konkret belegtes company und company_evidence Pflicht.
 Marketing heisst: der Artikel liefert übertragbare Substanz für eigene Inhalte, unabhängig von einem einzelnen Unternehmen.
 headline_de ist eine sachliche deutsche Überschrift ohne neue Fakten, why_de genau ein deutscher Satz zur Begründung.
-trigger_de ist ein belegter Gesprächsaufhänger für genau das Unternehmen in company und besteht aus zwei bis drei kurzen deutschen Sätzen: (1) der konkrete aktuelle Anlass, die Entscheidung oder das Problem aus dem Artikel, (2) die daraus entstehende strategische Spannung oder offene Marketingfrage, (3) optional ein sachlicher Gesprächseinstieg für ROOTS, wenn roots_offering belastbar passt. Nenne den Unternehmensnamen. Formuliere keine Kaufabsicht und keine nicht belegte interne Lage. Allgemeine Sätze wie "Der Artikel liefert aktuelle Daten/Insights", "lässt sich für Marketing-Inhalte nutzen" oder reine Branchenbeobachtungen sind verboten. Wenn company leer ist oder der Artikel keinen unternehmensspezifischen Anlass belegt, bleibt trigger_de leer.
+trigger_de entsteht in genau diesem einen Analyseaufruf. Er ist ein belegter Gesprächsaufhänger für company und besteht aus zwei bis drei kurzen deutschen Sätzen: (1) der konkrete aktuelle Anlass, die Entscheidung oder das Problem des Unternehmens aus dem Kernartikel, (2) die daraus entstehende strategische Spannung oder offene Marketingfrage, (3) optional ein sachlicher Gesprächseinstieg für ROOTS, wenn roots_offering belastbar passt. Nenne den Unternehmensnamen. Eine Branchenentwicklung oder ein allgemeines Zitat eines Unternehmensvertreters ist kein unternehmensspezifischer Trigger, solange keine konkrete Lage des Unternehmens belegt ist. Formuliere keine Kaufabsicht und keine nicht belegte interne Lage. Allgemeine Sätze wie "Der Artikel liefert aktuelle Daten/Insights", "lässt sich für Marketing-Inhalte nutzen" oder reine Branchenbeobachtungen sind verboten. Wenn company leer ist oder der Artikel keinen unternehmensspezifischen Anlass belegt, bleibt trigger_de leer. Es gibt keinen zweiten automatischen KI-Nachlauf.
 summary_de fasst den Artikel in maximal zwei deutschen Sätzen zusammen, ohne neue Fakten und ohne Wertung. Fülle es immer aus, auch bei lane="keine".
 article_type beschreibt die Textform, nicht das Thema. language ist die Sprache des Artikeltexts.
 roots_offering und roots_link_de sind optionale Hilfsangaben. Nur für signal_id "virale_news" sind sie Pflicht, weil dort sonst kein fachliches Kriterium bleibt.
@@ -423,7 +435,7 @@ buying_center_roles enthält ein bis vier Rollen, die laut Artikeltext von diese
 </rules>
 <answer_format>
 Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
-{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","trigger_de":"zwei bis drei belegte Sätze oder leer","company":"Unternehmen oder leerer String","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"Leistung oder leerer String","roots_link_de":"ein Satz oder leerer String","person_name":"Name oder leerer String","person_role":"Rolle oder leerer String","buying_center_roles":["Rolle"]}
+{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","trigger_de":"zwei bis drei belegte Sätze oder leer","company":"primaeres Unternehmen oder leerer String","company_evidence":"wörtlicher Unternehmensbeleg oder leerer String","tier1_companies":[{"name":"Name aus tier1_unternehmen","evidence":"wörtlicher Beleg aus dem Kern","role":"primary_actor|decision_maker|directly_affected|central_subject"}],"has_unrelated_tail":false,"editorial_end_quote":"letzter wörtlicher Satz des Kernartikels oder leer","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"Leistung oder leerer String","roots_link_de":"ein Satz oder leerer String","person_name":"Name oder leerer String","person_role":"Rolle oder leerer String","buying_center_roles":["Rolle"],"relevance":{"a":0,"b":0,"c":0,"d":0,"reason":"ein Satz"}}
 </answer_format>
 ${tier1.length ? `<tier1_unternehmen>${tier1.join(", ")}</tier1_unternehmen>\n` : ""}<source name="${article.source?.company || "unbekannt"}" category="${article.source?.category || "unbekannt"}" />
 <article_title>${String(article.title || "")}</article_title>
@@ -432,7 +444,7 @@ ${tier1.length ? `<tier1_unternehmen>${tier1.join(", ")}</tier1_unternehmen>\n` 
 
 export const SIMPLE_RESPONSE_SCHEMA = {
   type: "OBJECT",
-  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "trigger_de", "company", "summary_de", "article_type", "language", "roots_offering", "roots_link_de", "person_name", "person_role", "buying_center_roles", "relevance"],
+  required: ["lane", "signal_id", "confidence", "score", "evidence", "headline_de", "why_de", "trigger_de", "company", "company_evidence", "tier1_companies", "has_unrelated_tail", "editorial_end_quote", "summary_de", "article_type", "language", "roots_offering", "roots_link_de", "person_name", "person_role", "buying_center_roles", "relevance"],
   properties: {
     lane: { type: "STRING", enum: ["sales", "marketing", "keine"] },
     signal_id: { type: "STRING", description: "Eine id aus candidate_signals oder leer, wenn lane=keine." },
@@ -443,6 +455,22 @@ export const SIMPLE_RESPONSE_SCHEMA = {
     why_de: { type: "STRING" },
     trigger_de: { type: "STRING", description: "Zwei bis drei belegte deutsche Sätze zum konkreten Gesprächsanlass für company oder leer." },
     company: { type: "STRING", description: "Betroffenes Unternehmen oder leer." },
+    company_evidence: { type: "STRING", description: "Wörtliches Zitat aus dem redaktionellen Kern, das company namentlich nennt und seine zentrale Rolle belegt, oder leer." },
+    tier1_companies: {
+      type: "ARRAY",
+      description: "Nur zentrale Tier-1-Unternehmen, niemals Neben-, Teaser-, Listen- oder Navigationserwähnungen.",
+      items: {
+        type: "OBJECT",
+        required: ["name", "evidence", "role"],
+        properties: {
+          name: { type: "STRING" },
+          evidence: { type: "STRING", description: "Wörtlicher Beleg aus dem redaktionellen Kern." },
+          role: { type: "STRING", enum: ["primary_actor", "decision_maker", "directly_affected", "central_subject"] },
+        },
+      },
+    },
+    has_unrelated_tail: { type: "BOOLEAN", description: "True, wenn nach dem Kernartikel fremde Empfehlungen, Teaser oder Seitenelemente folgen." },
+    editorial_end_quote: { type: "STRING", description: "Bei has_unrelated_tail der letzte vollständige Satz des echten Kernartikels, wortwörtlich; sonst leer." },
     summary_de: { type: "STRING", description: "Deutsche Zusammenfassung des Artikels, maximal zwei Sätze." },
     article_type: { type: "STRING", enum: [...SIMPLE_ARTICLE_TYPES] },
     language: { type: "STRING", enum: ["de", "en", "other"] },
@@ -697,9 +725,9 @@ const SIMPLE_TRIGGER_SCHEMA = {
 };
 
 /**
- * Enger Nachlauf fuer ein fehlendes Steckbrief-Feld. Er veraendert weder Lane,
- * Signal, Score noch Begründung und wird nur ausgefuehrt, wenn der normale
- * Simple-Aufruf fuer ein erkanntes Tier-1-Unternehmen keinen Aufhaenger liefert.
+ * Nur fuer einen ausdruecklich gestarteten historischen Reparaturlauf. Die
+ * Pipeline v2 ruft diese Funktion nicht automatisch auf: Kern, Unternehmen und
+ * Aufhaenger entstehen dort in genau einem Analyseaufruf.
  */
 export async function generateSimpleTrigger(
   deps: SimpleDeps,
@@ -742,6 +770,125 @@ function isStrongSimpleTrigger(trigger: string, company: string): boolean {
   return companyTokens.length === 0 || companyTokens.some((token) => normalizeMatchText(trigger).includes(token));
 }
 
+export type EditorialCoreResult = {
+  text: string;
+  trimmed: boolean;
+  boundaryValid: boolean;
+  removedChars: number;
+  endQuote: string | null;
+};
+
+function compactWhitespaceWithMap(value: string): { text: string; map: number[] } {
+  let text = "";
+  const map: number[] = [];
+  let inWhitespace = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (/\s/.test(char)) {
+      if (!inWhitespace && text.length > 0) {
+        text += " ";
+        map.push(index);
+      }
+      inWhitespace = true;
+      continue;
+    }
+    text += char;
+    map.push(index);
+    inWhitespace = false;
+  }
+  return { text: text.trim(), map };
+}
+
+/**
+ * Schneidet nie nach Modellgefuehl, sondern nur nach einem im Original
+ * auffindbaren Endzitat. Der Rohtext bleibt in `content` erhalten; nur der fuer
+ * Anzeige und Analyse verwendete `cleaned_content` wird spaeter aktualisiert.
+ */
+export function editorialCoreFromBoundary(
+  body: string,
+  hasUnrelatedTail: boolean,
+  rawEndQuote: string,
+): EditorialCoreResult {
+  const source = String(body || "").trim();
+  const endQuote = String(rawEndQuote || "").replace(/\s+/g, " ").trim();
+  if (!hasUnrelatedTail) {
+    return { text: source, trimmed: false, boundaryValid: true, removedChars: 0, endQuote: null };
+  }
+  if (endQuote.length < 30 || source.length < SIMPLE_MIN_TEXT_CHARS) {
+    return { text: source, trimmed: false, boundaryValid: false, removedChars: 0, endQuote: null };
+  }
+
+  let endOffset = -1;
+  const directIndex = source.indexOf(rawEndQuote.trim());
+  if (directIndex >= 0) {
+    endOffset = directIndex + rawEndQuote.trim().length;
+  } else {
+    const compact = compactWhitespaceWithMap(source);
+    const compactIndex = compact.text.indexOf(endQuote);
+    const compactEnd = compactIndex + endQuote.length - 1;
+    if (compactIndex >= 0 && compactEnd < compact.map.length) endOffset = compact.map[compactEnd] + 1;
+  }
+
+  if (endOffset < 0) {
+    return { text: source, trimmed: false, boundaryValid: false, removedChars: 0, endQuote: null };
+  }
+  const text = source.slice(0, endOffset).trim();
+  const removedChars = Math.max(source.length - text.length, 0);
+  // Eine minimale Abweichung ist kein angehaengter Fremdblock. Diese Schranke
+  // verhindert, dass ein versehentliches Endzitat den Artikel kuerzt.
+  if (text.length < SIMPLE_MIN_TEXT_CHARS || text.length < source.length * 0.2 || removedChars < 120) {
+    return { text: source, trimmed: false, boundaryValid: false, removedChars: 0, endQuote: null };
+  }
+  return { text, trimmed: true, boundaryValid: true, removedChars, endQuote };
+}
+
+type ValidatedTier1Decision = {
+  name: string;
+  evidence: string;
+  role: "primary_actor" | "decision_maker" | "directly_affected" | "central_subject";
+};
+
+const SIMPLE_COMPANY_ROLES = new Set(["primary_actor", "decision_maker", "directly_affected", "central_subject"]);
+
+function companyTerms(company: SimpleTier1Company): string[] {
+  return [company.name, ...(company.aliases || [])].map((value) => String(value || "").trim()).filter(Boolean);
+}
+
+function resolveTier1Company(
+  reported: string,
+  detected: string[],
+  companies: SimpleTier1Company[],
+): SimpleTier1Company | null {
+  const normalized = normalizeMatchText(reported);
+  if (!normalized) return null;
+  return companies.find((company) => detected.includes(company.name)
+    && companyTerms(company).some((term) => normalizeMatchText(term) === normalized)) || null;
+}
+
+function evidenceNamesCompany(evidence: string, terms: string[]): boolean {
+  const normalized = normalizeMatchText(evidence);
+  return terms.some((term) => containsMatchTerm(normalized, term));
+}
+
+function validateTier1Decisions(
+  decisions: SimpleAiAnswer["tier1_companies"],
+  coreText: string,
+  detected: string[],
+  companies: SimpleTier1Company[],
+): ValidatedTier1Decision[] {
+  const valid: ValidatedTier1Decision[] = [];
+  for (const decision of Array.isArray(decisions) ? decisions : []) {
+    const company = resolveTier1Company(String(decision?.name || ""), detected, companies);
+    const evidence = String(decision?.evidence || "").trim();
+    const role = String(decision?.role || "") as ValidatedTier1Decision["role"];
+    if (!company || !SIMPLE_COMPANY_ROLES.has(role) || evidence.length < 20) continue;
+    if (!evidenceExists(evidence, coreText) || !evidenceNamesCompany(evidence, companyTerms(company))) continue;
+    if (valid.some((entry) => entry.name === company.name)) continue;
+    valid.push({ name: company.name, evidence: evidence.slice(0, 800), role });
+  }
+  return valid;
+}
+
 // ---------------------------------------------------------------------------
 // Result assembly and validation
 // ---------------------------------------------------------------------------
@@ -780,7 +927,7 @@ export type SimpleResult = {
 // Aufrufer, ob ein Artikel überhaupt KI-Budget gekostet hat.
 export const SIMPLE_AI_REJECT_REASONS = new Set([
   "modell_ohne_signal", "familie_nicht_erlaubt", "evidenz_fehlt", "sensibles_zitat", "zu_unsicher",
-  "kein_roots_bezug", "modellfehler",
+  "kein_roots_bezug", "redaktioneller_kern_nicht_belegt", "zielunternehmen_nicht_belegt", "modellfehler",
 ]);
 
 export function simpleResultUsedAi(result: SimpleResult): boolean {
@@ -792,7 +939,7 @@ export function simpleResultUsedAi(result: SimpleResult): boolean {
 export const SIMPLE_ALL_REJECT_REASONS = [
   "zu_wenig_text", "sensibles_thema", "kein_signalmuster", "modell_ohne_signal",
   "familie_nicht_erlaubt", "evidenz_fehlt", "zu_unsicher", "sensibles_zitat",
-  "kein_roots_bezug", "modellfehler",
+  "kein_roots_bezug", "redaktioneller_kern_nicht_belegt", "zielunternehmen_nicht_belegt", "modellfehler",
 ];
 
 export const SIMPLE_REJECT_LABELS: Record<string, string> = {
@@ -805,6 +952,8 @@ export const SIMPLE_REJECT_LABELS: Record<string, string> = {
   zu_unsicher: "Konfidenz oder Nutzwert unter der Mindestschwelle.",
   sensibles_zitat: "Das Zitat betrifft ein sensibles Thema.",
   kein_roots_bezug: "Breit diskutiert, aber ohne belegbaren Anschluss an eine ROOTS-Leistung (nur für virale News ein Ausschlussgrund).",
+  redaktioneller_kern_nicht_belegt: "Die KI erkannte angehängte Fremdinhalte, konnte das Ende des echten Artikels aber nicht wörtlich belegen.",
+  zielunternehmen_nicht_belegt: "Für das Sales-Signal fehlt ein wörtlich belegtes, zentrales Zielunternehmen.",
   modellfehler: "Technischer Fehler bei der KI-Prüfung.",
 };
 
@@ -813,7 +962,7 @@ function rejected(
   reason: string,
   families: SimpleFamily[],
   model: string | null,
-  tier1: string[] = [],
+  _tier1: string[] = [],
 ): SimpleResult {
   return {
     article_id: article.id,
@@ -833,7 +982,8 @@ function rejected(
     language: null,
     roots_offering: null,
     roots_link_de: null,
-    tier1_companies: tier1,
+    // Ein blosser Namensfund darf in v2 nie als erkannter Zielkunde erscheinen.
+    tier1_companies: [],
     person_name: null,
     person_role: null,
     buying_center_roles: [],
@@ -848,7 +998,7 @@ function rejected(
 
 export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArticleInput): Promise<SimpleResult> {
   const prefilter = prefilterSimpleArticle(article, deps.tier1Companies || []);
-  if (prefilter.reject) return rejected(article, prefilter.reject, prefilter.families, null, prefilter.tier1);
+  if (prefilter.reject) return rejected(article, prefilter.reject, prefilter.families, null);
 
   const model = deps.model || SIMPLE_MODEL;
   let answer: SimpleAiAnswer;
@@ -866,30 +1016,58 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     // Lauf nach 72 von 1000 Artikeln gestoppt, obwohl DeepSeek einwandfrei lief.
     const singleCase = /no valid simple classification|aborted|abort|connection closed|error sending request|closed before message completed|stream closed|broken pipe/i;
     const kind = singleCase.test(message) ? "response" : "provider";
-    return { ...rejected(article, "modellfehler", prefilter.families, model, prefilter.tier1), error_kind: kind };
+    return { ...rejected(article, "modellfehler", prefilter.families, model), error_kind: kind };
   }
 
+  const body = String(article.cleaned_content || article.content || "");
+  const editorial = editorialCoreFromBoundary(
+    body,
+    answer.has_unrelated_tail === true,
+    String(answer.editorial_end_quote || ""),
+  );
+  const coreText = `${String(article.title || "").trim()}\n${editorial.text}`.trim();
+  if (editorial.trimmed) {
+    // `content` bleibt als Rohfassung erhalten. Damit sind die entfernten
+    // Seitenelemente weiterhin rekonstruierbar, waehrend alle kuenftigen
+    // Analysen und die Artikelansicht den belegten Kern verwenden.
+    await deps.admin.schema("signal_layer").from("articles")
+      .update({ cleaned_content: editorial.text }).eq("id", article.id)
+      .then(({ error }: { error?: { message?: string } | null }) => {
+        if (error) console.warn(`Redaktionellen Kern fuer ${article.id} nicht gespeichert:`, error.message);
+      });
+  }
+  const editorialDetails = {
+    fremdblock_erkannt: answer.has_unrelated_tail === true,
+    grenze_belegt: editorial.boundaryValid,
+    endzitat: editorial.endQuote,
+    entfernte_zeichen: editorial.removedChars,
+    ignorierte_tier1_namensfunde: prefilter.tier1,
+  };
   const answerContext = {
     summary_de: String(answer.summary_de || "").slice(0, 800) || null,
     article_type: SIMPLE_ARTICLE_TYPES.includes(String(answer.article_type) as typeof SIMPLE_ARTICLE_TYPES[number])
       ? String(answer.article_type) : null,
     language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
+    score_details: { redaktioneller_kern: editorialDetails },
   };
+  if (answer.has_unrelated_tail === true && !editorial.boundaryValid) {
+    return { ...rejected(article, "redaktioneller_kern_nicht_belegt", prefilter.families, model), ...answerContext };
+  }
   if (answer.lane !== "sales" && answer.lane !== "marketing") {
-    return { ...rejected(article, "modell_ohne_signal", prefilter.families, model, prefilter.tier1), ...answerContext };
+    return { ...rejected(article, "modell_ohne_signal", prefilter.families, model), ...answerContext };
   }
   const family = prefilter.families.find((candidate) => candidate.id === answer.signal_id);
   // Gemini may only confirm a family the prefilter already accepted, and the
   // lane must be the one that family belongs to.
   if (!family || family.lane !== answer.lane) {
-    return { ...rejected(article, "familie_nicht_erlaubt", prefilter.families, model, prefilter.tier1), ...answerContext };
+    return { ...rejected(article, "familie_nicht_erlaubt", prefilter.families, model), ...answerContext };
   }
   const evidence = String(answer.evidence || "").trim();
-  if (!evidenceExists(evidence, prefilter.text)) {
-    return { ...rejected(article, "evidenz_fehlt", prefilter.families, model, prefilter.tier1), ...answerContext };
+  if (!evidenceExists(evidence, coreText)) {
+    return { ...rejected(article, "evidenz_fehlt", prefilter.families, model), ...answerContext };
   }
   if (SIMPLE_SENSITIVE_PATTERN.test(normalizeMatchText(evidence))) {
-    return { ...rejected(article, "sensibles_zitat", prefilter.families, model, prefilter.tier1), ...answerContext };
+    return { ...rejected(article, "sensibles_zitat", prefilter.families, model), ...answerContext };
   }
   // Der ROOTS-Bezug ist eine Zusatzinformation: er hilft bei der Einordnung,
   // entscheidet aber nicht über Annahme oder Ablehnung. Nur die virale Spur
@@ -897,10 +1075,10 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   const rootsLink = String(answer.roots_link_de || "").trim();
   const rootsOffering = String(answer.roots_offering || "").trim();
   if (family.id === SIMPLE_VIRAL_FAMILY_ID && (rootsLink.length < 25 || !rootsOffering)) {
-    return { ...rejected(article, "kein_roots_bezug", prefilter.families, model, prefilter.tier1), ...answerContext };
+    return { ...rejected(article, "kein_roots_bezug", prefilter.families, model), ...answerContext };
   }
-  // Person und Rollen müssen im Artikel stehen, nicht erfunden sein.
-  const articleNormalized = normalizeMatchText(prefilter.text);
+  // Person und Rollen müssen im redaktionellen Kern stehen, nicht in Teasern.
+  const articleNormalized = normalizeMatchText(coreText);
   const nameCandidate = String(answer.person_name || "").trim();
   const roleCandidate = String(answer.person_role || "").trim();
   const personName = nameCandidate && articleNormalized.includes(normalizeMatchText(nameCandidate)) ? nameCandidate.slice(0, 120) : "";
@@ -926,17 +1104,38 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   const modelScore = Math.max(0, Math.min(100, Math.round(Number(answer.score) || 0)));
   const score = weightValues.reduce((sum, weight) => sum + weight, 0) === 100 && weighted > 0 ? weighted : modelScore;
   if (confidence < SIMPLE_MIN_CONFIDENCE || score < SIMPLE_MIN_SCORE) {
-    return { ...rejected(article, "zu_unsicher", prefilter.families, model, prefilter.tier1), ...answerContext };
+    return { ...rejected(article, "zu_unsicher", prefilter.families, model), ...answerContext };
   }
-  const reportedCompany = String(answer.company || "").trim().slice(0, 200) || null;
-  const targetTier1 = reportedCompany
-    ? prefilter.tier1.find((name) => normalizeMatchText(name) === normalizeMatchText(reportedCompany)) || null
+  const tier1Decisions = validateTier1Decisions(
+    answer.tier1_companies,
+    coreText,
+    prefilter.tier1,
+    deps.tier1Companies || [],
+  );
+  const reportedCompany = String(answer.company || "").trim().slice(0, 200);
+  const companyEvidence = String(answer.company_evidence || "").trim();
+  const reportedTier1 = resolveTier1Company(reportedCompany, prefilter.tier1, deps.tier1Companies || []);
+  const reportedTerms = reportedTier1 ? companyTerms(reportedTier1) : [reportedCompany];
+  const company = reportedCompany && companyEvidence.length >= 20
+      && evidenceExists(companyEvidence, coreText)
+      && evidenceNamesCompany(companyEvidence, reportedTerms)
+    ? (reportedTier1?.name || reportedCompany)
     : null;
-  const company = targetTier1 || reportedCompany;
-  let trigger = targetTier1 && isStrongSimpleTrigger(String(answer.trigger_de || "").trim(), targetTier1)
+  if (reportedTier1 && company && !tier1Decisions.some((entry) => entry.name === reportedTier1.name)) {
+    // company_evidence kommt aus derselben KI-Antwort und erfuellt dieselben
+    // Belegregeln; dadurch geht ein primaeres Tier-1-Unternehmen nicht verloren,
+    // falls das Modell es im Array versehentlich nicht wiederholt.
+    tier1Decisions.push({ name: reportedTier1.name, evidence: companyEvidence.slice(0, 800), role: "primary_actor" });
+  }
+  if (family.lane === "sales" && !company) {
+    return { ...rejected(article, "zielunternehmen_nicht_belegt", prefilter.families, model), ...answerContext };
+  }
+  const targetTier1 = company ? tier1Decisions.find((entry) => entry.name === company)?.name || null : null;
+  // v2 erzeugt keinen automatischen zweiten KI-Aufruf. Fehlt ein belastbarer
+  // Aufhaenger im Haupt-JSON, bleibt das Feld bewusst leer.
+  const trigger = targetTier1 && isStrongSimpleTrigger(String(answer.trigger_de || "").trim(), targetTier1)
     ? String(answer.trigger_de || "").trim().slice(0, 900)
     : null;
-  if (targetTier1 && !trigger) trigger = await generateSimpleTrigger(deps, article, targetTier1);
   return {
     article_id: article.id,
     status: "signal",
@@ -968,9 +1167,12 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
       gewichteter_wert: weighted,
       modellwert: modelScore,
       begruendung: String(answer.relevance?.reason || "").slice(0, 400) || null,
+      redaktioneller_kern: editorialDetails,
+      unternehmensbeleg: company ? companyEvidence.slice(0, 800) : null,
+      tier1_belege: tier1Decisions,
     },
     error_kind: null,
-    tier1_companies: prefilter.tier1,
+    tier1_companies: tier1Decisions.map((entry) => entry.name),
     // Person und Rollen nur mit Namen und Rolle im Text; sonst bleibt es leer.
     person_name: personName && personRole ? personName : null,
     person_role: personName && personRole ? personRole : null,
@@ -1046,7 +1248,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       copy: "Signalmuster entscheiden ausschliesslich, ob das Modell den Artikel sehen darf. Ein Treffer erzeugt nie selbst ein Signal.",
       steps: [
         { title: "Sensible Themen ausschliessen", copy: "Steht ein sensibles Thema in der Überschrift, endet die Prüfung sofort. Steht es nur im Text, wird die bild.de-News-Spur gesperrt, die Fachspuren bleiben offen.", kind: "Deterministischer Code" },
-        { title: "Tier-1-Unternehmen suchen", copy: "Namen und Aliase aus derselben Tier-1-Liste wie im Advanced-Modus werden als eigenständige Wörter im Text gesucht.", kind: "Deterministischer Code" },
+        { title: "Tier-1-Kandidaten suchen", copy: "Namen und Aliase aus derselben Tier-1-Liste werden als eigenständige Wörter gesucht. Das ist nur eine kostenlose Kandidatenliste und erzeugt noch keine Company-Pill.", kind: "Deterministischer Code" },
         { title: "Signalfamilien prüfen", copy: "Je Familie muss ein Auslöser vorkommen und - wo hinterlegt - zusätzlich ein Kontextbegriff. Beides muss im selben Artikel stehen.", kind: "Deterministischer Code" },
         { title: "Titel-Ausschlüsse anwenden", copy: "Familien mit Ausschlussliste verwerfen Artikel, deren Überschrift von etwas anderem handelt, etwa Quartalszahlen oder Spielberichte.", kind: "Deterministischer Code" },
         { title: "Quellenbindung prüfen", copy: `Die News-Spur akzeptiert ausschliesslich ${SIMPLE_NEWS_DOMAINS.join(", ")}; alle anderen Familien sind quellenoffen.`, kind: "Deterministischer Code" },
@@ -1064,20 +1266,21 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       system: "gemini",
       copy: `Ein Aufruf an ${option.label}. Das Modell darf nur eine der vorgefilterten Familien bestätigen und muss ein wörtliches Zitat liefern.`,
       steps: [
-        { title: "Prompt bauen", copy: "Enthalten sind: die bestätigten Familien mit Definition, erkannte Tier-1-Unternehmen, Quelle, Titel und der ausgewählte Artikeltext.", kind: "Server" },
+        { title: "Prompt bauen", copy: "Enthalten sind: die bestätigten Familien mit Definition, mögliche Tier-1-Namensfunde, Quelle, Titel und der ausgewählte Artikeltext. Namensfunde sind ausdrücklich noch keine erkannten Unternehmen.", kind: "Server" },
+        { title: "Redaktionellen Kern abgrenzen", copy: "Im selben Aufruf erkennt das Modell angehängte Empfehlungen, Navigation und fremde Teaser. Bei einem Fremdblock liefert es den letzten echten Artikelsatz als wörtliche Schnittmarke.", kind: "KI + Schutzregel" },
         { title: "ROOTS-Portfolio mitgeben", copy: "Das Leistungsportfolio liegt kompakt im selben Aufruf. Das Modell muss semantisch entscheiden, welche Leistung inhaltlich anschliesst - ohne Keywordliste.", kind: "Server" },
         { title: "Semantische Entscheidung", copy: `${option.label} wählt genau eine Familie, vergibt Konfidenz und Nutzwert, kopiert ein wörtliches Zitat und schreibt Überschrift, Begründung und Zusammenfassung auf Deutsch.`, kind: "KI" },
-        { title: "Zielunternehmen bestimmen", copy: "Ein Tier-1-Name wird nur übernommen, wenn das Unternehmen selbst handelt, entscheidet oder konkret betroffen ist. Neben-, Listen-, Navigations- und Vergleichserwähnungen reichen nicht.", kind: "KI + Schutzregel" },
+        { title: "Zielunternehmen bestimmen", copy: "Ein Tier-1-Name wird nur mit wörtlichem Beleg und zentraler Rolle übernommen: Hauptakteur, Entscheider, direkt betroffen oder zentraler Gegenstand. Neben-, Listen-, Teaser-, Award-, Navigations- und Vergleichserwähnungen reichen nicht.", kind: "KI + Schutzregel" },
         { title: "Trigger & Aufhänger vertiefen", copy: "Im selben Hauptlauf formuliert das Modell zwei bis drei belegte Sätze: aktueller Anlass, strategische Spannung und optional ein passender ROOTS-Gesprächseinstieg. Allgemeine Insight-Floskeln sind verboten.", kind: "KI + Schutzregel" },
         { title: "Artikeltext bleibt Daten", copy: "Die Systemanweisung verbietet, Artikeltext als Anweisung zu behandeln. Im Zweifel muss das Modell \"keine Spur\" antworten.", kind: "KI" },
         { title: "Person und Rollen mitbestimmen", copy: "Im selben Aufruf nennt das Modell die verantwortliche Person mit Rolle und bis zu vier betroffene Rollen als Buying Center - ohne zusätzlichen KI-Aufruf.", kind: "KI" },
-        { title: "Ein Hauptdurchlauf", copy: "Lane, Familie, Score und Inhalte entstehen gemeinsam. Nur wenn bei einem Tier-1-Signal der konkrete Gesprächsaufhänger fehlt, ergänzt dasselbe Modell gezielt dieses eine Feld.", kind: "KI" },
+        { title: "Genau ein Analyselauf", copy: "Kernabgrenzung, Lane, Familie, Score, Zielunternehmen, Unternehmensbeleg und Trigger entstehen gemeinsam in einem JSON. Ein automatischer KI-Nachlauf findet in v2 nicht statt.", kind: "KI" },
       ],
       details: [
         { label: "Modell", value: `${option.label} (in Kosten & Betrieb einstellbar)` },
-        { label: "Antwortform", value: "Ein JSON-Objekt: Spur, Familie, Konfidenz, vier Relevanz-Teilwerte, Zitat, Überschrift, Begründung, Zusammenfassung, Zielunternehmen, Trigger & Aufhänger, Artikeltyp, Sprache, Person mit Rolle, Buying-Center-Rollen" },
+        { label: "Antwortform", value: "Ein JSON-Objekt: redaktionelle Schnittmarke, Spur, Familie, Konfidenz, vier Relevanz-Teilwerte, Zitat, Überschrift, Begründung, Zusammenfassung, Zielunternehmen mit Beleg, bestätigte Tier-1-Hauptakteure, Trigger & Aufhänger, Artikeltyp, Sprache, Person und Buying Center" },
         { label: "ROOTS-Portfolio im Prompt", value: "Immer enthalten, kompakt als Säule und Leistungsname. Das Modell ordnet semantisch zu, wenn eine Leistung passt - erzwungen wird es nicht." },
-        { label: "Durchläufe", value: "Ein Hauptlauf; gezielter Feld-Nachlauf nur bei fehlendem Tier-1-Aufhänger" },
+        { label: "Durchläufe", value: "Genau ein Analyseaufruf pro vorgefiltertem Artikel; kein automatischer Feld-Nachlauf" },
       ],
     },
     {
@@ -1088,16 +1291,19 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
       steps: [
         { title: "Familie gegenprüfen", copy: "Nennt das Modell eine Familie, die der Vorfilter nicht bestätigt hat, wird die Antwort verworfen.", kind: "Server" },
         { title: "Zitat gegenprüfen", copy: "Das Zitat muss wortgleich im Artikel stehen. Fehlt es, wird das Signal verworfen und nicht korrigiert.", kind: "Server" },
+        { title: "Fremdblock sicher abschneiden", copy: "Der Server kürzt den bereinigten Artikeltext nur, wenn das von der KI genannte Endzitat wortgleich im Original steht, mindestens 300 Zeichen Kern bleiben und mindestens 120 Zeichen Fremdinhalt entfernt werden. Der Rohtext bleibt erhalten.", kind: "Server" },
+        { title: "Unternehmensbelege prüfen", copy: "Company und jedes Tier-1-Unternehmen brauchen ein wörtliches Zitat aus dem redaktionellen Kern, das den Namen selbst enthält. Sales ohne belegtes Zielunternehmen wird verworfen.", kind: "Server" },
         { title: "Person und Rollen gegenprüfen", copy: "Name, Rolle und jede Buying-Center-Rolle müssen wörtlich im Artikel vorkommen, sonst werden sie verworfen.", kind: "Server" },
         { title: "Sensibles Zitat abfangen", copy: "Auch ein formal gültiges Zitat wird verworfen, wenn es ein sensibles Thema betrifft.", kind: "Deterministischer Code" },
         { title: "ROOTS-Bezug übernehmen", copy: "Nennt das Modell eine Leistung mit Anschlusssatz, wird sie gespeichert und angezeigt. Fehlt sie, bleibt das Signal gültig - nur bei viralen News führt ein fehlender Bezug zur Ablehnung.", kind: "Server" },
-        { title: "Aufhänger gegenprüfen", copy: "Der Aufhänger wird nur für das tatsächlich bestimmte Tier-1-Zielunternehmen gespeichert. Er muss den Namen nennen, aus zwei bis drei Sätzen bestehen und darf keine allgemeinen Insight-Floskeln enthalten.", kind: "Server" },
+        { title: "Aufhänger gegenprüfen", copy: "Der im einzigen KI-Lauf erzeugte Aufhänger wird nur für das belegte Tier-1-Zielunternehmen gespeichert. Er muss den Namen nennen, aus zwei bis drei Sätzen bestehen und darf keine allgemeinen Insight-Floskeln enthalten.", kind: "Server" },
         { title: "Relevanz gewichten", copy: "Die vier Teilwerte werden serverseitig mit denselben Gewichten wie im Advanced-Modus zu einem Prozentwert verrechnet: Marketing 25/30/25/20, Sales 32/30/23/15.", kind: "Server" },
         { title: "Schwellen anwenden", copy: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder ${SIMPLE_MIN_SCORE} Prozent Relevanz landen in "Nicht relevant" statt in den Ergebnissen.`, kind: "Server" },
         { title: "Ergebnis speichern", copy: "Signal oder Ablehnungsgrund werden je Artikel gespeichert, inklusive Modell, Tokens und Kosten.", kind: "Server" },
       ],
       details: [
         { label: "Zitatprüfung", value: "Das Zitat muss wortgleich im Artikel stehen, sonst verworfen" },
+        { label: "Company-Prüfung", value: "Zentrale Rolle plus wörtlicher Namensbeleg aus dem redaktionellen Kern" },
         { label: "Familienbindung", value: "Nur vom Vorfilter bestätigte Familien werden akzeptiert" },
         { label: "Mindestsicherheit", value: String(SIMPLE_MIN_CONFIDENCE) },
         { label: "Mindestnutzwert", value: String(SIMPLE_MIN_SCORE) },

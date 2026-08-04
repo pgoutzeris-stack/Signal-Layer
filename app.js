@@ -2,7 +2,7 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts } from "./status-state.mjs?v=20260804-2330";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2400";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2500";
 
 let sb = null;
 let sources = [];
@@ -3002,7 +3002,7 @@ function renderSimpleHeaderStatusContent() {
   byId("simple-pool-summary").textContent = poolTotal ? `${poolTotal.toLocaleString("de-DE")} Artikel` : "kein Bestand";
   byId("simple-pool-count").textContent = poolTotal ? poolTotal.toLocaleString("de-DE") : "–";
   byId("simple-pool-newest").textContent = freshness;
-  byId("simple-pipeline-version").textContent = triggerRun?.pipeline_version || run?.pipeline_version || "1.9";
+  byId("simple-pipeline-version").textContent = triggerRun?.pipeline_version || run?.pipeline_version || "2.0";
 }
 
 // ---------------------------------------------------------------------------
@@ -3119,7 +3119,7 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
   const triggerCopy = trigger || (triggerState === "mention"
     ? `${company} wurde in diesem Artikel als Tier-1-Unternehmen erwähnt, aber nicht als handelnder oder konkret betroffener Akteur bestätigt. Deshalb erzeugt die Pipeline bewusst keinen Gesprächsaufhänger.`
     : triggerState === "target"
-      ? `Für ${company} ist in diesem Artikel kein ausreichend belegter Gesprächsaufhänger vorhanden. Der KI-Nachlauf erfindet deshalb weder Anlass noch Beratungsbedarf.`
+      ? `Für ${company} ist in diesem Artikel kein ausreichend belegter Gesprächsaufhänger vorhanden. Die Pipeline erfindet deshalb weder Anlass noch Beratungsbedarf.`
       : "");
   const triggerMuted = !trigger;
   card.innerHTML = companyProfileHeadHtml(company, profile, trigger, triggerState, versions) + `<div class="cp-body">
