@@ -392,6 +392,14 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
   // laeuft. Erneuert wird nur, wenn jemand es im Steckbrief anfordert.
   if (existing && !force) return "fresh";
 
+  const configuredResearchModel = (await getPipelineConfig()).ai.simple_research_model || COMPANY_PROFILE_MODEL;
+  // Die Steckbrief-Implementierung braucht natives Google-Search-Grounding.
+  // Eine alte oder manipulierte Konfiguration darf hier kein Analysemodell
+  // ohne Websuche einschleusen.
+  const researchModel = configuredResearchModel.startsWith("gemini-")
+    ? configuredResearchModel
+    : COMPANY_PROFILE_MODEL;
+
   let apiKey = "";
   try {
     apiKey = await getGeminiKey();
@@ -405,7 +413,7 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
 
   try {
     const { profile, usage } = await researchCompanyProfile(
-      { apiKey, model: COMPANY_PROFILE_MODEL, rootsPortfolio: await getSimpleRootsPortfolio() },
+      { apiKey, model: researchModel, rootsPortfolio: await getSimpleRootsPortfolio() },
       name,
       Array.isArray(hints) ? hints as never[] : [],
     );
@@ -414,7 +422,7 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
         const commonsLogo = await researchWikimediaLogo(name);
         const focused = commonsLogo
           ? { logo: commonsLogo, usage: { prompt_tokens: 0, output_tokens: 0, total_tokens: 0 } }
-          : await researchCompanyLogo({ apiKey, model: COMPANY_PROFILE_MODEL }, name);
+          : await researchCompanyLogo({ apiKey, model: researchModel }, name);
         if (focused.logo) {
           profile.logo_url = focused.logo.logo_url;
           profile.logo_source_url = focused.logo.logo_source_url;
@@ -449,7 +457,7 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
       sources: profile.sources,
       unverified_note: profile.unverified_note,
       article_count: Array.isArray(hints) ? hints.length : 0,
-      model: COMPANY_PROFILE_MODEL,
+      model: researchModel,
       pipeline_version: SIMPLE_PIPELINE_VERSION,
       researched_at: researchedAt,
       updated_at: researchedAt,
@@ -460,7 +468,7 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
       company: name,
       researched_at: researchedAt,
       profile: profileRow,
-      model: COMPANY_PROFILE_MODEL,
+      model: researchModel,
       pipeline_version: SIMPLE_PIPELINE_VERSION,
     }).then(({ error }) => {
       if (error) console.warn(`Steckbrief-Historie ${name} nicht geschrieben:`, error.message);
@@ -469,13 +477,13 @@ async function ensureCompanyProfile(company: string, force = false): Promise<str
     // Auswertung sichtbar ist wie die Artikelbewertung.
     await admin.schema("signal_layer").from("ai_usage_events").insert({
       operation: "company_profile",
-      model: COMPANY_PROFILE_MODEL,
+      model: researchModel,
       status: "success",
       attempt: 1,
       input_tokens: usage.prompt_tokens,
       output_tokens: usage.output_tokens,
       total_tokens: usage.total_tokens,
-      estimated_cost_usd: modelCostUsd(COMPANY_PROFILE_MODEL, {
+      estimated_cost_usd: modelCostUsd(researchModel, {
         input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
         thinking: 0, total: usage.total_tokens,
       }),
@@ -497,13 +505,17 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
     .select("company, logo_url, logo_lookup_version").eq("company", name).maybeSingle();
   if (!existing || existing.logo_url || existing.logo_lookup_version === COMPANY_LOGO_LOOKUP_VERSION) return "fresh";
   try {
+    const configuredResearchModel = (await getPipelineConfig()).ai.simple_research_model || COMPANY_PROFILE_MODEL;
+    const researchModel = configuredResearchModel.startsWith("gemini-")
+      ? configuredResearchModel
+      : COMPANY_PROFILE_MODEL;
     let logo = await researchWikimediaLogo(name);
     let usage = { prompt_tokens: 0, output_tokens: 0, total_tokens: 0 };
     if (!logo) {
       let apiKey = "";
       try { apiKey = await getGeminiKey(); } catch { /* Commons bleibt auch ohne Schlüssel nutzbar */ }
       if (apiKey) {
-        const focused = await researchCompanyLogo({ apiKey, model: COMPANY_PROFILE_MODEL }, name);
+        const focused = await researchCompanyLogo({ apiKey, model: researchModel }, name);
         logo = focused.logo;
         usage = focused.usage;
       }
@@ -521,13 +533,13 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
     if (usage.total_tokens > 0) {
       await admin.schema("signal_layer").from("ai_usage_events").insert({
         operation: "company_logo",
-        model: COMPANY_PROFILE_MODEL,
+        model: researchModel,
         status: "success",
         attempt: 1,
         input_tokens: usage.prompt_tokens,
         output_tokens: usage.output_tokens,
         total_tokens: usage.total_tokens,
-        estimated_cost_usd: modelCostUsd(COMPANY_PROFILE_MODEL, {
+        estimated_cost_usd: modelCostUsd(researchModel, {
           input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
           thinking: 0, total: usage.total_tokens,
         }),
@@ -579,9 +591,9 @@ async function getSimpleTier1Companies(): Promise<Array<{ name: string; aliases:
   return simpleTier1Cache.value;
 }
 
-async function registerSimplePipelineVersion(model: string): Promise<{ version: string; rules_changed_without_bump: boolean }> {
+async function registerSimplePipelineVersion(model: string, researchModel: string): Promise<{ version: string; rules_changed_without_bump: boolean }> {
   const admin = getAdminClient();
-  const rules = simpleRuleManifest(model);
+  const rules = simpleRuleManifest(model, researchModel);
   const version = String(rules.version_label || "1.0");
   const hash = await sha256(JSON.stringify({ lanes: rules.lanes, guardrails: rules.guardrails, stages: rules.stages, min_confidence: rules.min_confidence, min_score: rules.min_score, min_text_chars: rules.min_text_chars }));
   const { data: existing } = await admin.schema("signal_layer").from("simple_pipeline_versions")
@@ -3988,8 +4000,9 @@ Deno.serve(async (req: Request) => {
             || !TOPIC_IDS.every((topic) => relevanceModes.has(String(requested.relevance[topic])))) {
           return errorResponse(origin, "Ungültiges Relevanz- oder Qualitätsprofil");
         }
+        const availableGeminiModels = await getAvailableGeminiModels();
         const allowedModels = new Set([
-          ...(await getAvailableGeminiModels()).map((model) => model.id),
+          ...availableGeminiModels.map((model) => model.id),
           ...SIMPLE_MODEL_CATALOG.map((model) => model.id),
         ]);
         if (!allowedModels.has(requested.ai.primary_model) || !allowedModels.has(requested.ai.review_model)) {
@@ -3997,6 +4010,10 @@ Deno.serve(async (req: Request) => {
         }
         if (!SIMPLE_MODEL_CATALOG.some((model) => model.id === requested.ai.simple_model)) {
           return errorResponse(origin, "Für den einfachen Modus sind nur Modelle mit hinterlegter Preisliste erlaubt");
+        }
+        if (!requested.ai.simple_research_model.startsWith("gemini-")
+            || !availableGeminiModels.some((model) => model.id === requested.ai.simple_research_model)) {
+          return errorResponse(origin, "Das Recherchemodell muss ein für Google Search freigeschaltetes Gemini-Modell sein");
         }
         const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Number(value)));
         requested.crawl.freshness_days = Math.round(clamp(requested.crawl.freshness_days, 1, 365));
@@ -5356,7 +5373,11 @@ Deno.serve(async (req: Request) => {
         ]);
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
 
-        const rules = simpleRuleManifest((await getPipelineConfig()).ai.simple_model || SIMPLE_MODEL);
+        const detailConfig = await getPipelineConfig();
+        const rules = simpleRuleManifest(
+          detailConfig.ai.simple_model || SIMPLE_MODEL,
+          detailConfig.ai.simple_research_model || COMPANY_PROFILE_MODEL,
+        );
         const familyLabel = (id: string) => {
           for (const lane of rules.lanes) {
             const found = lane.families.find((family) => family.id === id);
@@ -5512,7 +5533,11 @@ Deno.serve(async (req: Request) => {
             archived_signals: archivedSignals || 0,
           };
         }));
-        return corsResponse(origin, { versions: counts, current: (await getPipelineConfig()) && simpleRuleManifest((await getPipelineConfig()).ai.simple_model || SIMPLE_MODEL).version_label });
+        const versionConfig = await getPipelineConfig();
+        return corsResponse(origin, { versions: counts, current: simpleRuleManifest(
+          versionConfig.ai.simple_model || SIMPLE_MODEL,
+          versionConfig.ai.simple_research_model || COMPANY_PROFILE_MODEL,
+        ).version_label });
       }
 
       case "get_simple_rules": {
@@ -5527,7 +5552,10 @@ Deno.serve(async (req: Request) => {
             return corsResponse(origin, { rules: { ...snapshot.rules, snapshot: true, snapshot_taken_at: snapshot.first_seen_at } });
           }
         }
-        return corsResponse(origin, { rules: simpleRuleManifest(simpleConfig.ai.simple_model || SIMPLE_MODEL) });
+        return corsResponse(origin, { rules: simpleRuleManifest(
+          simpleConfig.ai.simple_model || SIMPLE_MODEL,
+          simpleConfig.ai.simple_research_model || COMPANY_PROFILE_MODEL,
+        ) });
       }
 
       case "start_simple_run": {
@@ -5642,7 +5670,10 @@ Deno.serve(async (req: Request) => {
           return errorResponse(origin, message, 500);
         }
 
-        const versionInfo = await registerSimplePipelineVersion(simpleModel);
+        const versionInfo = await registerSimplePipelineVersion(
+          simpleModel,
+          simpleConfig.ai.simple_research_model || COMPANY_PROFILE_MODEL,
+        );
         if (run.pipeline_version !== versionInfo.version) {
           await admin.schema("signal_layer").from("simple_runs")
             .update({ pipeline_version: versionInfo.version }).eq("id", run.id);

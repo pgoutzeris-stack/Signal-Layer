@@ -36,10 +36,7 @@ export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.0";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
 export const SIMPLE_VERSION = "2.0";
 export const SIMPLE_UPDATED_AT = "2026-08-04";
-// Flash-Lite ist fuer den kompakten strukturierten Simple-Aufruf der robuste
-// Standard. DeepSeek bleibt im Dropdown waehlbar, seine Reasoning-Antworten
-// liefen in Edge Functions jedoch wiederholt in das 60-Sekunden-Limit.
-export const SIMPLE_MODEL = "gemini-2.5-flash-lite";
+export const SIMPLE_MODEL = "deepseek-v4-pro";
 
 // Auswahlbare Modelle des einfachen Modus mit den Preisen, die im Kostenledger
 // und in der Prognose verwendet werden. Preise sind USD pro 1 Mio. Tokens laut
@@ -625,7 +622,10 @@ function deepseekRequest(model: string, apiKey: string, prompt: string, options:
       // Bei DeepSeek zählt max_tokens Reasoning und Antwort zusammen. Mit den
       // Relevanz-Teilwerten, Person und Zusammenfassung wurde 3000 zu knapp -
       // abgeschnittene Antworten landeten als invalid_response im Fehlerprotokoll.
-      max_tokens: options.maxOutputTokens || 6_000,
+      // v2 braucht mehr Platz als die alte 3.000er-Antwort, aber 4.500 Tokens
+      // begrenzen unnoetig lange Reasoning-Laeufe ohne die JSON-Felder zu
+      // beschneiden.
+      max_tokens: options.maxOutputTokens || 4_500,
       temperature: 0,
       stream: false,
     }),
@@ -666,22 +666,24 @@ async function callSimpleJson<T>(
   const startedAt = Date.now();
   let response: Response | null = null;
   let lastError = "";
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  const providerTimeoutMs = option.provider === "deepseek" ? 90_000 : 60_000;
+  const maxAttempts = option.provider === "deepseek" ? 1 : 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       response = await fetch(request.endpoint, {
         method: "POST",
         headers: request.headers,
         body: request.body,
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(providerTimeoutMs),
       });
       if (response.ok) break;
       lastError = await response.text();
       const hardStop = /spending cap|insufficient balance|invalid api key|unauthorized/i.test(lastError);
       const retryable = !hardStop && (response.status === 429 || [500, 502, 503, 504].includes(response.status));
-      if (!retryable || attempt === 3) break;
+      if (!retryable || attempt === maxAttempts) break;
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
-      if (attempt === 3) break;
+      if (attempt === maxAttempts) break;
     }
     await new Promise((resolve) => setTimeout(resolve, 1200 * attempt));
   }
@@ -1211,7 +1213,7 @@ function familyDetail(family: SimpleFamily) {
 
 // Fünf Stufen, damit die Oberfläche den Ablauf genauso aufklappen kann wie im
 // Advanced-Modus - inklusive der Wörter, auf die wirklich geprüft wird.
-export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
+export function simpleStageManifest(activeModel: string = SIMPLE_MODEL, researchModel = "gemini-2.5-flash") {
   const option = simpleModelOption(activeModel);
   return [
     {
@@ -1316,16 +1318,35 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL) {
         { label: "Ablehnungsgründe", value: Object.values(SIMPLE_REJECT_LABELS).join(" · ") },
       ],
     },
+    {
+      id: "steckbrief",
+      title: "6 · Tier-1-Steckbrief",
+      system: "gemini",
+      copy: "Ein bestaetigtes Zielunternehmen wird mit einem vorhandenen Steckbrief verknuepft. Nur wenn noch keiner existiert, startet eine getrennte Webrecherche.",
+      steps: [
+        { title: "Vorhandenen Steckbrief laden", copy: "Der Server sucht zuerst nach dem exakten Unternehmen in der Steckbrief-Datenbank. Ein vorhandener Stand wird direkt geladen und niemals automatisch neu recherchiert.", kind: "Server" },
+        { title: "Fehlenden Steckbrief recherchieren", copy: `Nur ohne vorhandenen Steckbrief recherchiert ${researchModel} Unternehmensdaten, Buying Center, Strategie, Ansprachethemen und belegte Quellen mit Google Search.`, kind: "KI + Websuche" },
+        { title: "Artikelaufhaenger getrennt halten", copy: `Der individuelle Trigger kommt weiterhin aus dem einzigen Artikelaufruf mit ${option.label}. Die Steckbrief-Recherche veraendert ihn nicht.`, kind: "Schutzregel" },
+        { title: "Stand versionieren", copy: "Neue und manuell aktualisierte Steckbriefe werden samt Modell, Quellen und Recherchezeitpunkt historisiert.", kind: "Server" },
+      ],
+      details: [
+        { label: "Analysemodell", value: option.label },
+        { label: "Recherchemodell", value: researchModel },
+        { label: "Automatische Neurecherche", value: "Nur wenn noch kein Steckbrief existiert" },
+        { label: "Manuelle Aktualisierung", value: "Nur nach ausdruecklicher Bestaetigung im Steckbrief" },
+      ],
+    },
   ];
 }
 
-export function simpleRuleManifest(activeModel: string = SIMPLE_MODEL) {
+export function simpleRuleManifest(activeModel: string = SIMPLE_MODEL, researchModel = "gemini-2.5-flash") {
   return {
     version: SIMPLE_PIPELINE_VERSION,
     version_label: SIMPLE_VERSION,
     updated_at: SIMPLE_UPDATED_AT,
     model: activeModel,
     model_label: simpleModelOption(activeModel).label,
+    research_model: researchModel,
     models: SIMPLE_MODEL_CATALOG,
     article_limit: SIMPLE_ARTICLE_LIMIT,
     batch_size: SIMPLE_BATCH_SIZE,
@@ -1351,6 +1372,6 @@ export function simpleRuleManifest(activeModel: string = SIMPLE_MODEL) {
     ],
     guardrails: SIMPLE_GUARDRAILS,
     reject_labels: SIMPLE_REJECT_LABELS,
-    stages: simpleStageManifest(activeModel),
+    stages: simpleStageManifest(activeModel, researchModel),
   };
 }

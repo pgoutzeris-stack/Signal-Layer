@@ -614,9 +614,10 @@ function operationsModelSelect(path, label, description, icon) {
 
 // Modelle des einfachen Modus kommen aus dem Servercode (pipeline-simple.ts),
 // nicht aus der Gemini-Modellliste, weil dort auch DeepSeek dabei ist.
-function simpleModelSelect() {
-  const catalog = pipelineSettings?.simple_models || [];
-  const value = getConfigValue("ai.simple_model");
+function simpleModelSelect(path, label, description, researchOnly = false) {
+  const fullCatalog = pipelineSettings?.simple_models || [];
+  const catalog = researchOnly ? fullCatalog.filter((model) => model.provider === "gemini") : fullCatalog;
+  const value = getConfigValue(path);
   const options = (catalog.length ? catalog : [{ id: value, label: value }])
     .map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === value ? "selected" : ""}>${escapeHtml(model.label || model.id)}</option>`)
     .join("");
@@ -624,7 +625,7 @@ function simpleModelSelect() {
   const price = active
     ? `Eingabe ${active.input_usd} $ · Cache ${active.cached_input_usd} $ · Ausgabe ${active.output_usd} $ je 1 Mio. Tokens`
     : "Preisliste im Servercode hinterlegt";
-  return `<label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></span><span class="operations-model-copy"><b>Modell für den einfachen Modus</b><small>Prüft die letzten gespeicherten Artikel. ${escapeHtml(price)}</small><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="ai.simple_model" aria-label="Modell für den einfachen Modus">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
+  return `<label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid ${researchOnly ? "fa-magnifying-glass" : "fa-wand-magic-sparkles"}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)} ${escapeHtml(price)}</small><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="${path}" aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
 }
 
 function renderOperationsPanel(telemetry) {
@@ -659,8 +660,11 @@ function renderOperationsPanel(telemetry) {
     </section>`}
 
     ${!simpleMode ? "" : `<section class="operations-card">
-      <div class="operations-card-head"><div><span>KI-Konfiguration · Einfacher Modus</span><h4>Eigenes Modell für Simple</h4><p>Der einfache Modus läuft getrennt vom Advanced-Modus: kein Crawl, kein Batch, ein kompakter Aufruf je Artikel. Tokens und Kosten landen im selben Kostenledger, die Prognose erscheint in der Statusleiste.</p></div><i class="fa-solid fa-wand-magic-sparkles operations-card-symbol"></i></div>
-      <div class="operations-model-grid">${simpleModelSelect()}</div>
+      <div class="operations-card-head"><div><span>KI-Konfiguration · Einfacher Modus</span><h4>Analyse und Recherche getrennt steuern</h4><p>Das Analysemodell bewertet Artikel in genau einem Aufruf. Das Recherchemodell arbeitet nur bei einem bestätigten Tier-1-Unternehmen ohne vorhandenen Steckbrief. Tokens und Kosten landen im selben Kostenledger.</p></div><i class="fa-solid fa-wand-magic-sparkles operations-card-symbol"></i></div>
+      <div class="operations-model-grid">
+        ${simpleModelSelect("ai.simple_model", "Analysemodell", "Prüft und klassifiziert die gespeicherten Artikel im einzigen Analyseaufruf.")}
+        ${simpleModelSelect("ai.simple_research_model", "Recherchemodell", "Recherchiert ausschließlich einen noch nicht vorhandenen Tier-1-Steckbrief mit Websuche.", true)}
+      </div>
     </section>`}
 
     <section class="operations-card operations-card--compact">
