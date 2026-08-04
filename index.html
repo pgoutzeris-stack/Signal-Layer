@@ -248,19 +248,19 @@
   .cp-overlay { position: fixed; inset: 0; background: rgba(13,24,43,.62); backdrop-filter: blur(7px); display: none; z-index: 120; padding: 2.5vh 2vw; overflow: auto; }
   .cp-overlay.open { display: block; }
   .cp-card { max-width: 1120px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); overflow: hidden; box-shadow: 0 28px 72px rgba(5,15,35,.28); }
-  .cp-head { position: relative; border-top: 4px solid var(--brand); border-bottom: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 1.2rem 1.3rem; display: flex; align-items: center; gap: 1.05rem; }
-  .cp-head-main { min-width: 0; flex: 1 1 auto; }
+  .cp-head { position: relative; border-bottom: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 1.2rem 1.3rem; display: grid; grid-template-columns: minmax(0, 1fr) 154px; align-items: center; gap: 1.25rem; }
+  .cp-head-main { min-width: 0; grid-column: 1; }
   .cp-eyebrow { display: inline-flex; align-items: center; gap: 6px; margin-bottom: .42rem; padding-left: .55rem; border-left: 3px solid var(--brand); color: var(--brand-dark); font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .cp-head h2 { margin: 0; color: var(--ink); font-size: clamp(1.2rem, 2vw, 1.55rem); font-weight: 730; letter-spacing: -.025em; }
   .cp-head-sub { margin: .32rem 0 0; max-width: 720px; font-size: .8rem; line-height: 1.45; color: var(--muted); }
-  .cp-logo-wrap { width: 154px; flex: 0 0 154px; display: flex; flex-direction: column; align-items: center; gap: .36rem; }
+  .cp-logo-wrap { width: 154px; grid-column: 2; padding-top: 1.35rem; display: flex; flex-direction: column; align-items: center; gap: .36rem; }
   .cp-logo { width: 154px; height: 74px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: #fff; display: grid; place-items: center; overflow: hidden; box-sizing: border-box; box-shadow: 0 5px 16px rgba(15,23,42,.07); }
   .cp-logo img { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; object-position: center; }
   .cp-logo span { font-weight: 800; font-size: 1.05rem; color: var(--brand-dark); letter-spacing: .04em; }
   .cp-logo--fallback { background: var(--brand-light); border-color: color-mix(in srgb, var(--brand) 22%, var(--line)); }
   .cp-logo-source { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: .6rem; font-weight: 650; text-decoration: none; }
   .cp-logo-source:hover { color: var(--brand); text-decoration: underline; }
-  .cp-close { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); font-size: 1rem; cursor: pointer; padding: 0; margin-left: .15rem; flex: none; }
+  .cp-close { position: absolute; top: .7rem; right: .8rem; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); font-size: 1rem; cursor: pointer; padding: 0; }
   .cp-close:hover { border-color: color-mix(in srgb, var(--brand) 30%, var(--line)); background: var(--brand-light); color: var(--brand-dark); }
   .cp-pills { display: flex; gap: .4rem; margin-top: .55rem; flex-wrap: wrap; }
   .cp-pill { display: inline-flex; align-items: center; gap: .3rem; background: var(--surface); color: var(--status-text); border: 1px solid var(--line); border-radius: 8px; padding: .27rem .58rem; font-size: .68rem; font-weight: 650; }
@@ -280,6 +280,10 @@
   .cp-sec--trigger { border-color: color-mix(in srgb, #f59e0b 38%, var(--line)); }
   .cp-sec--trigger h3 { background: #fff7df; color: #8a5400; border-bottom-color: #f7df9b; }
   .cp-sec--trigger h3 i { margin-right: 6px; color: #e59a00; }
+  .cp-sec--trigger-muted { border-color: var(--line); }
+  .cp-sec--trigger-muted h3 { background: var(--surface); color: var(--status-text); border-bottom-color: var(--line); }
+  .cp-sec--trigger-muted h3 i { color: var(--muted); }
+  .cp-sec--trigger-muted li { color: var(--muted); }
   .cp-note { margin-top: .9rem; padding: .6rem .8rem; border: 1px solid #fcd34d; background: #fffbeb; border-radius: 8px; font-size: .8rem; color: #92400e; }
   .cp-sources { margin-top: .9rem; padding-top: .7rem; border-top: 1px solid #e2e8f2; font-size: .74rem; color: #6b7a94; line-height: 1.6; }
   .cp-sources a { color: #2563eb; text-decoration: none; }
@@ -288,12 +292,11 @@
   @media (max-width: 640px) {
     .cp-overlay { padding: 0; }
     .cp-card { min-height: 100%; border-radius: 0; }
-    .cp-head { align-items: flex-start; padding: 1rem; flex-wrap: wrap; }
-    .cp-logo-wrap { width: 110px; flex-basis: 110px; order: 2; }
+    .cp-head { grid-template-columns: minmax(0, 1fr) 110px; align-items: start; padding: 1rem; }
+    .cp-logo-wrap { width: 110px; grid-column: 2; padding-top: 1.8rem; }
     .cp-logo { width: 110px; height: 58px; }
-    .cp-head-main { order: 1; flex-basis: calc(100% - 160px); }
-    .cp-close { order: 3; }
-    .cp-close { margin-left: auto; }
+    .cp-head-main { grid-column: 1; }
+    .cp-close { top: .55rem; right: .55rem; }
     .cp-body { padding: 1rem; }
     .cp-grid { grid-template-columns: 1fr; }
   }
@@ -341,6 +344,7 @@
   .status-pill:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(15, 23, 42, .12); }
   .status-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .status-pill--ready { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
+  .status-pill--idle { color: var(--muted); border-style: dashed; border-color: #b8c3d2; background: var(--bg); box-shadow: none; }
   .status-pill--working { color: var(--brand-dark); border-color: #bfdbfe; background: var(--brand-light); }
   .status-pill--working .status-pill-dot { animation: statusPulse 1.25s ease-in-out infinite; }
   .status-pill--error { color: var(--danger); border-color: #fecaca; background: #fef2f2; }
@@ -504,7 +508,8 @@
   .signal-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 1rem; padding: .6rem; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 92%, var(--surface)); box-shadow: var(--shadow-dash); }
   .signal-toolbar-label { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-size: .78rem; font-weight: 700; white-space: nowrap; }
   .signal-toolbar-label i { color: var(--brand); }
-  .signal-toolbar-controls { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+  .signal-toolbar-controls { min-width: 0; display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: nowrap; }
+  .signal-toolbar-controls > * { flex: 0 0 auto; }
   .signal-toolbar-select { position: absolute !important; width: 1px !important; height: 1px !important; opacity: 0 !important; pointer-events: none !important; }
   .roots-select { position: relative; min-width: 142px; }
   .roots-select-trigger { width: 100%; height: 34px; padding: 0 10px 0 13px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--status-text); display: flex; align-items: center; justify-content: space-between; gap: 10px; font: inherit; font-size: .72rem; font-weight: 650; cursor: pointer; box-shadow: 0 2px 7px rgba(15,23,42,.035); transition: border-color .16s, box-shadow .16s, color .16s; }
@@ -533,7 +538,7 @@
   .roots-select-option--empty::before { content: "\f111"; font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: .36rem; color: var(--muted); opacity: .6; }
   .signal-toolbar > .crawl-trigger-wrap { margin-left: 2px; }
   .signal-toolbar > .crawl-trigger-wrap .status-pill { min-height: 34px; box-shadow: none; }
-  @media (max-width: 720px) { .signal-toolbar { align-items: flex-start; flex-direction: column; } .signal-toolbar-controls { width: 100%; justify-content: flex-start; } .roots-select { flex: 1; min-width: 130px; } .signal-toolbar > .crawl-trigger-wrap { position: absolute; right: 2.1rem; top: 2rem; } }
+  @media (max-width: 720px) { .signal-toolbar { align-items: flex-start; flex-direction: column; } .signal-toolbar-controls { width: 100%; justify-content: flex-start; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; } .signal-toolbar-controls:has(.roots-select.open) { overflow: visible; } .roots-select { min-width: 130px; } .signal-toolbar > .crawl-trigger-wrap { position: absolute; right: 2.1rem; top: 2rem; } }
 
   .track-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
   .track-card {
@@ -1910,7 +1915,7 @@
             <div class="dashboard-title">Signal Layer</div>
           </div>
           <div class="crawl-trigger-wrap">
-            <button type="button" class="status-pill status-pill--ready" id="btn-crawl-trigger" aria-expanded="false">
+            <button type="button" class="status-pill status-pill--idle" id="btn-crawl-trigger" aria-expanded="false">
               <span class="status-pill-dot"></span><span>Status</span>
             </button>
             <div class="crawl-status-popover" role="status">
@@ -2012,7 +2017,7 @@
               <option value="all">Alle Quellen</option>
             </select>
             <select class="signal-toolbar-select" id="signal-version" aria-label="Advanced-Regelstand filtern">
-              <option value="current">Aktueller Stand (alle Versionen)</option>
+              <option value="current">Aktueller Stand</option>
             </select>
             <select class="signal-toolbar-select" id="signal-sort" aria-label="Signale sortieren">
               <option value="recommended">Empfohlen</option>
@@ -2104,7 +2109,7 @@
                 <option value="all">Alle Quellen</option>
               </select>
               <select class="signal-toolbar-select" id="simple-version" aria-label="Pipeline-Version">
-                <option value="current">Aktueller Stand (alle Versionen)</option>
+                <option value="current">Aktueller Stand</option>
               </select>
               <select class="signal-toolbar-select" id="simple-sort" aria-label="Signale sortieren">
                 <option value="recommended">Empfohlen</option>
@@ -2113,13 +2118,13 @@
               </select>
             </div>
             <div class="crawl-trigger-wrap simple-status-wrap">
-              <button type="button" class="status-pill status-pill--ready" id="simple-status-trigger" aria-label="Simple-Status: Bereit">
+              <button type="button" class="status-pill status-pill--idle" id="simple-status-trigger" aria-label="Simple-Status: Kein Lauf aktiv">
                 <span class="status-pill-dot"></span><span>Status</span>
               </button>
               <div class="crawl-status-popover simple-status-popover" role="status">
                 <div class="crawl-status-head">
                   <div><span class="crawl-status-kicker">Letzte Simple-Analyse</span><strong id="simple-status-time">--:--</strong></div>
-                  <span class="crawl-live-state" id="simple-live-state">Bereit</span>
+                  <span class="crawl-live-state" id="simple-live-state">Kein Lauf aktiv</span>
                 </div>
                 <div class="simple-forecast-pill" id="simple-forecast-pill" hidden><i class="fa-solid fa-coins"></i><span id="simple-forecast-pill-text"></span></div>
                 <div class="backfill-status">
@@ -2360,7 +2365,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260804-2100';
+  import { initApp } from './app.js?v=20260804-2300';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

@@ -77,6 +77,13 @@ function escText(value) {
   return ctx.escapeText(String(value ?? ""));
 }
 
+function sameCompany(left, right) {
+  const key = (value) => String(value || "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("de-DE").replace(/[^a-z0-9]+/g, "");
+  return Boolean(key(left)) && key(left) === key(right);
+}
+
 function formatDate(iso) {
   if (!iso) return "";
   const date = new Date(iso);
@@ -130,7 +137,10 @@ function signalCard(signal) {
         <div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escText(signal.roots_link_de)}</p></div>
       </div>` : ""}
       <div class="finding-meta">
-        ${(signal.tier1_companies || []).map((name) => `<span class="tag tag--kunde" data-company-profile="${esc(name)}" data-company-trigger="${esc(signal.company === name ? signal.trigger_de || "" : "")}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${esc(name)}</span>`).join("")}
+        ${(signal.tier1_companies || []).map((name) => {
+          const isTarget = sameCompany(signal.company, name);
+          return `<span class="tag tag--kunde" data-company-profile="${esc(name)}" data-company-trigger="${esc(isTarget ? signal.trigger_de || "" : "")}" data-company-trigger-state="${isTarget ? "target" : "mention"}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${esc(name)}</span>`;
+        }).join("")}
         ${signal.company && !(signal.tier1_companies || []).includes(signal.company) ? `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
         ${signal.person_name ? `<span class="tag tag--person" data-pill-info="Einstufung: Person${signal.person_role ? " · " + esc(signal.person_role) : ""}" tabindex="0"><i class="fa-solid fa-user"></i> ${esc(signal.person_name)}</span>` : ""}
         ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
@@ -310,7 +320,7 @@ async function loadVersions() {
     versionList = versions || [];
     if (!els.version) return;
     const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
-    els.version.innerHTML = `<option value="current">Aktueller Stand (alle Versionen)</option>${versionList
+    els.version.innerHTML = `<option value="current">Aktueller Stand</option>${versionList
       .map((entry) => `<option value="${esc(entry.version)}" ${entry.version === selectedVersion ? "selected" : ""}>Version ${esc(entry.version)} · ${entry.archived_signals ?? entry.signals} Signale · ${esc(date(entry.first_seen_at))}</option>`)
       .join("")}`;
   } catch (_error) { /* Auswahl bleibt bei der aktuellen Pipeline */ }

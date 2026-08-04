@@ -1,7 +1,7 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2010";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260804-2300";
 
 let sb = null;
 let sources = [];
@@ -1419,6 +1419,13 @@ function uniqueCompanyNames(values) {
   );
 }
 
+function sameCompanyName(left, right) {
+  const key = (value) => String(value || "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("de-DE").replace(/[^a-z0-9]+/g, "");
+  return Boolean(key(left)) && key(left) === key(right);
+}
+
 // Advanced speichert Tier-1-Treffer in matched_companies. Weitere Unternehmen
 // kommen nur dann in "Company", wenn die KI sie als echten Gegenstand und nicht
 // lediglich als beiläufige Erwähnung eingeordnet hat.
@@ -1606,7 +1613,7 @@ function renderFindings(track) {
             ${article.matched_offering_reasoning ? `<div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${escapeText(article.matched_offering_reasoning)}</p></div>` : ""}
           </div>` : ""}
           <div class="finding-meta">
-            ${companyGroups.tier1.map((c) => `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
+            ${companyGroups.tier1.map((c) => `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-company-trigger-state="${sameCompanyName(article.primary_company, c) ? "target" : "mention"}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
             ${companyGroups.company.map((c) => `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
             ${source?.company ? `<span class="tag tag--source" title="Quelle: ${escapeHtml(source.company)}"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
@@ -1687,7 +1694,7 @@ async function loadAdvancedVersions() {
   try {
     const { versions, current } = await callApi("list_advanced_versions");
     const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
-    els.signalVersion.innerHTML = `<option value="current">Aktueller Stand (alle Versionen)</option>${(versions || [])
+    els.signalVersion.innerHTML = `<option value="current">Aktueller Stand</option>${(versions || [])
       .map((entry) => `<option value="${escapeHtml(entry.version)}" ${entry.version === signalSelectedVersion ? "selected" : ""}>${entry.version === current ? "Aktive Version" : "Version"} ${escapeHtml(entry.version)} · ${Number(entry.article_count || 0).toLocaleString("de-DE")} Artikel · ${escapeHtml(date(entry.last_seen_at))}</option>`)
       .join("")}`;
     enhanceHeaderSelects();
@@ -2079,7 +2086,7 @@ async function loadReviewArticles() {
           <p class="finding-rationale"><i class="fa-solid fa-scale-balanced"></i><span>${escapeText(article.manual_review_reason || "Mindestens ein fachliches Pflichtkriterium ist noch offen.")}</span></p>
           <div class="finding-meta">
             ${reviewTrackPill(tracks)}
-            ${article.primary_company ? `<span class="tag tag--kunde" data-company-profile="${escapeHtml(article.primary_company)}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
+            ${article.primary_company ? `<span class="tag tag--kunde" data-company-profile="${escapeHtml(article.primary_company)}" data-company-trigger="${escapeHtml(article.trigger_de || "")}" data-company-trigger-state="target" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(article.primary_company)}</span>` : ""}
             ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
           </div>
@@ -2872,12 +2879,12 @@ function getLiveStatus(last, backfill, analysisQueue = {}) {
   if (last?.status === "error" || backfill?.status === "error") {
     return { tone: "error", label: "Aufmerksamkeit nötig", hint: "Ein Lauf wurde mit Fehler beendet." };
   }
-  return { tone: "ready", label: "Bereit", hint: "Klicken, um einen Crawl zu starten." };
+  return { tone: "idle", label: "Kein Lauf aktiv", hint: "Klicken, um einen Crawl zu starten." };
 }
 
 function setLiveStatus(last, backfill, analysisQueue = {}) {
   const liveStatus = getLiveStatus(last, backfill, analysisQueue);
-  els.btnCrawlTrigger.classList.remove("status-pill--ready", "status-pill--working", "status-pill--error");
+  els.btnCrawlTrigger.classList.remove("status-pill--ready", "status-pill--idle", "status-pill--working", "status-pill--error");
   els.btnCrawlTrigger.classList.add(`status-pill--${liveStatus.tone}`);
   els.btnCrawlTrigger.setAttribute("aria-label", `Status: ${liveStatus.label}`);
   els.crawlLiveState.textContent = liveStatus.label;
@@ -2891,8 +2898,17 @@ function setLiveStatus(last, backfill, analysisQueue = {}) {
 function renderSimpleHeaderStatus() {
   if (!document.body.classList.contains("mode-simple")) return;
   const run = simpleRunStatus;
-  const triggerRun = simpleTriggerBackfill?.status === "running" ? simpleTriggerBackfill : null;
-  const visibleRun = triggerRun || run;
+  const activeStates = ["queued", "running"];
+  const triggerRun = activeStates.includes(simpleTriggerBackfill?.status) ? simpleTriggerBackfill : null;
+  const activeRun = triggerRun || (activeStates.includes(run?.status) ? run : null);
+  const recentRuns = [simpleTriggerBackfill, run].filter(Boolean).sort((left, right) =>
+    new Date(right.finished_at || right.last_progress_at || right.started_at || 0).getTime()
+      - new Date(left.finished_at || left.last_progress_at || left.started_at || 0).getTime()
+  );
+  const visibleRun = activeRun || recentRuns[0] || null;
+  const failedRun = !activeRun && visibleRun?.status === "error" ? visibleRun : null;
+  const progressRun = activeRun || failedRun;
+  const progressIsTrigger = progressRun === simpleTriggerBackfill;
   const byId = (id) => document.getElementById(id);
   const trigger = byId("simple-status-trigger");
   const live = byId("simple-live-state");
@@ -2900,44 +2916,44 @@ function renderSimpleHeaderStatus() {
   const progress = byId("simple-article-progress");
   if (!trigger || !live || !time || !progress) return;
 
-  const running = ["queued", "running"].includes(visibleRun?.status);
-  const failed = visibleRun?.status === "error";
-  const tone = running ? "working" : failed ? "error" : "ready";
-  const label = running ? "Analyse läuft" : failed ? "Prüfung nötig" : "Bereit";
-  trigger.classList.remove("status-pill--ready", "status-pill--working", "status-pill--error");
+  const running = Boolean(activeRun);
+  const failed = Boolean(failedRun);
+  const tone = running ? "working" : failed ? "error" : "idle";
+  const label = running ? "Analyse läuft" : failed ? "Prüfung nötig" : "Kein Lauf aktiv";
+  trigger.classList.remove("status-pill--ready", "status-pill--idle", "status-pill--working", "status-pill--error");
   trigger.classList.add(`status-pill--${tone}`);
   trigger.setAttribute("aria-label", `Simple-Status: ${label}`);
   live.textContent = label;
   time.textContent = visibleRun ? formatCrawlTime(visibleRun.finished_at || visibleRun.last_progress_at || visibleRun.started_at) : "--:--";
 
-  const total = Number(visibleRun?.total_count || 0);
-  const processed = triggerRun
-    ? Number(triggerRun.completed_count || 0) + Number(triggerRun.missing_count || 0) + Number(triggerRun.error_count || 0)
-    : Number(run?.processed_count || 0);
-  progress.hidden = !visibleRun;
-  if (visibleRun) {
+  const total = Number(progressRun?.total_count || 0);
+  const processed = progressIsTrigger
+    ? Number(progressRun.completed_count || 0) + Number(progressRun.missing_count || 0) + Number(progressRun.error_count || 0)
+    : Number(progressRun?.processed_count || 0);
+  progress.hidden = !progressRun;
+  if (progressRun) {
     byId("simple-progress-text").textContent = `${processed.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} Artikel`;
     byId("simple-progress-bar").style.width = total > 0 ? `${Math.round(Math.min(processed / total, 1) * 100)}%` : "0%";
-    const modelLabel = simpleForecast?.model_label || visibleRun.model || "Modell";
-    const position = Number(triggerRun ? processed + 1 : visibleRun.current_position || processed || 0);
+    const modelLabel = simpleForecast?.model_label || progressRun.model || "Modell";
+    const position = Number(progressIsTrigger ? processed + 1 : progressRun.current_position || processed || 0);
     const current = byId("simple-current-article");
     if (running) {
       current.hidden = false;
-      current.textContent = visibleRun.current_article
-        ? `${triggerRun ? "Aufhänger-Nachlauf" : modelLabel} · Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}: ${visibleRun.current_article}`
-        : `${triggerRun ? "Aufhänger-Nachlauf" : modelLabel} · Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}`;
+      current.textContent = progressRun.current_article
+        ? `${progressIsTrigger ? "Aufhänger-Nachlauf" : modelLabel} · Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}: ${progressRun.current_article}`
+        : `${progressIsTrigger ? "Aufhänger-Nachlauf" : modelLabel} · Artikel ${position.toLocaleString("de-DE")} von ${total.toLocaleString("de-DE")}`;
     } else {
       current.hidden = true;
     }
-    byId("simple-progress-detail").textContent = triggerRun
-      ? `${Number(triggerRun.completed_count || 0)} Aufhänger ergänzt · ${Number(triggerRun.missing_count || 0)} ohne belastbaren Anlass`
-      : `${Number(run.signal_count || 0)} Signale · ${Number(run.rejected_count || 0)} aussortiert`;
+    byId("simple-progress-detail").textContent = progressIsTrigger
+      ? `${Number(progressRun.completed_count || 0)} Aufhänger ergänzt · ${Number(progressRun.missing_count || 0)} ohne belastbaren Anlass`
+      : `${Number(progressRun.signal_count || 0)} Signale · ${Number(progressRun.rejected_count || 0)} aussortiert`;
   }
 
   const runError = byId("simple-run-error");
   runError.hidden = !failed;
   if (failed) {
-    const raw = String(visibleRun?.error_message || "");
+    const raw = String(failedRun?.error_message || "");
     runError.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${escapeHtml(
       /Hintergrundanalyse blockierte die interaktive Artikelansicht/i.test(raw)
         ? "Der abgebrochene Testlauf ist beendet. Die gespeicherten Ergebnisse bleiben verfügbar."
@@ -3024,30 +3040,30 @@ function companyLogoHtml(company, profile) {
   </div>`;
 }
 
-function companyProfileHeadHtml(company, profile, triggerForHead = null) {
+function companyProfileHeadHtml(company, profile, triggerForHead = null, triggerState = "") {
   const stand = profile?.researched_at
     ? new Date(profile.researched_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
     : null;
   return `<div class="cp-head">
-    ${companyLogoHtml(company, profile)}
     <div class="cp-head-main">
       <span class="cp-eyebrow"><i class="fa-solid fa-building"></i> Tier-1-Steckbrief</span>
       <h2 id="cp-title">Unternehmensprofil: ${escapeHtml(company)}</h2>
       ${profile?.headline ? `<p class="cp-head-sub">${escapeHtml(profile.headline)}</p>` : ""}
       ${profile ? `<div class="cp-pills">
         <span class="cp-pill">Recherchiert: ${escapeHtml(stand || "unbekannt")}</span>
-        <button type="button" class="cp-pill cp-pill--action" data-company-refresh="${escapeHtml(company)}" data-company-trigger="${escapeHtml(triggerForHead || "")}">
+        <button type="button" class="cp-pill cp-pill--action" data-company-refresh="${escapeHtml(company)}" data-company-trigger="${escapeHtml(triggerForHead || "")}" data-company-trigger-state="${escapeHtml(triggerState)}">
           <i class="fa-solid fa-rotate"></i> Aktualisieren</button>
       </div>` : ""}
     </div>
+    ${companyLogoHtml(company, profile)}
     <button type="button" class="cp-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
   </div>`;
 }
 
-function renderCompanyProfile(company, profile, pending, trigger = null) {
+function renderCompanyProfile(company, profile, pending, trigger = null, triggerState = "") {
   const card = companyProfileOverlay().querySelector(".cp-card");
   if (!profile) {
-    card.innerHTML = companyProfileHeadHtml(company, null) + `<div class="cp-body"><div class="cp-state">${
+    card.innerHTML = companyProfileHeadHtml(company, null, trigger, triggerState) + `<div class="cp-body"><div class="cp-state">${
       pending
         ? LOADER_HTML + '<p style="margin:.8rem 0 0">Steckbrief wird recherchiert, das dauert etwa eine Minute.</p>'
         : "Für dieses Unternehmen liegt kein Steckbrief vor. Steckbriefe entstehen für Tier-1-Unternehmen während eines Analyselaufs."
@@ -3057,16 +3073,22 @@ function renderCompanyProfile(company, profile, pending, trigger = null) {
   const kpis = Array.isArray(profile.kpis) ? profile.kpis : [];
   const sections = Array.isArray(profile.sections) ? profile.sections : [];
   const sources = Array.isArray(profile.sources) ? profile.sources : [];
-  card.innerHTML = companyProfileHeadHtml(company, profile, trigger) + `<div class="cp-body">
+  const triggerCopy = trigger || (triggerState === "mention"
+    ? `${company} wurde in diesem Artikel als Tier-1-Unternehmen erwähnt, aber nicht als handelnder oder konkret betroffener Akteur bestätigt. Deshalb erzeugt die Pipeline bewusst keinen Gesprächsaufhänger.`
+    : triggerState === "target"
+      ? `Für ${company} ist in diesem Artikel kein ausreichend belegter Gesprächsaufhänger vorhanden. Der KI-Nachlauf erfindet deshalb weder Anlass noch Beratungsbedarf.`
+      : "");
+  const triggerMuted = !trigger;
+  card.innerHTML = companyProfileHeadHtml(company, profile, trigger, triggerState) + `<div class="cp-body">
     ${kpis.length ? `<div class="cp-kpis">${kpis.map((k) => `<div class="cp-kpi">
       <b>${escapeHtml(k.value || "–")}</b><span>${escapeHtml(k.label || "")}</span>
       ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}</div>`).join("")}</div>` : ""}
-    ${sections.length || trigger ? `<div class="cp-grid">${sections.map((sec) => `<section class="cp-sec">
+    ${sections.length || triggerCopy ? `<div class="cp-grid">${sections.map((sec) => `<section class="cp-sec">
       <h3>${escapeHtml(sec.title || "")}</h3>
       <ul>${(Array.isArray(sec.items) ? sec.items : []).map((item) => `<li>${escapeText(item)}</li>`).join("")}</ul>
-    </section>`).join("")}${trigger ? `<section class="cp-sec cp-sec--trigger">
+    </section>`).join("")}${triggerCopy ? `<section class="cp-sec cp-sec--trigger${triggerMuted ? " cp-sec--trigger-muted" : ""}">
       <h3><i class="fa-solid fa-bolt"></i> Trigger &amp; Aufhänger — warum jetzt?</h3>
-      <ul><li>${escapeText(trigger)}</li></ul>
+      <ul><li>${escapeText(triggerCopy)}</li></ul>
     </section>` : ""}</div>` : ""}
     ${profile.unverified_note ? `<div class="cp-note"><i class="fa-solid fa-circle-info"></i> Nicht belegt: ${escapeText(profile.unverified_note)}</div>` : ""}
     ${sources.length ? `<div class="cp-sources"><b>Quellen:</b> ${sources.map((src) =>
@@ -3075,17 +3097,17 @@ function renderCompanyProfile(company, profile, pending, trigger = null) {
   </div>`;
 }
 
-export async function openCompanyProfile(company, { refresh = false, trigger = null } = {}) {
+export async function openCompanyProfile(company, { refresh = false, trigger = null, triggerState = "" } = {}) {
   const name = String(company || "").trim();
   if (!name) return;
   const host = companyProfileOverlay();
   host.dataset.company = name;
   host.classList.add("open");
-  renderCompanyProfile(name, null, true, trigger);
+  renderCompanyProfile(name, null, true, trigger, triggerState);
   try {
     const payload = refresh ? { company: name, refresh: true } : { company: name };
     const { profile, pending, pending_logo: pendingLogo } = await callApi("get_company_profile", payload);
-    renderCompanyProfile(name, profile, pending, trigger);
+    renderCompanyProfile(name, profile, pending, trigger, triggerState);
     if (pendingLogo) {
       // Bestehende Steckbriefe werden serverseitig einmalig um ein verifiziertes
       // Logo ergänzt. Die Karte bleibt benutzbar und aktualisiert nur den Kopf,
@@ -3094,12 +3116,12 @@ export async function openCompanyProfile(company, { refresh = false, trigger = n
         await new Promise((resolve) => setTimeout(resolve, 5_000));
         if (!host.classList.contains("open") || host.dataset.company !== name) break;
         const next = await callApi("get_company_profile", { company: name, logo_poll: true });
-        renderCompanyProfile(name, next.profile || profile, false, trigger);
+        renderCompanyProfile(name, next.profile || profile, false, trigger, triggerState);
         if (!next.pending_logo) break;
       }
     }
   } catch (error) {
-    host.querySelector(".cp-card").innerHTML = companyProfileHeadHtml(name, null)
+    host.querySelector(".cp-card").innerHTML = companyProfileHeadHtml(name, null, trigger, triggerState)
       + `<div class="cp-body"><div class="cp-state">Steckbrief konnte nicht geladen werden: ${escapeHtml(error.message)}</div></div>`;
   }
 }
@@ -3112,6 +3134,7 @@ if (typeof document !== "undefined") document.addEventListener("click", (event) 
     event.stopPropagation();
     void openCompanyProfile(refreshBtn.getAttribute("data-company-refresh"), {
       refresh: true, trigger: refreshBtn.getAttribute("data-company-trigger") || null,
+      triggerState: refreshBtn.getAttribute("data-company-trigger-state") || "",
     });
     return;
   }
@@ -3123,6 +3146,7 @@ if (typeof document !== "undefined") document.addEventListener("click", (event) 
   event.stopPropagation();
   void openCompanyProfile(pill.getAttribute("data-company-profile"), {
     trigger: pill.getAttribute("data-company-trigger") || null,
+    triggerState: pill.getAttribute("data-company-trigger-state") || "",
   });
 }, { capture: true });
 
