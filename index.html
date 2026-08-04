@@ -124,11 +124,11 @@
     transition: width .22s ease, box-shadow .22s ease;
   }
   .app-sidebar:hover, .app-sidebar:focus-within { width: 260px; box-shadow: 12px 0 28px rgba(15, 23, 42, .08); }
-  /* Eingeklappt liegt die Mitte des Logos genau auf der Mitte der Nav-Icons;
-     aufgeklappt rückt es mit dem Text auf die Textkante. */
-  .sidebar-brand { display: flex; width: 100%; min-width: 0; align-items: center; gap: 10px; margin-bottom: 1.5rem; padding: .35rem 0 .35rem 5px; }
+  /* Etwas Luft zur Außenkante und zwischen Markenzeichen und Wortmarke hält
+     den Kopf auch im aufgeklappten Zustand ruhig und gut lesbar. */
+  .sidebar-brand { display: flex; width: 100%; min-width: 0; align-items: center; gap: 12px; margin-bottom: 1.5rem; padding: .35rem 0 .35rem 7px; }
   .sidebar-brand .sidebar-label { flex: 1 1 auto; min-width: 0; overflow: hidden; }
-  .app-sidebar:hover .sidebar-brand, .app-sidebar:focus-within .sidebar-brand { padding: .35rem .85rem; }
+  .app-sidebar:hover .sidebar-brand, .app-sidebar:focus-within .sidebar-brand { padding: .35rem 1rem; }
   .logo-mark {
     width: 36px; height: 36px; border-radius: 10px; background: var(--brand);
     display: flex; align-items: center; justify-content: center; color: #fff;
