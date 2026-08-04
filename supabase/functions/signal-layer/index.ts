@@ -528,7 +528,8 @@ async function ensureSimpleArticleText(
   }
 }
 
-// Kompaktes ROOTS-Portfolio für die virale Spur: Säule, Leistung, ein Halbsatz.
+// ROOTS-Portfolio als strukturierte Zeilen. Die Simple-Pipeline waehlt daraus
+// vor jedem KI-Aufruf nur die zur Kandidatenfamilie passenden Leistungen aus.
 // Gecacht, weil es sich selten ändert und sonst jeder Batch die Tabelle liest.
 const simplePortfolioCache: { value: string; at: number } = { value: "", at: 0 };
 
@@ -537,10 +538,14 @@ async function getSimpleRootsPortfolio(): Promise<string> {
   if (simplePortfolioCache.value && now - simplePortfolioCache.at < 10 * 60 * 1000) return simplePortfolioCache.value;
   const { data } = await getAdminClient().schema("signal_layer").from("roots_offerings")
     .select("id, label, pillar, description").eq("active", true).order("sort_order", { ascending: true });
-  // Bewusst knapp: Säule und Leistungsname genügen dem Modell für die
-  // semantische Zuordnung und halten den Prompt klein.
+  // Die Beschreibung ist notwendig, damit aus dem Leistungsnamen ein konkreter
+  // Unternehmensbezug entsteht. Token-effizient bleibt es durch die spaetere
+  // Familienauswahl in pipeline-simple.ts.
   const text = (data || [])
-    .map((offering: Record<string, string>) => `- [${offering.pillar || "sonstige"}] ${offering.label}`)
+    .map((offering: Record<string, string>) => {
+      const description = String(offering.description || "").replace(/\s+/g, " ").trim().slice(0, 420);
+      return `- ${offering.id} | [${offering.pillar || "sonstige"}] ${offering.label}: ${description}`;
+    })
     .join("\n");
   simplePortfolioCache.value = text;
   simplePortfolioCache.at = now;
@@ -1448,6 +1453,17 @@ function extractPublishedDate(html: string, url: string): string | null {
           && d <= new Date(Date.now() + 24 * 60 * 60 * 1000)) return d.toISOString();
     }
   }
+  // W&V exposes the publish date to analytics as YYYYMMDD even when the
+  // structured `datePublished` value is null.
+  const compactDate = html.match(/["']PublishedDate["']\s*:\s*["'](20\d{6})["']/i)?.[1];
+  if (compactDate) {
+    const date = new Date(Date.UTC(
+      Number(compactDate.slice(0, 4)),
+      Number(compactDate.slice(4, 6)) - 1,
+      Number(compactDate.slice(6, 8)),
+    ));
+    if (!isNaN(date.getTime()) && date <= new Date(Date.now() + 24 * 60 * 60 * 1000)) return date.toISOString();
+  }
   const visibleText = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -1462,6 +1478,15 @@ function extractPublishedDate(html: string, url: string): string | null {
     const date = new Date(Date.UTC(year, month - 1, day));
     if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
         && date <= new Date(Date.now() + 24 * 60 * 60 * 1000)) return date.toISOString();
+  }
+  const germanMonths: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, maerz: 2, apr: 3, mai: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, okt: 9, nov: 10, dez: 11,
+  };
+  const germanDate = normalizeMatchText(visibleText).match(/(?:^|\D)([0-3]?\d)\.?\s+(jan|feb|mar|maerz|apr|mai|jun|jul|aug|sep|okt|nov|dez)\w*\s+(20\d{2})(?:\D|$)/);
+  if (germanDate) {
+    const date = new Date(Date.UTC(Number(germanDate[3]), germanMonths[germanDate[2]], Number(germanDate[1])));
+    if (!isNaN(date.getTime()) && date <= new Date(Date.now() + 24 * 60 * 60 * 1000)) return date.toISOString();
   }
   // Last resort: a /YYYY/MM/DD/ date pattern baked into the URL itself
   // (common WordPress/CMS permalink structure).

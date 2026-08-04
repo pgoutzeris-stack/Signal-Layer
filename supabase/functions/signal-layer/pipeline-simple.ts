@@ -32,9 +32,9 @@ import {
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
-export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.0";
+export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.1";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "2.0";
+export const SIMPLE_VERSION = "2.1";
 export const SIMPLE_UPDATED_AT = "2026-08-04";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -131,7 +131,7 @@ const SALES_FAMILIES: SimpleFamily[] = [
     id: "cmo_wechsel",
     lane: "sales",
     label: "CMO-/Marketingleitung-Wechsel",
-    definition: "Eine Führungsrolle für Marketing, Marke oder Produkt (CMO, Marketingleitung, Head of Marketing, Brand Director, Chief Creative Officer, Chief Product Officer) wird neu besetzt, verlassen oder umgebaut. Entscheidend ist die Verantwortung für Marke, Markenauftritt oder Produkthandschrift, nicht der genaue Titel.",
+    definition: "Eine Führungsrolle für Marketing, Marke oder Produkt (CMO, Marketingleitung, Head of Marketing, Brand Director, Chief Creative Officer, Chief Product Officer) wird neu besetzt, verlassen oder umgebaut. Der Wechsel selbst ist ein belastbarer Timing-Anlass für Standortbestimmung, Priorisierung und die ersten 100 Tage; ein zusätzlich behauptetes Problem oder Budget ist nicht erforderlich. Entscheidend ist die Verantwortung für Marke, Markenauftritt oder Produkthandschrift, nicht der genaue Titel.",
     trigger: /\b(cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter\w*|marketingleitung|marketingchef\w*|marketingdirektor\w*|marketingvorstand\w*|marketinggeschaftsfuhr\w*|head of marketing|marketing director|vp marketing|markenchef\w*|markenverantwortung|leiter\w* marketing|leitung marketing|bereichsleiter\w* marketing|marketing chef\w*|marketing leiter\w*|marketing leitung|marketing direktor\w*|marketing vorstand\w*|marken chef\w*|brand director|brand lead|senior brand director|chief creative officer|chief product officer|chief brand director|head of brand|brand strategy director|markendirektor\w*|produktdirektor\w*|global product director|marketingverantwortlich\w*)\b/,
     context: /\b(wechsel\w*|wechselt|ubernimmt|ubernahme|verlasst|verlassen|scheidet aus|abgang|nachfolge\w*|nachfolger\w*|folgt auf|ernannt|ernennt|bestellt|berufen|beruft|antritt|tritt an|tritt zuruck|rucktritt|besetzt|neubesetzung|umbesetzung|vakan\w*|interim|neuer|neue|neues|kommissarisch|appointed|appoints|joins|steps down|succeeds|hires|named|departs|exit)\b/,
   },
@@ -139,8 +139,8 @@ const SALES_FAMILIES: SimpleFamily[] = [
     id: "strategiewechsel",
     lane: "sales",
     label: "Strategiewechsel",
-    definition: "Das Unternehmen ändert seine Marketing-, Marken-, Kunden- oder Handelsstrategie erkennbar (Neuausrichtung, Repositionierung, Transformationsprogramm).",
-    trigger: /\b(strategiewechsel|strategieschwenk|kurswechsel|neuausrichtung|neu ausgerichtet|neuaufstellung|neuausgerichtet|repositionier\w*|neupositionier\w*|strategieprogramm|transformationsprogramm|strategische wende|neue strategie|strategie neu|strategy shift|strategy pivot|strategy reset|strategy overhaul|refocus\w*|realign\w*|turnaround)\b/,
+    definition: "Das Unternehmen ändert seine Marketing-, Marken-, Kunden- oder Handelsstrategie erkennbar (Neuausrichtung, Repositionierung, Transformationsprogramm). Die Ernennung einer Transformationsleitung zählt nur, wenn ihr Mandat nachweislich Marke, Kunden, Marketing, Omnichannel, Daten, Portfolio oder das Handelsmodell verändert; der Titel allein genügt nicht.",
+    trigger: /\b(strategiewechsel|strategieschwenk|kurswechsel|neuausrichtung|neu ausgerichtet|neuaufstellung|neuausgerichtet|repositionier\w*|neupositionier\w*|strategieprogramm|transformationsprogramm|strategische wende|neue strategie|strategie neu|strategy shift|strategy pivot|strategy reset|strategy overhaul|refocus\w*|realign\w*|turnaround|chief transformation officer|transformation officer|transformation office|transformationschef\w*|transformationsleitung|transformationsbeauftragte\w*|transformationsrolle)\b/,
     context: /\b(marke\w*|brand\w*|marketing|kunde\w*|kundin\w*|customer|consumer|konsument\w*|shopper|handel\w*|retail|sortiment\w*|portfolio|kommunikation|media|category|preis\w*|pricing|omnichannel|e commerce|d2c|zielgrupp\w*)\b/,
   },
   {
@@ -266,7 +266,7 @@ export const SIMPLE_GUARDRAILS: SimpleGuardrail[] = [
   { id: "candidate_lock", label: "Nur vorgefilterte Familien", description: "Gemini darf nur eine der Signalfamilien wählen, die der Vorfilter für diesen Artikel bereits bestätigt hat." },
   { id: "sensitive_topics", label: "Politik, Religion, sensible Themen aus", description: "Sensible Themen im Titel schliessen den Artikel komplett aus; im Text schliessen sie die bild.de-News-Spur aus." },
   { id: "news_domain_lock", label: "News nur von bild.de", description: `Die Marketing-Spur "Aktuelle News & Topics" akzeptiert ausschliesslich Artikel von ${SIMPLE_NEWS_DOMAINS.join(", ")}.` },
-  { id: "roots_link", label: "ROOTS-Bezug als Zusatz", description: "Passt eine ROOTS-Leistung inhaltlich, wird sie mit Anschlusssatz ausgewiesen. Fehlt der Bezug, bleibt das Signal bestehen - nur die virale Spur verlangt ihn zwingend." },
+  { id: "roots_link", label: "Konkreter ROOTS-Leistungsfit", description: "Nur zur Signalfamilie passende Leistungen samt Beschreibung gehen in den KI-Aufruf. Gespeichert werden ausschließlich exakte Leistungsnamen und ein unternehmensbezogener Anschluss; generische Formeln werden entfernt." },
   { id: "editorial_core", label: "Nur der redaktionelle Kern", description: "Die KI markiert im selben Analyseaufruf angehängte Empfehlungen, Navigation und fremde Teaser. Der Server schneidet sie nur an einem belegten wörtlichen Endzitat ab." },
   { id: "tier1", label: "Tier-1 nur als Hauptakteur", description: "Die Namenssuche erzeugt nur Kandidaten. Gespeichert wird ein Tier-1-Unternehmen erst, wenn die KI im selben Aufruf Rolle und wörtlichen Beleg aus dem redaktionellen Kern liefert." },
   { id: "min_text", label: "Mindestlänge", description: `Artikel unter ${SIMPLE_MIN_TEXT_CHARS} Zeichen Text gehen nicht an das Modell.` },
@@ -386,14 +386,106 @@ export type SimpleAiAnswer = {
   relevance: { a: number; b: number; c: number; d: number; reason: string };
 };
 
+// Nur Leistungen, die zur kostenlosen Vorfilter-Familie passen, gehen in den
+// Artikelprompt. So erhaelt das Modell echte Leistungsbeschreibungen statt 48
+// nackter Namen, ohne den Prompt mit dem ganzen Portfolio aufzublaehen.
+const SIMPLE_FAMILY_OFFERINGS: Record<string, string[]> = {
+  cmo_wechsel: [
+    "people_erste_100_tage_cmo", "planning_marketing_audit", "planning_marketingstrategie",
+    "purpose_brand_audit", "purpose_markenpositionierung", "productivity_marketing_operations_audit",
+  ],
+  strategiewechsel: [
+    "planning_marketing_audit", "planning_wachstumsstrategie", "planning_marketingstrategie",
+    "planning_markenstrategie", "planning_markenarchitektur", "performance_digital_maturity_assessment",
+    "performance_datenstrategie_exekution", "productivity_marketing_operations_audit",
+    "productivity_project_management_office",
+  ],
+  marken_relaunch: [
+    "purpose_brand_audit", "purpose_markenpositionierung", "planning_markenstrategie",
+    "planning_markenarchitektur", "purpose_internal_branding", "productivity_design_to_print_artwork",
+  ],
+  eigenmarken_launch: [
+    "purpose_handelsmarkenstrategie", "purpose_markenpositionierung", "planning_markenstrategie",
+    "planning_markt_wettbewerbsanalyse", "planning_go_to_market_strategie", "purpose_value_proposition",
+  ],
+  design_to_print: [
+    "productivity_design_to_print_artwork", "productivity_marketing_prozesse",
+    "productivity_marketing_operations_audit", "productivity_governance_modell",
+    "productivity_project_management_office", "performance_marketing_tool_auswahl",
+  ],
+  marketing_prozess: [
+    "productivity_marketing_operations_audit", "productivity_marketing_operations_ziele",
+    "productivity_marketing_prozesse", "productivity_governance_modell",
+    "productivity_project_management_office", "people_agenturen_richtig_briefen",
+    "people_effiziente_agentur_pitches", "productivity_martech_oekosystem",
+  ],
+  news_aktuell: [
+    "planning_markt_wettbewerbsanalyse", "presence_customer_insights", "planning_marketingstrategie",
+    "purpose_markenpositionierung", "presence_content_strategie",
+  ],
+  virale_news: [
+    "presence_content_strategie", "presence_social_media_strategie", "purpose_brand_purpose",
+    "purpose_markenpositionierung", "purpose_internal_branding", "planning_marketingstrategie",
+  ],
+  marketing_strategie: [
+    "planning_marketing_audit", "planning_marketingstrategie", "planning_integrierte_marketingplanung",
+    "planning_wachstumsstrategie", "performance_marketing_performance_management",
+    "productivity_marketing_operations_audit",
+  ],
+  marken_strategie: [
+    "purpose_brand_audit", "purpose_markenpositionierung", "planning_markenstrategie",
+    "planning_markenarchitektur", "purpose_brand_purpose", "purpose_value_proposition",
+    "purpose_internal_branding",
+  ],
+  eigenmarken_strategie: [
+    "purpose_handelsmarkenstrategie", "planning_markt_wettbewerbsanalyse", "purpose_markenpositionierung",
+    "planning_markenstrategie", "purpose_value_proposition", "presence_customer_insights",
+  ],
+  customer_insights: [
+    "presence_customer_insights", "presence_customer_journey_maps", "presence_customer_experience_management",
+    "performance_customer_journey_analytics", "planning_markt_wettbewerbsanalyse",
+    "presence_content_strategie", "planning_ideation_workshops",
+  ],
+  prozess_knowhow: [
+    "productivity_design_to_print_artwork", "productivity_marketing_operations_audit",
+    "productivity_marketing_prozesse", "productivity_governance_modell",
+    "productivity_project_management_office", "productivity_marketing_automation",
+  ],
+};
+
+export function selectRootsPortfolio(rootsPortfolio: string, families: SimpleFamily[], limit = 10): string {
+  const ids = new Set(families.flatMap((family) => SIMPLE_FAMILY_OFFERINGS[family.id] || []));
+  const lines = String(rootsPortfolio || "").split("\n").map((line) => line.trim()).filter(Boolean);
+  const selected = lines.filter((line) => {
+    const id = line.match(/^-\s*([^|]+)\|/)?.[1]?.trim();
+    return id ? ids.has(id) : false;
+  });
+  return selected.slice(0, Math.max(1, limit)).join("\n");
+}
+
+function rootsPortfolioLabels(portfolio: string): string[] {
+  return String(portfolio || "").split("\n").map((line) => {
+    return line.match(/^-\s*[^|]+\|\s*\[[^\]]+\]\s*([^:]+):/)?.[1]?.trim() || "";
+  }).filter(Boolean);
+}
+
+function validatedRootsOffering(value: unknown, portfolio: string): string {
+  const allowed = new Map(rootsPortfolioLabels(portfolio).map((label) => [normalizeMatchText(label), label]));
+  const requested = String(value || "").split(/\s+\+\s+|\s*;\s*/).map((part) => part.trim()).filter(Boolean);
+  if (requested.length < 1 || requested.length > 3) return "";
+  const canonical = requested.map((part) => allowed.get(normalizeMatchText(part)) || "");
+  return canonical.every(Boolean) ? canonical.join(" + ") : "";
+}
+
 export function buildSimplePrompt(
   article: SimpleArticleInput,
   families: SimpleFamily[],
   rootsPortfolio = "",
   tier1 : string[] = [],
 ): string {
-  // Jedes Signal braucht einen Bezug zu einer ROOTS-Leistung, deshalb steht das
-  // Portfolio immer im Prompt - kompakt, nur Säule und Leistungsname.
+  // Im Prompt stehen nur zur Kandidatenlage passende Leistungen, dafuer mit
+  // ihrer echten Beschreibung. Das ist zugleich praeziser und tokenaermer.
+  const selectedPortfolio = selectRootsPortfolio(rootsPortfolio, families);
   const hasViralCandidate = families.some((family) => family.id === SIMPLE_VIRAL_FAMILY_ID);
   const candidates = families
     .map((family) => `- ${family.id} (${family.lane}): ${family.definition}`)
@@ -405,11 +497,13 @@ export function buildSimplePrompt(
   return `<candidate_signals>
 ${candidates}
 </candidate_signals>
-${rootsPortfolio ? `<roots_portfolio>\n${rootsPortfolio}\n</roots_portfolio>
+${selectedPortfolio ? `<roots_portfolio>\n${selectedPortfolio}\n</roots_portfolio>
 <roots_rules>
-Zusatzangabe für jedes Signal, in Marketing wie in Sales: Wenn eine Leistung aus roots_portfolio inhaltlich anschliesst, nenne sie in roots_offering und beschreibe in roots_link_de mit einem deutschen Satz, wie ROOTS damit andocken kann.
+Waehle nur aus roots_portfolio. roots_offering enthaelt den exakten Leistungsnamen oder bis zu drei komplementaere exakte Leistungsnamen, verbunden mit " + ". Erfinde oder verallgemeinere keine Leistung.
+Fuer Sales muss roots_link_de zwei konkrete Saetze enthalten: zuerst, welches im Artikel belegte Ziel, Problem, Mandat, Risiko oder welche Chance company gerade hat; danach, was ROOTS mit der gewaehlten Leistung oder Kombination dafuer konkret analysiert, entwickelt, priorisiert, strukturiert oder umsetzt. Nenne company. Verboten sind generische Formeln wie "ROOTS kann mit X andocken", "ROOTS kann unterstuetzen" oder eine unbelegte Kaufabsicht.
+Ein CMO-/Marketingleitungswechsel ist bereits ein belastbarer Timing-Anlass fuer Standortbestimmung, Stakeholder-Ausrichtung, Priorisierung und die ersten 100 Tage. Behaupte trotzdem kein Problem, Budget oder Beratungsmandat.
+Fuer Marketing beschreibt roots_link_de, welches belegte Fachwissen aus dem Artikel zu welcher ROOTS-Leistung passt und wie es als fachliche Grundlage genutzt werden kann.
 Findest du keinen belastbaren Anschluss, lass beide Felder leer. Das ist kein Grund, das Signal zu verwerfen - erfinde niemals einen Bezug.
-Für Sales beschreibt der Satz, was ROOTS dem betroffenen Unternehmen anbieten kann. Für Marketing beschreibt er, welches ROOTS-Thema sich mit diesem Artikel belegen lässt.
 </roots_rules>${hasViralCandidate ? `
 <viral_rules>
 Für signal_id "virale_news" gilt zusätzlich: Das Thema muss breit diskutiert sein und sich für einen LinkedIn-Beitrag eignen, auch wenn es kein Marketingthema ist.
@@ -426,6 +520,7 @@ Politik, Religion, Krieg, Kriminalität, Unglücke, Krankheit und andere sensibl
 Bewerte die Relevanz in vier Teilwerten von 0 bis 100. Für lane="marketing": a Neuheit, b strategischer Wert, c Übertragbarkeit auf andere Marken, d Evidenzstärke. Für lane="sales": a Problemstärke des Unternehmens, b Passung zu strategischer Marketingberatung, c erkennbare Kaufabsicht oder Bedarf, d Timing. 80+ nur bei konkretem, belegtem Anlass; ein blosses Thema ohne Beleg bleibt unter 50. relevance.reason ist ein deutscher Satz.
 score ist dein Gesamteindruck von 0 bis 100; der ausgewiesene Prozentwert wird serverseitig aus den vier Teilwerten berechnet.
 Sales heisst: ein konkretes Unternehmen hat gerade eine Situation, in der ROOTS-Beratung anschlussfähig wäre. Nenne dieses Unternehmen in company.
+Bei cmo_wechsel ist die neue oder veraenderte Marketingverantwortung selbst die konkrete Situation und der Zeitanker. Bei strategiewechsel ist ein Chief-Transformation-Titel allein kein Signal: Das Artikelzitat muss ein konkretes Mandat fuer Marke, Kunden, Marketing, Omnichannel, Daten, Portfolio, Wachstum oder Handelsmodell belegen.
 Wenn tier1_unternehmen vorhanden ist, sind das nur durch eine kostenlose Namenssuche gefundene Kandidaten, noch keine erkannten Zielkunden. Schreibe in tier1_companies ausschliesslich Unternehmen, die im redaktionellen Kern selbst handelnder Hauptakteur, Entscheider, direkt Betroffener oder zentraler Gegenstand sind. Liefere fuer jedes Unternehmen ein wörtliches evidence-Zitat aus dem Kern und die passende role. Eine Neben-, Listen-, Navigations-, Empfehlungs-, Teaser-, Award-, Filiallisten- oder Vergleichserwaehnung reicht niemals. Eine Nennung in einem fremden Block darf niemals in tier1_companies oder company landen.
 company ist das eine primaere Unternehmen, um dessen konkrete Situation es im Signal geht. company_evidence ist ein wörtliches Zitat aus dem redaktionellen Kern, das company namentlich nennt und seine zentrale Rolle belegt. Ist kein Unternehmen eindeutig Gegenstand des Artikels, bleiben company und company_evidence leer. Bei Sales sind ein konkret belegtes company und company_evidence Pflicht.
 Marketing heisst: der Artikel liefert übertragbare Substanz für eigene Inhalte, unabhängig von einem einzelnen Unternehmen.
@@ -439,7 +534,7 @@ buying_center_roles enthält ein bis vier Rollen, die laut Artikeltext von diese
 </rules>
 <answer_format>
 Antworte ausschliesslich mit einem JSON-Objekt, ohne Text davor oder danach:
-{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","trigger_de":"zwei bis drei belegte Sätze oder leer","company":"primaeres Unternehmen oder leerer String","company_evidence":"wörtlicher Unternehmensbeleg oder leerer String","tier1_companies":[{"name":"Name aus tier1_unternehmen","evidence":"wörtlicher Beleg aus dem Kern","role":"primary_actor|decision_maker|directly_affected|central_subject"}],"has_unrelated_tail":false,"editorial_end_quote":"letzter wörtlicher Satz des Kernartikels oder leer","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"Leistung oder leerer String","roots_link_de":"ein Satz oder leerer String","person_name":"Name oder leerer String","person_role":"Rolle oder leerer String","buying_center_roles":["Rolle"],"relevance":{"a":0,"b":0,"c":0,"d":0,"reason":"ein Satz"}}
+{"lane":"sales|marketing|keine","signal_id":"id aus candidate_signals oder leerer String","confidence":0.0-1.0,"score":0-100,"evidence":"wörtliches Zitat","headline_de":"deutsche Überschrift","why_de":"ein deutscher Satz","trigger_de":"zwei bis drei belegte Sätze oder leer","company":"primaeres Unternehmen oder leerer String","company_evidence":"wörtlicher Unternehmensbeleg oder leerer String","tier1_companies":[{"name":"Name aus tier1_unternehmen","evidence":"wörtlicher Beleg aus dem Kern","role":"primary_actor|decision_maker|directly_affected|central_subject"}],"has_unrelated_tail":false,"editorial_end_quote":"letzter wörtlicher Satz des Kernartikels oder leer","summary_de":"maximal zwei Sätze","article_type":"news|analysis|interview|opinion|study|report|case_study|press_release|company_update|event_report|viral_news|other","language":"de|en|other","roots_offering":"ein bis drei exakte Leistungen mit + oder leer","roots_link_de":"konkreter Leistungsfit oder leer","person_name":"Name oder leerer String","person_role":"Rolle oder leerer String","buying_center_roles":["Rolle"],"relevance":{"a":0,"b":0,"c":0,"d":0,"reason":"ein Satz"}}
 </answer_format>
 ${tier1.length ? `<tier1_unternehmen>${tier1.join(", ")}</tier1_unternehmen>\n` : ""}<source name="${article.source?.company || "unbekannt"}" category="${article.source?.category || "unbekannt"}" />
 <article_title>${String(article.title || "")}</article_title>
@@ -478,8 +573,8 @@ export const SIMPLE_RESPONSE_SCHEMA = {
     summary_de: { type: "STRING", description: "Deutsche Zusammenfassung des Artikels, maximal zwei Sätze." },
     article_type: { type: "STRING", enum: [...SIMPLE_ARTICLE_TYPES] },
     language: { type: "STRING", enum: ["de", "en", "other"] },
-    roots_offering: { type: "STRING", description: "Passende ROOTS-Leistung aus roots_portfolio oder leer." },
-    roots_link_de: { type: "STRING", description: "Ein deutscher Satz, wie ROOTS mit dieser Leistung an das Thema andocken kann. Leer, wenn kein belastbarer Bezug besteht." },
+    roots_offering: { type: "STRING", description: "Ein bis drei exakte ROOTS-Leistungsnamen aus roots_portfolio, mit + verbunden, oder leer." },
+    roots_link_de: { type: "STRING", description: "Konkreter, belegter Leistungsfit. Sales: zwei Sätze mit Unternehmen, Situation und ROOTS-Arbeit. Marketing: fachlicher Nutzwert. Leer ohne belastbaren Bezug." },
     person_name: { type: "STRING", description: "Im Artikel genannte Person, die das Signal verantwortet, oder leer." },
     person_role: { type: "STRING", description: "Rolle dieser Person, wörtlich aus dem Artikel, oder leer." },
     buying_center_roles: { type: "ARRAY", items: { type: "STRING" }, description: "Ein bis vier im Artikel belegte Rollen, die von diesem Signal betroffen sind." },
@@ -510,7 +605,7 @@ export type SimpleDeps = {
   model?: string;
   /** Unveraenderliche Zuordnung fuer Kosten und Tokens dieses Simple-Laufs. */
   runId?: string;
-  /** Kompakte Liste der ROOTS-Leistungen; nur für die virale Spur gebraucht. */
+  /** Strukturierte ROOTS-Leistungen; je Familie geht nur eine kleine Teilmenge in den Prompt. */
   rootsPortfolio?: string;
   /** Tier-1-Zielkunden, identisch zur Advanced-Pipeline. */
   tier1Companies?: SimpleTier1Company[];
@@ -792,6 +887,17 @@ function isStrongSimpleTrigger(trigger: string, company: string): boolean {
   return companyTokens.length === 0 || companyTokens.some((token) => normalizeMatchText(trigger).includes(token));
 }
 
+function isConcreteRootsLink(link: string, lane: SimpleLane, company = ""): boolean {
+  if (link.length < 70 || link.length > 700) return false;
+  if (/roots kann mit .{0,80} andocken|roots kann (?:hier )?unterst(?:u|ü)tzen/i.test(link)) return false;
+  if (!/(analys|entwick|defin|prioris|struktur|bewert|konzip|moder|gestalt|veranker|optimier|begleit|schärf|uebersetz|übersetz|audit|roadmap)/i.test(link)) return false;
+  if (lane !== "sales") return true;
+  const sentences = link.split(/[.!?](?:\s|$)/).map((part) => part.trim()).filter(Boolean);
+  if (sentences.length < 2) return false;
+  const companyTokens = normalizeMatchText(company).split(/\s+/).filter((token) => token.length >= 4);
+  return companyTokens.length > 0 && companyTokens.some((token) => normalizeMatchText(link).includes(token));
+}
+
 export type EditorialCoreResult = {
   text: string;
   trimmed: boolean;
@@ -799,6 +905,36 @@ export type EditorialCoreResult = {
   removedChars: number;
   endQuote: string | null;
 };
+
+// Eindeutige, wiederkehrende Verlagsbausteine werden vor Vorfilter und KI
+// kostenlos abgeschnitten. Das vermeidet, dass eine korrekte Kurzmeldung nur
+// deshalb verloren geht, weil das Modell zwar die Paywall erkennt, aber kein
+// exaktes Endzitat fuer die technische Schnittmarke liefert.
+const SIMPLE_KNOWN_TAIL_MARKERS = [
+  /\n\s*#{0,3}\s*Du willst weiterlesen\?/i,
+  /\n\s*#{0,3}\s*Noch kein Abo\?/i,
+  /\n\s*#{0,3}\s*Sie haben Fragen oder Anmerkungen zu diesem Artikel\?/i,
+  /\n\s*#{0,3}\s*Jetzt weiterlesen mit/i,
+  /\n\s*#{0,3}\s*Bereits Abonnent(?:in)?\?/i,
+];
+
+export function deterministicEditorialCore(body: string): EditorialCoreResult {
+  const source = String(body || "").trim();
+  let firstMarker = -1;
+  for (const pattern of SIMPLE_KNOWN_TAIL_MARKERS) {
+    const index = source.search(pattern);
+    if (index >= SIMPLE_MIN_TEXT_CHARS && (firstMarker < 0 || index < firstMarker)) firstMarker = index;
+  }
+  if (firstMarker < 0) {
+    return { text: source, trimmed: false, boundaryValid: true, removedChars: 0, endQuote: null };
+  }
+  const text = source.slice(0, firstMarker).trim();
+  const removedChars = source.length - text.length;
+  if (text.length < SIMPLE_MIN_TEXT_CHARS || removedChars < 120) {
+    return { text: source, trimmed: false, boundaryValid: true, removedChars: 0, endQuote: null };
+  }
+  return { text, trimmed: true, boundaryValid: true, removedChars, endQuote: null };
+}
 
 function compactWhitespaceWithMap(value: string): { text: string; map: number[] } {
   let text = "";
@@ -1019,7 +1155,12 @@ function rejected(
 }
 
 export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArticleInput): Promise<SimpleResult> {
-  const prefilter = prefilterSimpleArticle(article, deps.tier1Companies || []);
+  const rawBody = String(article.cleaned_content || article.content || "");
+  const deterministicCore = deterministicEditorialCore(rawBody);
+  const preparedArticle = deterministicCore.trimmed
+    ? { ...article, cleaned_content: deterministicCore.text }
+    : article;
+  const prefilter = prefilterSimpleArticle(preparedArticle, deps.tier1Companies || []);
   if (prefilter.reject) return rejected(article, prefilter.reject, prefilter.families, null);
 
   const model = deps.model || SIMPLE_MODEL;
@@ -1028,7 +1169,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     answer = await callSimpleModel(
       deps,
       article.id,
-      buildSimplePrompt(article, prefilter.families, deps.rootsPortfolio || "", prefilter.tier1),
+      buildSimplePrompt(preparedArticle, prefilter.families, deps.rootsPortfolio || "", prefilter.tier1),
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1041,14 +1182,14 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     return { ...rejected(article, "modellfehler", prefilter.families, model), error_kind: kind };
   }
 
-  const body = String(article.cleaned_content || article.content || "");
+  const body = String(preparedArticle.cleaned_content || preparedArticle.content || "");
   const editorial = editorialCoreFromBoundary(
     body,
     answer.has_unrelated_tail === true,
     String(answer.editorial_end_quote || ""),
   );
   const coreText = `${String(article.title || "").trim()}\n${editorial.text}`.trim();
-  if (editorial.trimmed) {
+  if (deterministicCore.trimmed || editorial.trimmed) {
     // `content` bleibt als Rohfassung erhalten. Damit sind die entfernten
     // Seitenelemente weiterhin rekonstruierbar, waehrend alle kuenftigen
     // Analysen und die Artikelansicht den belegten Kern verwenden.
@@ -1059,10 +1200,11 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
       });
   }
   const editorialDetails = {
-    fremdblock_erkannt: answer.has_unrelated_tail === true,
+    fremdblock_erkannt: deterministicCore.trimmed || answer.has_unrelated_tail === true,
+    bekannte_verlagsgrenze: deterministicCore.trimmed,
     grenze_belegt: editorial.boundaryValid,
     endzitat: editorial.endQuote,
-    entfernte_zeichen: editorial.removedChars,
+    entfernte_zeichen: deterministicCore.removedChars + editorial.removedChars,
     ignorierte_tier1_namensfunde: prefilter.tier1,
   };
   const answerContext = {
@@ -1094,9 +1236,10 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   // Der ROOTS-Bezug ist eine Zusatzinformation: er hilft bei der Einordnung,
   // entscheidet aber nicht über Annahme oder Ablehnung. Nur die virale Spur
   // braucht ihn, weil sie sonst kein fachliches Kriterium hätte.
-  const rootsLink = String(answer.roots_link_de || "").trim();
-  const rootsOffering = String(answer.roots_offering || "").trim();
-  if (family.id === SIMPLE_VIRAL_FAMILY_ID && (rootsLink.length < 25 || !rootsOffering)) {
+  const selectedPortfolio = selectRootsPortfolio(deps.rootsPortfolio || "", prefilter.families);
+  const rootsLinkCandidate = String(answer.roots_link_de || "").trim();
+  const rootsOffering = validatedRootsOffering(answer.roots_offering, selectedPortfolio);
+  if (family.id === SIMPLE_VIRAL_FAMILY_ID && (!rootsOffering || !isConcreteRootsLink(rootsLinkCandidate, family.lane))) {
     return { ...rejected(article, "kein_roots_bezug", prefilter.families, model), ...answerContext };
   }
   // Person und Rollen müssen im redaktionellen Kern stehen, nicht in Teasern.
@@ -1152,6 +1295,9 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   if (family.lane === "sales" && !company) {
     return { ...rejected(article, "zielunternehmen_nicht_belegt", prefilter.families, model), ...answerContext };
   }
+  const rootsLink = rootsOffering && isConcreteRootsLink(rootsLinkCandidate, family.lane, company || "")
+    ? rootsLinkCandidate
+    : "";
   const targetTier1 = company ? tier1Decisions.find((entry) => entry.name === company)?.name || null : null;
   // v2 erzeugt keinen automatischen zweiten KI-Aufruf. Fehlt ein belastbarer
   // Aufhaenger im Haupt-JSON, bleibt das Feld bewusst leer.
@@ -1290,7 +1436,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL, research
       steps: [
         { title: "Prompt bauen", copy: "Enthalten sind: die bestätigten Familien mit Definition, mögliche Tier-1-Namensfunde, Quelle, Titel und der ausgewählte Artikeltext. Namensfunde sind ausdrücklich noch keine erkannten Unternehmen.", kind: "Server" },
         { title: "Redaktionellen Kern abgrenzen", copy: "Im selben Aufruf erkennt das Modell angehängte Empfehlungen, Navigation und fremde Teaser. Bei einem Fremdblock liefert es den letzten echten Artikelsatz als wörtliche Schnittmarke.", kind: "KI + Schutzregel" },
-        { title: "ROOTS-Portfolio mitgeben", copy: "Das Leistungsportfolio liegt kompakt im selben Aufruf. Das Modell muss semantisch entscheiden, welche Leistung inhaltlich anschliesst - ohne Keywordliste.", kind: "Server" },
+        { title: "Passende ROOTS-Leistungen mitgeben", copy: "Der kostenlose Vorfilter wählt je Signalfamilie höchstens zehn passende Leistungen aus. Im selben KI-Aufruf erhält das Modell deren exakte Namen und Beschreibungen von ROOTS statt des gesamten Portfolios.", kind: "Server" },
         { title: "Semantische Entscheidung", copy: `${option.label} wählt genau eine Familie, vergibt Konfidenz und Nutzwert, kopiert ein wörtliches Zitat und schreibt Überschrift, Begründung und Zusammenfassung auf Deutsch.`, kind: "KI" },
         { title: "Zielunternehmen bestimmen", copy: "Ein Tier-1-Name wird nur mit wörtlichem Beleg und zentraler Rolle übernommen: Hauptakteur, Entscheider, direkt betroffen oder zentraler Gegenstand. Neben-, Listen-, Teaser-, Award-, Navigations- und Vergleichserwähnungen reichen nicht.", kind: "KI + Schutzregel" },
         { title: "Trigger & Aufhänger vertiefen", copy: "Im selben Hauptlauf formuliert das Modell zwei bis drei belegte Sätze: aktueller Anlass, strategische Spannung und optional ein passender ROOTS-Gesprächseinstieg. Allgemeine Insight-Floskeln sind verboten.", kind: "KI + Schutzregel" },
@@ -1301,7 +1447,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL, research
       details: [
         { label: "Modell", value: `${option.label} (in Kosten & Betrieb einstellbar)` },
         { label: "Antwortform", value: "Ein JSON-Objekt: redaktionelle Schnittmarke, Spur, Familie, Konfidenz, vier Relevanz-Teilwerte, Zitat, Überschrift, Begründung, Zusammenfassung, Zielunternehmen mit Beleg, bestätigte Tier-1-Hauptakteure, Trigger & Aufhänger, Artikeltyp, Sprache, Person und Buying Center" },
-        { label: "ROOTS-Portfolio im Prompt", value: "Immer enthalten, kompakt als Säule und Leistungsname. Das Modell ordnet semantisch zu, wenn eine Leistung passt - erzwungen wird es nicht." },
+        { label: "ROOTS-Portfolio im Prompt", value: "Je Signalfamilie maximal zehn vorausgewählte Leistungen mit exaktem Namen und ROOTS-Beschreibung. Kombinationen aus bis zu drei Leistungen sind möglich." },
         { label: "Durchläufe", value: "Genau ein Analyseaufruf pro vorgefiltertem Artikel; kein automatischer Feld-Nachlauf" },
       ],
     },
@@ -1317,7 +1463,7 @@ export function simpleStageManifest(activeModel: string = SIMPLE_MODEL, research
         { title: "Unternehmensbelege prüfen", copy: "Company und jedes Tier-1-Unternehmen brauchen ein wörtliches Zitat aus dem redaktionellen Kern, das den Namen selbst enthält. Sales ohne belegtes Zielunternehmen wird verworfen.", kind: "Server" },
         { title: "Person und Rollen gegenprüfen", copy: "Name, Rolle und jede Buying-Center-Rolle müssen wörtlich im Artikel vorkommen, sonst werden sie verworfen.", kind: "Server" },
         { title: "Sensibles Zitat abfangen", copy: "Auch ein formal gültiges Zitat wird verworfen, wenn es ein sensibles Thema betrifft.", kind: "Deterministischer Code" },
-        { title: "ROOTS-Bezug übernehmen", copy: "Nennt das Modell eine Leistung mit Anschlusssatz, wird sie gespeichert und angezeigt. Fehlt sie, bleibt das Signal gültig - nur bei viralen News führt ein fehlender Bezug zur Ablehnung.", kind: "Server" },
+        { title: "ROOTS-Bezug gegenprüfen", copy: "Der Server akzeptiert nur exakte Namen der mitgegebenen Leistungen. Bei Sales muss der Anschluss das Zielunternehmen, seine belegte Situation und eine konkrete ROOTS-Arbeit in zwei Sätzen nennen; generische Andock-Floskeln werden entfernt.", kind: "Server" },
         { title: "Aufhänger gegenprüfen", copy: "Der im einzigen KI-Lauf erzeugte Aufhänger wird nur für das belegte Tier-1-Zielunternehmen gespeichert. Er muss den Namen nennen, aus zwei bis drei Sätzen bestehen und darf keine allgemeinen Insight-Floskeln enthalten.", kind: "Server" },
         { title: "Relevanz gewichten", copy: "Die vier Teilwerte werden serverseitig mit denselben Gewichten wie im Advanced-Modus zu einem Prozentwert verrechnet: Marketing 25/30/25/20, Sales 32/30/23/15.", kind: "Server" },
         { title: "Schwellen anwenden", copy: `Signale unter Konfidenz ${SIMPLE_MIN_CONFIDENCE} oder ${SIMPLE_MIN_SCORE} Prozent Relevanz landen in "Nicht relevant" statt in den Ergebnissen.`, kind: "Server" },
