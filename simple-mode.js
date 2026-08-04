@@ -13,6 +13,8 @@
 // Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
+import { simpleCurrentVersionLabel, simpleLaneCountLabel } from "./simple-view-state.mjs?v=20260804-2355";
+
 let ctx = null;
 let els = {};
 let bound = false;
@@ -235,6 +237,21 @@ function visibleSignals(lane) {
   });
 }
 
+function resultFiltersActive() {
+  return ctx.viewState.articleTypes.length > 0
+    || ctx.viewState.sources.length > 0
+    || companyFilterState.selected.length > 0;
+}
+
+function resetResultFilters() {
+  ctx.viewState.articleTypes.length = 0;
+  ctx.viewState.sources.length = 0;
+  companyFilterState.selected = [];
+  if (els.articleTypeFilter) els.articleTypeFilter.value = "all";
+  if (els.sourceFilter) els.sourceFilter.value = "all";
+  renderCompanyFilter();
+}
+
 function refreshFilterOptions() {
   const all = [...signalsByLane.marketing, ...signalsByLane.sales];
   const types = [...new Set(all.map((signal) => signal.article?.article_type).filter(Boolean))]
@@ -258,7 +275,12 @@ function renderLane(lane) {
   const count = lane === "sales" ? els.salesCount : els.marketingCount;
   if (!list) return;
   const signals = visibleSignals(lane);
-  count.textContent = signals.length.toLocaleString("de-DE");
+  const total = signalsByLane[lane].length;
+  const filtersActive = resultFiltersActive();
+  count.textContent = simpleLaneCountLabel(signals.length, total, filtersActive);
+  count.title = filtersActive && signals.length !== total
+    ? `${signals.length.toLocaleString("de-DE")} sichtbar · ${total.toLocaleString("de-DE")} insgesamt`
+    : `${total.toLocaleString("de-DE")} Signale insgesamt`;
   list.innerHTML = signals.length
     ? signals.map(signalCard).join("")
     : `<div class="track-card-empty">Keine Signale entsprechen den gewählten Filtern.</div>`;
@@ -316,11 +338,11 @@ async function loadRules() {
 // diesem Regelstand klassifiziert wurden.
 async function loadVersions() {
   try {
-    const { versions } = await ctx.callApi("list_simple_versions");
+    const { versions, current } = await ctx.callApi("list_simple_versions");
     versionList = versions || [];
     if (!els.version) return;
     const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
-    els.version.innerHTML = `<option value="current">Aktueller Stand</option>${versionList
+    els.version.innerHTML = `<option value="current">${esc(simpleCurrentVersionLabel(versionList, current))}</option>${versionList
       .map((entry) => `<option value="${esc(entry.version)}" ${entry.version === selectedVersion ? "selected" : ""}>Version ${esc(entry.version)} · ${entry.archived_signals ?? entry.signals} Signale · ${esc(date(entry.first_seen_at))}</option>`)
       .join("")}`;
   } catch (_error) { /* Auswahl bleibt bei der aktuellen Pipeline */ }
@@ -330,8 +352,8 @@ async function loadResults({ keepStatus = false } = {}) {
   const versionFilter = selectedVersion ? { pipeline_version: selectedVersion } : {};
   try {
     const [marketing, sales, rejected, status] = await Promise.all([
-      ctx.callApi("list_simple_signals", { lane: "marketing", limit: 60, ...versionFilter }),
-      ctx.callApi("list_simple_signals", { lane: "sales", limit: 60, ...versionFilter }),
+      ctx.callApi("list_simple_signals", { lane: "marketing", limit: 200, ...versionFilter }),
+      ctx.callApi("list_simple_signals", { lane: "sales", limit: 200, ...versionFilter }),
       ctx.callApi("list_simple_rejected", { limit: 60, reasons: ["zu_unsicher", "evidenz_fehlt", "familie_nicht_erlaubt"], ...versionFilter }),
       ctx.callApi("get_simple_run_status"),
     ]);
@@ -440,6 +462,9 @@ function bindUi() {
   });
   els.version?.addEventListener("change", () => {
     selectedVersion = els.version.value === "current" ? "" : els.version.value;
+    // Ein Regelstandswechsel beginnt bewusst ungefiltert. Sonst wirkt ein
+    // zuvor gewählter Quellen-, Typ- oder Unternehmensfilter wie Datenverlust.
+    resetResultFilters();
     rulesLoaded = false;
     simpleRules = null;
     // Sichtbarer Wechsel: erst leeren und laden zeigen, dann den neuen Stand.
