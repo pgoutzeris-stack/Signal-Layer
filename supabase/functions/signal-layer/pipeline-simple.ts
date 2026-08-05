@@ -32,9 +32,9 @@ import {
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
-export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.4";
+export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.5";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "2.4";
+export const SIMPLE_VERSION = "2.5";
 export const SIMPLE_UPDATED_AT = "2026-08-05";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -1496,13 +1496,28 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     reportedCompany = leadershipFallback.company;
     companyEvidence = leadershipFallback.companyEvidence;
   }
-  const reportedTier1 = resolveTier1Company(reportedCompany, prefilter.tier1, deps.tier1Companies || []);
-  const reportedTerms = reportedTier1 ? companyTerms(reportedTier1) : [reportedCompany];
-  const company = reportedCompany && companyEvidence.length >= 20
+  let reportedTier1 = resolveTier1Company(reportedCompany, prefilter.tier1, deps.tier1Companies || []);
+  let reportedTerms = reportedTier1 ? companyTerms(reportedTier1) : [reportedCompany];
+  let company = reportedCompany && companyEvidence.length >= 20
       && evidenceExists(companyEvidence, coreText)
       && evidenceNamesCompany(companyEvidence, reportedTerms)
     ? (reportedTier1?.name || reportedCompany)
     : null;
+  // Nicht nur leere, sondern auch formal ungueltige KI-Unternehmensbelege
+  // duerfen einen ansonsten eindeutigen CMO-/CTO-Titel nicht vernichten. Der
+  // Fallback bleibt eng: Titel, Rolle, Wechsel und Unternehmen wurden oben
+  // bereits gemeinsam gegen den redaktionellen Kern geprueft.
+  if (!company && family.lane === "sales" && leadershipFallback) {
+    reportedCompany = leadershipFallback.company;
+    companyEvidence = leadershipFallback.companyEvidence;
+    reportedTier1 = resolveTier1Company(reportedCompany, prefilter.tier1, deps.tier1Companies || []);
+    reportedTerms = reportedTier1 ? companyTerms(reportedTier1) : [reportedCompany];
+    if (companyEvidence.length >= 20
+        && evidenceExists(companyEvidence, coreText)
+        && evidenceNamesCompany(companyEvidence, reportedTerms)) {
+      company = reportedTier1?.name || reportedCompany;
+    }
+  }
   if (reportedTier1 && company && !tier1Decisions.some((entry) => entry.name === reportedTier1.name)) {
     // company_evidence kommt aus derselben KI-Antwort und erfuellt dieselben
     // Belegregeln; dadurch geht ein primaeres Tier-1-Unternehmen nicht verloren,

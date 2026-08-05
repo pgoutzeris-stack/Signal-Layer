@@ -3,9 +3,9 @@ import test from "node:test";
 
 const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
 
-test("the canonical ROOTS match runs as a separate v2.4 ruleset", () => {
-  assert.equal(pipeline.SIMPLE_VERSION, "2.4");
-  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.4");
+test("the canonical ROOTS match runs as a separate v2.5 ruleset", () => {
+  assert.equal(pipeline.SIMPLE_VERSION, "2.5");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.5");
 });
 
 test("canonicalizes safe model variants to exact ROOTS database labels", () => {
@@ -79,6 +79,61 @@ test("an explicit CMO change survives a missing model company field", () => {
   assert.equal(fallback?.familyId, "cmo_wechsel");
   assert.equal(fallback?.company, "Xpeng");
   assert.match(fallback?.companyEvidence || "", /Marketing-Chef von Xpeng/);
+});
+
+test("an explicit CMO change also replaces an invalid model company citation", async () => {
+  const article = {
+    id: "cmo-invalid-evidence",
+    title: "Christian Wiegand wird Marketing-Chef von Xpeng | W&V",
+    cleaned_content: [
+      "Christian Wiegand wird Marketing-Chef von Xpeng.",
+      "Der neue Marketingleiter soll die Marke in Deutschland bekannt machen und die Produkte positionieren.",
+      "Er verantwortet Partnerschaften, Events und Kommunikation.",
+      "Damit beginnt eine neue Phase der Markenführung.",
+      "Der Hersteller baut sein Vertriebsnetz aus und will weitere Kundengruppen erreichen.",
+    ].join("\n\n"),
+  };
+  const modelAnswer = {
+    lane: "sales", signal_id: "cmo_wechsel", confidence: 0.92, score: 75,
+    evidence: "Christian Wiegand wird Marketing-Chef von Xpeng | W&V",
+    headline_de: "Xpeng ernennt neuen Marketing-Chef", why_de: "Der Führungswechsel schafft einen konkreten Timing-Anlass.",
+    trigger_de: "Xpeng besetzt seine Marketingleitung neu. Die neue Verantwortung schafft einen konkreten Zeitpunkt für die Priorisierung der Markenagenda.",
+    company: "Xpeng", company_evidence: "Dieser erfundene Satz steht nicht im Artikel.", tier1_companies: [],
+    has_unrelated_tail: false, editorial_end_quote: "", summary_de: "Xpeng ordnet seine Marketingleitung neu.",
+    article_type: "news", language: "de", roots_offering: "[people] Die ersten 100 Tage als CMO",
+    roots_link_de: "Xpeng hat seine Marketingverantwortung neu besetzt und muss die Markenagenda priorisieren. ROOTS strukturiert mit Die ersten 100 Tage als CMO Stakeholder, Prioritäten und die Agenda für die Startphase.",
+    person_name: "Christian Wiegand", person_role: "Marketing-Chef", buying_center_roles: ["Marketing-Chef"],
+    relevance: { a: 70, b: 80, c: 35, d: 90, reason: "Der belegte Führungswechsel ist ein aktueller Gesprächsanlass." },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{ message: { content: JSON.stringify(modelAnswer) } }],
+    usage: { prompt_tokens: 1200, completion_tokens: 400, total_tokens: 1600 },
+  }), { status: 200, headers: { "content-type": "application/json" } });
+  const fakeAdmin = {
+    schema: () => ({
+      from: () => ({
+        insert: async () => ({ error: null }),
+        update: () => ({ eq: async () => ({ error: null }) }),
+      }),
+    }),
+  };
+  try {
+    const result = await pipeline.classifySimpleArticle({
+      admin: fakeAdmin,
+      apiKey: "test-key",
+      model: "deepseek-v4-pro",
+      rootsPortfolio: "- people_erste_100_tage_cmo | [people] Die ersten 100 Tage als CMO: ROOTS strukturiert Standortbestimmung, Stakeholder, Prioritäten und die Agenda für die ersten 100 Tage.",
+      tier1Companies: [],
+    }, article);
+    assert.equal(result.status, "signal");
+    assert.equal(result.lane, "sales");
+    assert.equal(result.company, "Xpeng");
+    assert.equal(result.roots_offering, "Die ersten 100 Tage als CMO");
+    assert.match(result.roots_link_de || "", /Xpeng/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("a CTO change is rescued only with a concrete marketing or customer mandate", () => {
