@@ -291,6 +291,12 @@
   .cp-kpi b { display: block; font-size: 1.45rem; font-weight: 730; color: var(--brand-dark); line-height: 1.15; }
   .cp-kpi span { display: block; font-size: .72rem; color: var(--status-text); margin-top: .3rem; font-weight: 650; }
   .cp-kpi small { display: block; font-size: .7rem; color: #94a3b8; margin-top: .15rem; }
+  /* Geschaetzte Kennzahl: gestrichelter Rahmen, grauer Wert, Rechner-Icon. */
+  .cp-kpi--estimated { border-style: dashed; border-color: var(--status-border); background: var(--status-bg); box-shadow: none; }
+  .cp-kpi--estimated b { color: var(--muted); font-weight: 700; }
+  .cp-kpi--estimated span { color: var(--muted); }
+  .cp-kpi--estimated span i { font-size: .68rem; }
+  .cp-kpi--estimated small { color: var(--muted); font-style: italic; }
   .cp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: .8rem; }
   .cp-sec { border: 1px solid var(--line); border-radius: 14px; background: var(--bg); overflow: hidden; box-shadow: var(--shadow-dash); }
   .cp-sec h3 { margin: 0; border-bottom: 1px solid color-mix(in srgb, var(--brand) 14%, var(--line)); background: var(--brand-light); color: var(--brand-dark); font-size: .79rem; font-weight: 750; text-align: left; padding: .65rem .8rem; }
@@ -303,7 +309,10 @@
   .cp-sec--trigger-muted h3 { background: var(--surface); color: var(--status-text); border-bottom-color: var(--line); }
   .cp-sec--trigger-muted h3 i { color: var(--muted); }
   .cp-sec--trigger-muted li { color: var(--muted); }
-  .cp-note { margin-top: .9rem; padding: .6rem .8rem; border: 1px solid #fcd34d; background: #fffbeb; border-radius: 8px; font-size: .8rem; color: #92400e; }
+  /* Kein Warnton: eine markierte Schaetzung ist kein Fehler, sondern eine
+     Einordnung. Gleiches Grau wie die geschaetzten Kacheln. */
+  .cp-note { margin-top: .9rem; padding: .6rem .8rem; border: 1px dashed var(--status-border); background: var(--status-bg); border-radius: 8px; font-size: .8rem; color: var(--muted); }
+  .cp-note i { color: var(--muted); }
   .cp-sources { margin-top: .9rem; padding-top: .7rem; border-top: 1px solid #e2e8f2; font-size: .74rem; color: #6b7a94; line-height: 1.6; }
   .cp-sources a { color: #2563eb; text-decoration: none; }
   .cp-sources a:hover { text-decoration: underline; }
@@ -2427,7 +2436,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260805-1215';
+  import { initApp } from './app.js?v=20260805-1330';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

@@ -34,7 +34,7 @@ export const COMPANY_PROFILE_SECTIONS = [
 /** Kommt nicht aus der Recherche, sondern je Artikel aus dem Bewertungsaufruf. */
 export const COMPANY_PROFILE_ARTICLE_SECTION = "Trigger & Aufhänger — warum jetzt?";
 
-export type CompanyProfileKpi = { label: string; value: string; hint?: string };
+export type CompanyProfileKpi = { label: string; value: string; hint?: string; estimated?: boolean };
 export type CompanyProfileSection = { title: string; items: string[] };
 export type CompanyProfileSource = { title: string; uri: string };
 export type CompanyProfileLogoSourceKind =
@@ -124,7 +124,8 @@ danach, ohne Code-Zäune:
   "logo_format": "svg | png | webp | jpg",
   "headline": "Branche · Kurzcharakterisierung in maximal 8 Wörtern",
   "kpis": [
-    {"label": "Umsatz GJ 2025", "value": "8,9 Mrd. €", "hint": "Konzern, brutto"}
+    {"label": "Umsatz GJ 2025", "value": "8,9 Mrd. €", "hint": "Konzern, brutto", "estimated": false},
+    {"label": "Marketingbudget", "value": "ca. 120 Mio. €", "hint": "geschätzt aus Branchenanteil 3-5% vom Umsatz", "estimated": true}
   ],
   "sections": [
     {"title": "Allgemeine Unternehmensdaten", "items": ["Hauptsitz: ...", "Gegründet: ..."]}
@@ -134,7 +135,12 @@ danach, ohne Code-Zäune:
 
 REGELN, sie entscheiden über die Brauchbarkeit:
 1. Genau 6 Einträge in "kpis". Jeder mit kurzem "value", der als große Zahl
-   lesbar ist. Fehlt eine Zahl belegbar, nimm eine andere Kennzahl statt zu raten.
+   lesbar ist. Konntest du eine Zahl per Suche belegen, setze "estimated": false.
+   Findest du sie nicht, gib eine begründete Schätzung, setze "estimated": true
+   und schreibe in "hint" in maximal 12 Wörtern, worauf die Schätzung beruht
+   (Bezugsgröße, Branchenanteil, Vergleichsunternehmen, Vorjahr). Eine Schätzung
+   ohne nachvollziehbare Grundlage lässt du weg. Kennzeichne sie im "value"
+   zusätzlich mit "ca.".
 2. Genau diese 5 Abschnitte in "sections", in dieser Reihenfolge, jeder mit 3 bis
    5 Einträgen, jeder Eintrag maximal 20 Wörter: ${COMPANY_PROFILE_SECTIONS.join(" | ")}
 3. Bei "Buying Center / Relevante Personen": Name, Rolle, und wenn belegbar seit
@@ -143,8 +149,10 @@ REGELN, sie entscheiden über die Brauchbarkeit:
    lädt und "logo_source_url" die überprüfbare Herkunftsseite ist. Die angegebene
    Quelle und Datei müssen zum aktuellen Unternehmen passen. Bei Worldvectorlogo
    müssen Seiten- und SVG-Slug den exakten Unternehmensnamen eindeutig abbilden.
-5. Jede Zahl, die du nicht per Suche belegen konntest, gehört nicht in "kpis" oder
-   "sections", sondern in "unverified_note". Erfinde niemals eine Quelle.
+5. In "sections" stehen nur belegte Angaben. Eine geschätzte Zahl gehört
+   ausschliesslich in "kpis", dort mit "estimated": true. In "unverified_note"
+   nennst du in einem Satz, welche Angaben geschätzt oder offen sind. Erfinde
+   niemals eine Quelle.
 6. Deutsch, knapp, keine Werbesprache. Kein Satz, der nur Offensichtliches sagt.
 7. Keine Zeilenumbrueche innerhalb der Zeichenketten - jeder Eintrag ist eine Zeile.`;
 }
@@ -210,6 +218,10 @@ function normalizeKpis(raw: unknown): CompanyProfileKpi[] {
       label: clean(item.label, 60),
       value: clean(item.value, 40),
       hint: clean(item.hint, 80) || undefined,
+      // Markierung immer mitnehmen, auch wenn das Modell die Grundlage in
+      // "hint" schuldig bleibt: eine unmarkierte Schaetzung waere schlimmer als
+      // eine Schaetzung ohne Begruendung.
+      estimated: item.estimated === true ? true : undefined,
     };
   }).filter((kpi) => kpi.label && kpi.value);
 }

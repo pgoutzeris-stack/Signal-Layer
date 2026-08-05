@@ -3331,9 +3331,15 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
       : "");
   const triggerMuted = !trigger;
   card.innerHTML = companyProfileHeadHtml(company, profile, trigger, triggerState, versions) + `<div class="cp-body">
-    ${kpis.length ? `<div class="cp-kpis">${kpis.map((k) => `<div class="cp-kpi">
-      <b>${escapeHtml(k.value || "–")}</b><span>${escapeHtml(k.label || "")}</span>
-      ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}</div>`).join("")}</div>` : ""}
+    ${kpis.length ? `<div class="cp-kpis">${kpis.map((k) => {
+      // Geschätzte Kennzahlen bleiben sichtbar, aber grau und mit Icon: der
+      // Steckbrief soll die Zahl liefern und gleichzeitig zeigen, dass sie
+      // nicht belegt ist.
+      const geschaetzt = k.estimated === true;
+      return `<div class="cp-kpi${geschaetzt ? " cp-kpi--estimated" : ""}"${geschaetzt ? ' title="Geschätzt, nicht belegt"' : ""}>
+      <b>${escapeHtml(k.value || "–")}</b><span>${geschaetzt ? '<i class="fa-solid fa-calculator"></i> ' : ""}${escapeHtml(k.label || "")}</span>
+      ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}</div>`;
+    }).join("")}</div>` : ""}
     ${sections.length || triggerCopy ? `<div class="cp-grid">${sections.map((sec) => `<section class="cp-sec">
       <h3>${escapeHtml(sec.title || "")}</h3>
       <ul>${(Array.isArray(sec.items) ? sec.items : []).map((item) => `<li>${escapeText(item)}</li>`).join("")}</ul>
@@ -3341,7 +3347,7 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
       <h3><i class="fa-solid fa-bolt"></i> Trigger &amp; Aufhänger — warum jetzt?</h3>
       <ul><li>${escapeText(triggerCopy)}</li></ul>
     </section>` : ""}</div>` : ""}
-    ${profile.unverified_note ? `<div class="cp-note"><i class="fa-solid fa-circle-info"></i> Nicht belegt: ${escapeText(profile.unverified_note)}</div>` : ""}
+    ${profile.unverified_note ? `<div class="cp-note"><i class="fa-solid fa-calculator"></i> Nicht belegt: ${escapeText(profile.unverified_note)}</div>` : ""}
     ${sources.length ? `<div class="cp-sources"><b>Quellen:</b> ${sources.map((src) =>
       src.uri ? `<a href="${escapeHtml(src.uri)}" data-external target="_blank" rel="noopener noreferrer">${escapeHtml(src.title)}</a>` : escapeHtml(src.title)
     ).join(" · ")}${profile.article_count ? ` &nbsp;·&nbsp; ${Number(profile.article_count)} eigene Artikel im Bestand` : ""}</div>` : ""}
