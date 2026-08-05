@@ -32,9 +32,9 @@ import {
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
-export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.3";
+export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.4";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "2.3";
+export const SIMPLE_VERSION = "2.4";
 export const SIMPLE_UPDATED_AT = "2026-08-05";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
@@ -491,18 +491,67 @@ export function selectRootsPortfolio(
   return ranked.slice(0, Math.max(1, limit)).map((entry) => entry.line).join("\n");
 }
 
-function rootsPortfolioLabels(portfolio: string): string[] {
+type RootsPortfolioEntry = {
+  id: string;
+  pillar: string;
+  label: string;
+  description: string;
+};
+
+function rootsPortfolioEntries(portfolio: string): RootsPortfolioEntry[] {
   return String(portfolio || "").split("\n").map((line) => {
-    return line.match(/^-\s*[^|]+\|\s*\[[^\]]+\]\s*([^:]+):/)?.[1]?.trim() || "";
-  }).filter(Boolean);
+    const match = line.trim().match(/^-\s*([^|]+)\|\s*\[([^\]]+)\]\s*([^:]+):\s*(.*)$/);
+    if (!match) return null;
+    return {
+      id: match[1].trim(),
+      pillar: match[2].trim(),
+      label: match[3].trim(),
+      description: match[4].trim(),
+    };
+  }).filter((entry): entry is RootsPortfolioEntry => Boolean(entry));
 }
 
-function validatedRootsOffering(value: unknown, portfolio: string): string {
-  const allowed = new Map(rootsPortfolioLabels(portfolio).map((label) => [normalizeMatchText(label), label]));
+function rootsPortfolioLabels(portfolio: string): string[] {
+  return rootsPortfolioEntries(portfolio).map((entry) => entry.label);
+}
+
+function rootsPortfolioForPrompt(portfolio: string): string {
+  return rootsPortfolioEntries(portfolio).map((entry) =>
+    `- NAME="${entry.label.replace(/"/g, "'")}" | ID="${entry.id}" | SAEULE="${entry.pillar}" | ROOTS_VORGEHEN="${entry.description.replace(/"/g, "'")}"`
+  ).join("\n");
+}
+
+export function validatedRootsOffering(value: unknown, portfolio: string): string {
+  const entries = rootsPortfolioEntries(portfolio);
+  const allowed = new Map<string, string>();
+  for (const entry of entries) {
+    const aliases = [
+      entry.label,
+      entry.id,
+      `[${entry.pillar}] ${entry.label}`,
+      `${entry.pillar}: ${entry.label}`,
+      `${entry.pillar} ${entry.label}`,
+      `NAME ${entry.label}`,
+    ];
+    for (const alias of aliases) allowed.set(normalizeMatchText(alias), entry.label);
+  }
   const requested = String(value || "").split(/\s+\+\s+|\s*;\s*/).map((part) => part.trim()).filter(Boolean);
   if (requested.length < 1 || requested.length > 3) return "";
-  const canonical = requested.map((part) => allowed.get(normalizeMatchText(part)) || "");
-  return canonical.every(Boolean) ? canonical.join(" + ") : "";
+  const canonical = requested.map((part) => {
+    const normalized = normalizeMatchText(part.replace(/^["'„“]+|["'„“]+$/g, ""));
+    const direct = allowed.get(normalized);
+    if (direct) return direct;
+    // Modelle geben trotz klarer Anweisung gelegentlich "Leistung: NAME" oder
+    // "[Saeule] NAME" aus. Akzeptiert wird nur, wenn darin genau ein Name aus
+    // der vorausgewaehlten Datenbankmenge eindeutig vorkommt.
+    const contained = entries.filter((entry) => {
+      const label = normalizeMatchText(entry.label);
+      return normalized === label || normalized.endsWith(` ${label}`);
+    });
+    return contained.length === 1 ? contained[0].label : "";
+  });
+  if (!canonical.every(Boolean)) return "";
+  return [...new Set(canonical)].join(" + ");
 }
 
 export function buildSimplePrompt(
@@ -525,9 +574,9 @@ export function buildSimplePrompt(
   return `<candidate_signals>
 ${candidates}
 </candidate_signals>
-${selectedPortfolio ? `<roots_portfolio>\n${selectedPortfolio}\n</roots_portfolio>
+${selectedPortfolio ? `<roots_portfolio>\n${rootsPortfolioForPrompt(selectedPortfolio)}\n</roots_portfolio>
 <roots_rules>
-Waehle nur aus roots_portfolio. roots_offering enthaelt den exakten Leistungsnamen oder bis zu drei komplementaere exakte Leistungsnamen, verbunden mit " + ". Erfinde oder verallgemeinere keine Leistung.
+Waehle nur aus roots_portfolio. Kopiere fuer roots_offering ausschliesslich den exakten Text aus NAME, niemals ID, SAEULE oder ROOTS_VORGEHEN. Bis zu drei komplementaere NAME-Werte sind erlaubt, verbunden mit " + ". Erfinde oder verallgemeinere keine Leistung.
 Fuer Sales muss roots_link_de zwei konkrete Saetze enthalten: zuerst, welches im Artikel belegte Ziel, Problem, Mandat, Risiko oder welche Chance company gerade hat; danach, was ROOTS mit der gewaehlten Leistung oder Kombination dafuer konkret analysiert, entwickelt, priorisiert, strukturiert oder umsetzt. Nenne company. Verboten sind generische Formeln wie "ROOTS kann mit X andocken", "ROOTS kann unterstuetzen" oder eine unbelegte Kaufabsicht.
 Ein CMO-/Marketingleitungswechsel ist bereits ein belastbarer Timing-Anlass fuer Standortbestimmung, Stakeholder-Ausrichtung, Priorisierung und die ersten 100 Tage. Behaupte trotzdem kein Problem, Budget oder Beratungsmandat.
 Fuer Marketing beschreibt roots_link_de, welches belegte Fachwissen aus dem Artikel zu welcher ROOTS-Leistung passt und wie es als fachliche Grundlage genutzt werden kann.
@@ -938,7 +987,7 @@ function isStrongSimpleTrigger(trigger: string, company: string): boolean {
 function isConcreteRootsLink(link: string, lane: SimpleLane, company = ""): boolean {
   if (link.length < 70 || link.length > 700) return false;
   if (/roots kann mit .{0,80} andocken|roots kann (?:hier )?unterst(?:u|ü)tzen/i.test(link)) return false;
-  if (!/(analys|entwick|defin|prioris|struktur|bewert|konzip|moder|gestalt|veranker|optimier|begleit|schärf|uebersetz|übersetz|audit|roadmap)/i.test(link)) return false;
+  if (!/(analys|entwick|defin|prioris|struktur|bewert|konzip|moder|gestalt|veranker|optimier|begleit|schärf|uebersetz|übersetz|umsetz|erarbeit|ableit|validier|orchestrier|implementier|audit|roadmap)/i.test(link)) return false;
   if (lane !== "sales") return true;
   const sentences = link.split(/[.!?](?:\s|$)/).map((part) => part.trim()).filter(Boolean);
   if (sentences.length < 2) return false;

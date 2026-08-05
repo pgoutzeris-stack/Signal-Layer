@@ -3,9 +3,38 @@ import test from "node:test";
 
 const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
 
-test("the leadership repair rules run as a separate v2.3 ruleset", () => {
-  assert.equal(pipeline.SIMPLE_VERSION, "2.3");
-  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.3");
+test("the canonical ROOTS match runs as a separate v2.4 ruleset", () => {
+  assert.equal(pipeline.SIMPLE_VERSION, "2.4");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.4");
+});
+
+test("canonicalizes safe model variants to exact ROOTS database labels", () => {
+  const portfolio = [
+    "- presence_customer_insights | [presence] Customer Insights: ROOTS verdichtet Kundenerkenntnisse.",
+    "- purpose_handelsmarkenstrategie | [purpose] Handelsmarkenstrategie: ROOTS schärft Eigenmarken.",
+  ].join("\n");
+  assert.equal(pipeline.validatedRootsOffering("Customer Insights", portfolio), "Customer Insights");
+  assert.equal(pipeline.validatedRootsOffering("[presence] Customer Insights", portfolio), "Customer Insights");
+  assert.equal(pipeline.validatedRootsOffering("presence: Customer Insights", portfolio), "Customer Insights");
+  assert.equal(pipeline.validatedRootsOffering("presence_customer_insights", portfolio), "Customer Insights");
+  assert.equal(
+    pipeline.validatedRootsOffering("[presence] Customer Insights + purpose: Handelsmarkenstrategie", portfolio),
+    "Customer Insights + Handelsmarkenstrategie",
+  );
+  assert.equal(pipeline.validatedRootsOffering("Erfundene Leistung", portfolio), "");
+});
+
+test("the one AI prompt separates offering name, pillar and ROOTS method", () => {
+  const family = pipeline.SIMPLE_FAMILIES.filter((item) => item.id === "customer_insights");
+  const prompt = pipeline.buildSimplePrompt({
+    id: "prompt",
+    title: "Studie zeigt neue Bedürfnisse im Handel",
+    cleaned_content: "Eine umfangreiche Studie untersucht neue Bedürfnisse und Barrieren von Kundinnen und Kunden im Handel. ".repeat(5),
+  }, family, "- presence_customer_insights | [presence] Customer Insights: ROOTS verdichtet qualitative und quantitative Kundenerkenntnisse.");
+  assert.match(prompt, /NAME="Customer Insights"/);
+  assert.match(prompt, /SAEULE="presence"/);
+  assert.match(prompt, /ROOTS_VORGEHEN="ROOTS verdichtet qualitative und quantitative Kundenerkenntnisse\./);
+  assert.match(prompt, /Kopiere fuer roots_offering ausschliesslich den exakten Text aus NAME/);
 });
 
 test("v2.1 keeps a complete CMO-change article and removes a known paywall tail", () => {
