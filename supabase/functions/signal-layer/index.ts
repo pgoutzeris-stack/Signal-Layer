@@ -6067,8 +6067,19 @@ Deno.serve(async (req: Request) => {
         const allIds: string[] = Array.isArray(run.article_ids) ? run.article_ids : [];
         const slice = allIds.slice(run.cursor, run.cursor + SIMPLE_BATCH_SIZE);
         if (slice.length === 0) {
+          const { count: technicalErrors } = await admin.schema("signal_layer").from("simple_signals")
+            .select("id", { count: "exact", head: true })
+            .eq("run_id", run.id).eq("status", "rejected").eq("reject_reason", "modellfehler");
+          // Ein Lauf mit technisch unlesbaren Modellantworten ist nicht fachlich
+          // abgeschlossen. Die UI darf ihn deshalb nie als gruenen Volltreffer
+          // darstellen; die betroffenen Artikel koennen gezielt repariert werden.
+          const finalStatus = Number(technicalErrors || 0) > 0 ? "error" : "done";
           const { data: finished } = await admin.schema("signal_layer").from("simple_runs").update({
-            status: "done", finished_at: new Date().toISOString(), last_progress_at: new Date().toISOString(),
+            status: finalStatus,
+            error_message: finalStatus === "error"
+              ? `${technicalErrors} Artikel konnten technisch nicht analysiert werden; der Lauf ist nicht vollstaendig.`
+              : null,
+            finished_at: new Date().toISOString(), last_progress_at: new Date().toISOString(),
           }).eq("id", run.id).eq("status", "running").select("*").maybeSingle();
           return corsResponse(origin, { run: finished || run, done: true });
         }
@@ -6257,12 +6268,21 @@ Deno.serve(async (req: Request) => {
         const cursor = run.cursor + Math.max(consumed, 1);
         const processed = run.processed_count + rows.length;
         const done = cursor >= allIds.length;
+        const { count: finalTechnicalErrors } = done
+          ? await admin.schema("signal_layer").from("simple_signals")
+            .select("id", { count: "exact", head: true })
+            .eq("run_id", run.id).eq("status", "rejected").eq("reject_reason", "modellfehler")
+          : { count: 0 };
+        const completedWithErrors = done && Number(finalTechnicalErrors || 0) > 0;
         const { data: updated, error: updateError } = await admin.schema("signal_layer").from("simple_runs").update({
           cursor,
           processed_count: processed,
           signal_count: run.signal_count + signals,
           rejected_count: run.rejected_count + (rows.length - signals),
-          status: done ? "done" : "running",
+          status: completedWithErrors ? "error" : done ? "done" : "running",
+          error_message: completedWithErrors
+            ? `${finalTechnicalErrors} Artikel konnten technisch nicht analysiert werden; der Lauf ist nicht vollstaendig.`
+            : null,
           last_progress_at: new Date().toISOString(),
           current_article: done ? null : undefined,
           finished_at: done ? new Date().toISOString() : null,

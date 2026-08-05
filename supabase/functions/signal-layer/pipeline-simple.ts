@@ -32,10 +32,10 @@ import {
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
-export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.2";
+export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.3";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "2.2";
-export const SIMPLE_UPDATED_AT = "2026-08-04";
+export const SIMPLE_VERSION = "2.3";
+export const SIMPLE_UPDATED_AT = "2026-08-05";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
 // Auswahlbare Modelle des einfachen Modus mit den Preisen, die im Kostenledger
@@ -668,6 +668,7 @@ async function recordSimpleUsage(
   durationMs: number,
   errorCode?: string,
   errorMessage?: string,
+  attempt = 1,
 ): Promise<void> {
   const fallbackCost = simpleUsageCostUsd(model, usage);
   const priceFields = deps.priceUsage
@@ -679,7 +680,7 @@ async function recordSimpleUsage(
     operation: "classification",
     model,
     status,
-    attempt: 1,
+    attempt,
     prompt_version: SIMPLE_PIPELINE_VERSION,
     input_tokens: usage.input + usage.cachedInput,
     cached_input_tokens: usage.cachedInput,
@@ -709,6 +710,8 @@ type SimpleRequestOptions = {
   systemInstruction?: string;
   responseSchema?: Record<string, unknown>;
   maxOutputTokens?: number;
+  /** Interner zweiter Versuch nach einer bezahlten, aber unlesbaren Antwort. */
+  repairAttempt?: boolean;
 };
 
 function geminiRequest(model: string, apiKey: string, prompt: string, options: SimpleRequestOptions = {}): ProviderRequest {
@@ -833,7 +836,10 @@ async function callSimpleJson<T>(
       : status === 503 ? "model_busy"
       : /timeout|abort/i.test(lastError) ? "timeout"
       : `http_${status || "network"}`;
-    await recordSimpleUsage(deps, articleId, model, "error", EMPTY_USAGE, Date.now() - startedAt, errorCode, lastError);
+    await recordSimpleUsage(
+      deps, articleId, model, "error", EMPTY_USAGE, Date.now() - startedAt,
+      errorCode, lastError, options.repairAttempt ? 2 : 1,
+    );
     throw new Error(`${option.label} failed: ${status} ${lastError.slice(0, 300)}`);
   }
   const payload = await response.json();
@@ -841,11 +847,25 @@ async function callSimpleJson<T>(
   try {
     if (!text) throw new Error("empty answer");
     const answer = JSON.parse(text) as T;
-    await recordSimpleUsage(deps, articleId, model, "success", usage, Date.now() - startedAt);
+    await recordSimpleUsage(
+      deps, articleId, model, "success", usage, Date.now() - startedAt,
+      undefined, undefined, options.repairAttempt ? 2 : 1,
+    );
     return answer;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await recordSimpleUsage(deps, articleId, model, "error", usage, Date.now() - startedAt, "invalid_response", message);
+    const attempt = options.repairAttempt ? 2 : 1;
+    await recordSimpleUsage(deps, articleId, model, "error", usage, Date.now() - startedAt, "invalid_response", message, attempt);
+    // DeepSeek erzwingt zwar json_object, lieferte in Run 2.2 aber bei 16
+    // Artikeln leere oder abgeschnittene Antworten. Ein einziger gezielter
+    // Reparaturversuch verhindert, dass bezahlte technische Fehler als
+    // fachliche Ablehnung im Archiv landen. Beide Aufrufe bleiben im Ledger.
+    if (option.provider === "deepseek" && !options.repairAttempt) {
+      return callSimpleJson<T>(deps, articleId, `${prompt}\n\n<repair>Die vorige Antwort war technisch unlesbar. Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt.</repair>`, {
+        ...options,
+        repairAttempt: true,
+      });
+    }
     throw new Error(`${option.label} returned no valid simple classification`);
   }
 }
@@ -1182,6 +1202,96 @@ function rejected(
   };
 }
 
+export type SimpleLeadershipFallback = {
+  familyId: "cmo_wechsel" | "strategiewechsel";
+  company: string;
+  companyEvidence: string;
+  signalEvidence: string;
+  reason: string;
+  relevance: { a: number; b: number; c: number; d: number };
+};
+
+const SIMPLE_CMO_ROLE_PATTERN = /\b(?:cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter(?:in)?|marketingleitung|marketing[ -]?chef(?:in)?|marketingdirektor(?:in)?|head of marketing|marketing director|vp marketing|markenchef(?:in)?|brand director|chief creative officer|chief product officer|head of brand)\b/i;
+const SIMPLE_TRANSFORMATION_ROLE_PATTERN = /\b(?:chief transformation officer|transformation officer|transformationschef(?:in)?|transformationsleitung)\b/i;
+const SIMPLE_LEADERSHIP_CHANGE_PATTERN = /\b(?:wird|wechselt|uebernimmt|übernimmt|verlaesst|verlässt|ernennt|ernannt|holt|beruft|bestellt|tritt an|folgt auf|neuer|neue|appointed|appoints|joins|named|hires|succeeds)\b/i;
+// Bewusst enger als der kostenlose Familienfilter: Ein CTO-Titel wird nur
+// gerettet, wenn der Artikel ein konkretes ROOTS-nahes Mandat beschreibt.
+const SIMPLE_TRANSFORMATION_MANDATE_PATTERN = /\b(?:marketing|marke(?:n)?|brand|kunde(?:n)?|kundin(?:nen)?|customer|consumer|omnichannel|e[ -]?commerce|datenstrategie|customer journey|customer experience|portfolio|sortiment|handelsmodell|plattform|positionierung|kommunikation|pricing|preisstrategie|wachstumsstrategie)\b/i;
+
+function cleanCompanyCandidate(value: string): string {
+  return String(value || "")
+    .replace(/^[\s"„“'’]+|[\s"„“'’]+$/g, "")
+    .replace(/\s+(?:bei|im|in|fuer|für)\s+(?:w\s*&\s*v|horizont|lebensmittelpraxis|textilwirtschaft)$/i, "")
+    .trim()
+    .slice(0, 120);
+}
+
+function leadershipCompanyFromTitle(title: string): string {
+  const headline = String(title || "").replace(/\s+\|\s+[^|]+$/, "").trim();
+  const suffix = headline.match(/\b(?:bei|von|fuer|für|at)\s+([^|–—:;,]{2,80})$/i)?.[1];
+  if (suffix) return cleanCompanyCandidate(suffix);
+  const prefix = headline.match(/^([^:|–—]{2,80}?)\s+(?:ernennt|holt|beruft|bestellt|engagiert|macht|appoints|names|hires)\b/i)?.[1];
+  return cleanCompanyCandidate(prefix || "");
+}
+
+function editorialSentences(value: string): string[] {
+  return String(value || "").split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.replace(/^#{1,6}\s*/, "").trim())
+    .filter((sentence) => sentence.length >= 20);
+}
+
+/**
+ * Enger deterministischer Rettungsanker fuer eindeutige Fuehrungswechsel.
+ * Er erzeugt niemals ein Signal nur aus einem Titel: Rolle, Wechsel und
+ * Unternehmen muessen im redaktionellen Kern vorkommen; beim CTO zusaetzlich
+ * ein konkretes Marketing-/Kunden-/Handelsmandat.
+ */
+export function deterministicLeadershipFallback(
+  article: SimpleArticleInput,
+  families: SimpleFamily[],
+): SimpleLeadershipFallback | null {
+  const title = String(article.title || "").trim();
+  const body = String(article.cleaned_content || article.content || "").trim();
+  const fullText = `${title}\n${body}`.trim();
+  const company = leadershipCompanyFromTitle(title);
+  if (!company || company.length < 2 || !normalizeMatchText(fullText).includes(normalizeMatchText(company))) return null;
+  const sentences = editorialSentences(fullText);
+  const companyEvidence = [title, ...sentences].find((sentence) =>
+    sentence.length >= 20
+    && normalizeMatchText(sentence).includes(normalizeMatchText(company))
+    && (SIMPLE_CMO_ROLE_PATTERN.test(sentence) || SIMPLE_TRANSFORMATION_ROLE_PATTERN.test(sentence))
+    && SIMPLE_LEADERSHIP_CHANGE_PATTERN.test(sentence)
+  ) || "";
+  if (!companyEvidence) return null;
+
+  if (families.some((family) => family.id === "cmo_wechsel")
+      && SIMPLE_CMO_ROLE_PATTERN.test(companyEvidence)) {
+    return {
+      familyId: "cmo_wechsel",
+      company,
+      companyEvidence,
+      signalEvidence: companyEvidence,
+      reason: `Der Wechsel der Marketing- oder Markenverantwortung bei ${company} ist als konkreter Timing-Anlass wörtlich belegt.`,
+      relevance: { a: 70, b: 75, c: 35, d: 90 },
+    };
+  }
+
+  if (families.some((family) => family.id === "strategiewechsel")
+      && SIMPLE_TRANSFORMATION_ROLE_PATTERN.test(companyEvidence)) {
+    const mandateEvidence = sentences.find((sentence) => SIMPLE_TRANSFORMATION_MANDATE_PATTERN.test(sentence)) || "";
+    if (!mandateEvidence) return null;
+    return {
+      familyId: "strategiewechsel",
+      company,
+      companyEvidence,
+      signalEvidence: mandateEvidence,
+      reason: `Die neue Transformationsverantwortung bei ${company} ist mit einem konkreten Marketing-, Kunden- oder Handelsmandat verknuepft.`,
+      relevance: { a: 75, b: 80, c: 45, d: 85 },
+    };
+  }
+  return null;
+}
+
 export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArticleInput): Promise<SimpleResult> {
   const rawBody = String(article.cleaned_content || article.content || "");
   const deterministicCore = deterministicEditorialCore(rawBody);
@@ -1245,6 +1355,30 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   if (answer.has_unrelated_tail === true && !editorial.boundaryValid) {
     return { ...rejected(article, "redaktioneller_kern_nicht_belegt", prefilter.families, model), ...answerContext };
   }
+  const leadershipFallback = deterministicLeadershipFallback(preparedArticle, prefilter.families);
+  if (answer.lane !== "sales" && answer.lane !== "marketing" && leadershipFallback) {
+    const fallbackFamily = prefilter.families.find((candidate) => candidate.id === leadershipFallback.familyId)!;
+    const selectedPortfolio = selectRootsPortfolio(deps.rootsPortfolio || "", [fallbackFamily], coreText);
+    const fallbackOffering = rootsPortfolioLabels(selectedPortfolio)[0] || "";
+    const rootsAction = fallbackFamily.id === "cmo_wechsel"
+      ? `ROOTS strukturiert mit ${fallbackOffering || "einer Standortbestimmung"} die Prioritaeten, Stakeholder und Agenda fuer die ersten 100 Tage.`
+      : `ROOTS analysiert mit ${fallbackOffering || "einem Marketing-Audit"} das belegte Mandat und priorisiert die strategischen Marketing- und Kundenhebel.`;
+    answer = {
+      ...answer,
+      lane: "sales",
+      signal_id: fallbackFamily.id,
+      confidence: Math.max(clampConfidence(answer.confidence), 0.9),
+      score: Math.max(Number(answer.score) || 0, 68),
+      evidence: leadershipFallback.signalEvidence,
+      headline_de: String(answer.headline_de || article.title || ""),
+      why_de: leadershipFallback.reason,
+      company: leadershipFallback.company,
+      company_evidence: leadershipFallback.companyEvidence,
+      roots_offering: fallbackOffering,
+      roots_link_de: `${leadershipFallback.company} hat die Fuehrungsverantwortung in einem fuer ROOTS relevanten Feld neu geordnet; der belegte Wechsel schafft einen konkreten Zeitpunkt fuer Standortbestimmung und Priorisierung. ${rootsAction}`,
+      relevance: { ...leadershipFallback.relevance, reason: leadershipFallback.reason },
+    };
+  }
   if (answer.lane !== "sales" && answer.lane !== "marketing") {
     return { ...rejected(article, "modell_ohne_signal", prefilter.families, model), ...answerContext };
   }
@@ -1305,8 +1439,14 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     prefilter.tier1,
     deps.tier1Companies || [],
   );
-  const reportedCompany = String(answer.company || "").trim().slice(0, 200);
-  const companyEvidence = String(answer.company_evidence || "").trim();
+  let reportedCompany = String(answer.company || "").trim().slice(0, 200);
+  let companyEvidence = String(answer.company_evidence || "").trim();
+  // Bei einer ansonsten gueltigen Sales-Antwort darf ein ausgelassenes
+  // company-Feld den eindeutig belegten CMO-/CTO-Wechsel nicht vernichten.
+  if (family.lane === "sales" && leadershipFallback && (!reportedCompany || !companyEvidence)) {
+    reportedCompany = leadershipFallback.company;
+    companyEvidence = leadershipFallback.companyEvidence;
+  }
   const reportedTier1 = resolveTier1Company(reportedCompany, prefilter.tier1, deps.tier1Companies || []);
   const reportedTerms = reportedTier1 ? companyTerms(reportedTier1) : [reportedCompany];
   const company = reportedCompany && companyEvidence.length >= 20

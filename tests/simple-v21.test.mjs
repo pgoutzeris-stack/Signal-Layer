@@ -3,9 +3,9 @@ import test from "node:test";
 
 const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
 
-test("the enriched portfolio runs as a separate v2.2 ruleset", () => {
-  assert.equal(pipeline.SIMPLE_VERSION, "2.2");
-  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.2");
+test("the leadership repair rules run as a separate v2.3 ruleset", () => {
+  assert.equal(pipeline.SIMPLE_VERSION, "2.3");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.3");
 });
 
 test("v2.1 keeps a complete CMO-change article and removes a known paywall tail", () => {
@@ -31,6 +31,50 @@ test("transformation leadership needs a strategic ROOTS-relevant mandate", () =>
   const unrelated = `${"Ein Softwareanbieter ernennt einen Chief Transformation Officer. ".repeat(7)}Die Personalie tritt im September an.`;
   const rejected = pipeline.prefilterSimpleArticle({ id: "s", title: "Softwareanbieter ernennt Chief Transformation Officer", cleaned_content: unrelated });
   assert.ok(!rejected.families.some((family) => family.id === "strategiewechsel"));
+});
+
+test("an explicit CMO change survives a missing model company field", () => {
+  const article = {
+    id: "cmo",
+    title: "Christian Wiegand wird Marketing-Chef von Xpeng | W&V",
+    cleaned_content: [
+      "Christian Wiegand wird Marketing-Chef von Xpeng.",
+      "Der neue Marketingleiter soll die Marke in Deutschland bekannt machen und die Produkte positionieren.",
+      "Er verantwortet Partnerschaften, Events und Kommunikation.",
+      "Damit beginnt eine neue Phase der Markenführung.",
+      "Der Hersteller baut sein Vertriebsnetz aus und will mit klarerer Markenkommunikation weitere Kundengruppen erreichen.",
+    ].join("\n\n"),
+  };
+  const prefilter = pipeline.prefilterSimpleArticle(article);
+  const fallback = pipeline.deterministicLeadershipFallback(article, prefilter.families);
+  assert.equal(fallback?.familyId, "cmo_wechsel");
+  assert.equal(fallback?.company, "Xpeng");
+  assert.match(fallback?.companyEvidence || "", /Marketing-Chef von Xpeng/);
+});
+
+test("a CTO change is rescued only with a concrete marketing or customer mandate", () => {
+  const relevant = {
+    id: "cto-relevant",
+    title: "Galeria holt Chief Transformation Officer – digitale Strategie bleibt offen",
+    cleaned_content: [
+      "Galeria holt einen Chief Transformation Officer und richtet die Verantwortung neu aus.",
+      "Das Unternehmen muss Omnichannel, E-Commerce, Datenstrategie und das Sortiment neu priorisieren.",
+      "Die neue Rolle führt das Transformationsprogramm.",
+      "Der Warenhauskonzern arbeitet dafür an einem neuen Handelsmodell.",
+    ].join("\n\n"),
+  };
+  const relevantPrefilter = pipeline.prefilterSimpleArticle(relevant);
+  const relevantFallback = pipeline.deterministicLeadershipFallback(relevant, relevantPrefilter.families);
+  assert.equal(relevantFallback?.familyId, "strategiewechsel");
+  assert.equal(relevantFallback?.company, "Galeria");
+
+  const appointmentOnly = {
+    id: "cto-only",
+    title: "Softwareanbieter ernennt Chief Transformation Officer",
+    cleaned_content: `${"Der Softwareanbieter ernennt einen Chief Transformation Officer. ".repeat(6)}Die neue Führungskraft tritt im September an.`,
+  };
+  const appointmentPrefilter = pipeline.prefilterSimpleArticle(appointmentOnly);
+  assert.equal(pipeline.deterministicLeadershipFallback(appointmentOnly, appointmentPrefilter.families), null);
 });
 
 test("the prompt receives descriptions only for family-relevant ROOTS services", () => {

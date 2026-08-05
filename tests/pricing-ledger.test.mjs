@@ -36,3 +36,14 @@ test("separates cached input and search usage and freezes EUR per event", () => 
   assert.match(migration, /estimated_cost_eur/);
   assert.match(migration, /search_query_count/);
 });
+
+test("books a DeepSeek JSON repair as a separate paid attempt", () => {
+  assert.match(simple, /options\.repairAttempt \? 2 : 1/);
+  assert.match(simple, /repairAttempt:\s*true/);
+  assert.match(simple, /option\.provider === "deepseek" && !options\.repairAttempt/);
+});
+
+test("never marks a Simple run complete with technical model errors", () => {
+  assert.match(backend, /const completedWithErrors = done && Number\(finalTechnicalErrors \|\| 0\) > 0/);
+  assert.match(backend, /status: completedWithErrors \? "error" : done \? "done" : "running"/);
+});
