@@ -6149,7 +6149,15 @@ Deno.serve(async (req: Request) => {
         // braucht pro Artikel gut 25 Sekunden, deshalb entscheidet die Zeit,
         // nicht eine feste Zahl von Prüfungen, wann das Paket endet.
         const batchStartedAt = Date.now();
-        const BATCH_TIME_BUDGET_MS = 85_000;
+        // DeepSeek V4 Pro brauchte im gezielten 2.3-Reparaturlauf bis zu rund
+        // 76 Sekunden pro Artikel. Nach so einem Aufruf darf im selben
+        // 120-Sekunden-Request kein zweiter mehr beginnen: sonst wird der
+        // Request mitten im naechsten Artikel beendet und der Watchdog muss
+        // erst die Lease abwarten. Schnelle Antworten koennen weiterhin bis
+        // zur normalen AI-Aufrufgrenze gebuendelt werden.
+        const BATCH_TIME_BUDGET_MS = simpleModelOption(simpleModel).provider === "deepseek"
+          ? 45_000
+          : 85_000;
         // The prefilter is free, so a single invocation may look at many
         // articles; only the AI budget is capped. The cursor advances by the
         // articles actually looked at, so the pool can be much larger than a

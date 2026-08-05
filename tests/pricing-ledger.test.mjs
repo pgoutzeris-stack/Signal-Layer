@@ -47,3 +47,7 @@ test("never marks a Simple run complete with technical model errors", () => {
   assert.match(backend, /const completedWithErrors = done && Number\(finalTechnicalErrors \|\| 0\) > 0/);
   assert.match(backend, /status: completedWithErrors \? "error" : done \? "done" : "running"/);
 });
+
+test("starts no second slow DeepSeek article near the request timeout", () => {
+  assert.match(backend, /simpleModelOption\(simpleModel\)\.provider === "deepseek"\s*\? 45_000\s*:\s*85_000/);
+});
