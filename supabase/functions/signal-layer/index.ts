@@ -4,6 +4,7 @@ import {
   hasQualifiedTier1EventParticipation,
   isBareEventAnnouncement,
 } from "./event-signals.ts";
+import { extractDateFromDateElement } from "./extraction-helpers.ts";
 import {
   CrawlPolicy,
   SourceType,
@@ -1470,6 +1471,9 @@ function extractPublishedDate(html: string, url: string): string | null {
     /<meta[^>]+name=["']parsely-pub-date["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+name=["']sailthru\.date["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/i,
+    // Packaging Europe (Sitecore/„.article"-Seiten): kein JSON-LD, kein
+    // article:published_time, aber ein RFC-822-Datum in name="pubdate".
+    /<meta[^>]+name=["']pubdate["'][^>]+content=["']([^"']+)["']/i,
   ];
   for (const pattern of patterns) {
     const m = html.match(pattern);
@@ -1490,6 +1494,11 @@ function extractPublishedDate(html: string, url: string): string | null {
     ));
     if (!isNaN(date.getTime()) && date <= new Date(Date.now() + 24 * 60 * 60 * 1000)) return date.toISOString();
   }
+  // Ein als Datum ausgewiesenes Element schlaegt die Textsuche weiter unten:
+  // die sieht nur die ersten 1.800 Zeichen, und Newsrooms wie Beiersdorf
+  // stellen das Datum erst nach ueber 3.000 Zeichen Kopfbereich.
+  const elementDate = extractDateFromDateElement(html);
+  if (elementDate) return elementDate;
   const visibleText = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
