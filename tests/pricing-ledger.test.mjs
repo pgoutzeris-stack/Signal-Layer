@@ -17,6 +17,17 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const coverageMigration = readFileSync(
+  new URL(
+    "../supabase/migrations/20260805083719_fix_ai_cost_coverage.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const profileResearch = readFileSync(
+  new URL("../supabase/functions/signal-layer/company-profile.ts", import.meta.url),
+  "utf8",
+);
 
 test("uses verified standard and batch model prices without a guessed fallback", () => {
   assert.match(backend, /"gemini-2\.5-flash-lite":\s*\{[^\n]*standard:\s*\{ input: 0\.1, cachedInput: 0\.01, output: 0\.4 \}, batch:\s*\{ input: 0\.05, cachedInput: 0\.01, output: 0\.2 \}/);
@@ -35,6 +46,15 @@ test("separates cached input and search usage and freezes EUR per event", () => 
   assert.match(migration, /legacy-reconstructed-2026-08-04/);
   assert.match(migration, /estimated_cost_eur/);
   assert.match(migration, /search_query_count/);
+});
+
+test("includes Simple research operations in the immutable cost ledger", () => {
+  assert.match(coverageMigration, /'company_profile', 'company_logo'/);
+  assert.match(coverageMigration, /ai_usage_events_paid_tokens_have_cost/);
+  assert.match(backend, /operation: "company_profile"[\s\S]*prompt_version: SIMPLE_PIPELINE_VERSION/);
+  assert.match(backend, /operation: "company_logo"[\s\S]*prompt_version: SIMPLE_PIPELINE_VERSION/);
+  assert.match(profileResearch, /cachedContentTokenCount/);
+  assert.match(profileResearch, /thoughtsTokenCount/);
 });
 
 test("books a DeepSeek JSON repair as a separate paid attempt", () => {

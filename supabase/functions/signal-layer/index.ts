@@ -748,7 +748,9 @@ async function ensureCompanyProfile(
           profile.logo_format = focused.logo.logo_format;
         }
         usage.prompt_tokens += focused.usage.prompt_tokens;
+        usage.cached_input_tokens = Number(usage.cached_input_tokens || 0) + Number(focused.usage.cached_input_tokens || 0);
         usage.output_tokens += focused.usage.output_tokens;
+        usage.thinking_tokens = Number(usage.thinking_tokens || 0) + Number(focused.usage.thinking_tokens || 0);
         usage.total_tokens += focused.usage.total_tokens;
         usage.search_queries = Number(usage.search_queries || 0) + Number(focused.usage.search_queries || 0);
       } catch (logoError) {
@@ -794,9 +796,11 @@ async function ensureCompanyProfile(
     });
     // Kosten mitschreiben, damit die Steckbrief-Recherche in derselben
     // Auswertung sichtbar ist wie die Artikelbewertung.
+    const profileCachedInput = Number(usage.cached_input_tokens || 0);
+    const profileThinking = Number(usage.thinking_tokens || 0);
     const profileCostFields = await modelCostFields(researchModel, {
-      input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
-      thinking: 0, total: usage.total_tokens,
+      input: Math.max(usage.prompt_tokens - profileCachedInput, 0), cachedInput: profileCachedInput,
+      output: usage.output_tokens, thinking: profileThinking, total: usage.total_tokens,
     }, "standard", Number(usage.search_queries || 0));
     await admin.schema("signal_layer").from("ai_usage_events").insert({
       operation: "company_profile",
@@ -804,8 +808,11 @@ async function ensureCompanyProfile(
       model: researchModel,
       status: "success",
       attempt: 1,
+      prompt_version: SIMPLE_PIPELINE_VERSION,
       input_tokens: usage.prompt_tokens,
+      cached_input_tokens: profileCachedInput,
       output_tokens: usage.output_tokens,
+      thinking_tokens: profileThinking,
       total_tokens: usage.total_tokens,
       ...profileCostFields,
     }).then(({ error }) => { if (error) console.warn("Steckbrief-Kosten nicht protokolliert:", error.message); });
@@ -831,7 +838,10 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
       ? configuredResearchModel
       : COMPANY_PROFILE_MODEL;
     let logo = await getTier1CompanyLogo(name);
-    let usage: Record<string, number> = { prompt_tokens: 0, output_tokens: 0, total_tokens: 0 };
+    let usage: Record<string, number> = {
+      prompt_tokens: 0, cached_input_tokens: 0, output_tokens: 0,
+      thinking_tokens: 0, total_tokens: 0, search_queries: 0,
+    };
     if (!logo) {
       logo = await researchWikimediaLogo(name);
     }
@@ -860,12 +870,16 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
         model: researchModel,
         status: "success",
         attempt: 1,
+        prompt_version: SIMPLE_PIPELINE_VERSION,
         input_tokens: usage.prompt_tokens,
+        cached_input_tokens: Number(usage.cached_input_tokens || 0),
         output_tokens: usage.output_tokens,
+        thinking_tokens: Number(usage.thinking_tokens || 0),
         total_tokens: usage.total_tokens,
         ...(await modelCostFields(researchModel, {
-          input: usage.prompt_tokens, cachedInput: 0, output: usage.output_tokens,
-          thinking: 0, total: usage.total_tokens,
+          input: Math.max(usage.prompt_tokens - Number(usage.cached_input_tokens || 0), 0),
+          cachedInput: Number(usage.cached_input_tokens || 0), output: usage.output_tokens,
+          thinking: Number(usage.thinking_tokens || 0), total: usage.total_tokens,
         }, "standard", Number(usage.search_queries || 0))),
       }).then(({ error }) => { if (error) console.warn("Logo-Kosten nicht protokolliert:", error.message); });
     }
@@ -6698,7 +6712,10 @@ Deno.serve(async (req: Request) => {
 
       case "get_simple_run_status": {
         const admin = getAdminClient();
-        const [{ data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount }, { data: exchangeRate }, { data: costLedger }] = await Promise.all([
+        const [
+          { data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount },
+          { data: exchangeRate }, { data: costLedger }, { data: allCostRows }, { count: profileResearchCount },
+        ] = await Promise.all([
           admin.schema("signal_layer").from("simple_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
@@ -6709,10 +6726,19 @@ Deno.serve(async (req: Request) => {
             .select("id", { count: "exact", head: true }).eq("status", "rejected"),
           getUsdEurRateSnapshot().then((snapshot) => ({ data: snapshot })).catch(() => ({ data: null })),
           admin.schema("signal_layer").rpc("get_simple_cost_ledger"),
+          admin.schema("signal_layer").from("ai_cost_ledger_daily").select("estimated_cost_eur"),
+          admin.schema("signal_layer").from("company_profile_history")
+            .select("id", { count: "exact", head: true }).gte("researched_at", "2026-08-01T00:00:00Z"),
         ]);
         const usdEurRate = exchangeRate?.rate ?? null;
         const todayCostRows = (costLedger || []).filter((row: { usage_date?: string }) => row.usage_date === berlinDateKey());
         const costSummary = summarizeGlobalCosts(costLedger || [], todayCostRows || [], usdEurRate);
+        const trackedProfileResearchCalls = (costLedger || [])
+          .filter((row: { operation?: string }) => row.operation === "company_profile")
+          .reduce((sum: number, row: { request_count?: number }) => sum + Number(row.request_count || 0), 0);
+        const untrackedProfileResearchCalls = Math.max(Number(profileResearchCount || 0) - trackedProfileResearchCalls, 0);
+        const toolTotalEur = (allCostRows || [])
+          .reduce((sum: number, row: { estimated_cost_eur?: number }) => sum + Number(row.estimated_cost_eur || 0), 0);
         const runWithError = run ? { ...run, ai_error_detail: await buildSimpleRunAiErrorDetail(run) } : null;
         return corsResponse(origin, {
           run: runWithError,
@@ -6723,7 +6749,10 @@ Deno.serve(async (req: Request) => {
           cost_summary: {
             ...costSummary,
             scope: "simple_since_v1.0",
-            scope_label: "Alle Simple-Kosten seit Version 1.0",
+            scope_label: "Alle protokollierten Simple-Aufrufe seit Version 1.0; Advanced ist separat",
+            tool_total_eur: toolTotalEur,
+            historical_untracked_research_calls: untrackedProfileResearchCalls,
+            total_is_lower_bound: untrackedProfileResearchCalls > 0,
             usd_eur_rate: usdEurRate,
             exchange_rate: exchangeRate,
           },

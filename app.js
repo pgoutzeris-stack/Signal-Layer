@@ -2928,6 +2928,11 @@ function formatCostEur(value) {
     : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+function formatSimpleTotalEur(value, summary = simpleCostSummary) {
+  const amount = formatCostEur(value);
+  return summary?.total_is_lower_bound ? `≥ ${amount}` : amount;
+}
+
 function activeUsdEurRate() {
   const value = pipelineOperationsTelemetry?.costs?.usd_eur_rate ?? simpleCostSummary?.usd_eur_rate;
   const rate = Number(value);
@@ -2991,10 +2996,16 @@ function renderCostLedgerDetail(title, amountEur, breakdown, summary, scopeCopy)
   const calculatedAt = summary?.calculated_at
     ? new Date(summary.calculated_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : "jetzt";
+  const simpleScope = summary?.scope === "simple_since_v1.0";
+  const trackedAmount = simpleScope ? formatSimpleTotalEur(amountEur, summary) : formatCostEur(amountEur);
+  const toolComparison = simpleScope && summary?.tool_total_eur !== null && summary?.tool_total_eur !== undefined
+    ? `<span>Alle Signal-Layer-Flows<b>${formatCostEur(summary.tool_total_eur)}</b></span>` : "";
+  const coverageNote = simpleScope && Number(summary?.historical_untracked_research_calls || 0) > 0
+    ? ` ${formatCostInt(summary.historical_untracked_research_calls)} frühe Steckbrief-Recherchen wurden vor der reparierten Kostenbuchung ausgeführt und sind nicht seriös rekonstruierbar. Deshalb ist der Simple-Wert als Untergrenze markiert; alle neuen Recherchen werden vollständig erfasst.` : "";
   return `<div class="cost-detail-head"><i class="fa-solid fa-receipt"></i><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(scopeCopy)} · Stand ${calculatedAt}</small></div></div>
-    <div class="cost-detail-summary"><span>Ist-Kosten<b>${formatCostEur(amountEur)}</b></span><span>Modelle<b>${formatCostInt(breakdown?.length || 0)}</b></span></div>
+    <div class="cost-detail-summary"><span>${simpleScope ? "Protokollierte Kosten" : "Ist-Kosten"}<b>${trackedAmount}</b></span><span>Modelle<b>${formatCostInt(breakdown?.length || 0)}</b></span>${toolComparison}</div>
     <span class="cost-detail-section"><b>Aufteilung nach KI-Modell</b>${costModelBreakdownHtml(breakdown, summary?.usd_eur_rate)}</span>
-    <small class="cost-detail-foot">Die Beträge stammen aus den unveränderlichen Supabase-Nutzungsereignissen und dem beim Aufruf gespeicherten Anbieterpreis samt Wechselkurs. Gesamt bedeutet: alle seit ${escapeHtml(trackedSince)} protokollierten Aufrufe; erneute Analysen überschreiben diese Kosten nicht.${Number(summary?.search_queries || 0) > 0 ? ` ${formatCostInt(summary.search_queries)} Google-Suchabfragen sind separat gezählt; deren endgültige Abrechnung ist bei Google nur zeitverzögert verfügbar.` : ""} ${escapeHtml(exchangeRateCopy(summary))}</small>`;
+    <small class="cost-detail-foot">Die Beträge stammen aus den unveränderlichen Supabase-Nutzungsereignissen und dem beim Aufruf gespeicherten Anbieterpreis samt Wechselkurs. Gesamt bedeutet: alle seit ${escapeHtml(trackedSince)} protokollierten Aufrufe; erneute Analysen überschreiben diese Kosten nicht.${Number(summary?.search_queries || 0) > 0 ? ` Google-Suche: ${formatCostInt(summary.search_queries)} Nutzungen protokolliert. Eine mögliche, vom täglichen Google-Freikontingent abhängige Tool-Gebühr ist im Live-Betrag nicht enthalten und wird erst in der Anbieterabrechnung verbindlich.` : ""}${escapeHtml(coverageNote)} ${escapeHtml(exchangeRateCopy(summary))}</small>`;
 }
 
 function bindCostDetailPopover(anchor, detail) {
@@ -3169,9 +3180,9 @@ function renderSimpleHeaderStatusContent() {
   }
 
   const activeSimpleRun = Boolean(run && ["queued", "running"].includes(run.status));
-  byId("simple-cost-summary").textContent = formatCostEur(simpleCostSummary?.total_eur);
+  byId("simple-cost-summary").textContent = formatSimpleTotalEur(simpleCostSummary?.total_eur);
   byId("simple-cost-today").textContent = formatCostEur(simpleCostSummary?.today_eur);
-  byId("simple-cost-total").textContent = formatCostEur(simpleCostSummary?.total_eur);
+  byId("simple-cost-total").textContent = formatSimpleTotalEur(simpleCostSummary?.total_eur);
   byId("simple-cost-projected").textContent = activeSimpleRun ? formatCostEur(simpleForecast?.projected_eur) : "–";
   const analysisModel = simpleForecast?.analysis_model || run?.model || "nicht gesetzt";
   const researchModel = simpleForecast?.research_model || run?.research_model || "nicht gesetzt";

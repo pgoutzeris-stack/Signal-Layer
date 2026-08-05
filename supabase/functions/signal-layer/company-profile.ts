@@ -569,7 +569,9 @@ Wenn kein aktuelles Logo eindeutig belegt ist, setze alle Logo-Felder auf null.`
     logo: await verifyLogoCandidate(company, parsed),
     usage: {
       prompt_tokens: Number(usageMeta.promptTokenCount || 0),
+      cached_input_tokens: Number(usageMeta.cachedContentTokenCount || 0),
       output_tokens: Number(usageMeta.candidatesTokenCount || 0),
+      thinking_tokens: Number(usageMeta.thoughtsTokenCount || 0),
       total_tokens: Number(usageMeta.totalTokenCount || 0),
       search_queries: groundingSearchCount(candidate),
     },
@@ -633,7 +635,9 @@ export async function researchCompanyProfile(
     },
     usage: {
       prompt_tokens: Number(usageMeta.promptTokenCount || 0),
+      cached_input_tokens: Number(usageMeta.cachedContentTokenCount || 0),
       output_tokens: Number(usageMeta.candidatesTokenCount || 0),
+      thinking_tokens: Number(usageMeta.thoughtsTokenCount || 0),
       total_tokens: Number(usageMeta.totalTokenCount || 0),
       search_queries: groundingSearchCount(candidate),
     },
