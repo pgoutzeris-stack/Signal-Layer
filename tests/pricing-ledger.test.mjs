@@ -30,9 +30,11 @@ const profileResearch = readFileSync(
 );
 
 test("uses verified standard and batch model prices without a guessed fallback", () => {
-  assert.match(backend, /"gemini-2\.5-flash-lite":\s*\{[^\n]*standard:\s*\{ input: 0\.1, cachedInput: 0\.01, output: 0\.4 \}, batch:\s*\{ input: 0\.05, cachedInput: 0\.01, output: 0\.2 \}/);
+  assert.match(backend, /"gemini-2\.5-flash-lite":\s*\{[^\n]*standard:\s*\{ input: 0\.1, cachedInput: 0\.025, output: 0\.4 \}, batch:\s*\{ input: 0\.05, cachedInput: 0\.025, output: 0\.2 \}/);
+  assert.match(backend, /"gemini-2\.5-flash":\s*\{[^\n]*standard:\s*\{ input: 0\.3, cachedInput: 0\.075, output: 2\.5 \}, batch:\s*\{ input: 0\.15, cachedInput: 0\.075, output: 1\.25 \}/);
   assert.match(backend, /"gemini-3\.5-flash":\s*\{[^\n]*standard:\s*\{ input: 1\.5, cachedInput: 0\.15, output: 9 \}, batch:\s*\{ input: 0\.75, cachedInput: 0\.075, output: 4\.5 \}/);
-  assert.match(backend, /"deepseek-v4-pro":\s*\{ currency: "CNY", standard:\s*\{ input: 3, cachedInput: 0\.025, output: 6 \}/);
+  assert.match(backend, /"deepseek-v4-pro":\s*\{ currency: "USD", standard:\s*\{ input: 0\.435, cachedInput: 0\.003625, output: 0\.87 \}/);
+  assert.match(backend, /"deepseek-v4-flash":\s*\{ currency: "USD", standard:\s*\{ input: 0\.14, cachedInput: 0\.0028, output: 0\.28 \}/);
   assert.match(backend, /if \(!verified\) throw new Error\(/);
   assert.match(backend, /function zeroCostFields\(model: string\)/);
   assert.doesNotMatch(backend, /fallbackRate|defaultRate|estimatedModelRate/i);

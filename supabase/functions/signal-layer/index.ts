@@ -2634,12 +2634,12 @@ type ModelPrice = {
 // Versionierte, ausschliesslich aus den offiziellen Anbieterpreislisten
 // uebernommene Preise je 1 Mio. Tokens. Unbekannte Modelle werden nicht
 // geschaetzt: Ohne verifizierten Eintrag darf kein kostenpflichtiger Lauf starten.
-const AI_PRICING_VERSION = "official-2026-08-04";
+const AI_PRICING_VERSION = "official-2026-08-05";
 const MODEL_PRICES: Record<string, ModelPrice> = {
-  "deepseek-v4-pro": { currency: "CNY", standard: { input: 3, cachedInput: 0.025, output: 6 } },
-  "deepseek-v4-flash": { currency: "CNY", standard: { input: 1, cachedInput: 0.02, output: 2 } },
-  "gemini-2.5-flash-lite": { currency: "USD", standard: { input: 0.1, cachedInput: 0.01, output: 0.4 }, batch: { input: 0.05, cachedInput: 0.01, output: 0.2 } },
-  "gemini-2.5-flash": { currency: "USD", standard: { input: 0.3, cachedInput: 0.03, output: 2.5 }, batch: { input: 0.15, cachedInput: 0.03, output: 1.25 } },
+  "deepseek-v4-pro": { currency: "USD", standard: { input: 0.435, cachedInput: 0.003625, output: 0.87 } },
+  "deepseek-v4-flash": { currency: "USD", standard: { input: 0.14, cachedInput: 0.0028, output: 0.28 } },
+  "gemini-2.5-flash-lite": { currency: "USD", standard: { input: 0.1, cachedInput: 0.025, output: 0.4 }, batch: { input: 0.05, cachedInput: 0.025, output: 0.2 } },
+  "gemini-2.5-flash": { currency: "USD", standard: { input: 0.3, cachedInput: 0.075, output: 2.5 }, batch: { input: 0.15, cachedInput: 0.075, output: 1.25 } },
   "gemini-2.5-pro": { currency: "USD", standard: { input: 1.25, cachedInput: 0.125, output: 10 }, standardLarge: { input: 2.5, cachedInput: 0.25, output: 15 }, batch: { input: 0.625, cachedInput: 0.125, output: 5 }, batchLarge: { input: 1.25, cachedInput: 0.25, output: 7.5 } },
   "gemini-3.1-flash-lite": { currency: "USD", standard: { input: 0.25, cachedInput: 0.025, output: 1.5 }, batch: { input: 0.125, cachedInput: 0.0125, output: 0.75 } },
   "gemini-3.1-pro-preview": { currency: "USD", standard: { input: 2, cachedInput: 0.2, output: 12 }, standardLarge: { input: 4, cachedInput: 0.4, output: 18 }, batch: { input: 1, cachedInput: 0.2, output: 6 }, batchLarge: { input: 2, cachedInput: 0.4, output: 9 } },
