@@ -1,8 +1,8 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
-import { deriveSimpleHeaderState, simpleProgressCounts } from "./status-state.mjs?v=20260804-2330";
+import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260805-1130";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260805-0810";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260805-1130";
 
 let sb = null;
 let sources = [];
@@ -3067,6 +3067,52 @@ function renderSimpleHeaderStatus() {
   }
 }
 
+function bindAnalysisErrorPopovers(root) {
+  root?.querySelectorAll(".analysis-error-chip").forEach((chip) => {
+    const position = () => {
+      const popover = chip.querySelector(".analysis-error-popover");
+      if (!popover) return;
+      const trigger = chip.querySelector(".crawl-result-pill") || chip;
+      const rect = trigger.getBoundingClientRect();
+      const margin = 12;
+      const width = Math.min(340, window.innerWidth - margin * 2);
+      popover.style.width = `${width}px`;
+      const height = Math.min(popover.scrollHeight, window.innerHeight - margin * 2, 440);
+      const left = Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin));
+      const top = window.innerHeight - rect.bottom >= height
+        ? rect.bottom
+        : Math.max(margin, rect.top - height);
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+    };
+    chip.addEventListener("mouseenter", position);
+    chip.addEventListener("focusin", position);
+  });
+}
+
+function renderSimpleAiError(detail, fallbackMessage) {
+  const error = simpleRunErrorPresentation(detail, fallbackMessage);
+  const occurredAt = error.occurredAt
+    ? new Date(error.occurredAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
+    : "letzter Simple-Lauf";
+  const billingCopy = error.internalCostWarning
+    ? "Interne Kostenwarnung"
+    : error.billable ? "Tokens sind angefallen" : "Nicht berechnet";
+  return `<span class="analysis-error-chip simple-ai-error-chip" tabindex="0">
+    <span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-triangle-exclamation"></i>${escapeHtml(error.pillLabel)}</span>
+    <span class="analysis-error-popover simple-ai-error-popover" role="tooltip">
+      <span class="analysis-error-popover-head"><i class="fa-solid fa-triangle-exclamation"></i><span><b>${escapeHtml(error.title)}</b><small>${escapeHtml(error.provider)} · ${escapeHtml(occurredAt)}</small></span></span>
+      <span class="analysis-error-action"><b>Was ist passiert?</b>${escapeHtml(error.summary)}</span>
+      <span class="analysis-error-causes">
+        <b>Konkrete Diagnose</b>
+        <span class="analysis-error-cause"><i class="fa-solid fa-server"></i><span><b>Anbieter-Antwort</b><small>${escapeHtml(error.providerMessage)}</small></span><strong>${escapeHtml(error.code)}</strong></span>
+        <span class="analysis-error-cause"><i class="fa-solid fa-coins"></i><span><b>Token & Kosten</b><small>${formatCostInt(error.tokens)} Tokens · ${formatCostEur(error.costEur)} · ${billingCopy}</small></span><strong>${formatCostInt(error.affectedCalls)}×</strong></span>
+      </span>
+      <span class="analysis-error-action"><b>Nächster Schritt</b>${escapeHtml(error.action)}</span>
+    </span>
+  </span>`;
+}
+
 function renderSimpleHeaderStatusContent() {
   if (!document.body.classList.contains("mode-simple")) return;
   const run = simpleRunStatus;
@@ -3112,11 +3158,14 @@ function renderSimpleHeaderStatusContent() {
   runError.hidden = !failed;
   if (failed) {
     const raw = String(failedRun?.error_message || "");
-    runError.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${escapeHtml(
-      /Hintergrundanalyse blockierte die interaktive Artikelansicht/i.test(raw)
-        ? "Der abgebrochene Testlauf ist beendet. Die gespeicherten Ergebnisse bleiben verfügbar."
-        : raw || "Der letzte Simple-Lauf wurde mit einem Fehler beendet."
-    )}`;
+    runError.innerHTML = failedRun?.ai_error_detail
+      ? renderSimpleAiError(failedRun.ai_error_detail, raw)
+      : `<span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-circle-info"></i>${escapeHtml(
+        /Hintergrundanalyse blockierte die interaktive Artikelansicht/i.test(raw)
+          ? "Der abgebrochene Testlauf ist beendet"
+          : simpleRunErrorPresentation(null, raw).shortLabel
+      )}</span>`;
+    bindAnalysisErrorPopovers(runError);
   }
 
   const activeSimpleRun = Boolean(run && ["queued", "running"].includes(run.status));
@@ -3636,27 +3685,7 @@ async function loadLastRun() {
       const groupCount = errors.reduce((sum, error) => sum + Number(error.count || 0), 0);
       return `<section class="status-error-group"><header class="status-error-group-head"><span>${escapeHtml(group)}</span><b>${groupCount.toLocaleString("de-DE")}</b></header><div class="status-error-pills">${errors.map(renderErrorChip).join("")}</div></section>`;
     }).join("");
-    const positionErrorPopover = (chip) => {
-      const popover = chip.querySelector(".analysis-error-popover");
-      if (!popover) return;
-      const trigger = chip.querySelector(".crawl-result-pill");
-      const rect = (trigger || chip).getBoundingClientRect();
-      const margin = 12;
-      const gap = 0;
-      const width = Math.min(305, window.innerWidth - margin * 2);
-      popover.style.width = `${width}px`;
-      const height = Math.min(popover.scrollHeight, window.innerHeight - margin * 2, 390);
-      const left = Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin));
-      const top = window.innerHeight - rect.bottom >= height + gap
-        ? rect.bottom + gap
-        : Math.max(margin, rect.top - height - gap);
-      popover.style.left = `${left}px`;
-      popover.style.top = `${top}px`;
-    };
-    els.apiErrorList.querySelectorAll(".analysis-error-chip").forEach((chip) => {
-      chip.addEventListener("mouseenter", () => positionErrorPopover(chip));
-      chip.addEventListener("focusin", () => positionErrorPopover(chip));
-    });
+    bindAnalysisErrorPopovers(els.apiErrorList);
     scheduleStatusRefresh(isActive || browserPending > 0);
   } catch {
     els.lastRunText.textContent = "Noch kein Crawl-Lauf.";

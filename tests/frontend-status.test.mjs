@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveSimpleHeaderState, simpleProgressCounts } from "../status-state.mjs";
+import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "../status-state.mjs";
 
 test("no Simple run stays idle without a fake trigger run", () => {
   const state = deriveSimpleHeaderState(null, null);
@@ -36,4 +36,31 @@ test("running main analysis reports processed articles", () => {
   assert.equal(state.progressRun, run);
   assert.equal(state.progressIsTrigger, false);
   assert.deepEqual(simpleProgressCounts(state.progressRun, state.progressIsTrigger), { total: 1000, processed: 72 });
+});
+
+test("provider balance errors identify model, cause and zero-cost effect", () => {
+  const error = simpleRunErrorPresentation({
+    code: "insufficient_balance",
+    model_label: "DeepSeek V4 Pro",
+    short_label: "Guthaben aufgebraucht",
+    summary: "DeepSeek hat die Analyse abgelehnt.",
+    provider_label: "DeepSeek API",
+    provider_message: "Insufficient Balance",
+    affected_calls: 5,
+    tokens: 0,
+    cost_eur: 0,
+    billable: false,
+    internal_cost_warning: false,
+  });
+  assert.equal(error.pillLabel, "DeepSeek V4 Pro · Guthaben aufgebraucht");
+  assert.equal(error.providerMessage, "Insufficient Balance");
+  assert.equal(error.affectedCalls, 5);
+  assert.equal(error.billable, false);
+  assert.equal(error.internalCostWarning, false);
+});
+
+test("old generic database hints are never shown as the user explanation", () => {
+  const error = simpleRunErrorPresentation(null, "KI-Prüfung nicht möglich (siehe ai_usage_events).");
+  assert.doesNotMatch(error.summary, /ai_usage_events/);
+  assert.match(error.summary, /Analysemodell/);
 });

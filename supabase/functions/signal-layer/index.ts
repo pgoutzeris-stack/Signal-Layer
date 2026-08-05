@@ -430,6 +430,116 @@ async function buildSimpleForecast(run: Record<string, unknown> | null | undefin
   };
 }
 
+function simpleProviderMessage(raw: unknown): string {
+  const text = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!text) return "Keine Anbieter-Antwort gespeichert";
+  try {
+    const parsed = JSON.parse(text);
+    return String(parsed?.error?.message || parsed?.message || text).replace(/\s+/g, " ").slice(0, 300);
+  } catch {
+    return text.slice(0, 300);
+  }
+}
+
+function simpleAiErrorCopy(code: string, modelLabel: string) {
+  const copies: Record<string, { shortLabel: string; title: string; summary: string; action: string }> = {
+    insufficient_balance: {
+      shortLabel: "Guthaben aufgebraucht",
+      title: `${modelLabel}: API-Guthaben aufgebraucht`,
+      summary: `${modelLabel} hat die Artikelanalyse abgelehnt, weil das Guthaben des Anbieter-Kontos aufgebraucht ist. Das ist eine Abrechnungssperre beim KI-Anbieter, keine interne Token- oder Kostenwarnung des Signal Layers.`,
+      action: "DeepSeek-Guthaben aufladen oder unter Kosten & Betrieb ein verfügbares Analysemodell wählen. Danach den gestoppten Lauf neu starten.",
+    },
+    spending_cap: {
+      shortLabel: "Ausgabenlimit erreicht",
+      title: `${modelLabel}: Ausgabenlimit erreicht`,
+      summary: `${modelLabel} hat die Analyse abgelehnt, weil das beim KI-Anbieter hinterlegte Ausgabenlimit erreicht wurde.`,
+      action: "Das Ausgabenlimit beim Anbieter erhöhen oder ein verfügbares Analysemodell wählen. Danach den Lauf neu starten.",
+    },
+    rate_limit: {
+      shortLabel: "Anfragelimit erreicht",
+      title: `${modelLabel}: Anfragelimit erreicht`,
+      summary: `${modelLabel} hat die Anfragen vorübergehend wegen eines Rate- oder Quota-Limits abgelehnt.`,
+      action: "Kurz warten und den Lauf erneut starten. Bei wiederholtem Auftreten das Anbieter-Limit prüfen oder ein anderes Analysemodell wählen.",
+    },
+    invalid_key: {
+      shortLabel: "API-Schlüssel abgelehnt",
+      title: `${modelLabel}: API-Schlüssel abgelehnt`,
+      summary: `Der KI-Anbieter hat den für ${modelLabel} hinterlegten API-Schlüssel nicht akzeptiert.`,
+      action: "Den API-Schlüssel im Vault prüfen beziehungsweise erneuern und den Lauf danach neu starten.",
+    },
+    model_busy: {
+      shortLabel: "Modell ausgelastet",
+      title: `${modelLabel}: Modell vorübergehend ausgelastet`,
+      summary: `Der KI-Anbieter meldet, dass ${modelLabel} derzeit keine weiteren Anfragen verarbeiten kann.`,
+      action: "Den Lauf später erneut starten oder vorübergehend ein anderes Analysemodell wählen.",
+    },
+    timeout: {
+      shortLabel: "Zeitüberschreitung",
+      title: `${modelLabel}: Zeitüberschreitung`,
+      summary: `${modelLabel} hat nicht innerhalb des technischen Zeitfensters geantwortet.`,
+      action: "Den Lauf erneut starten. Wiederholte Timeouts sprechen für eine vorübergehende Störung oder Überlastung des Anbieters.",
+    },
+    invalid_response: {
+      shortLabel: "Antwort nicht lesbar",
+      title: `${modelLabel}: Modellantwort nicht lesbar`,
+      summary: `${modelLabel} hat geantwortet, aber keine vollständig lesbare strukturierte Artikelbewertung geliefert.`,
+      action: "Den betroffenen Artikel erneut analysieren. Bereits übermittelte Tokens können bei diesem Fehlertyp berechnet worden sein.",
+    },
+  };
+  return copies[code] || {
+    shortLabel: "Technischer API-Fehler",
+    title: `${modelLabel}: technischer API-Fehler`,
+    summary: `${modelLabel} konnte keine verwertbare Artikelbewertung liefern.`,
+    action: "Die Anbieter-Antwort prüfen und den Lauf nach Behebung erneut starten.",
+  };
+}
+
+async function buildSimpleRunAiErrorDetail(run: Record<string, unknown> | null | undefined) {
+  if (!run?.id || String(run.status || "") !== "error") return null;
+  const admin = getAdminClient();
+  const { data: events } = await admin.schema("signal_layer").from("ai_usage_events")
+    .select("model,error_code,error_message,input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_eur,created_at")
+    .eq("simple_run_id", String(run.id)).eq("status", "error")
+    .order("created_at", { ascending: false }).limit(40);
+  const latest = events?.[0];
+  if (!latest) return null;
+  // A deliberately cancelled test run can still contain an older article
+  // error. Only errors close to the run stop are presented as its cause.
+  const stoppedAt = new Date(String(run.finished_at || run.last_progress_at || 0)).getTime();
+  const errorAt = new Date(String(latest.created_at || 0)).getTime();
+  if (stoppedAt && errorAt && Math.abs(stoppedAt - errorAt) > 120_000) return null;
+  const model = String(latest.model || run.model || SIMPLE_MODEL);
+  const modelOption = simpleModelOption(model);
+  const code = String(latest.error_code || "unknown");
+  const latestAt = errorAt || Date.now();
+  const related = (events || []).filter((event: Record<string, unknown>) =>
+    String(event.model || "") === model
+    && String(event.error_code || "unknown") === code
+    && Math.abs(latestAt - new Date(String(event.created_at || 0)).getTime()) <= 10 * 60_000
+  );
+  const tokens = related.reduce((sum: number, event: Record<string, unknown>) => sum + Number(event.total_tokens || 0), 0);
+  const costEur = related.reduce((sum: number, event: Record<string, unknown>) => sum + Number(event.estimated_cost_eur || 0), 0);
+  const copy = simpleAiErrorCopy(code, modelOption.label);
+  return {
+    code,
+    model,
+    model_label: modelOption.label,
+    provider: modelOption.provider,
+    provider_label: modelOption.provider === "deepseek" ? "DeepSeek API" : "Google Gemini API",
+    short_label: copy.shortLabel,
+    title: copy.title,
+    summary: copy.summary,
+    action: copy.action,
+    provider_message: simpleProviderMessage(latest.error_message),
+    affected_calls: related.length,
+    tokens,
+    cost_eur: costEur,
+    billable: tokens > 0 || costEur > 0,
+    internal_cost_warning: false,
+    occurred_at: latest.created_at || null,
+  };
+}
+
 // Selbstaufruf, der das Ende der Antwort überlebt: ohne waitUntil verwirft das
 // Isolate den ausstehenden fetch, und die Kette bleibt stehen.
 // ---------------------------------------------------------------------------
@@ -5953,9 +6063,10 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
         ]);
+        const runWithError = run ? { ...run, ai_error_detail: await buildSimpleRunAiErrorDetail(run) } : null;
         return corsResponse(origin, {
           counts: { marketing: marketing || 0, sales: sales || 0, rejected: rejected || 0 },
-          run: run || null,
+          run: runWithError,
           trigger_backfill: triggerBackfill || null,
           forecast: await buildSimpleForecast(run),
         });
@@ -6271,15 +6382,22 @@ Deno.serve(async (req: Request) => {
             await admin.schema("signal_layer").from("simple_signals")
               .upsert(deterministicRows, { onConflict: "article_id" });
           }
+          const stoppedAt = new Date().toISOString();
+          const stoppedRun = { ...run, status: "error", last_progress_at: stoppedAt, finished_at: stoppedAt };
+          const aiErrorDetail = await buildSimpleRunAiErrorDetail(stoppedRun);
           await admin.schema("signal_layer").from("simple_runs").update({
             status: "error",
-            error_message: "KI-Prüfung nicht möglich (siehe ai_usage_events). Lauf gestoppt, die betroffenen Artikel bleiben unbewertet.",
-            last_progress_at: new Date().toISOString(),
-            finished_at: new Date().toISOString(),
+            error_message: aiErrorDetail?.summary || "Das konfigurierte KI-Modell konnte keine Artikelbewertung liefern. Der Lauf wurde gestoppt.",
+            last_progress_at: stoppedAt,
+            finished_at: stoppedAt,
             processing_token: null,
             processing_until: null,
           }).eq("id", run.id).eq("status", "running").eq("processing_token", processingToken);
-          return corsResponse(origin, { run: { ...run, status: "error" }, done: true, ai_unavailable: true });
+          return corsResponse(origin, {
+            run: { ...stoppedRun, error_message: aiErrorDetail?.summary, ai_error_detail: aiErrorDetail },
+            done: true,
+            ai_unavailable: true,
+          });
         }
 
         const cursor = run.cursor + Math.max(consumed, 1);
@@ -6595,8 +6713,9 @@ Deno.serve(async (req: Request) => {
         const usdEurRate = exchangeRate?.rate ?? null;
         const todayCostRows = (costLedger || []).filter((row: { usage_date?: string }) => row.usage_date === berlinDateKey());
         const costSummary = summarizeGlobalCosts(costLedger || [], todayCostRows || [], usdEurRate);
+        const runWithError = run ? { ...run, ai_error_detail: await buildSimpleRunAiErrorDetail(run) } : null;
         return corsResponse(origin, {
-          run: run || null,
+          run: runWithError,
           trigger_backfill: triggerBackfill || null,
           batch_size: SIMPLE_BATCH_SIZE,
           totals: { signals: signalCount || 0, rejected: rejectedCount || 0 },

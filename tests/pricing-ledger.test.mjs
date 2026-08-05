@@ -48,6 +48,14 @@ test("never marks a Simple run complete with technical model errors", () => {
   assert.match(backend, /status: completedWithErrors \? "error" : done \? "done" : "running"/);
 });
 
+test("Simple run status explains the actual provider error from the immutable ledger", () => {
+  assert.match(backend, /function simpleAiErrorCopy\(/);
+  assert.match(backend, /buildSimpleRunAiErrorDetail\(/);
+  assert.match(backend, /insufficient_balance:[\s\S]*API-Guthaben aufgebraucht/);
+  assert.match(backend, /internal_cost_warning: false/);
+  assert.doesNotMatch(backend, /KI-Prüfung nicht möglich \(siehe ai_usage_events\)/);
+});
+
 test("starts no second slow DeepSeek article near the request timeout", () => {
   assert.match(backend, /simpleModelOption\(simpleModel\)\.provider === "deepseek"\s*\? 45_000\s*:\s*85_000/);
 });
