@@ -69,3 +69,9 @@ select cron.schedule(
   '17 3 * * *',
   $$delete from shared.ops_probes where checked_at < now() - interval '30 days'$$
 );
+
+-- Ohne USAGE auf der Sequenz scheitert jedes INSERT der Edge Function: die
+-- Tabellenrechte allein genuegen bei bigserial nicht. Beim ersten Anlegen
+-- gefehlt, deshalb hier nachgezogen.
+grant usage, select on sequence shared.ops_probes_id_seq to service_role;
+grant usage, select on sequence shared.ops_incidents_id_seq to service_role;
