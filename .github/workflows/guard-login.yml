@@ -70,6 +70,12 @@ jobs:
           echo "$recruiting"
           echo "$profiles"
 
+          # Messwerte weiterreichen. GitHub loescht dieses Protokoll nach wenigen
+          # Tagen, deshalb landen sie zusaetzlich in shared.ops_probes.
+          set -- $login;      echo "login_status=$2"      >> "$GITHUB_OUTPUT"; echo "login_ms=$3"      >> "$GITHUB_OUTPUT"
+          set -- $recruiting; echo "recruiting_status=$2" >> "$GITHUB_OUTPUT"; echo "recruiting_ms=$3" >> "$GITHUB_OUTPUT"
+          set -- $profiles;   echo "profiles_status=$2"   >> "$GITHUB_OUTPUT"; echo "profiles_ms=$3"   >> "$GITHUB_OUTPUT"
+
           failed=""
           for line in "$login" "$recruiting" "$profiles"; do
             set -- $line
@@ -94,6 +100,7 @@ jobs:
         env:
           WORKER_SECRET: ${{ secrets.CRAWLER_WORKER_SECRET }}
           REASON: ${{ steps.probe.outputs.reason }}
+          PROBE: ${{ toJSON(steps.probe.outputs) }}
         run: |
           set -uo pipefail
           if [ -z "${WORKER_SECRET}" ]; then
@@ -102,7 +109,7 @@ jobs:
           fi
           curl -s --max-time 25 -X POST "${PROJECT_URL}/functions/v1/signal-layer" \
             -H "Content-Type: application/json" -H "authorization: Bearer ${WORKER_SECRET}" \
-            -d "$(printf '{"action":"set_ops_guard","enabled":false,"reason":%s}' "$(printf '%s' "Waechter: ${REASON}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")"
+            -d "$(REASON="${REASON}" PROBE="${PROBE}" python3 -c 'import json,os; print(json.dumps({"action":"set_ops_guard","enabled":False,"reason":"Waechter: "+os.environ["REASON"],"probe":json.loads(os.environ["PROBE"])}))')"
           echo
           echo "::error::Login or recruiting is failing: ${REASON} Heavy Signal Layer work is paused."
           exit 1
@@ -111,6 +118,7 @@ jobs:
         if: steps.probe.outputs.verdict == 'up'
         env:
           WORKER_SECRET: ${{ secrets.CRAWLER_WORKER_SECRET }}
+          PROBE: ${{ toJSON(steps.probe.outputs) }}
         run: |
           set -uo pipefail
           if [ -z "${WORKER_SECRET}" ]; then
@@ -122,5 +130,5 @@ jobs:
           # weil der naechste Ausfall sofort wieder pausiert.
           curl -s --max-time 25 -X POST "${PROJECT_URL}/functions/v1/signal-layer" \
             -H "Content-Type: application/json" -H "authorization: Bearer ${WORKER_SECRET}" \
-            -d '{"action":"set_ops_guard","enabled":true}'
+            -d "$(PROBE="${PROBE}" python3 -c 'import json,os; print(json.dumps({"action":"set_ops_guard","enabled":True,"probe":json.loads(os.environ["PROBE"])}))')"
           echo

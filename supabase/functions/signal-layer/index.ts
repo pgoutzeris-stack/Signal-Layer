@@ -240,6 +240,66 @@ const EDITOR_ACTIONS = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// Protokoll des externen Waechters. GitHub loescht seine Laufprotokolle nach
+// wenigen Tagen, deshalb liegen die Messwerte hier: shared.ops_probes 30 Tage
+// (Cron-Job shared-ops-probe-cleanup), shared.ops_incidents ohne Verfall.
+// ---------------------------------------------------------------------------
+function probeZahl(value: unknown): number | null {
+  const zahl = Number(value);
+  return Number.isFinite(zahl) ? Math.round(zahl) : null;
+}
+
+async function logGuardProbe(input: {
+  enabled: boolean;
+  reason?: string;
+  probe?: Record<string, unknown>;
+  warVorherFrei: boolean;
+}): Promise<void> {
+  const admin = getAdminClient();
+  const p = input.probe || {};
+  const loginMs = probeZahl(p.login_ms);
+  const recruitingMs = probeZahl(p.recruiting_ms);
+  const profilesMs = probeZahl(p.profiles_ms);
+  const gemessen = [loginMs, recruitingMs, profilesMs].filter((ms): ms is number => ms !== null);
+  const grund = (input.reason || "").slice(0, 500) || null;
+  try {
+    await admin.schema("shared").from("ops_probes").insert({
+      verdict: input.enabled ? "up" : "down",
+      login_status: probeZahl(p.login_status),
+      login_ms: loginMs,
+      recruiting_status: probeZahl(p.recruiting_status),
+      recruiting_ms: recruitingMs,
+      profiles_status: probeZahl(p.profiles_status),
+      profiles_ms: profilesMs,
+      slowest_ms: gemessen.length ? Math.max(...gemessen) : null,
+      reason: grund,
+      source: String(p.source || "github_actions").slice(0, 60),
+    });
+
+    // Nur Wechsel als Vorfall: sonst waechst die Tabelle ohne Verfallsdatum bei
+    // einem laengeren Ausfall alle fuenf Minuten um eine Zeile.
+    if (!input.enabled && input.warVorherFrei) {
+      await admin.schema("shared").from("ops_incidents").insert({
+        reason: grund || "Waechter hat pausiert, ohne Grund zu melden.",
+        login_ms: loginMs, recruiting_ms: recruitingMs, profiles_ms: profilesMs,
+        source: String(p.source || "github_actions").slice(0, 60),
+      });
+    }
+    if (input.enabled && !input.warVorherFrei) {
+      const { data: offen } = await admin.schema("shared").from("ops_incidents")
+        .select("id").is("resolved_at", null).order("started_at", { ascending: false }).limit(1);
+      const offeneId = offen?.[0]?.id;
+      if (offeneId) {
+        await admin.schema("shared").from("ops_incidents")
+          .update({ resolved_at: new Date().toISOString() }).eq("id", offeneId);
+      }
+    }
+  } catch (error) {
+    console.warn(`ops_guard: Protokoll fehlgeschlagen (${error instanceof Error ? error.message : String(error)}).`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Scheduled-trigger auth — pg_cron calls this function with a shared secret
 // header instead of a user JWT (there's no logged-in user for a 6am cron run).
 // ---------------------------------------------------------------------------
@@ -5752,9 +5812,18 @@ Deno.serve(async (req: Request) => {
       // full crawl).
       // ---------------------------------------------------------------
       case "set_ops_guard": {
-        const { enabled, reason } = (body || {}) as { enabled?: boolean; reason?: string };
+        const { enabled, reason, probe } = (body || {}) as {
+          enabled?: boolean;
+          reason?: string;
+          probe?: Record<string, unknown>;
+        };
         const admin = getAdminClient();
         const on = enabled !== false;
+        // Vorherigen Zustand lesen, bevor er ueberschrieben wird: nur so ist ein
+        // Zustandswechsel erkennbar, und nur Wechsel gehoeren in die Vorfaelle.
+        const { data: vorher } = await admin.schema("signal_layer").from("ops_guard")
+          .select("heavy_work_enabled").eq("id", true).maybeSingle();
+        const warVorherFrei = vorher?.heavy_work_enabled !== false;
         const { error } = await admin.schema("signal_layer").from("ops_guard").update({
           heavy_work_enabled: on,
           paused_reason: on ? null : (reason || "Extern pausiert.").slice(0, 500),
@@ -5762,6 +5831,10 @@ Deno.serve(async (req: Request) => {
           updated_at: new Date().toISOString(),
         }).eq("id", true);
         if (error) return errorResponse(origin, error.message, 500);
+        // Protokoll getrennt vom Schalten: schlaegt es fehl, bleibt der Waechter
+        // trotzdem wirksam. Ein fehlendes Protokoll ist ein Aerger, ein nicht
+        // pausierter Ausfall ein Vorfall.
+        await logGuardProbe({ enabled: on, reason, probe, warVorherFrei });
         console.warn(`ops_guard: schwere Arbeit ${on ? "freigegeben" : "pausiert"}${on ? "" : ` (${reason || "ohne Grund"})`}.`);
         return corsResponse(origin, { heavy_work_enabled: on, reason: on ? null : reason || null });
       }
