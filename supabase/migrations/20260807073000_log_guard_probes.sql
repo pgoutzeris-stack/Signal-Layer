@@ -75,3 +75,14 @@ select cron.schedule(
 -- gefehlt, deshalb hier nachgezogen.
 grant usage, select on sequence shared.ops_probes_id_seq to service_role;
 grant usage, select on sequence shared.ops_incidents_id_seq to service_role;
+
+-- Der Waechter fasst bei einem schlechten Messwert einmal nach. Die Werte des
+-- ersten Versuchs bleiben erhalten: nur so ist zu sehen, wie oft der erste
+-- Versuch langsam und der zweite gut war - das Muster eines kalten Starts.
+alter table shared.ops_probes
+  add column if not exists retried boolean not null default false,
+  add column if not exists login_first_ms integer,
+  add column if not exists recruiting_first_ms integer,
+  add column if not exists profiles_first_ms integer;
+
+create index if not exists ops_probes_retried_idx on shared.ops_probes (checked_at desc) where retried;

@@ -272,6 +272,14 @@ async function logGuardProbe(input: {
       profiles_status: probeZahl(p.profiles_status),
       profiles_ms: profilesMs,
       slowest_ms: gemessen.length ? Math.max(...gemessen) : null,
+      // Nachgefasste Werte getrennt halten: die *_ms sind der zweite Versuch,
+      // die *_first_ms der erste. Ein kalter Start sieht so aus - erster
+      // Versuch langsam, zweiter schnell - und ist von echter Ueberlast
+      // unterscheidbar, bei der beide Versuche kriechen.
+      retried: String(p.retried || "") === "1" || p.retried === true,
+      login_first_ms: probeZahl(p.login_first_ms),
+      recruiting_first_ms: probeZahl(p.recruiting_first_ms),
+      profiles_first_ms: probeZahl(p.profiles_first_ms),
       reason: grund,
       source: String(p.source || "github_actions").slice(0, 60),
     });

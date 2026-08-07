@@ -9,6 +9,11 @@ name: guard login and recruiting
 # Ein 5xx oder eine Zeitueberschreitung gilt als Ausfall. Ein 400 oder 401 ist
 # ausdruecklich in Ordnung: es beweist, dass der Dienst antwortet und nur die
 # Testdaten ablehnt.
+#
+# Bei einem schlechten Messwert wird einmal nachgefasst, bevor pausiert wird.
+# Der Waechter haelt die Datenbank mit seinen Laeufen selbst warm; faellt ein
+# geplanter Lauf bei GitHub aus, kuehlt sie ab, und der naechste Lauf misst dann
+# die Aufwaermzeit statt eines Ausfalls. Ein echter Ausfall scheitert beide Male.
 
 on:
   schedule:
@@ -51,18 +56,46 @@ jobs:
             echo "$label $code $ms"
           }
 
-          login=$(probe login -X POST \
+          schlecht() {
+            # $1 http_code, $2 ms
+            [ "$1" = "000" ] && return 0
+            [ "$1" -ge 500 ] 2>/dev/null && return 0
+            [ "$2" -gt "${MAX_MS}" ] && return 0
+            return 1
+          }
+
+          zweimal() {
+            # Nachfassen statt sofort Alarm: nach einer Pause in den geplanten
+            # Laeufen ist die Datenbank kalt, und dann misst nur der erste
+            # Versuch die Aufwaermzeit. Ein echter Ausfall scheitert beide Male.
+            # Druckt "<label> <code> <ms> <nachgefasst 0|1> <erster_ms|->".
+            local args=("$@")
+            local erst zweit erster_ms
+            erst=$(probe "${args[@]}")
+            set -- $erst
+            if ! schlecht "$2" "$3"; then
+              echo "$erst 0 -"
+              return
+            fi
+            erster_ms="$3"
+            sleep 3
+            zweit=$(probe "${args[@]}")
+            set -- $zweit
+            echo "$1 $2 $3 1 ${erster_ms}"
+          }
+
+          login=$(zweimal login -X POST \
             -H "apikey: ${ANON_KEY}" -H "Content-Type: application/json" \
             -d '{"email":"guard-probe@example.invalid","password":"not-a-real-password"}' \
             "${PROJECT_URL}/auth/v1/token?grant_type=password")
 
           # Echte Recruiting-Tabelle, nicht ersatzweise profiles: nur so deckt der
           # Waechter auch einen Ausfall ab, der allein das Recruiting-Tool trifft.
-          recruiting=$(probe recruiting -I \
+          recruiting=$(zweimal recruiting -I \
             -H "apikey: ${ANON_KEY}" -H "Accept-Profile: recruiting" \
             "${PROJECT_URL}/rest/v1/applicants?select=id&limit=1")
 
-          profiles=$(probe profiles -I \
+          profiles=$(zweimal profiles -I \
             -H "apikey: ${ANON_KEY}" \
             "${PROJECT_URL}/rest/v1/profiles?select=id&limit=1")
 
@@ -72,9 +105,18 @@ jobs:
 
           # Messwerte weiterreichen. GitHub loescht dieses Protokoll nach wenigen
           # Tagen, deshalb landen sie zusaetzlich in shared.ops_probes.
-          set -- $login;      echo "login_status=$2"      >> "$GITHUB_OUTPUT"; echo "login_ms=$3"      >> "$GITHUB_OUTPUT"
-          set -- $recruiting; echo "recruiting_status=$2" >> "$GITHUB_OUTPUT"; echo "recruiting_ms=$3" >> "$GITHUB_OUTPUT"
-          set -- $profiles;   echo "profiles_status=$2"   >> "$GITHUB_OUTPUT"; echo "profiles_ms=$3"   >> "$GITHUB_OUTPUT"
+          nachgefasst=0
+          for line in "$login" "$recruiting" "$profiles"; do
+            set -- $line
+            echo "$1_status=$2" >> "$GITHUB_OUTPUT"
+            echo "$1_ms=$3" >> "$GITHUB_OUTPUT"
+            if [ "${4:-0}" = "1" ]; then
+              nachgefasst=1
+              echo "$1_first_ms=${5:--}" >> "$GITHUB_OUTPUT"
+              echo "Nachgefasst bei $1: erster Versuch ${5} ms, zweiter $3 ms."
+            fi
+          done
+          echo "retried=$nachgefasst" >> "$GITHUB_OUTPUT"
 
           failed=""
           for line in "$login" "$recruiting" "$profiles"; do
