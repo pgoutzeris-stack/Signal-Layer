@@ -14,10 +14,19 @@ name: guard login and recruiting
 # Der Waechter haelt die Datenbank mit seinen Laeufen selbst warm; faellt ein
 # geplanter Lauf bei GitHub aus, kuehlt sie ab, und der naechste Lauf misst dann
 # die Aufwaermzeit statt eines Ausfalls. Ein echter Ausfall scheitert beide Male.
+# Zwischen den Versuchen wird 20 s gewartet: am 9.8.2026 war die Datenbank nach
+# 2 h 23 min ohne Lauf nach 3 s noch nicht warm (login 8149 ms, dann 3404 ms),
+# und der Waechter meldete einen Ausfall, den es nicht gab.
+#
+# Nachts laeuft der Waechter nicht, Fenster 0 bis 6 Uhr deutscher Zeit. GitHub
+# kennt nur UTC, deshalb steht hier die Sommerzeit (UTC+2). Im Winter verschiebt
+# sich das Fenster bewusst auf 23 bis 5 Uhr. Eine 6-Stunden-Luecke ist erprobt:
+# am 7.8.2026 mass der Lauf danach 1068/718/551 ms.
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    # 04:00–21:55 UTC = 06:00–23:55 Sommerzeit, danach Pause bis zum Morgen.
+    - cron: "*/5 4-21 * * *"
   workflow_dispatch:
 
 permissions:
@@ -78,7 +87,7 @@ jobs:
               return
             fi
             erster_ms="$3"
-            sleep 3
+            sleep 20
             zweit=$(probe "${args[@]}")
             set -- $zweit
             echo "$1 $2 $3 1 ${erster_ms}"
