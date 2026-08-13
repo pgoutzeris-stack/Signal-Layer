@@ -31,9 +31,8 @@ def read(name, ordner=None):
     return open(os.path.join(ordner or SRC, name), encoding="utf-8").read()
 
 # Infografiken: gleiche Kachel, aber Titel und Untertitel liegen in .ttl/.sub,
-# und die Aussage steckt in einer SVG-Zeichnung. Die Zeichnung bleibt wie
-# gebaut - ihre Zahlen gehoeren zum Beispielthema und muessen in der Werkbank
-# ersetzt werden. Deshalb tragen diese Layouts einen eigenen Hinweis in der UI.
+# und die Aussage steckt in einer SVG-Zeichnung. Die Form bleibt, die
+# Beschriftung sind Platzhalter (Slots, stats, steps), die das Modell fuellt.
 LAYOUTS = {
     "S1": (SRC_MODELL, "ROOTS_LinkedIn_Modell_1_Sweet-Spot.html", "Sweet-Spot-Venn"),
     "S2": (SRC_MODELL, "ROOTS_LinkedIn_Modell_2_Reifepyramide.html", "Reifepyramide"),

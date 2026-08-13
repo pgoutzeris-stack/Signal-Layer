@@ -609,7 +609,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260813-2230";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260813-2345";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1153,6 +1153,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       takeaway: String(src.takeaway || ""),
       footerLeft: String(src.footer_left || company || "ROOTS Brand Strategy Consultants"),
       imageHint: String(src.image_hint || ""),
+      slot_a: String(src.slot_a || ""),
+      slot_b: String(src.slot_b || ""),
+      slot_c: String(src.slot_c || ""),
+      slot_d: String(src.slot_d || ""),
+      slot_center: String(src.slot_center || ""),
       counts: {
         stats: Math.max(3, stats.length || 0),
         steps: Math.max(3, steps.length || 0),
@@ -1224,7 +1229,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     html = fillTemplate(html, slide);
     html = wrapImageSlots(html, slide);
     if (editable) {
-      html = html.replace(/data-field="([a-z_]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
+      html = html.replace(/data-field="([a-z0-9_.]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
     }
     // Kein Eingriff in die Anmutung: jedes gebaute Asset bringt seine mit, und
     // die Textfarben stehen inline im Markup. Ein Umschalten der Klasse hat
@@ -1268,12 +1273,26 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       fact: slide.fact,
       takeaway: slide.takeaway,
       footer_left: slide.footerLeft,
+      slot_a: slide.slot_a || "",
+      slot_b: slide.slot_b || "",
+      slot_c: slide.slot_c || "",
+      slot_d: slide.slot_d || "",
+      slot_center: slide.slot_center || "",
       // Nur bei den Datenlayouts: die Zeile ueber dem Titel. Nicht den Kicker
       // wiederholen, der steht schon oben rechts in der Kachel.
       eyebrow: company ? `Abbildung · ${company}` : "Abbildung",
       image: slide.image.src || "",
     };
-    return html.replace(/\{\{([a-z_]+)\}\}/g, (_m, name) => {
+    (slide.stats || []).forEach((eintrag, i) => {
+      werte[`stat${i + 1}_value`] = eintrag?.value || "";
+      werte[`stat${i + 1}_label`] = eintrag?.label || "";
+    });
+    (slide.steps || []).forEach((schritt, i) => {
+      werte[`step${i + 1}_n`] = schritt?.n || "";
+      werte[`step${i + 1}_title`] = schritt?.title || "";
+      werte[`step${i + 1}_text`] = schritt?.text || "";
+    });
+    return html.replace(/\{\{([a-z0-9_]+)\}\}/g, (_m, name) => {
       const wert = werte[name];
       if (name === "logo" || name === "image") return attr(wert || "");
       const bearbeitet = slide.html?.[name];

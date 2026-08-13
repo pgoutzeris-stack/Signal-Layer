@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.2";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.3";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -131,6 +131,12 @@ export type AssetSlide = {
   takeaway: string;
   footer_left: string;
   image_hint: string;
+  /** Beschriftung in der Infografik-Zeichnung, nicht in der Textfolie. */
+  slot_a: string;
+  slot_b: string;
+  slot_c: string;
+  slot_d: string;
+  slot_center: string;
 };
 
 export type LinkedinPayload = {
@@ -219,7 +225,7 @@ export function digitKey(value: string): string {
 
 /**
  * "25 %" zaehlt nur, wenn 25 als eigene Zahl im Artikel steht, nicht als
- * Teil von 2025. "etwa ein Viertel" und "keine zehn" sind keine Werte.
+ * Teil von 2025. "etwa ein Viertel" ist keine Ziffer 25.
  */
 export function numberIsAttested(value: string, corpus: string): boolean {
   const digits = digitKey(value);
@@ -231,6 +237,27 @@ export function numberIsAttested(value: string, corpus: string): boolean {
   } catch {
     return nackt.includes(digits);
   }
+}
+
+/**
+ * Deutsche Zahlwoerter, die wie eine Ziffer zaehlen, sobald eine Einheit
+ * folgt (siebzig Prozent, dreissig Mrd.). Brueche stehen extra.
+ */
+export const DE_NUMBER_WORDS: Record<string, string> = {
+  zwei: "2", drei: "3", vier: "4", fünf: "5", fuenf: "5", sechs: "6", sieben: "7",
+  acht: "8", neun: "9", zehn: "10", elf: "11", zwölf: "12", zwoelf: "12",
+  dreizehn: "13", vierzehn: "14", fünfzehn: "15", fuenfzehn: "15", sechzehn: "16",
+  siebzehn: "17", achtzehn: "18", neunzehn: "19", zwanzig: "20",
+  dreißig: "30", dreissig: "30", vierzig: "40", fünfzig: "50", fuenfzig: "50",
+  sechzig: "60", siebzig: "70", achtzig: "80", neunzig: "90", hundert: "100",
+};
+
+const DE_WORD_ALT = Object.keys(DE_NUMBER_WORDS).sort((a, b) => b.length - a.length).join("|");
+const DE_UNIT_ALT = "Prozent(?:punkte)?|%|Mrd\\.?|Milliarden?|Millionen?|Mio\\.?";
+const DE_FRACTION_RE = /\b((?:ein|eine|einem|einen|zwei|drei|vier)\s+(?:Viertel|Drittel|Hälfte|Haelfte|Zehntel|Fünftel|Fuenftel))\b/gi;
+
+function isFractionClaim(value: string): boolean {
+  return /viertel|drittel|hälfte|haelfte|zehntel|fünftel|fuenftel/i.test(value);
 }
 
 /**
@@ -254,9 +281,98 @@ export function claimedNumbers(value: string): string[] {
   return [...gefunden];
 }
 
+/** „siebzig Prozent“ und „ein Viertel“ — Behauptungen ohne Ziffer. */
+export function claimedVerbalNumbers(value: string): string[] {
+  const nackt = String(value || "").replace(/\u00a0/g, " ");
+  const gefunden = new Set<string>();
+  const wort = new RegExp(`\\b(${DE_WORD_ALT})\\s*(?:${DE_UNIT_ALT})\\b`, "gi");
+  let treffer: RegExpExecArray | null;
+  while ((treffer = wort.exec(nackt))) gefunden.add(treffer[0].replace(/\s+/g, " ").trim());
+  const bruch = new RegExp(DE_FRACTION_RE.source, "gi");
+  while ((treffer = bruch.exec(nackt))) gefunden.add(treffer[1].replace(/\s+/g, " ").trim());
+  return [...gefunden];
+}
+
+/**
+ * Eine Ziffer gilt auch, wenn der Artikel das Zahlwort schreibt (70 und
+ * siebzig). Ein Bruch gilt nur als Bruch, nie als 25.
+ */
+export function quantityIsAttested(value: string, corpus: string): boolean {
+  if (!corpus) return false;
+  const nackt = corpus.replace(/\u00a0/g, " ");
+  const claim = String(value || "").replace(/\u00a0/g, " ").trim();
+  if (!claim) return false;
+  if (nackt.toLowerCase().includes(claim.toLowerCase())) return true;
+  if (numberIsAttested(claim, nackt)) return true;
+  if (isFractionClaim(claim)) {
+    const wort = claim.toLowerCase().match(/viertel|drittel|hälfte|haelfte|zehntel|fünftel|fuenftel/)?.[0];
+    return Boolean(wort && nackt.toLowerCase().includes(wort));
+  }
+  const wort = claim.toLowerCase().match(new RegExp(`(?:${DE_WORD_ALT})`, "i"))?.[0]?.toLowerCase();
+  if (wort && DE_NUMBER_WORDS[wort]) {
+    if (new RegExp(`\\b${wort}\\b`, "i").test(nackt)) return true;
+    return numberIsAttested(DE_NUMBER_WORDS[wort], nackt);
+  }
+  const ziffern = digitKey(claim);
+  if (ziffern) {
+    for (const [word, digit] of Object.entries(DE_NUMBER_WORDS)) {
+      if (digit === ziffern && new RegExp(`\\b${word}\\b`, "i").test(nackt)) return true;
+    }
+  }
+  return false;
+}
+
 export function unattestedClaims(value: string, corpus: string): string[] {
   if (!corpus) return [];
-  return claimedNumbers(value).filter((zahl) => !numberIsAttested(zahl, corpus));
+  const claims = [...claimedNumbers(value), ...claimedVerbalNumbers(value)];
+  return [...new Set(claims)].filter((zahl) => !quantityIsAttested(zahl, corpus));
+}
+
+function snippetAround(text: string, index: number, length: number): string {
+  const start = Math.max(0, index - 48);
+  const end = Math.min(text.length, index + length + 72);
+  let snip = text.slice(start, end).replace(/\s+/g, " ").trim();
+  if (start > 0) snip = `…${snip}`;
+  if (end < text.length) snip = `${snip}…`;
+  return snip;
+}
+
+/**
+ * Maschinell gezogene Liste: dieselben Ziffern wie claimedNumbers, plus
+ * Zahlwoerter mit Einheit. Brueche sind qualitativ, keine Kachelzahl.
+ */
+export function formatKennzahlenBlock(article: string): string {
+  const nackt = String(article || "").replace(/\u00a0/g, " ");
+  const zeilen: string[] = [];
+  const gesehen = new Set<string>();
+  for (const zahl of claimedNumbers(nackt)) {
+    const key = zahl.toLowerCase();
+    if (gesehen.has(key)) continue;
+    gesehen.add(key);
+    const idx = nackt.indexOf(zahl);
+    zeilen.push(`- ${zahl} — ${idx >= 0 ? snippetAround(nackt, idx, zahl.length) : ""}`);
+  }
+  const wortRe = new RegExp(`\\b(${DE_WORD_ALT})\\s*(?:${DE_UNIT_ALT})\\b`, "gi");
+  let treffer: RegExpExecArray | null;
+  while ((treffer = wortRe.exec(nackt))) {
+    const roh = treffer[0].replace(/\s+/g, " ").trim();
+    const key = roh.toLowerCase();
+    if (gesehen.has(key)) continue;
+    gesehen.add(key);
+    zeilen.push(`- ${roh} — ${snippetAround(nackt, treffer.index, treffer[0].length)}`);
+  }
+  const bruchRe = new RegExp(DE_FRACTION_RE.source, "gi");
+  while ((treffer = bruchRe.exec(nackt))) {
+    const roh = treffer[1].replace(/\s+/g, " ").trim();
+    const key = roh.toLowerCase();
+    if (gesehen.has(key)) continue;
+    gesehen.add(key);
+    zeilen.push(`- ${roh} — qualitativ, keine Kachelzahl`);
+  }
+  if (!zeilen.length) {
+    return "<kennzahlen_im_artikel>keine Ziffern und keine Mengenwörter — keine Kennzahl-Variante (E, H, L) und keine Infografik (S, T) wählen</kennzahlen_im_artikel>";
+  }
+  return `<kennzahlen_im_artikel>\n${zeilen.join("\n")}\n</kennzahlen_im_artikel>`;
 }
 
 function capWords(value: string, maxWords: number): string {
@@ -403,8 +519,9 @@ Keine erklärenden Unterzeilen unter Überschriften.
 const BELEGREGELN = `<belegregeln>
 Jede Aussage muss aus signal oder artikel belegbar sein.
 Fehlt der Beleg für eine Zahl, formuliere die Aussage qualitativ, statt eine Zahl zu erfinden.
-„etwa ein Viertel", „keine zehn", „rund" sind keine Kennzahlen. Eine Ziffer muss ausgeschrieben im Artikel stehen.
-Das gilt für post_text, Titel, Unterzeilen, Aufzählungen und KPIs genauso wie für die Kennzahl-Varianten E, H und L.
+„etwa ein Viertel", „keine zehn", „rund" sind keine Kachelzahlen. Eine Ziffer oder ein Zahlwort mit Einheit muss im Artikel stehen.
+Das gilt für post_text, Titel, Unterzeilen, Aufzählungen, Zeichnungs-Slots und KPIs genauso wie für E, H, L und Infografiken.
+Ein Zahlwort ohne Beleg ist unbelegt: „siebzig Prozent" ohne 70 oder siebzig im Artikel ist unbrauchbar.
 Ein Zitat ist nur erlaubt, wenn es wörtlich im Artikel steht; nenne dann Person und Rolle.
 Nenne keine Quelle, die nicht in signal oder artikel vorkommt.
 Behaupte keine Kaufabsicht, kein Budget und keine interne Lage, die nicht belegt ist.
@@ -438,6 +555,7 @@ function signalBlock(signal: AssetSignalInput, article: AssetArticleInput): stri
   return `<signal>
 ${zeilen}
 </signal>
+${formatKennzahlenBlock(body)}
 <artikel titel="${asData(article.title_de || article.title, 240)}" quelle="${asData(article.url, 300)}" datum="${asData(article.published_at, 10)}">
 ${asData(body, ASSET_ARTICLE_CHARS)}
 </artikel>`;
@@ -457,16 +575,16 @@ export const ASSET_VISIBLE_FIELDS: Record<string, readonly string[]> = {
   J: ["kicker", "quote", "footer_left", "image_hint"],
   K: ["kicker", "title", "takeaway", "footer_left"],
   L: ["kicker", "stat", "title", "stat_label", "bullets", "takeaway", "footer_left"],
-  S1: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  S2: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  S3: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  S4: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  T1: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  T2: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  T3: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  T4: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  T5: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  T6: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
+  S1: ["kicker", "title", "subtitle", "takeaway", "footer_left", "slot_a", "slot_b", "slot_c", "slot_center"],
+  S2: ["kicker", "title", "subtitle", "takeaway", "footer_left", "steps"],
+  S3: ["kicker", "title", "subtitle", "takeaway", "footer_left", "slot_a", "slot_b", "slot_center", "steps"],
+  S4: ["kicker", "title", "subtitle", "takeaway", "footer_left", "steps"],
+  T1: ["kicker", "title", "subtitle", "takeaway", "footer_left", "stats"],
+  T2: ["kicker", "title", "subtitle", "takeaway", "footer_left", "stats"],
+  T3: ["kicker", "title", "subtitle", "takeaway", "footer_left", "stats", "slot_center"],
+  T4: ["kicker", "title", "subtitle", "takeaway", "footer_left", "stats"],
+  T5: ["kicker", "title", "subtitle", "takeaway", "footer_left", "stats"],
+  T6: ["kicker", "title", "subtitle", "takeaway", "footer_left", "steps"],
 };
 
 /** Wohin die Pointe wandert, wenn takeaway unsichtbar ist. */
@@ -479,36 +597,137 @@ export const ASSET_POINTE_FIELD: Record<string, string> = {
 };
 
 const VARIANT_ZEILE: Record<string, string> = {
-  A: "A Zitat: sichtbar quote (Pointe hier). takeaway wird nicht gezeichnet.",
-  B: "B Titel: sichtbar title und subtitle. Pointe in subtitle, nicht in takeaway.",
-  C: "C Titel und Bild: sichtbar title, subtitle, image_hint. Pointe in subtitle.",
-  D: "D Vollbild: sichtbar title, subtitle, image_hint. Pointe in subtitle.",
-  E: "E Kennzahl: nur wenn eine Ziffer im Artikel steht. Sichtbar stat.value, stat.label, title, subtitle. Pointe in subtitle.",
-  F: "F Aufzählung: sichtbar title und bis zu fünf bullets. Pointe als letzte Zeile.",
-  G: "G Mythos und Fakt: sichtbar myth und fact. Pointe in fact.",
-  H: "H Mehrere Kennzahlen: nur mit Ziffern im Artikel. Sichtbar bis zu vier stats. Pointe im letzten label.",
-  I: "I Prozess: sichtbar title und bis zu fünf steps. Pointe im letzten step.text.",
-  J: "J Zitat über Bild: sichtbar quote und image_hint. Pointe in quote.",
-  K: "K Durchgestrichenes Wort: title mit genau einem Wort in ~~Tilden~~, das der Satz verwirft, zum Beispiel „Nicht mehr ~~Tools~~, sondern mehr Handschrift\". takeaway ist sichtbar.",
-  L: "L Annotierte Kennzahl: nur mit Ziffer im Artikel. Sichtbar stat.value, stat.label, title, bis zu drei bullets, takeaway.",
-  S1: "S1 Schnittmengen-Modell: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
-  S2: "S2 Reifepyramide: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
-  S3: "S3 Strategie-Haus: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
-  S4: "S4 Funnel-Modell: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
-  T1: "T1 Marktwachstum: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
-  T2: "T2 Wasserfall: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
-  T3: "T3 Anteile: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
-  T4: "T4 Anwendungsfälle: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
-  T5: "T5 Daten-Funnel: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
-  T6: "T6 Roadmap: Zeichnung fest. Sichtbar title, subtitle, takeaway.",
+  A: `A Zitat.
+Wozu: ein wörtlicher Satz einer benannten Person trägt die Pointe.
+Zeichnet: kicker, quote, footer_left. Pointe in quote. takeaway unsichtbar.
+Greift wenn: der Artikel ein wörtliches Zitat mit Person hergibt.
+Nicht wählen wenn: nur Paraphrase, keine Person, oder der Satz nicht wörtlich vorkommt.`,
+  B: `B Titel.
+Wozu: eine These plus ein stützendes Argument, ohne Zahl und ohne Liste.
+Zeichnet: kicker, title, subtitle, footer_left. Pointe in subtitle. takeaway unsichtbar.
+Greift wenn: der Gedanke in zwei Sätzen trägt.
+Nicht wählen wenn: eine Leitkennzahl, ein Zitat, eine Aufzählung oder ein Mythos den Slide besser trägt.`,
+  C: `C Titel und Bild.
+Wozu: These über einem Foto, das der Nutzer liefert.
+Zeichnet: kicker, title, subtitle, image_hint, footer_left. Pointe in subtitle.
+Greift wenn: ein Motiv in image_hint beschreibbar ist (Szene, Person, Produkt).
+Nicht wählen wenn: kein Motiv hergibt; dann B. Die Datei kommt vom Nutzer, du schreibst nur den Hinweis.`,
+  D: `D Vollbild.
+Wozu: These auf einem Foto über die volle Fläche.
+Zeichnet: kicker, title, subtitle, image_hint, footer_left. Pointe in subtitle.
+Greift wenn: das Motiv die Aussage trägt und image_hint es beschreibt.
+Nicht wählen wenn: kein Motiv; dann eine Textfolie.`,
+  E: `E Kennzahl.
+Wozu: eine grosse Leitkennzahl, die die Signalthese trägt, nicht die erste Zahl im Text.
+Zeichnet: kicker, stat.value, title, subtitle, footer_left. Pointe in subtitle.
+Greift wenn: genau diese Ziffer in kennzahlen_im_artikel steht.
+Nicht wählen wenn: die Liste leer ist, nur ein Bruch qualitativ markiert ist, oder mehrere Zahlen gleichrangig sind (dann H).`,
+  F: `F Aufzählung.
+Wozu: drei bis fünf Hebel, Schritte oder Belege unter einer These.
+Zeichnet: kicker, title, bis zu fünf bullets, footer_left. Pointe als letzte Zeile.
+Greift wenn: der Artikel eine kurze Liste hergibt.
+Nicht wählen wenn: nur ein Gedanke da ist (dann B) oder die Punkte Zahlenkacheln brauchen (dann H).`,
+  G: `G Mythos und Fakt.
+Wozu: eine Fehlannahme gegen den belegten Befund.
+Zeichnet: kicker, myth, fact, footer_left. Pointe in fact.
+Greift wenn: der Artikel eine verbreitete Annahme widerlegt oder korrigiert.
+Nicht wählen wenn: kein Gegensatz hergibt; erfinde keinen Mythos.`,
+  H: `H Mehrere Kennzahlen.
+Wozu: zwei bis vier belegte Zahlen nebeneinander, jede an ihrem Beleg.
+Zeichnet: kicker, stats (value und label), footer_left. Pointe im letzten label.
+Greift wenn: mindestens zwei Ziffern in kennzahlen_im_artikel stehen und sich in der Sache unterscheiden.
+Nicht wählen wenn: nur eine Zahl (dann E) oder die Liste leer ist.`,
+  I: `I Prozess.
+Wozu: drei bis fünf aufeinanderfolgende Schritte.
+Zeichnet: kicker, title, steps (n, title, text), footer_left. Pointe im letzten step.text.
+Greift wenn: der Artikel eine Reihenfolge, einen Ablauf oder ein Vorgehen hergibt.
+Nicht wählen wenn: die Schritte nur umbenannte Aufzählung sind (dann F).`,
+  J: `J Zitat über Bild.
+Wozu: wörtliches Zitat auf einem Foto.
+Zeichnet: kicker, quote, image_hint, footer_left. Pointe in quote.
+Greift wenn: Zitat mit Person und ein Motiv für image_hint.
+Nicht wählen wenn: kein Zitat oder kein Motiv; dann A oder B.`,
+  K: `K Durchgestrichenes Wort.
+Wozu: Abschluss mit Streichung. title enthält genau ein Wort in ~~Tilden~~, das der Satz verwirft, zum Beispiel „Nicht mehr ~~Tools~~, sondern mehr Handschrift".
+Zeichnet: kicker, title, takeaway, footer_left. takeaway ist sichtbar.
+Greift wenn: ein Begriff ersetzt oder verworfen wird.
+Nicht wählen wenn: kein verwerfbares Wort im Artikel steht; erfinde keine Streichung.`,
+  L: `L Annotierte Kennzahl.
+Wozu: eine Leitkennzahl plus kurze Deutung in bullets.
+Zeichnet: kicker, stat.value, title, stat.label, bis zu drei bullets, takeaway, footer_left.
+Greift wenn: eine Ziffer in kennzahlen_im_artikel die These trägt und drei kurze Belege danebenstehen.
+Nicht wählen wenn: keine Ziffer oder die Deutung die Zahl nicht braucht (dann B oder F).`,
+  S1: `S1 Schnittmengen-Modell (Venn).
+Wozu: drei Kreise und ihr Schnitt. Die Zeichnung braucht drei Kreisnamen und die Schnitt-Pointe.
+Zeichnet: title, subtitle, takeaway plus slot_a (oben), slot_b (links), slot_c (rechts), slot_center (Schnitt).
+Greift wenn: der Artikel drei zusammentreffende Fähigkeiten, Hebel oder Rollen hergibt.
+Nicht wählen wenn: die vier Slots nicht aus dem Artikel füllbar sind; dann eine Textfolie.`,
+  S2: `S2 Reifepyramide.
+Wozu: vier aufsteigende Reifestufen, Spitze oben.
+Zeichnet: title, subtitle, takeaway plus steps[0] bis steps[3] als Stufentitel (steps[0] ist die Spitze).
+Greift wenn: der Artikel vier Stufen, Reifegrade oder Prioritäten hergibt.
+Nicht wählen wenn: weniger als vier belegbare Stufen; dann I oder F.`,
+  S3: `S3 Strategie-Haus.
+Wozu: Dach, drei Säulen, Fundament.
+Zeichnet: slot_a und slot_b (Dach, zwei Zeilen), steps[0..2] title/text (Säulen), slot_center (Fundament), plus title/subtitle/takeaway.
+Greift wenn: drei parallele Säulen und ein Fundament im Artikel stehen.
+Nicht wählen wenn: die Slots nicht füllbar sind.`,
+  S4: `S4 Funnel-Modell.
+Wozu: fünf sich verengende Stufen von Reichweite zu Bindung.
+Zeichnet: steps[0..4] mit title (in der Stufe) und text (darunter), plus title/subtitle/takeaway.
+Greift wenn: der Artikel eine Trichter- oder Stufenfolge mit fünf Stationen hergibt.
+Nicht wählen wenn: die Stationen nicht belegt sind; dann I.`,
+  T1: `T1 Marktwachstum als Säulen.
+Wozu: Zeitreihe, Jahre unter den Säulen, Werte darüber.
+Zeichnet: stats, je value (Zahl) und label (Jahr oder Periode). Mindestens drei, höchstens sieben. Nur Zahlen aus kennzahlen_im_artikel.
+Greift wenn: der Artikel eine belegte Zeitreihe hergibt.
+Nicht wählen wenn: die Werte fehlen oder erfunden werden müssten; dann E oder B.`,
+  T2: `T2 Wasserfall.
+Wozu: Ausgangswert, Veränderung, Ergebnis — drei Balken.
+Zeichnet: genau drei stats (value und label). Nur belegte Zahlen.
+Greift wenn: der Artikel Start, Delta und Ende als Ziffern hergibt.
+Nicht wählen wenn: das Delta nicht belegt ist.`,
+  T3: `T3 Anteile als Donut.
+Wozu: drei Anteile einer Menge, Mitte als Summe oder Leitanteil.
+Zeichnet: drei stats (value und label) plus slot_center für die Mitte.
+Greift wenn: drei Anteile in kennzahlen_im_artikel stehen.
+Nicht wählen wenn: weniger als drei belegte Anteile; dann E oder H.`,
+  T4: `T4 Horizontale Balken.
+Wozu: vier bis fünf vergleichbare Anteile oder Nennungen.
+Zeichnet: stats mit value und label, mindestens vier. Nur Zahlen aus der Liste.
+Greift wenn: der Artikel mindestens vier vergleichbare Ziffern hergibt.
+Nicht wählen wenn: die Reihe nicht belegt ist; dann H.`,
+  T5: `T5 Daten-Funnel.
+Wozu: fünf Trichterstufen mit je einer belegten Zahl.
+Zeichnet: fünf stats, label ist der Stufenname, value die Zahl.
+Greift wenn: fünf belegte Stufenwerte in der Liste stehen.
+Nicht wählen wenn: Werte fehlen; dann S4 ohne Zahlen oder I.`,
+  T6: `T6 Roadmap.
+Wozu: vier Phasen in der Zeit.
+Zeichnet: steps[0..3], n ist die Zeitangabe (etwa „Woche 1–4"), title die Phase, text die Kurzbeschreibung.
+Greift wenn: der Artikel vier aufeinanderfolgende Phasen hergibt.
+Nicht wählen wenn: die Phasen nicht belegt sind; dann I.`,
 };
 
 export function allowedSlideKeys(answers: LinkedinAnswers): AssetSlideKey[] {
   if (answers.variant !== "auto" && isSlideKey(answers.variant)) return [answers.variant];
   const picked = (answers.slide_types || []).filter(isSlideKey);
   if (picked.length) return [...new Set(picked)];
-  return [...ASSET_VARIANTS];
+  return [...ASSET_SLIDE_KEYS];
 }
+
+const ASSETTYP_BRIEFING = `<assettypen>
+LinkedIn Einzelbild: eine These, ein Gedanke. Genau ein sichtbares Feld trägt die Pointe. Foto-Layouts C, D und J nur mit image_hint; die Datei kommt vom Nutzer.
+LinkedIn Karussell: Folge von Gedanken, keine Wiederholung. Erste Folie setzt die These. Jede mittlere Folie einen Beleg oder Gegensatz. Letzte Folie den Aufruf im sichtbaren Feld der gewählten Variante (F, I oder K passen oft; B nur, wenn subtitle den Aufruf trägt). Das ist eine Richtlinie, keine Zwangsfolge.
+Ansprache: Entscheiderpapier in einer Minute. Lage aus dem Artikel. Optionen unterscheiden sich in der Sache. Empfehlung nennt eine Option plus roots_leistung. next_step ist ein Angebot von ROOTS an eine Rolle aus betroffene_rollen.
+</assettypen>`;
+
+const LEITKENNZAHL = `<leitkennzahl>
+Du wählst die Leitkennzahl. Wir listen nur, was im Artikel existiert, in kennzahlen_im_artikel.
+Eine Folie E oder L: die Zahl, die die Signalthese trägt, nicht die erste im Text.
+Folie H und Infografiken T1–T5: nur Zahlen aus dieser Liste, jede an ihrem Beleg.
+Fehlt die Liste oder stehen dort nur qualitative Brüche: keine Kennzahl-Variante und keine Zahlen-Infografik, These qualitativ.
+</leitkennzahl>`;
 
 function variantenBlock(keys: AssetSlideKey[], carousel: boolean): string {
   const zeilen = keys.map((key) => VARIANT_ZEILE[key]).filter(Boolean);
@@ -516,10 +735,10 @@ function variantenBlock(keys: AssetSlideKey[], carousel: boolean): string {
     ? "Beim Carousel: title höchstens 60 Zeichen, subtitle höchstens 110, takeaway höchstens 120, je Aufzählung höchstens vier Zeilen à 70 Zeichen."
     : "Einzelbild: title höchstens 80 Zeichen, subtitle höchstens 130, takeaway höchstens 140.";
   return `<varianten>
-${zeilen.join("\n")}
+${zeilen.join("\n\n")}
 Nur diese Varianten. Ein Feld, das die Variante nicht zeigt, ist unsichtbar — die Pointe steht im sichtbaren Feld.
-E, H und L nur, wenn eine ausgeschriebene Ziffer im Artikel steht.
-S1–T6 nur, wenn sie oben stehen. Ihre Zeichnung ist fest und gehört zum Muster, nicht zum Signal; du schreibst nur die Texte.
+E, H, L und Zahlen-Infografiken nur mit Einträgen aus kennzahlen_im_artikel, die keine qualitative Markierung tragen.
+S1–T6 darf Auto wählen, wenn alle Zeichnungs-Slots aus Artikel oder Kennzahlenliste füllbar sind. Sonst eine Textfolie.
 ${laengen}
 ** und ~~ zaehlen nicht zur Zeichengrenze.
 Kein Slide wiederholt die Aussage eines anderen.
@@ -535,7 +754,7 @@ function linkedinPrompt(answers: LinkedinAnswers, daten: string): string {
       ? `Format: Carousel mit ${answers.slides} Slides, nicht mehr.`
       : "Format: Single-Image, ein Slide.",
     answers.variant === "auto"
-      ? `Variante: wähle je Slide aus ${erlaubt.join(", ")} die Variante, die den Inhalt am besten trägt. Ohne Ziffer im Artikel keine Kennzahl-Variante.`
+      ? `Variante: wähle je Slide aus ${erlaubt.join(", ")} die Variante, die den Inhalt am besten trägt. Ohne Eintrag in kennzahlen_im_artikel keine Kennzahl-Variante und keine Zahlen-Infografik.`
       : `Variante: ${answers.variant} für jeden Slide.`,
     `Anmutung: ${answers.theme === "dark" ? "dunkel" : "hell"}.`,
     Array.isArray(answers.slide_types) && answers.slide_types.length
@@ -554,10 +773,12 @@ function linkedinPrompt(answers: LinkedinAnswers, daten: string): string {
 
   return `Du erstellst ein LinkedIn-Asset für ROOTS Brand Strategy Consultants aus einem geprüften Signal.
 
+${ASSETTYP_BRIEFING}
 <auftrag>
 ${auftrag}
 </auftrag>
 ${variantenBlock(erlaubt, carousel)}
+${LEITKENNZAHL}
 <aufbau>
 kicker: Versalien, höchstens 26 Zeichen, benennt das Thema.
 title: die These des Slides, ein Verb, höchstens 15 Wörter.
@@ -565,8 +786,9 @@ subtitle: trägt ein Argument, nicht die Wiederholung des Titels.
 takeaway: nur bei Varianten, die es zeichnen (K, L, S, T). Sonst die Pointe ins sichtbare Feld.
 footer_left: Absender oder Quelle, kurz.
 image_hint: das Bildmotiv in Worten, nur bei C, D und J.
-post_text: der Begleittext des Beitrags, höchstens 1300 Zeichen, erste Zeile ist der Aufhänger, letzter Absatz der Handlungsaufruf. Absätze bleiben Absätze. Keine Ziffer, die nicht im Artikel steht.${carousel ? `
-Der erste Slide setzt die These, die mittleren tragen je einen Gedanken, der letzte ist F, I oder K, nicht B, denn B zeichnet keine Aufzählung. Der Handlungsaufruf steht im sichtbaren Pointe-Feld.` : ""}
+slot_a bis slot_center: nur bei Infografiken, die diese Slots zeichnen.
+post_text: der Begleittext des Beitrags, höchstens 1300 Zeichen, erste Zeile ist der Aufhänger, letzter Absatz der Handlungsaufruf. Absätze bleiben Absätze. Keine Ziffer und kein Zahlwort, die nicht im Artikel stehen.${carousel ? `
+Der erste Slide setzt die These, die mittleren tragen je einen Gedanken, der letzte den Aufruf im sichtbaren Pointe-Feld der gewählten Variante.` : ""}
 </aufbau>
 ${SPRACHREGELN}
 ${BELEGREGELN}
@@ -617,18 +839,25 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
 
   return `Du erstellst eine Entscheidervorlage für ROOTS Brand Strategy Consultants aus einem geprüften Signal. Sie liegt einer Entscheiderin oder einem Entscheider vor und muss in einer Minute lesbar sein.
 
+${ASSETTYP_BRIEFING}
 <auftrag>
 ${auftrag}
 </auftrag>
+<signalfelder>
+roots_leistung gehört in recommendation, nicht in die Lage.
+betroffene_rollen ist der Adressat von next_step, nicht der Imperativ-Täter im Kundenpapier.
+evidence und artikel speisen situation. Das ist keine interne ROOTS-Lage.
+</signalfelder>
+${LEITKENNZAHL}
 <aufbau>
 kicker: „Entscheidervorlage · ${unternehmen}“.
 title: der Action Title, eine These mit Verb, höchstens 15 Wörter.
 standfirst: der tragende Gedanke in einem Satz, dahinter ein stützender Beleg aus dem Artikel.
-kpis: eine bis drei Kennzahlen mit kurzem value und erklärendem label. Nur belegte, ausgeschriebene Zahlen. Liegt keine Ziffer vor, lass kpis leer — erfinde keine qualitativen Ersatzgrössen als Zahl.
-situation: zwei bis vier Punkte zu Lage und Anlass, je mit lead als Stichwort und text als Satz.
+kpis: eine bis drei Kennzahlen mit kurzem value und erklärendem label. Nur belegte, ausgeschriebene Zahlen aus kennzahlen_im_artikel. Liegt keine Ziffer vor, lass kpis leer — erfinde keine qualitativen Ersatzgrössen als Zahl.
+situation: zwei bis vier Punkte zu Lage und Anlass, je mit lead als Stichwort und text als Satz. Nur aus artikel und evidence.
 options: zwei bis drei Handlungsoptionen mit name, pro und contra. Optionen unterscheiden sich in der Sache, nicht im Zeitpunkt. Nichtstun, Abwarten und „später dasselbe" sind keine Optionen.
 recommendation: die Empfehlung in einem Satz, sie benennt eine der Optionen und die ROOTS-Leistung aus roots_leistung.
-next_step: der nächste Schritt mit einer Rolle aus betroffene_rollen und zeitlichem Bezug.
+next_step: ein Angebot von ROOTS an eine Rolle aus betroffene_rollen, mit zeitlichem Bezug. Kein Arbeitsauftrag an den Kunden.
 cta: der Text des Handlungsknopfs, höchstens fünf Wörter.
 sources: die verwendeten Quellen im Format „Titel · Herausgeber · Jahr“, nur was in signal oder artikel steht.
 </aufbau>
@@ -688,16 +917,16 @@ export const ASSET_SCHEMA_LINKEDIN = {
           quote: { type: "STRING", description: "Nur bei A und J: wörtliches Zitat aus dem Artikel." },
           attribution: { type: "STRING", description: "Nur bei A: Person und Rolle des Zitats." },
           stat: STAT_SCHEMA,
-          stats: { type: "ARRAY", items: STAT_SCHEMA, description: "Nur bei Variante H: eine bis vier belegte Kennzahlen." },
+          stats: { type: "ARRAY", items: STAT_SCHEMA, description: "Bei H und bei T1–T5: belegte Kennzahlen aus kennzahlen_im_artikel." },
           bullets: { type: "ARRAY", items: { type: "STRING" }, description: "Nur bei F und L: bis zu fünf kurze Zeilen." },
           steps: {
             type: "ARRAY",
-            description: "Nur bei Variante I: bis zu fünf Schritte.",
+            description: "Bei I, S2, S3, S4 und T6: Stufen der Zeichnung oder des Prozesses.",
             items: {
               type: "OBJECT",
               required: ["n", "title", "text"],
               properties: {
-                n: { type: "STRING", description: "Zweistellige Nummer, etwa 01." },
+                n: { type: "STRING", description: "Nummer oder Zeitangabe, etwa 01 oder Woche 1–4." },
                 title: { type: "STRING" },
                 text: { type: "STRING" },
               },
@@ -708,6 +937,11 @@ export const ASSET_SCHEMA_LINKEDIN = {
           takeaway: { type: "STRING", description: "Nur bei K, L und den Infografiken: Kernaussage mit Kontrast." },
           footer_left: { type: "STRING", description: "Absender oder Quelle." },
           image_hint: { type: "STRING", description: "Nur bei C, D und J: Bildmotiv in Worten." },
+          slot_a: { type: "STRING", description: "Infografik-Slot, etwa oberer Kreis oder Dachzeile." },
+          slot_b: { type: "STRING", description: "Infografik-Slot." },
+          slot_c: { type: "STRING", description: "Infografik-Slot." },
+          slot_d: { type: "STRING", description: "Infografik-Slot." },
+          slot_center: { type: "STRING", description: "Infografik-Mitte, Schnitt oder Fundament." },
         },
       },
     },
@@ -798,6 +1032,7 @@ function fieldCap(variant: string, field: string, carousel: boolean): number {
     kicker: 26, title: 80, subtitle: 130, takeaway: 140, quote: 240,
     attribution: 100, footer_left: 80, image_hint: 200, myth: 180, fact: 180,
     bullet: 90, step_title: 60, step_text: 140, stat_value: 24, stat_label: 80,
+    slot: 48,
   };
   const perVariant: Record<string, Record<string, number>> = {
     A: { quote: 220 },
@@ -874,6 +1109,11 @@ export function dropHiddenFields(slide: AssetSlide): AssetSlide {
     steps: keep("steps") ? slide.steps : [],
     stats: keep("stats") ? slide.stats : [],
     stat: keep("stat") ? slide.stat : { value: "", label: "" },
+    slot_a: keep("slot_a") ? slide.slot_a : "",
+    slot_b: keep("slot_b") ? slide.slot_b : "",
+    slot_c: keep("slot_c") ? slide.slot_c : "",
+    slot_d: keep("slot_d") ? slide.slot_d : "",
+    slot_center: keep("slot_center") ? slide.slot_center : "",
   };
 }
 
@@ -881,29 +1121,67 @@ function slidePlain(slide: AssetSlide): string {
   return [
     slide.kicker, slide.title, slide.subtitle, slide.quote, slide.attribution,
     slide.stat.value, slide.stat.label, slide.myth, slide.fact, slide.takeaway,
-    slide.footer_left, ...slide.bullets,
+    slide.footer_left, slide.slot_a, slide.slot_b, slide.slot_c, slide.slot_d,
+    slide.slot_center, ...slide.bullets,
     ...slide.stats.flatMap((eintrag) => [eintrag.value, eintrag.label]),
-    ...slide.steps.flatMap((schritt) => [schritt.title, schritt.text]),
+    ...slide.steps.flatMap((schritt) => [schritt.n, schritt.title, schritt.text]),
   ].join("\n");
 }
 
 function rejectUnattested(text: string, corpus: string, wo: string): void {
   const fremd = unattestedClaims(text, corpus);
   if (!fremd.length) return;
-  throw new Error(`${wo} enthalten unbelegte Zahlen (${fremd.slice(0, 8).join(", ")}). Nur Ziffern aus dem Artikel verwenden oder qualitativ formulieren.`);
+  throw new Error(`${wo} enthalten unbelegte Zahlen oder Zahlwörter (${fremd.slice(0, 8).join(", ")}). Nur Ziffern und Mengenwörter aus dem Artikel verwenden oder qualitativ formulieren.`);
 }
+
+/** Pflicht-Slots der Zeichnung. Ungefüllt ist ein Fehler, keine stille Textfolie. */
+const INFOGRAPHIC_NEEDS: Record<string, { stats?: number; steps?: number; slots?: readonly string[] }> = {
+  S1: { slots: ["slot_a", "slot_b", "slot_c", "slot_center"] },
+  S2: { steps: 4 },
+  S3: { steps: 3, slots: ["slot_a", "slot_center"] },
+  S4: { steps: 5 },
+  T1: { stats: 3 },
+  T2: { stats: 3 },
+  T3: { stats: 3 },
+  T4: { stats: 4 },
+  T5: { stats: 5 },
+  T6: { steps: 4 },
+};
 
 function applyNumberGate(slide: AssetSlide, corpus: string): AssetSlide {
   if (!corpus) return slide;
   const zahlVariante = (ASSET_NUMBER_VARIANTS as readonly string[]).includes(slide.variant);
-  if (!zahlVariante) return slide;
-  if (slide.variant === "H") {
-    slide.stats = slide.stats.filter((eintrag) => numberIsAttested(eintrag.value, corpus));
-    if (!slide.stats.length) return { ...slide, variant: "B" };
-    return slide;
+  if (zahlVariante) {
+    if (slide.variant === "H") {
+      slide.stats = slide.stats.filter((eintrag) => quantityIsAttested(eintrag.value, corpus));
+      if (slide.stats.length < 2) {
+        throw new Error("Folie H braucht mindestens zwei belegte Kennzahlen aus kennzahlen_im_artikel. Wähle H nur mit Zahlen oder eine Textfolie (B, G, F).");
+      }
+      return slide;
+    }
+    if (!slide.stat.value || !quantityIsAttested(slide.stat.value, corpus)) {
+      throw new Error(`Folie ${slide.variant} braucht eine belegte Leitkennzahl aus kennzahlen_im_artikel. Wähle E/L nur mit Zahl oder eine Textfolie (B, G, F).`);
+    }
   }
-  if (!numberIsAttested(slide.stat.value, corpus)) {
-    return { ...slide, variant: "B", stat: { value: "", label: "" } };
+  return applyInfographicGate(slide);
+}
+
+function applyInfographicGate(slide: AssetSlide): AssetSlide {
+  const need = INFOGRAPHIC_NEEDS[slide.variant];
+  if (!need) return slide;
+  const fehlt: string[] = [];
+  if (need.stats && slide.stats.filter((eintrag) => eintrag.value).length < need.stats) {
+    fehlt.push(`${need.stats} belegte stats`);
+  }
+  if (need.steps && slide.steps.filter((schritt) => schritt.title || schritt.text).length < need.steps) {
+    fehlt.push(`${need.steps} steps`);
+  }
+  for (const slot of need.slots || []) {
+    const wert = String((slide as unknown as Record<string, string>)[slot] || "").trim();
+    if (!wert) fehlt.push(slot);
+  }
+  if (fehlt.length) {
+    throw new Error(`Infografik ${slide.variant} hat ungefüllte Zeichnungs-Slots (${fehlt.join(", ")}). Alle Slots aus dem Artikel füllen oder eine Textfolie wählen.`);
   }
   return slide;
 }
@@ -929,7 +1207,7 @@ function normalizeSlide(
       value: text(record(item.stat).value, cap("stat_value")),
       label: text(record(item.stat).label, cap("stat_label")),
     },
-    stats: stats(item.stats, 4).map((eintrag) => ({
+    stats: stats(item.stats, isLayoutKey(variant) ? 8 : 4).map((eintrag) => ({
       value: text(eintrag.value, cap("stat_value")),
       label: text(eintrag.label, cap("stat_label")),
     })),
@@ -937,7 +1215,7 @@ function normalizeSlide(
     steps: (Array.isArray(item.steps) ? item.steps : []).slice(0, 5).map((entry, index) => {
       const step = record(entry);
       return {
-        n: text(step.n, 2) || String(index + 1).padStart(2, "0"),
+        n: text(step.n, 24) || String(index + 1).padStart(2, "0"),
         title: text(step.title, cap("step_title")),
         text: text(step.text, cap("step_text")),
       };
@@ -947,6 +1225,11 @@ function normalizeSlide(
     takeaway: text(item.takeaway, cap("takeaway")),
     footer_left: text(item.footer_left, cap("footer_left")),
     image_hint: text(item.image_hint, cap("image_hint")),
+    slot_a: text(item.slot_a, cap("slot")),
+    slot_b: text(item.slot_b, cap("slot")),
+    slot_c: text(item.slot_c, cap("slot")),
+    slot_d: text(item.slot_d, cap("slot")),
+    slot_center: text(item.slot_center, cap("slot")),
   };
   return applyNumberGate(slide, corpus);
 }
@@ -955,7 +1238,8 @@ function normalizeSlide(
 function slideHasSubstance(slide: AssetSlide): boolean {
   return Boolean(
     slide.title || slide.quote || slide.takeaway || slide.stat.value
-    || slide.stats.length || slide.bullets.length || slide.steps.length || slide.myth || slide.fact,
+    || slide.stats.length || slide.bullets.length || slide.steps.length || slide.myth || slide.fact
+    || slide.slot_a || slide.slot_center,
   );
 }
 
@@ -1131,5 +1415,5 @@ export function assetRepairTimeoutMs(elapsedMs: number): number | null {
 
 export function buildAssetRepairPrompt(prompt: string, mangel: string): string {
   const grund = mangel.replace(/\s+/g, " ").trim().slice(0, 400);
-  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. Erfinde keine Zahlen, die nicht im Artikel stehen.</repair>`;
+  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. Erfinde keine Zahlen, die nicht im Artikel stehen. Unbelegte Kennzahl-Folien nicht nach B umbiegen: eine andere belegte Variante wählen.</repair>`;
 }
