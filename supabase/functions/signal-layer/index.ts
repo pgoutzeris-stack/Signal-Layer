@@ -7886,12 +7886,17 @@ Deno.serve(async (req: Request) => {
             prompt: buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers),
             schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
             maxOutputTokens: scope,
-            // Denken und Antwort teilen sich dieses Limit. Bewusst weit gesetzt,
-            // bis gemessen ist, wieviel Reasoning welche Assetart wirklich
-            // braucht: 8.192 hat das Denken allein aufgebraucht. Die tatsaechlich
-            // verbrauchten Tokens stehen je Lauf in ai_usage_events, danach wird
-            // der Wert auf das Gemessene plus Reserve gesetzt.
-            maxTotalTokens: 32_000,
+            // Denken und Antwort teilen sich dieses Limit. Gemessen am 13.8.2026
+            // mit deepseek-v4-pro (Denken + Antwort):
+            //   Einzelbild   3.513 + 341   = 3.854
+            //   Ansprache    5.696 + 641   = 6.337
+            //   Carousel 6   6.084 + 1.069 = 7.153
+            // Die alte Formel deckelte bei 5.500 bis 8.192 - Ansprache und
+            // Carousel lagen also am oder ueber dem Anschlag, und dann bleibt
+            // nichts fuer die Antwort. 20.000 gibt knapp das Dreifache des
+            // hoechsten Messwerts. Ein hohes Limit kostet nichts: abgerechnet
+            // werden verbrauchte Tokens, nicht erlaubte.
+            maxTotalTokens: 20_000,
             temperature: 0.35, timeoutMs: 120_000, attempts: 2,
           });
           const usageRow = {
