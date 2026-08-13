@@ -23,7 +23,7 @@ test("die Nutzlast des Backends passt zu den Feldern, die das Frontend liest", (
     slides: [{ variant: "E", kicker: "KENNZAHL", title: "Titel mit Verb", stat: { value: "14 %", label: "Anteil, 2025" }, takeaway: "Kontrast", footer_left: "ROOTS" }],
   }), backend.normalizeAssetAnswers("linkedin", { asset_type: "single", theme: "dark" }));
   const slide = linkedin.slides[0];
-  for (const feld of ["variant", "kicker", "title", "subtitle", "quote", "attribution", "stat", "stats", "bullets", "steps", "myth", "fact", "takeaway", "footer_left", "image_hint"]) {
+  for (const feld of ["variant", "kicker", "title", "subtitle", "quote", "attribution", "stat", "stats", "bullets", "steps", "myth", "fact", "takeaway", "footer_left", "image_hint", "slot_a", "slot_center"]) {
     assert.ok(feld in slide, `Slide-Feld ${feld} fehlt`);
   }
   assert.equal(linkedin.theme, "dark");
@@ -527,7 +527,8 @@ test("K und Infografiken bleiben die gewaehlte Variante, nicht still B", () => {
   assert.deepEqual(schemaS1.properties.slides.items.properties.variant.enum, ["S1"]);
   const schemaAuto = backend.assetResponseSchema("linkedin", backend.normalizeAssetAnswers("linkedin", {}));
   assert.ok(schemaAuto.properties.slides.items.properties.variant.enum.includes("K"));
-  assert.ok(!schemaAuto.properties.slides.items.properties.variant.enum.includes("S1"));
+  assert.ok(schemaAuto.properties.slides.items.properties.variant.enum.includes("S1"));
+  assert.ok(schemaAuto.properties.slides.items.properties.variant.enum.includes("T3"));
 });
 
 test("Vorlage L traegt keine fremde 32-Prozent-Zeile mehr", async () => {
@@ -539,16 +540,14 @@ test("Vorlage L traegt keine fremde 32-Prozent-Zeile mehr", async () => {
   assert.match(tpl.ASSET_TEMPLATES.L, /\{\{stat_label\}\}/);
 });
 
-test("Kennzahl-Varianten brauchen eine Ziffer im Artikel", () => {
+test("Kennzahl-Varianten ohne belegte Ziffer sind unbrauchbar, nicht still B", () => {
   const answers = backend.normalizeAssetAnswers("linkedin", {});
   const roh = {
     slides: [{ variant: "E", kicker: "DEEPFAKE", title: "Die Fälschung trifft den Handel", stat: { value: "25 %", label: "Anteil" }, footer_left: "ROOTS" }],
   };
-  const erfunden = backend.normalizeAssetPayload("linkedin", JSON.stringify(roh), answers, {
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify(roh), answers, {
     articleText: "Etwa ein Viertel der Fälle betrifft Deepfakes, keine zehn Minuten entfernt.",
-  });
-  assert.equal(erfunden.slides[0].variant, "B");
-  assert.equal(erfunden.slides[0].stat.value, "");
+  }), /belegte Leitkennzahl/);
 
   const belegt = backend.normalizeAssetPayload("linkedin", JSON.stringify(roh), answers, {
     articleText: "Der Anteil liegt bei 25 % der Fälle.",
@@ -618,7 +617,7 @@ test("Prompt und Studio kennen Feldkarte, Leserseite und Überlauf-Gate", () => 
   assert.doesNotMatch(prompt, /genau drei Kennzahlen/);
   assert.match(prompt, /\*\*Vorspann\*\* wird fett/);
   assert.match(prompt, /\*\*Folge:\*\*/);
-  assert.match(prompt, /sichtbar title und subtitle/);
+  assert.match(prompt, /Pointe in subtitle/);
   const memoPrompt = backend.buildAssetPrompt("memo",
     { company: "Aeffe", roots_offering: "Marketing Audit + Markenstrategie", buying_center_roles: ["Vertrieb"] },
     { title: "A", content_de: "Der Artikel." },
@@ -634,14 +633,15 @@ test("Prompt und Studio kennen Feldkarte, Leserseite und Überlauf-Gate", () => 
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.2");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.3");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
-  assert.match(prompt, /Keine Ziffer, die nicht im Artikel steht/);
+  assert.match(prompt, /Keine Ziffer und kein Zahlwort/);
   const karussell = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
     backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 }));
-  assert.match(karussell, /letzte ist F, I oder K/);
+  assert.match(karussell, /Aufruf im sichtbaren Pointe-Feld/);
+  assert.doesNotMatch(karussell, /letzte ist F, I oder K/);
   assert.match(memoPrompt, /ROOTS handelt/);
 });
 
@@ -716,4 +716,113 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
     buyingCenterRoles: ["Marketingleiter"],
   });
   assert.match(memo.recommendation, /100 Tage/);
+});
+
+test("Prompt v1.3 kennt Bühne, Steckbrief und Kennzahlenliste", () => {
+  const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
+  const prompt = backend.buildAssetPrompt("linkedin",
+    { headline_de: "Klarna", company: "Klarna" },
+    { title: "Klarna", content_de: artikel },
+    backend.normalizeAssetAnswers("linkedin", {}));
+  assert.match(prompt, /<assettypen>/);
+  assert.match(prompt, /LinkedIn Einzelbild/);
+  assert.match(prompt, /LinkedIn Karussell/);
+  assert.match(prompt, /<leitkennzahl>/);
+  assert.match(prompt, /kennzahlen_im_artikel/);
+  assert.match(prompt, /14/);
+  assert.match(prompt, /24/);
+  assert.match(prompt, /qualitativ, keine Kachelzahl/);
+  assert.match(prompt, /Wozu: eine These plus ein stützendes Argument/);
+  assert.match(prompt, /Greift wenn: genau diese Ziffer/);
+  assert.match(prompt, /slot_a \(oben\)/);
+  const leer = backend.buildAssetPrompt("linkedin", { headline_de: "S" },
+    { title: "A", content_de: "Keine Zahl im Text." },
+    backend.normalizeAssetAnswers("linkedin", {}));
+  assert.match(leer, /keine Ziffern und keine Mengenwörter/);
+  const memo = backend.buildAssetPrompt("memo",
+    { company: "Xpeng", roots_offering: "Marketing Audit", buying_center_roles: ["Marketingleitung"] },
+    { title: "A", content_de: "Der Artikel ohne Zahl." },
+    backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }));
+  assert.match(memo, /<signalfelder>/);
+  assert.match(memo, /roots_leistung gehört in recommendation/);
+  assert.match(memo, /evidence und artikel speisen situation/);
+});
+
+test("Zahlwörter und Brüche brauchen denselben Beleg wie Ziffern", () => {
+  const answers = backend.normalizeAssetAnswers("linkedin", {});
+  const folie = { variant: "B", kicker: "K", title: "Die Marke führt das Quartal", subtitle: "Ein Argument", footer_left: "ROOTS" };
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "Siebzig Prozent der Verbraucher nennen Passform als Grund.",
+    slides: [folie],
+  }), answers, { articleText: "Retouren von 47 Mrd. USD. Bershka senkte den Anteil." }), /siebzig/i);
+  const wortBelegt = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "Siebzig Prozent nennen die Passform. Stand 2026.",
+    slides: [folie],
+  }), answers, { articleText: "70 Prozent der Verbraucher nennen Passform als Grund." });
+  assert.match(wortBelegt.post_text, /Siebzig/);
+  assert.equal(backend.quantityIsAttested("siebzig Prozent", "70 Prozent der Verbraucher"), true);
+  assert.equal(backend.quantityIsAttested("70 %", "siebzig Prozent der Verbraucher"), true);
+  assert.equal(backend.quantityIsAttested("ein Viertel", "Etwa ein Viertel der Befragten"), true);
+  assert.equal(backend.quantityIsAttested("25 %", "Etwa ein Viertel der Befragten"), false);
+  assert.deepEqual(backend.claimedVerbalNumbers("siebzig Prozent und ein Viertel"), ["siebzig Prozent", "ein Viertel"]);
+});
+
+test("Infografik ohne gefüllte Slots ist ein Fehler, nicht still B", () => {
+  const answers = backend.normalizeAssetAnswers("linkedin", { variant: "S1" });
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{ variant: "S1", kicker: "KI", title: "Drei Hebel treffen sich", takeaway: "Der Schnitt entscheidet", footer_left: "ROOTS" }],
+  }), answers, { articleText: "Daten, Kompetenz und Use-Cases treffen sich im Sweet Spot." }), /Zeichnungs-Slots/);
+  const ok = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{
+      variant: "S1", kicker: "KI", title: "Drei Hebel treffen sich", takeaway: "Der Schnitt entscheidet",
+      footer_left: "ROOTS", slot_a: "Daten", slot_b: "Kompetenz", slot_c: "Use-Cases", slot_center: "Wirkung",
+    }],
+  }), answers, { articleText: "Daten, Kompetenz und Use-Cases treffen sich im Sweet Spot." });
+  assert.equal(ok.slides[0].variant, "S1");
+  assert.equal(ok.slides[0].slot_a, "Daten");
+  const t3 = backend.normalizeAssetAnswers("linkedin", { variant: "T3" });
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{ variant: "T3", kicker: "ANTEILE", title: "Drei Anteile tragen", takeaway: "Die Mitte zeigt die Lage", footer_left: "ROOTS", stats: [{ value: "14 %", label: "Überblick" }] }],
+  }), t3, { articleText: "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen." }), /stats/);
+  const t3ok = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{
+      variant: "T3", kicker: "ANTEILE", title: "Drei Anteile tragen", takeaway: "Die Mitte zeigt die Lage",
+      footer_left: "ROOTS", slot_center: "Lage",
+      stats: [
+        { value: "14 %", label: "Überblick verloren" },
+        { value: "24 %", label: "unter 30" },
+        { value: "38 %", label: "junge Erwachsene" },
+      ],
+    }],
+  }), t3, { articleText: "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen." });
+  assert.equal(t3ok.slides[0].variant, "T3");
+  assert.equal(t3ok.slides[0].stats.length, 3);
+});
+
+test("Infografik-Zeichnungen tragen Platzhalter statt Beispielzahlen", async () => {
+  const tpl = await import("../asset-templates.js");
+  assert.match(tpl.ASSET_LAYOUTS.S1, /\{\{slot_a\}\}/);
+  assert.match(tpl.ASSET_LAYOUTS.T3, /\{\{stat1_value\}\}/);
+  assert.match(tpl.ASSET_LAYOUTS.T6, /\{\{step1_title\}\}/);
+  assert.doesNotMatch(tpl.ASSET_LAYOUTS.T1, /20,4/);
+  assert.doesNotMatch(tpl.ASSET_LAYOUTS.T3, /75\s*%/);
+  assert.doesNotMatch(tpl.ASSET_LAYOUTS.T6, /Bestandsaufnahme/);
+});
+
+test("Ansprache injiziert Leistung und Rolle nur wenn sie fehlen", () => {
+  const answers = backend.normalizeAssetAnswers("memo", { reader_side: "kunde" });
+  const voll = backend.normalizeAssetPayload("memo", JSON.stringify({
+    title: "Der Umbau braucht eine Entscheidung",
+    standfirst: "Lage und Beleg aus dem Artikel",
+    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
+    options: [{ name: "Audit", pro: "Klarheit", contra: "Zeit" }],
+    recommendation: "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.",
+    next_step: "ROOTS schlägt der Marketingleitung in den kommenden zwei Wochen einen Termin vor.",
+  }), answers, {
+    rootsOffering: "Marketing Audit + Markenstrategie",
+    buyingCenterRoles: ["Marketingleitung"],
+  });
+  assert.equal(voll.recommendation, "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.");
+  assert.equal(voll.next_step, "ROOTS schlägt der Marketingleitung in den kommenden zwei Wochen einen Termin vor.");
+  assert.doesNotMatch(voll.next_step, /Gespräch mit.*Gespräch mit/);
 });
