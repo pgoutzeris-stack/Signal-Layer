@@ -1041,7 +1041,7 @@ function normalizeMemo(
     throw new Error(`Der Ansprache fehlen tragende Felder: ${fehlt.join(", ")}. Geliefert wurden: ${Object.keys(raw).join(", ") || "keine Felder"}.`);
   }
 
-  const corpus = String(context.articleText || "");
+  const corpus = [context.articleText, context.rootsOffering].filter(Boolean).join("\n");
   const kpis = stats(raw.kpis, 3).filter((eintrag) => !corpus || !digitKey(eintrag.value) || numberIsAttested(eintrag.value, corpus));
 
   const memo: MemoPayload = {

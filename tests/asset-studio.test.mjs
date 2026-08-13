@@ -701,3 +701,19 @@ test("Kundenpapier setzt ROOTS als Handelnden, nicht die Kundenrolle", () => {
   assert.match(memo.next_step, /Gespräch mit/);
   assert.doesNotMatch(memo.next_step, /^Marketingleiter:/);
 });
+
+test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify({
+    title: "Der Umbau braucht eine Entscheidung",
+    standfirst: "Lage und Beleg aus dem Artikel",
+    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
+    options: [{ name: "Audit", pro: "Klarheit", contra: "Zeit" }],
+    recommendation: "Die ersten 100 Tage als CMO begleiten",
+    next_step: "Termin setzen",
+  }), backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }), {
+    articleText: "Christian Wiegand übernimmt die Marketingleitung.",
+    rootsOffering: "Die ersten 100 Tage als CMO + Markenpositionierung",
+    buyingCenterRoles: ["Marketingleiter"],
+  });
+  assert.match(memo.recommendation, /100 Tage/);
+});
