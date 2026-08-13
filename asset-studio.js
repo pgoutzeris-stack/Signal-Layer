@@ -586,7 +586,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-0100";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -822,11 +822,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       attribution: "Name, Rolle",
       stat: { value: "14 %", label: "Bezug, Jahr" },
       stats: [{ value: "14 %", label: "Anteil am Umsatz" }, { value: "6", label: "Wochen je Runde" }, { value: "3", label: "Rollen im Buying Center" }],
-      bullets: ["Erster Hebel mit Substanz", "Zweiter Hebel mit Substanz", "Dritter Hebel mit Substanz"],
+      bullets: ["**Erster Hebel** mit Substanz und Begründung", "**Zweiter Hebel** mit Substanz und Begründung", "**Dritter Hebel** mit Substanz und Begründung"],
       steps: [{ n: "1", title: "Standort", text: "Lage in zwei Wochen belegen." }, { n: "2", title: "Priorität", text: "Drei Hebel auswählen." }, { n: "3", title: "Umsetzung", text: "Pilot in einem Segment." }],
       myth: "Die verbreitete Behauptung.",
       fact: "Der Befund, der ihr widerspricht.",
-      takeaway: "Die Kernaussage mit Kontrast.",
+      takeaway: "**Der Kontrast:** Struktur ist Standard, entscheidend ist die Handschrift.",
       footer_left: company || "ROOTS Brand Strategy Consultants",
       // Nur dieses Layout lebt von der Streichung, deshalb traegt sein
       // Beispieltext die Markierung.
@@ -1143,7 +1143,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         // wiederfindet: bullets.0 statt nur bullets.
         return block
           .replace(/data-field="([a-z_]+)"/g, (__m, name) => `data-field="${feld}.${i}.${name}"`)
-          .replace(/\{\{([a-z_]+)\}\}/g, (__m, name) => esc(werte[name] ?? ""));
+          .replace(/\{\{([a-z_]+)\}\}/g, (__m, name) => markiere(esc(werte[name] ?? "")));
       }).join("");
     });
   }
@@ -1177,13 +1177,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   /**
-   * ~~Wort~~ wird zum durchgestrichenen Wort in Markenfarbe. Das Layout
-   * "Durchgestrichenes Wort" lebt von dieser Auszeichnung; sie steht im Text,
-   * weil nur dort steht, welches Wort gestrichen gehoert.
+   * Zwei Auszeichnungen, die im Text stehen muessen, weil nur der Text weiss,
+   * wo sie hingehoeren: ~~Wort~~ wird durchgestrichen, **Vorspann** wird fett.
+   * Beide steckten in den gebauten Assets als inline-Markup in Ueberschrift,
+   * Aufzaehlung und Kernaussage-Band und waren mit dem Platzhalter verloren.
    */
   function markiere(text) {
-    return text.replace(/~~([^~]{1,60})~~/g,
-      '<span style="color:var(--extra-muted);text-decoration:line-through;text-decoration-color:var(--brand);text-decoration-thickness:8px;">$1</span>');
+    return text
+      .replace(/~~([^~]{1,60})~~/g,
+        '<span style="color:var(--extra-muted);text-decoration:line-through;text-decoration-color:var(--brand);text-decoration-thickness:8px;">$1</span>')
+      .replace(/\*\*([^*]{1,120})\*\*/g, "<b>$1</b>");
   }
 
   /** Fotos bekommen die Bedienung der Werkbank, das Logo bleibt unberuehrt. */

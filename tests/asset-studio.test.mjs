@@ -324,3 +324,21 @@ test("durch die gewaehlten Slides laesst sich blaettern", () => {
   // Schrumpft die Auswahl, darf der Zeiger nicht ins Leere zeigen.
   assert.match(studio, /if \(state\.prevIndex >= arten\.length\) state\.prevIndex = 0/);
 });
+
+test("fetter Vorspann und Streichung ueberleben den Platzhalter", () => {
+  // Derselbe Fehler wie beim durchgestrichenen Wort, nur breiter: der fette
+  // Vorspann stand in den gebauten Assets als <b> im Kernaussage-Band und in
+  // jeder Aufzaehlungszeile und war mit dem Platzhalter verschwunden.
+  assert.match(studio, /\\\*\\\*\(\[\^\*\]\{1,120\}\)\\\*\\\*\/g, "<b>\$1<\/b>"/);
+  // Auch die Schleifeninhalte laufen durch die Auszeichnung.
+  assert.match(studio, /markiere\(esc\(werte\[name\] \?\? ""\)\)/);
+  const prompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
+    backend.normalizeAssetAnswers("linkedin", {}));
+  assert.match(prompt, /\*\*Vorspann\*\* wird fett/);
+  // Die Sternchen duerfen die Normalisierung ueberleben, sonst kommt nichts an.
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{ variant: "F", title: "T", kicker: "K", footer_left: "R", takeaway: "**Pointe:** Kontrast", bullets: ["**Fett** und Text"] }],
+  }), backend.normalizeAssetAnswers("linkedin", {}));
+  assert.match(payload.slides[0].takeaway, /\*\*Pointe:\*\*/);
+  assert.match(payload.slides[0].bullets[0], /\*\*Fett\*\*/);
+});

@@ -338,6 +338,7 @@ I Prozess: steps, drei bis fünf Schritte mit n, title und text.
 L Annotierte Kennzahl: stat plus zwei bis drei bullets als Anmerkung.
 K Durchgestrichenes Wort: title mit genau einem Wort in ~~Tilden~~, das im Bild durchgestrichen erscheint. Es ist das Wort, das der Satz verwirft, zum Beispiel "Nicht mehr ~~Tools~~, sondern mehr Handschrift".
 Jeder Slide trägt zusätzlich kicker, title, takeaway und footer_left.
+Auszeichnungen im Text, weil nur der Text weiss, wo sie hingehoeren: **Vorspann** wird fett gesetzt. Nutze das im takeaway fuer die Pointe ("**Der Kontrast:** ...") und in jeder Aufzaehlungszeile fuer die Behauptung vor dem Beleg ("**Datenbasis konsolidieren** - Fundament jedes Use-Cases"). Hoechstens eine fette Stelle je Feld.
 </varianten>`;
 
 function linkedinPrompt(answers: LinkedinAnswers, daten: string): string {
