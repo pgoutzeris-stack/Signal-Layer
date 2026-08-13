@@ -122,7 +122,8 @@ test("die Variantenwahl zeigt die Vorlage, nicht nur ihren Namen", () => {
   assert.match(studio, /function variantPreview\(variant\)/);
   // Dieselbe Vorlage wie auf der Buehne: eine nachgezeichnete Vorschau wuerde
   // beim naechsten Layoutwechsel luegen.
-  assert.match(studio, /slideHtml\(demo\)/);
+  // Die Vorschau rendert dieselbe Vorlage, nur ohne Bearbeitbarkeit.
+  assert.match(studio, /slideHtml\(demo, false\)/);
   assert.match(studio, /contenteditable="true"/);
   assert.match(studio, /as-opts--prev/);
 });
