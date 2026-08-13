@@ -33,18 +33,27 @@ const VARIANT_KEYS = VARIANTS_ALL.map(([key]) => key);
 /** Was das Backend kennt. Layouts werden darauf abgebildet. */
 const MODEL_VARIANTS = VARIANTS.map(([key]) => key);
 
-const LOOK = { A: "dunkel", B: "hell", C: "hell", D: "Bild", E: "hell", F: "hell",
-  G: "hell", H: "dunkel", I: "hell", J: "Bild", K: "hell", L: "hell" };
+// Anmutung je Layout, abgelesen am Markup der gebauten Assets: dunkel heisst
+// li-dark oder ein dunkles Overlay ueber dem Bild. Die Wahl filtert die Liste,
+// sie faerbt nichts um - Umfaerben hatte weisse Schrift auf Weiss erzeugt.
+const LOOK = {
+  A: "dunkel", B: "hell", C: "hell", D: "dunkel", E: "hell", F: "hell",
+  G: "hell", H: "dunkel", I: "hell", J: "dunkel", K: "hell", L: "hell",
+  S1: "hell", S2: "dunkel", S3: "hell", S4: "dunkel",
+  T1: "hell", T2: "hell", T3: "hell", T4: "hell", T5: "hell", T6: "hell",
+};
+const MIT_BILD = new Set(["C", "D", "J"]);
 
 const FORM_LINKEDIN = [
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
+  { key: "look", label: "Anmutung", options: [["hell", "Hell"], ["dunkel", "Dunkel"]] },
+  { key: "variant", label: "Layout", art: "dropdown", options: [["auto", "Modell wählt"], ...VARIANTS_ALL] },
   {
     key: "slide_count",
     label: "Slides",
     options: [["4", "4"], ["6", "6"], ["8", "8"]],
     when: (answers) => answers.asset_type === "carousel",
   },
-  { key: "variant", label: "Layout", options: [["auto", "Modell wählt"], ...VARIANTS_ALL] },
   {
     key: "storyline",
     label: "Inhalt",
@@ -368,6 +377,30 @@ const CHROME_CSS = `
 #as-overlay .as-img--bg .as-img-ui{pointer-events:auto;}
 
 /* Vorschau der Varianten: 150px breite Buehne, also Faktor 150/1080. */
+/* Weisses Dropdown fuer das Layout. Eine Karte, die sich oeffnet, mit Miniatur
+   je Zeile - kein natives select, weil dort kein Bild moeglich ist. */
+#as-overlay .as-dd{position:relative;}
+#as-overlay .as-ddhead{width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:11px 14px; border:1px solid var(--line,#e2e8f0); border-radius:12px; background:#fff;
+  font-size:.86rem; font-weight:600; color:var(--ink,#0f172a); box-shadow:0 1px 2px rgba(15,23,42,.04);}
+#as-overlay .as-ddhead:hover{border-color:var(--brand,#206efb);}
+#as-overlay .as-ddhead i{font-size:.7rem; color:var(--muted,#475569); transition:transform .15s;}
+#as-overlay .as-dd.is-open .as-ddhead{border-color:var(--brand,#206efb); box-shadow:0 0 0 3px rgba(32,110,251,.12);}
+#as-overlay .as-dd.is-open .as-ddhead i{transform:rotate(180deg);}
+#as-overlay .as-ddlist{display:none; position:absolute; z-index:20; left:0; right:0; top:calc(100% + 6px);
+  max-height:340px; overflow-y:auto; padding:6px; background:#fff; border:1px solid var(--line,#e2e8f0);
+  border-radius:14px; box-shadow:0 18px 40px rgba(15,23,42,.16);}
+#as-overlay .as-dd.is-open .as-ddlist{display:block;}
+#as-overlay .as-ddrow{width:100%; display:flex; align-items:center; gap:10px; padding:6px 8px; border:0;
+  border-radius:10px; background:transparent; text-align:left; font-size:.82rem; font-weight:600; color:var(--ink,#0f172a);}
+#as-overlay .as-ddrow:hover{background:var(--surface,#f8fafc);}
+#as-overlay .as-ddrow.is-active{background:var(--brand-light,#eff6ff); color:var(--brand-dark,#165fd9);}
+#as-overlay .as-ddtext{flex:1; min-width:0;}
+#as-overlay .as-ddthumb{flex:0 0 auto; width:40px; height:50px; border-radius:6px; overflow:hidden;
+  border:1px solid var(--line,#e2e8f0); background:#fff; display:flex; align-items:center; justify-content:center; color:var(--brand,#206efb);}
+#as-overlay .as-mini{display:block; width:40px; height:50px; overflow:hidden;}
+#as-overlay .as-mini-in{display:block; width:1080px; height:1350px; transform:scale(.037); transform-origin:top left; pointer-events:none;}
+
 /* Auszeichnung am Layout: hell, dunkel, Bild oder Diagramm. Keine Miniatur
    mehr in der Antwortspalte - die Vorschau rechts zeigt es in gross. */
 #as-overlay .as-tag{font-style:normal; font-size:.62rem; font-weight:700; letter-spacing:.05em;
@@ -542,6 +575,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     memo: null,
     postText: "",
     pendingImage: null,
+    ddOffen: false,
   };
 
   const cleanups = [];
@@ -715,8 +749,56 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
   }
 
+  /** Layouts der gewaehlten Anmutung. "Modell waehlt" bleibt immer dabei. */
+  function layoutOptionen() {
+    const look = state.answers.look === "dunkel" ? "dunkel" : "hell";
+    return [["auto", "Modell wählt"], ...VARIANTS_ALL.filter(([key]) => LOOK[key] === look)];
+  }
+
+  /**
+   * Weisses Dropdown mit einer Miniatur je Zeile. Die Miniatur ist dieselbe
+   * Vorlage wie die grosse Vorschau, nur klein - deshalb kann sie nicht etwas
+   * anderes zeigen als das Ergebnis.
+   */
+  function dropdownHtml(q) {
+    const optionen = layoutOptionen();
+    const gewaehlt = optionen.some(([key]) => key === state.answers[q.key])
+      ? state.answers[q.key]
+      : "auto";
+    if (gewaehlt !== state.answers[q.key]) state.answers[q.key] = gewaehlt;
+    const label = (optionen.find(([key]) => key === gewaehlt) || optionen[0])[1];
+    const zeilen = optionen.map(([value, text]) => `
+      <button type="button" class="as-ddrow${value === gewaehlt ? " is-active" : ""}" data-act="pick-layout" data-value="${attr(value)}">
+        <span class="as-ddthumb">${value === "auto" ? '<i class="fa-solid fa-wand-magic-sparkles"></i>' : miniatur(value)}</span>
+        <span class="as-ddtext">${esc(text)}</span>
+        ${MIT_BILD.has(value) ? '<i class="as-tag">Bild</i>' : LAYOUT_KEYS.includes(value) ? '<i class="as-tag">Diagramm</i>' : ""}
+      </button>`).join("");
+    return `<div class="as-q">
+      <label>${esc(q.label)}</label>
+      <div class="as-dd${state.ddOffen ? " is-open" : ""}">
+        <button type="button" class="as-ddhead" data-act="toggle-layout" aria-expanded="${state.ddOffen ? "true" : "false"}">
+          <span>${esc(label)}</span><i class="fa-solid fa-chevron-down"></i>
+        </button>
+        <div class="as-ddlist">${zeilen}</div>
+      </div>
+    </div>`;
+  }
+
+  /**
+   * Kleine, nicht bedienbare Ausgabe einer Vorlage fuer die Dropdown-Zeile.
+   * Die Bildbedienung muss raus: sie enthaelt einen Knopf, und ein Knopf im
+   * Knopf laesst den Parser die Zeile vorzeitig schliessen - Variante C stand
+   * dadurch leer in der Liste.
+   */
+  function miniatur(variant) {
+    const html = slideHtml(demoSlide(variant), false)
+      .replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, "");
+    return `<span class="as-mini"><span class="as-mini-in">${html}</span></span>`;
+  }
+
   function formHtml() {
     const rows = questions.filter((q) => !q.when || q.when(state.answers)).map((q) => {
+      if (q.art === "dropdown") return dropdownHtml(q);
       const opts = q.options.map(([value, label]) => {
         // Der Look steht am Layout statt in einer eigenen Frage, und die
         // Infografiken tragen den Hinweis, dass ihre Zahlen zu setzen sind.
@@ -735,6 +817,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return `<div class="as-q"><label>${esc(q.label)}</label><div class="as-opts">${opts}</div>${free}</div>`;
     }).join("");
     return `<form class="as-form" data-form>${rows}</form>`;
+  }
+
+  /** Formular und Vorschau in einem Zug neu zeichnen. */
+  function zeichneForm() {
+    readForm();
+    const form = shell.querySelector(".as-split2-form");
+    if (form) form.innerHTML = formHtml();
+    const prev = shell.querySelector("[data-livepreview]");
+    if (prev) prev.innerHTML = livePreviewHtml();
+    fitPreview();
   }
 
   function readForm() {
@@ -1505,6 +1597,13 @@ ${stages}${post}
     if (act === "slide-del") { removeSlide(id); return; }
     if (act === "slide-up") { moveSlide(id, -1); return; }
     if (act === "slide-down") { moveSlide(id, 1); return; }
+    if (act === "toggle-layout") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
+    if (act === "pick-layout") {
+      state.answers.variant = hit.getAttribute("data-value");
+      state.ddOffen = false;
+      zeichneForm();
+      return;
+    }
     if (act === "download") { download(); return; }
     if (act === "print") { harvest(); window.print(); return; }
     if (act === "save") { save(); return; }
@@ -1530,11 +1629,7 @@ ${stages}${post}
     // zeichnet die Vorschau neu, damit die Wahl sofort zu sehen ist.
     if (state.step === "form" && event.target.matches('input[type="radio"]')) {
       readForm();
-      const form = shell.querySelector(".as-split2-form");
-      if (form) form.innerHTML = formHtml();
-      const prev = shell.querySelector("[data-livepreview]");
-      if (prev) prev.innerHTML = livePreviewHtml();
-      fitPreview();
+      zeichneForm();
     }
   }
 

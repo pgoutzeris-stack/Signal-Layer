@@ -129,13 +129,34 @@ test("die Antwortspalte zeigt Auswahl, die Vorschau zeigt das Asset", () => {
   assert.match(studio, /function livePreviewHtml\(\)/);
 });
 
-test("die Anmutung ist keine Frage mehr", () => {
-  // Jedes gebaute Asset bringt seinen Look mit, die Textfarben stehen inline.
-  // Ein Umschalten erzeugte weisse Schrift auf weissem Grund.
-  const formBlock = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("const FORM_MEMO"));
-  assert.doesNotMatch(formBlock, /key: "theme"/);
+test("Format, Anmutung, Layout - in dieser Reihenfolge", () => {
+  const block = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("const FORM_MEMO"));
+  const reihenfolge = [...block.matchAll(/key: "([a-z_]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(reihenfolge.slice(0, 3), ["asset_type", "look", "variant"]);
+});
+
+test("die Anmutung filtert die Layouts, sie faerbt nichts um", () => {
+  // Umfaerben hatte weisse Schrift auf weissem Grund erzeugt. Die Wahl schraenkt
+  // jetzt die Liste ein: jedes gebaute Asset behaelt seinen Look.
+  assert.match(studio, /function layoutOptionen\(\)/);
+  assert.match(studio, /VARIANTS_ALL\.filter\(\(\[key\]\) => LOOK\[key\] === look\)/);
   assert.doesNotMatch(studio, /class="li li-dark/);
   assert.doesNotMatch(studio, /data-act="theme"/);
+  // Alle 22 Layouts sind einer Anmutung zugeordnet, sonst fehlen sie in beiden Listen.
+  const lookBlock = studio.slice(studio.indexOf("const LOOK = {"), studio.indexOf("const MIT_BILD"));
+  for (const key of ["A", "B", "C", "D", "E", "F", "G", "H", "I", "K", "L", "S1", "S2", "S3", "S4", "T1", "T6"]) {
+    assert.match(lookBlock, new RegExp(`\\b${key}: "(hell|dunkel)"`), `Layout ${key} ohne Anmutung`);
+  }
+});
+
+test("das Layout waehlt man im weissen Dropdown mit Miniatur", () => {
+  assert.match(studio, /function dropdownHtml\(q\)/);
+  assert.match(studio, /data-act="toggle-layout"/);
+  assert.match(studio, /data-act="pick-layout"/);
+  // Die Miniatur darf keinen Knopf enthalten: ein Knopf im Knopf schliesst die
+  // Zeile vorzeitig, Variante C stand dadurch leer in der Liste.
+  assert.match(studio, /function miniatur\(variant\)/);
+  assert.match(studio, /as-img-ui"\[\\s\\S\]\*\?<\\\/div>\/g, ""\)/);
 });
 
 test("Sales heisst Ansprache", () => {
