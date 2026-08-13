@@ -386,6 +386,7 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
   // Ein gezielter zweiter Versuch, nur wenn das Isolate noch Zeit hat.
   // Beide Aufrufe landen im Kostenledger. Timeout wird nicht wiederholt.
   assert.equal(backend.assetRepairTimeoutMs(50_000), 120_000);
+  assert.equal(backend.assetRepairTimeoutMs(108_000), null);
   assert.equal(backend.assetRepairTimeoutMs(350_000), null);
   assert.match(edge, /assetRepairTimeoutMs/);
   assert.match(edge, /buildAssetRepairPrompt/);
@@ -478,8 +479,10 @@ test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () =>
     assert.equal(timeout, erwartet, `${kind} ${JSON.stringify(answers)}`);
     assert.ok(timeout + backend.ASSET_STAGE_HOLD_MS * 2 < 400_000, "Halten plus Modell muss unter 400 s bleiben");
   }
-  // Nach einem 6-Slide-Lauf von 280 s bleibt ein kurzer Repair (100 s), danach nicht.
-  assert.equal(backend.assetRepairTimeoutMs(280_000), 100_000);
+  // Nach einem langen ersten Lauf keine Reparatur: der Timeout-Manager
+  // hat am 13.8.2026 den Auftrag nach etwa 235 s beendet, der Status blieb running.
+  assert.equal(backend.assetRepairTimeoutMs(50_000), 120_000);
+  assert.equal(backend.assetRepairTimeoutMs(280_000), null);
   assert.equal(backend.assetRepairTimeoutMs(370_000), null);
 });
 
@@ -679,6 +682,7 @@ test("unbelegte Ziffern im Begleittext fallen durch, Jahreszahlen nicht", () => 
   }), answers, { articleText: "Etwa ein Viertel der Befragten. Keine ausgeschriebene Kennzahl." });
   assert.match(ok.post_text, /ein Viertel/);
   assert.deepEqual(backend.claimedNumbers("70 % und 2026 und 8.000 Stellen"), ["70", "8.000"]);
+  assert.deepEqual(backend.claimedNumbers("Klarna startet am 31.07.2026, 14 % verlieren den Überblick."), ["14"]);
 });
 
 test("Kundenpapier setzt ROOTS als Handelnden, nicht die Kundenrolle", () => {

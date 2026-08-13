@@ -247,6 +247,8 @@ export function claimedNumbers(value: string): string[] {
     const key = digitKey(roh);
     if (!key || key.length < 2) continue;
     if (/^(19|20)\d{2}$/.test(key)) continue;
+    // 31.07 ist der 31. Juli, keine Kennzahl 31,07.
+    if (/^(0?[1-9]|[12]\d|3[01])\.(0?[1-9]|1[0-2])$/.test(roh)) continue;
     gefunden.add(roh);
   }
   return [...gefunden];
@@ -1120,6 +1122,10 @@ export function assetTimeoutErrorText(model: string, timeoutMs: number): string 
 export function assetRepairTimeoutMs(elapsedMs: number): number | null {
   const rest = ASSET_WALL_CLOCK_MS - elapsedMs;
   if (rest < 40_000) return null;
+  // Am 13.8.2026 hat der Timeout-Manager den Hintergrundauftrag nach
+  // etwa 235 s beendet. Eine Reparatur nach einem langen ersten Lauf
+  // liess den Auftrag auf "running" stehen.
+  if (elapsedMs > 90_000) return null;
   return Math.min(120_000, rest);
 }
 
