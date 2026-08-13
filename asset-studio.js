@@ -75,7 +75,7 @@ const FORM_LINKEDIN = [
   {
     key: "slide_count",
     label: "Slides",
-    options: [["4", "4"], ["6", "6"], ["8", "8"]],
+    options: [["4", "4"], ["6", "6"]],
     when: (answers) => answers.asset_type === "carousel",
   },
   {
@@ -586,7 +586,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-0400";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-0700";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 

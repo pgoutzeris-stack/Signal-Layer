@@ -380,3 +380,18 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
   // Die Rohantwort steht im Fehlerereignis, sonst ist der Fall hinterher weg.
   assert.match(edge, /String\(assetResult\.text \|\| ""\)\.slice\(0, 1500\)/);
 });
+
+test("ein Entwurf bleibt im Zeitbudget der Plattform", () => {
+  // Gemessen dauert ein Aufruf 69 bis 76 Sekunden. Zwei hintereinander reissen
+  // die Verbindung, bevor ein Fehler geschrieben ist - im Browser stand dann
+  // "Load failed", und im Protokoll gar nichts.
+  assert.match(edge, /timeoutMs: 75_000/);
+  assert.match(edge, /const restMs = 80_000 - \(Date\.now\(\) - assetStartedAt\)/);
+  assert.match(edge, /restMs < 35_000 \? null :/);
+  assert.match(edge, /if \(repairResult\?\.ok\)/);
+  // Acht Slides passten nicht in eine Antwort.
+  assert.match(studio, /\[\["4", "4"\], \["6", "6"\]\]/);
+  const backendSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
+  assert.match(backendSrc, /\[4, 6\]\.includes\(slideCount\)/);
+  assert.match(backendSrc, /Sparsamkeitsgebot/);
+});

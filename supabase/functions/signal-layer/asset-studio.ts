@@ -240,7 +240,8 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
       asset_type: assetType,
       variant: (ASSET_VARIANTS as readonly string[]).includes(variantRaw) ? variantRaw as AssetVariant : "auto",
       theme: /dunkel|dark/i.test(pick(source, "theme", "anmutung", "mode")) ? "dark" : "light",
-      slides: assetType === "carousel" ? ([4, 6, 8].includes(slideCount) ? slideCount : 4) : 1,
+      // Acht Slides passten nicht in eine Antwort und brachen mitten im JSON ab.
+      slides: assetType === "carousel" ? ([4, 6].includes(slideCount) ? slideCount : 4) : 1,
       storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
       cta: choiceText(source, ["cta"], ["cta_text"], 240),
       sources: choiceText(source, ["sources", "quellen"], ["sources_text"], 600),
@@ -338,6 +339,7 @@ I Prozess: steps, drei bis fünf Schritte mit n, title und text.
 L Annotierte Kennzahl: stat plus zwei bis drei bullets als Anmerkung.
 K Durchgestrichenes Wort: title mit genau einem Wort in ~~Tilden~~, das im Bild durchgestrichen erscheint. Es ist das Wort, das der Satz verwirft, zum Beispiel "Nicht mehr ~~Tools~~, sondern mehr Handschrift".
 Jeder Slide trägt zusätzlich kicker, title, takeaway und footer_left.
+Beim Carousel gilt ein hartes Sparsamkeitsgebot, weil sonst die Antwort abbricht: title höchstens 60 Zeichen, subtitle höchstens 110, takeaway höchstens 120, je Aufzählung höchstens vier Zeilen à 70 Zeichen. Kein Slide wiederholt die Aussage eines anderen.
 Auszeichnungen im Text, weil nur der Text weiss, wo sie hingehoeren: **Vorspann** wird fett gesetzt. Nutze das im takeaway fuer die Pointe ("**Der Kontrast:** ...") und in jeder Aufzaehlungszeile fuer die Behauptung vor dem Beleg ("**Datenbasis konsolidieren** - Fundament jedes Use-Cases"). Hoechstens eine fette Stelle je Feld.
 </varianten>`;
 

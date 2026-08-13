@@ -7860,8 +7860,11 @@ Deno.serve(async (req: Request) => {
               ? 8_000
               : 3_000,
           temperature: 0.35,
-          timeoutMs: 90_000,
-          attempts: 2,
+          // Ein Aufruf dauert gemessen 69 bis 76 Sekunden. Zwei davon
+          // hintereinander reissen die Verbindung, bevor irgendetwas
+          // geschrieben ist - im Browser stand dann "Load failed".
+          timeoutMs: 75_000,
+          attempts: 1,
         });
 
         if (!assetResult.ok) {
@@ -7910,7 +7913,11 @@ Deno.serve(async (req: Request) => {
           // Die Tokens sind bezahlt. Ein zweiter, gezielter Versuch mit dem
           // Mangel im Prompt ist billiger als ein verworfener Lauf - dasselbe
           // Muster nutzt die Simple-Pipeline bei unlesbaren Antworten.
-          const repairResult = await callJsonModel({
+          // Reparatur nur mit echtem Zeitbudget. Nach einem langen ersten
+          // Aufruf ist ein zweiter garantiert zu spaet, und dann ist eine
+          // ehrliche Fehlermeldung besser als eine abgerissene Verbindung.
+          const restMs = 80_000 - (Date.now() - assetStartedAt);
+          const repairResult = restMs < 35_000 ? null : await callJsonModel({
             model: assetModel,
             apiKey: assetKey,
             systemText: ASSET_SYSTEM_TEXT,
@@ -7918,10 +7925,10 @@ Deno.serve(async (req: Request) => {
             schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
             maxOutputTokens: 8_000,
             temperature: 0.2,
-            timeoutMs: 90_000,
+            timeoutMs: Math.max(20_000, restMs - 5_000),
             attempts: 1,
           });
-          if (repairResult.ok) {
+          if (repairResult?.ok) {
             const repairCost = await modelCostFields(assetModel, repairResult.usage);
             await admin.schema("signal_layer").from("ai_usage_events").insert({
               article_id: assetArticleId, operation: "asset_generation", model: assetModel, status: "success",
