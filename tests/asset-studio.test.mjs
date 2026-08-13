@@ -411,6 +411,8 @@ test("die Ladeanzeige folgt dem gemeldeten Abschnitt, nicht der Uhr", () => {
   assert.doesNotMatch(studio, /box-shadow:0 0 0 14px/);
   assert.doesNotMatch(studio, /bis zwei Minuten/);
   assert.match(studio, /@keyframes as-atem/);
+  // "fertig" gehoert zu keinem Schritt; ohne Filter sprang die Anzeige zurueck.
+  assert.match(studio, /ABSCHNITTE\.some\(\(\[key\]\) => key === name\)/);
 });
 test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   // Belegt am 13.8.2026: input 3.252, thinking 5.500, output 0. Denken und

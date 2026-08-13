@@ -605,7 +605,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-1600";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-1620";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -858,7 +858,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Gemeldeter Abschnitt uebernehmen und die Anzeige tauschen. */
   function ladeAbschnittSetzen(name) {
+    // "fertig" und alles Unbekannte werden ignoriert: sonst faende findIndex
+    // nichts und die Anzeige sprang kurz vor dem Ergebnis auf Schritt eins.
     if (!name || name === state.ladeAbschnitt) return;
+    if (!ABSCHNITTE.some(([key]) => key === name)) return;
     state.ladeAbschnitt = name;
     const box = shell.querySelector(".as-load");
     if (box) box.outerHTML = ladeanzeigeHtml();
