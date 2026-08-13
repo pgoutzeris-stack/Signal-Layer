@@ -1901,15 +1901,26 @@
 
   /* ---------- Asset Studio ---------- */
   /* Der Einstieg sitzt in der Prüfleiste des Artikel-Popups und trägt als
-  .as-launch-row { padding: 0 0 .9rem; }
-  .as-launch {
-    width: 100%; min-height: 40px; padding: 0 1rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    border: 1px solid var(--brand); border-radius: var(--radius-pill); color: #fff; background: var(--brand);
-    font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer;
-    box-shadow: var(--shadow-dash); transition: background .15s, box-shadow .15s, transform .15s;
+  /* Einstieg in das Studio. Traegt dieselbe Karte wie die Leistungs-Kachel der
+     Pruefleiste (.decision-block--offering), damit die Leiste ein Muster hat. */
+  .decision-block--asset { border-top: 1px solid var(--line); }
+  .asset-launch {
+    width: 100%; margin-top: .45rem; padding: .7rem .8rem;
+    display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: .6rem;
+    border: 1px solid var(--brand); border-radius: 12px; background: var(--brand-light);
+    font: inherit; font-size: .82rem; font-weight: 600; color: var(--brand-dark);
+    text-align: left; cursor: pointer; transition: background .15s, border-color .15s;
   }
-  .as-launch:hover, .as-launch:focus-visible { outline: none; background: var(--brand-dark); box-shadow: var(--shadow-focus); transform: translateY(-1px); }
-  .as-launch:disabled { opacity: .6; transform: none; cursor: wait; }
+  .asset-launch-icon {
+    width: 30px; height: 30px; border-radius: 9px; background: var(--brand); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center; font-size: .82rem;
+  }
+  .asset-launch-arrow { font-size: .74rem; color: var(--brand); transition: transform .15s; }
+  .asset-launch:hover, .asset-launch:focus-visible {
+    outline: none; background: color-mix(in srgb, var(--brand) 14%, var(--bg)); border-color: var(--brand-dark);
+  }
+  .asset-launch:hover .asset-launch-arrow, .asset-launch:focus-visible .asset-launch-arrow { transform: translateX(3px); }
+  .asset-launch:disabled { opacity: .6; cursor: wait; }
 
   /* Alles Uebrige des Studios stylt asset-studio.js in einer eigenen Insel:
      das Overlay muss auch als heruntergeladene Einzeldatei tragen, und der
@@ -2396,7 +2407,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260813-1200';
+  import { initApp } from './app.js?v=20260813-2340';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

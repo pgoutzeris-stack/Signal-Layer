@@ -95,3 +95,46 @@ test("die Kosten werden als asset_generation gebucht", () => {
   // Ein Erfolgsereignis ohne modelCostFields verletzt den Kostencheck.
   assert.match(edge, /modelCostFields\(assetModel, assetUsage\)/);
 });
+
+test("das Studio arbeitet im Rahmen des Artikel-Popups", () => {
+  // Als eigene Vollflaeche wuerde es das Popup verdecken statt darin zu leben:
+  // der Artikel bliebe offen im Hintergrund, der Weg zurueck waere unklar.
+  assert.match(studio, /openAssetStudio\(\{ kind, articleId, signal, callApi, escapeHtml, host \} = \{\}\)/);
+  assert.match(studio, /const mount = host instanceof HTMLElement \? host : document\.body/);
+  assert.match(studio, /#as-overlay\.as-in-host\{position:absolute/);
+  const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  assert.match(frontend, /host: els\.articleDetailContent/);
+});
+
+test("der Einstieg folgt dem Muster der Pruefleiste", () => {
+  const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  // Eigener Vollbreiten-Knopf ohne Bezug zur Leiste war der Bruch; jetzt ist es
+  // ein decision-block wie die uebrigen Elemente daneben.
+  assert.match(frontend, /decision-block decision-block--asset/);
+  assert.match(frontend, /class="asset-launch"/);
+  assert.doesNotMatch(frontend, /class="as-launch"/);
+  assert.match(styles, /\.asset-launch \{/);
+  assert.doesNotMatch(styles, /\.as-launch \{/);
+});
+
+test("die Variantenwahl zeigt die Vorlage, nicht nur ihren Namen", () => {
+  assert.match(studio, /function variantPreview\(variant\)/);
+  // Dieselbe Vorlage wie auf der Buehne: eine nachgezeichnete Vorschau wuerde
+  // beim naechsten Layoutwechsel luegen.
+  assert.match(studio, /slideHtml\(demo\)/);
+  assert.match(studio, /contenteditable="true"/);
+  assert.match(studio, /as-opts--prev/);
+});
+
+test("die Werkbank bearbeitet in Echtzeit", () => {
+  // Nachweis ueber die Bausteine: bearbeitbare Felder, schwebende Leiste mit
+  // allen Formatbefehlen, Bildtausch, Variantenwechsel.
+  for (const befehl of ["bold", "italic", "underline", "smaller", "larger", "left", "center", "right", "color", "list", "undo", "redo"]) {
+    assert.ok(studio.includes(`data-fmt="${befehl}"`), `Formatbefehl ${befehl} fehlt`);
+  }
+  assert.match(studio, /data-act="img-pick"/);
+  assert.match(studio, /data-act="img-pos"/);
+  assert.match(studio, /data-act="variant"/);
+  assert.match(studio, /function harvest\(\)/);
+});

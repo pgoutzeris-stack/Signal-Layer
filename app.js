@@ -5,7 +5,7 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260805-1130";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio } from "./asset-studio.js?v=20260813-1200";
+import { openAssetStudio } from "./asset-studio.js?v=20260813-2340";
 
 let sb = null;
 let sources = [];
@@ -2203,11 +2203,6 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
         <div class="article-fulltext">${formatArticleBody(renderEvidenceLinkedText(fulltext, evidence))}</div>
       </main>
       <aside class="article-detail-aside">
-        ${action === "get_simple_article_detail" ? `<div class="as-launch-row">
-          <button type="button" class="as-launch" data-asset-studio="${salesPerspective ? "memo" : "linkedin"}" data-article-id="${escapeHtml(article.id || articleId)}">
-            <i class="fa-solid ${salesPerspective ? "fa-file-lines" : "fa-pen-nib"}"></i> ${salesPerspective ? "Entscheidervorlage erstellen" : "LinkedIn-Asset erstellen"}
-          </button>
-        </div>` : ""}
         <h3>Warum diese Entscheidung?</h3>
         <p class="decision-lead">Die rechte Prüfleiste zeigt Modellentscheidung, bestandene Regeln und die wörtlichen Belege.</p>
         <div class="decision-block">
@@ -2220,6 +2215,14 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
         </div>
         ${reasons.length ? `<div class="decision-block"><span class="decision-label">Ausschlussregeln</span><div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></div>` : ""}
         ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Passende ROOTS-Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><div class="offering-match-dock"><span>So kann ROOTS andocken</span><p class="offering-match-reasoning">${escapeText(article.matched_offering_reasoning || "")}</p></div></div></div>` : ""}
+        ${action === "get_simple_article_detail" ? `<div class="decision-block decision-block--asset">
+          <span class="decision-label">${salesPerspective ? "Entscheidervorlage" : "LinkedIn-Asset"}</span>
+          <button type="button" class="asset-launch" data-asset-studio="${salesPerspective ? "memo" : "linkedin"}" data-article-id="${escapeHtml(article.id || articleId)}">
+            <span class="asset-launch-icon"><i class="fa-solid ${salesPerspective ? "fa-file-lines" : "fa-pen-nib"}"></i></span>
+            <span class="asset-launch-text">${salesPerspective ? "Aus diesem Signal erstellen" : "Aus diesem Signal erstellen"}</span>
+            <i class="fa-solid fa-arrow-right asset-launch-arrow"></i>
+          </button>
+        </div>` : ""}
         <div class="decision-block">
           <span class="decision-label">Tags & Routing</span>
           <div class="decision-tags">${renderDetailTags(article) || `<span class="decision-lead">Keine Tags vergeben</span>`}</div>
@@ -3841,6 +3844,10 @@ function bindUi() {
         signal: detailArticle,
         callApi,
         escapeHtml,
+        // Das Studio arbeitet im Rahmen des Popups. Der Artikel bleibt darunter
+        // stehen, deshalb ist der Weg zurueck ein Schliessen der Ebene und kein
+        // Nachladen.
+        host: els.articleDetailContent,
       });
       return;
     }

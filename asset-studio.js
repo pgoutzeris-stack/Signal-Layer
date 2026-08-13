@@ -254,6 +254,9 @@ const CHROME_CSS = `
   font-family:'Circular Std', system-ui, -apple-system, sans-serif;
   display:grid; grid-template-columns:250px 1fr; overflow:hidden;
 }
+/* Im Artikel-Popup: absolute Ebene im Rahmen des Popups, eigene Rundung, damit
+   die Ecken des Popups nicht ueberdeckt werden. */
+#as-overlay.as-in-host{position:absolute; inset:0; z-index:40; border-radius:inherit;}
 #as-overlay *{box-sizing:border-box;}
 #as-overlay button{font:inherit; color:inherit; cursor:pointer;}
 #as-overlay .as-rail{
@@ -316,6 +319,16 @@ const CHROME_CSS = `
   background:var(--bg,#fff); font-size:13px; cursor:pointer; user-select:none;
 }
 #as-overlay .as-opt input{position:absolute; opacity:0; pointer-events:none;}
+/* Vorschau der Varianten: 150px breite Buehne, also Faktor 150/1080. */
+/* Feste Kartenbreite: die Vorschau ist mit Faktor 150/1080 skaliert, eine
+   mitwachsende Karte wuerde nur Leerraum um die Buehne legen. */
+#as-overlay .as-opts--prev{display:grid; grid-template-columns:repeat(auto-fill, 150px); gap:12px; justify-content:start;}
+/* Ohne waagerechte Polsterung: die Spalte ist 150px breit, und genau darauf
+   ist der Skalierungsfaktor der Vorschau gerechnet. */
+#as-overlay .as-opt--prev{flex-direction:column; align-items:stretch; gap:6px; padding:0 0 6px; text-align:center; border-radius:11px; overflow:hidden;}
+#as-overlay .as-prev{display:block; width:100%; aspect-ratio:1080/1350; overflow:hidden; background:#fff; border-bottom:1px solid var(--line,#e2e8f0);}
+#as-overlay .as-prev-in{display:block; width:1080px; height:1350px; transform:scale(.1389); transform-origin:top left; pointer-events:none;}
+#as-overlay .as-opt--prev > span:last-child{font-size:.74rem; font-weight:600;}
 #as-overlay .as-opt:has(input:checked){
   border-color:var(--brand,#206efb); background:var(--brand-light,#eff6ff);
   color:var(--brand-dark,#165fd9); font-weight:700;
@@ -457,7 +470,7 @@ function sanitizeFragment(html) {
 
 let openInstance = null;
 
-export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml } = {}) {
+export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host } = {}) {
   // Zwei Studios gleichzeitig würden sich Tastatur und Auswahl streitig machen.
   if (openInstance) return openInstance;
 
@@ -505,9 +518,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml }
   fileInput.className = "as-file";
   overlay.appendChild(fileInput);
 
-  const prevOverflow = document.body.style.overflow;
-  document.body.appendChild(overlay);
-  document.body.style.overflow = "hidden";
+  // Das Studio gehoert in das Artikel-Popup, nicht darueber: der Artikel bleibt
+  // stehen, das Studio legt sich als Ebene in denselben Rahmen, und Schliessen
+  // gibt den Artikel unveraendert frei - ohne Nachladen.
+  const mount = host instanceof HTMLElement ? host : document.body;
+  const inHost = mount !== document.body;
+  if (inHost) overlay.classList.add("as-in-host");
+  const prevOverflow = inHost ? "" : document.body.style.overflow;
+  mount.appendChild(overlay);
+  if (!inHost) document.body.style.overflow = "hidden";
 
   /* ── Zustand aus dem Fragebogen ── */
 
@@ -595,17 +614,51 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml }
 
   /* ── Schritt 1: Fragebogen ── */
 
+  /**
+   * Vorschau einer Variante: dieselbe Vorlage wie spaeter auf der Buehne, nur
+   * mit Platzhaltertext und stark verkleinert. Bewusst kein eigenes Schaubild -
+   * eine nachgezeichnete Vorschau wuerde beim naechsten Layoutwechsel luegen.
+   */
+  function variantPreview(variant) {
+    const demo = normalizeSlide({
+      variant,
+      kicker: "KICKER",
+      title: "Ein Satz, der etwas behauptet",
+      subtitle: "Zwei Zeilen Einordnung, die die Behauptung stuetzen.",
+      quote: "Ein Zitat mit Haltung",
+      attribution: "Name, Rolle",
+      stat: { value: "14 %", label: "Bezug, Jahr" },
+      stats: [{ value: "14 %", label: "Anteil" }, { value: "6", label: "Wochen" }, { value: "3", label: "Rollen" }],
+      bullets: ["Erster Punkt", "Zweiter Punkt", "Dritter Punkt"],
+      steps: [{ n: "01", title: "Schritt", text: "Kurz" }, { n: "02", title: "Schritt", text: "Kurz" }, { n: "03", title: "Schritt", text: "Kurz" }],
+      myth: "Behauptung", fact: "Befund",
+      takeaway: "Die Kernaussage mit Kontrast.",
+      footer_left: "ROOTS",
+    });
+    const stage = { ...state.stage, theme: state.answers.theme === "dark" ? "dark" : "light" };
+    const eigentlich = state.stage;
+    state.stage = stage;
+    // Bedienelemente aus der Vorschau nehmen: sie soll nur zeigen, nicht koennen.
+    const html = slideHtml(demo)
+      .replace(/ contenteditable="true"/g, "")
+      .replace(/<div class="as-img-ui"[\s\S]*?<\/div>\s*<\/div>/g, "</div>");
+    state.stage = eigentlich;
+    return `<span class="as-prev"><span class="as-prev-in">${html}</span></span>`;
+  }
+
   function formHtml() {
     const rows = questions.filter((q) => !q.when || q.when(state.answers)).map((q) => {
+      const mitVorschau = q.key === "variant";
       const opts = q.options.map(([value, label]) => `
-        <label class="as-opt">
+        <label class="as-opt${mitVorschau ? " as-opt--prev" : ""}">
           <input type="radio" name="as-${attr(q.key)}" value="${attr(value)}"${state.answers[q.key] === value ? " checked" : ""}>
+          ${mitVorschau && value !== "auto" ? variantPreview(value) : ""}
           <span>${esc(label)}</span>
         </label>`).join("");
       const free = q.free && state.answers[q.key] === q.free.on
         ? `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}">${esc(state.answers[q.free.key] || "")}</textarea>`
         : "";
-      return `<div class="as-q"><label>${esc(q.label)}</label><div class="as-opts">${opts}</div>${free}</div>`;
+      return `<div class="as-q"><label>${esc(q.label)}</label><div class="as-opts${mitVorschau ? " as-opts--prev" : ""}">${opts}</div>${free}</div>`;
     }).join("");
     return `<form class="as-form" data-form>${rows}</form>`;
   }
@@ -1525,7 +1578,7 @@ ${stages}${post}
     if (fmtBar) fmtBar.remove();
     fmtBar = null;
     overlay.remove();
-    document.body.style.overflow = prevOverflow;
+    if (!inHost) document.body.style.overflow = prevOverflow;
     openInstance = null;
   }
 
