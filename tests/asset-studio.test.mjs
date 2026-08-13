@@ -118,14 +118,32 @@ test("der Einstieg folgt dem Muster der Pruefleiste", () => {
   assert.doesNotMatch(styles, /\.as-launch \{/);
 });
 
-test("die Variantenwahl zeigt die Vorlage, nicht nur ihren Namen", () => {
-  assert.match(studio, /function variantPreview\(variant\)/);
-  // Dieselbe Vorlage wie auf der Buehne: eine nachgezeichnete Vorschau wuerde
-  // beim naechsten Layoutwechsel luegen.
-  // Die Vorschau rendert dieselbe Vorlage, nur ohne Bearbeitbarkeit.
-  assert.match(studio, /slideHtml\(demo, false\)/);
-  assert.match(studio, /contenteditable="true"/);
-  assert.match(studio, /as-opts--prev/);
+test("die Antwortspalte zeigt Auswahl, die Vorschau zeigt das Asset", () => {
+  // Miniaturen in der Antwortspalte waren zu klein zum Erkennen und zerbrachen
+  // beim Parsen. Der Look steht jetzt als Auszeichnung am Layout, gezeigt wird
+  // rechts in gross.
+  assert.doesNotMatch(studio, /variantPreview/);
+  assert.doesNotMatch(studio, /as-opts--prev/);
+  assert.match(studio, /class="as-tag"/);
+  assert.match(studio, /const LOOK = \{/);
+  assert.match(studio, /function livePreviewHtml\(\)/);
+});
+
+test("die Anmutung ist keine Frage mehr", () => {
+  // Jedes gebaute Asset bringt seinen Look mit, die Textfarben stehen inline.
+  // Ein Umschalten erzeugte weisse Schrift auf weissem Grund.
+  const formBlock = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("const FORM_MEMO"));
+  assert.doesNotMatch(formBlock, /key: "theme"/);
+  assert.doesNotMatch(studio, /class="li li-dark/);
+  assert.doesNotMatch(studio, /data-act="theme"/);
+});
+
+test("Sales heisst Ansprache", () => {
+  const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  assert.match(frontend, /"Ansprache erstellen"/);
+  assert.doesNotMatch(frontend, /Entscheidervorlage/);
+  assert.doesNotMatch(studio, /Entscheidervorlage/);
+  assert.match(studio, /isMemo \? "Ansprache"/);
 });
 
 test("die Werkbank bearbeitet in Echtzeit", () => {

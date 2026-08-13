@@ -5,7 +5,7 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260805-1130";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio } from "./asset-studio.js?v=20260814-0500";
+import { openAssetStudio } from "./asset-studio.js?v=20260814-1200";
 
 let sb = null;
 let sources = [];
@@ -2216,10 +2216,10 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
         ${reasons.length ? `<div class="decision-block"><span class="decision-label">Ausschlussregeln</span><div class="review-reasons">${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></div>` : ""}
         ${article.matched_offering ? `<div class="decision-block decision-block--offering"><span class="decision-label">Passende ROOTS-Leistung</span><div class="offering-match"><span class="offering-match-name">${escapeHtml(article.matched_offering)}</span><div class="offering-match-dock"><span>So kann ROOTS andocken</span><p class="offering-match-reasoning">${escapeText(article.matched_offering_reasoning || "")}</p></div></div></div>` : ""}
         ${action === "get_simple_article_detail" ? `<div class="decision-block decision-block--asset">
-          <span class="decision-label">${salesPerspective ? "Entscheidervorlage" : "LinkedIn-Asset"}</span>
+          <span class="decision-label">${salesPerspective ? "Ansprache" : "LinkedIn-Asset"}</span>
           <button type="button" class="asset-launch" data-asset-studio="${salesPerspective ? "memo" : "linkedin"}" data-article-id="${escapeHtml(article.id || articleId)}">
-            <span class="asset-launch-icon"><i class="fa-solid ${salesPerspective ? "fa-file-lines" : "fa-pen-nib"}"></i></span>
-            <span class="asset-launch-text">${salesPerspective ? "Aus diesem Signal erstellen" : "Aus diesem Signal erstellen"}</span>
+            <span class="asset-launch-icon"><i class="fa-solid ${salesPerspective ? "fa-comments" : "fa-pen-nib"}"></i></span>
+            <span class="asset-launch-text">${salesPerspective ? "Ansprache erstellen" : "LinkedIn-Asset erstellen"}</span>
             <i class="fa-solid fa-arrow-right asset-launch-arrow"></i>
           </button>
         </div>` : ""}

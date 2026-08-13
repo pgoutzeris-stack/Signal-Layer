@@ -1,5 +1,5 @@
 // Asset Studio: Fragebogen, Entwurf und Werkbank für LinkedIn-Assets und
-// Entscheidervorlagen. Das Modul baut sein Overlay selbst und bringt die Stile
+// Ansprachen. Das Modul baut sein Overlay selbst und bringt die Stile
 // der Bühne mit, weil die heruntergeladene HTML-Datei ohne die App auskommen
 // muss und das App-Thema die Markenfarben sonst umfärben würde.
 
@@ -33,33 +33,35 @@ const VARIANT_KEYS = VARIANTS_ALL.map(([key]) => key);
 /** Was das Backend kennt. Layouts werden darauf abgebildet. */
 const MODEL_VARIANTS = VARIANTS.map(([key]) => key);
 
+const LOOK = { A: "dunkel", B: "hell", C: "hell", D: "Bild", E: "hell", F: "hell",
+  G: "hell", H: "dunkel", I: "hell", J: "Bild", K: "hell", L: "hell" };
+
 const FORM_LINKEDIN = [
-  { key: "asset_type", label: "Assettyp", options: [["single", "Single-Image"], ["carousel", "Carousel"]] },
-  { key: "variant", label: "Layout", options: [["auto", "Modell schlägt vor"], ...VARIANTS_ALL] },
-  { key: "theme", label: "Anmutung", options: [["light", "Hell"], ["dark", "Dunkel"]] },
+  { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
   {
     key: "slide_count",
     label: "Slides",
     options: [["4", "4"], ["6", "6"], ["8", "8"]],
     when: (answers) => answers.asset_type === "carousel",
   },
+  { key: "variant", label: "Layout", options: [["auto", "Modell wählt"], ...VARIANTS_ALL] },
   {
     key: "storyline",
-    label: "Storyline",
-    options: [["auto", "Modell entwickelt sie"], ["custom", "Ich liefere den Text"]],
-    free: { key: "storyline_text", on: "custom", rows: 5 },
+    label: "Inhalt",
+    options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich gebe den Text vor"]],
+    free: { key: "storyline_text", on: "custom", rows: 5, platzhalter: "Kernaussage, Stichpunkte oder fertiger Text" },
   },
   {
     key: "cta",
-    label: "CTA",
+    label: "Handlungsaufruf",
     options: [["auto", "Modell schlägt vor"], ["custom", "Eigener Text"]],
-    free: { key: "cta_text", on: "custom", rows: 2 },
+    free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Termin vereinbaren" },
   },
   {
     key: "sources",
     label: "Quellen",
-    options: [["auto", "keine bestimmten"], ["custom", "eigene angeben"]],
-    free: { key: "sources_text", on: "custom", rows: 3 },
+    options: [["auto", "Nur belegte Aussagen aus dem Artikel"], ["custom", "Eigene Quellen angeben"]],
+    free: { key: "sources_text", on: "custom", rows: 3, platzhalter: "Studie, Herausgeber, Jahr" },
   },
 ];
 
@@ -69,25 +71,25 @@ const FORM_MEMO = [
     label: "Adressat",
     options: [["geschaeftsfuehrung", "Geschäftsführung"], ["marketingleitung", "Marketingleitung"], ["vertrieb", "Vertrieb"], ["beirat", "Beirat"]],
   },
-  { key: "scope", label: "Umfang", options: [["1", "Eine Seite"], ["2", "Zwei Seiten"]] },
   {
     key: "focus",
     label: "Schwerpunkt",
     options: [["lage", "Lage und Anlass"], ["optionen", "Handlungsoptionen"], ["schritt", "Nächster Schritt"]],
   },
+  { key: "scope", label: "Umfang", options: [["1", "Eine Seite"], ["2", "Zwei Seiten"]] },
   {
     key: "storyline",
-    label: "Storyline",
-    options: [["auto", "Modell entwickelt sie"], ["custom", "Ich liefere den Text"]],
-    free: { key: "storyline_text", on: "custom", rows: 5 },
+    label: "Inhalt",
+    options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich gebe den Text vor"]],
+    free: { key: "storyline_text", on: "custom", rows: 5, platzhalter: "Kernaussage, Stichpunkte oder fertiger Text" },
   },
   {
     key: "cta",
-    label: "CTA",
+    label: "Handlungsaufruf",
     options: [["auto", "Modell schlägt vor"], ["custom", "Eigener Text"]],
-    free: { key: "cta_text", on: "custom", rows: 2 },
+    free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Termin abstimmen" },
   },
-  { key: "note", label: "Vermerk", options: [["none", "ohne"], ["intern", "Vertraulich · nur intern"]] },
+  { key: "note", label: "Vermerk", options: [["keiner", "ohne"], ["intern", "Vertraulich · nur intern"]] },
 ];
 
 /* ─────────────────────────  Stile der Bühne  ───────────────────────── */
@@ -216,7 +218,7 @@ const STAGE_CSS = `
 .as-stage--li.as-stage--full .as-kicker{color:var(--navy-kick);}
 .as-stage--li.as-stage--full .as-band{background:rgba(11,31,69,.62); border-color:rgba(255,255,255,.34); color:#ffffff;}
 
-/* ── Entscheidervorlage, A4 ── */
+/* ── Ansprache, A4 ── */
 .as-stage--a4{
   width:210mm; min-height:297mm; padding:16mm 15mm 14mm;
   display:flex; flex-direction:column; gap:18px;
@@ -296,14 +298,14 @@ const CHROME_CSS = `
 }
 #as-overlay .as-steps li[data-state="active"] b{background:var(--brand,#206efb); color:#fff;}
 
-#as-overlay .as-main{display:flex; flex-direction:column; min-width:0; overflow:hidden;}
+#as-overlay .as-main{display:grid; grid-template-rows:auto minmax(0, 1fr); min-width:0; min-height:0; overflow:hidden;}
 #as-overlay .as-topbar{
   display:flex; align-items:center; justify-content:space-between; gap:16px;
   padding:16px 24px; border-bottom:1px solid var(--line,#e2e8f0); background:var(--bg,#fff);
 }
 #as-overlay .as-topbar h2{margin:0; font-size:17px; font-weight:700;}
 #as-overlay .as-topactions{display:flex; gap:8px; flex-wrap:wrap;}
-#as-overlay .as-content{flex:1 1 auto; min-height:0; overflow:auto; padding:24px;}
+#as-overlay .as-content{min-height:0; overflow:auto; padding:24px;}
 /* Im Fragebogen scrollt ausschliesslich die Antwortspalte. Ein zweiter
    Scrollbereich in der Mitte war der Grund, dass sich das Studio nicht wie ein
    Fenster, sondern wie eine Webseite im Fenster anfuehlte. */
@@ -366,16 +368,12 @@ const CHROME_CSS = `
 #as-overlay .as-img--bg .as-img-ui{pointer-events:auto;}
 
 /* Vorschau der Varianten: 150px breite Buehne, also Faktor 150/1080. */
-/* Feste Kartenbreite: die Vorschau ist mit Faktor 150/1080 skaliert, eine
-   mitwachsende Karte wuerde nur Leerraum um die Buehne legen. */
-#as-overlay .as-opts--prev{display:grid; grid-template-columns:repeat(auto-fill, 104px); gap:10px; justify-content:start;}
-/* Ohne waagerechte Polsterung: die Spalte ist 150px breit, und genau darauf
-   ist der Skalierungsfaktor der Vorschau gerechnet. */
-#as-overlay .as-opt--prev{flex-direction:column; align-items:stretch; gap:6px; padding:0 0 6px; text-align:center; border-radius:11px; overflow:hidden;}
-#as-overlay .as-prev{display:block; width:100%; aspect-ratio:1080/1350; overflow:hidden; background:#fff; border-bottom:1px solid var(--line,#e2e8f0);}
-#as-overlay .as-prev-in{display:block; width:1080px; height:1350px; transform:scale(.0963); transform-origin:top left; pointer-events:none;}
-#as-overlay .as-opt--prev > span{font-size:.66rem; font-weight:600; line-height:1.25; padding:0 4px;}
-#as-overlay .as-opt-note{font-size:.64rem; font-weight:600; color:var(--muted,#475569);}
+/* Auszeichnung am Layout: hell, dunkel, Bild oder Diagramm. Keine Miniatur
+   mehr in der Antwortspalte - die Vorschau rechts zeigt es in gross. */
+#as-overlay .as-tag{font-style:normal; font-size:.62rem; font-weight:700; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--muted,#475569); background:var(--surface,#f8fafc);
+  border:1px solid var(--line,#e2e8f0); border-radius:99px; padding:1px 6px; margin-left:6px;}
+#as-overlay .as-opt:has(input:checked) .as-tag{color:var(--brand,#206efb); border-color:currentColor; background:transparent;}
 #as-overlay .as-opt:has(input:checked){
   border-color:var(--brand,#206efb); background:var(--brand-light,#eff6ff);
   color:var(--brand-dark,#165fd9); font-weight:700;
@@ -551,7 +549,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   overlay.id = "as-overlay";
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", isMemo ? "Entscheidervorlage" : "LinkedIn-Asset");
+  overlay.setAttribute("aria-label", isMemo ? "Ansprache" : "LinkedIn-Asset");
 
   const styleIsland = document.createElement("style");
   styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${STAGE_CSS}\n${printCss(isMemo)}`;
@@ -592,7 +590,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     shell.innerHTML = `
       <nav class="as-rail">
         <button type="button" class="as-back" data-act="close"><i class="fa-solid fa-arrow-left"></i>Zurück</button>
-        <span class="as-railtitle">${isMemo ? "Entscheidervorlage" : "LinkedIn-Asset"}</span>
+        <span class="as-railtitle">${isMemo ? "Ansprache" : "LinkedIn-Asset"}</span>
         <ol class="as-steps">
           ${stepItem(1, "Fragebogen", "form")}
           ${stepItem(2, "Entwurf", "draft")}
@@ -617,7 +615,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function headline() {
-    if (state.step === "form") return isMemo ? "Entscheidervorlage" : "LinkedIn-Asset";
+    if (state.step === "form") return isMemo ? "Ansprache" : "LinkedIn-Asset";
     if (state.step === "draft") return state.busy ? "Entwurf wird erzeugt" : "Entwurf";
     return "Bearbeiten";
   }
@@ -676,61 +674,28 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /* ── Schritt 1: Fragebogen ── */
 
-  /**
-   * Vorschau einer Variante: dieselbe Vorlage wie spaeter auf der Buehne, nur
-   * mit Platzhaltertext und stark verkleinert. Bewusst kein eigenes Schaubild -
-   * eine nachgezeichnete Vorschau wuerde beim naechsten Layoutwechsel luegen.
-   */
-  function variantPreview(variant) {
-    const demo = normalizeSlide({
-      variant,
-      kicker: "KICKER",
-      title: "Ein Satz, der etwas behauptet",
-      subtitle: "Zwei Zeilen Einordnung, die die Behauptung stuetzen.",
-      quote: "Ein Zitat mit Haltung",
-      attribution: "Name, Rolle",
-      stat: { value: "14 %", label: "Bezug, Jahr" },
-      stats: [{ value: "14 %", label: "Anteil" }, { value: "6", label: "Wochen" }, { value: "3", label: "Rollen" }],
-      bullets: ["Erster Punkt", "Zweiter Punkt", "Dritter Punkt"],
-      steps: [{ n: "01", title: "Schritt", text: "Kurz" }, { n: "02", title: "Schritt", text: "Kurz" }, { n: "03", title: "Schritt", text: "Kurz" }],
-      myth: "Behauptung", fact: "Befund",
-      takeaway: "Die Kernaussage mit Kontrast.",
-      footer_left: "ROOTS",
-    });
-    const stage = { ...state.stage, theme: state.answers.theme === "dark" ? "dark" : "light" };
-    const eigentlich = state.stage;
-    state.stage = stage;
-    // Bedienelemente aus der Vorschau nehmen: sie soll nur zeigen, nicht koennen.
-    // Der Auflagenblock endet mit seinem eigenen </div> - ein zweites mitzunehmen
-    // riss vorher ein fremdes Schliess-Tag weg, und der Parser hat daraufhin die
-    // halbe Spalte nach draussen verschoben.
-    const html = slideHtml(demo, false)
-      .replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, "");
-    state.stage = eigentlich;
-    return `<span class="as-prev"><span class="as-prev-in">${html}</span></span>`;
-  }
-
-  /** Grosse Vorschau neben dem Fragebogen. Kein Modellaufruf, nur die Vorlage. */
+  /** Grosse Vorschau rechts. Dieselbe Vorlage wie das Ergebnis, kein Modellaufruf. */
   function livePreviewHtml() {
-    if (isMemo) {
-      const demo = normalizeMemo({
-        title: "Der Anlass verlangt eine Entscheidung im Quartal",
-        standfirst: "Ein Satz zur Lage, gefolgt von dem Beleg, der ihn traegt.",
-        kpis: [{ value: "14 %", label: "Bezug, Jahr" }, { value: "6", label: "Wochen" }, { value: "3", label: "Rollen" }],
-        situation: [{ lead: "Anlass", text: "Was gerade passiert ist." }, { lead: "Engstelle", text: "Woran es haengt." }],
-        options: [{ name: "Weg A", pro: "Wirkt breit", contra: "Bindet Kapazitaet" }, { name: "Weg B", pro: "Schnell sichtbar", contra: "Engstelle bleibt" }],
-        recommendation: "Die Empfehlung in einem Satz.",
-        next_step: "Der naechste Schritt mit Verantwortlichkeit.",
-        cta: "Termin abstimmen",
-      });
-      return `<span class="as-prev-scale">${memoHtml(demo, false)}</span>`;
-    }
+    if (isMemo) return `<span class="as-prev-scale">${memoHtml(demoMemo(), false)}</span>`;
     const gewaehlt = state.answers.variant;
     const variante = VARIANT_KEYS.includes(gewaehlt) ? gewaehlt : "B";
     return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>`;
   }
 
-  /** Platzhalterinhalt, mit dem jede Variante etwas zu zeigen hat. */
+  function demoMemo() {
+    return normalizeMemo({
+      title: "Der Anlass verlangt eine Entscheidung im Quartal",
+      standfirst: "Ein Satz zur Lage, gefolgt von dem Beleg, der ihn traegt.",
+      kpis: [{ value: "14 %", label: "Bezug, Jahr" }, { value: "6", label: "Wochen" }, { value: "3", label: "Rollen" }],
+      situation: [{ lead: "Anlass", text: "Was gerade passiert ist." }, { lead: "Engstelle", text: "Woran es haengt." }],
+      options: [{ name: "Weg A", pro: "Wirkt breit", contra: "Bindet Kapazitaet" }, { name: "Weg B", pro: "Schnell sichtbar", contra: "Engstelle bleibt" }],
+      recommendation: "Die Empfehlung in einem Satz.",
+      next_step: "Der naechste Schritt mit Verantwortlichkeit.",
+      cta: "Termin abstimmen",
+    });
+  }
+
+  /** Platzhalterinhalt, mit dem jedes Layout etwas zu zeigen hat. */
   function demoSlide(variant) {
     return normalizeSlide({
       variant,
@@ -752,18 +717,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function formHtml() {
     const rows = questions.filter((q) => !q.when || q.when(state.answers)).map((q) => {
-      const mitVorschau = q.key === "variant";
-      const opts = q.options.map(([value, label]) => `
-        <label class="as-opt${mitVorschau ? " as-opt--prev" : ""}">
+      const opts = q.options.map(([value, label]) => {
+        // Der Look steht am Layout statt in einer eigenen Frage, und die
+        // Infografiken tragen den Hinweis, dass ihre Zahlen zu setzen sind.
+        const hinweis = q.key !== "variant" ? ""
+          : LAYOUT_KEYS.includes(value) ? "Diagramm"
+          : LOOK[value] ? LOOK[value] : "";
+        return `
+        <label class="as-opt">
           <input type="radio" name="as-${attr(q.key)}" value="${attr(value)}"${state.answers[q.key] === value ? " checked" : ""}>
-          ${mitVorschau && value !== "auto" ? variantPreview(value) : ""}
-          ${mitVorschau && LAYOUT_KEYS.includes(value) ? '<span class="as-opt-note">Zahlen selbst setzen</span>' : ""}
-          <span>${esc(label)}</span>
-        </label>`).join("");
+          <span>${esc(label)}</span>${hinweis ? `<i class="as-tag">${esc(hinweis)}</i>` : ""}
+        </label>`;
+      }).join("");
       const free = q.free && state.answers[q.key] === q.free.on
-        ? `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}">${esc(state.answers[q.free.key] || "")}</textarea>`
+        ? `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}">${esc(state.answers[q.free.key] || "")}</textarea>`
         : "";
-      return `<div class="as-q"><label>${esc(q.label)}</label><div class="as-opts${mitVorschau ? " as-opts--prev" : ""}">${opts}</div>${free}</div>`;
+      return `<div class="as-q"><label>${esc(q.label)}</label><div class="as-opts">${opts}</div>${free}</div>`;
     }).join("");
     return `<form class="as-form" data-form>${rows}</form>`;
   }
@@ -880,7 +849,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const options = toArray(src.options);
     return {
       uid: uid(),
-      kicker: String(src.kicker || `Entscheidervorlage${company ? ` · ${company}` : ""}`),
+      kicker: String(src.kicker || `Ansprache${company ? ` · ${company}` : ""}`),
       title: String(src.title || ""),
       standfirst: String(src.standfirst || ""),
       kpis: (kpis.length ? kpis : [{}, {}, {}]).slice(0, 3).map((item) => ({
@@ -937,10 +906,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (editable) {
       html = html.replace(/data-field="([a-z_]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
     }
-    // Hell und dunkel steuert dieselbe Klasse, die der Builder benutzt.
-    html = state.stage.theme === "dark"
-      ? html.replace(/class="li(?! )/, 'class="li li-dark').replace(/class="li"/, 'class="li li-dark"')
-      : html.replace(/\bli-dark\b/g, "");
+    // Kein Eingriff in die Anmutung: jedes gebaute Asset bringt seine mit, und
+    // die Textfarben stehen inline im Markup. Ein Umschalten der Klasse hat
+    // vorher weisse Schrift auf weissem Grund erzeugt - die Kachel sah leer aus.
     return `<div class="as-stage as-stage--tpl" data-stage data-uid="${attr(slide.uid)}" data-variant="${attr(slide.variant)}">${html}</div>`;
   }
 
@@ -1034,7 +1002,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <header class="as-head">
         ${lockup()}
         <div>
-          ${field("p", "as-kicker", memo, "kicker", memo.kicker, "Entscheidervorlage")}
+          ${field("p", "as-kicker", memo, "kicker", memo.kicker, "Ansprache")}
           ${memo.confidential ? field("span", "as-conf", memo, "confidential", memo.confidential, "Vermerk") : ""}
         </div>
       </header>
@@ -1064,7 +1032,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function docId() {
     const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    return `Entscheidervorlage · ${stamp}`;
+    return `Ansprache · ${stamp}`;
   }
 
   /* ── Bühnen einhängen und einpassen ── */
@@ -1199,42 +1167,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <button type="button" class="as-btn" data-act="copy-post"><i class="fa-regular fa-copy"></i>Kopieren</button>
       </div>`;
     return `<aside class="as-inspector">
-      <div class="as-group">
-        <span>Anmutung</span>
-        <div class="as-row">
-          ${seg("theme", "light", "Hell", state.stage.theme === "light")}
-          ${seg("theme", "dark", "Dunkel", state.stage.theme === "dark")}
-        </div>
-      </div>
-      <div class="as-group">
-        <span>Akzent</span>
-        <div class="as-row">
-          ${seg("accent", "brand", "Brand", state.stage.accent === "brand")}
-          ${seg("accent", "navy", "Navy", state.stage.accent === "navy")}
-          ${seg("accent", "ink", "Ink", state.stage.accent === "ink")}
-        </div>
-      </div>
-      <div class="as-group">
-        <span>Kernaussage-Band</span>
-        <div class="as-row">
-          ${seg("band", "on", "An", state.stage.band)}
-          ${seg("band", "off", "Aus", !state.stage.band)}
-        </div>
-      </div>
-      <div class="as-group">
-        <span>Ecken</span>
-        <div class="as-row">
-          ${seg("corners", "round", "Rund", state.stage.corners === "round")}
-          ${seg("corners", "sharp", "Eckig", state.stage.corners === "sharp")}
-        </div>
-      </div>
       ${post}
       <div class="as-group">
         <span>Ausgabe</span>
         <button type="button" class="as-btn" data-act="download"><i class="fa-solid fa-download"></i>HTML herunterladen</button>
         <button type="button" class="as-btn" data-act="print"><i class="fa-solid fa-print"></i>Drucken / PDF</button>
         <button type="button" class="as-btn as-btn--primary" data-act="save"><i class="fa-regular fa-floppy-disk"></i>Speichern</button>
-        <p class="as-hint" data-savehint></p>
       </div>
     </aside>`;
   }
@@ -1420,7 +1358,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function exportDocument() {
     const stages = exportStages().join("\n");
-    const title = isMemo ? "Entscheidervorlage" : "LinkedIn-Asset";
+    const title = isMemo ? "Ansprache" : "LinkedIn-Asset";
     const post = !isMemo && state.postText.trim()
       ? `\n<!-- Beitragstext\n${state.postText.replace(/--+>/g, "-->")}\n-->`
       : "";
@@ -1579,15 +1517,6 @@ ${stages}${post}
       mountStages(state.step === "edit");
       return;
     }
-    if (act === "theme" || act === "accent" || act === "corners" || act === "band") {
-      const value = hit.getAttribute("data-value");
-      if (act === "band") state.stage.band = value === "on";
-      else state.stage[act] = value;
-      harvest();
-      const inspector = shell.querySelector(".as-inspector");
-      if (inspector) inspector.outerHTML = inspectorHtml();
-      mountStages(state.step === "edit");
-    }
   }
 
   function onChange(event) {
@@ -1597,7 +1526,8 @@ ${stages}${post}
       setVariant(frame ? frame.getAttribute("data-uid") : null, hit.value);
       return;
     }
-    // Der Fragebogen blendet Freitextfelder erst bei passender Wahl ein.
+    // Der Fragebogen blendet Freitextfelder erst bei passender Wahl ein und
+    // zeichnet die Vorschau neu, damit die Wahl sofort zu sehen ist.
     if (state.step === "form" && event.target.matches('input[type="radio"]')) {
       readForm();
       const form = shell.querySelector(".as-split2-form");
@@ -1653,6 +1583,13 @@ ${stages}${post}
   on(document, "keydown", onKeyDown, true);
   on(document, "selectionchange", onSelectionChange);
   on(window, "resize", () => { fitStages(); fitPreview(); });
+  // Ein Groessenwaechter statt einer einmaligen Messung: die Spalte kennt ihre
+  // Breite erst nach dem Umbruch, und Schrift laedt spaeter nach.
+  if (typeof ResizeObserver === "function") {
+    const wachhund = new ResizeObserver(() => { fitPreview(); fitStages(); });
+    wachhund.observe(overlay);
+    cleanups.push(() => wachhund.disconnect());
+  }
   on(document, "mousedown", onDocMouseDown, true);
   on(window, "resize", fitStages);
 
