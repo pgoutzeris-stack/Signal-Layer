@@ -2915,7 +2915,12 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
       if (!retryable || attempt === attemptsAllowed) break;
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
-      if (attempt === attemptsAllowed) break;
+      // Ein Zeitueberschreitung heisst: das Modell denkt laenger als erlaubt.
+      // Ein zweiter Versuch denkt genauso lange und verdoppelt nur die
+      // Wartezeit, bis der Anrufer selbst aufgibt. Also gleich melden.
+      const zeitAbgelaufen = error instanceof Error
+        && (error.name === "TimeoutError" || error.name === "AbortError");
+      if (zeitAbgelaufen || attempt === attemptsAllowed) break;
     }
     await new Promise((resolve) => setTimeout(resolve, 1500 * (2 ** (attempt - 1))));
   }
@@ -7903,7 +7908,14 @@ Deno.serve(async (req: Request) => {
             // hoechsten Messwerts. Ein hohes Limit kostet nichts: abgerechnet
             // werden verbrauchte Tokens, nicht erlaubte.
             maxTotalTokens: 20_000,
-            temperature: 0.35, timeoutMs: 120_000, attempts: 2,
+            temperature: 0.35, attempts: 2,
+            // Gemessen am 13.8.2026: Einzelbild 63 s, Ansprache 77 bis 104 s,
+            // Carousel mit 4 Slides 101 s. Mit 120 s starben sechs von acht
+            // Testlaeufen an der Uhr, nicht am Inhalt - vor allem die langen
+            // Artikel und die 6-Slide-Karussells, die am meisten denken muessen.
+            timeoutMs: (assetAnswers as { asset_type?: string }).asset_type === "carousel"
+              ? ((assetAnswers as { slides?: number }).slides === 6 ? 280_000 : 220_000)
+              : assetKind === "memo" ? 200_000 : 160_000,
           });
           const usageRow = {
             article_id: assetArticleId, operation: "asset_generation", model: assetModel,

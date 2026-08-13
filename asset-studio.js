@@ -1081,9 +1081,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
   }
 
-  /** Fragt den Auftrag ab, bis er fertig ist. Bis zu vier Minuten. */
+  /** Fragt den Auftrag ab, bis er fertig ist. Bis zu sechs Minuten. */
   async function warteAufAsset(id) {
-    const bis = Date.now() + 240_000;
+    // Muss ueber dem Zeitfenster des Modells liegen (bis 280 s beim
+    // 6-Slide-Karussell), sonst gibt die Anzeige auf, waehrend der Auftrag
+    // noch laeuft, und das fertige Ergebnis sieht niemand.
+    const bis = Date.now() + 360_000;
     let wartezeit = 2_500;
     while (Date.now() < bis) {
       await new Promise((r) => setTimeout(r, wartezeit));
@@ -1093,7 +1096,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ladeAbschnittSetzen(row.stage);
       if (row.status && row.status !== "running") return row;
     }
-    throw new Error("Der Entwurf ist nach vier Minuten nicht fertig geworden. Der Auftrag läuft weiter, versuche es in einer Minute erneut.");
+    throw new Error("Der Entwurf ist nach sechs Minuten nicht fertig geworden. Der Auftrag läuft weiter, versuche es in einer Minute erneut.");
   }
 
   function adoptPayload(raw) {
