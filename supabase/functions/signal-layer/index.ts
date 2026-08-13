@@ -7851,7 +7851,14 @@ Deno.serve(async (req: Request) => {
           systemText: ASSET_SYSTEM_TEXT,
           prompt: buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers),
           schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
-          maxOutputTokens: 3000,
+          // Ein Carousel mit acht Slides ist ein Vielfaches einer Kachel. Mit
+          // festen 3.000 Tokens bricht die Antwort mitten im JSON ab, und der
+          // Aufruf ist trotzdem bezahlt. DeepSeek teilt dieses Budget zudem mit
+          // seinem Reasoning, deshalb bis an die Obergrenze gehen.
+          maxOutputTokens: assetKind === "memo" ? 4_000
+            : (assetAnswers as { asset_type?: string; slides?: number }).asset_type === "carousel"
+              ? 8_000
+              : 3_000,
           temperature: 0.35,
           timeoutMs: 90_000,
           attempts: 2,
@@ -7900,10 +7907,43 @@ Deno.serve(async (req: Request) => {
           assetPayload = normalizeAssetPayload(assetKind, assetResult.text, assetAnswers);
         } catch (assetError) {
           assetInvalidMessage = assetError instanceof Error ? assetError.message : String(assetError);
+          // Die Tokens sind bezahlt. Ein zweiter, gezielter Versuch mit dem
+          // Mangel im Prompt ist billiger als ein verworfener Lauf - dasselbe
+          // Muster nutzt die Simple-Pipeline bei unlesbaren Antworten.
+          const repairResult = await callJsonModel({
+            model: assetModel,
+            apiKey: assetKey,
+            systemText: ASSET_SYSTEM_TEXT,
+            prompt: `${buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers)}\n\n<reparatur>Der vorige Versuch war unbrauchbar: ${assetInvalidMessage}\nAntworte erneut, vollstaendig und ausschliesslich als JSON-Objekt. Kuerze notfalls die Texte, aber liefere alle Pflichtfelder.</reparatur>`,
+            schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
+            maxOutputTokens: 8_000,
+            temperature: 0.2,
+            timeoutMs: 90_000,
+            attempts: 1,
+          });
+          if (repairResult.ok) {
+            const repairCost = await modelCostFields(assetModel, repairResult.usage);
+            await admin.schema("signal_layer").from("ai_usage_events").insert({
+              article_id: assetArticleId, operation: "asset_generation", model: assetModel, status: "success",
+              prompt_version: ASSET_PROMPT_VERSION, attempt: repairResult.attempts + assetResult.attempts,
+              input_tokens: repairResult.usage.input + repairResult.usage.cachedInput,
+              output_tokens: repairResult.usage.output, thinking_tokens: repairResult.usage.thinking,
+              total_tokens: repairResult.usage.total, ...repairCost, duration_ms: Date.now() - assetStartedAt,
+            });
+            try {
+              assetPayload = normalizeAssetPayload(assetKind, repairResult.text, assetAnswers);
+              assetInvalidMessage = "";
+            } catch (repairError) {
+              assetInvalidMessage = `${assetInvalidMessage} Auch der Reparaturversuch scheiterte: ${repairError instanceof Error ? repairError.message : String(repairError)}`;
+            }
+          }
         }
         if (!assetPayload) {
           await admin.schema("signal_layer").from("ai_usage_events")
-            .insert({ ...assetUsageRow, status: "error", error_code: "invalid_response", error_message: assetInvalidMessage.slice(0, 1000) });
+            // Die Modellantwort mit ins Protokoll: ohne sie ist ein Fehlversuch
+            // hinterher nicht mehr nachvollziehbar.
+            .insert({ ...assetUsageRow, status: "error", error_code: "invalid_response",
+              error_message: `${assetInvalidMessage}\n---\n${String(assetResult.text || "").slice(0, 1500)}`.slice(0, 3000) });
           return errorResponse(origin, assetInvalidMessage, 502);
         }
 

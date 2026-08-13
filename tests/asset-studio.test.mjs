@@ -366,3 +366,17 @@ test("Fehler beim Entwurf nennen die Ursache, nicht nur ihr Scheitern", async ()
   assert.match(studio, /class="as-error"/);
   assert.match(studio, /Erneut versuchen/);
 });
+
+test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repariert", () => {
+  // Feste 3.000 Tokens reichen fuer eine Kachel, nicht fuer acht Slides: die
+  // Antwort bricht mitten im JSON ab und der Aufruf ist trotzdem bezahlt.
+  assert.match(edge, /asset_type === "carousel"\s*\?\s*8_000/);
+  assert.match(edge, /assetKind === "memo" \? 4_000/);
+  // Ein gezielter zweiter Versuch mit dem Mangel im Prompt.
+  assert.match(edge, /<reparatur>Der vorige Versuch war unbrauchbar/);
+  assert.match(edge, /Auch der Reparaturversuch scheiterte/);
+  // Beide Aufrufe landen im Kostenledger.
+  assert.match(edge, /modelCostFields\(assetModel, repairResult\.usage\)/);
+  // Die Rohantwort steht im Fehlerereignis, sonst ist der Fall hinterher weg.
+  assert.match(edge, /String\(assetResult\.text \|\| ""\)\.slice\(0, 1500\)/);
+});
