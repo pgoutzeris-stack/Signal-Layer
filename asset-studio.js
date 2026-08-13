@@ -23,11 +23,19 @@ const VARIANTS = [
   ["I", "I Prozess"],
   ["L", "L Annotierte Kennzahl"],
 ];
-const VARIANT_KEYS = VARIANTS.map(([key]) => key);
+// Infografiken kommen aus denselben gebauten Assets. Sie sind Layouts, keine
+// eigenen Signalarten: das Modell liefert weiter Titel und Einordnung, die
+// Zeichnung traegt die Aussage und wird in der Werkbank mit eigenen Zahlen
+// versehen.
+const LAYOUT_KEYS = Object.keys(ASSET_LAYOUTS);
+const VARIANTS_ALL = [...VARIANTS, ...LAYOUT_KEYS.map((k) => [k, `${k} ${ASSET_LAYOUT_LABELS[k] || k}`])];
+const VARIANT_KEYS = VARIANTS_ALL.map(([key]) => key);
+/** Was das Backend kennt. Layouts werden darauf abgebildet. */
+const MODEL_VARIANTS = VARIANTS.map(([key]) => key);
 
 const FORM_LINKEDIN = [
   { key: "asset_type", label: "Assettyp", options: [["single", "Single-Image"], ["carousel", "Carousel"]] },
-  { key: "variant", label: "Variante", options: [["auto", "Modell schlägt vor"], ...VARIANTS] },
+  { key: "variant", label: "Layout", options: [["auto", "Modell schlägt vor"], ...VARIANTS_ALL] },
   { key: "theme", label: "Anmutung", options: [["light", "Hell"], ["dark", "Dunkel"]] },
   {
     key: "slide_count",
@@ -296,6 +304,10 @@ const CHROME_CSS = `
 #as-overlay .as-topbar h2{margin:0; font-size:17px; font-weight:700;}
 #as-overlay .as-topactions{display:flex; gap:8px; flex-wrap:wrap;}
 #as-overlay .as-content{flex:1 1 auto; min-height:0; overflow:auto; padding:24px;}
+/* Im Fragebogen scrollt ausschliesslich die Antwortspalte. Ein zweiter
+   Scrollbereich in der Mitte war der Grund, dass sich das Studio nicht wie ein
+   Fenster, sondern wie eine Webseite im Fenster anfuehlte. */
+#as-overlay .as-content:has(.as-split2){overflow:hidden; padding:20px 24px 24px;}
 
 #as-overlay .as-btn{
   display:inline-flex; align-items:center; gap:8px; border-radius:10px;
@@ -309,10 +321,15 @@ const CHROME_CSS = `
 #as-overlay .as-btn--ghost{border-style:dashed;}
 #as-overlay .as-btn--icon{padding:8px 10px;}
 
-#as-overlay .as-form{max-width:720px; display:flex; flex-direction:column; gap:26px;}
+#as-overlay .as-form{max-width:none; display:flex; flex-direction:column; gap:0;}
+/* Jede Frage ist ein Abschnitt mit Trennlinie statt einer freien Lücke: so
+   liegen Label, Optionen und Freitext auf einer Kante. */
+#as-overlay .as-q{display:flex; flex-direction:column; gap:10px; padding:16px 0; border-top:1px solid var(--line,#e2e8f0);}
+#as-overlay .as-q:first-child{border-top:0; padding-top:0;}
+#as-overlay .as-q > label{font-size:.72rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--muted,#475569);}
 #as-overlay .as-q{display:flex; flex-direction:column; gap:10px;}
 #as-overlay .as-q > label{font-size:14px; font-weight:700;}
-#as-overlay .as-opts{display:flex; flex-wrap:wrap; gap:8px;}
+#as-overlay .as-opts{display:flex; flex-wrap:wrap; gap:8px; align-items:stretch;}
 #as-overlay .as-opt{
   position:relative; display:inline-flex; align-items:center; gap:8px; padding:9px 15px;
   border:1px solid var(--line,#e2e8f0); border-radius:999px;
@@ -321,7 +338,9 @@ const CHROME_CSS = `
 #as-overlay .as-opt input{position:absolute; opacity:0; pointer-events:none;}
 /* Fragebogen links, Vorschau rechts. Bei schmalem Popup untereinander. */
 #as-overlay .as-split2{display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:20px; align-items:stretch; height:100%; min-height:0;}
-#as-overlay .as-split2-form{overflow-y:auto; max-height:100%; padding-right:4px;}
+#as-overlay .as-split2-form{overflow-y:auto; max-height:100%; padding-right:10px; scrollbar-width:thin;}
+#as-overlay .as-split2-form::-webkit-scrollbar{width:8px;}
+#as-overlay .as-split2-form::-webkit-scrollbar-thumb{background:var(--line,#e2e8f0); border-radius:99px;}
 #as-overlay .as-split2-prev{position:sticky; top:0; display:flex; flex-direction:column; gap:8px; height:100%; min-height:0;}
 #as-overlay .as-prev-label{font-size:.68rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--muted,#475569);}
 /* Der Kasten traegt sein Seitenverhaeltnis selbst: so haengt die Vorschau nicht
@@ -354,7 +373,8 @@ const CHROME_CSS = `
 #as-overlay .as-opt--prev{flex-direction:column; align-items:stretch; gap:6px; padding:0 0 6px; text-align:center; border-radius:11px; overflow:hidden;}
 #as-overlay .as-prev{display:block; width:100%; aspect-ratio:1080/1350; overflow:hidden; background:#fff; border-bottom:1px solid var(--line,#e2e8f0);}
 #as-overlay .as-prev-in{display:block; width:1080px; height:1350px; transform:scale(.1389); transform-origin:top left; pointer-events:none;}
-#as-overlay .as-opt--prev > span:last-child{font-size:.74rem; font-weight:600;}
+#as-overlay .as-opt--prev > span{font-size:.74rem; font-weight:600;}
+#as-overlay .as-opt-note{font-size:.64rem; font-weight:600; color:var(--muted,#475569);}
 #as-overlay .as-opt:has(input:checked){
   border-color:var(--brand,#206efb); background:var(--brand-light,#eff6ff);
   color:var(--brand-dark,#165fd9); font-weight:700;
@@ -492,7 +512,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES } from "./asset-templates.js?v=20260814-0100";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0300";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -734,6 +754,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <label class="as-opt${mitVorschau ? " as-opt--prev" : ""}">
           <input type="radio" name="as-${attr(q.key)}" value="${attr(value)}"${state.answers[q.key] === value ? " checked" : ""}>
           ${mitVorschau && value !== "auto" ? variantPreview(value) : ""}
+          ${mitVorschau && LAYOUT_KEYS.includes(value) ? '<span class="as-opt-note">Zahlen selbst setzen</span>' : ""}
           <span>${esc(label)}</span>
         </label>`).join("");
       const free = q.free && state.answers[q.key] === q.free.on
@@ -766,10 +787,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.error = "";
     render();
     try {
+      // Das Backend kennt nur A bis L. Ein Infografik-Layout waehlt inhaltlich
+      // dieselben Felder wie B, deshalb wird es dafuer gemeldet und die Wahl
+      // separat mitgeschickt.
+      const gewaehlt = state.answers.variant;
+      const antworten = { ...state.answers, layout: gewaehlt };
+      if (gewaehlt && !MODEL_VARIANTS.includes(gewaehlt) && gewaehlt !== "auto") antworten.variant = "B";
       const res = await api("generate_asset", {
         kind: assetKind,
         article_id: articleId || null,
-        answers: { ...state.answers },
+        answers: antworten,
       });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       state.assetId = row.id || null;
@@ -796,6 +823,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     } else {
       const list = toArray(data.slides);
       state.slides = (list.length ? list : [{}]).map(normalizeSlide);
+      const gewaehltesLayout = state.answers.variant;
+      if (gewaehltesLayout && LAYOUT_KEYS.includes(gewaehltesLayout)) {
+        state.slides.forEach((slide) => { slide.variant = gewaehltesLayout; });
+      }
       state.memo = null;
       state.postText = String(data.post_text || "");
     }
@@ -896,7 +927,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * Asset benutzen denselben Weg, deshalb kann die Vorschau nicht luegen.
    */
   function slideHtml(slide, editable = true) {
-    let html = ASSET_TEMPLATES[slide.variant] || ASSET_TEMPLATES.B;
+    let html = ASSET_TEMPLATES[slide.variant] || ASSET_LAYOUTS[slide.variant] || ASSET_TEMPLATES.B;
     html = expandRepeats(html, slide);
     html = fillTemplate(html, slide);
     html = wrapImageSlots(html, slide);
@@ -946,6 +977,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       fact: slide.fact,
       takeaway: slide.takeaway,
       footer_left: slide.footerLeft,
+      // Nur bei den Datenlayouts: die Zeile ueber dem Titel. Nicht den Kicker
+      // wiederholen, der steht schon oben rechts in der Kachel.
+      eyebrow: company ? `Abbildung · ${company}` : "Abbildung",
       image: slide.image.src || "",
     };
     return html.replace(/\{\{([a-z_]+)\}\}/g, (_m, name) => {

@@ -8,6 +8,8 @@ Vorschau und fertiges Asset dieselbe Vorlage benutzen.
 import re, json, glob, os
 
 SRC = "/Users/panogoutzeris/Desktop/ROOTS-Assets/KI-im-Marketing/LinkedIn/Single-Posts"
+SRC_MODELL = "/Users/panogoutzeris/Desktop/ROOTS-Assets/KI-im-Marketing/LinkedIn/Strategie-Infografik"
+SRC_DATEN = "/Users/panogoutzeris/Desktop/ROOTS-Assets/KI-im-Marketing/LinkedIn/Data-Infografik"
 OUT = "/private/tmp/claude-501/-Users-panogoutzeris-Desktop/9b3fbce8-d20e-4d01-b5da-35393f61d03f/scratchpad/SL/asset-templates.js"
 
 FILES = {
@@ -25,8 +27,25 @@ FILES = {
     "L": "ROOTS_LinkedIn_L_Annotiert.html",
 }
 
-def read(name):
-    return open(os.path.join(SRC, name), encoding="utf-8").read()
+def read(name, ordner=None):
+    return open(os.path.join(ordner or SRC, name), encoding="utf-8").read()
+
+# Infografiken: gleiche Kachel, aber Titel und Untertitel liegen in .ttl/.sub,
+# und die Aussage steckt in einer SVG-Zeichnung. Die Zeichnung bleibt wie
+# gebaut - ihre Zahlen gehoeren zum Beispielthema und muessen in der Werkbank
+# ersetzt werden. Deshalb tragen diese Layouts einen eigenen Hinweis in der UI.
+LAYOUTS = {
+    "S1": (SRC_MODELL, "ROOTS_LinkedIn_Modell_1_Sweet-Spot.html", "Sweet-Spot-Venn"),
+    "S2": (SRC_MODELL, "ROOTS_LinkedIn_Modell_2_Reifepyramide.html", "Reifepyramide"),
+    "S3": (SRC_MODELL, "ROOTS_LinkedIn_Modell_3_Strategie-Haus.html", "Strategie-Haus"),
+    "S4": (SRC_MODELL, "ROOTS_LinkedIn_Modell_4_Funnel.html", "Modell-Funnel"),
+    "T1": (SRC_DATEN, "ROOTS_LinkedIn_Data_1_Marktwachstum.html", "Marktwachstum"),
+    "T2": (SRC_DATEN, "ROOTS_LinkedIn_Data_2_Wasserfall.html", "Wasserfall"),
+    "T3": (SRC_DATEN, "ROOTS_LinkedIn_Data_3_Reifegrad-Donut.html", "Reifegrad-Donut"),
+    "T4": (SRC_DATEN, "ROOTS_LinkedIn_Data_4_Anwendungsfaelle.html", "Anwendungsfälle"),
+    "T5": (SRC_DATEN, "ROOTS_LinkedIn_Data_5_Funnel.html", "Daten-Funnel"),
+    "T6": (SRC_DATEN, "ROOTS_LinkedIn_Data_6_Roadmap.html", "Roadmap"),
+}
 
 def layout_css(html):
     """Nur was die Kachel braucht: die Farbtoken und der .li-Block.
@@ -47,7 +66,50 @@ def layout_css(html):
                 token = m.group(0)
     if not kachel:
         raise SystemExit("Kachel-CSS nicht gefunden")
-    return token + "\n" + kachel
+    return begrenzen(token + "\n" + kachel)
+
+
+SCOPE = "#as-overlay .as-stage--tpl"
+
+def begrenzen(css):
+    """Bindet jede Regel an die Buehne.
+
+    Ungebunden waeren die Folgen gross: :root setzt dieselben Variablennamen wie
+    die App (--brand, --ink, --line), * setzt Abstaende zurueck, und
+    html,body{width:1080px} quetscht die ganze Seite. Genau das hat die Vorschau
+    zerlegt.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    css = re.sub(r"@page\{[^}]*\}", "", css)
+    # html/body-Regeln wandern auf die Buehne, ohne Breitenzwang
+    def html_body(m):
+        inner = m.group(1)
+        inner = re.sub(r"width:[^;]+;?", "", inner)
+        return "%s{%s}" % (SCOPE, inner)
+    css = re.sub(r"html,\s*body\s*\{([^}]*)\}", html_body, css)
+    teile = []
+    for regel in re.finditer(r"([^{}]+)\{([^}]*)\}", css):
+        sel, body = regel.group(1).strip(), regel.group(2).strip()
+        if not sel or not body:
+            continue
+        if sel.startswith("@"):
+            teile.append("%s{%s}" % (sel, body))
+            continue
+        neue = []
+        for einzeln in sel.split(","):
+            einzeln = einzeln.strip()
+            if not einzeln:
+                continue
+            if einzeln == ":root":
+                neue.append(SCOPE)
+            elif einzeln == "*":
+                neue.append(SCOPE + " *")
+            elif einzeln.startswith(SCOPE):
+                neue.append(einzeln)
+            else:
+                neue.append("%s %s" % (SCOPE, einzeln))
+        teile.append("%s{%s}" % (", ".join(neue), body))
+    return "\n".join(teile)
 
 def body_of(html):
     return re.search(r"<body[^>]*>(.*?)</body>", html, re.S).group(1).strip()
@@ -90,8 +152,8 @@ def kicker_und_fuss(html):
     return html
 
 def msg_band(html):
-    if 'class="msg"' in html:
-        html = mit_feld(html, r'<div class="msg"[^>]*>.*?<p[^>]*>(.*?)</p>', "takeaway")
+    if 'class="msg' in html:
+        html = mit_feld(html, r'<div class="msg[^"]*"[^>]*>.*?<p[^>]*>(.*?)</p>', "takeaway")
     return html
 
 def repeat(html, start_muster, feldname):
@@ -179,6 +241,25 @@ for key, name in FILES.items():
     b = re.sub(r"\s+", " ", b).strip()
     templates[key] = b
 
+layouts = {}
+namen = {}
+for key, (ordner, name, label) in LAYOUTS.items():
+    html = read(name, ordner)
+    b = body_of(html)
+    b = bilder_zu_slots(b)
+    b = kicker_und_fuss(b)
+    b = msg_band(b)
+    for muster, feld_name in [(r'<div class="ttl[^"]*"[^>]*>(.*?)</div>', "title"),
+                              (r'<div class="sub[^"]*"[^>]*>(.*?)</div>', "subtitle"),
+                              (r'<div class="take[^"]*"[^>]*>.*?<p[^>]*>(.*?)</p>', "takeaway"),
+                              (r'<div class="ey[^"]*"[^>]*>(.*?)</div>', "eyebrow")]:
+        try:
+            b = mit_feld(b, muster, feld_name)
+        except SystemExit:
+            pass
+    layouts[key] = re.sub(r"\s+", " ", b).strip()
+    namen[key] = label
+
 kopf = """// Vorlagen der LinkedIn-Assets. Markup und CSS stammen unveraendert aus den
 // bereits gebauten ROOTS-Einzelposts (KI-im-Marketing/LinkedIn/Single-Posts);
 // nur die Inhalte sind durch Platzhalter ersetzt. Erzeugt von
@@ -194,7 +275,15 @@ with open(OUT, "w", encoding="utf-8") as f:
     f.write("export const ASSET_TEMPLATES = {\n")
     for k in sorted(templates):
         f.write("  %s: %s,\n" % (k, json.dumps(templates[k], ensure_ascii=False)))
-    f.write("};\n")
+    f.write("};\n\n")
+    f.write("// Infografik-Layouts. Die SVG-Zeichnung bleibt unveraendert aus dem\n")
+    f.write("// gebauten Asset: ihre Zahlen gehoeren zum Beispielthema und sind in der\n")
+    f.write("// Werkbank zu ersetzen.\n")
+    f.write("export const ASSET_LAYOUTS = {\n")
+    for k in sorted(layouts):
+        f.write("  %s: %s,\n" % (k, json.dumps(layouts[k], ensure_ascii=False)))
+    f.write("};\n\n")
+    f.write("export const ASSET_LAYOUT_LABELS = " + json.dumps(namen, ensure_ascii=False) + ";\n")
 
 print("CSS:", len(css), "Zeichen")
 for k in sorted(templates):

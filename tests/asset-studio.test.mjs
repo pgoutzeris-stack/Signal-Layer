@@ -157,7 +157,7 @@ test("die Vorlagen sind das Markup der echten Assets", async () => {
 test("Vorschau und fertiges Asset benutzen denselben Weg", () => {
   // Zwei getrennte Renderpfade waren der Fehler davor: die Vorschau konnte
   // etwas anderes zeigen als das Ergebnis.
-  assert.match(studio, /import \{ ASSET_TEMPLATE_CSS, ASSET_TEMPLATES \} from "\.\/asset-templates\.js/);
+  assert.match(studio, /import \{ ASSET_TEMPLATE_CSS, ASSET_TEMPLATES[^}]*\} from "\.\/asset-templates\.js/);
   assert.match(studio, /function slideHtml\(slide, editable = true\)/);
   assert.match(studio, /function livePreviewHtml\(\)/);
   assert.match(studio, /slideHtml\(demoSlide\(variante\), false\)/);
@@ -169,4 +169,38 @@ test("Vorschau und fertiges Asset benutzen denselben Weg", () => {
   // Kein Modellaufruf fuer die Vorschau: sie kostet keine Token.
   const vorschauBlock = studio.slice(studio.indexOf("function livePreviewHtml"), studio.indexOf("function formHtml"));
   assert.doesNotMatch(vorschauBlock, /api\(/);
+});
+
+test("das Vorlagen-CSS wirkt nur auf der Buehne", async () => {
+  const tpl = await import("../asset-templates.js");
+  const css = tpl.ASSET_TEMPLATE_CSS;
+  // Ungebunden waere die Wirkung verheerend: :root setzt dieselben
+  // Variablennamen wie die App, * loescht ihre Abstaende, und
+  // html,body{width:1080px} quetscht die ganze Seite. Genau daran ist die
+  // Vorschau gescheitert.
+  for (const regel of css.split("\n").filter((l) => l.includes("{"))) {
+    const selektor = regel.slice(0, regel.indexOf("{")).trim();
+    if (!selektor || selektor.startsWith("@")) continue;
+    for (const einzeln of selektor.split(",")) {
+      assert.match(einzeln.trim(), /^#as-overlay /, `ungebundener Selektor: ${einzeln.trim()}`);
+    }
+  }
+  assert.doesNotMatch(css, /(^|\n):root\{/);
+  assert.doesNotMatch(css, /(^|\n)html,\s*body\{/);
+  assert.doesNotMatch(css, /width:1080px;background/);
+});
+
+test("alle Assets vom Desktop stehen als Layout zur Wahl", async () => {
+  const tpl = await import("../asset-templates.js");
+  // Zwoelf Einzelposts, vier Strategiemodelle, sechs Datenbilder.
+  assert.equal(Object.keys(tpl.ASSET_TEMPLATES).length, 12);
+  assert.equal(Object.keys(tpl.ASSET_LAYOUTS).length, 10);
+  for (const [key, markup] of Object.entries(tpl.ASSET_LAYOUTS)) {
+    assert.match(markup, /data-field="title"/, `Layout ${key} ohne Titel`);
+    assert.match(markup, /data-field="takeaway"/, `Layout ${key} ohne Kernaussage`);
+    assert.ok(tpl.ASSET_LAYOUT_LABELS[key], `Layout ${key} ohne Bezeichnung`);
+  }
+  assert.match(studio, /ASSET_LAYOUTS\[slide\.variant\]/);
+  // Das Backend kennt nur A bis L, deshalb wird ein Layout darauf abgebildet.
+  assert.match(studio, /antworten\.variant = "B"/);
 });
