@@ -85,12 +85,19 @@ import {
 } from "./company-profile.ts";
 import {
   ASSET_EDITED_HTML_LIMIT,
-  AssetPayload,
+  ASSET_MAX_TOTAL_TOKENS,
   ASSET_PROMPT_VERSION,
   ASSET_SCHEMA_LINKEDIN,
   ASSET_SCHEMA_MEMO,
+  ASSET_STAGE_HOLD_MS,
   ASSET_SYSTEM_TEXT,
+  AssetPayload,
+  assetModelTimeoutMs,
+  assetOutputTokenBudget,
+  assetRepairTimeoutMs,
+  assetTimeoutErrorText,
   buildAssetPrompt,
+  buildAssetRepairPrompt,
   isAssetKind,
   normalizeAssetAnswers,
   normalizeAssetPayload,
@@ -7884,17 +7891,17 @@ Deno.serve(async (req: Request) => {
 
         const arbeit = (async () => {
           const startedAt = Date.now();
-          // Der Abschnitt wandert auf die Zeile, damit die Ladeanzeige zeigt,
-          // was laeuft, statt Schritte nach der Uhr zu wechseln.
           const abschnitt = (name: string) => admin.schema("signal_layer")
             .from("generated_assets").update({ stage: name, updated_at: new Date().toISOString() })
             .eq("id", assetRow.id);
-          const scope = (assetAnswers as { asset_type?: string }).asset_type === "carousel" ? 8_000
-            : assetKind === "memo" ? 4_000 : 3_000;
+          const halte = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+          const scope = assetOutputTokenBudget(assetKind, assetAnswers);
+          const timeoutMs = assetModelTimeoutMs(assetKind, assetAnswers);
+          // Prompt bauen zaehlt noch als Lesen: das Modell startet erst danach.
+          const prompt = buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers);
           await abschnitt("modell");
-          const result = await callJsonModel({
+          const callOpts = {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
-            prompt: buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers),
             schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
             maxOutputTokens: scope,
             // Denken und Antwort teilen sich dieses Limit. Gemessen am 13.8.2026
@@ -7902,57 +7909,60 @@ Deno.serve(async (req: Request) => {
             //   Einzelbild   3.513 + 341   = 3.854
             //   Ansprache    5.696 + 641   = 6.337
             //   Carousel 6   6.084 + 1.069 = 7.153
-            // Die alte Formel deckelte bei 5.500 bis 8.192 - Ansprache und
-            // Carousel lagen also am oder ueber dem Anschlag, und dann bleibt
-            // nichts fuer die Antwort. 20.000 gibt knapp das Dreifache des
-            // hoechsten Messwerts. Ein hohes Limit kostet nichts: abgerechnet
-            // werden verbrauchte Tokens, nicht erlaubte.
-            maxTotalTokens: 20_000,
-            temperature: 0.35, attempts: 2,
-            // Gemessen am 13.8.2026: Einzelbild 63 s, Ansprache 77 bis 104 s,
-            // Carousel mit 4 Slides 101 s. Mit 120 s starben sechs von acht
-            // Testlaeufen an der Uhr, nicht am Inhalt - vor allem die langen
-            // Artikel und die 6-Slide-Karussells, die am meisten denken muessen.
-            timeoutMs: (assetAnswers as { asset_type?: string }).asset_type === "carousel"
-              ? ((assetAnswers as { slides?: number }).slides === 6 ? 280_000 : 220_000)
-              : assetKind === "memo" ? 200_000 : 160_000,
-          });
-          const usageRow = {
-            article_id: assetArticleId, operation: "asset_generation", model: assetModel,
-            attempt: result.attempts, prompt_version: ASSET_PROMPT_VERSION,
-            duration_ms: Date.now() - startedAt,
+            maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
+            temperature: 0.35,
           };
-          const scheitern = async (nachricht: string, code: string, kosten: Record<string, unknown>) => {
-            await admin.schema("signal_layer").from("ai_usage_events")
-              .insert({ ...usageRow, ...kosten, status: "error", error_code: code, error_message: nachricht.slice(0, 3000) });
+          let result = await callJsonModel({
+            ...callOpts, prompt, attempts: 2, timeoutMs,
+          });
+          const usageBasis = {
+            article_id: assetArticleId, operation: "asset_generation", model: assetModel,
+            prompt_version: ASSET_PROMPT_VERSION,
+          };
+          const buchen = async (
+            status: "success" | "error",
+            extra: Record<string, unknown>,
+            attempt: number,
+          ) => {
+            const { data } = await admin.schema("signal_layer").from("ai_usage_events")
+              .insert({
+                ...usageBasis, ...extra, status, attempt,
+                duration_ms: Date.now() - startedAt,
+              }).select("id").maybeSingle();
+            return data;
+          };
+          const scheitern = async (nachricht: string, code: string, kosten: Record<string, unknown>, attempt = 1) => {
+            await buchen("error", { ...kosten, error_code: code, error_message: nachricht.slice(0, 3000) }, attempt);
             await admin.schema("signal_layer").from("generated_assets")
               .update({ status: "error", error_message: nachricht.slice(0, 2000), updated_at: new Date().toISOString() })
               .eq("id", assetRow.id);
           };
-
-          if (!result.ok) {
-            const roh = result.error || "";
-            const klartext = /insufficient balance|spending cap/i.test(roh)
+          const klartextVon = (roh: string, status: number) =>
+            /insufficient balance|spending cap/i.test(roh)
               ? `Beim Anbieter ${assetModel} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`
               : /invalid api key|unauthorized|401/i.test(roh)
                 ? `Der API-Schlüssel für ${assetModel} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`
                 : /rate limit|429/i.test(roh)
                   ? `${assetModel} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`
                   : /empty completion/i.test(roh)
-              ? `${assetModel} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${roh}). Ein kürzerer Fragebogen oder weniger Slides hilft.`
-              : /timeout|aborted/i.test(roh)
-                    ? `${assetModel} hat nach 120 Sekunden nicht geantwortet.`
-                    : `${assetModel} hat mit ${result.status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
-            await scheitern(klartext, `http_${result.status || "network"}`, zeroCostFields(assetModel));
+                    ? `${assetModel} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${roh}). Ein kürzerer Fragebogen oder weniger Slides hilft.`
+                    : /timeout|aborted/i.test(roh)
+                      ? assetTimeoutErrorText(assetModel, timeoutMs)
+                      : `${assetModel} hat mit ${status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
+
+          if (!result.ok) {
+            await scheitern(klartextVon(result.error || "", result.status), `http_${result.status || "network"}`, zeroCostFields(assetModel));
             return;
           }
 
           await abschnitt("pruefen");
-          const kostenFelder = await modelCostFields(assetModel, result.usage);
-          const tokenFelder = {
-            input_tokens: result.usage.input + result.usage.cachedInput, output_tokens: result.usage.output,
-            thinking_tokens: result.usage.thinking, total_tokens: result.usage.total,
-          };
+          await halte(ASSET_STAGE_HOLD_MS);
+          const tokenFelderVon = (usage: typeof result.usage) => ({
+            input_tokens: usage.input + usage.cachedInput, output_tokens: usage.output,
+            thinking_tokens: usage.thinking, total_tokens: usage.total,
+          });
+          let kostenFelder = await modelCostFields(assetModel, result.usage);
+          let tokenFelder = tokenFelderVon(result.usage);
           let payload: AssetPayload | null = null;
           let mangel = "";
           try {
@@ -7960,14 +7970,44 @@ Deno.serve(async (req: Request) => {
           } catch (fehler) {
             mangel = fehler instanceof Error ? fehler.message : String(fehler);
           }
+
+          // Bezahlte, aber unlesbare JSON-Antwort: ein gezielter zweiter Versuch,
+          // nur wenn das Isolate noch Zeit hat. Timeout wird nicht wiederholt.
+          const repairMs = !payload ? assetRepairTimeoutMs(Date.now() - startedAt) : null;
+          if (!payload && repairMs) {
+            await buchen("error", {
+              ...kostenFelder, ...tokenFelder, error_code: "invalid_response",
+              error_message: `${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`.slice(0, 3000),
+            }, 1);
+            await abschnitt("modell");
+            result = await callJsonModel({
+              ...callOpts, attempts: 1, timeoutMs: repairMs,
+              prompt: buildAssetRepairPrompt(prompt, mangel),
+            });
+            if (!result.ok) {
+              await scheitern(klartextVon(result.error || "", result.status), `http_${result.status || "network"}`, zeroCostFields(assetModel), 2);
+              return;
+            }
+            await abschnitt("pruefen");
+            await halte(ASSET_STAGE_HOLD_MS);
+            kostenFelder = await modelCostFields(assetModel, result.usage);
+            tokenFelder = tokenFelderVon(result.usage);
+            mangel = "";
+            try {
+              payload = normalizeAssetPayload(assetKind, result.text, assetAnswers);
+            } catch (fehler) {
+              mangel = fehler instanceof Error ? fehler.message : String(fehler);
+            }
+          }
+
           if (!payload) {
             await scheitern(`${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`,
-              "invalid_response", { ...kostenFelder, ...tokenFelder });
+              "invalid_response", { ...kostenFelder, ...tokenFelder }, repairMs ? 2 : 1);
             return;
           }
-          const { data: usageEvent } = await admin.schema("signal_layer").from("ai_usage_events")
-            .insert({ ...usageRow, ...kostenFelder, ...tokenFelder, status: "success" }).select("id").single();
+          const usageEvent = await buchen("success", { ...kostenFelder, ...tokenFelder }, repairMs ? 2 : 1);
           await abschnitt("fuellen");
+          await halte(ASSET_STAGE_HOLD_MS);
           await admin.schema("signal_layer").from("generated_assets").update({
             status: "done", stage: "fertig", payload, error_message: null, usage_event_id: usageEvent?.id || null,
             ...tokenFelder, cached_input_tokens: result.usage.cachedInput,

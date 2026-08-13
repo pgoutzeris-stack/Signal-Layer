@@ -1,0 +1,42 @@
+name: asset studio check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "asset-studio.js"
+      - "asset-templates.js"
+      - "app.js"
+      - "index.html"
+      - "supabase/functions/signal-layer/asset-studio.ts"
+      - "supabase/functions/signal-layer/index.ts"
+      - "tests/asset-studio.test.mjs"
+      - ".github/workflows/asset-studio-check.yml"
+  pull_request:
+    paths:
+      - "asset-studio.js"
+      - "asset-templates.js"
+      - "app.js"
+      - "index.html"
+      - "supabase/functions/signal-layer/asset-studio.ts"
+      - "supabase/functions/signal-layer/index.ts"
+      - "tests/asset-studio.test.mjs"
+      - ".github/workflows/asset-studio-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  asset-studio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check studio syntax
+        run: |
+          node --check asset-studio.js
+          node --check asset-templates.js
+      - name: Test asset studio
+        run: node --experimental-strip-types --test tests/asset-studio.test.mjs
