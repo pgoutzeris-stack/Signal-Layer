@@ -416,7 +416,8 @@ test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   // Antwort teilen bei DeepSeek dasselbe Limit, und 8.192 waren zu knapp.
   assert.match(edge, /maxTotalTokens\?: number/);
   assert.match(edge, /max_tokens: options\.maxTotalTokens/);
-  assert.match(edge, /maxTotalTokens: scope \+ 12_000/);
+  // Weit gesetzt, bis gemessen ist, wieviel Reasoning je Assetart faellt.
+  assert.match(edge, /maxTotalTokens: 32_000/);
   // Eine leere Antwort trotz HTTP 200 ist ein Fehler, kein Erfolg.
   assert.match(edge, /if \(!inhalt\.trim\(\)\)/);
   assert.match(edge, /empty completion, reasoning used/);

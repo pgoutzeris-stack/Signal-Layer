@@ -7886,9 +7886,12 @@ Deno.serve(async (req: Request) => {
             prompt: buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers),
             schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
             maxOutputTokens: scope,
-            // Denken und Antwort teilen sich dieses Limit. Mit 8.192 blieb nach
-            // dem Reasoning nichts fuer das JSON uebrig.
-            maxTotalTokens: scope + 12_000,
+            // Denken und Antwort teilen sich dieses Limit. Bewusst weit gesetzt,
+            // bis gemessen ist, wieviel Reasoning welche Assetart wirklich
+            // braucht: 8.192 hat das Denken allein aufgebraucht. Die tatsaechlich
+            // verbrauchten Tokens stehen je Lauf in ai_usage_events, danach wird
+            // der Wert auf das Gemessene plus Reserve gesetzt.
+            maxTotalTokens: 32_000,
             temperature: 0.35, timeoutMs: 120_000, attempts: 2,
           });
           const usageRow = {
