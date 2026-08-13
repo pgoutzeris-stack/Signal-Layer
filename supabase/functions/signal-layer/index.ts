@@ -7911,7 +7911,9 @@ Deno.serve(async (req: Request) => {
           await abschnitt("modell");
           const callOpts = {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
-            schema: assetResponseSchema(assetKind, assetAnswers),
+            schema: assetResponseSchema(assetKind, assetAnswers, [
+              assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
+            ].filter(Boolean).join("\n")),
             maxOutputTokens: scope,
             // Denken und Antwort teilen sich dieses Limit. Gemessen am 13.8.2026
             // mit deepseek-v4-pro (Denken + Antwort):
@@ -7979,6 +7981,7 @@ Deno.serve(async (req: Request) => {
             ].filter(Boolean).join("\n"),
             rootsOffering: assetSignal.roots_offering,
             buyingCenterRoles: assetSignal.buying_center_roles,
+            personName: assetSignal.person_name,
           };
           let payload: AssetPayload | null = null;
           let mangel = "";

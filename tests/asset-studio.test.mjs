@@ -33,7 +33,10 @@ test("die Nutzlast des Backends passt zu den Feldern, die das Frontend liest", (
     standfirst: "Lage und Beleg",
     kpis: [{ value: "14 %", label: "Anteil" }],
     situation: [{ lead: "Anlass", text: "Grund" }],
-    options: [{ name: "Weg A", pro: "schnell", contra: "teuer" }],
+    options: [
+      { name: "Die Marke zuerst positionieren", pro: "schnell", contra: "teuer" },
+      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Zeit" },
+    ],
     recommendation: "Weg A",
     next_step: "Termin",
   }), backend.normalizeAssetAnswers("memo", {}));
@@ -383,10 +386,11 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
   assert.equal(backend.assetOutputTokenBudget("memo", memo), 4_000);
   assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 20_000);
 
-  // Ein gezielter zweiter Versuch, nur wenn das Isolate noch Zeit hat.
+  // Ein gezielter zweiter Versuch, solange Isolat und Kill-Grenze Platz lassen.
   // Beide Aufrufe landen im Kostenledger. Timeout wird nicht wiederholt.
-  assert.equal(backend.assetRepairTimeoutMs(50_000), 120_000);
-  assert.equal(backend.assetRepairTimeoutMs(108_000), null);
+  assert.equal(backend.assetRepairTimeoutMs(50_000), 90_000);
+  assert.equal(backend.assetRepairTimeoutMs(101_000), 90_000);
+  assert.equal(backend.assetRepairTimeoutMs(190_000), null);
   assert.equal(backend.assetRepairTimeoutMs(350_000), null);
   assert.match(edge, /assetRepairTimeoutMs/);
   assert.match(edge, /buildAssetRepairPrompt/);
@@ -479,11 +483,14 @@ test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () =>
     assert.equal(timeout, erwartet, `${kind} ${JSON.stringify(answers)}`);
     assert.ok(timeout + backend.ASSET_STAGE_HOLD_MS * 2 < 400_000, "Halten plus Modell muss unter 400 s bleiben");
   }
-  // Nach einem langen ersten Lauf keine Reparatur: der Timeout-Manager
-  // hat am 13.8.2026 den Auftrag nach etwa 235 s beendet, der Status blieb running.
-  assert.equal(backend.assetRepairTimeoutMs(50_000), 120_000);
+  // Nach ~101 s (Aeffe) bleibt Repair. Nach ~190 s nicht: First+Repair
+  // sollen unter der historischen Kill-Grenze (~235 s) bleiben.
+  assert.equal(backend.assetRepairTimeoutMs(50_000), 90_000);
+  assert.ok(backend.assetRepairTimeoutMs(101_000) >= 40_000);
+  assert.equal(backend.assetRepairTimeoutMs(190_000), null);
   assert.equal(backend.assetRepairTimeoutMs(280_000), null);
   assert.equal(backend.assetRepairTimeoutMs(370_000), null);
+  assert.equal(backend.ASSET_REPAIR_DEADLINE_MS, 220_000);
 });
 
 test("die Abfrage trifft pruefen und fuellen, weil sie laenger halten als der Takt", () => {
@@ -526,9 +533,19 @@ test("K und Infografiken bleiben die gewaehlte Variante, nicht still B", () => {
   const schemaS1 = backend.assetResponseSchema("linkedin", backend.normalizeAssetAnswers("linkedin", { variant: "S1" }));
   assert.deepEqual(schemaS1.properties.slides.items.properties.variant.enum, ["S1"]);
   const schemaAuto = backend.assetResponseSchema("linkedin", backend.normalizeAssetAnswers("linkedin", {}));
-  assert.ok(schemaAuto.properties.slides.items.properties.variant.enum.includes("K"));
-  assert.ok(schemaAuto.properties.slides.items.properties.variant.enum.includes("S1"));
-  assert.ok(schemaAuto.properties.slides.items.properties.variant.enum.includes("T3"));
+  const autoKeys = schemaAuto.properties.slides.items.properties.variant.enum;
+  assert.ok(autoKeys.includes("K"));
+  assert.ok(autoKeys.includes("E"));
+  for (const verboten of ["C", "D", "J", "S1", "T1", "T2", "T4", "T5", "T3"]) {
+    assert.ok(!autoKeys.includes(verboten), `Auto ohne Zahlen darf ${verboten} nicht anbieten`);
+  }
+  const schemaMitZahlen = backend.assetResponseSchema(
+    "linkedin",
+    backend.normalizeAssetAnswers("linkedin", {}),
+    "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen.",
+  );
+  assert.ok(schemaMitZahlen.properties.slides.items.properties.variant.enum.includes("T3"));
+  assert.ok(!schemaMitZahlen.properties.slides.items.properties.variant.enum.includes("T1"));
 });
 
 test("Vorlage L traegt keine fremde 32-Prozent-Zeile mehr", async () => {
@@ -589,7 +606,8 @@ test("die Ansprache erzwingt ROOTS-Leistung, Rolle und echte Optionen", () => {
     standfirst: "Lage und Beleg aus dem Artikel",
     situation: [{ lead: "Anlass", text: "Was passiert ist." }],
     options: [
-      { name: "Audit", pro: "Klarheit", contra: "Zeit" },
+      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
+      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
       { name: "Nichts tun", pro: "Keine Kosten", contra: "Risiko bleibt" },
     ],
     recommendation: "Audit wählen",
@@ -633,7 +651,7 @@ test("Prompt und Studio kennen Feldkarte, Leserseite und Überlauf-Gate", () => 
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.3");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.4");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -690,7 +708,10 @@ test("Kundenpapier setzt ROOTS als Handelnden, nicht die Kundenrolle", () => {
     title: "Der Umbau braucht eine Entscheidung",
     standfirst: "Lage und Beleg aus dem Artikel",
     situation: [{ lead: "Anlass", text: "Was passiert ist." }],
-    options: [{ name: "Audit", pro: "Klarheit", contra: "Zeit" }],
+    options: [
+      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
+      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
+    ],
     recommendation: "Audit wählen",
     next_step: "In zwei Wochen einen Termin setzen",
   }), backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }), {
@@ -707,7 +728,10 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
     title: "Der Umbau braucht eine Entscheidung",
     standfirst: "Lage und Beleg aus dem Artikel",
     situation: [{ lead: "Anlass", text: "Was passiert ist." }],
-    options: [{ name: "Audit", pro: "Klarheit", contra: "Zeit" }],
+    options: [
+      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
+      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
+    ],
     recommendation: "Die ersten 100 Tage als CMO begleiten",
     next_step: "Termin setzen",
   }), backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }), {
@@ -718,7 +742,7 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   assert.match(memo.recommendation, /100 Tage/);
 });
 
-test("Prompt v1.3 kennt Bühne, Steckbrief und Kennzahlenliste", () => {
+test("Prompt v1.4 kennt Bühne, Steckbrief und Kennzahlenliste", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -734,7 +758,15 @@ test("Prompt v1.3 kennt Bühne, Steckbrief und Kennzahlenliste", () => {
   assert.match(prompt, /qualitativ, keine Kachelzahl/);
   assert.match(prompt, /Wozu: eine These plus ein stützendes Argument/);
   assert.match(prompt, /Greift wenn: genau diese Ziffer/);
-  assert.match(prompt, /slot_a \(oben\)/);
+  assert.match(prompt, /Keine Ziffer auf zwei Folien/);
+  assert.match(prompt, /wähle je Slide aus A, B, E, F, G, H, I, K, L/);
+  assert.doesNotMatch(prompt, /wähle je Slide aus[^\n]*\bC\b/);
+  assert.doesNotMatch(prompt, /wähle je Slide aus[^\n]*\bT1\b/);
+  const s1 = backend.buildAssetPrompt("linkedin",
+    { headline_de: "Klarna", company: "Klarna" },
+    { title: "Klarna", content_de: artikel },
+    backend.normalizeAssetAnswers("linkedin", { variant: "S1" }));
+  assert.match(s1, /slot_a \(oben\)/);
   const leer = backend.buildAssetPrompt("linkedin", { headline_de: "S" },
     { title: "A", content_de: "Keine Zahl im Text." },
     backend.normalizeAssetAnswers("linkedin", {}));
@@ -815,7 +847,10 @@ test("Ansprache injiziert Leistung und Rolle nur wenn sie fehlen", () => {
     title: "Der Umbau braucht eine Entscheidung",
     standfirst: "Lage und Beleg aus dem Artikel",
     situation: [{ lead: "Anlass", text: "Was passiert ist." }],
-    options: [{ name: "Audit", pro: "Klarheit", contra: "Zeit" }],
+    options: [
+      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
+      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
+    ],
     recommendation: "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.",
     next_step: "ROOTS schlägt der Marketingleitung in den kommenden zwei Wochen einen Termin vor.",
   }), answers, {
@@ -825,4 +860,70 @@ test("Ansprache injiziert Leistung und Rolle nur wenn sie fehlen", () => {
   assert.equal(voll.recommendation, "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.");
   assert.equal(voll.next_step, "ROOTS schlägt der Marketingleitung in den kommenden zwei Wochen einen Termin vor.");
   assert.doesNotMatch(voll.next_step, /Gespräch mit.*Gespräch mit/);
+});
+
+test("dieselbe Leitkennzahl auf zwei Folien ist unbrauchbar", () => {
+  const answers = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 });
+  const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen.";
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
+    slides: [
+      { variant: "G", kicker: "BNPL", title: "Junge Nutzer verlieren den Überblick", myth: "BNPL bleibt ein Jugendphänomen", fact: "24 Prozent der unter 30 verlieren den Überblick", footer_left: "ROOTS" },
+      { variant: "H", kicker: "ZAHLEN", title: "Zwei Anteile tragen die Lage", stats: [
+        { value: "24 %", label: "unter 30" },
+        { value: "38 %", label: "junge Erwachsene" },
+      ], footer_left: "ROOTS" },
+    ],
+  }), answers, { articleText: artikel }), /Kennzahl 24.*Folie 1.*Folie 2/);
+
+  const ok = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
+    slides: [
+      { variant: "E", kicker: "BNPL", title: "Der Überblick bricht weg", stat: { value: "14 %", label: "verlieren den Überblick" }, footer_left: "ROOTS" },
+      { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
+      { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
+    ],
+  }), answers, { articleText: artikel });
+  assert.equal(ok.slides.length, 3);
+  assert.equal(ok.slides[0].stat.value.includes("14"), true);
+});
+
+test("Person im next_step zählt als Adressat, Optionsname braucht ein Verb", () => {
+  const answers = backend.normalizeAssetAnswers("memo", { reader_side: "kunde" });
+  const basis = {
+    title: "Der Umbau braucht eine Entscheidung",
+    standfirst: "Lage und Beleg aus dem Artikel",
+    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
+    recommendation: "Die Marke zuerst positionieren. ROOTS setzt hier mit Marketing Audit an.",
+  };
+  const mitPerson = backend.normalizeAssetPayload("memo", JSON.stringify({
+    ...basis,
+    options: [
+      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
+      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
+    ],
+    next_step: "ROOTS schlägt Christian Wiegand in den kommenden zwei Wochen einen Termin vor.",
+  }), answers, {
+    rootsOffering: "Marketing Audit",
+    buyingCenterRoles: ["Marketingleiter"],
+    personName: "Christian Wiegand",
+  });
+  assert.equal(mitPerson.next_step, "ROOTS schlägt Christian Wiegand in den kommenden zwei Wochen einen Termin vor.");
+  assert.doesNotMatch(mitPerson.next_step, /Gespräch mit/);
+
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify({
+    ...basis,
+    options: [
+      { name: "Technologie-Fokus", pro: "Klarheit", contra: "Zeit" },
+      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
+    ],
+    next_step: "Termin setzen",
+  }), answers, { buyingCenterRoles: ["Marketingleiter"] }), /Stichwort/);
+
+  const memoPrompt = backend.buildAssetPrompt("memo",
+    { company: "Xpeng", person_name: "Christian Wiegand", buying_center_roles: ["Marketingleiter"] },
+    { title: "A", content_de: "Der Artikel." },
+    answers);
+  assert.match(memoPrompt, /Christian Wiegand/);
+  assert.match(memoPrompt, /keine Rolle extra/);
 });
