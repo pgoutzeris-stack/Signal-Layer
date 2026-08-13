@@ -138,3 +138,35 @@ test("die Werkbank bearbeitet in Echtzeit", () => {
   assert.match(studio, /data-act="variant"/);
   assert.match(studio, /function harvest\(\)/);
 });
+
+test("die Vorlagen sind das Markup der echten Assets", async () => {
+  const tpl = await import("../asset-templates.js");
+  // Alle Varianten, die das Backend kennt, brauchen eine Vorlage.
+  const backendVariants = (await import("../supabase/functions/signal-layer/asset-studio.ts")).ASSET_VARIANTS;
+  for (const v of backendVariants) {
+    assert.ok(tpl.ASSET_TEMPLATES[v], `Vorlage ${v} fehlt`);
+    assert.match(tpl.ASSET_TEMPLATES[v], /class="li/, `Vorlage ${v} traegt nicht das Markup der Kachel`);
+    assert.match(tpl.ASSET_TEMPLATES[v], /data-field="kicker"/, `Vorlage ${v} ohne bearbeitbare Felder`);
+  }
+  // Das mitgeschleppte A4-Dokument-CSS der Quelldateien gehoert nicht hierher.
+  assert.match(tpl.ASSET_TEMPLATE_CSS, /\.li\{width:1080px;height:1350px/);
+  assert.doesNotMatch(tpl.ASSET_TEMPLATE_CSS, /@page/);
+  assert.ok(tpl.ASSET_TEMPLATE_CSS.length < 4000, "CSS zu gross, vermutlich Fremdstile mitgenommen");
+});
+
+test("Vorschau und fertiges Asset benutzen denselben Weg", () => {
+  // Zwei getrennte Renderpfade waren der Fehler davor: die Vorschau konnte
+  // etwas anderes zeigen als das Ergebnis.
+  assert.match(studio, /import \{ ASSET_TEMPLATE_CSS, ASSET_TEMPLATES \} from "\.\/asset-templates\.js/);
+  assert.match(studio, /function slideHtml\(slide, editable = true\)/);
+  assert.match(studio, /function livePreviewHtml\(\)/);
+  assert.match(studio, /slideHtml\(demoSlide\(variante\), false\)/);
+  // Schleifen fuer Aufzaehlung, Kennzahlen und Schritte
+  assert.match(studio, /function expandRepeats\(html, slide\)/);
+  for (const feld of ["bullets", "stats", "steps"]) {
+    assert.ok(studio.includes(`"${feld}"`), `Schleife ${feld} fehlt`);
+  }
+  // Kein Modellaufruf fuer die Vorschau: sie kostet keine Token.
+  const vorschauBlock = studio.slice(studio.indexOf("function livePreviewHtml"), studio.indexOf("function formHtml"));
+  assert.doesNotMatch(vorschauBlock, /api\(/);
+});

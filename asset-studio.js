@@ -319,6 +319,32 @@ const CHROME_CSS = `
   background:var(--bg,#fff); font-size:13px; cursor:pointer; user-select:none;
 }
 #as-overlay .as-opt input{position:absolute; opacity:0; pointer-events:none;}
+/* Fragebogen links, Vorschau rechts. Bei schmalem Popup untereinander. */
+#as-overlay .as-split2{display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:20px; align-items:stretch; height:100%; min-height:0;}
+#as-overlay .as-split2-form{overflow-y:auto; max-height:100%; padding-right:4px;}
+#as-overlay .as-split2-prev{position:sticky; top:0; display:flex; flex-direction:column; gap:8px; height:100%; min-height:0;}
+#as-overlay .as-prev-label{font-size:.68rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--muted,#475569);}
+/* Der Kasten traegt sein Seitenverhaeltnis selbst: so haengt die Vorschau nicht
+   davon ab, ob die Hoehe von oben durchgereicht wird. */
+#as-overlay .as-prev-big{width:100%; aspect-ratio:1080/1350; max-height:100%; min-height:240px;
+  display:flex; align-items:flex-start; justify-content:center; overflow:hidden;
+  border:1px solid var(--line,#e2e8f0); border-radius:14px; background:var(--surface,#f8fafc); padding:12px;}
+#as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:794/1123;}
+#as-overlay .as-prev-scale{display:block; transform-origin:top left; flex:0 0 auto;}
+#as-overlay .as-prev-scale .as-stage{box-shadow:0 10px 30px rgba(15,23,42,.12);}
+@media (max-width: 1080px){
+  #as-overlay .as-split2{grid-template-columns:1fr; grid-template-rows:auto minmax(220px, 40vh);}
+  #as-overlay .as-split2-prev{position:static;}
+}
+/* Die Buehne aus der Vorlage traegt ihre Masse selbst, damit das Einpassen
+   nicht auf einen zusammengefallenen Rahmen rechnet. */
+#as-overlay .as-stage--tpl{width:1080px; height:1350px; flex:0 0 auto; overflow:hidden; border-radius:inherit;}
+
+/* Bildplatz in der Vorlage: die Bedienung liegt als Auflage darauf. */
+#as-overlay .as-img--tpl{position:relative; display:block;}
+#as-overlay .as-img--bg{position:absolute; inset:0; z-index:3; display:block; pointer-events:none;}
+#as-overlay .as-img--bg .as-img-ui{pointer-events:auto;}
+
 /* Vorschau der Varianten: 150px breite Buehne, also Faktor 150/1080. */
 /* Feste Kartenbreite: die Vorschau ist mit Faktor 150/1080 skaliert, eine
    mitwachsende Karte wuerde nur Leerraum um die Buehne legen. */
@@ -466,6 +492,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES } from "./asset-templates.js?v=20260814-0100";
+
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
 let openInstance = null;
@@ -505,7 +533,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   overlay.setAttribute("aria-label", isMemo ? "Entscheidervorlage" : "LinkedIn-Asset");
 
   const styleIsland = document.createElement("style");
-  styleIsland.textContent = `${CHROME_CSS}\n${STAGE_CSS}\n${printCss(isMemo)}`;
+  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${STAGE_CSS}\n${printCss(isMemo)}`;
   overlay.appendChild(styleIsland);
 
   const shell = document.createElement("div");
@@ -557,6 +585,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         </header>
         <div class="as-content">${stepContent()}</div>
       </div>`;
+    // Direkt und noch einmal nach dem Umbruch: in einem verborgenen Tab
+    // laeuft requestAnimationFrame nicht, dann traegt der direkte Aufruf.
+    if (state.step === "form") { fitPreview(); requestAnimationFrame(fitPreview); }
     if (state.step === "draft" && state.payload) mountStages(false);
     if (state.step === "edit") {
       mountStages(true);
@@ -591,7 +622,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function stepContent() {
-    if (state.step === "form") return formHtml();
+    if (state.step === "form") {
+      // Links entscheiden, rechts sofort sehen. Die Vorschau ist dieselbe
+      // Vorlage wie das spaetere Asset, nur mit Platzhaltertext.
+      return `<div class="as-split2">
+        <div class="as-split2-form">${formHtml()}</div>
+        <div class="as-split2-prev">
+          <span class="as-prev-label">Vorschau</span>
+          <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
+        </div>
+      </div>`;
+    }
     if (state.step === "draft") {
       if (state.busy) return `<div class="as-loader" role="status" aria-label="Wird erzeugt"></div>`;
       if (state.error) {
@@ -644,6 +685,46 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       .replace(/<div class="as-img-ui"[\s\S]*?<\/div>\s*<\/div>/g, "</div>");
     state.stage = eigentlich;
     return `<span class="as-prev"><span class="as-prev-in">${html}</span></span>`;
+  }
+
+  /** Grosse Vorschau neben dem Fragebogen. Kein Modellaufruf, nur die Vorlage. */
+  function livePreviewHtml() {
+    if (isMemo) {
+      const demo = normalizeMemo({
+        title: "Der Anlass verlangt eine Entscheidung im Quartal",
+        standfirst: "Ein Satz zur Lage, gefolgt von dem Beleg, der ihn traegt.",
+        kpis: [{ value: "14 %", label: "Bezug, Jahr" }, { value: "6", label: "Wochen" }, { value: "3", label: "Rollen" }],
+        situation: [{ lead: "Anlass", text: "Was gerade passiert ist." }, { lead: "Engstelle", text: "Woran es haengt." }],
+        options: [{ name: "Weg A", pro: "Wirkt breit", contra: "Bindet Kapazitaet" }, { name: "Weg B", pro: "Schnell sichtbar", contra: "Engstelle bleibt" }],
+        recommendation: "Die Empfehlung in einem Satz.",
+        next_step: "Der naechste Schritt mit Verantwortlichkeit.",
+        cta: "Termin abstimmen",
+      });
+      return `<span class="as-prev-scale">${memoHtml(demo, false)}</span>`;
+    }
+    const gewaehlt = state.answers.variant;
+    const variante = VARIANT_KEYS.includes(gewaehlt) ? gewaehlt : "B";
+    return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>`;
+  }
+
+  /** Platzhalterinhalt, mit dem jede Variante etwas zu zeigen hat. */
+  function demoSlide(variant) {
+    return normalizeSlide({
+      variant,
+      kicker: company ? company.toUpperCase().slice(0, 26) : "KICKER",
+      title: "Ein Satz, der etwas behauptet",
+      subtitle: "Zwei Zeilen Einordnung, die die Behauptung stuetzen.",
+      quote: "Ein Zitat mit Haltung, zwei Zeilen lang.",
+      attribution: "Name, Rolle",
+      stat: { value: "14 %", label: "Bezug, Jahr" },
+      stats: [{ value: "14 %", label: "Anteil am Umsatz" }, { value: "6", label: "Wochen je Runde" }, { value: "3", label: "Rollen im Buying Center" }],
+      bullets: ["Erster Hebel mit Substanz", "Zweiter Hebel mit Substanz", "Dritter Hebel mit Substanz"],
+      steps: [{ n: "1", title: "Standort", text: "Lage in zwei Wochen belegen." }, { n: "2", title: "Priorität", text: "Drei Hebel auswählen." }, { n: "3", title: "Umsetzung", text: "Pilot in einem Segment." }],
+      myth: "Die verbreitete Behauptung.",
+      fact: "Der Befund, der ihr widerspricht.",
+      takeaway: "Die Kernaussage mit Kontrast.",
+      footer_left: company || "ROOTS Brand Strategy Consultants",
+    });
   }
 
   function formHtml() {
@@ -806,130 +887,96 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return `<span class="as-lockup"><img src="${attr(state.logo)}" alt="ROOTS"><span>${esc(LOGO_SUBTITLE)}</span></span>`;
   }
 
-  /* ── Bühne: LinkedIn-Slide ── */
+  /* ── Bühne: LinkedIn-Slide aus der echten Vorlage ── */
 
-  function slideHtml(slide) {
-    const full = slide.variant === "D";
-    const classes = `as-stage as-stage--li${full ? " as-stage--full" : ""}`;
-    return `<div class="${classes}" data-stage data-uid="${attr(slide.uid)}" data-theme="${attr(state.stage.theme)}" data-accent="${attr(state.stage.accent)}" data-corners="${attr(state.stage.corners)}">
-      ${full ? `${imageSlot(slide, "full")}<div class="as-scrim"></div>` : ""}
-      <header class="as-head">
-        ${lockup()}
-        ${field("p", "as-kicker", slide, "kicker", slide.kicker, "Kicker")}
-      </header>
-      <div class="as-mid${slide.variant === "C" ? " as-mid--split" : ""}">${slideMiddle(slide)}</div>
-      ${state.stage.band ? field("p", "as-band", slide, "takeaway", slide.takeaway, "Kernaussage") : ""}
-      <footer class="as-foot">
-        ${field("span", "as-footleft", slide, "footer_left", slide.footerLeft, "Absender")}
-        <b>${esc(FOOTER_DOMAIN)}</b>
-      </footer>
+  /**
+   * Rendert einen Slide aus dem Markup des bereits gebauten ROOTS-Assets.
+   * Die Vorlagen in asset-templates.js sind unveraendert aus den Einzelposts
+   * uebernommen; hier werden nur Platzhalter gefuellt. Vorschau und fertiges
+   * Asset benutzen denselben Weg, deshalb kann die Vorschau nicht luegen.
+   */
+  function slideHtml(slide, editable = true) {
+    let html = ASSET_TEMPLATES[slide.variant] || ASSET_TEMPLATES.B;
+    html = expandRepeats(html, slide);
+    html = fillTemplate(html, slide);
+    html = wrapImageSlots(html, slide);
+    if (editable) {
+      html = html.replace(/data-field="([a-z_]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
+    }
+    // Hell und dunkel steuert dieselbe Klasse, die der Builder benutzt.
+    html = state.stage.theme === "dark"
+      ? html.replace(/class="li(?! )/, 'class="li li-dark').replace(/class="li"/, 'class="li li-dark"')
+      : html.replace(/\bli-dark\b/g, "");
+    return `<div class="as-stage as-stage--tpl" data-stage data-uid="${attr(slide.uid)}" data-variant="${attr(slide.variant)}">${html}</div>`;
+  }
+
+  /** Wiederholte Bloecke: ein Eintrag je Aufzaehlung, Kennzahl oder Schritt. */
+  function expandRepeats(html, slide) {
+    return html.replace(/<!--repeat:([a-z]+)-->([\s\S]*?)<!--\/repeat-->/g, (_m, feld, block) => {
+      const liste = feld === "bullets" ? (slide.bullets.length ? slide.bullets : ["", "", ""])
+        : feld === "stats" ? (slide.stats.length ? slide.stats : [{}, {}, {}])
+        : feld === "steps" ? (slide.steps.length ? slide.steps : [{}, {}, {}])
+        : [];
+      return liste.map((eintrag, i) => {
+        const werte = feld === "bullets"
+          ? { item: String(eintrag || ""), n: String(i + 1) }
+          : feld === "stats"
+            ? { value: String(eintrag?.value || ""), label: String(eintrag?.label || ""), n: String(i + 1) }
+            : { n: String(eintrag?.n || String(i + 1)), title: String(eintrag?.title || ""), text: String(eintrag?.text || "") };
+        // Der Index wandert in data-field, damit die Werkbank den Eintrag
+        // wiederfindet: bullets.0 statt nur bullets.
+        return block
+          .replace(/data-field="([a-z_]+)"/g, (__m, name) => `data-field="${feld}.${i}.${name}"`)
+          .replace(/\{\{([a-z_]+)\}\}/g, (__m, name) => esc(werte[name] ?? ""));
+      }).join("");
+    });
+  }
+
+  function fillTemplate(html, slide) {
+    const werte = {
+      logo: state.logo || LOGO_PATH,
+      kicker: slide.kicker,
+      title: slide.title,
+      subtitle: slide.subtitle,
+      quote: slide.quote,
+      attribution: slide.attribution,
+      stat_value: slide.stat.value,
+      stat_label: slide.stat.label,
+      myth: slide.myth,
+      fact: slide.fact,
+      takeaway: slide.takeaway,
+      footer_left: slide.footerLeft,
+      image: slide.image.src || "",
+    };
+    return html.replace(/\{\{([a-z_]+)\}\}/g, (_m, name) => {
+      const wert = werte[name];
+      if (name === "logo" || name === "image") return attr(wert || "");
+      const bearbeitet = slide.html?.[name];
+      if (typeof bearbeitet === "string") return bearbeitet;
+      return esc(wert || "");
+    });
+  }
+
+  /** Fotos bekommen die Bedienung der Werkbank, das Logo bleibt unberuehrt. */
+  function wrapImageSlots(html, slide) {
+    const hat = Boolean(slide.image.src);
+    const ui = `<div class="as-img-ui" data-as-chrome>
+      <button type="button" data-act="img-pick">${hat ? "Bild ersetzen" : "Bild wählen"}</button>
+      ${hat ? `<input type="range" min="0" max="100" step="1" value="${Number.parseFloat(String(slide.image.pos).split(" ")[1]) || 50}" data-act="img-pos" aria-label="Ausschnitt">` : ""}
+      ${hat ? `<button type="button" data-act="img-clear">Entfernen</button>` : ""}
     </div>`;
-  }
-
-  function imageSlot(slide, mode) {
-    const has = Boolean(slide.image.src);
-    const inner = has
-      ? `<img src="${attr(slide.image.src)}" alt="" style="object-position:${attr(slide.image.pos)}">`
-      : "";
-    const posValue = Number.parseFloat(String(slide.image.pos).split(" ")[1]) || 50;
-    return `<div class="as-img as-img--${mode === "full" ? "full" : "panel"}" data-imgslot>
-      ${inner}
-      <div class="as-img-ui" data-as-chrome>
-        <button type="button" data-act="img-pick">${has ? "Bild ersetzen" : "Bild wählen"}</button>
-        ${has ? `<input type="range" min="0" max="100" step="1" value="${posValue}" data-act="img-pos" aria-label="Ausschnitt">` : ""}
-        ${has ? `<button type="button" data-act="img-clear">Entfernen</button>` : ""}
-      </div>
-    </div>`;
-  }
-
-  function slideMiddle(slide) {
-    const title = field("h1", "as-title", slide, "title", slide.title, "Titel");
-    const sub = field("p", "as-sub", slide, "subtitle", slide.subtitle, "Subtitel");
-    switch (slide.variant) {
-      case "A":
-        return `${field("blockquote", "as-quote", slide, "quote", slide.quote, "Zitat")}
-          ${field("p", "as-attr", slide, "attribution", slide.attribution, "Urheber")}`;
-      case "C":
-        // Variante C ist ein Split: Text traegt die linke Spalte, das Bild die
-        // rechte. Uebereinander gestapelt waere es Variante B mit Bild.
-        return `<div class="as-splittext">${title}${sub}</div>${imageSlot(slide, "panel")}`;
-      case "D":
-        return `${title}${sub}`;
-      case "E":
-        return `${field("p", "as-statbig", slide, "stat.value", slide.stat.value, "Zahl")}
-          ${field("p", "as-statlabel", slide, "stat.label", slide.stat.label, "Bezug, Jahr")}
-          ${title}`;
-      case "F":
-        return `${title}${bulletsHtml(slide)}`;
-      case "G":
-        return `${title}
-          <div class="as-grid2">
-            <div class="as-card">
-              <span class="as-cardhead">Mythos</span>
-              ${field("p", "as-cardtext", slide, "myth", slide.myth, "Behauptung")}
-            </div>
-            <div class="as-card as-card--acc">
-              <span class="as-cardhead">Fakt</span>
-              ${field("p", "as-cardtext", slide, "fact", slide.fact, "Befund")}
-            </div>
-          </div>`;
-      case "H":
-        return `${title}<div class="as-grid3">${statCards(slide)}</div>`;
-      case "I":
-        return `${title}<div class="as-steps">${stepRows(slide)}</div>`;
-      case "L":
-        return `${title}
-          <div class="as-grid2">
-            <div class="as-card as-card--acc">
-              ${field("p", "as-statval", slide, "stat.value", slide.stat.value, "Zahl")}
-              ${field("p", "as-statcap", slide, "stat.label", slide.stat.label, "Bezug, Jahr")}
-            </div>
-            <div class="as-card">${bulletsHtml(slide)}</div>
-          </div>`;
-      case "B":
-      default:
-        return `${title}${sub}`;
+    if (html.includes("data-imgsrc")) {
+      return html.replace(/(<img[^>]*data-imgsrc[^>]*>)/, `<span class="as-img as-img--tpl" data-imgslot>$1${ui}</span>`);
     }
-  }
-
-  function bulletsHtml(slide) {
-    const edited = slide.html?.bullets;
-    const items = typeof edited === "string"
-      ? edited
-      : (slide.bullets.length ? slide.bullets : ["", "", ""]).map((line) => `<li>${esc(line)}</li>`).join("");
-    return `<ul class="as-bullets as-edit" data-field="bullets" data-ph="Zeile">${items}</ul>`;
-  }
-
-  function statCards(slide) {
-    const rows = [];
-    for (let i = 0; i < slide.counts.stats; i += 1) {
-      const item = slide.stats[i] || { value: "", label: "" };
-      rows.push(`<div class="as-card">
-        ${field("p", "as-statval", slide, `stats.${i}.value`, item.value, "Zahl")}
-        ${field("p", "as-statcap", slide, `stats.${i}.label`, item.label, "Bezug")}
-      </div>`);
+    // Hintergrundbild (Vollbild und Zitat ueber Bild): Slot als Auflage.
+    if (/background-image:url\(/.test(html)) {
+      return html.replace(/(<div style="position:absolute;inset:0;background-image:url\([^)]*\)[^"]*"><\/div>)/,
+        `$1<span class="as-img as-img--bg" data-imgslot>${ui}</span>`);
     }
-    return rows.join("");
+    return html;
   }
 
-  function stepRows(slide) {
-    const rows = [];
-    for (let i = 0; i < slide.counts.steps; i += 1) {
-      const item = slide.steps[i] || { n: String(i + 1).padStart(2, "0"), title: "", text: "" };
-      rows.push(`<div class="as-step">
-        ${field("div", "as-stepn", slide, `steps.${i}.n`, item.n || String(i + 1).padStart(2, "0"), "01")}
-        <div>
-          ${field("p", "as-steptitle", slide, `steps.${i}.title`, item.title, "Schritt")}
-          ${field("p", "as-steptext", slide, `steps.${i}.text`, item.text, "Text")}
-        </div>
-      </div>`);
-    }
-    return rows.join("");
-  }
-
-  /* ── Bühne: Entscheidervorlage ── */
-
-  function memoHtml(memo) {
+  function memoHtml(memo, editable = true) {
     const kpis = memo.kpis.map((item, i) => `<div class="as-kpi">
       ${field("p", "as-kpival", memo, `kpis.${i}.value`, item.value, "Zahl")}
       ${field("p", "as-kpilabel", memo, `kpis.${i}.label`, item.label, "Bezug")}
@@ -946,7 +993,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const sources = memo.sources.length || typeof memo.html["sources"] === "string"
       ? `<div class="as-sources"><b>Quellen</b>${field("div", "as-sourcelist", memo, "sources", memo.sources.join(" · "), "Quelle · Herausgeber · Jahr")}</div>`
       : "";
-    return `<div class="as-stage as-stage--a4" data-stage data-uid="${attr(memo.uid)}" data-theme="${attr(state.stage.theme)}" data-accent="${attr(state.stage.accent)}" data-corners="${attr(state.stage.corners)}">
+    const html = `<div class="as-stage as-stage--a4" data-stage data-uid="${attr(memo.uid)}" data-theme="${attr(state.stage.theme)}" data-accent="${attr(state.stage.accent)}" data-corners="${attr(state.stage.corners)}">
       <header class="as-head">
         ${lockup()}
         <div>
@@ -975,6 +1022,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         ${field("span", "as-docid", memo, "doc_id", docId(), "Kennung")}
       </footer>
     </div>`;
+    return editable ? html : html.replace(/ contenteditable="true"/g, "");
   }
 
   function docId() {
@@ -1033,6 +1081,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   // Die Bühne hat feste Maße; erst der Maßstab bringt sie in die Fläche.
+  /** Passt die grosse Vorschau in ihre Spalte ein. Gleiche Rechnung wie fitStages. */
+  function fitPreview() {
+    const box = shell.querySelector("[data-livepreview]");
+    const inner = box?.querySelector(".as-prev-scale");
+    const stage = inner?.querySelector(".as-stage");
+    if (!box || !inner || !stage) return;
+    const breite = box.clientWidth || 1;
+    const hoehe = Math.max(box.clientHeight, 240);
+    const w = stage.offsetWidth || (isMemo ? 794 : 1080);
+    const h = stage.offsetHeight || (isMemo ? 1123 : 1350);
+    const faktor = Math.min(breite / w, hoehe / h);
+    inner.style.transform = `scale(${faktor})`;
+    inner.style.width = `${w}px`;
+    inner.style.height = `${h}px`;
+  }
+
   function fitStages() {
     const area = shell.querySelector("[data-stagearea]");
     if (!area) return;
@@ -1494,8 +1558,11 @@ ${stages}${post}
     // Der Fragebogen blendet Freitextfelder erst bei passender Wahl ein.
     if (state.step === "form" && event.target.matches('input[type="radio"]')) {
       readForm();
-      const content = shell.querySelector(".as-content");
-      if (content) content.innerHTML = formHtml();
+      const form = shell.querySelector(".as-split2-form");
+      if (form) form.innerHTML = formHtml();
+      const prev = shell.querySelector("[data-livepreview]");
+      if (prev) prev.innerHTML = livePreviewHtml();
+      fitPreview();
     }
   }
 
@@ -1543,6 +1610,7 @@ ${stages}${post}
   on(overlay, "input", onInput);
   on(document, "keydown", onKeyDown, true);
   on(document, "selectionchange", onSelectionChange);
+  on(window, "resize", () => { fitStages(); fitPreview(); });
   on(document, "mousedown", onDocMouseDown, true);
   on(window, "resize", fitStages);
 
