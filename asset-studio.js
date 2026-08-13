@@ -460,6 +460,31 @@ const CHROME_CSS = `
 }
 #as-overlay .as-free:focus{outline:none; border-color:var(--brand,#206efb); box-shadow:var(--shadow-focus,0 0 0 3px rgba(32,110,251,.15));}
 
+/* Ladeanzeige: pulsierendes Icon, wechselnder Schritt, Schimmerbalken. Der
+   Puls sagt "es laeuft", der Text sagt was, die Sekunden sagen wie lange. */
+#as-overlay .as-load{display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:14px; min-height:300px; text-align:center; padding:24px;}
+#as-overlay .as-load-icon{width:64px; height:64px; border-radius:20px; display:flex; align-items:center; justify-content:center;
+  background:var(--brand-light,#eff6ff); color:var(--brand,#206efb); font-size:1.5rem;
+  animation:as-puls 1.8s ease-in-out infinite;}
+@keyframes as-puls{
+  0%,100%{transform:scale(1); box-shadow:0 0 0 0 rgba(32,110,251,.28);}
+  50%{transform:scale(1.06); box-shadow:0 0 0 14px rgba(32,110,251,0);}
+}
+#as-overlay .as-load-text{margin:0; font-size:1rem; font-weight:700; color:var(--ink,#0f172a);
+  animation:as-auf .45s ease-out;}
+@keyframes as-auf{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+#as-overlay .as-load-bar{width:min(260px, 70%); height:4px; border-radius:99px; overflow:hidden;
+  background:var(--line,#e2e8f0);}
+#as-overlay .as-load-bar span{display:block; width:40%; height:100%; border-radius:99px;
+  background:linear-gradient(90deg, rgba(32,110,251,0), var(--brand,#206efb), rgba(32,110,251,0));
+  animation:as-schimmer 1.4s ease-in-out infinite;}
+@keyframes as-schimmer{0%{transform:translateX(-100%);} 100%{transform:translateX(250%);}}
+#as-overlay .as-load-meta{margin:0; font-size:.76rem; color:var(--muted,#475569);}
+@media (prefers-reduced-motion: reduce){
+  #as-overlay .as-load-icon, #as-overlay .as-load-bar span, #as-overlay .as-load-text{animation:none;}
+}
+
 #as-overlay .as-loader{display:flex; align-items:center; justify-content:center; min-height:280px;}
 #as-overlay .as-loader::after{
   content:""; width:34px; height:34px; border-radius:50%;
@@ -586,7 +611,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-1000";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-1300";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -632,6 +657,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ddOffen: false,
     multiOffen: false,
     prevIndex: 0,
+    ladeSchritt: 0,
+    ladeStart: 0,
+    ladeTakt: 0,
+    ladeUhr: 0,
   };
 
   const cleanups = [];
@@ -745,7 +774,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </div>`;
     }
     if (state.step === "draft") {
-      if (state.busy) return `<div class="as-loader" role="status" aria-label="Wird erzeugt"></div>`;
+      if (state.busy) return ladeanzeigeHtml();
       if (state.error) {
         // Der Servertext ist die einzige belastbare Auskunft und steht deshalb
         // wortwoertlich da, nicht hinter einer Sammelmeldung.
@@ -789,6 +818,65 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         </div>`
       : "";
     return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${blaettern}`;
+  }
+
+  /**
+   * Die Schritte benennen, was wirklich passiert: erst laedt die Function
+   * Signal und Artikel, dann rechnet das Modell, dann wird die Antwort geprueft
+   * und in die Vorlage gefuellt. Erfundene Zwischenschritte waeren Dekoration.
+   */
+  const LADESCHRITTE = isMemo
+    ? [
+      ["fa-file-lines", "Signal und Artikel werden gelesen"],
+      ["fa-brain", "Das Modell entwickelt die Ansprache"],
+      ["fa-list-check", "Lage, Optionen und Empfehlung werden geprüft"],
+      ["fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
+    ]
+    : [
+      ["fa-file-lines", "Signal und Artikel werden gelesen"],
+      ["fa-brain", "Das Modell schreibt Titel und Kernaussage"],
+      ["fa-list-check", "Belege und Längen werden geprüft"],
+      ["fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
+    ];
+
+  function ladeanzeigeHtml() {
+    const i = state.ladeSchritt % LADESCHRITTE.length;
+    const [icon, text] = LADESCHRITTE[i];
+    const sekunden = state.ladeStart ? Math.round((Date.now() - state.ladeStart) / 1000) : 0;
+    return `<div class="as-load" role="status" aria-live="polite">
+      <div class="as-load-icon"><i class="fa-solid ${icon}"></i></div>
+      <p class="as-load-text">${esc(text)}</p>
+      <div class="as-load-bar"><span></span></div>
+      <p class="as-load-meta">${sekunden} s · ein Entwurf braucht meist eine bis zwei Minuten</p>
+    </div>`;
+  }
+
+  /** Taktgeber der Ladeanzeige. Laeuft nur, solange gearbeitet wird. */
+  function ladeTaktStart() {
+    ladeTaktStop();
+    state.ladeStart = Date.now();
+    state.ladeSchritt = 0;
+    state.ladeTakt = window.setInterval(() => {
+      if (!state.busy) { ladeTaktStop(); return; }
+      state.ladeSchritt += 1;
+      const box = shell.querySelector(".as-load");
+      if (box) box.outerHTML = ladeanzeigeHtml();
+    }, 3_200);
+    // Die Sekundenzahl laeuft feiner als die Schritte.
+    state.ladeUhr = window.setInterval(() => {
+      const meta = shell.querySelector(".as-load-meta");
+      if (!state.busy) return;
+      if (meta && state.ladeStart) {
+        meta.textContent = `${Math.round((Date.now() - state.ladeStart) / 1000)} s · ein Entwurf braucht meist eine bis zwei Minuten`;
+      }
+    }, 1_000);
+  }
+
+  function ladeTaktStop() {
+    if (state.ladeTakt) window.clearInterval(state.ladeTakt);
+    if (state.ladeUhr) window.clearInterval(state.ladeUhr);
+    state.ladeTakt = 0;
+    state.ladeUhr = 0;
   }
 
   /** Ruhiger Platzhalter statt einer geratenen Kachel. */
@@ -974,6 +1062,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.busy = true;
     state.error = "";
     render();
+    ladeTaktStart();
     try {
       const gewaehlt = state.answers.variant;
       const antworten = { ...state.answers, layout: gewaehlt };
@@ -992,10 +1081,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.assetId = fertig.id || state.assetId;
       adoptPayload(fertig.payload || fertig);
       state.busy = false;
+      ladeTaktStop();
       render();
     } catch (err) {
       // Der Servertext ist die einzige belastbare Auskunft, deshalb wörtlich zeigen.
       state.busy = false;
+      ladeTaktStop();
       state.error = (err && err.message) ? String(err.message) : String(err || "Unbekannter Fehler");
       state.payload = null;
       render();
@@ -1892,6 +1983,7 @@ ${stages}${post}
       const off = cleanups.pop();
       try { off(); } catch (_) { /* ein gescheitertes Abmelden darf den Abbau nicht stoppen */ }
     }
+    ladeTaktStop();
     if (selectionFrame) window.cancelAnimationFrame(selectionFrame);
     if (fmtBar) fmtBar.remove();
     fmtBar = null;

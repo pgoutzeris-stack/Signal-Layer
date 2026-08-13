@@ -391,3 +391,22 @@ test("der Entwurf laeuft als Hintergrundauftrag, nicht in der Anfrage", () => {
   assert.match(edge, /status: "error", error_message/);
   assert.match(studio, /fertig\.error_message/);
 });
+
+test("die Ladeanzeige benennt echte Schritte und laeuft nur beim Arbeiten", () => {
+  // Die Schritte spiegeln den tatsaechlichen Ablauf der Function: laden,
+  // rechnen, pruefen, fuellen. Erfundene Zwischenschritte waeren Dekoration.
+  assert.match(studio, /Signal und Artikel werden gelesen/);
+  assert.match(studio, /Das Modell schreibt Titel und Kernaussage/);
+  assert.match(studio, /Das Modell entwickelt die Ansprache/);
+  assert.match(studio, /Die Vorlage wird gefüllt/);
+  // Wechselnde Icons, Puls, Schimmer, verstrichene Zeit.
+  assert.match(studio, /as-puls/);
+  assert.match(studio, /as-schimmer/);
+  assert.match(studio, /braucht meist eine bis zwei Minuten/);
+  // Der Takt haengt am Arbeitszustand und wird beim Abbau gestoppt.
+  assert.match(studio, /function ladeTaktStart\(\)/);
+  assert.match(studio, /if \(!state\.busy\) \{ ladeTaktStop\(\); return; \}/);
+  assert.match(studio, /ladeTaktStop\(\);\n    if \(selectionFrame\)/);
+  // Wer Bewegung abgeschaltet hat, bekommt keine.
+  assert.match(studio, /prefers-reduced-motion: reduce/);
+});
