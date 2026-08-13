@@ -148,7 +148,12 @@ def bilder_zu_slots(html):
 
 def kicker_und_fuss(html):
     html = mit_feld(html, r'<span class="kick[^"]*"[^>]*>(.*?)</span>', "kicker")
-    html = mit_feld(html, r'<div class="foot[^"]*"[^>]*>\s*<span[^>]*>(.*?)</span>', "footer_left")
+    # Bis zur Domain-Spanne greifen: mehrere Fussnoten tragen eine verschachtelte
+    # Spanne ("Quelle: ..."), und ein zu frueh geschlossenes Muster liess ein
+    # </span> uebrig - das verschiebt beim Parsen die ganze Kachel.
+    # Die Datenbilder tragen die Domain ohne Klasse, nur mit Farbe. Beide Formen
+    # abdecken, sonst bricht der Generator an ihnen ab.
+    html = mit_feld(html, r'<div class="foot[^"]*"[^>]*>\s*<span[^>]*>(.*?)</span>\s*(?=<span (?:class="dom"|style="color:var\(--brand\)))', "footer_left")
     return html
 
 def msg_band(html):

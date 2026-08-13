@@ -308,6 +308,7 @@ const CHROME_CSS = `
    Scrollbereich in der Mitte war der Grund, dass sich das Studio nicht wie ein
    Fenster, sondern wie eine Webseite im Fenster anfuehlte. */
 #as-overlay .as-content:has(.as-split2){overflow:hidden; padding:20px 24px 24px;}
+#as-overlay .as-content{container-type:inline-size;}
 
 #as-overlay .as-btn{
   display:inline-flex; align-items:center; gap:8px; border-radius:10px;
@@ -351,7 +352,7 @@ const CHROME_CSS = `
 #as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:794/1123;}
 #as-overlay .as-prev-scale{display:block; transform-origin:top left; flex:0 0 auto;}
 #as-overlay .as-prev-scale .as-stage{box-shadow:0 10px 30px rgba(15,23,42,.12);}
-@media (max-width: 1080px){
+@container (max-width: 860px){
   #as-overlay .as-split2{grid-template-columns:1fr; grid-template-rows:auto minmax(220px, 40vh);}
   #as-overlay .as-split2-prev{position:static;}
 }
@@ -367,13 +368,13 @@ const CHROME_CSS = `
 /* Vorschau der Varianten: 150px breite Buehne, also Faktor 150/1080. */
 /* Feste Kartenbreite: die Vorschau ist mit Faktor 150/1080 skaliert, eine
    mitwachsende Karte wuerde nur Leerraum um die Buehne legen. */
-#as-overlay .as-opts--prev{display:grid; grid-template-columns:repeat(auto-fill, 150px); gap:12px; justify-content:start;}
+#as-overlay .as-opts--prev{display:grid; grid-template-columns:repeat(auto-fill, 104px); gap:10px; justify-content:start;}
 /* Ohne waagerechte Polsterung: die Spalte ist 150px breit, und genau darauf
    ist der Skalierungsfaktor der Vorschau gerechnet. */
 #as-overlay .as-opt--prev{flex-direction:column; align-items:stretch; gap:6px; padding:0 0 6px; text-align:center; border-radius:11px; overflow:hidden;}
 #as-overlay .as-prev{display:block; width:100%; aspect-ratio:1080/1350; overflow:hidden; background:#fff; border-bottom:1px solid var(--line,#e2e8f0);}
-#as-overlay .as-prev-in{display:block; width:1080px; height:1350px; transform:scale(.1389); transform-origin:top left; pointer-events:none;}
-#as-overlay .as-opt--prev > span{font-size:.74rem; font-weight:600;}
+#as-overlay .as-prev-in{display:block; width:1080px; height:1350px; transform:scale(.0963); transform-origin:top left; pointer-events:none;}
+#as-overlay .as-opt--prev > span{font-size:.66rem; font-weight:600; line-height:1.25; padding:0 4px;}
 #as-overlay .as-opt-note{font-size:.64rem; font-weight:600; color:var(--muted,#475569);}
 #as-overlay .as-opt:has(input:checked){
   border-color:var(--brand,#206efb); background:var(--brand-light,#eff6ff);
@@ -512,7 +513,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0300";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0500";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -700,9 +701,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const eigentlich = state.stage;
     state.stage = stage;
     // Bedienelemente aus der Vorschau nehmen: sie soll nur zeigen, nicht koennen.
-    const html = slideHtml(demo)
-      .replace(/ contenteditable="true"/g, "")
-      .replace(/<div class="as-img-ui"[\s\S]*?<\/div>\s*<\/div>/g, "</div>");
+    // Der Auflagenblock endet mit seinem eigenen </div> - ein zweites mitzunehmen
+    // riss vorher ein fremdes Schliess-Tag weg, und der Parser hat daraufhin die
+    // halbe Spalte nach draussen verschoben.
+    const html = slideHtml(demo, false)
+      .replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, "");
     state.stage = eigentlich;
     return `<span class="as-prev"><span class="as-prev-in">${html}</span></span>`;
   }
@@ -1129,6 +1132,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     inner.style.transform = `scale(${faktor})`;
     inner.style.width = `${w}px`;
     inner.style.height = `${h}px`;
+    // Eine Skalierung veraendert das Bild, nicht den Platz. Ohne diese
+    // Ausgleichsraender rechnet die Zentrierung mit 1080px Breite, und die
+    // Kachel schiebt sich rechts aus ihrem Kasten.
+    inner.style.marginRight = `${-Math.round(w * (1 - faktor))}px`;
+    inner.style.marginBottom = `${-Math.round(h * (1 - faktor))}px`;
   }
 
   function fitStages() {

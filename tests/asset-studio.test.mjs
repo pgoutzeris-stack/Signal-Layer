@@ -204,3 +204,26 @@ test("alle Assets vom Desktop stehen als Layout zur Wahl", async () => {
   // Das Backend kennt nur A bis L, deshalb wird ein Layout darauf abgebildet.
   assert.match(studio, /antworten\.variant = "B"/);
 });
+
+test("jede Vorlage ist in sich geschlossen", async () => {
+  const tpl = await import("../asset-templates.js");
+  // Ein einziges ueberzaehliges </span> verschiebt beim Parsen die ganze
+  // Kachel: die Vorschau landete dadurch neben ihrer Spalte statt darin.
+  for (const [name, satz] of [["Vorlage", tpl.ASSET_TEMPLATES], ["Layout", tpl.ASSET_LAYOUTS]]) {
+    for (const [key, markup] of Object.entries(satz)) {
+      for (const tag of ["div", "span", "p", "svg"]) {
+        const auf = (markup.match(new RegExp(`<${tag}\\b`, "g")) || []).length;
+        const zu = (markup.match(new RegExp(`</${tag}>`, "g")) || []).length;
+        assert.equal(auf, zu, `${name} ${key}: ${tag} ${auf} offen, ${zu} geschlossen`);
+      }
+    }
+  }
+});
+
+test("der Umbruch richtet sich nach dem Popup, nicht nach dem Fenster", () => {
+  // Das Studio lebt im Artikel-Popup. Eine Medienabfrage auf die Fensterbreite
+  // hat dort nichts zu suchen: sie stapelte die Spalten im breiten Popup.
+  assert.match(studio, /@container \(max-width: 860px\)/);
+  assert.match(studio, /container-type:inline-size/);
+  assert.doesNotMatch(studio, /@media \(max-width: 1080px\)\{\s*#as-overlay \.as-split2/);
+});
