@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.3";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.4";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -105,6 +105,7 @@ export type AssetNormalizeContext = {
   articleText?: string;
   rootsOffering?: string | null;
   buyingCenterRoles?: string[] | null;
+  personName?: string | null;
 };
 
 export type AssetAnswers = LinkedinAnswers | MemoAnswers;
@@ -709,24 +710,32 @@ Greift wenn: der Artikel vier aufeinanderfolgende Phasen hergibt.
 Nicht wählen wenn: die Phasen nicht belegt sind; dann I.`,
 };
 
-export function allowedSlideKeys(answers: LinkedinAnswers): AssetSlideKey[] {
+/** Auto ohne Foto (Datei fehlt) und ohne Balken, deren Höhe nicht mitgeht. */
+export const ASSET_AUTO_TEXT_KEYS = ["A", "B", "E", "F", "G", "H", "I", "K", "L"] as const;
+/** Donut-Anteile: Labels füllbar, Geometrie fest — nur bei drei belegten Zahlen. */
+const ASSET_AUTO_DONUT: AssetSlideKey = "T3";
+
+export function allowedSlideKeys(answers: LinkedinAnswers, articleText = ""): AssetSlideKey[] {
   if (answers.variant !== "auto" && isSlideKey(answers.variant)) return [answers.variant];
   const picked = (answers.slide_types || []).filter(isSlideKey);
   if (picked.length) return [...new Set(picked)];
-  return [...ASSET_SLIDE_KEYS];
+  const keys: AssetSlideKey[] = [...ASSET_AUTO_TEXT_KEYS];
+  if (claimedNumbers(articleText).length >= 3) keys.push(ASSET_AUTO_DONUT);
+  return keys;
 }
 
 const ASSETTYP_BRIEFING = `<assettypen>
-LinkedIn Einzelbild: eine These, ein Gedanke. Genau ein sichtbares Feld trägt die Pointe. Foto-Layouts C, D und J nur mit image_hint; die Datei kommt vom Nutzer.
-LinkedIn Karussell: Folge von Gedanken, keine Wiederholung. Erste Folie setzt die These. Jede mittlere Folie einen Beleg oder Gegensatz. Letzte Folie den Aufruf im sichtbaren Feld der gewählten Variante (F, I oder K passen oft; B nur, wenn subtitle den Aufruf trägt). Das ist eine Richtlinie, keine Zwangsfolge.
-Ansprache: Entscheiderpapier in einer Minute. Lage aus dem Artikel. Optionen unterscheiden sich in der Sache. Empfehlung nennt eine Option plus roots_leistung. next_step ist ein Angebot von ROOTS an eine Rolle aus betroffene_rollen.
+LinkedIn Einzelbild: eine These, ein Gedanke. Genau ein sichtbares Feld trägt die Pointe. Foto-Layouts C, D und J nur, wenn der Nutzer sie gewählt hat; die Datei kommt vom Nutzer.
+LinkedIn Karussell: Folge von Gedanken, keine Wiederholung. Erste Folie setzt die These. Jede mittlere Folie einen Beleg oder Gegensatz. Dieselbe Ziffer darf nicht auf zwei Folien die Pointe tragen. Letzte Folie den Aufruf im sichtbaren Feld (F, I oder K passen oft).
+Ansprache: Entscheiderpapier in einer Minute. Lage aus dem Artikel. Optionen-name ist ein Satz mit Verb, kein Stichwort. Empfehlung nennt eine Option plus roots_leistung. next_step ist ein Angebot von ROOTS an person oder eine Rolle aus betroffene_rollen — nicht beides hintereinander.
 </assettypen>`;
 
 const LEITKENNZAHL = `<leitkennzahl>
 Du wählst die Leitkennzahl. Wir listen nur, was im Artikel existiert, in kennzahlen_im_artikel.
 Eine Folie E oder L: die Zahl, die die Signalthese trägt, nicht die erste im Text.
-Folie H und Infografiken T1–T5: nur Zahlen aus dieser Liste, jede an ihrem Beleg.
-Fehlt die Liste oder stehen dort nur qualitative Brüche: keine Kennzahl-Variante und keine Zahlen-Infografik, These qualitativ.
+Folie H und T3: nur Zahlen aus dieser Liste, jede an ihrem Beleg. Dieselbe Ziffer nicht auf G und H zugleich.
+Fehlt die Liste oder stehen dort nur qualitative Brüche: keine Kennzahl-Variante, These qualitativ.
+Säulen, Wasserfall und Balken (T1, T2, T4, T5) nur, wenn der Nutzer sie gewählt hat: ihre Höhe folgt nicht der Zahl.
 </leitkennzahl>`;
 
 function variantenBlock(keys: AssetSlideKey[], carousel: boolean): string {
@@ -737,18 +746,18 @@ function variantenBlock(keys: AssetSlideKey[], carousel: boolean): string {
   return `<varianten>
 ${zeilen.join("\n\n")}
 Nur diese Varianten. Ein Feld, das die Variante nicht zeigt, ist unsichtbar — die Pointe steht im sichtbaren Feld.
-E, H, L und Zahlen-Infografiken nur mit Einträgen aus kennzahlen_im_artikel, die keine qualitative Markierung tragen.
-S1–T6 darf Auto wählen, wenn alle Zeichnungs-Slots aus Artikel oder Kennzahlenliste füllbar sind. Sonst eine Textfolie.
+E, H, L und T3 nur mit Einträgen aus kennzahlen_im_artikel, die keine qualitative Markierung tragen.
+Foto-Layouts und Infografiken nur, wenn sie oben stehen. Auto erfindet kein Motiv und keine Balkenhöhe.
 ${laengen}
 ** und ~~ zaehlen nicht zur Zeichengrenze.
-Kein Slide wiederholt die Aussage eines anderen.
+Kein Slide wiederholt die Aussage eines anderen. Keine Ziffer auf zwei Folien.
 Auszeichnungen im Text, weil nur der Text weiss, wo sie hingehoeren: **Vorspann** wird fett gesetzt. Nutze das fuer die Pointe (ein kurzes Stichwort vor dem Satz, etwa „**Folge:** die Handschrift entscheidet") und in jeder Aufzaehlungszeile fuer die Behauptung vor dem Beleg ("**Datenbasis konsolidieren** - Fundament jedes Use-Cases"). Hoechstens eine fette Stelle je Feld. Kein Vorspann, der in jedem Slide gleich lautet.
 </varianten>`;
 }
 
-function linkedinPrompt(answers: LinkedinAnswers, daten: string): string {
+function linkedinPrompt(answers: LinkedinAnswers, daten: string, articleText: string): string {
   const carousel = answers.asset_type === "carousel";
-  const erlaubt = allowedSlideKeys(answers);
+  const erlaubt = allowedSlideKeys(answers, articleText);
   const auftrag = [
     carousel
       ? `Format: Carousel mit ${answers.slides} Slides, nicht mehr.`
@@ -830,6 +839,9 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
       ? `Handlungsaufruf, verbindlich: ${answers.cta}`
       : "Handlungsaufruf: formuliere ihn selbst, konkret und ohne Werbeton.",
     leistung ? `ROOTS-Leistung, verbindlich in recommendation nennen: ${leistung}.` : "",
+    asData(signal.person_name, 120)
+      ? `person im Signal: ${asData(signal.person_name, 120)}. next_step darf diese Person als Adressat nennen; dann keine Rolle extra anhängen.`
+      : "",
     rollen.length
       ? (answers.reader_side === "intern"
         ? `next_step nennt eine dieser Rollen als handelnde Verantwortung: ${rollen.join(", ")}.`
@@ -855,9 +867,9 @@ title: der Action Title, eine These mit Verb, höchstens 15 Wörter.
 standfirst: der tragende Gedanke in einem Satz, dahinter ein stützender Beleg aus dem Artikel.
 kpis: eine bis drei Kennzahlen mit kurzem value und erklärendem label. Nur belegte, ausgeschriebene Zahlen aus kennzahlen_im_artikel. Liegt keine Ziffer vor, lass kpis leer — erfinde keine qualitativen Ersatzgrössen als Zahl.
 situation: zwei bis vier Punkte zu Lage und Anlass, je mit lead als Stichwort und text als Satz. Nur aus artikel und evidence.
-options: zwei bis drei Handlungsoptionen mit name, pro und contra. Optionen unterscheiden sich in der Sache, nicht im Zeitpunkt. Nichtstun, Abwarten und „später dasselbe" sind keine Optionen.
+options: zwei bis drei Handlungsoptionen mit name, pro und contra. name ist ein Satz mit Verb, kein Stichwort („Technologie-Fokus“ ist unbrauchbar, „Die Marke zuerst positionieren“ trägt). Optionen unterscheiden sich in der Sache, nicht im Zeitpunkt. Nichtstun, Abwarten und „später dasselbe" sind keine Optionen.
 recommendation: die Empfehlung in einem Satz, sie benennt eine der Optionen und die ROOTS-Leistung aus roots_leistung.
-next_step: ein Angebot von ROOTS an eine Rolle aus betroffene_rollen, mit zeitlichem Bezug. Kein Arbeitsauftrag an den Kunden.
+next_step: ein Angebot von ROOTS an person oder eine Rolle aus betroffene_rollen, mit zeitlichem Bezug. Die Person aus dem Signal zählt als Adressat. Kein zweiter Satz „Gespräch mit Rolle“, wenn der Adressat schon genannt ist. Kein Arbeitsauftrag an den Kunden.
 cta: der Text des Handlungsknopfs, höchstens fünf Wörter.
 sources: die verwendeten Quellen im Format „Titel · Herausgeber · Jahr“, nur was in signal oder artikel steht.
 </aufbau>
@@ -876,8 +888,9 @@ export function buildAssetPrompt(
   answers: AssetAnswers,
 ): string {
   const daten = signalBlock(signal, article);
+  const body = String(article.content_de || article.cleaned_content || article.content || "");
   return kind === "linkedin"
-    ? linkedinPrompt(answers as LinkedinAnswers, daten)
+    ? linkedinPrompt(answers as LinkedinAnswers, daten, body)
     : memoPrompt(answers as MemoAnswers, signal, daten);
 }
 
@@ -975,23 +988,27 @@ export const ASSET_SCHEMA_MEMO = {
         type: "OBJECT",
         required: ["name", "pro", "contra"],
         properties: {
-          name: { type: "STRING" },
+          name: { type: "STRING", description: "Satz mit Verb, kein Stichwort." },
           pro: { type: "STRING" },
           contra: { type: "STRING" },
         },
       },
     },
     recommendation: { type: "STRING", description: "Empfehlung in einem Satz, benennt eine Option und die ROOTS-Leistung." },
-    next_step: { type: "STRING", description: "Nächster Schritt mit einer betroffenen Rolle und zeitlichem Bezug." },
+    next_step: { type: "STRING", description: "Angebot von ROOTS an person oder eine betroffene Rolle, mit zeitlichem Bezug. Kein zweiter Satz, wenn der Adressat schon genannt ist." },
     cta: { type: "STRING", description: "Text des Handlungsknopfs, höchstens fünf Wörter." },
     sources: { type: "ARRAY", items: { type: "STRING" }, description: "„Titel · Herausgeber · Jahr“, nur belegte Quellen." },
   },
 };
 
-export function assetResponseSchema(kind: AssetKind, answers: AssetAnswers): Record<string, unknown> {
+export function assetResponseSchema(
+  kind: AssetKind,
+  answers: AssetAnswers,
+  articleText = "",
+): Record<string, unknown> {
   if (kind === "memo") return ASSET_SCHEMA_MEMO;
   const clone = JSON.parse(JSON.stringify(ASSET_SCHEMA_LINKEDIN)) as typeof ASSET_SCHEMA_LINKEDIN;
-  clone.properties.slides.items.properties.variant.enum = allowedSlideKeys(answers as LinkedinAnswers);
+  clone.properties.slides.items.properties.variant.enum = allowedSlideKeys(answers as LinkedinAnswers, articleText);
   return clone;
 }
 
@@ -1065,6 +1082,14 @@ function mentions(haystack: string, needle: string): boolean {
 function isScheinoption(option: MemoOption): boolean {
   const name = option.name.toLowerCase();
   return /nichts\s*tun|nichtstun|abwarten|status\s*quo|keine aktion|aussitzen|spaeter dasselbe|später dasselbe/.test(name);
+}
+
+/** Ein Wort ist Stichwort. Zwei/drei Wörter ohne Verb auch. */
+function isStichwortOption(name: string): boolean {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 1) return true;
+  if (words.length >= 4) return false;
+  return !/\b[A-Za-zÄÖÜäöüß]{4,}(en|eln|ern|iert)\b/.test(name);
 }
 
 export function placePointe(slide: AssetSlide, last: boolean): AssetSlide {
@@ -1274,8 +1299,40 @@ function normalizeLinkedin(
   const postText = richText(raw.post_text, 1_300)
     || [kept[0].title, kept[0].takeaway || kept[0].subtitle].filter(Boolean).join("\n\n");
   rejectUnattested([postText, ...kept.map(slidePlain)].join("\n"), corpus, "Beitrag oder Slides");
+  rejectRepeatedLeadNumbers(kept);
 
   return { theme: answers.theme, post_text: postText, slides: kept };
+}
+
+/** Dieselbe Ziffer auf zwei Folien. post_text darf alle Zahlen noch einmal nennen. */
+function leadNumberKeys(value: string): string[] {
+  const keys = new Set<string>();
+  for (const n of claimedNumbers(value)) {
+    const key = digitKey(n);
+    if (key && key.length >= 2) keys.add(key);
+  }
+  for (const verbal of claimedVerbalNumbers(value)) {
+    if (isFractionClaim(verbal)) continue;
+    const wort = verbal.toLowerCase().match(new RegExp(`(?:${DE_WORD_ALT})`))?.[0];
+    const digit = wort ? DE_NUMBER_WORDS[wort] : "";
+    if (digit && digit.length >= 2) keys.add(digit);
+  }
+  return [...keys];
+}
+
+function rejectRepeatedLeadNumbers(slides: AssetSlide[]): void {
+  const firstSeen = new Map<string, number>();
+  for (let i = 0; i < slides.length; i += 1) {
+    for (const n of leadNumberKeys(slidePlain(slides[i]))) {
+      const prev = firstSeen.get(n);
+      if (prev !== undefined) {
+        throw new Error(
+          `Die Kennzahl ${n} steht auf Folie ${prev + 1} und Folie ${i + 1}. Jede Zahl nur auf einer Folie.`,
+        );
+      }
+      firstSeen.set(n, i);
+    }
+  }
 }
 
 function normalizeMemo(
@@ -1305,7 +1362,10 @@ function normalizeMemo(
   const rollen = Array.isArray(context.buyingCenterRoles)
     ? context.buyingCenterRoles.map((rolle) => String(rolle || "").trim()).filter(Boolean)
     : [];
-  if (rollen.length && !rollen.some((rolle) => mentions(nextStep, rolle))) {
+  const person = String(context.personName || "").trim();
+  const hatAdressat = (person && mentions(nextStep, person))
+    || rollen.some((rolle) => mentions(nextStep, rolle));
+  if (rollen.length && !hatAdressat) {
     nextStep = answers.reader_side === "intern"
       ? (nextStep ? `${rollen[0]}: ${nextStep}` : `${rollen[0]} setzt den nächsten Schritt in den kommenden zwei Wochen.`)
       : (nextStep
@@ -1323,6 +1383,17 @@ function normalizeMemo(
       !situation.length ? "situation" : "",
     ].filter(Boolean);
     throw new Error(`Der Ansprache fehlen tragende Felder: ${fehlt.join(", ")}. Geliefert wurden: ${Object.keys(raw).join(", ") || "keine Felder"}.`);
+  }
+
+  if (options.length < 2) {
+    throw new Error("Memo braucht zwei echte Optionen, keine Scheinoptionen.");
+  }
+  for (const opt of options) {
+    if (isStichwortOption(opt.name)) {
+      throw new Error(
+        `Optionsname „${opt.name}“ ist ein Stichwort. Schreib einen Satz mit Verb.`,
+      );
+    }
   }
 
   const corpus = [context.articleText, context.rootsOffering].filter(Boolean).join("\n");
@@ -1402,15 +1473,19 @@ export function assetTimeoutErrorText(model: string, timeoutMs: number): string 
   return `${model} hat nach ${Math.round(timeoutMs / 1000)} Sekunden nicht geantwortet.`;
 }
 
-/** Zweiter Versuch nur, wenn das Isolate noch Platz fuer einen kurzen Lauf hat. */
+/**
+ * Reparatur, solange Isolat noch ~40 s hat und First+Repair unter ~220 s
+ * bleiben (historischer Kill ~235 s). Hartes 90 s-Cutoff hat Aeffe nach
+ * 101 s ohne Repair gelassen.
+ */
+export const ASSET_REPAIR_DEADLINE_MS = 220_000;
+
 export function assetRepairTimeoutMs(elapsedMs: number): number | null {
   const rest = ASSET_WALL_CLOCK_MS - elapsedMs;
   if (rest < 40_000) return null;
-  // Am 13.8.2026 hat der Timeout-Manager den Hintergrundauftrag nach
-  // etwa 235 s beendet. Eine Reparatur nach einem langen ersten Lauf
-  // liess den Auftrag auf "running" stehen.
-  if (elapsedMs > 90_000) return null;
-  return Math.min(120_000, rest);
+  const vorKill = ASSET_REPAIR_DEADLINE_MS - elapsedMs;
+  if (vorKill < 40_000) return null;
+  return Math.min(90_000, rest, vorKill);
 }
 
 export function buildAssetRepairPrompt(prompt: string, mangel: string): string {
