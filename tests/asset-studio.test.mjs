@@ -242,8 +242,8 @@ test("alle Assets vom Desktop stehen als Layout zur Wahl", async () => {
     assert.ok(tpl.ASSET_LAYOUT_LABELS[key], `Layout ${key} ohne Bezeichnung`);
   }
   assert.match(studio, /ASSET_LAYOUTS\[slide\.variant\]/);
-  // Das Backend kennt nur A bis L, deshalb wird ein Layout darauf abgebildet.
-  assert.match(studio, /antworten\.variant = "B"/);
+  // Layouts gehen als Variante durch, nicht still auf B.
+  assert.doesNotMatch(studio, /antworten\.variant = "B"/);
 });
 
 test("jede Vorlage ist in sich geschlossen", async () => {
@@ -511,4 +511,124 @@ test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   assert.match(edge, /if \(!inhalt\.trim\(\)\)/);
   assert.match(edge, /empty completion, reasoning used/);
   assert.match(edge, /Tokenlimit vollständig zum Nachdenken verbraucht/);
+});
+
+test("K und Infografiken bleiben die gewaehlte Variante, nicht still B", () => {
+  assert.ok(backend.ASSET_VARIANTS.includes("K"));
+  assert.ok(backend.ASSET_VARIANTS.includes("J"));
+  assert.equal(backend.normalizeAssetAnswers("linkedin", { variant: "K" }).variant, "K");
+  assert.equal(backend.normalizeAssetAnswers("linkedin", { variant: "S1" }).variant, "S1");
+  assert.equal(backend.normalizeAssetAnswers("linkedin", { slide_pick: "A,H,G,I,L,B" }).slide_types.join(","), "A,H,G,I,L,B");
+  const schemaS1 = backend.assetResponseSchema("linkedin", backend.normalizeAssetAnswers("linkedin", { variant: "S1" }));
+  assert.deepEqual(schemaS1.properties.slides.items.properties.variant.enum, ["S1"]);
+  const schemaAuto = backend.assetResponseSchema("linkedin", backend.normalizeAssetAnswers("linkedin", {}));
+  assert.ok(schemaAuto.properties.slides.items.properties.variant.enum.includes("K"));
+  assert.ok(!schemaAuto.properties.slides.items.properties.variant.enum.includes("S1"));
+});
+
+test("Vorlage L traegt keine fremde 32-Prozent-Zeile mehr", async () => {
+  const tpl = await import("../asset-templates.js");
+  assert.doesNotMatch(tpl.ASSET_TEMPLATES.L, /32\s*%/);
+  assert.doesNotMatch(tpl.ASSET_TEMPLATES.L, /skalieren in Prozessen/);
+  assert.match(tpl.ASSET_TEMPLATES.L, /data-field="stat_label"/);
+  assert.match(tpl.ASSET_TEMPLATES.L, /repeat:bullets/);
+  assert.match(tpl.ASSET_TEMPLATES.L, /\{\{stat_label\}\}/);
+});
+
+test("Kennzahl-Varianten brauchen eine Ziffer im Artikel", () => {
+  const answers = backend.normalizeAssetAnswers("linkedin", {});
+  const roh = {
+    slides: [{ variant: "E", kicker: "DEEPFAKE", title: "Die Fälschung trifft den Handel", stat: { value: "25 %", label: "Anteil" }, footer_left: "ROOTS" }],
+  };
+  const erfunden = backend.normalizeAssetPayload("linkedin", JSON.stringify(roh), answers, {
+    articleText: "Etwa ein Viertel der Fälle betrifft Deepfakes, keine zehn Minuten entfernt.",
+  });
+  assert.equal(erfunden.slides[0].variant, "B");
+  assert.equal(erfunden.slides[0].stat.value, "");
+
+  const belegt = backend.normalizeAssetPayload("linkedin", JSON.stringify(roh), answers, {
+    articleText: "Der Anteil liegt bei 25 % der Fälle.",
+  });
+  assert.equal(belegt.slides[0].variant, "E");
+  assert.match(belegt.slides[0].stat.value, /25/);
+  assert.equal(backend.numberIsAttested("25 %", "etwa ein Viertel"), false);
+  assert.equal(backend.numberIsAttested("10 Autominuten", "keine zehn Autominuten"), false);
+  assert.equal(backend.numberIsAttested("47 Mrd.", "Retouren von 47 Mrd. USD"), true);
+});
+
+test("die Pointe wandert in ein sichtbares Feld, nicht ins tote takeaway", () => {
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{ variant: "B", kicker: "MARKE", title: "Die Marke führt das Quartal", takeaway: "Jetzt den Termin setzen", footer_left: "ROOTS" }],
+  }), backend.normalizeAssetAnswers("linkedin", {}));
+  assert.equal(payload.slides[0].subtitle, "Jetzt den Termin setzen");
+  const listicle = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{ variant: "F", kicker: "K", title: "Drei Hebel tragen", bullets: ["Erster Hebel"], takeaway: "Der Aufruf steht am Ende", footer_left: "R" }],
+  }), backend.normalizeAssetAnswers("linkedin", {}));
+  assert.ok(listicle.slides[0].bullets.includes("Der Aufruf steht am Ende"));
+});
+
+test("post_text behält Absätze und das Leerzeichen vor Prozent", () => {
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "Aufhänger zuerst.\n\nZweiter Absatz mit 14 % Anteil.\n\nJetzt den Termin setzen",
+    slides: [{ variant: "B", kicker: "K", title: "Die Marke führt", subtitle: "Ein Argument", footer_left: "R" }],
+  }), backend.normalizeAssetAnswers("linkedin", {}));
+  assert.match(payload.post_text, /Aufhänger zuerst\.\n\nZweiter Absatz/);
+  assert.match(payload.post_text, /14\u00a0%/);
+  assert.match(payload.post_text, /Jetzt den Termin setzen$/);
+});
+
+test("die Ansprache erzwingt ROOTS-Leistung, Rolle und echte Optionen", () => {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify({
+    title: "Der Umbau braucht eine Entscheidung",
+    standfirst: "Lage und Beleg aus dem Artikel",
+    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
+    options: [
+      { name: "Audit", pro: "Klarheit", contra: "Zeit" },
+      { name: "Nichts tun", pro: "Keine Kosten", contra: "Risiko bleibt" },
+    ],
+    recommendation: "Audit wählen",
+    next_step: "Nächste Woche klären",
+  }), backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }), {
+    rootsOffering: "Marketing Audit + Markenstrategie",
+    buyingCenterRoles: ["Marketingleitung"],
+  });
+  assert.match(memo.recommendation, /Marketing Audit/);
+  assert.match(memo.next_step, /Marketingleitung/);
+  assert.equal(memo.options.some((option) => /nichts tun/i.test(option.name)), false);
+  assert.equal(memo.confidential, "");
+  const intern = backend.normalizeAssetAnswers("memo", { reader_side: "intern", note: "intern" });
+  assert.equal(intern.reader_side, "intern");
+  assert.equal(intern.confidential, "Vertraulich · nur intern");
+  const kundeTrotzVermerk = backend.normalizeAssetAnswers("memo", { reader_side: "kunde", note: "intern" });
+  assert.equal(kundeTrotzVermerk.reader_side, "kunde");
+  assert.equal(kundeTrotzVermerk.confidential, "");
+});
+
+test("Prompt und Studio kennen Feldkarte, Leserseite und Überlauf-Gate", () => {
+  const prompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
+    backend.normalizeAssetAnswers("linkedin", {}));
+  assert.doesNotMatch(prompt, /Der Kontrast/);
+  assert.doesNotMatch(prompt, /genau drei Kennzahlen/);
+  assert.match(prompt, /\*\*Vorspann\*\* wird fett/);
+  assert.match(prompt, /\*\*Folge:\*\*/);
+  assert.match(prompt, /sichtbar title und subtitle/);
+  const memoPrompt = backend.buildAssetPrompt("memo",
+    { company: "Aeffe", roots_offering: "Marketing Audit + Markenstrategie", buying_center_roles: ["Vertrieb"] },
+    { title: "A", content_de: "Der Artikel." },
+    backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }));
+  assert.match(memoPrompt, /Leserseite: Kundenpapier/);
+  assert.match(memoPrompt, /Marketing Audit \+ Markenstrategie/);
+  assert.match(memoPrompt, /eine bis drei Kennzahlen/);
+  assert.match(memoPrompt, /Nichtstun/);
+  assert.match(studio, /key: "reader_side"/);
+  assert.match(studio, /function kachelUeberlauf/);
+  assert.match(studio, /scrollWidth > 1082/);
+  assert.match(studio, /Folie \$\{ueber\.join/);
+  assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
+  assert.match(edge, /checkCapacity\("asset"\)/);
+  assert.match(edge, /kind !== "asset"/);
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.1");
+  assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
+  assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
+  assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
 });

@@ -87,14 +87,13 @@ import {
   ASSET_EDITED_HTML_LIMIT,
   ASSET_MAX_TOTAL_TOKENS,
   ASSET_PROMPT_VERSION,
-  ASSET_SCHEMA_LINKEDIN,
-  ASSET_SCHEMA_MEMO,
   ASSET_STAGE_HOLD_MS,
   ASSET_SYSTEM_TEXT,
   AssetPayload,
   assetModelTimeoutMs,
   assetOutputTokenBudget,
   assetRepairTimeoutMs,
+  assetResponseSchema,
   assetTimeoutErrorText,
   buildAssetPrompt,
   buildAssetRepairPrompt,
@@ -644,8 +643,10 @@ async function buildSimpleRunAiErrorDetail(run: Record<string, unknown> | null |
 type CapacityVerdict = { ok: boolean; reason?: string; probeMs: number };
 
 const CAPACITY_PROBE_FALLBACK_MS = 5_000;
+/** Nutzerklick Asset: 800 ms war 30 ms zu knapp und hat die Notbremse gezogen. */
+const ASSET_CAPACITY_PROBE_MS = 2_500;
 
-async function checkCapacity(kind: "crawl" | "simple" | "analysis"): Promise<CapacityVerdict> {
+async function checkCapacity(kind: "crawl" | "simple" | "analysis" | "asset"): Promise<CapacityVerdict> {
   const admin = getAdminClient();
   let probeMs = 0;
   try {
@@ -663,15 +664,23 @@ async function checkCapacity(kind: "crawl" | "simple" | "analysis"): Promise<Cap
     .select("heavy_work_enabled, max_probe_ms, max_render_queue, quiet_hour_start, quiet_hour_end")
     .eq("id", true).maybeSingle();
 
-  const maxProbe = Number(guard?.max_probe_ms ?? 800);
   if (guard && guard.heavy_work_enabled === false) {
     return { ok: false, reason: "Schwere Arbeit ist per Notbremse abgeschaltet (ops_guard).", probeMs };
   }
+
+  // Ein Nutzerklick auf den Asset-Entwurf kostet einen halben Cent. Die
+  // Crawl-Schwelle (800 ms) hat solche Laeufe mit 830 ms verworfen und die
+  // Notbremse gezogen. Assets pruefen lockerer und pausieren ops_guard nicht.
+  const maxProbe = kind === "asset"
+    ? ASSET_CAPACITY_PROBE_MS
+    : Number(guard?.max_probe_ms ?? 800);
   if (probeMs > maxProbe) {
-    await admin.schema("signal_layer").from("ops_guard").update({
-      paused_reason: `Ausgesetzt: Datenbank antwortete in ${probeMs} ms (Grenze ${maxProbe} ms).`,
-      paused_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-    }).eq("id", true);
+    if (kind !== "asset") {
+      await admin.schema("signal_layer").from("ops_guard").update({
+        paused_reason: `Ausgesetzt: Datenbank antwortete in ${probeMs} ms (Grenze ${maxProbe} ms).`,
+        paused_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).eq("id", true);
+    }
     return { ok: false, reason: `Datenbank ist ausgelastet (${probeMs} ms statt unter ${maxProbe} ms).`, probeMs };
   }
   if (kind === "crawl") {
@@ -7846,7 +7855,7 @@ Deno.serve(async (req: Request) => {
       }
 
       case "generate_asset": {
-        const assetCapacity = await checkCapacity("simple");
+        const assetCapacity = await checkCapacity("asset");
         if (!assetCapacity.ok) return capacityResponse(origin, assetCapacity);
 
         const assetKind = String(body.kind || "");
@@ -7902,7 +7911,7 @@ Deno.serve(async (req: Request) => {
           await abschnitt("modell");
           const callOpts = {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
-            schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
+            schema: assetResponseSchema(assetKind, assetAnswers),
             maxOutputTokens: scope,
             // Denken und Antwort teilen sich dieses Limit. Gemessen am 13.8.2026
             // mit deepseek-v4-pro (Denken + Antwort):
@@ -7963,10 +7972,18 @@ Deno.serve(async (req: Request) => {
           });
           let kostenFelder = await modelCostFields(assetModel, result.usage);
           let tokenFelder = tokenFelderVon(result.usage);
+          const assetContext = {
+            articleText: [
+              assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
+              assetSignal.evidence, assetSignal.why_de, assetSignal.summary_de, assetSignal.headline_de,
+            ].filter(Boolean).join("\n"),
+            rootsOffering: assetSignal.roots_offering,
+            buyingCenterRoles: assetSignal.buying_center_roles,
+          };
           let payload: AssetPayload | null = null;
           let mangel = "";
           try {
-            payload = normalizeAssetPayload(assetKind, result.text, assetAnswers);
+            payload = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
           } catch (fehler) {
             mangel = fehler instanceof Error ? fehler.message : String(fehler);
           }
@@ -7994,7 +8011,7 @@ Deno.serve(async (req: Request) => {
             tokenFelder = tokenFelderVon(result.usage);
             mangel = "";
             try {
-              payload = normalizeAssetPayload(assetKind, result.text, assetAnswers);
+              payload = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
             } catch (fehler) {
               mangel = fehler instanceof Error ? fehler.message : String(fehler);
             }

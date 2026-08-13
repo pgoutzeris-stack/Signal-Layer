@@ -212,7 +212,33 @@ def regeln(key, b):
     elif key == "L":
         b = mit_feld(b, DIV("270px"), "stat_value")
         b = mit_feld(b, P("40px"), "title")
+        b = l_anmerkung_ersetzen(b)
     return b
+
+
+def l_anmerkung_ersetzen(html):
+    """Die Quelldatei traegt Beispieltext in der SVG ('aber nur 32 %').
+
+    Der Satz gehoert zum Musterasset, nicht zum Signal. Er wird durch
+    stat_label und einen Bullet-Block ersetzt, sonst erscheint er in jedem
+    L-Asset.
+    """
+    svg = re.search(r"<svg viewBox=\"0 0 320 240\".*?</svg>", html, re.S)
+    if not svg:
+        return html
+    anmerkung = (
+        '<p style="font-size:26px;line-height:1.35;color:var(--muted);margin-top:14px;max-width:560px;"'
+        ' data-field="stat_label">{{stat_label}}</p> </div>'
+        ' <div style="flex:0 0 360px;padding-top:28px;">'
+        ' <!--repeat:bullets--><div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:22px;">'
+        ' <div style="flex:0 0 auto;width:36px;height:36px;border-radius:50%;background:var(--brand);'
+        'color:#fff;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;"'
+        ' data-field="n">{{n}}</div>'
+        ' <span style="font-size:24px;line-height:1.3;color:var(--ink);font-weight:500;padding-top:4px;"'
+        ' data-field="item">{{item}}</span></div><!--/repeat-->'
+    )
+    # Die SVG sitzt neben der Zahl. An ihre Stelle tritt die Anmerkungsspalte.
+    return html[:svg.start()] + anmerkung + html[svg.end():]
 
 def schleife(html, block_muster, feldname, inner_regeln):
     m = re.search(block_muster, html, re.S)
