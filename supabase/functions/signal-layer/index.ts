@@ -7824,9 +7824,6 @@ Deno.serve(async (req: Request) => {
 
         const admin = getAdminClient();
         const [{ data: assetSignal }, { data: assetArticle, error: assetArticleError }] = await Promise.all([
-          // Bewusst alle Spalten: die Signalzeile ist ueber mehrere Migrationen
-          // gewachsen, und ein fehlender Spaltenname wuerde die ganze Abfrage
-          // scheitern lassen.
           admin.schema("signal_layer").from("simple_signals").select("*")
             .eq("article_id", assetArticleId).maybeSingle(),
           admin.schema("signal_layer").from("articles")
@@ -7844,149 +7841,103 @@ Deno.serve(async (req: Request) => {
         const assetKey = await modelApiKey(assetModel);
         if (!assetKey) return errorResponse(origin, `Für ${assetModel} ist kein API-Schlüssel hinterlegt`, 500);
 
-        const assetStartedAt = Date.now();
-        const assetResult = await callJsonModel({
-          model: assetModel,
-          apiKey: assetKey,
-          systemText: ASSET_SYSTEM_TEXT,
-          prompt: buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers),
-          schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
-          // Ein Carousel mit acht Slides ist ein Vielfaches einer Kachel. Mit
-          // festen 3.000 Tokens bricht die Antwort mitten im JSON ab, und der
-          // Aufruf ist trotzdem bezahlt. DeepSeek teilt dieses Budget zudem mit
-          // seinem Reasoning, deshalb bis an die Obergrenze gehen.
-          maxOutputTokens: assetKind === "memo" ? 4_000
-            : (assetAnswers as { asset_type?: string; slides?: number }).asset_type === "carousel"
-              ? 8_000
-              : 3_000,
-          temperature: 0.35,
-          // Ein Aufruf dauert gemessen 69 bis 76 Sekunden. Zwei davon
-          // hintereinander reissen die Verbindung, bevor irgendetwas
-          // geschrieben ist - im Browser stand dann "Load failed".
-          timeoutMs: 75_000,
-          attempts: 1,
-        });
-
-        if (!assetResult.ok) {
-          await admin.schema("signal_layer").from("ai_usage_events").insert({
-            article_id: assetArticleId, operation: "asset_generation", model: assetModel, status: "error",
-            prompt_version: ASSET_PROMPT_VERSION, attempt: assetResult.attempts,
-            duration_ms: Date.now() - assetStartedAt,
-            error_code: `http_${assetResult.status || "network"}`,
-            error_message: assetResult.error.slice(0, 1000),
-            ...zeroCostFields(assetModel),
-          });
-          // Klartext statt Sammelmeldung: der Nutzer soll sehen, ob Guthaben,
-          // Schluessel, Auslastung oder eine Zeitueberschreitung dahintersteckt.
-          const roh = assetResult.error || "";
-          const klartext = /insufficient balance|spending cap/i.test(roh)
-            ? `Beim Anbieter ${assetModel} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`
-            : /invalid api key|unauthorized|401/i.test(roh)
-              ? `Der API-Schlüssel für ${assetModel} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`
-              : /rate limit|429/i.test(roh)
-                ? `${assetModel} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`
-                : /timeout|aborted/i.test(roh)
-                  ? `${assetModel} hat nach 90 Sekunden nicht geantwortet.`
-                  : `${assetModel} hat mit ${assetResult.status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
-          return errorResponse(origin, klartext, 502);
-        }
-
-        // Die Tokens sind bezahlt, sobald die Antwort da ist. Der Kostensatz
-        // wird deshalb einmal berechnet und sowohl an das Erfolgs- als auch an
-        // das Fehlerereignis gehaengt.
-        const assetUsage = assetResult.usage;
-        const assetCostFields = await modelCostFields(assetModel, assetUsage);
-        const assetUsageRow = {
-          article_id: assetArticleId, operation: "asset_generation", model: assetModel,
-          attempt: assetResult.attempts, prompt_version: ASSET_PROMPT_VERSION,
-          input_tokens: assetUsage.input + assetUsage.cachedInput, output_tokens: assetUsage.output,
-          thinking_tokens: assetUsage.thinking, total_tokens: assetUsage.total,
-          ...assetCostFields, duration_ms: Date.now() - assetStartedAt,
-        };
-
-        let assetPayload: AssetPayload | null = null;
-        let assetInvalidMessage = "";
-        try {
-          assetPayload = normalizeAssetPayload(assetKind, assetResult.text, assetAnswers);
-        } catch (assetError) {
-          assetInvalidMessage = assetError instanceof Error ? assetError.message : String(assetError);
-          // Die Tokens sind bezahlt. Ein zweiter, gezielter Versuch mit dem
-          // Mangel im Prompt ist billiger als ein verworfener Lauf - dasselbe
-          // Muster nutzt die Simple-Pipeline bei unlesbaren Antworten.
-          // Reparatur nur mit echtem Zeitbudget. Nach einem langen ersten
-          // Aufruf ist ein zweiter garantiert zu spaet, und dann ist eine
-          // ehrliche Fehlermeldung besser als eine abgerissene Verbindung.
-          const restMs = 80_000 - (Date.now() - assetStartedAt);
-          const repairResult = restMs < 35_000 ? null : await callJsonModel({
-            model: assetModel,
-            apiKey: assetKey,
-            systemText: ASSET_SYSTEM_TEXT,
-            prompt: `${buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers)}\n\n<reparatur>Der vorige Versuch war unbrauchbar: ${assetInvalidMessage}\nAntworte erneut, vollstaendig und ausschliesslich als JSON-Objekt. Kuerze notfalls die Texte, aber liefere alle Pflichtfelder.</reparatur>`,
-            schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
-            maxOutputTokens: 8_000,
-            temperature: 0.2,
-            timeoutMs: Math.max(20_000, restMs - 5_000),
-            attempts: 1,
-          });
-          if (repairResult?.ok) {
-            const repairCost = await modelCostFields(assetModel, repairResult.usage);
-            await admin.schema("signal_layer").from("ai_usage_events").insert({
-              article_id: assetArticleId, operation: "asset_generation", model: assetModel, status: "success",
-              prompt_version: ASSET_PROMPT_VERSION, attempt: repairResult.attempts + assetResult.attempts,
-              input_tokens: repairResult.usage.input + repairResult.usage.cachedInput,
-              output_tokens: repairResult.usage.output, thinking_tokens: repairResult.usage.thinking,
-              total_tokens: repairResult.usage.total, ...repairCost, duration_ms: Date.now() - assetStartedAt,
-            });
-            try {
-              assetPayload = normalizeAssetPayload(assetKind, repairResult.text, assetAnswers);
-              assetInvalidMessage = "";
-            } catch (repairError) {
-              assetInvalidMessage = `${assetInvalidMessage} Auch der Reparaturversuch scheiterte: ${repairError instanceof Error ? repairError.message : String(repairError)}`;
-            }
-          }
-        }
-        if (!assetPayload) {
-          await admin.schema("signal_layer").from("ai_usage_events")
-            // Die Modellantwort mit ins Protokoll: ohne sie ist ein Fehlversuch
-            // hinterher nicht mehr nachvollziehbar.
-            .insert({ ...assetUsageRow, status: "error", error_code: "invalid_response",
-              error_message: `${assetInvalidMessage}\n---\n${String(assetResult.text || "").slice(0, 1500)}`.slice(0, 3000) });
-          return errorResponse(origin, assetInvalidMessage, 502);
-        }
-
-        const { data: assetUsageEvent, error: assetUsageError } = await admin.schema("signal_layer")
-          .from("ai_usage_events").insert({ ...assetUsageRow, status: "success" }).select("id").single();
-        if (assetUsageError) return errorResponse(origin, `Kosten konnten nicht gebucht werden: ${assetUsageError.message}`, 500);
-
+        // Der Auftrag wird angelegt und sofort quittiert. Ein Modellaufruf dauert
+        // 70 Sekunden und mehr; der Browser bricht eine Anfrage nach etwa 60 ab
+        // und meldet nur "Load failed". Die Arbeit laeuft deshalb im Hintergrund
+        // weiter, das Frontend fragt den Auftrag ab.
         const { data: assetRow, error: assetInsertError } = await admin.schema("signal_layer")
           .from("generated_assets").insert({
-            kind: assetKind,
-            article_id: assetArticleId,
-            signal_id: assetSignal.id,
+            kind: assetKind, status: "running",
+            article_id: assetArticleId, signal_id: assetSignal.id,
             company: assetSignal.company || null,
-            answers: assetAnswers,
-            payload: assetPayload,
-            model: assetModel,
-            prompt_version: ASSET_PROMPT_VERSION,
-            usage_event_id: assetUsageEvent?.id || null,
+            answers: assetAnswers, payload: null,
+            model: assetModel, prompt_version: ASSET_PROMPT_VERSION,
             created_by: auth?.userId || null,
-            // Tokens und tatsaechliche Kosten auch auf der Assetzeile, wie bei
-            // den Artikeln. Derselbe Kostensatz wie im Ereignis, damit beide
-            // Zahlen nie auseinanderlaufen koennen.
-            input_tokens: assetUsage.input + assetUsage.cachedInput,
-            cached_input_tokens: assetUsage.cachedInput,
-            output_tokens: assetUsage.output,
-            thinking_tokens: assetUsage.thinking,
-            total_tokens: assetUsage.total,
-            cost_usd: assetCostFields.estimated_cost_usd ?? null,
-            cost_eur: assetCostFields.estimated_cost_eur ?? null,
-            native_cost: assetCostFields.native_cost ?? null,
-            pricing_currency: assetCostFields.pricing_currency ?? null,
-            pricing_version: assetCostFields.pricing_version ?? null,
-            duration_ms: Date.now() - assetStartedAt,
           }).select("*").single();
         if (assetInsertError) return errorResponse(origin, assetInsertError.message, 500);
+
+        const arbeit = (async () => {
+          const startedAt = Date.now();
+          const scope = (assetAnswers as { asset_type?: string }).asset_type === "carousel" ? 8_000
+            : assetKind === "memo" ? 4_000 : 3_000;
+          const result = await callJsonModel({
+            model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
+            prompt: buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers),
+            schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
+            maxOutputTokens: scope, temperature: 0.35, timeoutMs: 120_000, attempts: 2,
+          });
+          const usageRow = {
+            article_id: assetArticleId, operation: "asset_generation", model: assetModel,
+            attempt: result.attempts, prompt_version: ASSET_PROMPT_VERSION,
+            duration_ms: Date.now() - startedAt,
+          };
+          const scheitern = async (nachricht: string, code: string, kosten: Record<string, unknown>) => {
+            await admin.schema("signal_layer").from("ai_usage_events")
+              .insert({ ...usageRow, ...kosten, status: "error", error_code: code, error_message: nachricht.slice(0, 3000) });
+            await admin.schema("signal_layer").from("generated_assets")
+              .update({ status: "error", error_message: nachricht.slice(0, 2000), updated_at: new Date().toISOString() })
+              .eq("id", assetRow.id);
+          };
+
+          if (!result.ok) {
+            const roh = result.error || "";
+            const klartext = /insufficient balance|spending cap/i.test(roh)
+              ? `Beim Anbieter ${assetModel} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`
+              : /invalid api key|unauthorized|401/i.test(roh)
+                ? `Der API-Schlüssel für ${assetModel} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`
+                : /rate limit|429/i.test(roh)
+                  ? `${assetModel} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`
+                  : /timeout|aborted/i.test(roh)
+                    ? `${assetModel} hat nach 120 Sekunden nicht geantwortet.`
+                    : `${assetModel} hat mit ${result.status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
+            await scheitern(klartext, `http_${result.status || "network"}`, zeroCostFields(assetModel));
+            return;
+          }
+
+          const kostenFelder = await modelCostFields(assetModel, result.usage);
+          const tokenFelder = {
+            input_tokens: result.usage.input + result.usage.cachedInput, output_tokens: result.usage.output,
+            thinking_tokens: result.usage.thinking, total_tokens: result.usage.total,
+          };
+          let payload: AssetPayload | null = null;
+          let mangel = "";
+          try {
+            payload = normalizeAssetPayload(assetKind, result.text, assetAnswers);
+          } catch (fehler) {
+            mangel = fehler instanceof Error ? fehler.message : String(fehler);
+          }
+          if (!payload) {
+            await scheitern(`${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`,
+              "invalid_response", { ...kostenFelder, ...tokenFelder });
+            return;
+          }
+          const { data: usageEvent } = await admin.schema("signal_layer").from("ai_usage_events")
+            .insert({ ...usageRow, ...kostenFelder, ...tokenFelder, status: "success" }).select("id").single();
+          await admin.schema("signal_layer").from("generated_assets").update({
+            status: "done", payload, error_message: null, usage_event_id: usageEvent?.id || null,
+            ...tokenFelder, cached_input_tokens: result.usage.cachedInput,
+            cost_usd: kostenFelder.estimated_cost_usd ?? null, cost_eur: kostenFelder.estimated_cost_eur ?? null,
+            native_cost: kostenFelder.native_cost ?? null, pricing_currency: kostenFelder.pricing_currency ?? null,
+            pricing_version: kostenFelder.pricing_version ?? null, duration_ms: Date.now() - startedAt,
+            updated_at: new Date().toISOString(),
+          }).eq("id", assetRow.id);
+        })().catch(async (fehler) => {
+          await getAdminClient().schema("signal_layer").from("generated_assets")
+            .update({ status: "error", error_message: String(fehler).slice(0, 2000), updated_at: new Date().toISOString() })
+            .eq("id", assetRow.id);
+        });
+        EdgeRuntime.waitUntil(arbeit);
         return corsResponse(origin, { asset: assetRow });
+      }
+
+      case "get_asset": {
+        const gefragteId = String(body.asset_id || "");
+        if (!gefragteId) return errorResponse(origin, "asset_id fehlt");
+        const { data: geladen, error: ladeFehler } = await getAdminClient().schema("signal_layer")
+          .from("generated_assets").select("*").eq("id", gefragteId).maybeSingle();
+        if (ladeFehler) return errorResponse(origin, ladeFehler.message, 500);
+        if (!geladen) return errorResponse(origin, "Asset nicht gefunden", 404);
+        return corsResponse(origin, { asset: geladen });
       }
 
       case "save_asset": {

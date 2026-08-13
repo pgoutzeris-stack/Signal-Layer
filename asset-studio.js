@@ -586,7 +586,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-0700";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-1000";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -975,9 +975,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.error = "";
     render();
     try {
-      // Das Backend kennt nur A bis L. Ein Infografik-Layout waehlt inhaltlich
-      // dieselben Felder wie B, deshalb wird es dafuer gemeldet und die Wahl
-      // separat mitgeschickt.
       const gewaehlt = state.answers.variant;
       const antworten = { ...state.answers, layout: gewaehlt };
       if (gewaehlt && !MODEL_VARIANTS.includes(gewaehlt) && gewaehlt !== "auto") antworten.variant = "B";
@@ -988,7 +985,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       state.assetId = row.id || null;
-      adoptPayload(row.payload || row);
+      // Der Auftrag laeuft im Hintergrund weiter: ein Modellaufruf dauert laenger
+      // als der Browser eine Anfrage offen haelt. Also fragen statt warten.
+      const fertig = row.status === "running" ? await warteAufAsset(row.id) : row;
+      if (fertig.status === "error") throw new Error(fertig.error_message || "Der Entwurf ist fehlgeschlagen.");
+      state.assetId = fertig.id || state.assetId;
+      adoptPayload(fertig.payload || fertig);
       state.busy = false;
       render();
     } catch (err) {
@@ -998,6 +1000,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.payload = null;
       render();
     }
+  }
+
+  /** Fragt den Auftrag ab, bis er fertig ist. Bis zu vier Minuten. */
+  async function warteAufAsset(id) {
+    const bis = Date.now() + 240_000;
+    let wartezeit = 2_500;
+    while (Date.now() < bis) {
+      await new Promise((r) => setTimeout(r, wartezeit));
+      wartezeit = Math.min(wartezeit + 500, 6_000);
+      const res = await api("get_asset", { asset_id: id });
+      const row = res && typeof res === "object" ? (res.asset || res) : {};
+      if (row.status && row.status !== "running") return row;
+    }
+    throw new Error("Der Entwurf ist nach vier Minuten nicht fertig geworden. Der Auftrag läuft weiter, versuche es in einer Minute erneut.");
   }
 
   function adoptPayload(raw) {

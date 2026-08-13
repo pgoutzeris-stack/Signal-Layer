@@ -65,3 +65,16 @@ alter table signal_layer.generated_assets
   add column if not exists pricing_currency text,
   add column if not exists pricing_version text,
   add column if not exists duration_ms integer;
+
+-- Der Browser haelt eine Anfrage nur etwa 60 Sekunden, ein Entwurf braucht 70
+-- und mehr. Der Auftrag laeuft deshalb im Hintergrund weiter und wird abgefragt.
+alter table signal_layer.generated_assets
+  add column if not exists status text not null default 'done',
+  add column if not exists error_message text;
+alter table signal_layer.generated_assets
+  drop constraint if exists generated_assets_status_check;
+alter table signal_layer.generated_assets
+  add constraint generated_assets_status_check check (status in ('running', 'done', 'error'));
+alter table signal_layer.generated_assets alter column payload drop not null;
+create index if not exists generated_assets_status_idx
+  on signal_layer.generated_assets (status, created_at desc) where status = 'running';
