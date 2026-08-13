@@ -586,7 +586,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-0100";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-0400";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -747,12 +747,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (state.step === "draft") {
       if (state.busy) return `<div class="as-loader" role="status" aria-label="Wird erzeugt"></div>`;
       if (state.error) {
+        // Der Servertext ist die einzige belastbare Auskunft und steht deshalb
+        // wortwoertlich da, nicht hinter einer Sammelmeldung.
         return `<div class="as-error">
           <strong>Der Entwurf konnte nicht erzeugt werden</strong>
           <p>${esc(state.error)}</p>
-          <div class="as-topactions">
+          <div class="as-actions">
+            <button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Zurück zum Fragebogen</button>
             <button type="button" class="as-btn as-btn--primary" data-act="generate"><i class="fa-solid fa-rotate-right"></i>Erneut versuchen</button>
-            <button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Fragebogen</button>
           </div>
         </div>`;
       }

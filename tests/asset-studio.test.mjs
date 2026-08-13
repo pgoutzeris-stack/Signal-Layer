@@ -342,3 +342,27 @@ test("fetter Vorspann und Streichung ueberleben den Platzhalter", () => {
   assert.match(payload.slides[0].takeaway, /\*\*Pointe:\*\*/);
   assert.match(payload.slides[0].bullets[0], /\*\*Fett\*\*/);
 });
+
+test("Fehler beim Entwurf nennen die Ursache, nicht nur ihr Scheitern", async () => {
+  // Eine Sammelmeldung ("bitte erneut versuchen") verschweigt, ob Guthaben,
+  // Schluessel, Auslastung oder eine unbrauchbare Antwort schuld war.
+  const a = backend.normalizeAssetAnswers("linkedin", {});
+  const faelle = [
+    ["", /leere Antwort/],
+    ["Ich kann das nicht.", /kein JSON-Objekt/],
+    ['{"post_text":"x"}', /kein Feld "slides"/],
+    ['{"slides":[{}]}', /inhaltsleer/],
+  ];
+  for (const [roh, muster] of faelle) {
+    assert.throws(() => backend.normalizeAssetPayload("linkedin", roh, a), muster, `Fall ${JSON.stringify(roh)}`);
+  }
+  assert.throws(() => backend.normalizeAssetPayload("memo", '{"kicker":"K"}', backend.normalizeAssetAnswers("memo", {})),
+    /fehlen tragende Felder: title/);
+  // Transportfehler bekommen Klartext je Ursache.
+  for (const muster of [/kein Guthaben mehr verfügbar/, /API-Schlüssel/, /Rate Limit/, /nicht geantwortet/]) {
+    assert.match(edge, muster);
+  }
+  // Das Studio zeigt den Servertext und laesst wiederholen.
+  assert.match(studio, /class="as-error"/);
+  assert.match(studio, /Erneut versuchen/);
+});

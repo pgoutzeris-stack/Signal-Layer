@@ -563,16 +563,27 @@ export const ASSET_SCHEMA_MEMO = {
  * legt im json_object-Modus gelegentlich Code-Zäune oder einen Rahmensatz
  * darum. Beides darf einen bereits bezahlten Aufruf nicht wertlos machen.
  */
+/** Kurzer, zitierbarer Ausschnitt der Modellantwort fuer die Fehlermeldung. */
+function probe(raw: unknown, max = 180): string {
+  const t = String(raw ?? "").replace(/\s+/g, " ").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+
 function parseAssetAnswer(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
   const source = String(raw ?? "").replace(/```(?:json)?/gi, "").trim();
+  if (!source) throw new Error("Das Modell hat eine leere Antwort geschickt.");
   const start = source.indexOf("{");
   const end = source.lastIndexOf("}");
-  if (start < 0 || end <= start) return {};
+  // Konkret statt generisch: der Nutzer soll sehen, was ankam.
+  if (start < 0 || end <= start) {
+    throw new Error(`Die Antwort war kein JSON-Objekt. Angekommen ist: "${probe(source)}"`);
+  }
   try {
     return record(JSON.parse(source.slice(start, end + 1)));
-  } catch {
-    return {};
+  } catch (fehler) {
+    const grund = fehler instanceof Error ? fehler.message : String(fehler);
+    throw new Error(`Die Antwort war beschaedigtes JSON (${grund}). Anfang: "${probe(source, 120)}"`);
   }
 }
 
@@ -618,7 +629,12 @@ function normalizeLinkedin(raw: Record<string, unknown>, answers: LinkedinAnswer
   const slides = (Array.isArray(raw.slides) ? raw.slides : [])
     .map((entry) => normalizeSlide(entry, fallbackVariant))
     .filter(slideHasSubstance);
-  if (!slides.length) throw new Error("Das Modell hat kein brauchbares LinkedIn-Asset geliefert.");
+  if (!slides.length) {
+    const roh = Array.isArray(raw.slides) ? raw.slides.length : 0;
+    throw new Error(roh === 0
+      ? `Die Antwort enthielt kein Feld "slides". Vorhandene Felder: ${Object.keys(raw).join(", ") || "keine"}.`
+      : `Alle ${roh} gelieferten Slides waren inhaltsleer: kein Titel, kein Zitat, keine Kennzahl, keine Aufzählung.`);
+  }
 
   // Zu viele Slides werden gekappt, zu wenige nicht erfunden: ein leerer Slide
   // waere im Beitrag sichtbar, ein fehlender faellt niemandem auf.
@@ -650,7 +666,13 @@ function normalizeMemo(raw: Record<string, unknown>, answers: MemoAnswers): Memo
   // Ein Titel allein ist noch keine Vorlage: ohne Standfirst, Lage oder
   // Empfehlung bliebe das Dokument eine Ueberschrift auf leerem Papier.
   if (!title || !(standfirst || recommendation || situation.length)) {
-    throw new Error("Das Modell hat keine brauchbare Entscheidervorlage geliefert.");
+    const fehlt = [
+      !title ? "title" : "",
+      !standfirst ? "standfirst" : "",
+      !recommendation ? "recommendation" : "",
+      !situation.length ? "situation" : "",
+    ].filter(Boolean);
+    throw new Error(`Der Ansprache fehlen tragende Felder: ${fehlt.join(", ")}. Geliefert wurden: ${Object.keys(raw).join(", ") || "keine Felder"}.`);
   }
 
   return {

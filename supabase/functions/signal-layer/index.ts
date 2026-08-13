@@ -7866,7 +7866,19 @@ Deno.serve(async (req: Request) => {
             error_message: assetResult.error.slice(0, 1000),
             ...zeroCostFields(assetModel),
           });
-          return errorResponse(origin, "Das Modell konnte kein Asset erzeugen. Bitte erneut versuchen.", 502);
+          // Klartext statt Sammelmeldung: der Nutzer soll sehen, ob Guthaben,
+          // Schluessel, Auslastung oder eine Zeitueberschreitung dahintersteckt.
+          const roh = assetResult.error || "";
+          const klartext = /insufficient balance|spending cap/i.test(roh)
+            ? `Beim Anbieter ${assetModel} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`
+            : /invalid api key|unauthorized|401/i.test(roh)
+              ? `Der API-Schlüssel für ${assetModel} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`
+              : /rate limit|429/i.test(roh)
+                ? `${assetModel} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`
+                : /timeout|aborted/i.test(roh)
+                  ? `${assetModel} hat nach 90 Sekunden nicht geantwortet.`
+                  : `${assetModel} hat mit ${assetResult.status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
+          return errorResponse(origin, klartext, 502);
         }
 
         // Die Tokens sind bezahlt, sobald die Antwort da ist. Der Kostensatz
