@@ -410,3 +410,15 @@ test("die Ladeanzeige benennt echte Schritte und laeuft nur beim Arbeiten", () =
   // Wer Bewegung abgeschaltet hat, bekommt keine.
   assert.match(studio, /prefers-reduced-motion: reduce/);
 });
+
+test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
+  // Belegt am 13.8.2026: input 3.252, thinking 5.500, output 0. Denken und
+  // Antwort teilen bei DeepSeek dasselbe Limit, und 8.192 waren zu knapp.
+  assert.match(edge, /maxTotalTokens\?: number/);
+  assert.match(edge, /max_tokens: options\.maxTotalTokens/);
+  assert.match(edge, /maxTotalTokens: scope \+ 12_000/);
+  // Eine leere Antwort trotz HTTP 200 ist ein Fehler, kein Erfolg.
+  assert.match(edge, /if \(!inhalt\.trim\(\)\)/);
+  assert.match(edge, /empty completion, reasoning used/);
+  assert.match(edge, /Tokenlimit vollständig zum Nachdenken verbraucht/);
+});

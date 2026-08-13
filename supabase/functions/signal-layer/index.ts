@@ -2837,6 +2837,8 @@ type ModelCallOptions = {
   systemText?: string;
   schema?: unknown;
   maxOutputTokens: number;
+  /** Hartes Gesamtlimit fuer Denken plus Antwort. Ohne Angabe gilt die Formel. */
+  maxTotalTokens?: number;
   temperature?: number;
   thinkingLevel?: string;
   timeoutMs?: number;
@@ -2877,8 +2879,11 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
       ],
       ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
       // Reasoning tokens share this budget with the answer, so the schema needs
-      // extra headroom on top of the configured answer size.
-      max_tokens: Math.min(Math.max(options.maxOutputTokens, 3_000) + 2_500, 8_192),
+      // extra headroom on top of the configured answer size. Wer ein hartes
+      // Limit kennt, setzt es: bei einem Asset hat das Denken am 13.8.2026 die
+      // vollen 5.500 Tokens verbraucht und null fuer die Antwort gelassen.
+      max_tokens: options.maxTotalTokens
+        ?? Math.min(Math.max(options.maxOutputTokens, 3_000) + 2_500, 8_192),
       temperature: options.temperature ?? 0,
       stream: false,
     })
@@ -2924,11 +2929,27 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
     const promptTokens = Number(usageMeta.prompt_tokens || 0);
     const completion = Number(usageMeta.completion_tokens || 0);
     const reasoning = Number(usageMeta.completion_tokens_details?.reasoning_tokens || 0);
+    const inhalt = String(payload?.choices?.[0]?.message?.content || "");
+    // HTTP 200 mit leerem Inhalt heisst bei DeepSeek: das Denken hat das
+    // Tokenlimit aufgebraucht. Das als Fehler melden, nicht als Erfolg mit
+    // leerem Text - so greift beim Aufrufer der Wiederholungsweg.
+    if (!inhalt.trim()) {
+      return {
+        ok: false, status: response.status,
+        error: `empty completion, reasoning used ${reasoning} of ${usageMeta.completion_tokens || 0} tokens`,
+        text: "", attempts: attemptsUsed,
+        usage: {
+          input: Number(usageMeta.prompt_cache_miss_tokens ?? Math.max(promptTokens - cached, 0)),
+          cachedInput: cached, output: Math.max(completion - reasoning, 0),
+          thinking: reasoning, total: Number(usageMeta.total_tokens || promptTokens + completion),
+        },
+      };
+    }
     return {
       ok: true,
       status: response.status,
       error: "",
-      text: payload?.choices?.[0]?.message?.content || "",
+      text: inhalt,
       usage: {
         input: Number(usageMeta.prompt_cache_miss_tokens ?? Math.max(promptTokens - cached, 0)),
         cachedInput: cached,
@@ -7864,7 +7885,11 @@ Deno.serve(async (req: Request) => {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
             prompt: buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers),
             schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
-            maxOutputTokens: scope, temperature: 0.35, timeoutMs: 120_000, attempts: 2,
+            maxOutputTokens: scope,
+            // Denken und Antwort teilen sich dieses Limit. Mit 8.192 blieb nach
+            // dem Reasoning nichts fuer das JSON uebrig.
+            maxTotalTokens: scope + 12_000,
+            temperature: 0.35, timeoutMs: 120_000, attempts: 2,
           });
           const usageRow = {
             article_id: assetArticleId, operation: "asset_generation", model: assetModel,
@@ -7887,7 +7912,9 @@ Deno.serve(async (req: Request) => {
                 ? `Der API-Schlüssel für ${assetModel} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`
                 : /rate limit|429/i.test(roh)
                   ? `${assetModel} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`
-                  : /timeout|aborted/i.test(roh)
+                  : /empty completion/i.test(roh)
+              ? `${assetModel} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${roh}). Ein kürzerer Fragebogen oder weniger Slides hilft.`
+              : /timeout|aborted/i.test(roh)
                     ? `${assetModel} hat nach 120 Sekunden nicht geantwortet.`
                     : `${assetModel} hat mit ${result.status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
             await scheitern(klartext, `http_${result.status || "network"}`, zeroCostFields(assetModel));
