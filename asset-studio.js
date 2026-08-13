@@ -605,7 +605,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-1620";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260813-1745";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1086,11 +1086,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Muss ueber dem Zeitfenster des Modells liegen (bis 280 s beim
     // 6-Slide-Karussell), sonst gibt die Anzeige auf, waehrend der Auftrag
     // noch laeuft, und das fertige Ergebnis sieht niemand.
+    // 800 ms, dann 1,0 / 1,2 s: unter der 2 s Pause von pruefen/fuellen,
+    // damit die Anzeige die kurzen Abschnitte nicht ueberspringt.
     const bis = Date.now() + 360_000;
-    let wartezeit = 2_500;
+    let wartezeit = 800;
     while (Date.now() < bis) {
       await new Promise((r) => setTimeout(r, wartezeit));
-      wartezeit = Math.min(wartezeit + 500, 6_000);
+      wartezeit = Math.min(wartezeit + 200, 1_200);
       const res = await api("get_asset", { asset_id: id });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       ladeAbschnittSetzen(row.stage);

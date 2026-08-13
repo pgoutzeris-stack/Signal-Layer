@@ -707,3 +707,48 @@ export function normalizeAssetPayload(kind: AssetKind, raw: unknown, answers: As
     ? normalizeLinkedin(parsed, answers as LinkedinAnswers)
     : normalizeMemo(parsed, answers as MemoAnswers);
 }
+
+// ---------------------------------------------------------------------------
+// Zeit und Budget des Modellaufrufs
+// ---------------------------------------------------------------------------
+
+/** Denken plus Antwort. Gemessenes Maximum lag bei 7.153 Tokens. */
+export const ASSET_MAX_TOTAL_TOKENS = 20_000;
+
+/**
+ * Pruefen und Fuellen dauern sonst Millisekunden. Das Studio fragt hoechstens
+ * alle 1,2 s ab - ohne diese Pause sieht niemand den Abschnitt.
+ */
+export const ASSET_STAGE_HOLD_MS = 2_000;
+
+/** Paid-Plan-Isolate (400 s) minus Schreibpuffer. */
+export const ASSET_WALL_CLOCK_MS = 380_000;
+
+export function assetOutputTokenBudget(kind: AssetKind, answers: AssetAnswers): number {
+  if (kind === "memo") return 4_000;
+  return (answers as LinkedinAnswers).asset_type === "carousel" ? 8_000 : 3_000;
+}
+
+export function assetModelTimeoutMs(kind: AssetKind, answers: AssetAnswers): number {
+  if (kind === "memo") return 200_000;
+  if ((answers as LinkedinAnswers).asset_type === "carousel") {
+    return (answers as LinkedinAnswers).slides === 6 ? 280_000 : 220_000;
+  }
+  return 160_000;
+}
+
+export function assetTimeoutErrorText(model: string, timeoutMs: number): string {
+  return `${model} hat nach ${Math.round(timeoutMs / 1000)} Sekunden nicht geantwortet.`;
+}
+
+/** Zweiter Versuch nur, wenn das Isolate noch Platz fuer einen kurzen Lauf hat. */
+export function assetRepairTimeoutMs(elapsedMs: number): number | null {
+  const rest = ASSET_WALL_CLOCK_MS - elapsedMs;
+  if (rest < 40_000) return null;
+  return Math.min(120_000, rest);
+}
+
+export function buildAssetRepairPrompt(prompt: string, mangel: string): string {
+  const grund = mangel.replace(/\s+/g, " ").trim().slice(0, 400);
+  return `${prompt}\n\n<repair>Die vorige Antwort war technisch unlesbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt in der verlangten Struktur.</repair>`;
+}

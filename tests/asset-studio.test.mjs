@@ -85,7 +85,8 @@ test("Tokens und Kosten stehen auch auf der Assetzeile", () => {
     assert.ok(migration.includes(spalte), `Spalte ${spalte} fehlt in der Migration`);
   }
   assert.match(edge, /cost_eur: kostenFelder\.estimated_cost_eur/);
-  assert.match(edge, /total_tokens: result\.usage\.total/);
+  assert.match(edge, /total_tokens: usage\.total/);
+  assert.match(edge, /\.\.\.tokenFelder/);
 });
 
 test("die Kosten werden als asset_generation gebucht", () => {
@@ -359,9 +360,11 @@ test("Fehler beim Entwurf nennen die Ursache, nicht nur ihr Scheitern", async ()
   assert.throws(() => backend.normalizeAssetPayload("memo", '{"kicker":"K"}', backend.normalizeAssetAnswers("memo", {})),
     /fehlen tragende Felder: title/);
   // Transportfehler bekommen Klartext je Ursache.
-  for (const muster of [/kein Guthaben mehr verfügbar/, /API-Schlüssel/, /Rate Limit/, /nicht geantwortet/]) {
+  for (const muster of [/kein Guthaben mehr verfügbar/, /API-Schlüssel/, /Rate Limit/]) {
     assert.match(edge, muster);
   }
+  assert.match(edge, /assetTimeoutErrorText\(assetModel, timeoutMs\)/);
+  assert.match(backend.assetTimeoutErrorText("deepseek-v4-pro", 160_000), /nicht geantwortet/);
   // Das Studio zeigt den Servertext und laesst wiederholen.
   assert.match(studio, /class="as-error"/);
   assert.match(edge, /String\(result\.text \|\| ""\)\.slice\(0, 1500\)/);
@@ -369,11 +372,26 @@ test("Fehler beim Entwurf nennen die Ursache, nicht nur ihr Scheitern", async ()
 });
 
 test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repariert", () => {
-  // Feste 3.000 Tokens reichen fuer eine Kachel, nicht fuer acht Slides: die
-  // Antwort bricht mitten im JSON ab und der Aufruf ist trotzdem bezahlt.
-  // Ein gezielter zweiter Versuch mit dem Mangel im Prompt.
-  // Beide Aufrufe landen im Kostenledger.
+  const single = backend.normalizeAssetAnswers("linkedin", { asset_type: "single" });
+  const carousel4 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 });
+  const carousel6 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 6 });
+  const memo = backend.normalizeAssetAnswers("memo", {});
+  assert.equal(backend.assetOutputTokenBudget("linkedin", single), 3_000);
+  assert.equal(backend.assetOutputTokenBudget("linkedin", carousel4), 8_000);
+  assert.equal(backend.assetOutputTokenBudget("linkedin", carousel6), 8_000);
+  assert.equal(backend.assetOutputTokenBudget("memo", memo), 4_000);
+  assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 20_000);
+
+  // Ein gezielter zweiter Versuch, nur wenn das Isolate noch Zeit hat.
+  // Beide Aufrufe landen im Kostenledger. Timeout wird nicht wiederholt.
+  assert.equal(backend.assetRepairTimeoutMs(50_000), 120_000);
+  assert.equal(backend.assetRepairTimeoutMs(350_000), null);
+  assert.match(edge, /assetRepairTimeoutMs/);
+  assert.match(edge, /buildAssetRepairPrompt/);
+  assert.match(backend.buildAssetRepairPrompt("PROMPT", "kein JSON-Objekt"), /<repair>/);
+  assert.match(backend.buildAssetRepairPrompt("PROMPT", "kein JSON-Objekt"), /PROMPT/);
   // Die Rohantwort steht im Fehlerereignis, sonst ist der Fall hinterher weg.
+  assert.match(edge, /String\(result\.text \|\| ""\)\.slice\(0, 1500\)/);
 });
 
 
@@ -413,6 +431,72 @@ test("die Ladeanzeige folgt dem gemeldeten Abschnitt, nicht der Uhr", () => {
   assert.match(studio, /@keyframes as-atem/);
   // "fertig" gehoert zu keinem Schritt; ohne Filter sprang die Anzeige zurueck.
   assert.match(studio, /ABSCHNITTE\.some\(\(\[key\]\) => key === name\)/);
+  // Pruefen und Fuellen halten lang genug, dass die Abfrage sie sieht.
+  assert.equal(backend.ASSET_STAGE_HOLD_MS, 2_000);
+  assert.match(edge, /halte\(ASSET_STAGE_HOLD_MS\)/);
+  assert.match(studio, /wartezeit = 800/);
+  assert.match(studio, /Math\.min\(wartezeit \+ 200, 1_200\)/);
+});
+
+test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", () => {
+  // Sechs von acht Live-Laeufen starben am 13.8.2026 bei 120 s. Die Fenster
+  // sind jetzt 160 / 200 / 220 / 280 s, und der Text darf nicht bei 120 bleiben.
+  const single = backend.normalizeAssetAnswers("linkedin", { asset_type: "single" });
+  const carousel4 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 });
+  const carousel6 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 6 });
+  const memo = backend.normalizeAssetAnswers("memo", {});
+  assert.equal(backend.assetModelTimeoutMs("linkedin", single), 160_000);
+  assert.equal(backend.assetModelTimeoutMs("memo", memo), 200_000);
+  assert.equal(backend.assetModelTimeoutMs("linkedin", carousel4), 220_000);
+  assert.equal(backend.assetModelTimeoutMs("linkedin", carousel6), 280_000);
+  assert.match(edge, /assetModelTimeoutMs\(assetKind, assetAnswers\)/);
+  assert.match(edge, /assetTimeoutErrorText\(assetModel, timeoutMs\)/);
+  assert.doesNotMatch(edge, /hat nach 120 Sekunden nicht geantwortet/);
+  assert.equal(
+    backend.assetTimeoutErrorText("deepseek-v4-pro", 280_000),
+    "deepseek-v4-pro hat nach 280 Sekunden nicht geantwortet.",
+  );
+  // Ein Timeout darf keinen zweiten Versuch ausloesen: der denkt genauso lange.
+  assert.match(edge, /zeitAbgelaufen \|\| attempt === attemptsAllowed/);
+  // Das Studio bleibt ueber dem groessten Fenster (280 s), sonst gibt die
+  // Anzeige auf, waehrend der Auftrag noch laeuft.
+  assert.match(studio, /Date\.now\(\) \+ 360_000/);
+});
+
+test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () => {
+  // Paid Edge Functions: 400 s Wall-Clock. Repair nur, wenn Rest bleibt.
+  const faelle = [
+    ["linkedin", { asset_type: "single" }, 160_000],
+    ["memo", {}, 200_000],
+    ["linkedin", { asset_type: "carousel", slides: 4 }, 220_000],
+    ["linkedin", { asset_type: "carousel", slides: 6 }, 280_000],
+  ];
+  for (const [kind, answers, erwartet] of faelle) {
+    const a = backend.normalizeAssetAnswers(kind, answers);
+    const timeout = backend.assetModelTimeoutMs(kind, a);
+    assert.equal(timeout, erwartet, `${kind} ${JSON.stringify(answers)}`);
+    assert.ok(timeout + backend.ASSET_STAGE_HOLD_MS * 2 < 400_000, "Halten plus Modell muss unter 400 s bleiben");
+  }
+  // Nach einem 6-Slide-Lauf von 280 s bleibt ein kurzer Repair (100 s), danach nicht.
+  assert.equal(backend.assetRepairTimeoutMs(280_000), 100_000);
+  assert.equal(backend.assetRepairTimeoutMs(370_000), null);
+});
+
+test("die Abfrage trifft pruefen und fuellen, weil sie laenger halten als der Takt", () => {
+  // Studio: 800, 1000, 1200, 1200, ...  Auftrag haelt pruefen/fuellen je 2 s.
+  const polls = [];
+  let w = 800, t = 0;
+  while (t < 10_000) {
+    t += w;
+    polls.push(t);
+    w = Math.min(w + 200, 1_200);
+  }
+  const hold = backend.ASSET_STAGE_HOLD_MS;
+  const trifft = (start) => polls.some((p) => p >= start && p < start + hold);
+  assert.ok(trifft(6_000), "pruefen nach 6 s Modellzeit muss getroffen werden");
+  assert.ok(trifft(8_000), "fuellen direkt danach muss getroffen werden");
+  assert.ok(polls[0] === 800);
+  assert.ok(Math.max(...polls.slice(0, 8).map((p, i, a) => p - (a[i - 1] || 0))) <= hold);
 });
 test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   // Belegt am 13.8.2026: input 3.252, thinking 5.500, output 0. Denken und
@@ -420,7 +504,8 @@ test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   assert.match(edge, /maxTotalTokens\?: number/);
   assert.match(edge, /max_tokens: options\.maxTotalTokens/);
   // Auf das Gemessene plus Reserve gesetzt; die Messwerte stehen im Kommentar.
-  assert.match(edge, /maxTotalTokens: 20_000/);
+  assert.match(edge, /maxTotalTokens: ASSET_MAX_TOTAL_TOKENS/);
+  assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 20_000);
   assert.match(edge, /Carousel 6   6\.084 \+ 1\.069 = 7\.153/);
   // Eine leere Antwort trotz HTTP 200 ist ein Fehler, kein Erfolg.
   assert.match(edge, /if \(!inhalt\.trim\(\)\)/);
