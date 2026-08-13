@@ -78,3 +78,7 @@ alter table signal_layer.generated_assets
 alter table signal_layer.generated_assets alter column payload drop not null;
 create index if not exists generated_assets_status_idx
   on signal_layer.generated_assets (status, created_at desc) where status = 'running';
+
+-- Die Ladeanzeige zeigt, was gerade laeuft: der Auftrag schreibt seinen
+-- Abschnitt auf die Zeile, statt dass das Frontend nach der Uhr blättert.
+alter table signal_layer.generated_assets add column if not exists stage text;

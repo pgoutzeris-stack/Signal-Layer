@@ -392,25 +392,26 @@ test("der Entwurf laeuft als Hintergrundauftrag, nicht in der Anfrage", () => {
   assert.match(studio, /fertig\.error_message/);
 });
 
-test("die Ladeanzeige benennt echte Schritte und laeuft nur beim Arbeiten", () => {
-  // Die Schritte spiegeln den tatsaechlichen Ablauf der Function: laden,
-  // rechnen, pruefen, fuellen. Erfundene Zwischenschritte waeren Dekoration.
-  assert.match(studio, /Signal und Artikel werden gelesen/);
-  assert.match(studio, /Das Modell schreibt Titel und Kernaussage/);
-  assert.match(studio, /Das Modell entwickelt die Ansprache/);
-  assert.match(studio, /Die Vorlage wird gefüllt/);
-  // Wechselnde Icons, Puls, Schimmer, verstrichene Zeit.
-  assert.match(studio, /as-puls/);
-  assert.match(studio, /as-schimmer/);
-  assert.match(studio, /braucht meist eine bis zwei Minuten/);
-  // Der Takt haengt am Arbeitszustand und wird beim Abbau gestoppt.
-  assert.match(studio, /function ladeTaktStart\(\)/);
-  assert.match(studio, /if \(!state\.busy\) \{ ladeTaktStop\(\); return; \}/);
-  assert.match(studio, /ladeTaktStop\(\);\n    if \(selectionFrame\)/);
-  // Wer Bewegung abgeschaltet hat, bekommt keine.
-  assert.match(studio, /prefers-reduced-motion: reduce/);
+test("die Ladeanzeige folgt dem gemeldeten Abschnitt, nicht der Uhr", () => {
+  // Der Auftrag schreibt seinen Abschnitt auf die Zeile, das Studio liest ihn
+  // beim Abfragen. Ein Durchblaettern nach der Uhr behauptet Fortschritt, den
+  // niemand kennt.
+  assert.match(edge, /stage: "lesen"/);
+  for (const name of ["modell", "pruefen", "fuellen"]) {
+    assert.ok(edge.includes(`abschnitt("${name}")`), `Abschnitt ${name} wird nicht gemeldet`);
+  }
+  assert.match(studio, /const ABSCHNITTE = \[/);
+  assert.match(studio, /ladeAbschnittSetzen\(row\.stage\)/);
+  // Schrittpunkte zeigen die Position, kein endloser Schimmer.
+  assert.match(studio, /as-load-step/);
+  assert.doesNotMatch(studio, /as-load-bar/);
+  assert.doesNotMatch(studio, /as-schimmer/);
+  // Kein Ring um das Icon, nur ein leises Atmen. Und keine Zeitprognose.
+  assert.doesNotMatch(studio, /as-puls/);
+  assert.doesNotMatch(studio, /box-shadow:0 0 0 14px/);
+  assert.doesNotMatch(studio, /bis zwei Minuten/);
+  assert.match(studio, /@keyframes as-atem/);
 });
-
 test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   // Belegt am 13.8.2026: input 3.252, thinking 5.500, output 0. Denken und
   // Antwort teilen bei DeepSeek dasselbe Limit, und 8.192 waren zu knapp.

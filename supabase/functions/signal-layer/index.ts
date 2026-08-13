@@ -7868,7 +7868,7 @@ Deno.serve(async (req: Request) => {
         // weiter, das Frontend fragt den Auftrag ab.
         const { data: assetRow, error: assetInsertError } = await admin.schema("signal_layer")
           .from("generated_assets").insert({
-            kind: assetKind, status: "running",
+            kind: assetKind, status: "running", stage: "lesen",
             article_id: assetArticleId, signal_id: assetSignal.id,
             company: assetSignal.company || null,
             answers: assetAnswers, payload: null,
@@ -7879,8 +7879,14 @@ Deno.serve(async (req: Request) => {
 
         const arbeit = (async () => {
           const startedAt = Date.now();
+          // Der Abschnitt wandert auf die Zeile, damit die Ladeanzeige zeigt,
+          // was laeuft, statt Schritte nach der Uhr zu wechseln.
+          const abschnitt = (name: string) => admin.schema("signal_layer")
+            .from("generated_assets").update({ stage: name, updated_at: new Date().toISOString() })
+            .eq("id", assetRow.id);
           const scope = (assetAnswers as { asset_type?: string }).asset_type === "carousel" ? 8_000
             : assetKind === "memo" ? 4_000 : 3_000;
+          await abschnitt("modell");
           const result = await callJsonModel({
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
             prompt: buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers),
@@ -7929,6 +7935,7 @@ Deno.serve(async (req: Request) => {
             return;
           }
 
+          await abschnitt("pruefen");
           const kostenFelder = await modelCostFields(assetModel, result.usage);
           const tokenFelder = {
             input_tokens: result.usage.input + result.usage.cachedInput, output_tokens: result.usage.output,
@@ -7948,8 +7955,9 @@ Deno.serve(async (req: Request) => {
           }
           const { data: usageEvent } = await admin.schema("signal_layer").from("ai_usage_events")
             .insert({ ...usageRow, ...kostenFelder, ...tokenFelder, status: "success" }).select("id").single();
+          await abschnitt("fuellen");
           await admin.schema("signal_layer").from("generated_assets").update({
-            status: "done", payload, error_message: null, usage_event_id: usageEvent?.id || null,
+            status: "done", stage: "fertig", payload, error_message: null, usage_event_id: usageEvent?.id || null,
             ...tokenFelder, cached_input_tokens: result.usage.cachedInput,
             cost_usd: kostenFelder.estimated_cost_usd ?? null, cost_eur: kostenFelder.estimated_cost_eur ?? null,
             native_cost: kostenFelder.native_cost ?? null, pricing_currency: kostenFelder.pricing_currency ?? null,
