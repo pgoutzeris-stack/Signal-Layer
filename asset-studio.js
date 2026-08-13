@@ -38,8 +38,6 @@ const LAYOUT_NAMEN = {
 };
 const VARIANTS_ALL = [...VARIANTS, ...LAYOUT_KEYS.map((k) => [k, LAYOUT_NAMEN[k] || ASSET_LAYOUT_LABELS[k] || k])];
 const VARIANT_KEYS = VARIANTS_ALL.map(([key]) => key);
-/** Was das Backend kennt. Layouts werden darauf abgebildet. */
-const MODEL_VARIANTS = VARIANTS.map(([key]) => key);
 
 // Anmutung je Layout, abgelesen am Markup der gebauten Assets: dunkel heisst
 // li-dark oder ein dunkles Overlay ueber dem Bild. Die Wahl filtert die Liste,
@@ -110,6 +108,11 @@ const FORM_MEMO = [
     options: [["lage", "Lage und Anlass"], ["optionen", "Handlungsoptionen"], ["schritt", "Nächster Schritt"]],
   },
   { key: "scope", label: "Umfang", options: [["1", "Eine Seite"], ["2", "Zwei Seiten"]] },
+  {
+    key: "reader_side",
+    label: "Leserseite",
+    options: [["kunde", "Kundenpapier"], ["intern", "ROOTS-intern"]],
+  },
   {
     key: "storyline",
     label: "Inhalt",
@@ -263,7 +266,7 @@ const STAGE_CSS = `
 .as-stage--a4 .as-conf{display:block; font-size:8.5px; letter-spacing:1.2px; color:var(--mut); margin-top:4px;}
 .as-stage--a4 .as-title{font-size:26px; font-weight:800; line-height:1.16; letter-spacing:-.5px;}
 .as-stage--a4 .as-standfirst{font-size:13px; line-height:1.5; color:var(--mut); max-width:150mm;}
-.as-stage--a4 .as-kpis{display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
+.as-stage--a4 .as-kpis{display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px;}
 .as-stage--a4 .as-kpi{background:var(--acc-soft); border:1.5px solid var(--acc-line); border-radius:calc(var(--round) / 2.5); padding:12px 14px;}
 .as-stage--a4 .as-kpival{font-size:26px; font-weight:800; line-height:1; letter-spacing:-.6px; color:var(--acc);}
 .as-stage--a4 .as-kpilabel{font-size:9.5px; line-height:1.35; color:var(--mut); margin-top:6px;}
@@ -521,6 +524,7 @@ const CHROME_CSS = `
 }
 #as-overlay .as-seg[aria-pressed="true"]{background:var(--brand,#206efb); border-color:var(--brand,#206efb); color:#fff;}
 #as-overlay .as-inspector .as-btn{justify-content:center; width:100%;}
+#as-overlay .as-savehint{font-size:12px; line-height:1.4; color:#b42318; min-height:1em; margin:0;}
 #as-overlay .as-post{
   width:100%; min-height:170px; resize:vertical; font:inherit; font-size:13px; line-height:1.5;
   border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:10px 12px;
@@ -605,7 +609,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260815-1620";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260813-2115";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -904,7 +908,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       steps: [{ n: "1", title: "Standort", text: "Lage in zwei Wochen belegen." }, { n: "2", title: "Priorität", text: "Drei Hebel auswählen." }, { n: "3", title: "Umsetzung", text: "Pilot in einem Segment." }],
       myth: "Die verbreitete Behauptung.",
       fact: "Der Befund, der ihr widerspricht.",
-      takeaway: "**Der Kontrast:** Struktur ist Standard, entscheidend ist die Handschrift.",
+      takeaway: "**Folge:** Struktur ist Standard, entscheidend ist die Handschrift.",
       footer_left: company || "ROOTS Brand Strategy Consultants",
       // Nur dieses Layout lebt von der Streichung, deshalb traegt sein
       // Beispieltext die Markierung.
@@ -1054,7 +1058,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     try {
       const gewaehlt = state.answers.variant;
       const antworten = { ...state.answers, layout: gewaehlt };
-      if (gewaehlt && !MODEL_VARIANTS.includes(gewaehlt) && gewaehlt !== "auto") antworten.variant = "B";
       const res = await api("generate_asset", {
         kind: assetKind,
         article_id: articleId || null,
@@ -1086,11 +1089,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Muss ueber dem Zeitfenster des Modells liegen (bis 280 s beim
     // 6-Slide-Karussell), sonst gibt die Anzeige auf, waehrend der Auftrag
     // noch laeuft, und das fertige Ergebnis sieht niemand.
+    // 800 ms, dann 1,0 / 1,2 s: unter der 2 s Pause von pruefen/fuellen,
+    // damit die Anzeige die kurzen Abschnitte nicht ueberspringt.
     const bis = Date.now() + 360_000;
-    let wartezeit = 2_500;
+    let wartezeit = 800;
     while (Date.now() < bis) {
       await new Promise((r) => setTimeout(r, wartezeit));
-      wartezeit = Math.min(wartezeit + 500, 6_000);
+      wartezeit = Math.min(wartezeit + 200, 1_200);
       const res = await api("get_asset", { asset_id: id });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       ladeAbschnittSetzen(row.stage);
@@ -1392,10 +1397,35 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       area.querySelectorAll("[data-as-chrome]").forEach((node) => node.remove());
     }
     fitStages();
+    requestAnimationFrame(meldeUeberlauf);
+  }
+
+  /**
+   * Die Kachel ist 1080×1350. scrollWidth darüber heisst: Text oder Grafik
+   * laufen aus dem Rahmen, wie beim Cucinelli-Titel. Vor dem Speichern ein Gate.
+   */
+  function kachelUeberlauf() {
+    if (isMemo) return [];
+    const treffer = [];
+    shell.querySelectorAll("[data-stagearea] .as-stage--tpl .li").forEach((kachel, i) => {
+      const ausRahmen = kachel.scrollWidth > 1082 || kachel.scrollHeight > 1352;
+      let ausFeld = false;
+      kachel.querySelectorAll("h1, [data-field='title'], [data-field='quote'], [data-field='stat_value']").forEach((el) => {
+        if (el.scrollWidth > el.clientWidth + 4) ausFeld = true;
+      });
+      if (ausRahmen || ausFeld) treffer.push(i + 1);
+    });
+    return treffer;
+  }
+
+  function meldeUeberlauf() {
+    const treffer = kachelUeberlauf();
+    if (!treffer.length) return;
+    showSaveHint(`Folie ${treffer.join(", ")} läuft über den Rahmen (1080 px). Text kürzen, bevor du speicherst.`);
   }
 
   function slideTools(slide, index) {
-    const opts = VARIANTS.map(([value, label]) => `<option value="${attr(value)}"${slide.variant === value ? " selected" : ""}>${esc(label)}</option>`).join("");
+    const opts = VARIANTS_ALL.map(([value, label]) => `<option value="${attr(value)}"${slide.variant === value ? " selected" : ""}>${esc(label)}</option>`).join("");
     // Die Variante lässt sich immer wechseln, die Slide-Verwaltung nur im Carousel.
     const manage = isCarousel() ? `
       <button type="button" class="as-btn as-btn--icon" data-act="slide-up" title="Nach oben" aria-label="Nach oben"><i class="fa-solid fa-arrow-up"></i></button>
@@ -1502,6 +1532,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <button type="button" class="as-btn" data-act="download"><i class="fa-solid fa-download"></i>HTML herunterladen</button>
         <button type="button" class="as-btn" data-act="print"><i class="fa-solid fa-print"></i>Drucken / PDF</button>
         <button type="button" class="as-btn as-btn--primary" data-act="save"><i class="fa-regular fa-floppy-disk"></i>Speichern</button>
+        <p class="as-savehint" data-savehint></p>
       </div>
     </aside>`;
   }
@@ -1736,6 +1767,11 @@ ${stages}${post}
     harvest();
     if (!state.assetId) {
       showSaveHint("Kein gespeicherter Entwurf vorhanden. Bitte den Entwurf neu erzeugen.");
+      return;
+    }
+    const ueber = kachelUeberlauf();
+    if (ueber.length) {
+      showSaveHint(`Folie ${ueber.join(", ")} läuft über den Rahmen (1080 px). Text kürzen, dann speichern.`);
       return;
     }
     const doc = exportDocument();

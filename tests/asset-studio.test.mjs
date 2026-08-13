@@ -85,7 +85,8 @@ test("Tokens und Kosten stehen auch auf der Assetzeile", () => {
     assert.ok(migration.includes(spalte), `Spalte ${spalte} fehlt in der Migration`);
   }
   assert.match(edge, /cost_eur: kostenFelder\.estimated_cost_eur/);
-  assert.match(edge, /total_tokens: result\.usage\.total/);
+  assert.match(edge, /total_tokens: usage\.total/);
+  assert.match(edge, /\.\.\.tokenFelder/);
 });
 
 test("die Kosten werden als asset_generation gebucht", () => {
@@ -241,8 +242,8 @@ test("alle Assets vom Desktop stehen als Layout zur Wahl", async () => {
     assert.ok(tpl.ASSET_LAYOUT_LABELS[key], `Layout ${key} ohne Bezeichnung`);
   }
   assert.match(studio, /ASSET_LAYOUTS\[slide\.variant\]/);
-  // Das Backend kennt nur A bis L, deshalb wird ein Layout darauf abgebildet.
-  assert.match(studio, /antworten\.variant = "B"/);
+  // Layouts gehen als Variante durch, nicht still auf B.
+  assert.doesNotMatch(studio, /antworten\.variant = "B"/);
 });
 
 test("jede Vorlage ist in sich geschlossen", async () => {
@@ -359,9 +360,11 @@ test("Fehler beim Entwurf nennen die Ursache, nicht nur ihr Scheitern", async ()
   assert.throws(() => backend.normalizeAssetPayload("memo", '{"kicker":"K"}', backend.normalizeAssetAnswers("memo", {})),
     /fehlen tragende Felder: title/);
   // Transportfehler bekommen Klartext je Ursache.
-  for (const muster of [/kein Guthaben mehr verfügbar/, /API-Schlüssel/, /Rate Limit/, /nicht geantwortet/]) {
+  for (const muster of [/kein Guthaben mehr verfügbar/, /API-Schlüssel/, /Rate Limit/]) {
     assert.match(edge, muster);
   }
+  assert.match(edge, /assetTimeoutErrorText\(assetModel, timeoutMs\)/);
+  assert.match(backend.assetTimeoutErrorText("deepseek-v4-pro", 160_000), /nicht geantwortet/);
   // Das Studio zeigt den Servertext und laesst wiederholen.
   assert.match(studio, /class="as-error"/);
   assert.match(edge, /String\(result\.text \|\| ""\)\.slice\(0, 1500\)/);
@@ -369,11 +372,26 @@ test("Fehler beim Entwurf nennen die Ursache, nicht nur ihr Scheitern", async ()
 });
 
 test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repariert", () => {
-  // Feste 3.000 Tokens reichen fuer eine Kachel, nicht fuer acht Slides: die
-  // Antwort bricht mitten im JSON ab und der Aufruf ist trotzdem bezahlt.
-  // Ein gezielter zweiter Versuch mit dem Mangel im Prompt.
-  // Beide Aufrufe landen im Kostenledger.
+  const single = backend.normalizeAssetAnswers("linkedin", { asset_type: "single" });
+  const carousel4 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 });
+  const carousel6 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 6 });
+  const memo = backend.normalizeAssetAnswers("memo", {});
+  assert.equal(backend.assetOutputTokenBudget("linkedin", single), 3_000);
+  assert.equal(backend.assetOutputTokenBudget("linkedin", carousel4), 8_000);
+  assert.equal(backend.assetOutputTokenBudget("linkedin", carousel6), 8_000);
+  assert.equal(backend.assetOutputTokenBudget("memo", memo), 4_000);
+  assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 20_000);
+
+  // Ein gezielter zweiter Versuch, nur wenn das Isolate noch Zeit hat.
+  // Beide Aufrufe landen im Kostenledger. Timeout wird nicht wiederholt.
+  assert.equal(backend.assetRepairTimeoutMs(50_000), 120_000);
+  assert.equal(backend.assetRepairTimeoutMs(350_000), null);
+  assert.match(edge, /assetRepairTimeoutMs/);
+  assert.match(edge, /buildAssetRepairPrompt/);
+  assert.match(backend.buildAssetRepairPrompt("PROMPT", "kein JSON-Objekt"), /<repair>/);
+  assert.match(backend.buildAssetRepairPrompt("PROMPT", "kein JSON-Objekt"), /PROMPT/);
   // Die Rohantwort steht im Fehlerereignis, sonst ist der Fall hinterher weg.
+  assert.match(edge, /String\(result\.text \|\| ""\)\.slice\(0, 1500\)/);
 });
 
 
@@ -413,6 +431,72 @@ test("die Ladeanzeige folgt dem gemeldeten Abschnitt, nicht der Uhr", () => {
   assert.match(studio, /@keyframes as-atem/);
   // "fertig" gehoert zu keinem Schritt; ohne Filter sprang die Anzeige zurueck.
   assert.match(studio, /ABSCHNITTE\.some\(\(\[key\]\) => key === name\)/);
+  // Pruefen und Fuellen halten lang genug, dass die Abfrage sie sieht.
+  assert.equal(backend.ASSET_STAGE_HOLD_MS, 2_000);
+  assert.match(edge, /halte\(ASSET_STAGE_HOLD_MS\)/);
+  assert.match(studio, /wartezeit = 800/);
+  assert.match(studio, /Math\.min\(wartezeit \+ 200, 1_200\)/);
+});
+
+test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", () => {
+  // Sechs von acht Live-Laeufen starben am 13.8.2026 bei 120 s. Die Fenster
+  // sind jetzt 160 / 200 / 220 / 280 s, und der Text darf nicht bei 120 bleiben.
+  const single = backend.normalizeAssetAnswers("linkedin", { asset_type: "single" });
+  const carousel4 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 });
+  const carousel6 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 6 });
+  const memo = backend.normalizeAssetAnswers("memo", {});
+  assert.equal(backend.assetModelTimeoutMs("linkedin", single), 160_000);
+  assert.equal(backend.assetModelTimeoutMs("memo", memo), 200_000);
+  assert.equal(backend.assetModelTimeoutMs("linkedin", carousel4), 220_000);
+  assert.equal(backend.assetModelTimeoutMs("linkedin", carousel6), 280_000);
+  assert.match(edge, /assetModelTimeoutMs\(assetKind, assetAnswers\)/);
+  assert.match(edge, /assetTimeoutErrorText\(assetModel, timeoutMs\)/);
+  assert.doesNotMatch(edge, /hat nach 120 Sekunden nicht geantwortet/);
+  assert.equal(
+    backend.assetTimeoutErrorText("deepseek-v4-pro", 280_000),
+    "deepseek-v4-pro hat nach 280 Sekunden nicht geantwortet.",
+  );
+  // Ein Timeout darf keinen zweiten Versuch ausloesen: der denkt genauso lange.
+  assert.match(edge, /zeitAbgelaufen \|\| attempt === attemptsAllowed/);
+  // Das Studio bleibt ueber dem groessten Fenster (280 s), sonst gibt die
+  // Anzeige auf, waehrend der Auftrag noch laeuft.
+  assert.match(studio, /Date\.now\(\) \+ 360_000/);
+});
+
+test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () => {
+  // Paid Edge Functions: 400 s Wall-Clock. Repair nur, wenn Rest bleibt.
+  const faelle = [
+    ["linkedin", { asset_type: "single" }, 160_000],
+    ["memo", {}, 200_000],
+    ["linkedin", { asset_type: "carousel", slides: 4 }, 220_000],
+    ["linkedin", { asset_type: "carousel", slides: 6 }, 280_000],
+  ];
+  for (const [kind, answers, erwartet] of faelle) {
+    const a = backend.normalizeAssetAnswers(kind, answers);
+    const timeout = backend.assetModelTimeoutMs(kind, a);
+    assert.equal(timeout, erwartet, `${kind} ${JSON.stringify(answers)}`);
+    assert.ok(timeout + backend.ASSET_STAGE_HOLD_MS * 2 < 400_000, "Halten plus Modell muss unter 400 s bleiben");
+  }
+  // Nach einem 6-Slide-Lauf von 280 s bleibt ein kurzer Repair (100 s), danach nicht.
+  assert.equal(backend.assetRepairTimeoutMs(280_000), 100_000);
+  assert.equal(backend.assetRepairTimeoutMs(370_000), null);
+});
+
+test("die Abfrage trifft pruefen und fuellen, weil sie laenger halten als der Takt", () => {
+  // Studio: 800, 1000, 1200, 1200, ...  Auftrag haelt pruefen/fuellen je 2 s.
+  const polls = [];
+  let w = 800, t = 0;
+  while (t < 10_000) {
+    t += w;
+    polls.push(t);
+    w = Math.min(w + 200, 1_200);
+  }
+  const hold = backend.ASSET_STAGE_HOLD_MS;
+  const trifft = (start) => polls.some((p) => p >= start && p < start + hold);
+  assert.ok(trifft(6_000), "pruefen nach 6 s Modellzeit muss getroffen werden");
+  assert.ok(trifft(8_000), "fuellen direkt danach muss getroffen werden");
+  assert.ok(polls[0] === 800);
+  assert.ok(Math.max(...polls.slice(0, 8).map((p, i, a) => p - (a[i - 1] || 0))) <= hold);
 });
 test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   // Belegt am 13.8.2026: input 3.252, thinking 5.500, output 0. Denken und
@@ -420,10 +504,131 @@ test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   assert.match(edge, /maxTotalTokens\?: number/);
   assert.match(edge, /max_tokens: options\.maxTotalTokens/);
   // Auf das Gemessene plus Reserve gesetzt; die Messwerte stehen im Kommentar.
-  assert.match(edge, /maxTotalTokens: 20_000/);
+  assert.match(edge, /maxTotalTokens: ASSET_MAX_TOTAL_TOKENS/);
+  assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 20_000);
   assert.match(edge, /Carousel 6   6\.084 \+ 1\.069 = 7\.153/);
   // Eine leere Antwort trotz HTTP 200 ist ein Fehler, kein Erfolg.
   assert.match(edge, /if \(!inhalt\.trim\(\)\)/);
   assert.match(edge, /empty completion, reasoning used/);
   assert.match(edge, /Tokenlimit vollständig zum Nachdenken verbraucht/);
+});
+
+test("K und Infografiken bleiben die gewaehlte Variante, nicht still B", () => {
+  assert.ok(backend.ASSET_VARIANTS.includes("K"));
+  assert.ok(backend.ASSET_VARIANTS.includes("J"));
+  assert.equal(backend.normalizeAssetAnswers("linkedin", { variant: "K" }).variant, "K");
+  assert.equal(backend.normalizeAssetAnswers("linkedin", { variant: "S1" }).variant, "S1");
+  assert.equal(backend.normalizeAssetAnswers("linkedin", { slide_pick: "A,H,G,I,L,B" }).slide_types.join(","), "A,H,G,I,L,B");
+  const schemaS1 = backend.assetResponseSchema("linkedin", backend.normalizeAssetAnswers("linkedin", { variant: "S1" }));
+  assert.deepEqual(schemaS1.properties.slides.items.properties.variant.enum, ["S1"]);
+  const schemaAuto = backend.assetResponseSchema("linkedin", backend.normalizeAssetAnswers("linkedin", {}));
+  assert.ok(schemaAuto.properties.slides.items.properties.variant.enum.includes("K"));
+  assert.ok(!schemaAuto.properties.slides.items.properties.variant.enum.includes("S1"));
+});
+
+test("Vorlage L traegt keine fremde 32-Prozent-Zeile mehr", async () => {
+  const tpl = await import("../asset-templates.js");
+  assert.doesNotMatch(tpl.ASSET_TEMPLATES.L, /32\s*%/);
+  assert.doesNotMatch(tpl.ASSET_TEMPLATES.L, /skalieren in Prozessen/);
+  assert.match(tpl.ASSET_TEMPLATES.L, /data-field="stat_label"/);
+  assert.match(tpl.ASSET_TEMPLATES.L, /repeat:bullets/);
+  assert.match(tpl.ASSET_TEMPLATES.L, /\{\{stat_label\}\}/);
+});
+
+test("Kennzahl-Varianten brauchen eine Ziffer im Artikel", () => {
+  const answers = backend.normalizeAssetAnswers("linkedin", {});
+  const roh = {
+    slides: [{ variant: "E", kicker: "DEEPFAKE", title: "Die Fälschung trifft den Handel", stat: { value: "25 %", label: "Anteil" }, footer_left: "ROOTS" }],
+  };
+  const erfunden = backend.normalizeAssetPayload("linkedin", JSON.stringify(roh), answers, {
+    articleText: "Etwa ein Viertel der Fälle betrifft Deepfakes, keine zehn Minuten entfernt.",
+  });
+  assert.equal(erfunden.slides[0].variant, "B");
+  assert.equal(erfunden.slides[0].stat.value, "");
+
+  const belegt = backend.normalizeAssetPayload("linkedin", JSON.stringify(roh), answers, {
+    articleText: "Der Anteil liegt bei 25 % der Fälle.",
+  });
+  assert.equal(belegt.slides[0].variant, "E");
+  assert.match(belegt.slides[0].stat.value, /25/);
+  assert.equal(backend.numberIsAttested("25 %", "etwa ein Viertel"), false);
+  assert.equal(backend.numberIsAttested("10 Autominuten", "keine zehn Autominuten"), false);
+  assert.equal(backend.numberIsAttested("47 Mrd.", "Retouren von 47 Mrd. USD"), true);
+});
+
+test("die Pointe wandert in ein sichtbares Feld, nicht ins tote takeaway", () => {
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{ variant: "B", kicker: "MARKE", title: "Die Marke führt das Quartal", takeaway: "Jetzt den Termin setzen", footer_left: "ROOTS" }],
+  }), backend.normalizeAssetAnswers("linkedin", {}));
+  assert.equal(payload.slides[0].subtitle, "Jetzt den Termin setzen");
+  const listicle = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{ variant: "F", kicker: "K", title: "Drei Hebel tragen", bullets: ["Erster Hebel"], takeaway: "Der Aufruf steht am Ende", footer_left: "R" }],
+  }), backend.normalizeAssetAnswers("linkedin", {}));
+  assert.ok(listicle.slides[0].bullets.includes("Der Aufruf steht am Ende"));
+});
+
+test("post_text behält Absätze und das Leerzeichen vor Prozent", () => {
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "Aufhänger zuerst.\n\nZweiter Absatz mit 14 % Anteil.\n\nJetzt den Termin setzen",
+    slides: [{ variant: "B", kicker: "K", title: "Die Marke führt", subtitle: "Ein Argument", footer_left: "R" }],
+  }), backend.normalizeAssetAnswers("linkedin", {}));
+  assert.match(payload.post_text, /Aufhänger zuerst\.\n\nZweiter Absatz/);
+  assert.match(payload.post_text, /14\u00a0%/);
+  assert.match(payload.post_text, /Jetzt den Termin setzen$/);
+});
+
+test("die Ansprache erzwingt ROOTS-Leistung, Rolle und echte Optionen", () => {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify({
+    title: "Der Umbau braucht eine Entscheidung",
+    standfirst: "Lage und Beleg aus dem Artikel",
+    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
+    options: [
+      { name: "Audit", pro: "Klarheit", contra: "Zeit" },
+      { name: "Nichts tun", pro: "Keine Kosten", contra: "Risiko bleibt" },
+    ],
+    recommendation: "Audit wählen",
+    next_step: "Nächste Woche klären",
+  }), backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }), {
+    rootsOffering: "Marketing Audit + Markenstrategie",
+    buyingCenterRoles: ["Marketingleitung"],
+  });
+  assert.match(memo.recommendation, /Marketing Audit/);
+  assert.match(memo.next_step, /Marketingleitung/);
+  assert.equal(memo.options.some((option) => /nichts tun/i.test(option.name)), false);
+  assert.equal(memo.confidential, "");
+  const intern = backend.normalizeAssetAnswers("memo", { reader_side: "intern", note: "intern" });
+  assert.equal(intern.reader_side, "intern");
+  assert.equal(intern.confidential, "Vertraulich · nur intern");
+  const kundeTrotzVermerk = backend.normalizeAssetAnswers("memo", { reader_side: "kunde", note: "intern" });
+  assert.equal(kundeTrotzVermerk.reader_side, "kunde");
+  assert.equal(kundeTrotzVermerk.confidential, "");
+});
+
+test("Prompt und Studio kennen Feldkarte, Leserseite und Überlauf-Gate", () => {
+  const prompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
+    backend.normalizeAssetAnswers("linkedin", {}));
+  assert.doesNotMatch(prompt, /Der Kontrast/);
+  assert.doesNotMatch(prompt, /genau drei Kennzahlen/);
+  assert.match(prompt, /\*\*Vorspann\*\* wird fett/);
+  assert.match(prompt, /\*\*Folge:\*\*/);
+  assert.match(prompt, /sichtbar title und subtitle/);
+  const memoPrompt = backend.buildAssetPrompt("memo",
+    { company: "Aeffe", roots_offering: "Marketing Audit + Markenstrategie", buying_center_roles: ["Vertrieb"] },
+    { title: "A", content_de: "Der Artikel." },
+    backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }));
+  assert.match(memoPrompt, /Leserseite: Kundenpapier/);
+  assert.match(memoPrompt, /Marketing Audit \+ Markenstrategie/);
+  assert.match(memoPrompt, /eine bis drei Kennzahlen/);
+  assert.match(memoPrompt, /Nichtstun/);
+  assert.match(studio, /key: "reader_side"/);
+  assert.match(studio, /function kachelUeberlauf/);
+  assert.match(studio, /scrollWidth > 1082/);
+  assert.match(studio, /Folie \$\{ueber\.join/);
+  assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
+  assert.match(edge, /checkCapacity\("asset"\)/);
+  assert.match(edge, /kind !== "asset"/);
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.1");
+  assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
+  assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
+  assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
 });
