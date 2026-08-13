@@ -61,6 +61,8 @@ export type AssetArticleInput = {
 
 export type LinkedinAnswers = {
   asset_type: "single" | "carousel";
+  /** Vom Nutzer gewaehlte Slide-Arten in Reihenfolge. Leer = Modell entscheidet. */
+  slide_types?: string[];
   variant: AssetVariant | "auto";
   theme: "light" | "dark";
   slides: number;
@@ -242,6 +244,12 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
       storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
       cta: choiceText(source, ["cta"], ["cta_text"], 240),
       sources: choiceText(source, ["sources", "quellen"], ["sources_text"], 600),
+      // Selbst gewaehlte Slide-Arten in der Reihenfolge der Auswahl. Leer heisst:
+      // das Modell stellt die Folge selbst zusammen.
+      slide_types: pick(source, "slide_pick", "slide_types")
+        .split(",").map((v) => v.trim().toUpperCase())
+        .filter((v) => (ASSET_VARIANTS as readonly string[]).includes(v) || /^[ST][1-6]$/.test(v))
+        .slice(0, 8),
     };
   }
   const audience = pick(source, "audience", "adressat");
@@ -341,6 +349,9 @@ function linkedinPrompt(answers: LinkedinAnswers, daten: string): string {
       ? "Variante: wähle je Slide die Variante, die den Inhalt am besten trägt."
       : `Variante: ${answers.variant} für jeden Slide.`,
     `Anmutung: ${answers.theme === "dark" ? "dunkel" : "hell"}.`,
+    Array.isArray((answers as LinkedinAnswers).slide_types) && (answers as LinkedinAnswers).slide_types!.length
+      ? `Slide-Arten in dieser Reihenfolge, verbindlich: ${(answers as LinkedinAnswers).slide_types!.join(", ")}. Setze variant je Slide genau darauf.`
+      : "",
     answers.storyline
       ? `Storyline, verbindlich: ${answers.storyline}`
       : "Storyline: entwickle sie selbst aus signal und artikel.",

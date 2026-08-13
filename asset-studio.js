@@ -12,23 +12,31 @@ const SAVE_LIMIT = 400000;
 
 // Nur diese Varianten sind vertraglich zugesagt; J fehlt bewusst.
 const VARIANTS = [
-  ["A", "A Zitat"],
-  ["B", "B Titel + Subtitel"],
-  ["C", "C Titel + Bild"],
-  ["D", "D Vollbild"],
-  ["E", "E Kennzahl"],
-  ["F", "F Listicle"],
-  ["G", "G Mythos/Fakt"],
-  ["H", "H Multi-Kennzahl"],
-  ["I", "I Prozess"],
-  ["L", "L Annotierte Kennzahl"],
+  ["B", "Titel mit Einordnung"],
+  ["A", "Zitat"],
+  ["E", "Große Kennzahl"],
+  ["F", "Aufzählung"],
+  ["G", "Mythos und Fakt"],
+  ["H", "Mehrere Kennzahlen"],
+  ["I", "Prozess in Schritten"],
+  ["L", "Kennzahl mit Anmerkung"],
+  ["K", "Durchgestrichenes Wort"],
+  ["C", "Titel mit Bild"],
+  ["D", "Vollbild mit Overlay"],
+  ["J", "Zitat über Bild"],
 ];
 // Infografiken kommen aus denselben gebauten Assets. Sie sind Layouts, keine
 // eigenen Signalarten: das Modell liefert weiter Titel und Einordnung, die
 // Zeichnung traegt die Aussage und wird in der Werkbank mit eigenen Zahlen
 // versehen.
 const LAYOUT_KEYS = Object.keys(ASSET_LAYOUTS);
-const VARIANTS_ALL = [...VARIANTS, ...LAYOUT_KEYS.map((k) => [k, `${k} ${ASSET_LAYOUT_LABELS[k] || k}`])];
+// Beschreibende Namen statt Kuerzel: "S2" sagt niemandem etwas.
+const LAYOUT_NAMEN = {
+  S1: "Schnittmengen-Modell", S2: "Reifepyramide", S3: "Strategie-Haus", S4: "Funnel-Modell",
+  T1: "Marktwachstum als Säulen", T2: "Wasserfall", T3: "Anteile als Donut",
+  T4: "Anwendungsfälle als Balken", T5: "Funnel mit Zahlen", T6: "Roadmap",
+};
+const VARIANTS_ALL = [...VARIANTS, ...LAYOUT_KEYS.map((k) => [k, LAYOUT_NAMEN[k] || ASSET_LAYOUT_LABELS[k] || k])];
 const VARIANT_KEYS = VARIANTS_ALL.map(([key]) => key);
 /** Was das Backend kennt. Layouts werden darauf abgebildet. */
 const MODEL_VARIANTS = VARIANTS.map(([key]) => key);
@@ -47,7 +55,23 @@ const MIT_BILD = new Set(["C", "D", "J"]);
 const FORM_LINKEDIN = [
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
   { key: "look", label: "Anmutung", options: [["hell", "Hell"], ["dunkel", "Dunkel"]] },
-  { key: "variant", label: "Layout", art: "dropdown", options: [["auto", "Modell wählt"], ...VARIANTS_ALL] },
+  // Einzelbild: genau ein Layout. Carousel: entweder das Modell mischt die
+  // Slide-Arten, oder der Nutzer waehlt sie selbst.
+  {
+    key: "variant", label: "Layout", art: "dropdown",
+    options: [["auto", "Modell wählt"], ...VARIANTS_ALL],
+    when: (answers) => answers.asset_type !== "carousel",
+  },
+  {
+    key: "slide_mix", label: "Slide-Arten",
+    options: [["auto", "Modell stellt sie zusammen"], ["custom", "Ich wähle sie selbst"]],
+    when: (answers) => answers.asset_type === "carousel",
+  },
+  {
+    key: "slide_pick", label: "Ausgewählte Arten", art: "multi",
+    options: VARIANTS_ALL,
+    when: (answers) => answers.asset_type === "carousel" && answers.slide_mix === "custom",
+  },
   {
     key: "slide_count",
     label: "Slides",
@@ -377,6 +401,17 @@ const CHROME_CSS = `
 #as-overlay .as-img--bg .as-img-ui{pointer-events:auto;}
 
 /* Vorschau der Varianten: 150px breite Buehne, also Faktor 150/1080. */
+/* Platzhalter, wenn das Modell das Layout waehlt. Kein Rahmen um Leere, sondern
+   eine ruhige Aussage. */
+#as-overlay .as-prev-empty{display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:8px; width:100%; height:100%; text-align:center; color:var(--muted,#475569);}
+#as-overlay .as-prev-empty i{font-size:1.5rem; color:var(--brand,#206efb); opacity:.75;}
+#as-overlay .as-prev-empty b{font-size:.92rem; color:var(--ink,#0f172a);}
+#as-overlay .as-prev-empty span{font-size:.78rem;}
+#as-overlay .as-prev-note{position:absolute; bottom:10px; right:14px; font-size:.7rem; font-weight:600;
+  color:var(--muted,#475569); background:#fff; border:1px solid var(--line,#e2e8f0); border-radius:99px; padding:2px 8px;}
+#as-overlay .as-prev-big{position:relative;}
+
 /* Weisses Dropdown fuer das Layout. Eine Karte, die sich oeffnet, mit Miniatur
    je Zeile - kein natives select, weil dort kein Bild moeglich ist. */
 #as-overlay .as-dd{position:relative;}
@@ -544,15 +579,27 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0500";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1800";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
 let openInstance = null;
 
+/** Schliesst ein offenes Studio. Von aussen aufrufbar, damit das Artikel-Popup
+ *  seine Ebene abraeumen kann, bevor es selbst verschwindet. */
+export function closeAssetStudio() {
+  if (openInstance) openInstance.close();
+}
+
 export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host } = {}) {
   // Zwei Studios gleichzeitig würden sich Tastatur und Auswahl streitig machen.
-  if (openInstance) return openInstance;
+  // Eine Instanz, deren Overlay nicht mehr im Dokument haengt, ist aber keine
+  // Instanz mehr: sie entsteht, wenn das Popup unter dem Studio geschlossen
+  // wird, und blockierte danach jeden weiteren Klick auf den Knopf.
+  if (openInstance) {
+    if (openInstance.lebt()) return openInstance;
+    openInstance = null;
+  }
 
   const esc = typeof escapeHtml === "function" ? escapeHtml : DEFAULT_ESCAPE;
   const api = typeof callApi === "function" ? callApi : async () => { throw new Error("Keine Verbindung zum Server verfügbar."); };
@@ -576,6 +623,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     postText: "",
     pendingImage: null,
     ddOffen: false,
+    multiOffen: false,
   };
 
   const cleanups = [];
@@ -613,7 +661,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function defaultAnswers(list) {
     const out = {};
-    for (const q of list) out[q.key] = q.options[0][0];
+    // Mehrfachauswahl startet leer: eine vorausgewaehlte Slide-Art waere eine
+    // Entscheidung, die niemand getroffen hat.
+    for (const q of list) out[q.key] = q.art === "multi" ? "" : q.options[0][0];
     for (const q of list) if (q.free) out[q.free.key] = "";
     return out;
   }
@@ -711,9 +761,27 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Grosse Vorschau rechts. Dieselbe Vorlage wie das Ergebnis, kein Modellaufruf. */
   function livePreviewHtml() {
     if (isMemo) return `<span class="as-prev-scale">${memoHtml(demoMemo(), false)}</span>`;
-    const gewaehlt = state.answers.variant;
-    const variante = VARIANT_KEYS.includes(gewaehlt) ? gewaehlt : "B";
-    return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>`;
+    // Entscheidet das Modell das Layout, gibt es nichts zu zeigen. Eine
+    // beliebige Kachel waere geraten und damit irrefuehrend.
+    const arten = gewaehlteArten();
+    const carousel = state.answers.asset_type === "carousel";
+    const variante = carousel
+      ? (state.answers.slide_mix === "custom" ? arten[0] : "")
+      : state.answers.variant;
+    if (!variante || variante === "auto" || !VARIANT_KEYS.includes(variante)) return platzhalterHtml();
+    const zusatz = carousel && arten.length > 1
+      ? `<span class="as-prev-note">Slide 1 von ${arten.length}</span>`
+      : "";
+    return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${zusatz}`;
+  }
+
+  /** Ruhiger Platzhalter statt einer geratenen Kachel. */
+  function platzhalterHtml() {
+    return `<div class="as-prev-empty">
+      <i class="fa-solid fa-wand-magic-sparkles"></i>
+      <b>Das Modell wählt das Layout</b>
+      <span>Vorschau erscheint nach „Entwurf erzeugen"</span>
+    </div>`;
   }
 
   function demoMemo() {
@@ -784,6 +852,42 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     </div>`;
   }
 
+  /** Gewaehlte Slide-Arten als Liste. Leer heisst: noch nichts ausgewaehlt. */
+  function gewaehlteArten() {
+    return String(state.answers.slide_pick || "").split(",").map((v) => v.trim()).filter(Boolean);
+  }
+
+  /**
+   * Mehrfachauswahl im selben weissen Dropdown, mit Nummer je gewaehlter Zeile.
+   * Die Reihenfolge der Auswahl ist die Reihenfolge der Slides.
+   */
+  function multiHtml(q) {
+    const gewaehlt = gewaehlteArten();
+    const look = state.answers.look === "dunkel" ? "dunkel" : "hell";
+    const optionen = q.options.filter(([key]) => LOOK[key] === look);
+    const label = gewaehlt.length
+      ? `${gewaehlt.length} von ${state.answers.slide_count || 4} gewählt`
+      : "Arten auswählen";
+    const zeilen = optionen.map(([value, text]) => {
+      const an = gewaehlt.includes(value);
+      return `
+      <button type="button" class="as-ddrow${an ? " is-active" : ""}" data-act="pick-art" data-value="${attr(value)}">
+        <span class="as-ddthumb">${miniatur(value)}</span>
+        <span class="as-ddtext">${esc(text)}</span>
+        ${an ? `<i class="as-tag">Slide ${gewaehlt.indexOf(value) + 1}</i>` : ""}
+      </button>`;
+    }).join("");
+    return `<div class="as-q">
+      <label>${esc(q.label)}</label>
+      <div class="as-dd${state.multiOffen ? " is-open" : ""}">
+        <button type="button" class="as-ddhead" data-act="toggle-arten" aria-expanded="${state.multiOffen ? "true" : "false"}">
+          <span>${esc(label)}</span><i class="fa-solid fa-chevron-down"></i>
+        </button>
+        <div class="as-ddlist">${zeilen}</div>
+      </div>
+    </div>`;
+  }
+
   /**
    * Kleine, nicht bedienbare Ausgabe einer Vorlage fuer die Dropdown-Zeile.
    * Die Bildbedienung muss raus: sie enthaelt einen Knopf, und ein Knopf im
@@ -799,6 +903,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function formHtml() {
     const rows = questions.filter((q) => !q.when || q.when(state.answers)).map((q) => {
       if (q.art === "dropdown") return dropdownHtml(q);
+      if (q.art === "multi") return multiHtml(q);
       const opts = q.options.map(([value, label]) => {
         // Der Look steht am Layout statt in einer eigenen Frage, und die
         // Infografiken tragen den Hinweis, dass ihre Zahlen zu setzen sind.
@@ -1183,6 +1288,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const box = shell.querySelector("[data-livepreview]");
     const inner = box?.querySelector(".as-prev-scale");
     const stage = inner?.querySelector(".as-stage");
+    // Ohne Buehne steht dort der Platzhalter - nichts einzupassen.
     if (!box || !inner || !stage) return;
     const breite = box.clientWidth || 1;
     const hoehe = Math.max(box.clientHeight, 240);
@@ -1598,6 +1704,19 @@ ${stages}${post}
     if (act === "slide-up") { moveSlide(id, -1); return; }
     if (act === "slide-down") { moveSlide(id, 1); return; }
     if (act === "toggle-layout") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
+    if (act === "toggle-arten") { state.multiOffen = !state.multiOffen; zeichneForm(); return; }
+    if (act === "pick-art") {
+      const wert = hit.getAttribute("data-value");
+      const liste = gewaehlteArten();
+      const i = liste.indexOf(wert);
+      // Abwaehlen entfernt, Anwaehlen haengt an: die Reihenfolge der Auswahl ist
+      // die Slidefolge, deshalb wird nicht sortiert.
+      if (i >= 0) liste.splice(i, 1);
+      else if (liste.length < Number(state.answers.slide_count || 4)) liste.push(wert);
+      state.answers.slide_pick = liste.join(",");
+      zeichneForm();
+      return;
+    }
     if (act === "pick-layout") {
       state.answers.variant = hit.getAttribute("data-value");
       state.ddOffen = false;
@@ -1725,6 +1844,6 @@ ${stages}${post}
   }
 
   render();
-  openInstance = { close };
+  openInstance = { close, lebt: () => overlay.isConnected };
   return openInstance;
 }

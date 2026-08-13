@@ -267,3 +267,41 @@ test("der Umbruch richtet sich nach dem Popup, nicht nach dem Fenster", () => {
   assert.match(studio, /container-type:inline-size/);
   assert.doesNotMatch(studio, /@media \(max-width: 1080px\)\{\s*#as-overlay \.as-split2/);
 });
+
+test("Carousel fragt nach den Slide-Arten, Einzelbild nach dem Layout", () => {
+  const block = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("const FORM_MEMO"));
+  assert.match(block, /key: "slide_mix"/);
+  assert.match(block, /key: "slide_pick", label: "Ausgewählte Arten", art: "multi"/);
+  // Das Layout entfaellt beim Carousel, die Slide-Arten entfallen beim Einzelbild.
+  assert.match(block, /when: \(answers\) => answers\.asset_type !== "carousel"/);
+  assert.match(block, /when: \(answers\) => answers\.asset_type === "carousel" && answers\.slide_mix === "custom"/);
+  assert.match(studio, /function multiHtml\(q\)/);
+  assert.match(studio, /q\.art === "multi"/);
+  // Reihenfolge der Auswahl ist die Slidefolge, deshalb kein Sortieren.
+  assert.match(studio, /liste\.push\(wert\)/);
+});
+
+test("waehlt das Modell, steht dort ein Platzhalter statt einer geratenen Kachel", () => {
+  assert.match(studio, /function platzhalterHtml\(\)/);
+  assert.match(studio, /Vorschau erscheint nach/);
+  assert.match(studio, /if \(!variante \|\| variante === "auto"/);
+});
+
+test("die Slide-Arten heissen beschreibend, ohne Buchstaben davor", () => {
+  const block = studio.slice(studio.indexOf("const VARIANTS = ["), studio.indexOf("const LOOK"));
+  assert.doesNotMatch(block, /"[A-L] [A-Z]/);
+  assert.match(block, /"Titel mit Einordnung"/);
+  assert.match(block, /"Mehrere Kennzahlen"/);
+  assert.match(studio, /const LAYOUT_NAMEN = \{/);
+  assert.match(studio, /S2: "Reifepyramide"/);
+});
+
+test("das Studio ueberlebt das Schliessen des Popups", () => {
+  // Eine Instanz, deren Overlay nicht mehr im Dokument haengt, blockierte jeden
+  // weiteren Klick auf den Startknopf.
+  assert.match(studio, /export function closeAssetStudio\(\)/);
+  assert.match(studio, /if \(openInstance\.lebt\(\)\) return openInstance/);
+  assert.match(studio, /lebt: \(\) => overlay\.isConnected/);
+  const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  assert.match(frontend, /closeAssetStudio\(\);\n  els\.articleDetailModal\.classList\.remove/);
+});
