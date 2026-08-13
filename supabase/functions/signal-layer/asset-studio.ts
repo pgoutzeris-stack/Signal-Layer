@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.1";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.2";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -172,15 +172,28 @@ function nbspPercent(value: string): string {
   return value.replace(/(\d(?:[.,]\d+)?)[\s\u00a0]*%/g, "$1\u00a0%").replace(/(\d(?:[.,]\d+)?)%/g, "$1\u00a0%");
 }
 
+/** **fett** und ~~streichen~~ zaehlen nicht zur sichtbaren Laenge. */
+export function withoutMarkup(value: string): string {
+  return String(value || "").replace(/\*\*/g, "").replace(/~~/g, "");
+}
+
+function capMarkup(value: string, max: number): string {
+  if (max <= 0) return "";
+  if (withoutMarkup(value).length <= max) return value;
+  let out = value;
+  while (out.length && withoutMarkup(out).length > max) out = out.slice(0, -1);
+  return out.replace(/(?:\*\*|~~)+$/g, "").replace(/[*~]+$/g, "").trimEnd();
+}
+
 function text(value: unknown, max: number): string {
-  return nbspPercent(
+  return capMarkup(nbspPercent(
     String(value ?? "")
       .replace(/\s*—\s*/g, " ")
       .replace(/\s–\s/g, " ")
       .replace(/[^\S\u00a0]+/g, " ")
       .replace(/ {2,}/g, " ")
       .trim(),
-  ).slice(0, max);
+  ), max);
 }
 
 /**
@@ -188,7 +201,7 @@ function text(value: unknown, max: number): string {
  * bleibt stehen. text() wuerde beides zu einer Zeile machen.
  */
 function richText(value: unknown, max: number): string {
-  return nbspPercent(
+  return capMarkup(nbspPercent(
     String(value ?? "")
       .replace(/\s*—\s*/g, " ")
       .replace(/\s–\s/g, " ")
@@ -196,7 +209,7 @@ function richText(value: unknown, max: number): string {
       .replace(/ *\n */g, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim(),
-  ).slice(0, max);
+  ), max);
 }
 
 /** Ziffernfolge einer Kennzahl, ohne Tausenderpunkte und Einheiten. */
@@ -218,6 +231,30 @@ export function numberIsAttested(value: string, corpus: string): boolean {
   } catch {
     return nackt.includes(digits);
   }
+}
+
+/**
+ * Ziffern, die als Behauptung zaehlen. Einzelziffern (1. Halbjahr) und
+ * Jahreszahlen (19xx/20xx) bleiben draussen: sie sind zu laut und zu oft Datum.
+ */
+export function claimedNumbers(value: string): string[] {
+  const nackt = String(value || "").replace(/\u00a0/g, " ");
+  const gefunden = new Set<string>();
+  const muster = /(?<!\d)(\d{1,3}(?:\.\d{3})+|\d+\.\d+|\d+(?:,\d+)?|\d+)(?!\d)/g;
+  let treffer: RegExpExecArray | null;
+  while ((treffer = muster.exec(nackt))) {
+    const roh = treffer[1];
+    const key = digitKey(roh);
+    if (!key || key.length < 2) continue;
+    if (/^(19|20)\d{2}$/.test(key)) continue;
+    gefunden.add(roh);
+  }
+  return [...gefunden];
+}
+
+export function unattestedClaims(value: string, corpus: string): string[] {
+  if (!corpus) return [];
+  return claimedNumbers(value).filter((zahl) => !numberIsAttested(zahl, corpus));
 }
 
 function capWords(value: string, maxWords: number): string {
@@ -365,11 +402,13 @@ const BELEGREGELN = `<belegregeln>
 Jede Aussage muss aus signal oder artikel belegbar sein.
 Fehlt der Beleg für eine Zahl, formuliere die Aussage qualitativ, statt eine Zahl zu erfinden.
 „etwa ein Viertel", „keine zehn", „rund" sind keine Kennzahlen. Eine Ziffer muss ausgeschrieben im Artikel stehen.
+Das gilt für post_text, Titel, Unterzeilen, Aufzählungen und KPIs genauso wie für die Kennzahl-Varianten E, H und L.
 Ein Zitat ist nur erlaubt, wenn es wörtlich im Artikel steht; nenne dann Person und Rolle.
 Nenne keine Quelle, die nicht in signal oder artikel vorkommt.
 Behaupte keine Kaufabsicht, kein Budget und keine interne Lage, die nicht belegt ist.
 Vorgesehen bleibt vorgesehen: ein Plan, ein Vorhaben oder eine Absicht ist keine vollzogene Tatsache.
 Wirkung nur der Ursache zuschreiben, die der Artikel nennt. Keine fremde Ressortlage erfinden, damit der Adressat sich angesprochen fühlt.
+Zwei Zahlen im selben Artikel sind nicht austauschbar: 24 Prozent Kontrollverlust ist nicht 24 Prozent Mehrausgabe.
 </belegregeln>`;
 
 const DATENHINWEIS = `<datenhinweis>
@@ -480,6 +519,7 @@ Nur diese Varianten. Ein Feld, das die Variante nicht zeigt, ist unsichtbar — 
 E, H und L nur, wenn eine ausgeschriebene Ziffer im Artikel steht.
 S1–T6 nur, wenn sie oben stehen. Ihre Zeichnung ist fest und gehört zum Muster, nicht zum Signal; du schreibst nur die Texte.
 ${laengen}
+** und ~~ zaehlen nicht zur Zeichengrenze.
 Kein Slide wiederholt die Aussage eines anderen.
 Auszeichnungen im Text, weil nur der Text weiss, wo sie hingehoeren: **Vorspann** wird fett gesetzt. Nutze das fuer die Pointe (ein kurzes Stichwort vor dem Satz, etwa „**Folge:** die Handschrift entscheidet") und in jeder Aufzaehlungszeile fuer die Behauptung vor dem Beleg ("**Datenbasis konsolidieren** - Fundament jedes Use-Cases"). Hoechstens eine fette Stelle je Feld. Kein Vorspann, der in jedem Slide gleich lautet.
 </varianten>`;
@@ -523,8 +563,8 @@ subtitle: trägt ein Argument, nicht die Wiederholung des Titels.
 takeaway: nur bei Varianten, die es zeichnen (K, L, S, T). Sonst die Pointe ins sichtbare Feld.
 footer_left: Absender oder Quelle, kurz.
 image_hint: das Bildmotiv in Worten, nur bei C, D und J.
-post_text: der Begleittext des Beitrags, höchstens 1300 Zeichen, erste Zeile ist der Aufhänger, letzter Absatz der Handlungsaufruf. Absätze bleiben Absätze.${carousel ? `
-Der erste Slide setzt die These, die mittleren tragen je einen Gedanken, der letzte trägt den Handlungsaufruf im sichtbaren Pointe-Feld.` : ""}
+post_text: der Begleittext des Beitrags, höchstens 1300 Zeichen, erste Zeile ist der Aufhänger, letzter Absatz der Handlungsaufruf. Absätze bleiben Absätze. Keine Ziffer, die nicht im Artikel steht.${carousel ? `
+Der erste Slide setzt die These, die mittleren tragen je einen Gedanken, der letzte ist F, I oder K, nicht B, denn B zeichnet keine Aufzählung. Der Handlungsaufruf steht im sichtbaren Pointe-Feld.` : ""}
 </aufbau>
 ${SPRACHREGELN}
 ${BELEGREGELN}
@@ -553,7 +593,7 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
   const rollen = list(signal.buying_center_roles, 6, 80);
   const leser = answers.reader_side === "intern"
     ? "Leserseite: ROOTS-intern. Arbeitsaufträge an das eigene Team sind erlaubt. Der Vermerk „Vertraulich · nur intern\" gilt nur hier."
-    : "Leserseite: Kundenpapier. Kein interner Vermerk, keine Arbeitsaufträge an den Kunden, als wäre er Mitarbeitender. Der nächste Schritt ist ein Angebot oder ein Termin, den ROOTS vorschlägt.";
+    : "Leserseite: Kundenpapier. Kein interner Vermerk, keine Arbeitsaufträge an den Kunden, als wäre er Mitarbeitender. next_step: ROOTS handelt (schlägt Termin oder Angebot vor). Die Rolle aus betroffene_rollen ist Adressat, nicht der Imperativ-Täter.";
   const auftrag = [
     `Adressat: ${MEMO_AUDIENCE_LABEL[answers.audience]}. Das ist die Rolle im Briefkopf, nicht die Leserseite.`,
     leser,
@@ -566,7 +606,11 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
       ? `Handlungsaufruf, verbindlich: ${answers.cta}`
       : "Handlungsaufruf: formuliere ihn selbst, konkret und ohne Werbeton.",
     leistung ? `ROOTS-Leistung, verbindlich in recommendation nennen: ${leistung}.` : "",
-    rollen.length ? `next_step nennt eine dieser Rollen als Verantwortung: ${rollen.join(", ")}.` : "",
+    rollen.length
+      ? (answers.reader_side === "intern"
+        ? `next_step nennt eine dieser Rollen als handelnde Verantwortung: ${rollen.join(", ")}.`
+        : `next_step nennt eine dieser Rollen als Adressat des ROOTS-Angebots: ${rollen.join(", ")}.`)
+      : "",
   ].filter(Boolean).join("\n");
 
   return `Du erstellst eine Entscheidervorlage für ROOTS Brand Strategy Consultants aus einem geprüften Signal. Sie liegt einer Entscheiderin oder einem Entscheider vor und muss in einer Minute lesbar sein.
@@ -808,6 +852,45 @@ export function placePointe(slide: AssetSlide, last: boolean): AssetSlide {
   return slide;
 }
 
+/** Felder, die die gewaehlte Vorlage nicht zeichnet, bleiben leer. */
+export function dropHiddenFields(slide: AssetSlide): AssetSlide {
+  const vis = new Set(ASSET_VISIBLE_FIELDS[slide.variant] || []);
+  const keep = (field: string) => vis.has(field);
+  return {
+    ...slide,
+    kicker: keep("kicker") ? slide.kicker : "",
+    title: keep("title") ? slide.title : "",
+    subtitle: keep("subtitle") ? slide.subtitle : "",
+    quote: keep("quote") ? slide.quote : "",
+    attribution: keep("quote") ? slide.attribution : "",
+    takeaway: keep("takeaway") ? slide.takeaway : "",
+    image_hint: keep("image_hint") ? slide.image_hint : "",
+    myth: keep("myth") ? slide.myth : "",
+    fact: keep("fact") ? slide.fact : "",
+    footer_left: keep("footer_left") ? slide.footer_left : "",
+    bullets: keep("bullets") ? slide.bullets : [],
+    steps: keep("steps") ? slide.steps : [],
+    stats: keep("stats") ? slide.stats : [],
+    stat: keep("stat") ? slide.stat : { value: "", label: "" },
+  };
+}
+
+function slidePlain(slide: AssetSlide): string {
+  return [
+    slide.kicker, slide.title, slide.subtitle, slide.quote, slide.attribution,
+    slide.stat.value, slide.stat.label, slide.myth, slide.fact, slide.takeaway,
+    slide.footer_left, ...slide.bullets,
+    ...slide.stats.flatMap((eintrag) => [eintrag.value, eintrag.label]),
+    ...slide.steps.flatMap((schritt) => [schritt.title, schritt.text]),
+  ].join("\n");
+}
+
+function rejectUnattested(text: string, corpus: string, wo: string): void {
+  const fremd = unattestedClaims(text, corpus);
+  if (!fremd.length) return;
+  throw new Error(`${wo} enthalten unbelegte Zahlen (${fremd.slice(0, 8).join(", ")}). Nur Ziffern aus dem Artikel verwenden oder qualitativ formulieren.`);
+}
+
 function applyNumberGate(slide: AssetSlide, corpus: string): AssetSlide {
   if (!corpus) return slide;
   const zahlVariante = (ASSET_NUMBER_VARIANTS as readonly string[]).includes(slide.variant);
@@ -895,10 +978,16 @@ function normalizeLinkedin(
   // Zu viele Slides werden gekappt, zu wenige nicht erfunden: ein leerer Slide
   // waere im Beitrag sichtbar, ein fehlender faellt niemandem auf.
   const limit = carousel ? Math.min(answers.slides || 8, 8) : 1;
-  const kept = slides.slice(0, limit).map((slide, index, alle) => placePointe(slide, index === alle.length - 1));
+  const kept = slides.slice(0, limit)
+    .map((slide, index, alle) => dropHiddenFields(placePointe(slide, index === alle.length - 1)))
+    .filter(slideHasSubstance);
+  if (!kept.length) {
+    throw new Error("Nach dem Entfernen unsichtbarer Felder blieb kein Slide mit Inhalt.");
+  }
 
   const postText = richText(raw.post_text, 1_300)
     || [kept[0].title, kept[0].takeaway || kept[0].subtitle].filter(Boolean).join("\n\n");
+  rejectUnattested([postText, ...kept.map(slidePlain)].join("\n"), corpus, "Beitrag oder Slides");
 
   return { theme: answers.theme, post_text: postText, slides: kept };
 }
@@ -931,7 +1020,11 @@ function normalizeMemo(
     ? context.buyingCenterRoles.map((rolle) => String(rolle || "").trim()).filter(Boolean)
     : [];
   if (rollen.length && !rollen.some((rolle) => mentions(nextStep, rolle))) {
-    nextStep = nextStep ? `${rollen[0]}: ${nextStep}` : `${rollen[0]} setzt den nächsten Schritt in den kommenden zwei Wochen.`;
+    nextStep = answers.reader_side === "intern"
+      ? (nextStep ? `${rollen[0]}: ${nextStep}` : `${rollen[0]} setzt den nächsten Schritt in den kommenden zwei Wochen.`)
+      : (nextStep
+        ? `${nextStep} Gespräch mit ${rollen[0]}.`
+        : `ROOTS schlägt ${rollen[0]} in den kommenden zwei Wochen einen Termin vor.`);
   }
 
   // Ein Titel allein ist noch keine Vorlage: ohne Standfirst, Lage oder
@@ -949,7 +1042,7 @@ function normalizeMemo(
   const corpus = String(context.articleText || "");
   const kpis = stats(raw.kpis, 3).filter((eintrag) => !corpus || !digitKey(eintrag.value) || numberIsAttested(eintrag.value, corpus));
 
-  return {
+  const memo: MemoPayload = {
     kicker: text(raw.kicker, 120) || "Entscheidervorlage",
     title,
     standfirst,
@@ -962,6 +1055,14 @@ function normalizeMemo(
     sources: list(raw.sources, 5, 200),
     confidential: answers.reader_side === "intern" ? answers.confidential : "",
   };
+  rejectUnattested([
+    memo.title, memo.standfirst, memo.recommendation, memo.next_step, memo.cta,
+    ...memo.situation.flatMap((punkt) => [punkt.lead, punkt.text]),
+    ...memo.options.flatMap((option) => [option.name, option.pro, option.contra]),
+    ...memo.kpis.flatMap((kpi) => [kpi.value, kpi.label]),
+    ...memo.sources,
+  ].join("\n"), corpus, "Die Ansprache");
+  return memo;
 }
 
 /**
@@ -1024,5 +1125,5 @@ export function assetRepairTimeoutMs(elapsedMs: number): number | null {
 
 export function buildAssetRepairPrompt(prompt: string, mangel: string): string {
   const grund = mangel.replace(/\s+/g, " ").trim().slice(0, 400);
-  return `${prompt}\n\n<repair>Die vorige Antwort war technisch unlesbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt in der verlangten Struktur.</repair>`;
+  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. Erfinde keine Zahlen, die nicht im Artikel stehen.</repair>`;
 }
