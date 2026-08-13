@@ -83,6 +83,18 @@ import {
   researchCompanyProfile,
   researchWikimediaLogo,
 } from "./company-profile.ts";
+import {
+  ASSET_EDITED_HTML_LIMIT,
+  AssetPayload,
+  ASSET_PROMPT_VERSION,
+  ASSET_SCHEMA_LINKEDIN,
+  ASSET_SCHEMA_MEMO,
+  ASSET_SYSTEM_TEXT,
+  buildAssetPrompt,
+  isAssetKind,
+  normalizeAssetAnswers,
+  normalizeAssetPayload,
+} from "./asset-studio.ts";
 
 // ---------------------------------------------------------------------------
 // CORS
@@ -237,6 +249,9 @@ const EDITOR_ACTIONS = new Set([
   // the same clearance as a crawl. Reading simple results stays open to readers.
   "start_simple_run",
   "process_simple_run",
+  // Ein Asset ist ein bezahlter Modellaufruf auf Anbieterbudget. Das Ansehen
+  // eines bereits erzeugten Assets bleibt fuer Leser offen.
+  "generate_asset",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -7795,6 +7810,129 @@ Deno.serve(async (req: Request) => {
           body: JSON.stringify({ action: "reformat_recent_articles" }),
         }).catch((e) => console.error("Failed to continue reformat batch:", e));
         return corsResponse(origin, { ok: true, processed: articles.length, updated });
+      }
+
+      case "generate_asset": {
+        const assetCapacity = await checkCapacity("simple");
+        if (!assetCapacity.ok) return capacityResponse(origin, assetCapacity);
+
+        const assetKind = String(body.kind || "");
+        if (!isAssetKind(assetKind)) return errorResponse(origin, "kind muss linkedin oder memo sein");
+        const assetArticleId = String(body.article_id || "");
+        if (!assetArticleId) return errorResponse(origin, "article_id fehlt");
+        const assetAnswers = normalizeAssetAnswers(assetKind, body.answers);
+
+        const admin = getAdminClient();
+        const [{ data: assetSignal }, { data: assetArticle, error: assetArticleError }] = await Promise.all([
+          // Bewusst alle Spalten: die Signalzeile ist ueber mehrere Migrationen
+          // gewachsen, und ein fehlender Spaltenname wuerde die ganze Abfrage
+          // scheitern lassen.
+          admin.schema("signal_layer").from("simple_signals").select("*")
+            .eq("article_id", assetArticleId).maybeSingle(),
+          admin.schema("signal_layer").from("articles")
+            .select("id, title, title_de, url, published_at, content, cleaned_content, content_de")
+            .eq("id", assetArticleId).maybeSingle(),
+        ]);
+        if (assetArticleError) return errorResponse(origin, assetArticleError.message, 500);
+        if (!assetArticle) return errorResponse(origin, "Artikel nicht gefunden", 404);
+        if (!assetSignal || assetSignal.status !== "signal") {
+          return errorResponse(origin, "Zu diesem Artikel liegt kein bestätigtes Signal vor", 404);
+        }
+
+        const assetConfig = await getPipelineConfig();
+        const assetModel = assetConfig.ai.simple_model || SIMPLE_MODEL;
+        const assetKey = await modelApiKey(assetModel);
+        if (!assetKey) return errorResponse(origin, `Für ${assetModel} ist kein API-Schlüssel hinterlegt`, 500);
+
+        const assetStartedAt = Date.now();
+        const assetResult = await callJsonModel({
+          model: assetModel,
+          apiKey: assetKey,
+          systemText: ASSET_SYSTEM_TEXT,
+          prompt: buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers),
+          schema: assetKind === "linkedin" ? ASSET_SCHEMA_LINKEDIN : ASSET_SCHEMA_MEMO,
+          maxOutputTokens: 3000,
+          temperature: 0.35,
+          timeoutMs: 90_000,
+          attempts: 2,
+        });
+
+        if (!assetResult.ok) {
+          await admin.schema("signal_layer").from("ai_usage_events").insert({
+            article_id: assetArticleId, operation: "asset_generation", model: assetModel, status: "error",
+            prompt_version: ASSET_PROMPT_VERSION, attempt: assetResult.attempts,
+            duration_ms: Date.now() - assetStartedAt,
+            error_code: `http_${assetResult.status || "network"}`,
+            error_message: assetResult.error.slice(0, 1000),
+            ...zeroCostFields(assetModel),
+          });
+          return errorResponse(origin, "Das Modell konnte kein Asset erzeugen. Bitte erneut versuchen.", 502);
+        }
+
+        // Die Tokens sind bezahlt, sobald die Antwort da ist. Der Kostensatz
+        // wird deshalb einmal berechnet und sowohl an das Erfolgs- als auch an
+        // das Fehlerereignis gehaengt.
+        const assetUsage = assetResult.usage;
+        const assetCostFields = await modelCostFields(assetModel, assetUsage);
+        const assetUsageRow = {
+          article_id: assetArticleId, operation: "asset_generation", model: assetModel,
+          attempt: assetResult.attempts, prompt_version: ASSET_PROMPT_VERSION,
+          input_tokens: assetUsage.input + assetUsage.cachedInput, output_tokens: assetUsage.output,
+          thinking_tokens: assetUsage.thinking, total_tokens: assetUsage.total,
+          ...assetCostFields, duration_ms: Date.now() - assetStartedAt,
+        };
+
+        let assetPayload: AssetPayload | null = null;
+        let assetInvalidMessage = "";
+        try {
+          assetPayload = normalizeAssetPayload(assetKind, assetResult.text, assetAnswers);
+        } catch (assetError) {
+          assetInvalidMessage = assetError instanceof Error ? assetError.message : String(assetError);
+        }
+        if (!assetPayload) {
+          await admin.schema("signal_layer").from("ai_usage_events")
+            .insert({ ...assetUsageRow, status: "error", error_code: "invalid_response", error_message: assetInvalidMessage.slice(0, 1000) });
+          return errorResponse(origin, assetInvalidMessage, 502);
+        }
+
+        const { data: assetUsageEvent, error: assetUsageError } = await admin.schema("signal_layer")
+          .from("ai_usage_events").insert({ ...assetUsageRow, status: "success" }).select("id").single();
+        if (assetUsageError) return errorResponse(origin, `Kosten konnten nicht gebucht werden: ${assetUsageError.message}`, 500);
+
+        const { data: assetRow, error: assetInsertError } = await admin.schema("signal_layer")
+          .from("generated_assets").insert({
+            kind: assetKind,
+            article_id: assetArticleId,
+            signal_id: assetSignal.id,
+            company: assetSignal.company || null,
+            answers: assetAnswers,
+            payload: assetPayload,
+            model: assetModel,
+            prompt_version: ASSET_PROMPT_VERSION,
+            usage_event_id: assetUsageEvent?.id || null,
+            created_by: auth?.userId || null,
+          }).select("*").single();
+        if (assetInsertError) return errorResponse(origin, assetInsertError.message, 500);
+        return corsResponse(origin, { asset: assetRow });
+      }
+
+      case "save_asset": {
+        const savedAssetId = String(body.asset_id || "");
+        if (!savedAssetId) return errorResponse(origin, "asset_id fehlt");
+        const editedHtml = String(body.edited_html ?? "");
+        if (!editedHtml.trim()) return errorResponse(origin, "edited_html fehlt");
+        // Abweisen statt kappen: ein in der Mitte abgeschnittenes Dokument
+        // waere beim naechsten Oeffnen unbrauchbar.
+        if (editedHtml.length > ASSET_EDITED_HTML_LIMIT) {
+          return errorResponse(origin, `Der bearbeitete Stand ist zu groß (maximal ${ASSET_EDITED_HTML_LIMIT.toLocaleString("de-DE")} Zeichen).`, 413);
+        }
+        const { data: savedAsset, error: savedAssetError } = await getAdminClient().schema("signal_layer")
+          .from("generated_assets")
+          .update({ edited_html: editedHtml, updated_at: new Date().toISOString() })
+          .eq("id", savedAssetId).select("id, updated_at").maybeSingle();
+        if (savedAssetError) return errorResponse(origin, savedAssetError.message, 500);
+        if (!savedAsset) return errorResponse(origin, "Asset nicht gefunden", 404);
+        return corsResponse(origin, { ok: true, asset: savedAsset });
       }
 
       default:

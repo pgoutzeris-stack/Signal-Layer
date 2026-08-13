@@ -1899,62 +1899,22 @@
     .pipeline-scroll { padding: 1rem; }
   }
 
-  /* One visual language for every explanatory hover surface. These tokens
-     stay deliberately light in dark system mode so Simple, Advance and the
-     settings pipeline never render different grey/dark tooltip variants. */
-  .tag[data-pill-info]::after,
-  .logic-owner::after,
-  .pipeline-term::after,
-  .stage-card[data-stage-tip]::after {
-    border-color: var(--pill-popover-border);
-    border-radius: 8px;
-    color: var(--pill-popover-text);
-    background: var(--pill-popover-bg);
-    box-shadow: var(--pill-popover-shadow);
-    font-family: 'Circular Std', system-ui, sans-serif;
-    font-size: .64rem;
-    font-weight: 650;
-    line-height: 1.45;
+  /* ---------- Asset Studio ---------- */
+  /* Der Einstieg sitzt in der Prüfleiste des Artikel-Popups und trägt als
+  .as-launch-row { padding: 0 0 .9rem; }
+  .as-launch {
+    width: 100%; min-height: 40px; padding: 0 1rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1px solid var(--brand); border-radius: var(--radius-pill); color: #fff; background: var(--brand);
+    font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer;
+    box-shadow: var(--shadow-dash); transition: background .15s, box-shadow .15s, transform .15s;
   }
-  .pipeline-card-popover,
-  .crawl-status-popover,
-  .review-track-popover,
-  .analysis-error-popover,
-  .cost-detail-popover,
-  .source-error-tip {
-    --ink: #0f172a;
-    --muted: #475569;
-    --line: #e2e8f0;
-    --bg: #ffffff;
-    --surface: #f8fafc;
-    --status-bg: #f8fafc;
-    --status-text: #334155;
-    --brand-light: #eff6ff;
-    --brand-dark: #165fd9;
-    --warning-bg: #fffbf0;
-    --warning-text: #b45309;
-    border-color: var(--pill-popover-border);
-    color: var(--pill-popover-text);
-    background: var(--pill-popover-bg);
-    box-shadow: var(--pill-popover-shadow);
-    font-family: 'Circular Std', system-ui, sans-serif;
-  }
-  .crawl-status-popover strong,
-  .crawl-status-popover b,
-  .review-track-popover b,
-  .analysis-error-popover b,
-  .analysis-error-popover strong,
-  .cost-detail-popover b,
-  .cost-detail-popover strong,
-  .source-error-tip-head { color: var(--pill-popover-text); }
-  .pipeline-card-popover li,
-  .review-track-popover span,
-  .analysis-error-popover small,
-  .cost-detail-popover small,
-  .source-error-tip-body { color: var(--pill-popover-muted); }
-  .logic-owner,
-  .pipeline-term,
-  .stage-card[data-stage-tip] { cursor: default; }
+  .as-launch:hover, .as-launch:focus-visible { outline: none; background: var(--brand-dark); box-shadow: var(--shadow-focus); transform: translateY(-1px); }
+  .as-launch:disabled { opacity: .6; transform: none; cursor: wait; }
+
+  /* Alles Uebrige des Studios stylt asset-studio.js in einer eigenen Insel:
+     das Overlay muss auch als heruntergeladene Einzeldatei tragen, und der
+     Markenlook der Buehne darf nicht vom App-Thema eingefaerbt werden. */
+
 </style>
 </head>
 <body>
@@ -2436,7 +2396,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260805-1330';
+  import { initApp } from './app.js?v=20260813-1200';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

@@ -3,6 +3,9 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260805-1130";
+// Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
+// bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
+import { openAssetStudio } from "./asset-studio.js?v=20260813-1200";
 
 let sb = null;
 let sources = [];
@@ -2149,13 +2152,19 @@ function detailActionForMode() {
   return document.body.classList.contains("mode-simple") ? "get_simple_article_detail" : "get_article_detail";
 }
 
+// Der Studio-Knopf wird über Delegation abgefangen, also lange nachdem das
+// Template gerendert wurde. Die geladene Zeile bleibt deshalb hier liegen.
+let detailArticle = null;
+
 async function openArticleDetail(articleId, { action = detailActionForMode() } = {}) {
   if (!articleId) return;
   els.articleDetailModal.classList.add("show");
   document.body.style.overflow = "hidden";
   els.articleDetailContent.innerHTML = LOADER_HTML;
+  detailArticle = null;
   try {
     const { article } = await callApi(action, { article_id: articleId });
+    detailArticle = article;
     const source = Array.isArray(article.source) ? article.source[0] : article.source;
     const status = article.classification_status || "legacy";
     const reasons = article.rejection_reasons || [];
@@ -2194,6 +2203,11 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
         <div class="article-fulltext">${formatArticleBody(renderEvidenceLinkedText(fulltext, evidence))}</div>
       </main>
       <aside class="article-detail-aside">
+        ${action === "get_simple_article_detail" ? `<div class="as-launch-row">
+          <button type="button" class="as-launch" data-asset-studio="${salesPerspective ? "memo" : "linkedin"}" data-article-id="${escapeHtml(article.id || articleId)}">
+            <i class="fa-solid ${salesPerspective ? "fa-file-lines" : "fa-pen-nib"}"></i> ${salesPerspective ? "Entscheidervorlage erstellen" : "LinkedIn-Asset erstellen"}
+          </button>
+        </div>` : ""}
         <h3>Warum diese Entscheidung?</h3>
         <p class="decision-lead">Die rechte Prüfleiste zeigt Modellentscheidung, bestandene Regeln und die wörtlichen Belege.</p>
         <div class="decision-block">
@@ -3815,6 +3829,21 @@ function bindUi() {
     });
   });
   els.articleDetailModal.addEventListener("click", (event) => {
+    // Muss vor der Schließen-Prüfung stehen, sonst räumt der Backdrop-Zweig das
+    // Popup weg, sobald das Studio davor liegt.
+    const studioButton = event.target.closest("[data-asset-studio]");
+    if (studioButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      void openAssetStudio({
+        kind: studioButton.dataset.assetStudio,
+        articleId: studioButton.dataset.articleId,
+        signal: detailArticle,
+        callApi,
+        escapeHtml,
+      });
+      return;
+    }
     if (event.target === els.articleDetailModal || event.target.closest(".article-detail-close:not(.technical-audit-close)")) closeArticleDetail();
   });
   els.technicalAuditModal?.addEventListener("click", (event) => {

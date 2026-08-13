@@ -11,7 +11,12 @@ test("der Waechter fasst nach, bevor er pausiert", () => {
   for (const dienst of ["login", "recruiting", "profiles"]) {
     assert.match(workflow, new RegExp(`${dienst}=\\$\\(zweimal ${dienst}`), `${dienst} ohne Nachfassen`);
   }
-  assert.match(workflow, /sleep 3/);
+  // Die Pause vor dem zweiten Versuch wurde nach echten Messwerten von 3 auf
+  // 20 Sekunden erhoeht: nach mehr als zwei Stunden ohne Lauf war die Datenbank
+  // nach 3 s noch nicht warm. Der Test prueft deshalb nur, dass eine Pause von
+  // mindestens einigen Sekunden steht, nicht den exakten Wert.
+  const pause = Number(workflow.match(/^\s*sleep (\d+)\s*$/m)?.[1] || 0);
+  assert.ok(pause >= 5, `Pause vor dem zweiten Versuch zu kurz: ${pause}s`);
 });
 
 test("die Messwerte beider Versuche gehen an die Edge Function", () => {
