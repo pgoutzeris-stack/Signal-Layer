@@ -305,3 +305,22 @@ test("das Studio ueberlebt das Schliessen des Popups", () => {
   const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
   assert.match(frontend, /closeAssetStudio\(\);\n  els\.articleDetailModal\.classList\.remove/);
 });
+
+test("das durchgestrichene Wort steht im Text, nicht im Layout", () => {
+  // Die Vorlage kann nicht wissen, welches Wort verworfen wird. Deshalb markiert
+  // der Text es mit Tilden, und der Renderer macht daraus die Auszeichnung.
+  assert.match(studio, /function markiere\(text\)/);
+  assert.match(studio, /text-decoration:line-through/);
+  assert.match(studio, /~~Tools~~/);
+  const prompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
+    backend.normalizeAssetAnswers("linkedin", { variant: "K" }));
+  assert.match(prompt, /~~Tilden~~/);
+});
+
+test("durch die gewaehlten Slides laesst sich blaettern", () => {
+  assert.match(studio, /data-act="prev-back"/);
+  assert.match(studio, /data-act="prev-fwd"/);
+  assert.match(studio, /state\.prevIndex = \(state\.prevIndex \+ richtung \+ anzahl\) % anzahl/);
+  // Schrumpft die Auswahl, darf der Zeiger nicht ins Leere zeigen.
+  assert.match(studio, /if \(state\.prevIndex >= arten\.length\) state\.prevIndex = 0/);
+});

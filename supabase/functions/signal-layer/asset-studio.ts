@@ -336,6 +336,7 @@ G Mythos und Fakt: myth und fact.
 H Multi-Kennzahl: stats, drei bis vier Einträge.
 I Prozess: steps, drei bis fünf Schritte mit n, title und text.
 L Annotierte Kennzahl: stat plus zwei bis drei bullets als Anmerkung.
+K Durchgestrichenes Wort: title mit genau einem Wort in ~~Tilden~~, das im Bild durchgestrichen erscheint. Es ist das Wort, das der Satz verwirft, zum Beispiel "Nicht mehr ~~Tools~~, sondern mehr Handschrift".
 Jeder Slide trägt zusätzlich kicker, title, takeaway und footer_left.
 </varianten>`;
 

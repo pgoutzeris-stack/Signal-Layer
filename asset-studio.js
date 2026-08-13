@@ -408,6 +408,13 @@ const CHROME_CSS = `
 #as-overlay .as-prev-empty i{font-size:1.5rem; color:var(--brand,#206efb); opacity:.75;}
 #as-overlay .as-prev-empty b{font-size:.92rem; color:var(--ink,#0f172a);}
 #as-overlay .as-prev-empty span{font-size:.78rem;}
+#as-overlay .as-prev-nav{position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+  display:flex; align-items:center; gap:4px; padding:3px 5px; background:#fff;
+  border:1px solid var(--line,#e2e8f0); border-radius:99px; box-shadow:0 6px 18px rgba(15,23,42,.12);}
+#as-overlay .as-prev-nav span{font-size:.7rem; font-weight:700; color:var(--muted,#475569); padding:0 4px;}
+#as-overlay .as-prev-nav button{width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+  border:0; border-radius:50%; background:transparent; color:var(--brand,#206efb); font-size:.72rem;}
+#as-overlay .as-prev-nav button:hover{background:var(--brand-light,#eff6ff);}
 #as-overlay .as-prev-note{position:absolute; bottom:10px; right:14px; font-size:.7rem; font-weight:600;
   color:var(--muted,#475569); background:#fff; border:1px solid var(--line,#e2e8f0); border-radius:99px; padding:2px 8px;}
 #as-overlay .as-prev-big{position:relative;}
@@ -579,7 +586,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1800";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -624,6 +631,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     pendingImage: null,
     ddOffen: false,
     multiOffen: false,
+    prevIndex: 0,
   };
 
   const cleanups = [];
@@ -765,14 +773,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // beliebige Kachel waere geraten und damit irrefuehrend.
     const arten = gewaehlteArten();
     const carousel = state.answers.asset_type === "carousel";
+    // Beim Blaettern nicht ueber das Ende hinaus: die Auswahl kann schrumpfen.
+    if (state.prevIndex >= arten.length) state.prevIndex = 0;
     const variante = carousel
-      ? (state.answers.slide_mix === "custom" ? arten[0] : "")
+      ? (state.answers.slide_mix === "custom" ? arten[state.prevIndex] : "")
       : state.answers.variant;
     if (!variante || variante === "auto" || !VARIANT_KEYS.includes(variante)) return platzhalterHtml();
-    const zusatz = carousel && arten.length > 1
-      ? `<span class="as-prev-note">Slide 1 von ${arten.length}</span>`
+    const blaettern = carousel && arten.length > 1
+      ? `<div class="as-prev-nav">
+          <button type="button" data-act="prev-back" aria-label="Vorherige Slide"><i class="fa-solid fa-chevron-left"></i></button>
+          <span>Slide ${state.prevIndex + 1} von ${arten.length}</span>
+          <button type="button" data-act="prev-fwd" aria-label="Nächste Slide"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>`
       : "";
-    return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${zusatz}`;
+    return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${blaettern}`;
   }
 
   /** Ruhiger Platzhalter statt einer geratenen Kachel. */
@@ -814,6 +828,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       fact: "Der Befund, der ihr widerspricht.",
       takeaway: "Die Kernaussage mit Kontrast.",
       footer_left: company || "ROOTS Brand Strategy Consultants",
+      // Nur dieses Layout lebt von der Streichung, deshalb traegt sein
+      // Beispieltext die Markierung.
+      ...(variant === "K" ? { title: "Nicht mehr ~~Tools~~, sondern mehr Handschrift" } : {}),
     });
   }
 
@@ -1155,8 +1172,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (name === "logo" || name === "image") return attr(wert || "");
       const bearbeitet = slide.html?.[name];
       if (typeof bearbeitet === "string") return bearbeitet;
-      return esc(wert || "");
+      return markiere(esc(wert || ""));
     });
+  }
+
+  /**
+   * ~~Wort~~ wird zum durchgestrichenen Wort in Markenfarbe. Das Layout
+   * "Durchgestrichenes Wort" lebt von dieser Auszeichnung; sie steht im Text,
+   * weil nur dort steht, welches Wort gestrichen gehoert.
+   */
+  function markiere(text) {
+    return text.replace(/~~([^~]{1,60})~~/g,
+      '<span style="color:var(--extra-muted);text-decoration:line-through;text-decoration-color:var(--brand);text-decoration-thickness:8px;">$1</span>');
   }
 
   /** Fotos bekommen die Bedienung der Werkbank, das Logo bleibt unberuehrt. */
@@ -1705,6 +1732,15 @@ ${stages}${post}
     if (act === "slide-down") { moveSlide(id, 1); return; }
     if (act === "toggle-layout") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
     if (act === "toggle-arten") { state.multiOffen = !state.multiOffen; zeichneForm(); return; }
+    if (act === "prev-back" || act === "prev-fwd") {
+      const anzahl = Math.max(1, gewaehlteArten().length);
+      const richtung = act === "prev-fwd" ? 1 : -1;
+      state.prevIndex = (state.prevIndex + richtung + anzahl) % anzahl;
+      const box = shell.querySelector("[data-livepreview]");
+      if (box) box.innerHTML = livePreviewHtml();
+      fitPreview();
+      return;
+    }
     if (act === "pick-art") {
       const wert = hit.getAttribute("data-value");
       const liste = gewaehlteArten();
