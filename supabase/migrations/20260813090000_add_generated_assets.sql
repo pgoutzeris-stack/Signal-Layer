@@ -48,3 +48,20 @@ comment on column signal_layer.generated_assets.edited_html is
   'Vom Nutzer in der Werkbank bearbeiteter Stand. Null, solange nur der Entwurf existiert.';
 comment on column signal_layer.generated_assets.usage_event_id is
   'Kostenereignis des erzeugenden Modellaufrufs, damit jedes Asset seinen Preis kennt.';
+
+-- Tokens und tatsaechliche Kosten zusaetzlich auf der Assetzeile, wie bei den
+-- Artikeln (articles.gemini_*_tokens / gemini_cost_*). ai_usage_events bleibt
+-- die Quelle der Wahrheit; hier stehen die Werte, damit der Preis eines Assets
+-- ohne Verbund lesbar ist.
+alter table signal_layer.generated_assets
+  add column if not exists input_tokens integer,
+  add column if not exists cached_input_tokens integer,
+  add column if not exists output_tokens integer,
+  add column if not exists thinking_tokens integer,
+  add column if not exists total_tokens integer,
+  add column if not exists cost_usd numeric,
+  add column if not exists cost_eur numeric,
+  add column if not exists native_cost numeric,
+  add column if not exists pricing_currency text,
+  add column if not exists pricing_version text,
+  add column if not exists duration_ms integer;

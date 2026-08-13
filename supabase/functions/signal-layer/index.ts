@@ -7911,6 +7911,20 @@ Deno.serve(async (req: Request) => {
             prompt_version: ASSET_PROMPT_VERSION,
             usage_event_id: assetUsageEvent?.id || null,
             created_by: auth?.userId || null,
+            // Tokens und tatsaechliche Kosten auch auf der Assetzeile, wie bei
+            // den Artikeln. Derselbe Kostensatz wie im Ereignis, damit beide
+            // Zahlen nie auseinanderlaufen koennen.
+            input_tokens: assetUsage.input + assetUsage.cachedInput,
+            cached_input_tokens: assetUsage.cachedInput,
+            output_tokens: assetUsage.output,
+            thinking_tokens: assetUsage.thinking,
+            total_tokens: assetUsage.total,
+            cost_usd: assetCostFields.estimated_cost_usd ?? null,
+            cost_eur: assetCostFields.estimated_cost_eur ?? null,
+            native_cost: assetCostFields.native_cost ?? null,
+            pricing_currency: assetCostFields.pricing_currency ?? null,
+            pricing_version: assetCostFields.pricing_version ?? null,
+            duration_ms: Date.now() - assetStartedAt,
           }).select("*").single();
         if (assetInsertError) return errorResponse(origin, assetInsertError.message, 500);
         return corsResponse(origin, { asset: assetRow });

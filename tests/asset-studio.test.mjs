@@ -77,6 +77,17 @@ test("Frontend und Backend rufen dieselben Aktionen mit denselben Namen", () => 
   assert.ok(!editorBlock.includes('"save_asset"'));
 });
 
+test("Tokens und Kosten stehen auch auf der Assetzeile", () => {
+  // Wie bei den Artikeln (articles.gemini_*): der Preis eines Assets soll ohne
+  // Verbund lesbar sein und erhalten bleiben, wenn das Kostenereignis faellt.
+  const migration = readFileSync(new URL("../supabase/migrations/20260813090000_add_generated_assets.sql", import.meta.url), "utf8");
+  for (const spalte of ["input_tokens", "output_tokens", "total_tokens", "cost_eur", "cost_usd", "native_cost", "pricing_version"]) {
+    assert.ok(migration.includes(spalte), `Spalte ${spalte} fehlt in der Migration`);
+  }
+  assert.match(edge, /cost_eur: assetCostFields\.estimated_cost_eur/);
+  assert.match(edge, /total_tokens: assetUsage\.total/);
+});
+
 test("die Kosten werden als asset_generation gebucht", () => {
   const migration = readFileSync(new URL("../supabase/migrations/20260813090000_add_generated_assets.sql", import.meta.url), "utf8");
   assert.match(migration, /'asset_generation'/);
