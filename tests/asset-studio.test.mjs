@@ -340,7 +340,8 @@ test("fetter Vorspann und Streichung ueberleben den Platzhalter", () => {
   const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
     slides: [{ variant: "F", title: "T", kicker: "K", footer_left: "R", takeaway: "**Pointe:** Kontrast", bullets: ["**Fett** und Text"] }],
   }), backend.normalizeAssetAnswers("linkedin", {}));
-  assert.match(payload.slides[0].takeaway, /\*\*Pointe:\*\*/);
+  assert.equal(payload.slides[0].takeaway, "");
+  assert.match(payload.slides[0].bullets.join("\n"), /\*\*Pointe:\*\*/);
   assert.match(payload.slides[0].bullets[0], /\*\*Fett\*\*/);
 });
 
@@ -561,10 +562,13 @@ test("die Pointe wandert in ein sichtbares Feld, nicht ins tote takeaway", () =>
     slides: [{ variant: "B", kicker: "MARKE", title: "Die Marke führt das Quartal", takeaway: "Jetzt den Termin setzen", footer_left: "ROOTS" }],
   }), backend.normalizeAssetAnswers("linkedin", {}));
   assert.equal(payload.slides[0].subtitle, "Jetzt den Termin setzen");
+  assert.equal(payload.slides[0].takeaway, "");
+  assert.deepEqual(payload.slides[0].bullets, []);
   const listicle = backend.normalizeAssetPayload("linkedin", JSON.stringify({
     slides: [{ variant: "F", kicker: "K", title: "Drei Hebel tragen", bullets: ["Erster Hebel"], takeaway: "Der Aufruf steht am Ende", footer_left: "R" }],
   }), backend.normalizeAssetAnswers("linkedin", {}));
   assert.ok(listicle.slides[0].bullets.includes("Der Aufruf steht am Ende"));
+  assert.equal(listicle.slides[0].takeaway, "");
 });
 
 test("post_text behält Absätze und das Leerzeichen vor Prozent", () => {
@@ -627,8 +631,69 @@ test("Prompt und Studio kennen Feldkarte, Leserseite und Überlauf-Gate", () => 
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.1");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.2");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
+  assert.match(prompt, /Keine Ziffer, die nicht im Artikel steht/);
+  const karussell = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
+    backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 }));
+  assert.match(karussell, /letzte ist F, I oder K/);
+  assert.match(memoPrompt, /ROOTS handelt/);
+});
+
+test("Tilden und Sterne zählen nicht gegen die Zeichenschwelle", () => {
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{
+      variant: "K", kicker: "HANDELN",
+      title: "Nicht ~~Umsatz~~, sondern Verantwortung entscheidet über BNPL",
+      takeaway: "Jetzt die Risiken prüfen", footer_left: "ROOTS",
+    }],
+  }), backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 }));
+  assert.match(payload.slides[0].title, /BNPL/);
+  assert.ok(backend.withoutMarkup(payload.slides[0].title).length <= 60);
+});
+
+test("unsichtbare Felder einer Variante bleiben leer", () => {
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{
+      variant: "B", kicker: "MARKE", title: "Die Marke führt das Quartal",
+      subtitle: "Ein Argument steht hier", bullets: ["Diese Zeile sieht niemand"],
+      takeaway: "", footer_left: "ROOTS",
+    }],
+  }), backend.normalizeAssetAnswers("linkedin", {}));
+  assert.deepEqual(payload.slides[0].bullets, []);
+  assert.equal(payload.slides[0].takeaway, "");
+});
+
+test("unbelegte Ziffern im Begleittext fallen durch, Jahreszahlen nicht", () => {
+  const answers = backend.normalizeAssetAnswers("linkedin", {});
+  const folie = { variant: "B", kicker: "K", title: "Die Marke führt das Quartal", subtitle: "Ein Argument", footer_left: "ROOTS" };
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "70 % der Verbraucher nennen Passform als Grund.",
+    slides: [folie],
+  }), answers, { articleText: "Retouren von 47 Mrd. USD. Bershka senkte den Anteil." }), /unbelegte Zahlen/);
+  const ok = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "Etwa ein Viertel traut sich die Erkennung zu. Stand 2026.",
+    slides: [folie],
+  }), answers, { articleText: "Etwa ein Viertel der Befragten. Keine ausgeschriebene Kennzahl." });
+  assert.match(ok.post_text, /ein Viertel/);
+  assert.deepEqual(backend.claimedNumbers("70 % und 2026 und 8.000 Stellen"), ["70", "8.000"]);
+});
+
+test("Kundenpapier setzt ROOTS als Handelnden, nicht die Kundenrolle", () => {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify({
+    title: "Der Umbau braucht eine Entscheidung",
+    standfirst: "Lage und Beleg aus dem Artikel",
+    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
+    options: [{ name: "Audit", pro: "Klarheit", contra: "Zeit" }],
+    recommendation: "Audit wählen",
+    next_step: "In zwei Wochen einen Termin setzen",
+  }), backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }), {
+    rootsOffering: "Brand Audit",
+    buyingCenterRoles: ["Marketingleiter"],
+  });
+  assert.match(memo.next_step, /Marketingleiter/);
+  assert.match(memo.next_step, /Gespräch mit/);
+  assert.doesNotMatch(memo.next_step, /^Marketingleiter:/);
 });
