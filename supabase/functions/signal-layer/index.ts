@@ -104,6 +104,7 @@ import {
   MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS,
   MEMO_BENCHMARK_RESEARCH_ATTEMPTS,
   MEMO_BENCHMARK_RESEARCH_MAX_TOKENS,
+  MEMO_IMAGE_FETCH_MS,
   MemoAnswers,
   MemoPayload,
   applyAssetPulse,
@@ -3060,7 +3061,7 @@ async function generateGeminiMemoImage(
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify(geminiImageRequestBody(prompt, aspect)),
-      }, ASSET_HEARTBEAT_STALE_MS);
+      }, MEMO_IMAGE_FETCH_MS);
       if (!response.ok) continue;
       const json = await response.json();
       const inline = parseGeminiInlineImage(json);
@@ -8615,9 +8616,9 @@ Deno.serve(async (req: Request) => {
             } else {
               payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
                 remainingMs: ASSET_WALL_CLOCK_MS - (Date.now() - startedAt),
-                log: (event, extra) => {
+                log: async (event, extra) => {
                   loggen(event, extra || {});
-                  void persist({});
+                  await persist({});
                 },
                 generate: (promptText, aspect) => generateGeminiMemoImage(geminiKey, promptText, aspect),
               });
