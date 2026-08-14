@@ -7,13 +7,13 @@ export function assetEtaFallbackStages(kind, answers = {}) {
   const memo = kind === "memo";
   const carousel = answers.asset_type === "carousel";
   const slides = Number(answers.slides || 4);
-  const modell = memo ? 110_000 : carousel ? (slides >= 6 ? 115_000 : 95_000) : 70_000;
+  const modell = memo ? 170_000 : carousel ? (slides >= 6 ? 115_000 : 95_000) : 70_000;
   const stages = { lesen: 2_000, modell, pruefen: 2_500, fuellen: 2_500 };
   if (memo) {
     const eigen = String(answers.benchmarks_mode || answers.benchmarks || "") === "custom";
     stages.recherchieren = eigen ? 4_000 : 8_000;
   }
-  if (memo && answers.images !== "upload") stages.bilder = 12_000;
+  if (memo && answers.images !== "upload") stages.bilder = 45_000;
   return stages;
 }
 
@@ -51,6 +51,12 @@ function schreibtSchon(log) {
   return Boolean(letzte(log, (row) => row?.event === "pulse" && row?.phase === "writing" && Number(row?.chars || 0) > 0));
 }
 
+function denktNoch(log) {
+  if (schreibtSchon(log)) return false;
+  const pulse = letzte(log, (row) => row?.event === "pulse");
+  return Boolean(pulse && pulse.phase === "thinking");
+}
+
 export function assetEtaRemainingMs({
   kind = "linkedin",
   answers = {},
@@ -72,27 +78,34 @@ export function assetEtaRemainingMs({
     if (i === idx) {
       const spent = Math.max(0, elapsed - stufeStartMs(runLog, name, elapsed));
       let left = typ - spent;
-      if (name === "modell" && schreibtSchon(runLog)) left = Math.min(Math.max(left, 0), 20_000);
-      if (spent > typ * 1.8) left = Math.min(Math.max(left, 0), 25_000);
-      rest += Math.max(8_000, left);
+      const denkt = name === "modell" && denktNoch(runLog);
+      const schreibt = name === "modell" && schreibtSchon(runLog);
+      if (denkt) {
+        // DeepSeek denkt oft länger als der Median. Die Anzeige darf dann
+        // nicht auf „unter 1 Minute“ fallen, solange noch Begründung kommt.
+        left = Math.max(left, 90_000);
+      } else if (schreibt) {
+        left = Math.min(Math.max(left, 18_000), 45_000);
+      } else if (spent > typ * 1.8) {
+        left = Math.min(Math.max(left, 0), 25_000);
+      }
+      rest += Math.max(denkt ? 90_000 : 8_000, left);
     } else {
       rest += typ;
     }
   }
   const totalTyp = order.reduce((sum, name) => sum + Math.max(0, Number(typical[name] || 0)), 0);
   const ziel = Number(forecastMs) > 8_000 ? Number(forecastMs) : totalTyp;
-  if (idx <= 1 && elapsed < 8_000 && ziel > elapsed) {
-    rest = Math.max(rest, ziel - elapsed);
-  }
+  if (ziel > elapsed) rest = Math.max(rest, ziel - elapsed);
   return Math.max(5_000, Math.round(rest));
 }
 
 export function assetEtaLabel(ms) {
   const sek = Math.max(0, Number(ms) || 0) / 1000;
-  if (sek < 45) return "Verbleibt unter 1 Minute";
+  if (sek < 45) return "Verbleibend unter 1 Minute";
   const min = Math.max(1, Math.round(sek / 60));
-  if (min === 1) return "Verbleibt 1 Minute";
-  return `Verbleiben ${min} Minuten`;
+  if (min === 1) return "Verbleibend 1 Minute";
+  return `Verbleibend ${min} Minuten`;
 }
 
 export function assetEtaProgressPct(elapsedMs, restMs) {

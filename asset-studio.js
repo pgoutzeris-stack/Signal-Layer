@@ -589,7 +589,11 @@ const CHROME_CSS = `
   animation:as-pulse 1.4s ease-in-out infinite;}
 @keyframes as-pulse{0%,100%{transform:scale(1); opacity:1;} 50%{transform:scale(1.12); opacity:.72;}}
 #as-overlay .as-load-text{margin:0; font-size:1.05rem; font-weight:700; color:var(--ink,#0f172a);}
-#as-overlay .as-load-eta{margin:0; font-size:.95rem; font-weight:600; color:var(--ink,#0f172a);}
+#as-overlay .as-load-eta{
+  margin:2px 0 0; display:inline-flex; align-items:center; gap:7px;
+  font-size:.78rem; font-weight:400; letter-spacing:.01em; color:#64748b;
+}
+#as-overlay .as-load-eta i{font-size:.72rem; color:#94a3b8;}
 #as-overlay .as-load-bar{
   width:100%; height:10px; border-radius:99px; background:var(--line,#e2e8f0);
   overflow:hidden; position:relative;
@@ -828,9 +832,9 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1430";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1430";
-import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-1430";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1615";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1615";
+import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-1615";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1257,7 +1261,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <div class="as-load-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Schritt ${i + 1} von ${ABSCHNITTE.length}">
         <span class="as-load-bar-fill" style="width:${pct}%"></span>
       </div>
-      <p class="as-load-eta">${esc(ladeEtaText())}</p>
+      <p class="as-load-eta"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span data-eta-text>${esc(ladeEtaText())}</span></p>
       ${log.length ? `<ul class="as-load-log">${log.map((row) => `<li><b>${row.sek} s</b><span>${esc(row.text)}</span></li>`).join("")}</ul>` : ""}
       <div class="as-load-actions"><button type="button" class="as-btn" data-act="cancel-generate">Abbrechen</button></div>
     </div>`;
@@ -1278,7 +1282,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (!state.busy) { ladeTaktStop(); return; }
       const fill = shell.querySelector(".as-load-bar-fill");
       const bar = shell.querySelector(".as-load-bar");
-      const eta = shell.querySelector(".as-load-eta");
+      const eta = shell.querySelector("[data-eta-text]");
       const pct = ladeFortschritt();
       if (fill) fill.style.width = `${pct}%`;
       if (bar) bar.setAttribute("aria-valuenow", String(pct));
@@ -1314,7 +1318,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ladeAbschnittSetzen(stage);
       return;
     }
-    const eta = shell.querySelector(".as-load-eta");
+    const eta = shell.querySelector("[data-eta-text]");
     if (eta) eta.textContent = ladeEtaText();
     const fill = shell.querySelector(".as-load-bar-fill");
     const bar = shell.querySelector(".as-load-bar");
