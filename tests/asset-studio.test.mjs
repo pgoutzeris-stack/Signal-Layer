@@ -578,6 +578,7 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.match(assetSrc, /function rejectRepeatedLeadNumbers/);
   assert.doesNotMatch(assetSrc, /dropRepeatedLeadNumberSlides/);
   assert.equal(backend.assetMangelIsRepairable("Die Antwort war kein JSON-Objekt. Angekommen ist: x"), true);
+  assert.equal(backend.assetMangelIsRepairable("Folie E braucht eine belegte Leitkennzahl aus kennzahlen_im_artikel. Wähle E/L nur mit Zahl oder eine Textfolie (B, G, F)."), true);
   assert.equal(backend.assetMangelIsRepairable("Die Kennzahl 24 steht auf Folie 1 und Folie 2."), false);
   assert.equal(backend.assetMangelIsRepairable("Das Karussell braucht genau 4 Folien, das Modell hat 3 geliefert (G, H, K)."), false);
   const now = Date.parse("2026-08-14T08:00:00.000Z");
@@ -724,6 +725,18 @@ test("Kennzahl-Varianten ohne belegte Ziffer sind unbrauchbar, nicht still B", (
   assert.equal(backend.numberIsAttested("25 %", "etwa ein Viertel"), false);
   assert.equal(backend.numberIsAttested("10 Autominuten", "keine zehn Autominuten"), false);
   assert.equal(backend.numberIsAttested("47 Mrd.", "Retouren von 47 Mrd. USD"), true);
+
+  // 14.8.2026: DeepSeek wählte E mit 13,3 %, der Artikel schrieb 13,3 Prozent.
+  // digitKey machte daraus 133 und verwarf die belegte Leitkennzahl.
+  const artikel = "Im ersten Halbjahr 2026 wächst der Konzern währungsbereinigt um 13,3 Prozent auf 749,4 Millionen Euro Umsatz. Die Jahresprognose wird auf bis zu 11 Prozent angehoben.";
+  assert.equal(backend.quantityIsAttested("13,3 %", artikel), true);
+  assert.equal(backend.quantityIsAttested("13.3%", artikel), true);
+  assert.equal(backend.quantityIsAttested("13,3 %", "133 Prozent Wachstum ohne Komma"), false);
+  const komma = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{ variant: "E", kicker: "MARKE", title: "Konsequente Markenstrategie treibt Wachstum.", subtitle: "Getragen von der Marke.", stat: { value: "13,3 %", label: "H1 2026" }, footer_left: "ROOTS" }],
+  }), answers, { articleText: artikel });
+  assert.equal(komma.slides[0].variant, "E");
+  assert.match(komma.slides[0].stat.value, /13/);
 });
 
 test("die Pointe wandert in ein sichtbares Feld, nicht ins tote takeaway", () => {
