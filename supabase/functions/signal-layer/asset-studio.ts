@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.8";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.9";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -125,6 +125,10 @@ export type AssetNormalizeContext = {
   topics?: string[] | null;
   territory?: string | null;
   signalLabel?: string | null;
+  /** Signalüberschrift: Anlass, nicht Cover-These. */
+  signalHeadline?: string | null;
+  /** Artikeltitel: Anlass, nicht Cover-These. */
+  articleTitle?: string | null;
   /** Recherchierte oder gelieferte Vorreiter, gelten als belegt. */
   benchmarkCorpus?: string | null;
 };
@@ -997,7 +1001,7 @@ export function allowedSlideKeys(answers: LinkedinAnswers, articleText = ""): As
 const ASSETTYP_BRIEFING = `<assettypen>
 LinkedIn Einzelbild: eine These, ein Gedanke. Genau ein sichtbares Feld trägt die Pointe. Foto-Layouts C, D und J nur, wenn der Nutzer sie gewählt hat; die Datei kommt vom Nutzer.
 LinkedIn Karussell: Folge von Gedanken, keine Wiederholung. Erste Folie setzt die These. Jede mittlere Folie einen Beleg oder Gegensatz. Dieselbe Ziffer darf nicht auf zwei Folien die Pointe tragen. Letzte Folie den Aufruf im sichtbaren Feld (F, I oder K passen oft).
-Ansprache: immer dasselbe Executive Memo, drei Seiten. Kein internes Vermerk, keine Optionsmatrix. Cover setzt den Moment. Seite 2 belegt ihn (Markt, Kennzahlen, drei Benchmarks). Seite 3 macht ihn für den Adressaten konkret (drei Potenziale) und holt das Gespräch.
+Ansprache: immer dasselbe Executive Memo, drei Seiten. Kein internes Vermerk, keine Optionsmatrix. Cover setzt die Herausforderung, an der ROOTS andockt. Das Signal ist der Anlass, nicht die Geschichte. Seite 2 belegt denselben Hebel (Markt, Kennzahlen, drei Benchmarks). Seite 3 macht ihn für den Adressaten konkret (drei Potenziale, wie ROOTS liefert) und holt das Gespräch.
 </assettypen>`;
 
 const LEITKENNZAHL = `<leitkennzahl>
@@ -1193,7 +1197,7 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
     firmaZeile,
     answers.storyline
       ? `Inhalt, verbindlich: ${answers.storyline}`
-      : "Inhalt: das Modell schreibt aus signal und artikel.",
+      : "Inhalt: Signal und Artikel sind der Anlass und der Beleg. Die Cover-These ist die Markt- oder Markenherausforderung, an der ROOTS andockt (roots_anschluss, roots_leistung, begründung). Nicht die Personalie, nicht die Nachrichtenüberschrift.",
     answers.cta
       ? `CTA, verbindlich in cta (die Frage im blauen Band): ${answers.cta}`
       : "cta: eine Gesprächsfrage. Der Knopftext ist fest „Kontakt aufnehmen“.",
@@ -1202,21 +1206,29 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
     bilder,
   ].filter(Boolean).join("\n");
 
-  return `Du erstellst das ROOTS Executive Memo. Es ist immer dasselbe Dokument aus drei A4-Seiten. Ziel: in einer Minute steht fest, warum jetzt gehandelt werden muss, und ROOTS holt das Gespräch. Es ist ein Türöffner, keine Strategiearbeit, keine Optionsmatrix, kein internes Vermerk.
+  return `Du erstellst das ROOTS Executive Memo. Es ist immer dasselbe Dokument aus drei A4-Seiten. Ziel: in einer Minute steht fest, welche Herausforderung jetzt anliegt und warum ROOTS der richtige Gesprächspartner ist. Es ist ein Türöffner, der Kompetenz zeigt, keine Strategiearbeit, keine Optionsmatrix, kein internes Vermerk, keine Nachrichtenzusammenfassung.
 
 ${ASSETTYP_BRIEFING}
 <ziel>
-Das Memo überzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu sprechen. Cover = der strategische Moment. Seite 2 belegt ihn. Seite 3 macht ihn für DIESES Unternehmen konkret und endet mit dem Angebot.
+Das Memo überzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu sprechen. Cover = die Markt- oder Markenherausforderung, an der ROOTS andockt. Seite 2 belegt denselben Hebel. Seite 3 macht ihn für DIESES Unternehmen konkret, zeigt wo ROOTS liefert, und endet mit dem Angebot.
 </ziel>
+<anlass>
+Signal und Artikel sind Auslöser und Beleg, nicht die Geschichte. überschrift, anlass und person erklären, WARUM das Memo jetzt entsteht. Sie dürfen nicht die Cover-These sein.
+title und standfirst nennen NICHT die Personalie, NICHT den Namen aus person, NICHT eine Ernennung, NICHT die Nachrichtenüberschrift und NICHT eine Paraphrase davon.
+Sie nennen die Herausforderung, die der Anlass aufwirft: Positionierung, Führung der Marke, Auftritt, Kanal, Handschrift, Agenda, Audit, Differenzierung oder ein anderer Hebel, an dem ROOTS arbeitet.
+Dafür liest du zuerst roots_anschluss, roots_leistung und begründung. Der Artikel liefert Belege und Timing, nicht den Titel.
+Seite 2 (Markt, KPIs, Benchmarks) zeigt, wie Vorreiter denselben Hebel schon gezogen haben. Seite 3 (Potenziale, about_fit) zeigt, wo ROOTS konkret liefert.
+Ein Führungswechsel, eine Kampagne oder eine Zahl ist nur dann Cover-Stoff, wenn du daraus die offene Aufgabe machst, nicht die Meldung.
+</anlass>
 <zusammenhang>
-title und standfirst auf dem Cover sind die These. market_title und die KPIs belegen, dass der Markt sich bewegt. Die drei benchmarks zeigen Vorreiter, die denselben Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation.
+title und standfirst auf dem Cover sind die Herausforderung. market_title und die KPIs belegen, dass der Markt sich bewegt. Die drei benchmarks zeigen Vorreiter, die denselben Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation. Nichts erzählt die Signalüberschrift noch einmal.
 </zusammenhang>
 <auftrag>
 ${auftrag}
 </auftrag>
 <aufbau>
-title: Action Title, These mit Verb, höchstens 15 Wörter. Der strategische Moment für das Unternehmen.
-standfirst: ein bis zwei Sätze, warum der Moment jetzt ist. Beleg aus dem Artikel, keine zweite These.
+title: Action Title, These mit Verb, höchstens 15 Wörter. Die Herausforderung für Marke oder Markt, an der ROOTS andockt. Keine Personalie, keine Nachrichtenmeldung, kein Name.
+standfirst: ein bis zwei Sätze, warum diese Herausforderung jetzt anliegt. Beleg aus dem Artikel, keine zweite These, keine Ernennung, kein Lebenslauf.
 market_title: Überschrift von 01 Marktdynamik. Die Kategorie oder der Markt, nicht das Unternehmen.
 market_p1, market_p2: je ein Absatz. Lage des Marktes, dann warum der Moment jetzt ist. Zahlen nur aus kennzahlen_im_artikel.
 kpis: drei oder vier belegte Kennzahlen. value kurz, label erklärt den Bezug. Leer, wenn keine Ziffer vorliegt.
@@ -1346,8 +1358,8 @@ export const ASSET_SCHEMA_MEMO = {
   type: "OBJECT",
   required: ["title", "standfirst", "market_title", "market_p1", "benchmarks", "potentials", "cta"],
   properties: {
-    title: { type: "STRING", description: "Action Title, These mit Verb, höchstens 15 Wörter." },
-    standfirst: { type: "STRING", description: "Ein bis zwei Sätze, warum der Moment jetzt ist." },
+    title: { type: "STRING", description: "Action Title, These mit Verb, höchstens 15 Wörter. Herausforderung für Marke oder Markt, nicht die Nachrichtenmeldung." },
+    standfirst: { type: "STRING", description: "Ein bis zwei Sätze, warum diese Herausforderung jetzt anliegt. Keine Personalie." },
     market_title: { type: "STRING", description: "Überschrift von 01 Marktdynamik. Kategorie oder Markt, nicht das Unternehmen." },
     market_p1: { type: "STRING", description: "Erster Absatz: Lage des Marktes." },
     market_p2: { type: "STRING", description: "Zweiter Absatz: warum der Moment jetzt ist." },
@@ -1706,7 +1718,7 @@ function rejectRepeatedLeadNumbers(slides: AssetSlide[]): void {
  * bleiben ein harter Fehler: die kommen nicht von einer Tippvariante.
  */
 export function assetMangelIsRepairable(mangel: string): boolean {
-  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|ungefüllte Zeichnungs-Slots/i.test(String(mangel || ""));
+  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|ungefüllte Zeichnungs-Slots|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel/i.test(String(mangel || ""));
 }
 
 function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {
@@ -1720,6 +1732,99 @@ function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {
       image_hint: text(item.image_hint, 200),
     };
   }).filter((item) => item.name || item.text);
+}
+
+/** Cover-These braucht einen Beratungsgegenstand, keinen Nachrichtenslogan. */
+const MEMO_HEBEL_RE = /\b(?:marke|marken|position(?:ierung)?|f[uü]hrung|auftritt|kanal|handschrift|agenda|hebel|audit|differenzierung|portfolio|kategorie|wachstum|kund(?:e|en|enerlebnis)?|kommunikation|vertrieb|preis|sortiment|umbau|entscheid(?:ung|et)?|linie|klarheit|steuerung|aktivierung|identit[aä]t|versprechen|erlebnis|launch|einf[uü]hrung|go-to-market|narrativ|territorium|kompetenz)\b/i;
+
+const MEMO_PERSONALIE_RE = /\b(?:[uü]bernimmt|ernennt|ernannt|berufen|nachfolge|wechselt\s+zu|wird\s+neue[rn]?\b|nimmt\s+die\s+(?:marketing)?leitung|wird\s+cmo|holt\s+\w+\s+als|verpflichtet|tritt\s+(?:die|seine|ihre)\s+nachfolge)\b/i;
+
+const MEMO_AMT_RE = /\b(?:marketingchef(?:in)?|marketingleiter(?:in)?|cmo|vorstand(?:svorsitzende[rn]?)?|gesch[aä]ftsf[uü]hrer(?:in)?|vertriebschef(?:in)?)\b/i;
+
+const MEMO_COVER_STOP = new Set([
+  "aber", "alle", "als", "also", "andere", "anderen", "anderes", "auch", "auf", "aus",
+  "bei", "dann", "das", "dass", "dem", "den", "der", "des", "die", "diese", "dieser",
+  "ein", "eine", "einem", "einen", "einer", "eines", "er", "es", "fuer", "hat", "im",
+  "in", "ist", "mit", "nach", "nicht", "noch", "nur", "oder", "sich", "sie", "sind",
+  "und", "vom", "von", "vor", "waehrend", "was", "weiter", "wenn", "wird", "wo", "zu",
+  "zum", "zur", "ueber", "ohne", "durch", "weil", "wie",
+]);
+
+function foldMemoText(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss");
+}
+
+function memoContentTokens(value: string): string[] {
+  return foldMemoText(value)
+    .split(/[^a-z0-9]+/)
+    .map((teil) => teil.replace(/(?:en|er|es|te|ten|t|e)$/, ""))
+    .filter((teil) => teil.length >= 4 && !MEMO_COVER_STOP.has(teil));
+}
+
+function coverNamesPerson(cover: string, personName?: string | null): boolean {
+  const name = String(personName || "").trim();
+  if (name.length < 4 || name.toLowerCase() === "keine") return false;
+  const hay = foldMemoText(cover);
+  if (hay.includes(foldMemoText(name))) return true;
+  return name.split(/\s+/)
+    .filter((teil) => teil.length >= 4 && !/^(von|van|der|den|de|la|und)$/i.test(teil))
+    .some((teil) => hay.includes(foldMemoText(teil)));
+}
+
+function titleParaphrasesSource(title: string, source: string): boolean {
+  const quelle = String(source || "").trim();
+  if (!quelle) return false;
+  const normTitle = foldMemoText(title).replace(/[^a-z0-9]+/g, " ").trim();
+  const normSource = foldMemoText(quelle).replace(/[^a-z0-9]+/g, " ");
+  if (normTitle.length >= 18 && normSource.includes(normTitle)) return true;
+  const a = memoContentTokens(title);
+  const b = new Set(memoContentTokens(quelle));
+  if (a.length < 2 || b.size < 2) return false;
+  const hits = a.filter((teil) => b.has(teil) || [...b].some((anderes) => anderes.startsWith(teil) || teil.startsWith(anderes)));
+  if (a.length <= 3) return hits.length >= 2;
+  return hits.length / a.length >= 0.55;
+}
+
+/**
+ * Das Memo hebt auf die Herausforderung, an der ROOTS andockt. Signal und
+ * Artikel sind der Anlass. Eine Nacherzählung der Nachricht auf dem Cover
+ * ist unabhängig vom konkreten Fall unbrauchbar.
+ */
+function rejectMemoNewsRetelling(
+  memo: { title: string; standfirst: string; market_title: string },
+  context: AssetNormalizeContext,
+): void {
+  const title = memo.title;
+  const standfirst = memo.standfirst;
+  const cover = `${title} ${standfirst} ${memo.market_title}`;
+
+  if (coverNamesPerson(`${title} ${memo.market_title} ${standfirst}`, context.personName)) {
+    throw new Error("Das Cover erzählt die Personalie, nicht die Cover-These. Personennamen gehören nicht in title, standfirst oder market_title.");
+  }
+  if (MEMO_PERSONALIE_RE.test(title) || MEMO_PERSONALIE_RE.test(standfirst)) {
+    throw new Error("Das Cover beschreibt eine Personalie. Die Cover-These ist die Markt- oder Markenherausforderung, an der ROOTS andockt, nicht die Meldung.");
+  }
+  if (
+    /^(?:ein |eine |der |die )?(?:erfahrene[rn]? |neue[rn]? )?(?:marketingchef|marketingleiter|cmo|vorstand|gesch[aä]ftsf[uü]hrer)/i.test(title)
+    || /(?:neue[rn]?|erfahrene[rn]?)\s+(?:marketingchef|marketingleiter|cmo|vorstand|gesch[aä]ftsf[uü]hrer)/i.test(cover)
+    || (MEMO_AMT_RE.test(title) && /\b(?:baut|uebernimmt|[uü]bernimmt|fuehrt|führt|leitet)\b/i.test(foldMemoText(title)))
+  ) {
+    throw new Error("Das Cover macht Amt oder Person zur These. title nennt die Herausforderung, nicht wer die Leitung übernimmt.");
+  }
+  const quellen = [context.signalHeadline, context.articleTitle].filter(Boolean).map(String);
+  if (quellen.some((quelle) => titleParaphrasesSource(title, quelle))) {
+    throw new Error("Das Cover wiederholt die Signalüberschrift. title muss die Herausforderung nennen, nicht die Nachricht.");
+  }
+  const hatHebel = MEMO_HEBEL_RE.test(title);
+  const nachrichtenkontrast = /\bw[aä]hrend\b/i.test(title) && !hatHebel;
+  if (!hatHebel || nachrichtenkontrast) {
+    throw new Error("Der Cover-Titel ist ein Nachrichtenslogan ohne Beratungshebel. title muss Marke, Positionierung, Führung, Auftritt oder einen anderen ROOTS-Hebel nennen, nicht die Meldung.");
+  }
 }
 
 function normalizePotentials(raw: unknown): MemoPotential[] {
@@ -1799,6 +1904,7 @@ function normalizeMemo(
     ...memo.potentials.flatMap((eintrag) => [eintrag.title, eintrag.finding, eintrag.potential, eintrag.image_hint]),
     ...memo.sources,
   ].join("\n"), corpus, "Die Ansprache");
+  rejectMemoNewsRetelling(memo, context);
   return memo;
 }
 
@@ -2308,5 +2414,5 @@ export function assetRepairTimeoutMs(elapsedMs: number): number | null {
 
 export function buildAssetRepairPrompt(prompt: string, mangel: string): string {
   const grund = mangel.replace(/\s+/g, " ").trim().slice(0, 400);
-  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. 13,3 % und 13,3 Prozent sind dieselbe Zahl. Erfinde keine Zahlen, die nicht im Artikel stehen. Passt keine Kennzahl-Variante (E, H, L), wähle eine Textfolie aus der erlaubten Liste — nicht dieselbe Variante mit leerer Zahl.</repair>`;
+  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. 13,3 % und 13,3 Prozent sind dieselbe Zahl. Erfinde keine Zahlen, die nicht im Artikel stehen. Passt keine Kennzahl-Variante (E, H, L), wähle eine Textfolie aus der erlaubten Liste — nicht dieselbe Variante mit leerer Zahl. Ist der Mangel die Cover-These: Signal bleibt Anlass, title nennt die Herausforderung an der ROOTS andockt, nicht die Nachricht und nicht die Personalie.</repair>`;
 }
