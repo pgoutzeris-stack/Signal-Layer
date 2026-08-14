@@ -233,7 +233,7 @@ const STAGE_CSS = `
 }
 .as-stage[data-theme="dark"] .as-lockup img{filter:brightness(0) invert(1);}
 
-.as-edit:focus{outline:2px solid rgba(32,110,251,.45); outline-offset:4px; border-radius:4px;}
+.as-edit:focus{outline:none; box-shadow:0 0 0 1.5px rgba(100,116,139,.4); border-radius:6px;}
 .as-edit:empty::before{content:attr(data-ph); color:var(--xmut); opacity:.7;}
 .as-edit ul{margin:0; padding-left:1.1em;}
 
@@ -447,13 +447,16 @@ const CHROME_CSS = `
   border-radius:8px; background:#fff; padding:0 8px; color:#0f172a;
 }
 
+#as-overlay .as-pagehost{position:relative; display:block; width:max-content; max-width:100%; max-height:100%;}
 #as-overlay .as-fs-btn{
-  position:absolute; right:10px; bottom:10px; z-index:8;
-  width:36px; height:36px; border-radius:10px;
+  position:absolute; right:8px; bottom:8px; z-index:8;
+  width:34px; height:34px; border-radius:10px;
   border:1px solid var(--line,#e2e8f0); background:#fff; color:#0f172a;
   box-shadow:0 6px 18px rgba(15,23,42,.12);
   display:grid; place-items:center;
 }
+#as-overlay .as-pagehost > .as-fs-btn,
+#as-overlay .as-prev-big > .as-fs-btn{right:8px; bottom:8px;}
 #as-overlay .as-fs-btn:hover{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
 #as-overlay .as-fs-exit{
   display:none; position:absolute; top:12px; right:12px; z-index:60;
@@ -477,8 +480,42 @@ const CHROME_CSS = `
 #as-overlay.as-fs-open .as-work{grid-template-columns:1fr;}
 
 #as-overlay .em-shot-hint{display:none !important;}
+#as-overlay .li-photo-hint{display:none !important;}
+#as-overlay .em-shot,
+#as-overlay .as-img--tpl:not(:has(img[src]:not([src=""]))){
+  background:
+    radial-gradient(ellipse at 28% 38%, #d7e4f7 0%, transparent 54%),
+    radial-gradient(ellipse at 78% 72%, #b7c9e4 0%, transparent 48%),
+    linear-gradient(165deg, #eef3f9 0%, #cfdbea 100%);
+}
+#as-overlay .em-shot:has(img[src]:not([src=""])){
+  background:var(--status-bg,#f8fafc);
+}
+#as-overlay .em-shot:not(:has(img[src]:not([src=""])))::after,
+#as-overlay .as-img--tpl:not(:has(img[src]:not([src=""])))::after{
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
+  background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'><rect x='10' y='16' width='44' height='32' rx='6' stroke='%238899a6' stroke-width='2'/><circle cx='22' cy='28' r='4' fill='%238899a6'/><path d='M14 42l12-12 8 8 6-6 10 10' stroke='%238899a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/38% no-repeat;
+  opacity:.55;
+}
 
-#as-overlay .as-fmt{display:none !important;}
+#as-overlay [data-field][contenteditable="true"]{
+  outline:none !important; border-radius:6px; box-shadow:none;
+}
+#as-overlay p[data-field][contenteditable="true"],
+#as-overlay h1[data-field][contenteditable="true"],
+#as-overlay h2[data-field][contenteditable="true"],
+#as-overlay h3[data-field][contenteditable="true"],
+#as-overlay div[data-field][contenteditable="true"]{display:block;}
+#as-overlay span[data-field][contenteditable="true"]{display:inline-block; max-width:100%; vertical-align:baseline;}
+#as-overlay b[data-field][contenteditable="true"]{display:inline-block; max-width:100%; vertical-align:baseline;}
+#as-overlay [data-field][contenteditable="true"]:focus,
+#as-overlay [data-field][contenteditable="true"]:focus-visible{
+  box-shadow:0 0 0 1.5px rgba(100,116,139,.4);
+  background:rgba(248,250,252,.55);
+}
+
+#as-overlay .as-prev-host{overflow:visible;}
+#as-overlay .as-stagearea.is-zoom{overflow:auto; justify-content:flex-start; align-items:flex-start;}
 
 #as-overlay .as-form{max-width:none; display:flex; flex-direction:column; gap:0;}
 /* Jede Frage ist ein Abschnitt mit Trennlinie statt einer freien Lücke: so
@@ -704,9 +741,12 @@ const CHROME_CSS = `
 #as-overlay .as-frame{width:auto; max-width:100%; display:flex; flex-direction:column; gap:8px; align-items:center; position:relative;}
 #as-overlay .as-frame.is-off{display:none !important;}
 #as-overlay .as-scaler{position:relative; margin:0 auto; overflow:hidden; border-radius:14px;
-  box-shadow:var(--shadow-lg,0 12px 40px rgba(15,23,42,.14));}
-#as-overlay .as-scaler > .as-stage{position:absolute; top:0; left:0; transform-origin:top left; border-radius:0;}
-#as-overlay .as-scaler .li{border-radius:0;}
+  background:#fff; box-shadow:var(--shadow-lg,0 12px 40px rgba(15,23,42,.14));}
+#as-overlay .as-scaler > .as-stage{position:absolute; top:0; left:0; transform-origin:top left; border-radius:14px;}
+#as-overlay .as-scaler .li{border-radius:14px;}
+#as-overlay .as-stage--memo{border-radius:14px; background:#fff !important;}
+#as-overlay .as-stage--memo .em-page{border-radius:14px; overflow:hidden;}
+#as-overlay .as-stage--memo .em-cover{border-radius:14px;}
 #as-overlay .as-slidetools{
   width:100%; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
   background:var(--bg,#fff); border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:8px 10px;
@@ -716,7 +756,7 @@ const CHROME_CSS = `
   font:inherit; font-size:13px; padding:6px 10px; border-radius:9px;
   border:1px solid var(--line,#e2e8f0); background:var(--bg,#fff); color:inherit;
 }
-#as-overlay .as-stage--memo{width:210mm !important; height:297mm !important; background:transparent;}
+#as-overlay .as-stage--memo{width:210mm !important; height:297mm !important; background:#fff !important;}
 #as-overlay .as-stage--memo .em-page.is-off{display:none !important;}
 
 #as-overlay .as-inspector{
@@ -740,30 +780,38 @@ const CHROME_CSS = `
 }
 
 #as-overlay .as-fmt{
-  display:none;
+  position:absolute; z-index:30; display:none; gap:2px; align-items:center; flex-wrap:nowrap;
+  background:#fff; border:1px solid var(--line,#e2e8f0); border-radius:12px;
+  padding:5px; box-shadow:0 10px 28px rgba(15,23,42,.14);
+  pointer-events:auto;
 }
-#as-overlay .as-fmt[data-open="1"]{display:none;}
+#as-overlay .as-fmt[data-open="1"]{display:flex;}
 #as-overlay .as-fmt button{
   border:0; background:transparent; border-radius:8px; width:30px; height:30px;
   display:grid; place-items:center; font-size:13px;
 }
 #as-overlay .as-fmt button:hover{background:var(--surface,#f8fafc); color:var(--brand,#206efb);}
 #as-overlay .as-fmt hr{width:1px; height:20px; border:0; background:var(--line,#e2e8f0); margin:0 3px;}
-#as-overlay .as-swatch{width:22px; height:22px; border-radius:999px; border:1px solid rgba(15,23,42,.18);}
+#as-overlay .as-swatch{width:16px; height:16px; border-radius:999px; border:1px solid rgba(15,23,42,.18); display:block;}
 
 #as-overlay .as-img-ui{
-  position:absolute; left:50%; bottom:18px; z-index:6;
-  display:flex; align-items:center; gap:8px; padding:7px 9px;
-  background:rgba(255,255,255,.96); border:1px solid #e2e8f0; border-radius:12px;
-  box-shadow:0 8px 24px rgba(15,23,42,.18); white-space:nowrap;
-  transform:translateX(-50%) scale(var(--as-inv,1)); transform-origin:bottom center;
+  position:absolute; right:8px; bottom:8px; z-index:6;
+  display:flex; align-items:center; gap:6px;
 }
-#as-overlay .as-img-ui button{
-  border:1px solid #e2e8f0; background:#fff; color:#0f172a;
-  border-radius:8px; padding:5px 10px; font-size:12px; font-weight:600;
+#as-overlay .as-img-btn{
+  width:32px; height:32px; border:0; border-radius:10px;
+  background:rgba(15,23,42,.72); color:#fff;
+  display:grid; place-items:center; font-size:13px;
+  box-shadow:0 6px 16px rgba(15,23,42,.22);
 }
-#as-overlay .as-img-ui button:hover{border-color:#206efb; color:#206efb;}
-#as-overlay .as-img-ui input[type="range"]{width:110px; accent-color:#206efb;}
+#as-overlay .as-img-btn:hover{background:rgba(15,23,42,.88);}
+#as-overlay .as-img-btn.is-clear{width:28px; height:28px; font-size:12px; background:rgba(255,255,255,.94); color:#0f172a;}
+#as-overlay .as-shot:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
+#as-overlay .as-img--tpl:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
+#as-overlay .em-shot:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear){opacity:0;}
+#as-overlay .as-shot:hover .as-img-btn,
+#as-overlay .as-img--tpl:hover .as-img-btn,
+#as-overlay .em-shot:hover .as-img-btn{opacity:1;}
 
 #as-overlay .as-hint{font-size:12px; line-height:1.5; color:var(--muted,#475569); margin:0;}
 #as-overlay .as-q > .as-hint{margin-top:-2px;}
@@ -778,17 +826,35 @@ const CHROME_CSS = `
 
 #as-overlay .as-crop{
   position:absolute; inset:0; z-index:80;
-  background:rgba(15,23,42,.46); display:grid; place-items:center; padding:24px;
+  background:rgba(15,23,42,.5); display:grid; place-items:center; padding:24px;
 }
 #as-overlay .as-crop[hidden]{display:none;}
 #as-overlay .as-crop-card{
-  width:min(560px,100%); background:#fff; border-radius:18px; padding:22px 22px 18px;
-  box-shadow:0 24px 60px rgba(15,23,42,.28); display:flex; flex-direction:column; gap:14px;
+  width:min(640px,100%); background:#fff; border-radius:20px; padding:22px 22px 18px;
+  box-shadow:0 28px 70px rgba(15,23,42,.32); display:flex; flex-direction:column; gap:14px;
 }
 #as-overlay .as-crop-card h3{margin:0; font-size:18px;}
+#as-overlay .as-crop-drop{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+  min-height:188px; border:1.5px dashed #cbd5e1; border-radius:16px;
+  background:#f8fafc; color:#475569; text-align:center; padding:22px 16px;
+}
+#as-overlay .as-crop-drop.is-over{border-color:#206efb; background:#eff6ff;}
+#as-overlay .as-crop-drop i{font-size:28px; color:#64748b;}
+#as-overlay .as-crop-drop b{font-size:14px; color:#0f172a;}
+#as-overlay .as-crop-drop span{font-size:12px; color:#94a3b8;}
+#as-overlay .as-crop-drop[hidden],
+#as-overlay .as-crop-editor[hidden]{display:none;}
+#as-overlay .as-crop-editor{display:flex; flex-direction:column; gap:12px;}
+#as-overlay .as-crop-modes{display:flex; flex-wrap:wrap; gap:6px;}
+#as-overlay .as-crop-modes button{
+  border:1px solid #e2e8f0; background:#fff; color:#334155;
+  border-radius:999px; padding:6px 12px; font-size:12px; font-weight:600;
+}
+#as-overlay .as-crop-modes button.is-on{border-color:#206efb; background:#eff6ff; color:#165fd9;}
 #as-overlay .as-crop-frame{
   width:100%; overflow:hidden; border-radius:12px; border:1px solid #e2e8f0;
-  background:#f8fafc; position:relative; cursor:grab; touch-action:none;
+  background:#0f172a; position:relative; cursor:grab; touch-action:none;
 }
 #as-overlay .as-crop-frame:active{cursor:grabbing;}
 #as-overlay .as-crop-img{
@@ -864,6 +930,72 @@ function cropSpecFor(key) {
   return { ...LINKEDIN_SHOT_PIXELS, mm: { w: 1080, h: 1350 }, label: "Folie" };
 }
 
+/** Sucht den Ausschnitt mit der höchsten Helligkeitsstreuung, also Kanten und Motiv. */
+function smartCropPan(img, outW, outH) {
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  if (!srcW || !srcH) return { panX: 0.5, panY: 0.5 };
+  const tw = 64;
+  const th = Math.max(8, Math.round(64 * srcH / srcW));
+  const canvas = document.createElement("canvas");
+  canvas.width = tw;
+  canvas.height = th;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return { panX: 0.5, panY: 0.5 };
+  ctx.drawImage(img, 0, 0, tw, th);
+  let data;
+  try { data = ctx.getImageData(0, 0, tw, th).data; } catch (_) {
+    return { panX: 0.5, panY: 0.5 };
+  }
+  const target = outW / outH;
+  const imgRatio = srcW / srcH;
+  let cw;
+  let ch;
+  if (imgRatio > target) {
+    ch = th;
+    cw = Math.max(1, th * target);
+  } else {
+    cw = tw;
+    ch = Math.max(1, tw / target);
+  }
+  const maxX = Math.max(0, tw - cw);
+  const maxY = Math.max(0, th - ch);
+  const stepX = Math.max(1, Math.round(Math.max(1, maxX) / 8));
+  const stepY = Math.max(1, Math.round(Math.max(1, maxY) / 8));
+  let best = { score: -1, panX: 0.5, panY: 0.5 };
+  const lumAt = (x, y) => {
+    const i = (y * tw + x) * 4;
+    return 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+  };
+  for (let y0 = 0; y0 <= maxY; y0 += stepY) {
+    for (let x0 = 0; x0 <= maxX; x0 += stepX) {
+      let sum = 0;
+      let sum2 = 0;
+      let n = 0;
+      const yEnd = Math.min(th, y0 + ch);
+      const xEnd = Math.min(tw, x0 + cw);
+      for (let y = y0; y < yEnd; y += 2) {
+        for (let x = x0; x < xEnd; x += 2) {
+          const L = lumAt(x, y);
+          sum += L;
+          sum2 += L * L;
+          n += 1;
+        }
+      }
+      const mean = sum / Math.max(1, n);
+      const score = sum2 / Math.max(1, n) - mean * mean;
+      if (score > best.score) {
+        best = {
+          score,
+          panX: maxX ? x0 / maxX : 0.5,
+          panY: maxY ? y0 / maxY : 0.5,
+        };
+      }
+    }
+  }
+  return { panX: best.panX, panY: best.panY };
+}
+
 function uid() {
   return `s${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -885,9 +1017,9 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1948";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1948";
-import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-1948";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-2100";
+import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-2100";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -946,6 +1078,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ladeUhr: 0,
     forecastMs: 0,
     laufLog: [],
+    viewZoom: 1,
     updatedAt: "",
   };
 
@@ -976,14 +1109,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   cropOverlay.innerHTML = `
     <div class="as-crop-card">
       <h3>Bild in den Platzhalter legen</h3>
-      <p class="as-hint" data-crop-hint>Nur der Ausschnitt im Rahmen landet im Asset.</p>
-      <div class="as-crop-frame" data-crop-frame>
-        <img class="as-crop-img" data-crop-img alt="">
+      <p class="as-hint" data-crop-hint>Zuerst Datei wählen, dann den Ausschnitt auf das exakte Format der Vorlage bringen.</p>
+      <div class="as-crop-drop" data-crop-drop>
+        <i class="fa-regular fa-image"></i>
+        <b>Bild hierher ziehen</b>
+        <span>oder</span>
+        <button type="button" class="as-btn as-btn--primary" data-act="crop-browse">Datei auswählen</button>
       </div>
-      <label class="as-crop-zoom">Zoom <input type="range" data-crop-zoom min="100" max="280" step="1" value="100"></label>
+      <div class="as-crop-editor" data-crop-editor hidden>
+        <div class="as-crop-modes" data-crop-modes>
+          <button type="button" data-crop-mode="fill">Füllen</button>
+          <button type="button" data-crop-mode="top">Oben</button>
+          <button type="button" data-crop-mode="center" class="is-on">Mitte</button>
+          <button type="button" data-crop-mode="bottom">Unten</button>
+          <button type="button" data-crop-mode="smart">Intelligent</button>
+        </div>
+        <div class="as-crop-frame" data-crop-frame>
+          <img class="as-crop-img" data-crop-img alt="">
+        </div>
+        <label class="as-crop-zoom">Zoom <input type="range" data-crop-zoom min="100" max="280" step="1" value="100"></label>
+      </div>
       <div class="as-crop-actions">
         <button type="button" class="as-btn" data-act="crop-cancel">Abbrechen</button>
-        <button type="button" class="as-btn as-btn--primary" data-act="crop-ok">Zuschneiden</button>
+        <button type="button" class="as-btn as-btn--primary" data-act="crop-ok" data-crop-ok disabled>Zuschneiden</button>
       </div>
     </div>`;
   overlay.appendChild(cropOverlay);
@@ -1052,6 +1200,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (state.step === "edit") {
       mountStages(true);
       mountFormatBar();
+      updateFormatBar();
+    } else if (fmtBar) {
+      fmtBar.setAttribute("data-open", "0");
     }
   }
 
@@ -1091,8 +1242,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <div class="as-split2-prev">
           <span class="as-prev-label">Vorschau</span>
           <div class="as-prev-host">
-            <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview data-act="toggle-fs">${livePreviewHtml()}</div>
-            <button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="Vollbild"><i class="fa-solid fa-expand"></i></button>
+            <div class="as-pagehost">
+              <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
+              <button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="Vollbild"><i class="fa-solid fa-expand"></i></button>
+            </div>
           </div>
         </div>
       </div>`;
@@ -1112,14 +1265,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         </div>`;
       }
       return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
-        <div class="as-stagearea" data-stagearea data-act="toggle-fs"></div>
-        <button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="Vollbild"><i class="fa-solid fa-expand"></i></button>
+        <div class="as-stagearea" data-stagearea></div>
       </div>`;
     }
       return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
       <div class="as-stagearea" data-stagearea></div>
       ${inspectorHtml()}
-      <button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="Vollbild"><i class="fa-solid fa-expand"></i></button>
     </div>`;
   }
 
@@ -2180,16 +2331,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       .replace(/\*\*([^*]{1,120})\*\*/g, "<b>$1</b>");
   }
 
-  /** Fotos bekommen die Bedienung der Werkbank, das Logo bleibt unberuehrt. */
+  /** Fotos bekommen ein Bild-Icon. Der Zuschnitt läuft im Popup, nicht als Leiste auf der Folie. */
   function wrapImageSlots(html, model) {
     const uiFor = (key) => {
       const bild = imageAt(model, key);
       const hat = Boolean(bild.src);
-      const pos = Number.parseFloat(String(bild.pos || "50% 50%").split(" ")[1]) || 50;
       return `<div class="as-img-ui" data-as-chrome>
-      <button type="button" data-act="img-pick" data-imgkey="${attr(key)}">${hat ? "Ausschnitt ersetzen" : "Bild zuschneiden"}</button>
-      ${hat ? `<input type="range" min="0" max="100" step="1" value="${pos}" data-act="img-pos" data-imgkey="${attr(key)}" aria-label="Ausschnitt">` : ""}
-      ${hat ? `<button type="button" data-act="img-clear" data-imgkey="${attr(key)}">Entfernen</button>` : ""}
+      <button type="button" class="as-img-btn" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><i class="fa-regular fa-image"></i></button>
+      ${hat ? `<button type="button" class="as-img-btn is-clear" data-act="img-clear" data-imgkey="${attr(key)}" aria-label="Bild entfernen" title="Bild entfernen"><i class="fa-solid fa-xmark"></i></button>` : ""}
     </div>`;
     };
     if (html.includes("data-imgsrc")) {
@@ -2281,20 +2430,25 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /* ── Bühnen einhängen und einpassen ── */
 
+  function fsBtnHtml() {
+    const open = overlay.classList.contains("as-fs-open");
+    return `<button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="${open ? "Vollbild beenden" : "Vollbild"}"><i class="fa-solid fa-${open ? "compress" : "expand"}"></i></button>`;
+  }
+
   function mountStages(editable) {
     const area = shell.querySelector("[data-stagearea]");
     if (!area) return;
     if (isMemo) {
       if (!state.memo) return;
       if (state.prevIndex >= MEMO_SEITEN) state.prevIndex = 0;
-      area.innerHTML = `<div class="as-frame"><div class="as-scaler">${markiereMemoSeiten(memoHtml(state.memo))}</div></div>${blaetterNavHtml()}`;
+      area.innerHTML = `<div class="as-frame"><div class="as-pagehost"><div class="as-scaler">${markiereMemoSeiten(memoHtml(state.memo))}</div>${fsBtnHtml()}</div></div>${blaetterNavHtml()}`;
     } else {
       if (!state.slides.length) return;
       if (state.prevIndex >= state.slides.length) state.prevIndex = 0;
       area.innerHTML = state.slides.map((slide, index) => `
         <div class="as-frame${index === state.prevIndex ? "" : " is-off"}" data-uid="${attr(slide.uid)}">
           ${editable ? slideTools(slide, index) : ""}
-          <div class="as-scaler">${slideHtml(slide)}</div>
+          <div class="as-pagehost"><div class="as-scaler">${slideHtml(slide)}</div>${fsBtnHtml()}</div>
         </div>`).join("")
         + blaetterNavHtml();
     }
@@ -2398,15 +2552,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       legeMemoSeiteMass(stage);
       const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
       const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
-      const scale = availH > 80
+      const zoom = Math.max(1, Number(state.viewZoom) || 1);
+      const base = availH > 80
         ? Math.min(1, availW / w, availH / h)
         : Math.min(1, availW / w);
+      const scale = base * zoom;
       scaler.style.width = `${Math.round(w * scale)}px`;
       scaler.style.height = `${Math.round(h * scale)}px`;
       stage.style.transform = `scale(${scale})`;
-      // Die Bildbedienung soll trotz Verkleinerung bedienbar bleiben.
       stage.style.setProperty("--as-inv", String(1 / scale));
     });
+    area.classList.toggle("is-zoom", (Number(state.viewZoom) || 1) > 1.01);
   }
 
   /* ── Bearbeiteten Zustand aus dem DOM zurücklesen ── */
@@ -2462,19 +2618,25 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     </aside>`;
   }
 
-  /* ── Formatierungsleiste (Word-Leiste, immer sichtbar) ── */
+  /* ── Formatierungsleiste: Ribbon für Maß, Floating für Zeichen ── */
 
   let fmtBar = null;
   let lastField = null;
+  let lastFmtPos = { left: 0, top: 0 };
+
+  function bindFmtHost(host) {
+    host.addEventListener("mousedown", (event) => {
+      if (event.target.closest("select")) return;
+      event.preventDefault();
+    });
+    host.addEventListener("click", onFormat);
+    host.addEventListener("change", onFormatChange);
+  }
 
   function mountFormatBar() {
-    const host = shell.querySelector("[data-ribbon]");
-    if (!host) return;
-    host.innerHTML = `
-      <button type="button" data-fmt="bold" title="Fett" aria-label="Fett"><i class="fa-solid fa-bold"></i></button>
-      <button type="button" data-fmt="italic" title="Kursiv" aria-label="Kursiv"><i class="fa-solid fa-italic"></i></button>
-      <button type="button" data-fmt="underline" title="Unterstrichen" aria-label="Unterstrichen"><i class="fa-solid fa-underline"></i></button>
-      <hr>
+    const ribbon = shell.querySelector("[data-ribbon]");
+    if (ribbon) {
+      ribbon.innerHTML = `
       <select data-fmt="fontsize" aria-label="Schriftgröße">
         <option value="">Größe</option>
         <option value="12">12</option>
@@ -2501,14 +2663,19 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <hr>
       <button type="button" data-fmt="undo" title="Rückgängig" aria-label="Rückgängig"><i class="fa-solid fa-rotate-left"></i></button>
       <button type="button" data-fmt="redo" title="Wiederholen" aria-label="Wiederholen"><i class="fa-solid fa-rotate-right"></i></button>`;
-    fmtBar = host;
-    fmtBar.setAttribute("data-open", "1");
-    host.addEventListener("mousedown", (event) => {
-      if (event.target.closest("select")) return;
-      event.preventDefault();
-    });
-    host.addEventListener("click", onFormat);
-    host.addEventListener("change", onFormatChange);
+      ribbon.setAttribute("data-open", "1");
+      bindFmtHost(ribbon);
+    }
+    if (!fmtBar) {
+      fmtBar = document.createElement("div");
+      fmtBar.className = "as-fmt";
+      fmtBar.innerHTML = `
+      <button type="button" data-fmt="bold" title="Fett" aria-label="Fett"><i class="fa-solid fa-bold"></i></button>
+      <button type="button" data-fmt="italic" title="Kursiv" aria-label="Kursiv"><i class="fa-solid fa-italic"></i></button>
+      <button type="button" data-fmt="underline" title="Unterstrichen" aria-label="Unterstrichen"><i class="fa-solid fa-underline"></i></button>`;
+      overlay.appendChild(fmtBar);
+      bindFmtHost(fmtBar);
+    }
   }
 
   function editableOf(node) {
@@ -2526,8 +2693,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function updateFormatBar() {
-    if (state.step !== "edit" || !fmtBar) return;
+    if (!fmtBar) return;
+    if (state.step !== "edit" || !cropOverlay.hidden) {
+      fmtBar.setAttribute("data-open", "0");
+      return;
+    }
+    const field = currentField();
+    if (!field || field.getAttribute("contenteditable") !== "true") {
+      fmtBar.setAttribute("data-open", "0");
+      return;
+    }
     fmtBar.setAttribute("data-open", "1");
+    const box = overlay.getBoundingClientRect();
+    const rect = field.getBoundingClientRect();
+    const barW = fmtBar.offsetWidth || 120;
+    const barH = fmtBar.offsetHeight || 40;
+    let left = rect.left - box.left + (rect.width - barW) / 2;
+    let top = rect.top - box.top - barH - 8;
+    if (top < 8) top = rect.bottom - box.top + 8;
+    left = Math.max(8, Math.min(left, box.width - barW - 8));
+    if (Math.abs(left - lastFmtPos.left) < 4 && Math.abs(top - lastFmtPos.top) < 4) return;
+    lastFmtPos = { left, top };
+    fmtBar.style.left = `${Math.round(left)}px`;
+    fmtBar.style.top = `${Math.round(top)}px`;
   }
 
   function onFormat(event) {
@@ -2576,9 +2764,82 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /* ── Bilder ── */
 
   const cropState = {
-    uid: "", key: "", img: null, panX: 0.5, panY: 0.5, zoom: 1,
+    uid: "", key: "", img: null, panX: 0.5, panY: 0.5, zoom: 1, mode: "center",
     dragging: false, lastX: 0, lastY: 0,
   };
+
+  function cropDropEl() { return cropOverlay.querySelector("[data-crop-drop]"); }
+  function cropEditorEl() { return cropOverlay.querySelector("[data-crop-editor]"); }
+  function cropOkEl() { return cropOverlay.querySelector("[data-crop-ok]"); }
+
+  function setCropHint(key) {
+    const spec = cropSpecFor(key);
+    const hint = cropOverlay.querySelector("[data-crop-hint]");
+    if (!hint) return spec;
+    hint.textContent = spec.mm && spec.mm.w < 200
+      ? `${spec.label}: ${spec.mm.w} × ${spec.mm.h} mm. Der Ausschnitt muss genau in diesen Platz.`
+      : `${spec.label}: ${spec.w} × ${spec.h} Pixel. Der Ausschnitt muss genau in diesen Platz.`;
+    return spec;
+  }
+
+  function setCropModeButtons(mode) {
+    cropOverlay.querySelectorAll("[data-crop-mode]").forEach((btn) => {
+      btn.classList.toggle("is-on", btn.getAttribute("data-crop-mode") === mode);
+    });
+  }
+
+  function applyCropMode(mode) {
+    const name = String(mode || "center");
+    cropState.mode = name;
+    setCropModeButtons(name);
+    if (!cropState.img) return;
+    const spec = cropSpecFor(cropState.key);
+    if (name === "top") {
+      cropState.panX = 0.5;
+      cropState.panY = 0;
+    } else if (name === "bottom") {
+      cropState.panX = 0.5;
+      cropState.panY = 1;
+    } else if (name === "smart") {
+      const pan = smartCropPan(cropState.img, spec.w, spec.h);
+      cropState.panX = pan.panX;
+      cropState.panY = pan.panY;
+    } else {
+      cropState.panX = 0.5;
+      cropState.panY = 0.5;
+    }
+    if (name === "fill") cropState.zoom = 1;
+    const zoom = cropOverlay.querySelector("[data-crop-zoom]");
+    if (zoom && name === "fill") zoom.value = "100";
+    layoutCropPreview();
+  }
+
+  function showCropEditor(on) {
+    const drop = cropDropEl();
+    const editor = cropEditorEl();
+    const ok = cropOkEl();
+    if (drop) drop.hidden = Boolean(on);
+    if (editor) editor.hidden = !on;
+    if (ok) ok.disabled = !on;
+  }
+
+  function openCropSheet(uid, key) {
+    cropState.uid = uid;
+    cropState.key = key || "image";
+    cropState.img = null;
+    cropState.panX = 0.5;
+    cropState.panY = 0.5;
+    cropState.zoom = 1;
+    cropState.mode = "center";
+    state.pendingImage = `${uid}::${cropState.key}`;
+    const spec = setCropHint(cropState.key);
+    const frame = cropFrameEl();
+    if (frame) frame.style.aspectRatio = `${spec.w} / ${spec.h}`;
+    setCropModeButtons("center");
+    showCropEditor(false);
+    cropOverlay.hidden = false;
+    if (fmtBar) fmtBar.setAttribute("data-open", "0");
+  }
 
   function loadHtmlImage(src) {
     return new Promise((resolve, reject) => {
@@ -2671,31 +2932,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function openCropper(file, uid, key) {
-    const spec = cropSpecFor(key);
+    if (uid) cropState.uid = uid;
+    if (key) cropState.key = key;
+    state.pendingImage = `${cropState.uid}::${cropState.key}`;
+    const spec = setCropHint(cropState.key);
     const reader = new FileReader();
     reader.onerror = () => showSaveHint("Die Bilddatei konnte nicht gelesen werden.");
     reader.onload = () => {
       const img = new Image();
       img.onerror = () => showSaveHint("Die Bilddatei konnte nicht gelesen werden.");
       img.onload = () => {
-        cropState.uid = uid;
-        cropState.key = key;
         cropState.img = img;
         cropState.panX = 0.5;
         cropState.panY = 0.5;
         cropState.zoom = 1;
-        const hint = cropOverlay.querySelector("[data-crop-hint]");
-        if (hint) {
-          hint.textContent = spec.mm && spec.mm.w < 200
-            ? `${spec.label}: ${spec.mm.w} × ${spec.mm.h} mm. Nur dieser Ausschnitt landet im Memo.`
-            : `${spec.label}: ${spec.w} × ${spec.h} Pixel. Nur dieser Ausschnitt landet auf der Folie.`;
-        }
+        cropState.mode = "center";
         const frame = cropFrameEl();
         if (frame) frame.style.aspectRatio = `${spec.w} / ${spec.h}`;
         const zoom = cropOverlay.querySelector("[data-crop-zoom]");
         if (zoom) zoom.value = "100";
         const el = cropImgEl();
         if (el) el.src = img.src;
+        setCropModeButtons("center");
+        showCropEditor(true);
         cropOverlay.hidden = false;
         requestAnimationFrame(layoutCropPreview);
       };
@@ -2745,21 +3004,25 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function pickFormImage(key) {
-    state.pendingImage = `form::${key || "image"}`;
-    fileInput.value = "";
-    fileInput.click();
+    openCropSheet("form", key || "image");
   }
 
   function pickImage(stageEl, key) {
-    state.pendingImage = `${stageEl.getAttribute("data-uid")}::${key || "image"}`;
+    const uid = stageEl?.getAttribute("data-uid") || "";
+    if (!uid) return;
+    openCropSheet(uid, key || "image");
+  }
+
+  function browseCropFile() {
+    if (!cropState.uid) return;
+    state.pendingImage = `${cropState.uid}::${cropState.key || "image"}`;
     fileInput.value = "";
     fileInput.click();
   }
 
   fileInput.addEventListener("change", () => {
     const file = fileInput.files && fileInput.files[0];
-    const pending = String(state.pendingImage || "");
-    state.pendingImage = null;
+    const pending = String(state.pendingImage || `${cropState.uid}::${cropState.key}`);
     const [targetUid, imgKey = "image"] = pending.split("::");
     if (!file || !targetUid) return;
     openCropper(file, targetUid, imgKey);
@@ -2795,6 +3058,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event.target?.getAttribute("data-crop-zoom") == null) return;
     cropState.zoom = Math.max(1, Number(event.target.value || 100) / 100);
     layoutCropPreview();
+  });
+  cropOverlay.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    cropDropEl()?.classList.add("is-over");
+  });
+  cropOverlay.addEventListener("dragleave", (event) => {
+    if (event.target === cropDropEl() || event.target === cropOverlay) {
+      cropDropEl()?.classList.remove("is-over");
+    }
+  });
+  cropOverlay.addEventListener("drop", (event) => {
+    event.preventDefault();
+    cropDropEl()?.classList.remove("is-over");
+    const file = [...(event.dataTransfer?.files || [])].find((item) => /^image\//.test(item.type));
+    if (!file || !cropState.uid) return;
+    openCropper(file, cropState.uid, cropState.key);
   });
 
   /* ── Ausgabe ── */
@@ -2990,6 +3269,11 @@ ${stages}${post}
 
   function onClick(event) {
     const stageEl = event.target.closest("[data-stage]");
+    const modeBtn = event.target.closest("[data-crop-mode]");
+    if (modeBtn) {
+      applyCropMode(modeBtn.getAttribute("data-crop-mode"));
+      return;
+    }
     const hit = event.target.closest("[data-act]");
     if (!hit) return;
     const act = hit.getAttribute("data-act");
@@ -3091,8 +3375,13 @@ ${stages}${post}
     if (act === "print") { harvest(); window.print(); return; }
     if (act === "save") { save(); return; }
     if (act === "copy-post") { copyPost(); return; }
-    if (act === "crop-cancel") { cropOverlay.hidden = true; return; }
+    if (act === "crop-cancel") {
+      cropOverlay.hidden = true;
+      showCropEditor(false);
+      return;
+    }
     if (act === "crop-ok") { confirmCrop(); return; }
+    if (act === "crop-browse") { browseCropFile(); return; }
     if (act === "bench-example") {
       BENCH_EXAMPLE.forEach((item, i) => {
         state.answers[`bench_${i}_name`] = item.name;
@@ -3133,14 +3422,8 @@ ${stages}${post}
   }
 
   function onInput(event) {
-    const hit = event.target.closest("[data-act]");
-    if (hit && hit.getAttribute("data-act") === "img-pos") {
-      const stageEl = hit.closest("[data-stage]");
-      const key = hit.getAttribute("data-imgkey") || "image";
-      const slot = stageEl?.querySelector(`[data-imgslot][data-imgkey="${CSS.escape(key)}"]`);
-      const img = slot?.querySelector("img") || stageEl?.querySelector("[data-imgslot] img");
-      if (img) img.style.objectPosition = `50% ${hit.value}%`;
-    }
+    /* Der Ausschnitt sitzt im Crop-Popup, nicht mehr als Schieberegler auf der Folie. */
+    void event;
   }
 
   function onKeyDown(event) {
@@ -3171,7 +3454,19 @@ ${stages}${post}
   function onDocMouseDown(event) {
     if (!fmtBar) return;
     if (fmtBar.contains(event.target)) return;
+    if (event.target.closest?.("[data-ribbon]")) return;
     if (!editableOf(event.target)) fmtBar.setAttribute("data-open", "0");
+  }
+
+  function onStageWheel(event) {
+    if (state.step !== "edit" && state.step !== "draft") return;
+    if (!(event.ctrlKey || event.metaKey)) return;
+    if (!event.target.closest?.("[data-stagearea]")) return;
+    if (!cropOverlay.hidden) return;
+    event.preventDefault();
+    const faktor = event.deltaY < 0 ? 1.08 : 1 / 1.08;
+    state.viewZoom = Math.round(Math.min(2.8, Math.max(1, (state.viewZoom || 1) * faktor)) * 100) / 100;
+    fitStages();
   }
 
   function on(target, type, handler, options) {
@@ -3190,6 +3485,7 @@ ${stages}${post}
   });
   on(document, "keydown", onKeyDown, true);
   on(document, "selectionchange", onSelectionChange);
+  on(overlay, "wheel", onStageWheel, { passive: false });
   on(window, "resize", () => { fitStages(); fitPreview(); });
   // Ein Groessenwaechter statt einer einmaligen Messung: die Spalte kennt ihre
   // Breite erst nach dem Umbruch, und Schrift laedt spaeter nach.
