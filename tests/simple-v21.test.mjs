@@ -190,11 +190,30 @@ test("DeepSeek empty content is truncated reasoning, not a silent model", () => 
     usage: { prompt_tokens: 4800, completion_tokens: 4000, total_tokens: 8800, completion_tokens_details: { reasoning_tokens: 3500 } },
   });
   assert.equal(ok.text, "{\"is_signal\":true}");
-  assert.equal(pipeline.deepseekEmptyAnswerMessage(ok, 8192), null);
-  assert.equal(pipeline.SIMPLE_DEEPSEEK_MAX_TOKENS, 8192);
+  assert.equal(pipeline.deepseekEmptyAnswerMessage(ok, 32768), null);
+  assert.equal(pipeline.SIMPLE_DEEPSEEK_MAX_TOKENS, 32768);
+  assert.equal(pipeline.SIMPLE_DEEPSEEK_REPAIR_MAX_TOKENS, 65536);
+  assert.ok(pipeline.SIMPLE_DEEPSEEK_MAX_TOKENS > 7727 * 4);
   const source = readFileSync(new URL("../supabase/functions/signal-layer/pipeline-simple.ts", import.meta.url), "utf8");
   assert.match(source, /reasoning_effort: "low"/);
   assert.match(source, /thinking: \{ type: "enabled" \}/);
+  assert.match(source, /max_tokens: maxTokens/);
+});
+
+test("a simple retry run accepts only stored article UUIDs", () => {
+  const ids = pipeline.requestedSimpleArticleIds([
+    "069A2F9E-DB91-4EAC-80A0-7D22E12DE3F9",
+    "069a2f9e-db91-4eac-80a0-7d22e12de3f9",
+    "not-an-id",
+    12,
+    null,
+  ]);
+  assert.deepEqual(ids, ["069a2f9e-db91-4eac-80a0-7d22e12de3f9"]);
+  assert.deepEqual(pipeline.requestedSimpleArticleIds(undefined), []);
+  assert.equal(pipeline.requestedSimpleArticleIds([
+    "069a2f9e-db91-4eac-80a0-7d22e12de3f9",
+    "08ca97dc-9c9d-4d96-8be7-00487dd04c07",
+  ], 1).length, 1);
 });
 
 test("all six-pillar services remain dynamically reachable", () => {

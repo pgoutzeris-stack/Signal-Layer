@@ -86,11 +86,26 @@ export const SIMPLE_MIN_SCORE = 45;
 export const SIMPLE_MARKETING_WEIGHTS = { novelty: 25, strategic_value: 30, transferability: 25, evidence_strength: 20 } as const;
 export const SIMPLE_SALES_WEIGHTS = { problem_strength: 32, roots_fit: 30, buying_intent: 23, timing: 15 } as const;
 export const SIMPLE_PROMPT_CHARS = 3_500;
-// DeepSeek V4 Pro denkt standardmäßig mit hohem Aufwand. max_tokens gilt für
-// Reasoning UND Antwort gemeinsam. 4.500 Tokens gingen in Live-Lauf 2.5 oft
-// komplett ins Denken (thinking_tokens=4500, output_tokens=0) — HTTP 200, aber
-// leeres content. 8.192 lässt nach dem Denken Platz für das JSON.
-export const SIMPLE_DEEPSEEK_MAX_TOKENS = 8_192;
+// DeepSeek V4 Pro: max_tokens gilt für Reasoning UND sichtbares JSON gemeinsam.
+// Weglassen wäre schlechter — der API-Default ist 4096 und würde wieder ins
+// Denken laufen. Live-Lauf 2.5 (c1042eaa): Erfolg Ø 3161 / p95 5503 / max 7727
+// Completion-Tokens (Denken + JSON). 32.768 ist grob das Vierfache des
+// beobachteten Maximums, mit Puffer für Ausreißer.
+export const SIMPLE_DEEPSEEK_MAX_TOKENS = 32_768;
+// Einziger Reparaturversuch nach Abschneiden: noch einmal Puffer, unter dem
+// dokumentierten Ausgabe-Maximum (384k), aber klar über dem Erstversuch.
+export const SIMPLE_DEEPSEEK_REPAIR_MAX_TOKENS = 65_536;
+const SIMPLE_ARTICLE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Gezielter Simple-Lauf über gespeicherte Artikel-IDs, ohne den ganzen Pool. */
+export function requestedSimpleArticleIds(raw: unknown, limit = SIMPLE_MAX_ARTICLE_LIMIT): string[] {
+  if (!Array.isArray(raw)) return [];
+  const ids = [...new Set(
+    raw.map((value) => String(value || "").trim().toLowerCase())
+      .filter((id) => SIMPLE_ARTICLE_ID_RE.test(id)),
+  )];
+  return ids.slice(0, Math.max(1, limit));
+}
 // The Marketing news lane is deliberately restricted to one publisher.
 export const SIMPLE_NEWS_DOMAINS = ["bild.de"];
 
@@ -944,7 +959,7 @@ async function callSimpleJson<T>(
       return callSimpleJson<T>(deps, articleId, `${prompt}\n\n<repair>Die vorige Antwort war technisch unlesbar. Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt.</repair>`, {
         ...options,
         repairAttempt: true,
-        maxOutputTokens: truncated ? Math.max(maxTokens, 12_288) : maxTokens,
+        maxOutputTokens: truncated ? Math.max(maxTokens, SIMPLE_DEEPSEEK_REPAIR_MAX_TOKENS) : maxTokens,
       });
     }
     throw new Error(`${option.label} returned no valid simple classification`);
