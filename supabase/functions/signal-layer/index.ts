@@ -89,6 +89,7 @@ import {
   ASSET_FIRST_BYTE_STALE_MS,
   ASSET_HEARTBEAT_PULSE_MS,
   ASSET_HEARTBEAT_STALE_MS,
+  ASSET_STREAM_KEEPALIVE_MS,
   ASSET_MAX_TOTAL_TOKENS,
   ASSET_PROMPT_VERSION,
   ASSET_STAGE_HOLD_MS,
@@ -101,6 +102,8 @@ import {
   GEMINI_IMAGE_MODEL,
   MEMO_BENCHMARK_RESEARCH_MODEL,
   MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS,
+  MEMO_BENCHMARK_RESEARCH_ATTEMPTS,
+  MEMO_BENCHMARK_RESEARCH_MAX_TOKENS,
   MemoAnswers,
   MemoPayload,
   applyAssetPulse,
@@ -118,6 +121,7 @@ import {
   buildMemoBenchmarkResearchPrompt,
   buildMemoBenchmarkReviewPrompt,
   fillMemoImages,
+  geminiFinishAllowsParse,
   geminiImageRequestBody,
   isAssetKind,
   memoBenchmarkCorpus,
@@ -3013,27 +3017,34 @@ async function leseSse(
       await onData(data);
     }
   };
-  if (!response.body) {
-    await verarbeite((await response.text()).replace(/\r\n/g, "\n"));
-    return;
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (value && value.byteLength) await onByte?.();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-    let nl = buf.indexOf("\n");
-    while (nl >= 0) {
-      const line = buf.slice(0, nl);
-      buf = buf.slice(nl + 1);
-      if (line.trim()) await verarbeite(line);
-      nl = buf.indexOf("\n");
+  const keepalive = onByte
+    ? setInterval(() => { void onByte(); }, ASSET_STREAM_KEEPALIVE_MS)
+    : undefined;
+  try {
+    if (!response.body) {
+      await verarbeite((await response.text()).replace(/\r\n/g, "\n"));
+      return;
     }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (value && value.byteLength) await onByte?.();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      let nl = buf.indexOf("\n");
+      while (nl >= 0) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        if (line.trim()) await verarbeite(line);
+        nl = buf.indexOf("\n");
+      }
+    }
+    if (buf.trim()) await verarbeite(buf);
+  } finally {
+    if (keepalive !== undefined) clearInterval(keepalive);
   }
-  if (buf.trim()) await verarbeite(buf);
 }
 
 async function generateGeminiMemoImage(
@@ -3063,7 +3074,7 @@ async function generateGeminiMemoImage(
   return null;
 }
 
-async function callGeminiWithGoogleSearch(
+async function callGeminiWithGoogleSearchOnce(
   apiKey: string,
   model: string,
   prompt: string,
@@ -3076,7 +3087,13 @@ async function callGeminiWithGoogleSearch(
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       tools: [{ google_search: {} }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 2_400 },
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: MEMO_BENCHMARK_RESEARCH_MAX_TOKENS,
+        // Ohne das frisst 2.5-Flash das Antwortbudget als Thinking und endet
+        // mit MAX_TOKENS bei leerem JSON (Live 14.8.2026, Phase headers).
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
   }, MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS);
   if (!response.ok) {
@@ -3097,10 +3114,30 @@ async function callGeminiWithGoogleSearch(
     await onPulse?.({ phase: "search", model, chars: text.length });
   }, () => onPulse?.({ phase: "search", model, chars: text.length }));
   if (!text.trim()) throw new Error("Die Vorreiter-Recherche hat keine Antwort geliefert.");
-  if (finish && finish !== "STOP") {
+  if (!geminiFinishAllowsParse(finish)) {
     throw new Error("Die Vorreiter-Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Vorreiter eintragen.");
   }
   return { text, titles, searchQueries: searchQueries || (titles.length ? 1 : 0) };
+}
+
+async function callGeminiWithGoogleSearch(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  onPulse?: (info: AssetPulse) => void | Promise<void>,
+): Promise<{ text: string; titles: string[]; searchQueries: number }> {
+  let letzter: Error | null = null;
+  for (let attempt = 1; attempt <= MEMO_BENCHMARK_RESEARCH_ATTEMPTS; attempt += 1) {
+    try {
+      return await callGeminiWithGoogleSearchOnce(apiKey, model, prompt, onPulse);
+    } catch (fehler) {
+      letzter = fehler instanceof Error ? fehler : new Error(String(fehler));
+      const hart = /fehlgeschlagen \(40[13]\)|kein Gemini-Schlüssel/i.test(letzter.message);
+      if (hart || attempt === MEMO_BENCHMARK_RESEARCH_ATTEMPTS) throw letzter;
+      await onPulse?.({ phase: "search", model, chars: 0 });
+    }
+  }
+  throw letzter || new Error("Die Vorreiter-Recherche ist unvollständig abgebrochen.");
 }
 
 async function researchMemoBenchmarksWithGemini(
@@ -8425,6 +8462,7 @@ Deno.serve(async (req: Request) => {
           if (!(await nochAktiv())) return;
           await abschnitt("modell");
           loggen("model_start", { stream: true });
+          await persist({});
           const callOpts = {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
             schema: assetResponseSchema(assetKind, assetAnswers, [
