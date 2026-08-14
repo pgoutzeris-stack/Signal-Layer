@@ -86,6 +86,11 @@ export const SIMPLE_MIN_SCORE = 45;
 export const SIMPLE_MARKETING_WEIGHTS = { novelty: 25, strategic_value: 30, transferability: 25, evidence_strength: 20 } as const;
 export const SIMPLE_SALES_WEIGHTS = { problem_strength: 32, roots_fit: 30, buying_intent: 23, timing: 15 } as const;
 export const SIMPLE_PROMPT_CHARS = 3_500;
+// DeepSeek V4 Pro denkt standardmäßig mit hohem Aufwand. max_tokens gilt für
+// Reasoning UND Antwort gemeinsam. 4.500 Tokens gingen in Live-Lauf 2.5 oft
+// komplett ins Denken (thinking_tokens=4500, output_tokens=0) — HTTP 200, aber
+// leeres content. 8.192 lässt nach dem Denken Platz für das JSON.
+export const SIMPLE_DEEPSEEK_MAX_TOKENS = 8_192;
 // The Marketing news lane is deliberately restricted to one publisher.
 export const SIMPLE_NEWS_DOMAINS = ["bild.de"];
 
@@ -752,7 +757,7 @@ type ProviderRequest = {
   headers: Record<string, string>;
   body: string;
   /** Liest Antworttext und Tokenverbrauch aus der Anbieter-Antwort. */
-  parse: (payload: any) => { text: string; usage: SimpleUsage };
+  parse: (payload: any) => { text: string; usage: SimpleUsage; finishReason?: string };
 };
 
 type SimpleRequestOptions = {
@@ -797,7 +802,45 @@ function geminiRequest(model: string, apiKey: string, prompt: string, options: S
 
 // DeepSeek ist OpenAI-kompatibel und kennt kein Response-Schema, deshalb steht
 // die Antwortform im Prompt und json_object erzwingt gültiges JSON.
+export type SimpleDeepseekParse = {
+  text: string;
+  finishReason: string;
+  usage: { input: number; cachedInput: number; output: number; thinking: number; total: number };
+};
+
+/** Liest die sichtbare Antwort. reasoning_content ist privates Denken, kein JSON. */
+export function parseDeepseekSimpleCompletion(payload: unknown): SimpleDeepseekParse {
+  const body = payload && typeof payload === "object" ? payload as Record<string, any> : {};
+  const usage = body.usage || {};
+  const cached = Number(usage.prompt_cache_hit_tokens || 0);
+  const promptTokens = Number(usage.prompt_tokens || 0);
+  const missed = Number(usage.prompt_cache_miss_tokens ?? Math.max(promptTokens - cached, 0));
+  const completion = Number(usage.completion_tokens || 0);
+  const reasoning = Number(usage.completion_tokens_details?.reasoning_tokens || 0);
+  const choice = Array.isArray(body.choices) ? body.choices[0] : null;
+  return {
+    text: String(choice?.message?.content || "").trim(),
+    finishReason: String(choice?.finish_reason || ""),
+    usage: {
+      input: missed,
+      cachedInput: cached,
+      output: Math.max(completion - reasoning, 0),
+      thinking: reasoning,
+      total: Number(usage.total_tokens || promptTokens + completion),
+    },
+  };
+}
+
+export function deepseekEmptyAnswerMessage(parsed: SimpleDeepseekParse, maxTokens: number): string | null {
+  if (parsed.text) return null;
+  if (parsed.finishReason === "length" || parsed.usage.thinking >= maxTokens) {
+    return `Antwort abgeschnitten: Reasoning hat ${parsed.usage.thinking} von ${maxTokens} Tokens verbraucht, kein JSON übrig.`;
+  }
+  return "empty answer";
+}
+
 function deepseekRequest(model: string, apiKey: string, prompt: string, options: SimpleRequestOptions = {}): ProviderRequest {
+  const maxTokens = options.maxOutputTokens || SIMPLE_DEEPSEEK_MAX_TOKENS;
   return {
     endpoint: "https://api.deepseek.com/chat/completions",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -808,35 +851,17 @@ function deepseekRequest(model: string, apiKey: string, prompt: string, options:
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
-      // Bei DeepSeek zählt max_tokens Reasoning und Antwort zusammen. Mit den
-      // Relevanz-Teilwerten, Person und Zusammenfassung wurde 3000 zu knapp -
-      // abgeschnittene Antworten landeten als invalid_response im Fehlerprotokoll.
-      // v2 braucht mehr Platz als die alte 3.000er-Antwort, aber 4.500 Tokens
-      // begrenzen unnoetig lange Reasoning-Laeufe ohne die JSON-Felder zu
-      // beschneiden.
-      max_tokens: options.maxOutputTokens || 4_500,
+      // Classification braucht kein hohes Denken: high hat in Lauf 2.5 den
+      // kompletten 4.500er-Deckel aufgebraucht. low lässt Raum für das JSON.
+      reasoning_effort: "low",
+      thinking: { type: "enabled" },
+      max_tokens: maxTokens,
       temperature: 0,
       stream: false,
     }),
     parse: (payload) => {
-      const usage = payload?.usage || {};
-      const cached = Number(usage.prompt_cache_hit_tokens || 0);
-      const promptTokens = Number(usage.prompt_tokens || 0);
-      const missed = Number(usage.prompt_cache_miss_tokens ?? Math.max(promptTokens - cached, 0));
-      const completion = Number(usage.completion_tokens || 0);
-      const reasoning = Number(usage.completion_tokens_details?.reasoning_tokens || 0);
-      return {
-        text: payload?.choices?.[0]?.message?.content || "",
-        usage: {
-          input: missed,
-          cachedInput: cached,
-          // completion_tokens enthält die Reasoning-Tokens schon; getrennt
-          // ausgewiesen, aber nur einmal bepreist.
-          output: Math.max(completion - reasoning, 0),
-          thinking: reasoning,
-          total: Number(usage.total_tokens || promptTokens + completion),
-        },
-      };
+      const parsed = parseDeepseekSimpleCompletion(payload);
+      return { text: parsed.text, usage: parsed.usage, finishReason: parsed.finishReason };
     },
   };
 }
@@ -892,9 +917,14 @@ async function callSimpleJson<T>(
     throw new Error(`${option.label} failed: ${status} ${lastError.slice(0, 300)}`);
   }
   const payload = await response.json();
-  const { text, usage } = request.parse(payload);
+  const parsed = request.parse(payload);
+  const { text, usage } = parsed;
+  const maxTokens = options.maxOutputTokens || SIMPLE_DEEPSEEK_MAX_TOKENS;
   try {
-    if (!text) throw new Error("empty answer");
+    const empty = option.provider === "deepseek"
+      ? deepseekEmptyAnswerMessage({ text, finishReason: parsed.finishReason || "", usage }, maxTokens)
+      : (text ? null : "empty answer");
+    if (empty) throw new Error(empty);
     const answer = JSON.parse(text) as T;
     await recordSimpleUsage(
       deps, articleId, model, "success", usage, Date.now() - startedAt,
@@ -910,9 +940,11 @@ async function callSimpleJson<T>(
     // Reparaturversuch verhindert, dass bezahlte technische Fehler als
     // fachliche Ablehnung im Archiv landen. Beide Aufrufe bleiben im Ledger.
     if (option.provider === "deepseek" && !options.repairAttempt) {
+      const truncated = /abgeschnitten|empty answer/i.test(message);
       return callSimpleJson<T>(deps, articleId, `${prompt}\n\n<repair>Die vorige Antwort war technisch unlesbar. Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt.</repair>`, {
         ...options,
         repairAttempt: true,
+        maxOutputTokens: truncated ? Math.max(maxTokens, 12_288) : maxTokens,
       });
     }
     throw new Error(`${option.label} returned no valid simple classification`);
@@ -1364,7 +1396,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     // Ebenso ein abgebrochener Aufruf: ein Deploy oder ein Neustart der Runtime
     // beendet laufende Isolate mitten im Aufruf. Am 3.8.2026 hat genau das einen
     // Lauf nach 72 von 1000 Artikeln gestoppt, obwohl DeepSeek einwandfrei lief.
-    const singleCase = /no valid simple classification|aborted|abort|timeout|timed out|connection closed|error sending request|closed before message completed|stream closed|broken pipe/i;
+    const singleCase = /no valid simple classification|abgeschnitten|empty answer|aborted|abort|timeout|timed out|connection closed|error sending request|closed before message completed|stream closed|broken pipe/i;
     const kind = singleCase.test(message) ? "response" : "provider";
     return { ...rejected(article, "modellfehler", prefilter.families, model), error_kind: kind };
   }
