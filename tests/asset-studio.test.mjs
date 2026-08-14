@@ -573,9 +573,9 @@ test("die Zeitprognose lernt aus gespeicherten Assets, Fehler stehen im Laufprot
 
 test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
   const eta = await import("../asset-eta.mjs");
-  assert.equal(eta.assetEtaLabel(20_000), "Verbleibt unter 1 Minute");
-  assert.equal(eta.assetEtaLabel(60_000), "Verbleibt 1 Minute");
-  assert.equal(eta.assetEtaLabel(150_000), "Verbleiben 3 Minuten");
+  assert.equal(eta.assetEtaLabel(20_000), "Verbleibend unter 1 Minute");
+  assert.equal(eta.assetEtaLabel(60_000), "Verbleibend 1 Minute");
+  assert.equal(eta.assetEtaLabel(150_000), "Verbleibend 3 Minuten");
 
   const linkedinStart = eta.assetEtaRemainingMs({
     kind: "linkedin", answers: { asset_type: "single" }, stage: "lesen", elapsedMs: 1_000,
@@ -585,7 +585,7 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
   const memoStart = eta.assetEtaRemainingMs({
     kind: "memo", answers: { images: "auto", benchmarks: "auto" }, stage: "lesen", elapsedMs: 1_000,
   });
-  assert.ok(memoStart > 100_000 && memoStart < 200_000, `memo ${memoStart}`);
+  assert.ok(memoStart > 180_000 && memoStart < 280_000, `memo ${memoStart}`);
 
   const ohneMotive = eta.assetEtaRemainingMs({
     kind: "memo", answers: { images: "upload" }, stage: "lesen", elapsedMs: 1_000,
@@ -603,7 +603,7 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
       { t: 331_000, event: "retry_model" },
     ],
   });
-  assert.ok(nachRetry > 90_000 && nachRetry < 180_000, `retry ${nachRetry}`);
+  assert.ok(nachRetry > 150_000 && nachRetry < 280_000, `retry ${nachRetry}`);
 
   const schreibt = eta.assetEtaRemainingMs({
     kind: "memo",
@@ -615,8 +615,28 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
       { t: 147_000, event: "pulse", phase: "writing", chars: 5246 },
     ],
   });
-  assert.ok(schreibt < 60_000, `schreiben ${schreibt}`);
+  assert.ok(schreibt < 120_000, `schreiben ${schreibt}`);
+
+  const denkt = eta.assetEtaRemainingMs({
+    kind: "memo",
+    answers: { images: "auto", benchmarks: "auto" },
+    stage: "modell",
+    elapsedMs: 127_000,
+    forecastMs: 111_000,
+    stages: { modell: 107_000, recherchieren: 6_000, bilder: 12_000, pruefen: 2_500, fuellen: 2_000 },
+    runLog: [
+      { t: 0, event: "start" },
+      { t: 10_000, event: "stage", stage: "modell" },
+      { t: 10_000, event: "model_start" },
+      { t: 127_000, event: "pulse", phase: "thinking", thinking_chars: 33540 },
+    ],
+  });
+  assert.ok(denkt >= 90_000, `denken ${denkt}`);
+  assert.ok(denkt > schreibt, "Denken muss länger restzeigen als Schreiben");
   assert.match(studio, /asset-eta\.mjs/);
+  assert.match(studio, /data-eta-text/);
+  assert.match(studio, /fa-hourglass-half/);
+  assert.doesNotMatch(studio, /Verbleibt unter/);
 });
 
 test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", () => {
