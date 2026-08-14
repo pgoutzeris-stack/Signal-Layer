@@ -594,6 +594,16 @@ const CHROME_CSS = `
 @keyframes as-bar-pulse{0%,100%{filter:brightness(1);} 50%{filter:brightness(1.35);}}
 @keyframes as-bar-shimmer{from{transform:translateX(-100%);} to{transform:translateX(100%);}}
 #as-overlay .as-load-meta{margin:0; font-size:.8rem; color:var(--muted,#475569); line-height:1.45;}
+#as-overlay .as-load-live{margin:0; font-size:.85rem; font-weight:600; color:var(--ink,#0f172a); line-height:1.4;}
+#as-overlay .as-load-live.is-still{color:#b45309;}
+#as-overlay .as-load-log{
+  margin:4px 0 0; padding:0; list-style:none; width:100%; text-align:left;
+  font-size:.78rem; color:var(--muted,#475569); line-height:1.4;
+}
+#as-overlay .as-load-log li{display:flex; gap:8px; padding:3px 0; border-top:1px solid var(--line,#e2e8f0);}
+#as-overlay .as-load-log li:first-child{border-top:0;}
+#as-overlay .as-load-log b{flex:0 0 3.2em; font-weight:600; color:#64748b;}
+#as-overlay .as-load-log span{min-width:0;}
 @media (prefers-reduced-motion: reduce){
   #as-overlay .as-load-icon, #as-overlay .as-load-bar-fill, #as-overlay .as-load-bar::after{animation:none; opacity:1;}
   #as-overlay .as-load-bar-fill{background:#206efb;}
@@ -789,8 +799,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0810";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0810";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0905";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0905";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -847,6 +857,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ladeStart: 0,
     ladeUhr: 0,
     forecastMs: 0,
+    laufLog: [],
+    updatedAt: "",
   };
 
   const cleanups = [];
@@ -1143,10 +1155,89 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return `Typisch ${zeitLabel(eta).replace(/^etwa /, "")} · ${seit}`;
   }
 
+  function laufEreignisText(entry) {
+    const event = String(entry?.event || "");
+    const phase = String(entry?.phase || "");
+    const model = String(entry?.model || "");
+    const chars = Number(entry?.chars || 0);
+    const thinking = Number(entry?.thinking_chars || 0);
+    const zahl = (n) => n.toLocaleString("de-DE");
+    if (event === "pulse") {
+      if (phase === "thinking") {
+        return thinking
+          ? `${model || "Das Modell"} denkt … ${zahl(thinking)} Zeichen Begründung`
+          : `${model || "Das Modell"} denkt`;
+      }
+      if (phase === "writing") {
+        return chars
+          ? `${model || "Das Modell"} schreibt … ${zahl(chars)} Zeichen`
+          : `${model || "Das Modell"} schreibt`;
+      }
+      if (phase === "search") {
+        return chars
+          ? `Gemini sucht und schreibt … ${zahl(chars)} Zeichen`
+          : "Gemini sucht im Web";
+      }
+      if (phase === "headers") return `${model || "Das Modell"} hat die Verbindung geöffnet`;
+      return `${model || "Das Modell"} sendet`;
+    }
+    if (event === "start") return "Auftrag gestartet";
+    if (event === "stage") {
+      const name = String(entry.stage || "");
+      if (name === "recherchieren") return "Vorreiter-Recherche gestartet";
+      if (name === "modell") return "Schreiben gestartet";
+      if (name === "pruefen") return "Belege werden geprüft";
+      if (name === "bilder") return "Motive werden erzeugt";
+      if (name === "fuellen") return "Vorlage wird gefüllt";
+      return "Nächster Schritt";
+    }
+    if (event === "model_start") return "Modellaufruf gestartet";
+    if (event === "model_ok") return "Text angekommen";
+    if (event === "benchmarks_ok") {
+      const names = Array.isArray(entry.names) ? entry.names.filter(Boolean).join(", ") : "";
+      return names ? `Vorreiter: ${names}` : "Vorreiter gefunden";
+    }
+    if (event === "benchmarks_user") return "Eigene Vorreiter übernommen";
+    if (event === "image_start") return "Ein Motiv wird erzeugt";
+    if (event === "images_done") return "Motive fertig";
+    if (event === "done") return "Entwurf steht";
+    return "";
+  }
+
+  function laufLogZeilen() {
+    const rows = Array.isArray(state.laufLog) ? state.laufLog : [];
+    const visible = [];
+    for (let i = rows.length - 1; i >= 0 && visible.length < 5; i -= 1) {
+      const text = laufEreignisText(rows[i]);
+      if (!text) continue;
+      const sek = Math.max(0, Math.round(Number(rows[i]?.t || 0) / 1000));
+      visible.push({ sek, text });
+    }
+    return visible.reverse();
+  }
+
+  function ladeLiveText() {
+    const age = state.updatedAt ? Date.now() - Date.parse(state.updatedAt) : (state.ladeStart ? Date.now() - state.ladeStart : 0);
+    const sek = Number.isFinite(age) ? Math.max(0, Math.round(age / 1000)) : 0;
+    const last = Array.isArray(state.laufLog) ? state.laufLog[state.laufLog.length - 1] : null;
+    const pulse = last && last.event === "pulse";
+    if (pulse && sek < 20) return laufEreignisText(last);
+    if (sek >= 40) return `Kein Impuls seit ${sek} s — die Verbindung wird geprüft`;
+    if (sek >= 12) return `Letzter Impuls vor ${sek} s — läuft noch`;
+    return pulse ? laufEreignisText(last) : "Wartet auf das erste Lebenszeichen";
+  }
+
+  function ladeLiveStill() {
+    const age = state.updatedAt ? Date.now() - Date.parse(state.updatedAt) : 0;
+    return Number.isFinite(age) && age >= 40_000;
+  }
+
   function ladeanzeigeHtml() {
     const i = Math.max(0, ABSCHNITTE.findIndex(([key]) => key === state.ladeAbschnitt));
     const [, icon, text] = ABSCHNITTE[i];
     const pct = ladeFortschritt();
+    const still = ladeLiveStill();
+    const log = laufLogZeilen();
     return `<div class="as-load" role="status" aria-live="polite">
       <div class="as-load-icon"><i class="fa-solid ${icon}"></i></div>
       <p class="as-load-text">${esc(text)}</p>
@@ -1154,7 +1245,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <span class="as-load-bar-fill" style="width:${pct}%"></span>
       </div>
       <p class="as-load-eta">${esc(ladeEtaText())}</p>
+      <p class="as-load-live${still ? " is-still" : ""}">${esc(ladeLiveText())}</p>
       <p class="as-load-meta">${esc(ladeMetaText())}</p>
+      ${log.length ? `<ul class="as-load-log">${log.map((row) => `<li><b>${row.sek} s</b><span>${esc(row.text)}</span></li>`).join("")}</ul>` : ""}
       <div class="as-load-actions"><button type="button" class="as-btn" data-act="cancel-generate">Abbrechen</button></div>
     </div>`;
   }
@@ -1164,17 +1257,24 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ladeTaktStop();
     state.ladeStart = Date.now();
     state.ladeAbschnitt = "lesen";
+    state.laufLog = [];
+    state.updatedAt = "";
     state.ladeUhr = window.setInterval(() => {
       if (!state.busy) { ladeTaktStop(); return; }
       const fill = shell.querySelector(".as-load-bar-fill");
       const bar = shell.querySelector(".as-load-bar");
       const meta = shell.querySelector(".as-load-meta");
       const eta = shell.querySelector(".as-load-eta");
+      const live = shell.querySelector(".as-load-live");
       const pct = ladeFortschritt();
       if (fill) fill.style.width = `${pct}%`;
       if (bar) bar.setAttribute("aria-valuenow", String(pct));
       if (meta) meta.textContent = ladeMetaText();
       if (eta) eta.textContent = ladeEtaText();
+      if (live) {
+        live.textContent = ladeLiveText();
+        live.classList.toggle("is-still", ladeLiveStill());
+      }
     }, 200);
   }
 
@@ -1192,6 +1292,33 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.ladeAbschnitt = name;
     const box = shell.querySelector(".as-load");
     if (box) box.outerHTML = ladeanzeigeHtml();
+  }
+
+  function uebernehmeLaufstand(row) {
+    if (!row || typeof row !== "object") return;
+    if (Array.isArray(row.run_log)) state.laufLog = row.run_log;
+    if (row.updated_at) state.updatedAt = String(row.updated_at);
+    if (Number(row.forecast_ms) > 0) state.forecastMs = Number(row.forecast_ms);
+    const stage = row.stage;
+    if (stage && stage !== state.ladeAbschnitt && ABSCHNITTE.some(([key]) => key === stage)) {
+      ladeAbschnittSetzen(stage);
+      return;
+    }
+    const live = shell.querySelector(".as-load-live");
+    if (live) {
+      live.textContent = ladeLiveText();
+      live.classList.toggle("is-still", ladeLiveStill());
+    }
+    const logBox = shell.querySelector(".as-load-log");
+    const zeilen = laufLogZeilen();
+    const html = zeilen.length
+      ? `<ul class="as-load-log">${zeilen.map((item) => `<li><b>${item.sek} s</b><span>${esc(item.text)}</span></li>`).join("")}</ul>`
+      : "";
+    if (logBox) logBox.outerHTML = html || `<ul class="as-load-log"></ul>`;
+    else if (html) {
+      const meta = shell.querySelector(".as-load-meta");
+      if (meta) meta.insertAdjacentHTML("afterend", html);
+    }
   }
 
   /** Ruhiger Platzhalter statt einer geratenen Kachel. */
@@ -1676,7 +1803,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (state.cancelRequested) return;
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       state.assetId = row.id || null;
-      state.forecastMs = Number(row.forecast_ms) || state.forecastMs || 0;
+      uebernehmeLaufstand(row);
       const fertig = row.status === "running" ? await warteAufAsset(row.id) : row;
       if (state.cancelRequested) return;
       if (fertig.status === "error") throw new Error(fertig.error_message || "Der Entwurf ist fehlgeschlagen.");
@@ -1710,8 +1837,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (state.cancelRequested) return { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
       const res = await api("get_asset", { asset_id: id });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
-      ladeAbschnittSetzen(row.stage);
-      if (Number(row.forecast_ms) > 0) state.forecastMs = Number(row.forecast_ms);
+      uebernehmeLaufstand(row);
       if (row.status && row.status !== "running") return row;
     }
     throw new Error("Der Entwurf ist nach sieben Minuten nicht fertig geworden. Bitte denselben Auftrag noch einmal starten.");

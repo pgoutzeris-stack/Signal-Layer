@@ -424,7 +424,7 @@ test("Fehler beim Entwurf nennen die Ursache, nicht nur ihr Scheitern", async ()
   for (const muster of [/kein Guthaben mehr verfügbar/, /API-Schlüssel/, /Rate Limit/]) {
     assert.match(edge, muster);
   }
-  assert.match(edge, /assetTimeoutErrorText\(assetModel, timeoutMs\)/);
+  assert.match(edge, /assetHeartbeatErrorText\(assetModel, "modell"/);
   assert.match(backend.assetTimeoutErrorText("deepseek-v4-pro", 160_000), /nicht geantwortet/);
   // Das Studio zeigt den Servertext und laesst wiederholen.
   assert.match(studio, /class="as-error"/);
@@ -482,7 +482,7 @@ test("die Ladeanzeige zeigt Abschnitt, Balken und Minutenprognose", () => {
     assert.ok(edge.includes(`abschnitt("${name}")`), `Abschnitt ${name} wird nicht gemeldet`);
   }
   assert.match(studio, /const ABSCHNITTE = \[/);
-  assert.match(studio, /ladeAbschnittSetzen\(row\.stage\)/);
+  assert.match(studio, /function uebernehmeLaufstand/);
   assert.match(studio, /as-load-bar/);
   assert.match(studio, /as-load-bar-fill/);
   assert.match(studio, /@keyframes as-bar-flow/);
@@ -494,6 +494,10 @@ test("die Ladeanzeige zeigt Abschnitt, Balken und Minutenprognose", () => {
   assert.match(studio, /function zeitLabel/);
   assert.match(studio, /Noch \$\{zeitLabel/);
   assert.match(studio, /as-load-eta/);
+  assert.match(studio, /as-load-live/);
+  assert.match(studio, /as-load-log/);
+  assert.match(studio, /function laufEreignisText/);
+  assert.match(studio, /Kein Impuls seit/);
   assert.doesNotMatch(studio, /noch ca\./);
   assert.doesNotMatch(studio, /0,3/);
   assert.doesNotMatch(studio, /function minutenLabel/);
@@ -520,7 +524,9 @@ test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", 
   assert.equal(backend.assetModelTimeoutMs("linkedin", carousel4), 220_000);
   assert.equal(backend.assetModelTimeoutMs("linkedin", carousel6), 280_000);
   assert.match(edge, /assetModelTimeoutMs\(assetKind, assetAnswers\)/);
-  assert.match(edge, /assetTimeoutErrorText\(assetModel, timeoutMs\)/);
+  assert.match(edge, /callJsonModelStreaming/);
+  assert.match(edge, /stream: true/);
+  assert.match(edge, /stream_options: \{ include_usage: true \}/);
   assert.doesNotMatch(edge, /hat nach 120 Sekunden nicht geantwortet/);
   assert.equal(
     backend.assetTimeoutErrorText("deepseek-v4-pro", 280_000),
@@ -552,19 +558,18 @@ test("die Zeitprognose lernt aus gespeicherten Assets, Fehler stehen im Laufprot
   assert.match(studio, /state\.forecastMs/);
 });
 
-test("ein haengender Auftrag wird geschlossen, kein zweites Modellrennen", () => {
-  // AbortSignal.timeout hat den DeepSeek-Fetch nicht abgebrochen. Promise.race
-  // gibt spaetestens nach dem Fenster zurueck, der Waechter schreibt den Fehler
-  // nur solange die Zeile noch running ist. Am 14.8.2026 blieb ein Memo 401 s
-  // auf modell, weil der Fetch die Timer im Isolat aushungerte: get_asset muss
-  // die Stufe selbst schliessen, nicht erst nach 400 s.
+test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", () => {
+  // AbortSignal.timeout hat den DeepSeek-Fetch nicht abgebrochen. Am 14.8.2026
+  // blieb ein Memo 401 s auf modell ohne ein Byte. Stufenfenster wuerden einen
+  // langsamen, aber lebenden Lauf toeten. get_asset schliesst nur bei Stille
+  // oder wenn das Isolat tot ist.
   assert.match(edge, /async function fetchMitLimit/);
-  assert.match(edge, /fetchMitLimit\(endpoint/);
-  assert.match(edge, /Promise\.race/);
-  assert.match(edge, /err\.name = "TimeoutError"/);
-  assert.match(edge, /setTimeout\(\(\) => \{/);
+  assert.match(edge, /async function leseSse/);
+  assert.match(edge, /async function callJsonModelStreaming/);
+  assert.match(edge, /onPulse/);
+  assert.match(edge, /applyAssetPulse/);
   assert.match(edge, /async function schliesseHangingAsset/);
-  assert.match(edge, /assetStageStaleMs/);
+  assert.match(edge, /assetHangReason/);
   assert.match(edge, /schliesseHangingAsset\(admin, geladen/);
   assert.match(edge, /EDITOR_ACTIONS[\s\S]*generate_asset/);
   assert.doesNotMatch(studio, /Der Auftrag läuft weiter/);
@@ -575,11 +580,43 @@ test("ein haengender Auftrag wird geschlossen, kein zweites Modellrennen", () =>
   assert.equal(backend.assetMangelIsRepairable("Die Antwort war kein JSON-Objekt. Angekommen ist: x"), true);
   assert.equal(backend.assetMangelIsRepairable("Die Kennzahl 24 steht auf Folie 1 und Folie 2."), false);
   assert.equal(backend.assetMangelIsRepairable("Das Karussell braucht genau 4 Folien, das Modell hat 3 geliefert (G, H, K)."), false);
-  const memo = backend.normalizeAssetAnswers("memo", {});
-  assert.equal(backend.assetStageStaleMs("modell", "memo", memo), 220_000);
-  assert.equal(backend.assetStageStaleMs("recherchieren", "memo", memo), 60_000);
-  assert.ok(backend.assetStageStaleMs("modell", "memo", memo) < backend.ASSET_STALE_MS);
-  assert.match(backend.assetStaleErrorText("deepseek-v4-pro", "modell", 220_000), /beim Schreiben nach 220 Sekunden/);
+  const now = Date.parse("2026-08-14T08:00:00.000Z");
+  const iso = (ms) => new Date(ms).toISOString();
+  const lebend = {
+    status: "running",
+    stage: "modell",
+    created_at: iso(now - 180_000),
+    updated_at: iso(now - 5_000),
+    run_log: [{ t: 175_000, event: "pulse", phase: "thinking", chars: 0, thinking_chars: 800 }],
+  };
+  assert.equal(backend.assetHangReason(lebend, now), null);
+  const still = {
+    ...lebend,
+    updated_at: iso(now - 50_000),
+    run_log: [{ t: 130_000, event: "pulse", phase: "thinking" }],
+  };
+  assert.equal(backend.assetHangReason(still, now), "silent");
+  const wartet = {
+    status: "running",
+    stage: "modell",
+    created_at: iso(now - 60_000),
+    updated_at: iso(now - 60_000),
+    run_log: [{ t: 0, event: "model_start" }],
+  };
+  assert.equal(backend.assetHangReason(wartet, now), null);
+  const keinByte = { ...wartet, created_at: iso(now - 100_000), updated_at: iso(now - 100_000) };
+  assert.equal(backend.assetHangReason(keinByte, now), "silent");
+  const tot = { ...lebend, created_at: iso(now - 401_000), updated_at: iso(now - 1_000) };
+  assert.equal(backend.assetHangReason(tot, now), "isolate");
+  assert.match(backend.assetHeartbeatErrorText("deepseek-v4-pro", "modell", 45_000, "silent"), /seit 45 Sekunden nichts mehr gesendet/);
+  const sse = backend.parseDeepseekSseData('{"choices":[{"delta":{"reasoning_content":"Hmm"}}]}');
+  assert.equal(sse?.reasoning, "Hmm");
+  const done = backend.parseDeepseekSseData("[DONE]");
+  assert.equal(done?.done, true);
+  const log = backend.applyAssetPulse([], { phase: "writing", chars: 12 }, now - 1_000, now);
+  backend.applyAssetPulse(log, { phase: "writing", chars: 40 }, now - 1_000, now);
+  assert.equal(log.length, 1);
+  assert.equal(log[0].chars, 40);
 });
 
 test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () => {
@@ -1256,6 +1293,7 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.match(edge, /VORREITER_PASSUNG:/);
   assert.match(edge, /Im Fragebogen eigene Vorreiter eintragen/);
   assert.match(edge, /function callGeminiWithGoogleSearch/);
+  assert.match(edge, /streamGenerateContent\?alt=sse/);
   assert.match(edge, /simple_research_model \|\| MEMO_BENCHMARK_RESEARCH_MODEL/);
   assert.match(edge, /MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS/);
 });
