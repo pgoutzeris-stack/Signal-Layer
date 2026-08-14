@@ -471,7 +471,7 @@ test("die Ladeanzeige zeigt Abschnitt, Balken und Minutenprognose", () => {
   // Der Auftrag schreibt seinen Abschnitt auf die Zeile, das Studio liest ihn
   // beim Abfragen. Der Balken kriecht mit der gelernten Prognose, nicht frei.
   assert.match(edge, /stage: "lesen"/);
-  for (const name of ["modell", "pruefen", "bilder", "fuellen"]) {
+  for (const name of ["recherchieren", "modell", "pruefen", "bilder", "fuellen"]) {
     assert.ok(edge.includes(`abschnitt("${name}")`), `Abschnitt ${name} wird nicht gemeldet`);
   }
   assert.match(studio, /const ABSCHNITTE = \[/);
@@ -479,8 +479,17 @@ test("die Ladeanzeige zeigt Abschnitt, Balken und Minutenprognose", () => {
   assert.match(studio, /as-load-bar/);
   assert.match(studio, /as-load-bar-fill/);
   assert.match(studio, /@keyframes as-bar-flow/);
-  assert.match(studio, /noch ca\./);
-  assert.match(studio, /function minutenLabel/);
+  assert.match(studio, /@keyframes as-pulse/);
+  assert.match(studio, /@keyframes as-bar-pulse/);
+  assert.match(studio, /@keyframes as-bar-shimmer/);
+  assert.match(studio, /animation:as-pulse 1.4s/);
+  assert.match(studio, /as-bar-flow 1.6s linear infinite, as-bar-pulse/);
+  assert.match(studio, /function zeitLabel/);
+  assert.match(studio, /Noch \$\{zeitLabel/);
+  assert.match(studio, /as-load-eta/);
+  assert.doesNotMatch(studio, /noch ca\./);
+  assert.doesNotMatch(studio, /0,3/);
+  assert.doesNotMatch(studio, /function minutenLabel/);
   assert.doesNotMatch(studio, /\$\{sekunden\} s/);
   assert.doesNotMatch(studio, /as-load-step/);
   assert.doesNotMatch(studio, /bis zwei Minuten/);
@@ -749,7 +758,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.6");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.7");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -830,7 +839,7 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   assert.match(memo.about_fit, /100 Tage/);
 });
 
-test("Prompt v1.6 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
+test("Prompt v1.7 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -1125,5 +1134,113 @@ test("das erkannte Unternehmen ist Briefing und überschreibbar", () => {
   assert.match(studio, /primary_company/);
   assert.match(studio, /Nur Briefing/);
   assert.match(edge, /resolveAssetCompany/);
+});
+
+test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", () => {
+  const beispiel = backend.MEMO_BENCHMARK_EXAMPLE;
+  assert.equal(beispiel.length, 3);
+  assert.equal(backend.MEMO_BENCHMARK_RESEARCH_MODEL, "gemini-2.5-flash");
+  assert.equal(backend.isExampleBenchmarkSet(beispiel), true);
+
+  const eigene = [
+    { name: "Lidl", text: "Hat die Eigenmarken unter eine Führung gestellt und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche", source: "" },
+    { name: "H&M", text: "Führt Store und Online mit derselben Handschrift statt getrennter Auftritte.", tag: "Eine Linie, zwei Kanäle", source: "" },
+    { name: "Uniqlo", text: "Hat Saisonkampagnen durch eine haltbare Linie ersetzt, die über die Kollektion trägt.", tag: "Linie vor Saison", source: "" },
+  ];
+  assert.deepEqual(backend.assertMemoBenchmarkBriefs(eigene, "Hugo Boss"), eigene);
+
+  assert.throws(() => backend.assertMemoBenchmarkBriefs(beispiel, ""), /Beispiel zeigt nur die Form/);
+  assert.doesNotThrow(() => backend.assertMemoBenchmarkBriefs(beispiel, "", { allowExample: true }));
+  assert.throws(() => backend.assertMemoBenchmarkBriefs(eigene, "Lidl"), /Adressatenfirma/);
+  assert.throws(() => backend.assertMemoBenchmarkBriefs(eigene.slice(0, 2), ""), /genau drei Vorreiter/);
+  assert.throws(() => backend.assertMemoBenchmarkBriefs([
+    { name: "Lidl", text: "zu kurz", tag: "x", source: "" },
+    eigene[1], eigene[2],
+  ], ""), /konkrete Handlung/);
+
+  const parsed = backend.parseMemoBenchmarkBriefs({
+    bench_0_name: "Lidl", bench_0_text: eigene[0].text, bench_0_tag: eigene[0].tag,
+    bench_1_name: "H&M", bench_1_text: eigene[1].text, bench_1_tag: eigene[1].tag,
+    bench_2_name: "Uniqlo", bench_2_text: eigene[2].text, bench_2_tag: eigene[2].tag,
+    benchmarks: "custom",
+  });
+  assert.equal(parsed[0].name, "Lidl");
+  assert.equal(backend.parseMemoBenchmarkBriefs({ benchmarks: "auto" }).length, 0);
+
+  const answers = backend.normalizeAssetAnswers("memo", {
+    benchmarks: "custom",
+    bench_0_name: "Lidl", bench_0_text: eigene[0].text, bench_0_tag: eigene[0].tag,
+    bench_1_name: "H&M", bench_1_text: eigene[1].text, bench_1_tag: eigene[1].tag,
+    bench_2_name: "Uniqlo", bench_2_text: eigene[2].text, bench_2_tag: eigene[2].tag,
+  });
+  assert.equal(answers.benchmarks_mode, "custom");
+  assert.equal(answers.benchmarks.length, 3);
+  assert.equal(backend.normalizeAssetAnswers("memo", {}).benchmarks_mode, "auto");
+
+  const block = backend.formatVorreiterBlock(eigene, "nutzer");
+  assert.match(block, /<vorreiter herkunft="nutzer">/);
+  assert.match(block, /name: Lidl/);
+
+  const research = backend.buildMemoBenchmarkResearchPrompt(
+    { headline_de: "Eigenmarken brauchen eine Führung", company: "Hugo Boss" },
+    { title: "Handelsstudie" },
+    backend.normalizeAssetAnswers("memo", { company_mode: "custom", company_text: "Hugo Boss" }),
+  );
+  assert.match(research, /Google Search ist Pflicht/);
+  assert.match(research, /Nicht Apple\/Nike\/Amazon/);
+  assert.match(research, /Hugo Boss/);
+  assert.match(research, /{"benchmarks"/);
+
+  const review = backend.buildMemoBenchmarkReviewPrompt(
+    { headline_de: "Eigenmarken brauchen eine Führung", company: "Hugo Boss" },
+    { title: "Handelsstudie" },
+    answers,
+  );
+  assert.match(review, /Google Search ist Pflicht/);
+  assert.match(review, /Lidl/);
+  assert.match(review, /{"ok":true}/);
+  assert.equal(backend.parseMemoBenchmarkReview({ ok: true }).ok, true);
+  assert.equal(backend.parseMemoBenchmarkReview({ ok: false, grund: "Nike ist Füllsel" }).ok, false);
+
+  const prompt = backend.buildAssetPrompt("memo", { headline_de: "Hebel", company: "Hugo Boss" }, { title: "A", content: "Text" }, answers);
+  assert.match(prompt, /<vorreiter herkunft="nutzer">/);
+  assert.match(prompt, /<belegregeln_vorreiter>/);
+  assert.match(prompt, /Lidl/);
+
+  const gefuellt = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    benchmarks: [
+      { name: "Marke A", text: "Hat den Hebel gezogen.", tag: "Eigenmarke zuerst" },
+      { name: "Marke B", text: "Hat den Kanal umgebaut.", tag: "Kanal vor Fläche" },
+    ],
+  })), answers, {
+    articleText: "14 %",
+    benchmarkCorpus: backend.memoBenchmarkCorpus(eigene),
+  });
+  assert.equal(gefuellt.benchmarks.length, 3);
+  assert.equal(gefuellt.benchmarks[0].name, "Lidl");
+
+  const grounded = backend.normalizeMemoBenchmarkResearch({
+    benchmarks: eigene.map((item, i) => ({ ...item, source: `Quelle ${i + 1}` })),
+  }, ["Titel A"]);
+  assert.equal(grounded[0].name, "Lidl");
+  assert.equal(backend.parseLooseJsonObject("```json\n{\"ok\":true}\n```").ok, true);
+
+  assert.match(studio, /key: "benchmarks"/);
+  assert.match(studio, /Gemini recherchiert aktuelle Vorreiter/);
+  assert.match(studio, /data-act="bench-example"/);
+  assert.match(studio, /Beispielform einsetzen/);
+  assert.match(studio, /function eigeneVorreiterPruefen/);
+  assert.match(studio, /Noch \$\{zeitLabel/);
+  assert.match(studio, /Typisch \$\{zeitLabel/);
+  assert.match(edge, /function researchMemoBenchmarksWithGemini/);
+  assert.match(edge, /function reviewMemoBenchmarksWithGemini/);
+  assert.match(edge, /tools: \[\{ google_search: \{\} \}\]/);
+  assert.match(edge, /buildMemoBenchmarkResearchPrompt/);
+  assert.match(edge, /buildMemoBenchmarkReviewPrompt/);
+  assert.match(edge, /VORREITER_PASSUNG:/);
+  assert.match(edge, /Im Fragebogen eigene Vorreiter eintragen/);
+  assert.match(edge, /function callGeminiWithGoogleSearch/);
+  assert.match(edge, /simple_research_model \|\| MEMO_BENCHMARK_RESEARCH_MODEL/);
+  assert.match(edge, /MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS/);
 });
 

@@ -95,8 +95,11 @@ import {
   AssetPayload,
   GEMINI_IMAGE_FALLBACK_MODEL,
   GEMINI_IMAGE_MODEL,
+  MEMO_BENCHMARK_RESEARCH_MODEL,
+  MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS,
   MemoAnswers,
   MemoPayload,
+  assertMemoBenchmarkBriefs,
   assetMangelIsRepairable,
   assetModelTimeoutMs,
   assetOutputTokenBudget,
@@ -105,13 +108,19 @@ import {
   assetTimeoutErrorText,
   buildAssetPrompt,
   buildAssetRepairPrompt,
+  buildMemoBenchmarkResearchPrompt,
+  buildMemoBenchmarkReviewPrompt,
   fillMemoImages,
   geminiImageRequestBody,
   isAssetKind,
+  memoBenchmarkCorpus,
   memoImageDataUri,
   normalizeAssetAnswers,
   normalizeAssetPayload,
+  normalizeMemoBenchmarkResearch,
   parseGeminiInlineImage,
+  parseLooseJsonObject,
+  parseMemoBenchmarkReview,
   resolveAssetCompany,
 } from "./asset-studio.ts";
 
@@ -2966,6 +2975,73 @@ async function generateGeminiMemoImage(
     }
   }
   return null;
+}
+
+function groundingTitles(candidate: Record<string, unknown> | null): string[] {
+  const meta = candidate?.groundingMetadata as Record<string, unknown> | undefined;
+  const chunks = Array.isArray(meta?.groundingChunks) ? meta!.groundingChunks as unknown[] : [];
+  const titles: string[] = [];
+  for (const chunk of chunks) {
+    const web = (chunk as Record<string, unknown>).web as Record<string, unknown> | undefined;
+    const title = String(web?.title || "").trim();
+    if (title) titles.push(title.slice(0, 80));
+  }
+  return titles;
+}
+
+async function callGeminiWithGoogleSearch(
+  apiKey: string,
+  model: string,
+  prompt: string,
+): Promise<{ text: string; titles: string[]; searchQueries: number }> {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const response = await fetchMitLimit(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      tools: [{ google_search: {} }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 2_400 },
+    }),
+  }, MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS);
+  if (!response.ok) {
+    throw new Error(`Die Vorreiter-Recherche ist fehlgeschlagen (${response.status}).`);
+  }
+  const payload = await response.json() as Record<string, unknown>;
+  const candidate = (Array.isArray(payload.candidates) ? payload.candidates[0] : null) as Record<string, unknown> | null;
+  if (!candidate) throw new Error("Die Vorreiter-Recherche hat keine Antwort geliefert.");
+  const finish = String(candidate.finishReason ?? "");
+  if (finish && finish !== "STOP") {
+    throw new Error("Die Vorreiter-Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Vorreiter eintragen.");
+  }
+  const parts = ((candidate.content as Record<string, unknown> | undefined)?.parts ?? []) as Array<Record<string, unknown>>;
+  const text = parts.map((part) => String(part.text ?? "")).join("\n");
+  const titles = groundingTitles(candidate);
+  const meta = candidate.groundingMetadata as Record<string, unknown> | undefined;
+  const queries = Array.isArray(meta?.webSearchQueries) ? meta!.webSearchQueries.length : (titles.length ? 1 : 0);
+  return { text, titles, searchQueries: queries };
+}
+
+async function researchMemoBenchmarksWithGemini(
+  apiKey: string,
+  model: string,
+  prompt: string,
+): Promise<{ briefs: ReturnType<typeof normalizeMemoBenchmarkResearch>; searchQueries: number }> {
+  const gefunden = await callGeminiWithGoogleSearch(apiKey, model, prompt);
+  return {
+    briefs: normalizeMemoBenchmarkResearch(parseLooseJsonObject(gefunden.text), gefunden.titles),
+    searchQueries: gefunden.searchQueries,
+  };
+}
+
+async function reviewMemoBenchmarksWithGemini(
+  apiKey: string,
+  model: string,
+  prompt: string,
+): Promise<{ ok: boolean; grund: string; searchQueries: number }> {
+  const gefunden = await callGeminiWithGoogleSearch(apiKey, model, prompt);
+  const verdict = parseMemoBenchmarkReview(parseLooseJsonObject(gefunden.text));
+  return { ...verdict, searchQueries: gefunden.searchQueries };
 }
 
 async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult> {
@@ -7989,9 +8065,10 @@ Deno.serve(async (req: Request) => {
         };
 
         const timeoutMs = assetModelTimeoutMs(assetKind, assetAnswers);
+        const researchMs = assetKind === "memo" ? MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS : 0;
         const forecast = await assetForecastFromDb(
           admin, assetKind, assetAnswers as { asset_type?: string; slides?: number },
-          Math.round(timeoutMs * 0.85),
+          Math.round((timeoutMs + researchMs) * 0.85),
         );
 
         // Der Auftrag wird angelegt und sofort quittiert. Ein Modellaufruf dauert
@@ -8065,6 +8142,63 @@ Deno.serve(async (req: Request) => {
             return `${nachricht}\n\n${assetModel} · ${ASSET_PROMPT_VERSION} · ${formatLabel} · ${dauer} · ${tok}`;
           };
           // Prompt bauen zaehlt noch als Lesen: das Modell startet erst danach.
+          // Vorreiter: Gemini sucht (DeepSeek hat keine Websuche) oder der Nutzer
+          // liefert drei. Ohne drei belastbare Marken bricht das Memo spaeter ab.
+          if (assetKind === "memo") {
+            const memoAnswers = assetAnswers as MemoAnswers;
+            const firma = String(signalForAsset.company || "");
+            await abschnitt("recherchieren");
+            const researchModel = assetConfig.ai.simple_research_model || MEMO_BENCHMARK_RESEARCH_MODEL;
+            const geminiKey = await getGeminiKey().catch(() => "");
+            if (memoAnswers.benchmarks_mode === "custom") {
+              memoAnswers.benchmarks = assertMemoBenchmarkBriefs(memoAnswers.benchmarks, firma);
+              loggen("benchmarks_user", { names: memoAnswers.benchmarks.map((item) => item.name) });
+              if (geminiKey) {
+                try {
+                  const pruefung = await reviewMemoBenchmarksWithGemini(
+                    geminiKey,
+                    researchModel,
+                    buildMemoBenchmarkReviewPrompt(signalForAsset, assetArticle, memoAnswers),
+                  );
+                  loggen("benchmarks_review", {
+                    model: researchModel,
+                    ok: pruefung.ok,
+                    search_queries: pruefung.searchQueries,
+                  });
+                  if (!pruefung.ok) {
+                    throw new Error(`VORREITER_PASSUNG:${pruefung.grund
+                      || "Die eigenen Vorreiter passen nicht zum Hebel dieses Signals."}`);
+                  }
+                } catch (fehler) {
+                  const grund = fehler instanceof Error ? fehler.message : String(fehler);
+                  if (grund.startsWith("VORREITER_PASSUNG:")) {
+                    throw new Error(`${grund.slice("VORREITER_PASSUNG:".length)}\n\nBitte Vorreiter ersetzen oder Gemini recherchieren lassen.`);
+                  }
+                  loggen("benchmarks_review_skip", { reason: grund.slice(0, 300) });
+                }
+              }
+            } else {
+              if (!geminiKey) {
+                throw new Error("Für die Vorreiter-Recherche ist kein Gemini-Schlüssel hinterlegt. Im Fragebogen eigene Vorreiter eintragen.");
+              }
+              try {
+                const gefunden = await researchMemoBenchmarksWithGemini(
+                  geminiKey,
+                  researchModel,
+                  buildMemoBenchmarkResearchPrompt(signalForAsset, assetArticle, memoAnswers),
+                );
+                memoAnswers.benchmarks = assertMemoBenchmarkBriefs(gefunden.briefs, firma, { allowExample: true });
+                loggen("benchmarks_ok", {
+                  model: researchModel,
+                  search_queries: gefunden.searchQueries,
+                  names: memoAnswers.benchmarks.map((item) => item.name),
+                });
+              } catch (fehler) {
+                const grund = fehler instanceof Error ? fehler.message : String(fehler);
+                throw new Error(`${grund}\n\nOhne drei belastbare Vorreiter kann das Memo nicht gebaut werden. Im Fragebogen eigene Vorreiter eintragen.`);
+              }
+            }
+          }
           const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
           await abschnitt("modell");
           const callOpts = {
@@ -8157,6 +8291,9 @@ Deno.serve(async (req: Request) => {
             topics: signalForAsset.topics,
             territory: signalForAsset.territory,
             signalLabel: assetSignal.signal_label,
+            benchmarkCorpus: assetKind === "memo"
+              ? memoBenchmarkCorpus((assetAnswers as MemoAnswers).benchmarks || [])
+              : null,
           };
           let payload: AssetPayload | null = null;
           let mangel = "";

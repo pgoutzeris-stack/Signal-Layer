@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.6";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.7";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -95,6 +95,13 @@ export type LinkedinAnswers = {
   sources: string;
 };
 
+export type MemoBenchmarkBrief = {
+  name: string;
+  text: string;
+  tag: string;
+  source: string;
+};
+
 export type MemoAnswers = {
   /** Wen das Papier anredet. auto = aus Signal (Person, Rollen, Firma). */
   addressee: "auto" | "person" | "persons" | "company";
@@ -102,6 +109,9 @@ export type MemoAnswers = {
   company: string;
   /** auto = Gemini fuellt die Motive. upload = der Nutzer schneidet selbst zu. */
   images: "auto" | "upload";
+  /** auto = Gemini recherchiert Vorreiter. custom = der Nutzer liefert drei. */
+  benchmarks_mode: "auto" | "custom";
+  benchmarks: MemoBenchmarkBrief[];
   storyline: string;
   cta: string;
 };
@@ -115,6 +125,8 @@ export type AssetNormalizeContext = {
   topics?: string[] | null;
   territory?: string | null;
   signalLabel?: string | null;
+  /** Recherchierte oder gelieferte Vorreiter, gelten als belegt. */
+  benchmarkCorpus?: string | null;
 };
 
 export type AssetAnswers = LinkedinAnswers | MemoAnswers;
@@ -506,6 +518,7 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
   }
   const adressat = pick(source, "addressee", "adressat", "audience");
   const images = pick(source, "images", "bilder");
+  const benchMode = pick(source, "benchmarks", "benchmarks_mode", "vorreiter");
   return {
     addressee: /persons|mehrere|buying.?center/i.test(adressat) ? "persons"
       : /person|einzeln/i.test(adressat) ? "person"
@@ -513,9 +526,211 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
       : "auto",
     company: choiceText(source, ["company_mode", "company"], ["company_text", "firma"], 160),
     images: /upload|eigen|eigene|manual|selbst/i.test(images) ? "upload" : "auto",
+    benchmarks_mode: /custom|eigen|eigene|manual|selbst/i.test(benchMode) ? "custom" : "auto",
+    benchmarks: parseMemoBenchmarkBriefs(source),
     storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
     cta: choiceText(source, ["cta"], ["cta_text"], 240),
   };
+}
+
+/** Zeigt nur die Form. Inhalt muss zum Hebel dieses Signals passen. */
+export const MEMO_BENCHMARK_EXAMPLE: MemoBenchmarkBrief[] = [
+  {
+    name: "Decathlon",
+    text: "Hat die Eigenmarken unter eine Führung gestellt und den Auftritt vereinheitlicht.",
+    tag: "Marke vor Fläche",
+    source: "",
+  },
+  {
+    name: "IKEA",
+    text: "Führt Store und Online mit derselben Handschrift statt getrennter Auftritte.",
+    tag: "Eine Linie, zwei Kanäle",
+    source: "",
+  },
+  {
+    name: "Zara",
+    text: "Hat Saisonkampagnen durch eine haltbare Linie ersetzt, die über die Kollektion trägt.",
+    tag: "Linie vor Saison",
+    source: "",
+  },
+];
+
+export const MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS = 40_000;
+export const MEMO_BENCHMARK_RESEARCH_MODEL = "gemini-2.5-flash";
+
+function briefFromParts(name: unknown, textValue: unknown, tag: unknown, source: unknown): MemoBenchmarkBrief {
+  return {
+    name: text(name, 80),
+    text: text(textValue, 420),
+    tag: text(tag, 80),
+    source: text(source, 200),
+  };
+}
+
+function briefsFromPipe(raw: string): MemoBenchmarkBrief[] {
+  return String(raw || "").split(/\n+/).map((line) => {
+    const parts = line.replace(/^\s*\d+[.)]\s*/, "").split(/\s*[|–]\s*|\s+—\s+/);
+    if (parts.length < 3) return briefFromParts("", "", "", "");
+    return briefFromParts(parts[0], parts[1], parts.slice(2).join(" | "), "");
+  }).filter((item) => item.name || item.text);
+}
+
+export function parseMemoBenchmarkBriefs(raw: unknown): MemoBenchmarkBrief[] {
+  if (Array.isArray(raw)) {
+    return raw.slice(0, 3).map((entry) => {
+      const item = record(entry);
+      return briefFromParts(item.name, item.text || item.handlung, item.tag || item.lehre, item.source || item.quelle);
+    }).filter((item) => item.name || item.text);
+  }
+  const source = record(raw);
+  const fromFields = [0, 1, 2].map((i) => briefFromParts(
+    pick(source, `bench_${i}_name`, `benchmark_${i}_name`),
+    pick(source, `bench_${i}_text`, `benchmark_${i}_text`),
+    pick(source, `bench_${i}_tag`, `benchmark_${i}_tag`),
+    pick(source, `bench_${i}_source`),
+  )).filter((item) => item.name || item.text);
+  if (fromFields.length) return fromFields.slice(0, 3);
+  const block = pick(source, "benchmarks_text", "vorreiter_text", "benchmarks");
+  if (/custom|auto|eigen/i.test(block) && block.length < 12) return [];
+  return briefsFromPipe(block).slice(0, 3);
+}
+
+export function isExampleBenchmarkSet(briefs: MemoBenchmarkBrief[]): boolean {
+  const names = briefs.map((item) => item.name.toLowerCase()).sort().join("|");
+  const example = MEMO_BENCHMARK_EXAMPLE.map((item) => item.name.toLowerCase()).sort().join("|");
+  return names === example;
+}
+
+export function assertMemoBenchmarkBriefs(
+  briefs: MemoBenchmarkBrief[],
+  addresseeCompany = "",
+  opts: { allowExample?: boolean } = {},
+): MemoBenchmarkBrief[] {
+  const firma = String(addresseeCompany || "").trim().toLowerCase();
+  const kept = briefs.filter((item) => item.name && item.text && item.tag);
+  if (kept.length < 3) {
+    throw new Error("Das Memo braucht genau drei Vorreiter, jeweils mit Name, Handlung und Lehre. Geliefert: "
+      + `${kept.length}. Beispiel: Decathlon | Hat die Eigenmarken unter eine Führung gestellt | Marke vor Fläche`);
+  }
+  if (!opts.allowExample && isExampleBenchmarkSet(kept)) {
+    throw new Error("Das Beispiel zeigt nur die Form. Bitte drei Vorreiter einsetzen, die denselben Hebel wie dieses Signal schon gezogen haben.");
+  }
+  for (const item of kept) {
+    if (item.text.length < 24) {
+      throw new Error(`„${item.name}“ braucht eine konkrete Handlung, nicht nur den Namen. Was hat die Marke getan?`);
+    }
+    if (firma && item.name.toLowerCase() === firma) {
+      throw new Error("Die Adressatenfirma ist kein Vorreiter. Drei andere Marken, die denselben Hebel schon gezogen haben.");
+    }
+  }
+  return kept.slice(0, 3);
+}
+
+export function formatVorreiterBlock(briefs: MemoBenchmarkBrief[], herkunft: "recherche" | "nutzer"): string {
+  const zeilen = briefs.map((item, i) => [
+    `${i + 1}. name: ${item.name}`,
+    `   text: ${item.text}`,
+    `   tag: ${item.tag}`,
+    item.source ? `   quelle: ${item.source}` : "",
+  ].filter(Boolean).join("\n")).join("\n");
+  return `<vorreiter herkunft="${herkunft}">
+${zeilen}
+</vorreiter>`;
+}
+
+export function memoBenchmarkCorpus(briefs: MemoBenchmarkBrief[]): string {
+  return briefs.map((item) => [item.name, item.text, item.tag, item.source].filter(Boolean).join("\n")).join("\n");
+}
+
+export function buildMemoBenchmarkReviewPrompt(
+  signal: AssetSignalInput,
+  article: AssetArticleInput,
+  answers: MemoAnswers,
+): string {
+  const firma = asData(answers.company, 160) || asData(signal.company, 160) || "";
+  const hebel = [
+    asData(signal.headline_de, 300),
+    asData(signal.why_de, 400),
+    asData(signal.trigger_de, 500),
+  ].filter(Boolean).join("\n");
+  const liste = answers.benchmarks.map((item, i) =>
+    `${i + 1}. ${item.name} | ${item.text} | ${item.tag}`).join("\n");
+  return `Du prüfst drei vom Nutzer gelieferte Vorreiter für ein ROOTS Executive Memo. Google Search ist Pflicht.
+
+<hebel>
+${hebel || asData(article.title_de || article.title, 240) || "nicht benannt"}
+</hebel>
+<adressat>${firma || "nicht benannt"}</adressat>
+<vorreiter>
+${liste}
+</vorreiter>
+
+ok=true nur wenn alle drei denselben Hebel schon gezogen haben, nicht nur dieselbe Branche, und keine die Adressatenfirma ist.
+Wenn ein Name unbelegt ist oder der Mechanismus ein anderer: ok=false.
+Antworte ausschliesslich mit JSON:
+{"ok":true} oder {"ok":false,"grund":"Ein Satz auf Deutsch, welche Marke nicht passt und warum."}`;
+}
+
+export function parseMemoBenchmarkReview(raw: unknown): { ok: boolean; grund: string } {
+  const root = record(raw);
+  const ok = root.ok === true || root.ok === "true";
+  return { ok, grund: text(root.grund || root.reason, 400) };
+}
+
+export function buildMemoBenchmarkResearchPrompt(
+  signal: AssetSignalInput,
+  article: AssetArticleInput,
+  answers: MemoAnswers,
+): string {
+  const firma = asData(answers.company, 160) || asData(signal.company, 160) || "";
+  const hebel = [
+    asData(signal.headline_de, 300),
+    asData(signal.why_de, 400),
+    asData(signal.trigger_de, 500),
+    asData(signal.summary_de, 400),
+  ].filter(Boolean).join("\n");
+  const sektor = [
+    asData(signal.territory, 80),
+    list(signal.topics, 6, 80).join(", "),
+    asData(signal.signal_label, 120),
+  ].filter(Boolean).join(" · ");
+  const titel = asData(article.title_de || article.title, 240);
+  return `Du recherchierst drei Vorreiter für ein ROOTS Executive Memo. Google Search ist Pflicht.
+
+<hebel>
+${hebel || titel || "nicht benannt"}
+</hebel>
+<sektor>${sektor || "unbekannt"}</sektor>
+<adressat>${firma || "nicht benannt"}</adressat>
+
+Auftrag:
+Finde genau drei echte Marken oder Firmen, die DIESEN Hebel schon gezogen haben.
+Nicht dieselbe Branche ohne denselben Mechanismus. Nicht die Adressatenfirma.
+Nicht Apple/Nike/Amazon als Füllsel, wenn der Hebel ein Handels-, Marken- oder Retail-Thema ist.
+Aktuell: bevorzugt die letzten fünf Jahre. Qualitative Handlung, Zahlen nur wenn die Suche sie belegt.
+tag ist die übertragbare Lehre in wenigen Worten, kein Slogan.
+
+Antworte ausschliesslich mit JSON:
+{"benchmarks":[{"name":"Marke","text":"Was sie konkret getan hat.","tag":"Lehre","source":"Titel · Medium · Jahr"}]}`;
+}
+
+export function normalizeMemoBenchmarkResearch(raw: unknown, groundingTitles: string[] = []): MemoBenchmarkBrief[] {
+  const root = record(raw);
+  const liste = Array.isArray(root.benchmarks) ? root.benchmarks : Array.isArray(raw) ? raw : [];
+  const briefs = liste.slice(0, 3).map((entry, i) => {
+    const item = record(entry);
+    const source = text(item.source || item.quelle, 200) || text(groundingTitles[i], 200);
+    return briefFromParts(item.name, item.text || item.handlung, item.tag || item.lehre, source);
+  });
+  return assertMemoBenchmarkBriefs(briefs, "", { allowExample: true });
+}
+
+export function parseLooseJsonObject(textValue: string): Record<string, unknown> {
+  const stripped = String(textValue || "").replace(/```(?:json)?/gi, "").trim();
+  const start = stripped.indexOf("{");
+  const end = stripped.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("Die Recherche hat kein JSON geliefert.");
+  return record(JSON.parse(stripped.slice(start, end + 1).replace(/[\u0000-\u001F]/g, " ")));
 }
 
 // ---------------------------------------------------------------------------
@@ -955,6 +1170,9 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
   const bilder = answers.images === "upload"
     ? "Bilder: der Nutzer lädt sie selbst. Schreibe image_hint als Motivbeschreibung für den Platzhalter."
     : "Bilder: Gemini erzeugt die Motive aus image_hint. Beschreibe je Slot ein konkretes, textfreies Fotomotiv.";
+  const vorreiter = answers.benchmarks.length >= 3
+    ? `Vorreiter, verbindlich:\n${formatVorreiterBlock(answers.benchmarks, answers.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\nÜbernimm name, text und tag. Formuliere höchstens sprachlich. Zahlen nur wie dort angegeben. Erfinde keine vierte Marke und ersetze keine Namen.`
+    : "Vorreiter: genau drei, die denselben Hebel schon gezogen haben. Nur aus <vorreiter> oder aus artikel.";
   const auftrag = [
     memoAddresseeLine(answers, signal),
     `Unternehmen (nur Briefing, kein Aufdruck): ${firma}. Der Name darf nicht als Kicker, Cover-Label, Titelzusatz („für ${firma}“) oder market_title erscheinen. Die drei Seiten bleiben ohne Firmenaufdruck; die Lage dieses Unternehmens steckt in den Potenzialen.`,
@@ -965,6 +1183,7 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
       ? `Handlungsaufruf, verbindlich in cta (die Frage im blauen Band): ${answers.cta}`
       : "cta: eine Gesprächsfrage, die den Adressaten meint. Der Knopftext ist fest „Kontakt aufnehmen“.",
     leistung ? `ROOTS-Leistung ${leistung} gehört in about_fit, einen Satz, warum ROOTS hier ansetzt.` : "",
+    vorreiter,
     bilder,
   ].filter(Boolean).join("\n");
 
@@ -988,7 +1207,7 @@ market_p1, market_p2: je ein Absatz. Lage des Marktes, dann warum der Moment jet
 kpis: drei oder vier belegte Kennzahlen. value kurz, label erklärt den Bezug. Leer, wenn keine Ziffer vorliegt.
 benchmark_title: Überschrift von 02. Was Vorreiter richtig machen.
 benchmark_lead: ein Satz, worin der Hebel liegt.
-benchmarks: genau drei. name ist die Firma oder Marke (fett), text der Beleg ohne erfundene Zahl, tag die Lehre in wenigen Worten, image_hint das Motiv in Worten. Qualitative Analogie ist erlaubt, Ziffern nur mit Beleg.
+benchmarks: genau drei. name, text und tag kommen aus <vorreiter>, wenn der Block steht. Sonst qualitative Analogie aus artikel. Ziffern nur mit Beleg.
 potentials_title: Überschrift von 03. Der Channel- oder Lage-Check DIESES Unternehmens.
 potentials_lead: ein Satz, wie viele Ansatzpunkte der Check zeigt.
 potentials: genau drei. title mit Verb oder Gegensatz („vom … zur …“). finding = belegter Zustand aus artikel oder evidence. potential = was ROOTS daraus macht, ohne erfundene Zahl. image_hint das Motiv.
@@ -1012,9 +1231,12 @@ export function buildAssetPrompt(
 ): string {
   const daten = signalBlock(signal, article);
   const body = String(article.content_de || article.cleaned_content || article.content || "");
-  return kind === "linkedin"
-    ? linkedinPrompt(answers as LinkedinAnswers, daten, body, signal)
-    : memoPrompt(answers as MemoAnswers, signal, daten);
+  if (kind === "linkedin") return linkedinPrompt(answers as LinkedinAnswers, daten, body, signal);
+  const memo = answers as MemoAnswers;
+  const vorreiter = memo.benchmarks.length >= 3
+    ? `\n${formatVorreiterBlock(memo.benchmarks, memo.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\n<belegregeln_vorreiter>\nDie drei Vorreiter in <vorreiter> gelten als belegt, inklusive ihrer Quellen. Andere Zahlen weiter nur aus kennzahlen_im_artikel.\n</belegregeln_vorreiter>`
+    : "";
+  return memoPrompt(memo, signal, daten + vorreiter);
 }
 
 // ---------------------------------------------------------------------------
@@ -1500,12 +1722,20 @@ function normalizePotentials(raw: unknown): MemoPotential[] {
 
 function normalizeMemo(
   raw: Record<string, unknown>,
-  _answers: MemoAnswers,
+  answers: MemoAnswers,
   context: AssetNormalizeContext,
 ): MemoPayload {
   const title = capWords(text(raw.title, 160), 15);
   const standfirst = text(raw.standfirst, 400);
-  const benchmarks = normalizeBenchmarks(raw.benchmarks);
+  let benchmarks = normalizeBenchmarks(raw.benchmarks);
+  if (benchmarks.length < 3 && answers.benchmarks.length >= 3) {
+    benchmarks = answers.benchmarks.slice(0, 3).map((item) => ({
+      name: item.name,
+      text: item.text,
+      tag: item.tag,
+      image_hint: "",
+    }));
+  }
   const potentials = normalizePotentials(raw.potentials);
   let aboutFit = text(raw.about_fit, 400);
 
@@ -1525,7 +1755,7 @@ function normalizeMemo(
     throw new Error(`Das Memo braucht genau drei Potenziale. Geliefert: ${potentials.length}.`);
   }
 
-  const corpus = [context.articleText, context.rootsOffering].filter(Boolean).join("\n");
+  const corpus = [context.articleText, context.rootsOffering, context.benchmarkCorpus].filter(Boolean).join("\n");
   const kpis = stats(raw.kpis, 4).filter((eintrag) => !corpus || !digitKey(eintrag.value) || numberIsAttested(eintrag.value, corpus));
 
   const memo: MemoPayload = {
