@@ -280,6 +280,7 @@ const EDITOR_ACTIONS = new Set([
   // Ein Asset ist ein bezahlter Modellaufruf auf Anbieterbudget. Das Ansehen
   // eines bereits erzeugten Assets bleibt fuer Leser offen.
   "generate_asset",
+  "cancel_asset",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -8119,7 +8120,13 @@ Deno.serve(async (req: Request) => {
               updated_at: new Date().toISOString(),
               ...fields,
             })
-            .eq("id", assetRow.id);
+            .eq("id", assetRow.id)
+            .eq("status", "running");
+          const nochAktiv = async () => {
+            const { data } = await admin.schema("signal_layer").from("generated_assets")
+              .select("status").eq("id", assetRow.id).maybeSingle();
+            return String(data?.status || "") === "running";
+          };
           const abschnitt = async (name: string) => {
             loggen("stage", { stage: name });
             await persist({ stage: name });
@@ -8200,6 +8207,7 @@ Deno.serve(async (req: Request) => {
             }
           }
           const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
+          if (!(await nochAktiv())) return;
           await abschnitt("modell");
           const callOpts = {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
@@ -8375,10 +8383,45 @@ Deno.serve(async (req: Request) => {
               duration_ms: Date.now() - Date.parse(String(assetRow.created_at || "")) || null,
               updated_at: new Date().toISOString(),
             })
-            .eq("id", assetRow.id);
+            .eq("id", assetRow.id)
+            .eq("status", "running");
         }).finally(() => clearTimeout(waechter));
         EdgeRuntime.waitUntil(arbeit);
         return corsResponse(origin, { asset: assetRow });
+      }
+
+      case "cancel_asset": {
+        const cancelId = String(body.asset_id || "");
+        if (!cancelId) return errorResponse(origin, "asset_id fehlt");
+        const { data: cancelled, error: cancelError } = await getAdminClient().schema("signal_layer")
+          .from("generated_assets")
+          .update({
+            status: "error",
+            error_message: "Vom Nutzer abgebrochen.",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", cancelId)
+          .eq("status", "running")
+          .select("id, status").maybeSingle();
+        if (cancelError) return errorResponse(origin, cancelError.message, 500);
+        return corsResponse(origin, { ok: true, asset: cancelled || { id: cancelId, status: "error" } });
+      }
+
+      case "list_assets": {
+        const listArticleId = String(body.article_id || "");
+        const listKind = String(body.kind || "");
+        if (!listArticleId) return errorResponse(origin, "article_id fehlt");
+        if (listKind && !isAssetKind(listKind)) return errorResponse(origin, "kind muss linkedin oder memo sein");
+        let query = getAdminClient().schema("signal_layer")
+          .from("generated_assets")
+          .select("id, kind, status, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message")
+          .eq("article_id", listArticleId)
+          .order("created_at", { ascending: false })
+          .limit(40);
+        if (listKind) query = query.eq("kind", listKind);
+        const { data: liste, error: listError } = await query;
+        if (listError) return errorResponse(origin, listError.message, 500);
+        return corsResponse(origin, { assets: liste || [] });
       }
 
       case "get_asset": {
