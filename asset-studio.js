@@ -125,19 +125,19 @@ function memoQuestions(firma) {
   const erkannt = String(firma || "").trim();
   return [
     {
-      key: "addressee",
-      label: "Adressat",
+      key: "company_named",
+      label: "Unternehmen",
+      hint: "Nur Briefing für das Modell. Der Name erscheint nicht auf dem Memo.",
+      muted: true,
       options: [
-        ["auto", "Modell entscheidet aus dem Signal"],
-        ["person", "Eine Person aus dem Signal"],
-        ["persons", "Mehrere Personen / Buying Center"],
-        ["company", "Das Unternehmen allgemein"],
+        ["yes", "Ja, das Unternehmen nennen"],
+        ["no", "Nein"],
       ],
     },
     {
       key: "company_mode",
-      label: "Unternehmen",
-      hint: "Nur Briefing für das Modell. Der Name erscheint nicht auf dem Memo.",
+      label: "Welches Unternehmen",
+      when: (answers) => answers.company_named === "yes",
       options: [
         ["auto", erkannt ? `Erkannt: ${erkannt}` : "Aus dem Signal übernehmen"],
         ["custom", "Anderes Unternehmen"],
@@ -151,28 +151,26 @@ function memoQuestions(firma) {
       free: { key: "storyline_text", on: "custom", rows: 5, platzhalter: "Kernaussage, Stichpunkte oder fertiger Text" },
     },
     {
-      key: "cta",
-      label: "Handlungsaufruf",
-      options: [["auto", "Modell schreibt die Gesprächsfrage"], ["custom", "Eigene Frage"]],
-      free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Sollen wir den Check gemeinsam durchgehen?" },
-    },
-    {
       key: "benchmarks",
-      label: "Vorreiter",
-      hint: "Drei Marken, die denselben Hebel schon gezogen haben — nicht die Adressatenfirma. Gemini sucht aktuelle Fälle per Google. Eigene Angaben brauchen Name, Handlung und Lehre; das Beispiel zeigt nur die Form.",
+      label: "Benchmarking",
       options: [
-        ["auto", "Gemini recherchiert aktuelle Vorreiter"],
-        ["custom", "Eigene Vorreiter"],
+        ["auto", "Gemini recherchiert"],
+        ["custom", "Eigene Benchmarks"],
       ],
     },
     {
       key: "images",
       label: "Bilder",
-      hint: "Jedes Motiv muss den Platzhalter füllen: Benchmark 46×28 mm, Potenzial 52×36 mm.",
       options: [
         ["auto", "Gemini entscheidet die Motive"],
         ["upload", "Eigene Bilder zuschneiden"],
       ],
+    },
+    {
+      key: "cta",
+      label: "CTA",
+      options: [["auto", "Modell schreibt die Gesprächsfrage"], ["custom", "Eigene Frage"]],
+      free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Sollen wir den Check gemeinsam durchgehen?" },
     },
   ];
 }
@@ -533,10 +531,40 @@ const CHROME_CSS = `
   border-radius:999px; padding:6px 12px; font-size:12px; font-weight:700;
 }
 #as-overlay .as-pill:hover{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
-#as-overlay .as-form-error{
-  border:1px solid var(--danger,#dc2626); background:#fef2f2; color:#991b1b;
-  border-radius:12px; padding:10px 12px; font-size:13px; line-height:1.45; margin:0 0 8px;
+#as-overlay .as-q--muted > label, #as-overlay .as-q--muted .as-hint{color:#94a3b8;}
+#as-overlay .as-q--muted .as-hint{font-size:12px; line-height:1.45;}
+#as-overlay .as-slots{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;}
+#as-overlay .as-slot{
+  border:1px dashed var(--line,#cbd5e1); border-radius:12px; padding:8px;
+  background:#fff; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:6px;
 }
+#as-overlay .as-slot:hover{border-color:var(--brand,#206efb);}
+#as-overlay .as-slot b{font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted,#475569);}
+#as-overlay .as-slot small{font-size:11px; color:var(--muted,#64748b);}
+#as-overlay .as-slot-frame{
+  width:100%; aspect-ratio:46/28; border-radius:8px; overflow:hidden;
+  background:#f1f5f9; display:grid; place-items:center; color:#94a3b8; font-size:18px;
+}
+#as-overlay .as-slot-frame.is-pot{aspect-ratio:52/36;}
+#as-overlay .as-slot-frame img{width:100%; height:100%; object-fit:cover; display:block;}
+#as-overlay .as-drafts{margin-top:18px; padding-top:16px; border-top:1px solid var(--line,#e2e8f0);}
+#as-overlay .as-drafts-head{
+  width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px;
+  background:transparent; border:0; padding:0; font-size:13px; font-weight:700; text-align:left;
+}
+#as-overlay .as-drafts-head i{color:var(--muted,#64748b);}
+#as-overlay .as-draft-list{display:flex; flex-direction:column; gap:8px; margin-top:10px;}
+#as-overlay .as-draft{
+  width:100%; text-align:left; border:1px solid var(--line,#e2e8f0); border-radius:12px;
+  background:#fff; padding:10px 12px; display:flex; flex-direction:column; gap:4px;
+}
+#as-overlay .as-draft:hover{border-color:var(--brand,#206efb);}
+#as-overlay .as-draft strong{font-size:13px;}
+#as-overlay .as-draft span{font-size:12px; color:var(--muted,#64748b); line-height:1.4;}
+#as-overlay .as-draft em{font-style:normal; font-size:11px; color:#64748b;}
+#as-overlay .as-draft.is-error{border-color:#fecaca;}
+#as-overlay .as-draft.is-run{border-color:#bfdbfe;}
+#as-overlay .as-load-actions{margin-top:4px;}
 
 /* Ladeanzeige: echte Abschnitte, gerundete Minuten, pulsierender Balken. */
 #as-overlay .as-load{display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -761,8 +789,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0735";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0735";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0810";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0810";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -806,6 +834,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     memo: null,
     postText: "",
     pendingImage: null,
+    formImages: {},
+    cancelRequested: false,
+    drafts: [],
+    draftsOpen: false,
+    draftsUhr: 0,
+    draftsError: "",
     ddOffen: false,
     multiOffen: false,
     prevIndex: 0,
@@ -931,9 +965,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return `<button type="button" class="as-btn as-btn--primary" data-act="generate"><i class="fa-solid fa-wand-magic-sparkles"></i>Entwurf erzeugen</button>`;
     }
     if (state.step === "draft") {
-      const back = `<button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Fragebogen</button>`;
-      if (state.busy || !state.payload) return back;
-      return `${back}<button type="button" class="as-btn as-btn--primary" data-act="to-edit"><i class="fa-solid fa-pen-to-square"></i>Bearbeiten</button>`;
+      if (state.busy || !state.payload) {
+        return `<button type="button" class="as-btn" data-act="cancel-generate"><i class="fa-solid fa-xmark"></i>Abbrechen</button>`;
+      }
+      return `<button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Fragebogen</button><button type="button" class="as-btn as-btn--primary" data-act="to-edit"><i class="fa-solid fa-pen-to-square"></i>Bearbeiten</button>`;
     }
     return `<button type="button" class="as-btn" data-act="to-draft"><i class="fa-solid fa-arrow-rotate-left"></i>Entwurf</button>`;
   }
@@ -943,7 +978,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // Links entscheiden, rechts sofort sehen. Die Vorschau ist dieselbe
       // Vorlage wie das spaetere Asset, nur mit Platzhaltertext.
       return `<div class="as-split2">
-        <div class="as-split2-form">${formHtml()}</div>
+        <div class="as-split2-form">${formHtml()}${draftsHtml()}</div>
         <div class="as-split2-prev">
           <span class="as-prev-label">Vorschau</span>
           <div class="as-prev-host">
@@ -982,7 +1017,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function livePreviewHtml() {
     if (isMemo) {
       if (state.prevIndex >= MEMO_SEITEN) state.prevIndex = 0;
-      const html = markiereMemoSeiten(memoHtml(demoMemo(), false).replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, ""));
+      const html = markiereMemoSeiten(memoHtml(applyFormImages(demoMemo()), false).replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, ""));
       return `<span class="as-prev-scale">${html}</span>${blaetterNavHtml()}`;
     }
     // Entscheidet das Modell das Layout, gibt es nichts zu zeigen. Eine
@@ -1120,6 +1155,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </div>
       <p class="as-load-eta">${esc(ladeEtaText())}</p>
       <p class="as-load-meta">${esc(ladeMetaText())}</p>
+      <div class="as-load-actions"><button type="button" class="as-btn" data-act="cancel-generate">Abbrechen</button></div>
     </div>`;
   }
 
@@ -1312,15 +1348,220 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function benchesHtml() {
     const zeilen = [0, 1, 2].map((i) => `
       <div class="as-bench">
-        <b>Vorreiter ${i + 1}</b>
-        <input data-bench="${i}-name" placeholder="Name der Marke oder Firma" value="${esc(state.answers[`bench_${i}_name`] || "")}" aria-label="Vorreiter ${i + 1} Name">
-        <textarea data-bench="${i}-text" rows="2" placeholder="Was sie konkret getan haben (eine Handlung, kein Slogan)" aria-label="Vorreiter ${i + 1} Handlung">${esc(state.answers[`bench_${i}_text`] || "")}</textarea>
-        <input data-bench="${i}-tag" placeholder="Lehre in wenigen Worten, z. B. Marke vor Fläche" value="${esc(state.answers[`bench_${i}_tag`] || "")}" aria-label="Vorreiter ${i + 1} Lehre">
+        <b>Benchmark ${i + 1}</b>
+        <input data-bench="${i}-name" placeholder="Name der Marke oder Firma" value="${esc(state.answers[`bench_${i}_name`] || "")}" aria-label="Benchmark ${i + 1} Name">
+        <textarea data-bench="${i}-text" rows="2" placeholder="Was sie konkret getan haben (eine Handlung, kein Slogan)" aria-label="Benchmark ${i + 1} Handlung">${esc(state.answers[`bench_${i}_text`] || "")}</textarea>
+        <input data-bench="${i}-tag" placeholder="Lehre in wenigen Worten, z. B. Marke vor Fläche" value="${esc(state.answers[`bench_${i}_tag`] || "")}" aria-label="Benchmark ${i + 1} Lehre">
       </div>`).join("");
     return `<div class="as-benches">
       ${zeilen}
       <button type="button" class="as-pill" data-act="bench-example">Beispielform einsetzen</button>
     </div>`;
+  }
+
+  function slotsHtml() {
+    const zeilen = [
+      ["benchmarks.0", "Benchmark 1", "46 × 28 mm", false],
+      ["benchmarks.1", "Benchmark 2", "46 × 28 mm", false],
+      ["benchmarks.2", "Benchmark 3", "46 × 28 mm", false],
+      ["potentials.0", "Potenzial 1", "52 × 36 mm", true],
+      ["potentials.1", "Potenzial 2", "52 × 36 mm", true],
+      ["potentials.2", "Potenzial 3", "52 × 36 mm", true],
+    ].map(([key, label, mass, pot]) => {
+      const bild = state.formImages[key];
+      return `<button type="button" class="as-slot" data-act="form-img-pick" data-imgkey="${attr(key)}">
+        <b>${esc(label)}</b>
+        <span class="as-slot-frame${pot ? " is-pot" : ""}">${bild?.src ? `<img src="${attr(bild.src)}" alt="">` : `<i class="fa-solid fa-crop"></i>`}</span>
+        <small>${bild?.src ? "Ausschnitt ersetzen" : `Zuschneiden auf ${mass}`}</small>
+      </button>`;
+    }).join("");
+    return `<div class="as-slots">${zeilen}</div>`;
+  }
+
+  function draftsHtml() {
+    const offen = state.draftsOpen;
+    const liste = Array.isArray(state.drafts) ? state.drafts : [];
+    const zeilen = !offen ? ""
+      : state.draftsError ? `<p class="as-hint">${esc(state.draftsError)}</p>`
+      : !liste.length ? `<p class="as-hint">Noch keine Entwürfe für diesen Artikel.</p>`
+      : `<div class="as-draft-list">${liste.map((row) => draftZeileHtml(row)).join("")}</div>`;
+    return `<div class="as-drafts">
+      <button type="button" class="as-drafts-head" data-act="toggle-drafts" aria-expanded="${offen ? "true" : "false"}">
+        <span>Entwürfe anzeigen${liste.length ? ` (${liste.length})` : ""}</span>
+        <i class="fa-solid fa-chevron-${offen ? "up" : "down"}"></i>
+      </button>
+      ${zeilen}
+    </div>`;
+  }
+
+  function draftZeileHtml(row) {
+    const status = String(row.status || "");
+    const titel = status === "done" ? "Fertiger Entwurf"
+      : status === "running" ? "Läuft gerade"
+      : "Nicht fertig";
+    const wann = formatDraftWhen(row.created_at);
+    const dauer = formatDraftDauer(row.duration_ms);
+    const tokens = Number(row.total_tokens) > 0 ? `${Number(row.total_tokens).toLocaleString("de-DE")} Token` : "";
+    const kosten = formatDraftEur(row.cost_eur);
+    const meta = [wann, dauer, tokens, kosten].filter(Boolean).join(" · ");
+    const klasse = status === "error" ? " is-error" : status === "running" ? " is-run" : "";
+    return `<button type="button" class="as-draft${klasse}" data-act="open-draft" data-id="${attr(row.id)}">
+      <strong>${esc(titel)}</strong>
+      <span>${esc(draftSettingsText(row))}</span>
+      <em>${esc(meta || row.model || "")}</em>
+    </button>`;
+  }
+
+  function formatDraftWhen(value) {
+    const date = new Date(value || "");
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function formatDraftDauer(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n < 1000) return "";
+    const sek = Math.round(n / 1000);
+    if (sek < 60) return `${sek} s`;
+    return `${Math.round(sek / 60)} Min`;
+  }
+
+  function formatDraftEur(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "";
+    return n.toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  }
+
+  function draftSettingsText(row) {
+    const a = row && typeof row.answers === "object" && row.answers ? row.answers : {};
+    const teile = [];
+    if (a.company_named === "no") teile.push("ohne Firma");
+    else if (row.company || a.company) teile.push(String(row.company || a.company));
+    if (a.benchmarks_mode === "custom") teile.push("eigene Benchmarks");
+    else if (isMemo) teile.push("Gemini-Benchmarks");
+    if (a.images === "upload") teile.push("eigene Bilder");
+    else if (isMemo) teile.push("Gemini-Motive");
+    if (a.cta) teile.push("eigener CTA");
+    if (a.storyline) teile.push("eigener Inhalt");
+    if (a.asset_type === "carousel") teile.push(`Karussell ${a.slides || ""}`.trim());
+    else if (a.asset_type === "single") teile.push("Einzelbild");
+    return teile.filter(Boolean).join(" · ") || (row.prompt_version || "");
+  }
+
+  async function ladeDrafts() {
+    if (!articleId) return;
+    try {
+      const res = await api("list_assets", { article_id: articleId, kind: assetKind });
+      const liste = res && typeof res === "object" ? (res.assets || res) : [];
+      state.drafts = Array.isArray(liste) ? liste : [];
+      state.draftsError = "";
+    } catch (err) {
+      state.draftsError = err && err.message ? String(err.message) : "Entwürfe konnten nicht geladen werden.";
+    }
+    if (state.step === "form") {
+      const box = shell.querySelector(".as-drafts");
+      if (box) box.outerHTML = draftsHtml();
+    }
+  }
+
+  function draftsTaktStart() {
+    draftsTaktStop();
+    void ladeDrafts();
+    state.draftsUhr = window.setInterval(() => {
+      if (!state.draftsOpen || state.step !== "form") { draftsTaktStop(); return; }
+      void ladeDrafts();
+    }, 4_000);
+  }
+
+  function draftsTaktStop() {
+    if (state.draftsUhr) window.clearInterval(state.draftsUhr);
+    state.draftsUhr = 0;
+  }
+
+  function applyFormImages(memo) {
+    if (!memo) return memo;
+    Object.entries(state.formImages || {}).forEach(([key, image]) => setImageAt(memo, key, image));
+    return memo;
+  }
+
+  function answersToForm(saved, row = {}) {
+    const a = defaultAnswers(questions);
+    const src = saved && typeof saved === "object" ? saved : {};
+    a.company_named = src.company_named === "no" ? "no" : "yes";
+    const firma = String(src.company || row.company || "").trim();
+    if (firma && firma !== company) {
+      a.company_mode = "custom";
+      a.company_text = firma;
+    } else {
+      a.company_mode = "auto";
+    }
+    a.images = src.images === "upload" ? "upload" : "auto";
+    a.benchmarks = src.benchmarks_mode === "custom" ? "custom" : "auto";
+    (Array.isArray(src.benchmarks) ? src.benchmarks : []).forEach((item, i) => {
+      a[`bench_${i}_name`] = item?.name || "";
+      a[`bench_${i}_text`] = item?.text || "";
+      a[`bench_${i}_tag`] = item?.tag || "";
+    });
+    a.storyline = src.storyline ? "custom" : "auto";
+    a.storyline_text = src.storyline || "";
+    a.cta = src.cta ? "custom" : "auto";
+    a.cta_text = src.cta || "";
+    if (src.asset_type) a.asset_type = src.asset_type;
+    if (src.variant) a.variant = src.variant;
+    if (src.theme === "dark") a.look = "dunkel";
+    if (src.slides) a.slide_count = String(src.slides);
+    if (Array.isArray(src.slide_types) && src.slide_types.length) a.slide_pick = src.slide_types.join(",");
+    return a;
+  }
+
+  async function openDraft(id) {
+    try {
+      const res = await api("get_asset", { asset_id: id });
+      const row = res && typeof res === "object" ? (res.asset || res) : {};
+      if (!row.id) throw new Error("Entwurf nicht gefunden.");
+      state.assetId = row.id;
+      state.answers = answersToForm(row.answers, row);
+      state.forecastMs = Number(row.forecast_ms) || 0;
+      if (row.status === "running") {
+        state.step = "draft";
+        state.busy = true;
+        state.error = "";
+        state.cancelRequested = false;
+        render();
+        ladeTaktStart();
+        const fertig = await warteAufAsset(row.id);
+        if (state.cancelRequested) return;
+        if (fertig.status === "error") throw new Error(fertig.error_message || "Der Entwurf ist fehlgeschlagen.");
+        state.assetId = fertig.id || state.assetId;
+        adoptPayload(fertig.payload || fertig);
+        applyFormImages(state.memo);
+        await compactAdoptedImages();
+        state.busy = false;
+        ladeTaktStop();
+        render();
+        return;
+      }
+      if (row.status === "error") {
+        state.step = "draft";
+        state.busy = false;
+        state.error = row.error_message || "Der Entwurf ist fehlgeschlagen.";
+        state.payload = null;
+        render();
+        return;
+      }
+      adoptPayload(row.payload || row);
+      applyFormImages(state.memo);
+      await compactAdoptedImages();
+      state.step = "draft";
+      state.busy = false;
+      state.error = "";
+      render();
+    } catch (err) {
+      state.formError = err && err.message ? String(err.message) : "Entwurf konnte nicht geöffnet werden.";
+      state.step = "form";
+      state.busy = false;
+      render();
+    }
   }
 
   function formHtml() {
@@ -1346,7 +1587,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         : "";
       const hinweis = q.hint ? `<p class="as-hint">${esc(q.hint)}</p>` : "";
       const benches = q.key === "benchmarks" && state.answers.benchmarks === "custom" ? benchesHtml() : "";
-      return `<div class="as-q"><label>${esc(q.label)}</label>${hinweis}<div class="as-opts">${opts}</div>${free}${benches}</div>`;
+      const slots = q.key === "images" && state.answers.images === "upload" ? slotsHtml() : "";
+      return `<div class="as-q${q.muted ? " as-q--muted" : ""}"><label>${esc(q.label)}</label>${hinweis}<div class="as-opts">${opts}</div>${free}${benches}${slots}</div>`;
     }).join("");
     const fehler = state.formError ? `<p class="as-form-error">${esc(state.formError)}</p>` : "";
     return `<form class="as-form" data-form>${fehler}${rows}</form>`;
@@ -1356,7 +1598,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function zeichneForm() {
     readForm();
     const form = shell.querySelector(".as-split2-form");
-    if (form) form.innerHTML = formHtml();
+    if (form) form.innerHTML = `${formHtml()}${draftsHtml()}`;
     const prev = shell.querySelector("[data-livepreview]");
     if (prev) prev.innerHTML = livePreviewHtml();
     fitPreview();
@@ -1420,6 +1662,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.step = "draft";
     state.busy = true;
     state.error = "";
+    state.cancelRequested = false;
     render();
     ladeTaktStart();
     try {
@@ -1430,21 +1673,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         article_id: articleId || null,
         answers: antworten,
       });
+      if (state.cancelRequested) return;
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       state.assetId = row.id || null;
       state.forecastMs = Number(row.forecast_ms) || state.forecastMs || 0;
-      // Der Auftrag laeuft im Hintergrund weiter: ein Modellaufruf dauert laenger
-      // als der Browser eine Anfrage offen haelt. Also fragen statt warten.
       const fertig = row.status === "running" ? await warteAufAsset(row.id) : row;
+      if (state.cancelRequested) return;
       if (fertig.status === "error") throw new Error(fertig.error_message || "Der Entwurf ist fehlgeschlagen.");
       state.assetId = fertig.id || state.assetId;
       adoptPayload(fertig.payload || fertig);
+      applyFormImages(state.memo);
       await compactAdoptedImages();
       state.busy = false;
       ladeTaktStop();
       render();
     } catch (err) {
-      // Der Servertext ist die einzige belastbare Auskunft, deshalb wörtlich zeigen.
+      if (state.cancelRequested) return;
       state.busy = false;
       ladeTaktStop();
       state.error = (err && err.message) ? String(err.message) : String(err || "Unbekannter Fehler");
@@ -1460,8 +1704,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const bis = Date.now() + 420_000;
     let wartezeit = 800;
     while (Date.now() < bis) {
+      if (state.cancelRequested) return { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
       await new Promise((r) => setTimeout(r, wartezeit));
       wartezeit = Math.min(wartezeit + 200, 1_200);
+      if (state.cancelRequested) return { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
       const res = await api("get_asset", { asset_id: id });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       ladeAbschnittSetzen(row.stage);
@@ -2225,10 +2471,38 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       showSaveHint("Der Ausschnitt konnte nicht erzeugt werden.");
       return;
     }
+    if (cropState.uid === "form") {
+      state.formImages[cropState.key] = { src, pos: "50% 50%" };
+      if (state.memo) setImageAt(state.memo, cropState.key, state.formImages[cropState.key]);
+      if (state.step === "form") zeichneForm();
+      else mountStages(state.step === "edit");
+      return;
+    }
     harvest();
     const model = modelByUid(cropState.uid);
     setImageAt(model, cropState.key, { src, pos: "50% 50%" });
     mountStages(state.step === "edit");
+  }
+
+  async function cancelGenerate() {
+    if (!state.busy && state.step !== "draft") return;
+    state.cancelRequested = true;
+    const id = state.assetId;
+    state.busy = false;
+    ladeTaktStop();
+    state.step = "form";
+    state.error = "";
+    render();
+    if (id) {
+      try { await api("cancel_asset", { asset_id: id }); } catch { /* der Auftrag endet serverseitig */ }
+    }
+    if (state.draftsOpen) draftsTaktStart();
+  }
+
+  function pickFormImage(key) {
+    state.pendingImage = `form::${key || "image"}`;
+    fileInput.value = "";
+    fileInput.click();
   }
 
   function pickImage(stageEl, key) {
@@ -2477,9 +2751,47 @@ ${stages}${post}
     const frame = hit.closest("[data-uid]");
     const id = frame ? frame.getAttribute("data-uid") : null;
 
-    if (act === "close") { close(); return; }
+    if (act === "close") {
+      if (state.busy) { void cancelGenerate(); return; }
+      if (state.step !== "form") {
+        state.step = "form";
+        state.error = "";
+        render();
+        if (state.draftsOpen) draftsTaktStart();
+        return;
+      }
+      close();
+      return;
+    }
     if (act === "generate") { generate(); return; }
-    if (act === "to-form") { state.step = "form"; state.error = ""; render(); return; }
+    if (act === "cancel-generate") { void cancelGenerate(); return; }
+    if (act === "to-form") {
+      state.busy = false;
+      ladeTaktStop();
+      state.step = "form";
+      state.error = "";
+      render();
+      if (state.draftsOpen) draftsTaktStart();
+      return;
+    }
+    if (act === "toggle-drafts") {
+      state.draftsOpen = !state.draftsOpen;
+      if (state.draftsOpen) draftsTaktStart();
+      else draftsTaktStop();
+      const box = shell.querySelector(".as-drafts");
+      if (box) box.outerHTML = draftsHtml();
+      else render();
+      return;
+    }
+    if (act === "open-draft") {
+      const id = hit.getAttribute("data-id");
+      if (id) void openDraft(id);
+      return;
+    }
+    if (act === "form-img-pick") {
+      pickFormImage(hit.getAttribute("data-imgkey") || "image");
+      return;
+    }
     if (act === "to-draft") { harvest(); state.step = "draft"; render(); return; }
     if (act === "to-edit") { state.step = "edit"; render(); return; }
     if (act === "slide-add") { addSlide(); return; }
@@ -2652,11 +2964,13 @@ ${stages}${post}
   /* ── Abbau ── */
 
   function close() {
+    state.cancelRequested = true;
     while (cleanups.length) {
       const off = cleanups.pop();
       try { off(); } catch (_) { /* ein gescheitertes Abmelden darf den Abbau nicht stoppen */ }
     }
     ladeTaktStop();
+    draftsTaktStop();
     if (selectionFrame) window.cancelAnimationFrame(selectionFrame);
     if (fmtBar) fmtBar.remove();
     fmtBar = null;
@@ -2666,6 +2980,7 @@ ${stages}${post}
   }
 
   render();
+  void ladeDrafts();
   openInstance = { close, lebt: () => overlay.isConnected };
   return openInstance;
 }

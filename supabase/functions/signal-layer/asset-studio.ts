@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.7";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.8";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -103,8 +103,8 @@ export type MemoBenchmarkBrief = {
 };
 
 export type MemoAnswers = {
-  /** Wen das Papier anredet. auto = aus Signal (Person, Rollen, Firma). */
-  addressee: "auto" | "person" | "persons" | "company";
+  /** Ob das Modell einen Firmennamen als Briefing bekommt. */
+  company_named: "yes" | "no";
   /** Override aus dem Fragebogen. Leer = erkanntes Unternehmen aus dem Signal. */
   company: string;
   /** auto = Gemini fuellt die Motive. upload = der Nutzer schneidet selbst zu. */
@@ -516,15 +516,15 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
         .slice(0, 8),
     };
   }
-  const adressat = pick(source, "addressee", "adressat", "audience");
   const images = pick(source, "images", "bilder");
   const benchMode = pick(source, "benchmarks", "benchmarks_mode", "vorreiter");
+  const named = pick(source, "company_named", "unternehmen_nennen");
+  const companyNamed = /no|nein|ohne|false/i.test(named) ? "no" as const : "yes" as const;
   return {
-    addressee: /persons|mehrere|buying.?center/i.test(adressat) ? "persons"
-      : /person|einzeln/i.test(adressat) ? "person"
-      : /company|unternehmen|firma/i.test(adressat) ? "company"
-      : "auto",
-    company: choiceText(source, ["company_mode", "company"], ["company_text", "firma"], 160),
+    company_named: companyNamed,
+    company: companyNamed === "no"
+      ? ""
+      : choiceText(source, ["company_mode", "company"], ["company_text", "firma"], 160),
     images: /upload|eigen|eigene|manual|selbst/i.test(images) ? "upload" : "auto",
     benchmarks_mode: /custom|eigen|eigene|manual|selbst/i.test(benchMode) ? "custom" : "auto",
     benchmarks: parseMemoBenchmarkBriefs(source),
@@ -1041,6 +1041,7 @@ export function resolveAssetCompany(
   signal: AssetSignalInput,
   article?: { primary_company?: string | null },
 ): string {
+  if ("company_named" in answers && (answers as MemoAnswers).company_named === "no") return "";
   const override = "company" in answers ? String((answers as MemoAnswers).company || "").trim() : "";
   if (override) return override.slice(0, 160);
   return String(
@@ -1142,46 +1143,27 @@ ${daten}
 Antworte ausschliesslich mit einem JSON-Objekt nach dem verlangten Schema, ohne Text davor oder danach.`;
 }
 
-function memoAddresseeLine(answers: MemoAnswers, signal: AssetSignalInput): string {
-  const person = asData(signal.person_name, 120);
-  const rollen = list(signal.buying_center_roles, 6, 80);
-  const firma = asData(answers.company, 120) || asData(signal.company, 120) || "das Unternehmen";
-  if (answers.addressee === "person") {
-    return person
-      ? `Adressat, verbindlich: ${person}${signal.person_role ? `, ${asData(signal.person_role, 80)}` : ""}. Sprache an diese eine Person.`
-      : `Adressat: die verantwortliche Person. Im Signal steht keine; nimm ${firma}.`;
-  }
-  if (answers.addressee === "persons") {
-    return rollen.length
-      ? `Adressat, verbindlich: mehrere Rollen (${rollen.join(", ")}). Kein einzelner Briefkopf-Name.`
-      : `Adressat: das Buying Center von ${firma}.`;
-  }
-  if (answers.addressee === "company") {
-    return `Adressat, verbindlich: ${firma} als Unternehmen, nicht eine Einzelperson.`;
-  }
-  if (person) return `Adressat: das Modell wählt sinnvoll. Person im Signal: ${person}. Sonst Rollen (${rollen.join(", ") || "keine"}) oder ${firma}.`;
-  if (rollen.length) return `Adressat: das Modell wählt sinnvoll. Rollen im Signal: ${rollen.join(", ")}. Sonst ${firma}.`;
-  return `Adressat: das Modell wählt sinnvoll, hier ${firma}.`;
-}
-
 function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: string): string {
   const leistung = asData(signal.roots_offering, 240);
-  const firma = asData(answers.company, 160) || asData(signal.company, 160) || "das Unternehmen";
+  const firma = asData(answers.company, 160) || asData(signal.company, 160) || "";
   const bilder = answers.images === "upload"
     ? "Bilder: der Nutzer lädt sie selbst. Schreibe image_hint als Motivbeschreibung für den Platzhalter."
     : "Bilder: Gemini erzeugt die Motive aus image_hint. Beschreibe je Slot ein konkretes, textfreies Fotomotiv.";
   const vorreiter = answers.benchmarks.length >= 3
     ? `Vorreiter, verbindlich:\n${formatVorreiterBlock(answers.benchmarks, answers.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\nÜbernimm name, text und tag. Formuliere höchstens sprachlich. Zahlen nur wie dort angegeben. Erfinde keine vierte Marke und ersetze keine Namen.`
     : "Vorreiter: genau drei, die denselben Hebel schon gezogen haben. Nur aus <vorreiter> oder aus artikel.";
+  const firmaZeile = answers.company_named === "no" || !firma
+    ? "Kein Unternehmensname im Briefing. Die drei Seiten bleiben ohne Firmenaufdruck."
+    : `Unternehmen (nur Briefing, kein Aufdruck): ${firma}. Der Name darf nicht als Kicker, Cover-Label, Titelzusatz („für ${firma}“) oder market_title erscheinen. Die drei Seiten bleiben ohne Firmenaufdruck; die Lage dieses Unternehmens steckt in den Potenzialen.`;
   const auftrag = [
-    memoAddresseeLine(answers, signal),
-    `Unternehmen (nur Briefing, kein Aufdruck): ${firma}. Der Name darf nicht als Kicker, Cover-Label, Titelzusatz („für ${firma}“) oder market_title erscheinen. Die drei Seiten bleiben ohne Firmenaufdruck; die Lage dieses Unternehmens steckt in den Potenzialen.`,
+    "Sprache an eine Entscheiderin oder einen Entscheider, ohne Briefkopf-Name.",
+    firmaZeile,
     answers.storyline
       ? `Inhalt, verbindlich: ${answers.storyline}`
       : "Inhalt: das Modell schreibt aus signal und artikel.",
     answers.cta
-      ? `Handlungsaufruf, verbindlich in cta (die Frage im blauen Band): ${answers.cta}`
-      : "cta: eine Gesprächsfrage, die den Adressaten meint. Der Knopftext ist fest „Kontakt aufnehmen“.",
+      ? `CTA, verbindlich in cta (die Frage im blauen Band): ${answers.cta}`
+      : "cta: eine Gesprächsfrage. Der Knopftext ist fest „Kontakt aufnehmen“.",
     leistung ? `ROOTS-Leistung ${leistung} gehört in about_fit, einen Satz, warum ROOTS hier ansetzt.` : "",
     vorreiter,
     bilder,

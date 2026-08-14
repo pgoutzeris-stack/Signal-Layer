@@ -100,12 +100,17 @@ test("der Artikeltext gilt im Prompt als Daten, nicht als Anweisung", () => {
 test("Frontend und Backend rufen dieselben Aktionen mit denselben Namen", () => {
   assert.match(studio, /api\("generate_asset", \{\s*kind/);
   assert.match(studio, /api\("save_asset", \{ asset_id/);
+  assert.match(studio, /api\("list_assets"/);
+  assert.match(studio, /api\("cancel_asset"/);
   assert.match(edge, /case "generate_asset"/);
   assert.match(edge, /case "save_asset"/);
-  // Nur die Erzeugung verbraucht Anbieterbudget und braucht die Editorrolle.
+  assert.match(edge, /case "list_assets"/);
+  assert.match(edge, /case "cancel_asset"/);
   const editorBlock = edge.match(/const EDITOR_ACTIONS = new Set\(\[([\s\S]*?)\]\)/)?.[1] || "";
   assert.ok(editorBlock.includes('"generate_asset"'));
+  assert.ok(editorBlock.includes('"cancel_asset"'));
   assert.ok(!editorBlock.includes('"save_asset"'));
+  assert.ok(!editorBlock.includes('"list_assets"'));
 });
 
 test("Tokens und Kosten stehen auch auf der Assetzeile", () => {
@@ -233,14 +238,16 @@ test("Vorschau und fertiges Asset benutzen denselben Weg", () => {
   assert.match(studio, /function slideHtml\(slide, editable = true\)/);
   assert.match(studio, /function livePreviewHtml\(\)/);
   assert.match(studio, /slideHtml\(demoSlide\(variante\), false\)/);
-  assert.match(studio, /memoHtml\(demoMemo\(\), false\)/);
+  assert.match(studio, /memoHtml\(applyFormImages\(demoMemo\(\)\), false\)/);
   // Schleifen fuer Aufzaehlung, Kennzahlen und Schritte
   assert.match(studio, /function expandRepeats\(html, slide\)/);
   for (const feld of ["bullets", "stats", "steps"]) {
     assert.ok(studio.includes(`"${feld}"`), `Schleife ${feld} fehlt`);
   }
   // Kein Modellaufruf fuer die Vorschau: sie kostet keine Token.
-  const vorschauBlock = studio.slice(studio.indexOf("function livePreviewHtml"), studio.indexOf("function formHtml"));
+  const start = studio.indexOf("function livePreviewHtml");
+  const end = studio.indexOf("\n  function ", start + 20);
+  const vorschauBlock = studio.slice(start, end);
   assert.doesNotMatch(vorschauBlock, /api\(/);
 });
 
@@ -699,30 +706,29 @@ test("post_text behält Absätze und das Leerzeichen vor Prozent", () => {
   assert.match(payload.post_text, /Jetzt den Termin setzen$/);
 });
 
-test("die Ansprache bindet die ROOTS-Leistung an about_fit und kennt den Adressaten", () => {
+test("die Ansprache bindet die ROOTS-Leistung an about_fit, ohne Adressat-Frage", () => {
   const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
     about_fit: "Audit wählen",
-  })), backend.normalizeAssetAnswers("memo", { addressee: "company" }), {
+  })), backend.normalizeAssetAnswers("memo", {}), {
     rootsOffering: "Marketing Audit + Markenstrategie",
   });
   assert.match(memo.about_fit, /Marketing Audit/);
-  const person = backend.normalizeAssetAnswers("memo", { addressee: "person" });
-  assert.equal(person.addressee, "person");
-  const mehrere = backend.normalizeAssetAnswers("memo", { adressat: "mehrere" });
-  assert.equal(mehrere.addressee, "persons");
-  const firma = backend.normalizeAssetAnswers("memo", { audience: "unternehmen" });
-  assert.equal(firma.addressee, "company");
   const auto = backend.normalizeAssetAnswers("memo", {});
-  assert.equal(auto.addressee, "auto");
+  assert.equal(auto.company_named, "yes");
   assert.equal(auto.company, "");
   assert.equal(auto.images, "auto");
+  assert.equal("addressee" in auto, false);
   assert.equal("reader_side" in auto, false);
   assert.equal("confidential" in auto, false);
   const override = backend.normalizeAssetAnswers("memo", {
-    company_mode: "custom", company_text: "Aeffe", images: "upload",
+    company_named: "yes", company_mode: "custom", company_text: "Aeffe", images: "upload",
   });
   assert.equal(override.company, "Aeffe");
   assert.equal(override.images, "upload");
+  const ohne = backend.normalizeAssetAnswers("memo", { company_named: "no", company_mode: "custom", company_text: "Aeffe" });
+  assert.equal(ohne.company_named, "no");
+  assert.equal(ohne.company, "");
+  assert.equal(backend.resolveAssetCompany(ohne, { company: "Coca-Cola" }), "");
 });
 
 test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", () => {
@@ -736,7 +742,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   const memoPrompt = backend.buildAssetPrompt("memo",
     { company: "Aeffe", roots_offering: "Marketing Audit + Markenstrategie", buying_center_roles: ["Vertrieb"] },
     { title: "A", content_de: "Der Artikel." },
-    backend.normalizeAssetAnswers("memo", { addressee: "company" }));
+    backend.normalizeAssetAnswers("memo", {}));
   assert.match(memoPrompt, /<ziel>/);
   assert.match(memoPrompt, /<zusammenhang>/);
   assert.match(memoPrompt, /01 Marktdynamik/);
@@ -748,7 +754,10 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.doesNotMatch(memoPrompt, /Nichtstun/);
   assert.doesNotMatch(memoPrompt, /confidential/);
   assert.doesNotMatch(studio, /label: "Vermerk"/);
-  assert.match(studio, /key: "addressee"/);
+  assert.doesNotMatch(studio, /key: "addressee"/);
+  assert.match(studio, /key: "company_named"/);
+  assert.match(studio, /label: "CTA"/);
+  assert.match(studio, /label: "Benchmarking"/);
   assert.doesNotMatch(studio, /key: "reader_side"/);
   assert.doesNotMatch(studio, /key: "focus"/);
   assert.doesNotMatch(studio, /key: "note"/);
@@ -758,7 +767,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.7");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.8");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -839,7 +848,7 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   assert.match(memo.about_fit, /100 Tage/);
 });
 
-test("Prompt v1.7 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
+test("Prompt v1.8 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -1012,7 +1021,7 @@ test("Person im Signal wird Adressat, ohne Gespräch-mit-Rolle anzuhängen", () 
     { title: "A", content_de: "Der Artikel." },
     answers);
   assert.match(memoPrompt, /Christian Wiegand/);
-  assert.match(memoPrompt, /Adressat, verbindlich/);
+  assert.doesNotMatch(memoPrompt, /Adressat, verbindlich/);
   assert.doesNotMatch(memoPrompt, /keine Rolle extra/);
   assert.doesNotMatch(memoPrompt, /Gespräch mit/);
 });
@@ -1226,7 +1235,7 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.equal(backend.parseLooseJsonObject("```json\n{\"ok\":true}\n```").ok, true);
 
   assert.match(studio, /key: "benchmarks"/);
-  assert.match(studio, /Gemini recherchiert aktuelle Vorreiter/);
+  assert.match(studio, /Gemini recherchiert/);
   assert.match(studio, /data-act="bench-example"/);
   assert.match(studio, /Beispielform einsetzen/);
   assert.match(studio, /function eigeneVorreiterPruefen/);
@@ -1242,5 +1251,31 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.match(edge, /function callGeminiWithGoogleSearch/);
   assert.match(edge, /simple_research_model \|\| MEMO_BENCHMARK_RESEARCH_MODEL/);
   assert.match(edge, /MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS/);
+});
+
+test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
+  assert.match(studio, /key: "company_named"/);
+  assert.match(studio, /Nur Briefing für das Modell/);
+  assert.doesNotMatch(studio, /key: "addressee"/);
+  assert.match(studio, /label: "CTA"/);
+  assert.match(studio, /label: "Benchmarking"/);
+  assert.doesNotMatch(studio, /Jedes Motiv muss den Platzhalter füllen/);
+  assert.match(studio, /function slotsHtml/);
+  assert.match(studio, /data-act="form-img-pick"/);
+  assert.match(studio, /function openCropper/);
+  assert.match(studio, /cropState\.uid === "form"/);
+  assert.match(studio, /data-act="cancel-generate"/);
+  assert.match(studio, /function cancelGenerate/);
+  assert.match(studio, /Entwürfe anzeigen/);
+  assert.match(studio, /function ladeDrafts/);
+  assert.match(studio, /data-act="open-draft"/);
+  assert.match(studio, /state\.step !== "form"/);
+  assert.match(edge, /Vom Nutzer abgebrochen/);
+  assert.match(edge, /const nochAktiv = async/);
+  const ohne = backend.normalizeAssetAnswers("memo", { company_named: "nein" });
+  assert.equal(ohne.company_named, "no");
+  const prompt = backend.buildAssetPrompt("memo", { company: "Coca-Cola" }, { title: "A" }, ohne);
+  assert.match(prompt, /Kein Unternehmensname im Briefing/);
+  assert.doesNotMatch(prompt, /für Coca-Cola/);
 });
 
