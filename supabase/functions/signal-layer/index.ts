@@ -109,6 +109,7 @@ import {
   MemoAnswers,
   MemoPayload,
   applyAssetPulse,
+  summarizeAssetPace,
   assertMemoBenchmarkBriefs,
   assetDraftTextFromLog,
   assetFinishHandoffDue,
@@ -3010,7 +3011,16 @@ async function assetForecastFromDb(
   kind: string,
   answers: { asset_type?: string; slides?: number; images?: string; benchmarks_mode?: string },
   fallbackMs: number,
-): Promise<{ ms: number; sample_count: number; median_tokens: number | null; scope: string; stages: Record<string, number> }> {
+): Promise<{
+  ms: number;
+  sample_count: number;
+  median_tokens: number | null;
+  scope: string;
+  stages: Record<string, number>;
+  think: Record<string, number>;
+  write: Record<string, number>;
+}> {
+  const leer = { ms: fallbackMs, sample_count: 0, median_tokens: null, scope: "fallback", stages: {}, think: {}, write: {} };
   try {
     const { data } = await admin.schema("signal_layer").rpc("asset_duration_forecast", {
       p_kind: kind,
@@ -3031,15 +3041,24 @@ async function assetForecastFromDb(
       const ms = Number(value);
       if (Number.isFinite(ms) && ms >= 500) stages[key] = Math.round(ms);
     }
+    const { data: recent } = await admin.schema("signal_layer").from("generated_assets")
+      .select("run_log")
+      .eq("kind", kind)
+      .eq("status", "done")
+      .order("created_at", { ascending: false })
+      .limit(40);
+    const pace = summarizeAssetPace((recent || []).map((item) => item.run_log));
     return {
       ms: Number.isFinite(median) && median >= 8_000 ? Math.round(median) : fallbackMs,
       sample_count: Number(row.sample_count) || 0,
       median_tokens: Number.isFinite(Number(row.median_tokens)) ? Number(row.median_tokens) : null,
       scope: String(row.scope || ""),
       stages,
+      think: pace.think as Record<string, number>,
+      write: pace.write as Record<string, number>,
     };
   } catch {
-    return { ms: fallbackMs, sample_count: 0, median_tokens: null, scope: "fallback", stages: {} };
+    return leer;
   }
 }
 
@@ -8903,7 +8922,7 @@ Deno.serve(async (req: Request) => {
             model: assetModel, prompt_version: ASSET_PROMPT_VERSION,
             created_by: auth?.userId || null,
             forecast_ms: forecast.ms,
-            run_log: [{ t: 0, event: "start", forecast_ms: forecast.ms, sample_count: forecast.sample_count, scope: forecast.scope, stages: forecast.stages }],
+            run_log: [{ t: 0, event: "start", forecast_ms: forecast.ms, sample_count: forecast.sample_count, scope: forecast.scope, stages: forecast.stages, think: forecast.think, write: forecast.write }],
           }).select("*").single();
         if (assetInsertError) return errorResponse(origin, assetInsertError.message, 500);
 

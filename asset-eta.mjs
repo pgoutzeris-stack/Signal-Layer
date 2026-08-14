@@ -1,7 +1,18 @@
-// Restzeit für die Ladeanzeige: je Assetart und aktuellem Schritt,
-// aus gemessenen Stufen plus dem laufenden Protokoll.
+// Restzeit für die Ladeanzeige: laufendes Tempo (Zeichen je Zeit) plus
+// gelernte Denk-/Schreibgrößen. Zwischen Impulsen zählt die Uhr weiter.
 
 export const ASSET_ETA_STAGES = ["lesen", "recherchieren", "modell", "pruefen", "bilder", "fuellen"];
+
+const PACE_FALLBACK = {
+  memo: {
+    think: { ms: 115_000, p75_ms: 145_000, chars: 32_000, p75_chars: 40_000 },
+    write: { ms: 22_000, p75_ms: 35_000, chars: 5_400, p75_chars: 6_200 },
+  },
+  linkedin: {
+    think: { ms: 55_000, p75_ms: 80_000, chars: 12_000, p75_chars: 20_000 },
+    write: { ms: 18_000, p75_ms: 28_000, chars: 2_800, p75_chars: 4_000 },
+  },
+};
 
 export function assetEtaFallbackStages(kind, answers = {}) {
   const memo = kind === "memo";
@@ -47,14 +58,86 @@ function stufeStartMs(log, name, elapsedMs) {
   return Math.max(0, Number(elapsedMs || 0));
 }
 
-function schreibtSchon(log) {
-  return Boolean(letzte(log, (row) => row?.event === "pulse" && row?.phase === "writing" && Number(row?.chars || 0) > 0));
+function nimm(raw, key, fallback) {
+  const n = Number(raw?.[key]);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : fallback;
 }
 
-function denktNoch(log) {
-  if (schreibtSchon(log)) return false;
-  const pulse = letzte(log, (row) => row?.event === "pulse");
-  return Boolean(pulse && pulse.phase === "thinking");
+export function assetEtaPaceFromLog(log, kind = "linkedin") {
+  const start = Array.isArray(log) ? log.find((row) => row?.event === "start") : null;
+  const fb = kind === "memo" ? PACE_FALLBACK.memo : PACE_FALLBACK.linkedin;
+  const thinkRaw = start && start.think && typeof start.think === "object" ? start.think : {};
+  const writeRaw = start && start.write && typeof start.write === "object" ? start.write : {};
+  const thinkChars = nimm(thinkRaw, "chars", fb.think.chars);
+  const writeChars = nimm(writeRaw, "chars", fb.write.chars);
+  return {
+    think: {
+      ms: nimm(thinkRaw, "ms", fb.think.ms),
+      p75_ms: Math.max(nimm(thinkRaw, "p75_ms", fb.think.p75_ms), nimm(thinkRaw, "ms", fb.think.ms)),
+      chars: thinkChars,
+      p75_chars: Math.max(nimm(thinkRaw, "p75_chars", fb.think.p75_chars), thinkChars),
+    },
+    write: {
+      ms: nimm(writeRaw, "ms", fb.write.ms),
+      p75_ms: Math.max(nimm(writeRaw, "p75_ms", fb.write.p75_ms), nimm(writeRaw, "ms", fb.write.ms)),
+      chars: writeChars,
+      p75_chars: Math.max(nimm(writeRaw, "p75_chars", fb.write.p75_chars), writeChars),
+    },
+  };
+}
+
+function restNachImpuls(restAmImpuls, impulsT, elapsedMs) {
+  return Math.max(0, restAmImpuls - Math.max(0, elapsedMs - impulsT));
+}
+
+function zielZeichen(current, typical, p75) {
+  if (current < typical) return typical;
+  return Math.max(typical, p75);
+}
+
+function modellRest({ runLog, elapsed, typicalModell, later, pace }) {
+  const pulse = letzte(
+    runLog,
+    (row) => row?.event === "pulse" && (row.phase === "thinking" || row.phase === "writing"),
+  );
+  const start = stufeStartMs(runLog, "modell", elapsed);
+  const spent = Math.max(0, elapsed - start);
+  const { think, write } = pace;
+
+  if (pulse && pulse.phase === "writing" && Number(pulse.chars || 0) > 0) {
+    const chars = Number(pulse.chars || 0);
+    const pulseT = Number(pulse.t || elapsed);
+    const since = Number(pulse.since ?? pulse.t ?? start);
+    const phaseSpent = Math.max(1, pulseT - since);
+    const liveRate = phaseSpent >= 800 ? chars / phaseSpent : 0;
+    const typicalRate = write.chars / Math.max(1, write.ms);
+    const rate = liveRate > 0 ? liveRate : typicalRate;
+    const target = zielZeichen(chars, write.chars, write.p75_chars);
+    const remChars = Math.max(0, target - chars);
+    const remAmImpuls = rate > 0 ? remChars / rate : Math.max(0, write.ms - phaseSpent);
+    return restNachImpuls(remAmImpuls, pulseT, elapsed) + later;
+  }
+
+  if (pulse && pulse.phase === "thinking") {
+    const chars = Number(pulse.thinking_chars || 0);
+    const pulseT = Number(pulse.t || elapsed);
+    const since = Number(pulse.since ?? start);
+    const phaseSpent = Math.max(1, pulseT - since);
+    const hasRate = chars >= 80 && phaseSpent >= 800;
+    let remAmImpuls = 0;
+    if (hasRate) {
+      const rate = chars / phaseSpent;
+      const target = zielZeichen(chars, think.chars, think.p75_chars);
+      const remChars = Math.max(0, target - chars);
+      remAmImpuls = remChars > 0 ? remChars / rate : Math.max(0, think.p75_ms - phaseSpent);
+    } else {
+      const targetMs = phaseSpent < think.ms ? think.ms : think.p75_ms;
+      remAmImpuls = Math.max(0, targetMs - phaseSpent);
+    }
+    return restNachImpuls(remAmImpuls, pulseT, elapsed) + write.ms + later;
+  }
+
+  return Math.max(0, typicalModell - spent) + later;
 }
 
 export function assetEtaRemainingMs({
@@ -71,33 +154,33 @@ export function assetEtaRemainingMs({
   const current = order.includes(stage) ? stage : order[0] || "lesen";
   const idx = Math.max(0, order.indexOf(current));
   const elapsed = Math.max(0, Number(elapsedMs) || 0);
+  const pace = assetEtaPaceFromLog(runLog, kind);
+  const pulse = letzte(
+    runLog,
+    (row) => row?.event === "pulse" && (row.phase === "thinking" || row.phase === "writing"),
+  );
+
   let rest = 0;
   for (let i = idx; i < order.length; i += 1) {
     const name = order[i];
     const typ = Math.max(1_000, Number(typical[name] || 0));
-    if (i === idx) {
-      const spent = Math.max(0, elapsed - stufeStartMs(runLog, name, elapsed));
-      let left = typ - spent;
-      const denkt = name === "modell" && denktNoch(runLog);
-      const schreibt = name === "modell" && schreibtSchon(runLog);
-      if (denkt) {
-        // DeepSeek denkt oft länger als der Median. Die Anzeige darf dann
-        // nicht auf „unter 1 Minute“ fallen, solange noch Begründung kommt.
-        left = Math.max(left, 90_000);
-      } else if (schreibt) {
-        left = Math.min(Math.max(left, 18_000), 45_000);
-      } else if (spent > typ * 1.8) {
-        left = Math.min(Math.max(left, 0), 25_000);
-      }
-      rest += Math.max(denkt ? 90_000 : 8_000, left);
-    } else {
+    if (i !== idx) {
       rest += typ;
+      continue;
     }
+    if (name === "modell") {
+      const later = order.slice(i + 1).reduce((sum, key) => sum + Math.max(0, Number(typical[key] || 0)), 0);
+      rest += modellRest({ runLog, elapsed, typicalModell: typ, later, pace });
+      break;
+    }
+    const spent = Math.max(0, elapsed - stufeStartMs(runLog, name, elapsed));
+    rest += Math.max(0, typ - spent);
   }
+
   const totalTyp = order.reduce((sum, name) => sum + Math.max(0, Number(typical[name] || 0)), 0);
   const ziel = Number(forecastMs) > 8_000 ? Number(forecastMs) : totalTyp;
-  if (ziel > elapsed) rest = Math.max(rest, ziel - elapsed);
-  return Math.max(5_000, Math.round(rest));
+  if (!pulse && ziel > elapsed) rest = Math.max(rest, ziel - elapsed);
+  return Math.max(0, Math.round(rest));
 }
 
 export function assetEtaLabel(ms) {
