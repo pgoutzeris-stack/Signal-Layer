@@ -971,6 +971,8 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
     { title: "A", content_de: "Der Artikel." },
     backend.normalizeAssetAnswers("memo", {}));
   assert.match(memoPrompt, /<ziel>/);
+  assert.match(memoPrompt, /<hebel>/);
+  assert.match(memoPrompt, /<titel>/);
   assert.match(memoPrompt, /<zusammenhang>/);
   assert.match(memoPrompt, /01 Marktdynamik/);
   assert.match(memoPrompt, /Benchmarks/);
@@ -994,7 +996,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.10");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.11");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -1254,6 +1256,9 @@ test("Person im Signal wird Adressat, ohne Gespräch-mit-Rolle anzuhängen", () 
     answers);
   assert.match(memoPrompt, /Christian Wiegand/);
   assert.match(memoPrompt, /<anlass>/);
+  assert.match(memoPrompt, /<hebel>/);
+  assert.match(memoPrompt, /<titel>/);
+  assert.match(memoPrompt, /Action Title/);
   assert.match(memoPrompt, /nicht die Geschichte/);
   assert.doesNotMatch(memoPrompt, /Adressat, verbindlich/);
   assert.doesNotMatch(memoPrompt, /keine Rolle extra/);
@@ -1311,6 +1316,30 @@ test("das Executive Memo hebt auf die Herausforderung, nicht auf die Nachricht",
   assert.doesNotMatch(gut.standfirst, /Wiegand|übernimmt/i);
   assert.doesNotMatch(gut.about_fit, /100\s*Tage/i);
 
+  const aeffe = {
+    articleText: "Aeffe hat ein verbindliches Sanierungsangebot über 115 Millionen Euro vorgelegt. Moschino und Alberta Ferretti sollen neu ausgerichtet werden.",
+    signalHeadline: "Aeffe-Gruppe: Sanierungsplan mit Marken-Neuausrichtung und 115-Millionen-Euro-Übernahme",
+    articleTitle: "Verbindliches Angebot über 115 Millionen Euro für Sanierung und Arbeitsplatzerhalt",
+    rootsOffering: "Marketing Audit + Markenstrategie",
+    rootsLink: "Aeffe muss seine historischen Marken neu ausrichten und kommerziell stärken. ROOTS analysiert die Markenstrukturen und entwickelt eine Markenstrategie für die neu aufgestellten Einheiten.",
+  };
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Markenstrategie wird zum entscheidenden Hebel der Sanierung",
+    standfirst: "Ein verbindliches Sanierungsangebot sieht die Aufspaltung vor.",
+  })), answers, aeffe), /ROOTS-Leistung zum Titel/);
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Verbindliches Angebot über 115 Millionen Euro für die Sanierung",
+    standfirst: "Die Marken brauchen eigene Profile, bevor die Gruppe sie trennt.",
+  })), answers, aeffe), /Nachrichtenmeldung im Titel|Signalüberschrift/);
+  const aeffeGut = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Zwei Traditionsmarken brauchen eigene Profile, bevor die Gruppe sie trennt",
+    standfirst: "Die Aufspaltung zwingt jedes Haus zur eigenen Handschrift. Der Moment ist die Neuordnung, nicht die Transaktion.",
+  })), answers, aeffe);
+  assert.match(aeffeGut.title, /Traditionsmarken brauchen eigene Profile/);
+  assert.doesNotMatch(aeffeGut.title, /Markenstrategie wird|115/i);
+
+  assert.deepEqual(backend.memoOfferingNames("Marketing Audit + Markenstrategie"), ["Marketing Audit", "Markenstrategie"]);
+
   assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
     title: "Die ersten 100 Tage brauchen eine klare Agenda",
     standfirst: "Ein Führungswechsel macht die Positionierung zur ersten Aufgabe, nicht zur Nachricht.",
@@ -1320,7 +1349,10 @@ test("das Executive Memo hebt auf die Herausforderung, nicht auf die Nachricht",
   assert.equal(backend.assetMangelIsRepairable("Das Cover erzählt die Personalie, nicht die Cover-These."), true);
   assert.equal(backend.assetMangelIsRepairable("Der Cover-Titel ist ein Nachrichtenslogan ohne Beratungshebel."), true);
   assert.equal(backend.assetMangelIsRepairable("Das Executive Memo enthält 100-Tage-CMO-Sprache."), true);
+  assert.equal(backend.assetMangelIsRepairable("Das Cover macht die ROOTS-Leistung zum Titel."), true);
+  assert.equal(backend.assetMangelIsRepairable("Das Cover erzählt die Nachrichtenmeldung im Titel."), true);
   assert.match(edge, /signalHeadline: assetSignal.headline_de/);
+  assert.match(edge, /rootsLink:/);
   assert.match(edge, /CMO_HUNDRED_DAYS_WIP/);
 });
 
@@ -1521,13 +1553,20 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.match(block, /name: Lidl/);
 
   const research = backend.buildMemoBenchmarkResearchPrompt(
-    { headline_de: "Eigenmarken brauchen eine Führung", company: "Hugo Boss" },
+    {
+      headline_de: "Eigenmarken brauchen eine Führung",
+      company: "Hugo Boss",
+      roots_offering: "Markenstrategie",
+      roots_link_de: "Eigenmarken brauchen eine Führung unter einer Handschrift.",
+    },
     { title: "Handelsstudie" },
     backend.normalizeAssetAnswers("memo", { company_mode: "custom", company_text: "Hugo Boss" }),
   );
   assert.match(research, /Google Search ist Pflicht/);
   assert.match(research, /Nicht Apple\/Nike\/Amazon/);
   assert.match(research, /Hugo Boss/);
+  assert.match(research, /Markenstrategie/);
+  assert.match(research, /nicht die Nachrichtenmeldung/);
   assert.match(research, /{"benchmarks"/);
 
   const review = backend.buildMemoBenchmarkReviewPrompt(
@@ -1626,6 +1665,12 @@ test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   assert.match(studio, /function openCropper/);
   assert.match(studio, /cropState\.uid === "form"/);
   assert.match(studio, /data-act="cancel-generate"/);
+  assert.match(studio, /data-act="close-popup"/);
+  assert.match(studio, /data-act="toggle-fs"/);
+  assert.match(studio, /as-ribbon/);
+  assert.match(studio, /as-fs-btn/);
+  assert.match(studio, /em-shot-hint\{display:none/);
+  assert.match(studio, /function toggleFullscreen/);
   assert.match(studio, /function cancelGenerate/);
   assert.match(studio, /Entwürfe anzeigen/);
   assert.match(studio, /function ladeDrafts/);
