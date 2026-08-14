@@ -93,6 +93,10 @@ import {
   ASSET_SYSTEM_TEXT,
   ASSET_WALL_CLOCK_MS,
   AssetPayload,
+  GEMINI_IMAGE_FALLBACK_MODEL,
+  GEMINI_IMAGE_MODEL,
+  MemoAnswers,
+  MemoPayload,
   assetMangelIsRepairable,
   assetModelTimeoutMs,
   assetOutputTokenBudget,
@@ -101,9 +105,14 @@ import {
   assetTimeoutErrorText,
   buildAssetPrompt,
   buildAssetRepairPrompt,
+  fillMemoImages,
+  geminiImageRequestBody,
   isAssetKind,
+  memoImageDataUri,
   normalizeAssetAnswers,
   normalizeAssetPayload,
+  parseGeminiInlineImage,
+  resolveAssetCompany,
 } from "./asset-studio.ts";
 
 // ---------------------------------------------------------------------------
@@ -2930,6 +2939,33 @@ async function fetchMitLimit(
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
+}
+
+async function generateGeminiMemoImage(
+  apiKey: string,
+  prompt: string,
+  aspect: string,
+): Promise<string | null> {
+  const models = [GEMINI_IMAGE_MODEL, GEMINI_IMAGE_FALLBACK_MODEL];
+  for (const model of models) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      const response = await fetchMitLimit(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify(geminiImageRequestBody(prompt, aspect)),
+      }, 22_000);
+      if (!response.ok) continue;
+      const json = await response.json();
+      const inline = parseGeminiInlineImage(json);
+      if (!inline) continue;
+      const uri = memoImageDataUri(inline.mime, inline.data);
+      if (uri) return uri;
+    } catch {
+      // Naechstes Modell. Ein fehlendes Motiv darf den Textentwurf nicht kippen.
+    }
+  }
+  return null;
 }
 
 async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult> {
@@ -7929,7 +7965,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("simple_signals").select("*")
             .eq("article_id", assetArticleId).maybeSingle(),
           admin.schema("signal_layer").from("articles")
-            .select("id, title, title_de, url, published_at, content, cleaned_content, content_de")
+            .select("id, title, title_de, url, published_at, content, cleaned_content, content_de, topics, territory, article_type, primary_company")
             .eq("id", assetArticleId).maybeSingle(),
         ]);
         if (assetArticleError) return errorResponse(origin, assetArticleError.message, 500);
@@ -7942,6 +7978,15 @@ Deno.serve(async (req: Request) => {
         const assetModel = assetConfig.ai.simple_model || SIMPLE_MODEL;
         const assetKey = await modelApiKey(assetModel);
         if (!assetKey) return errorResponse(origin, `Für ${assetModel} ist kein API-Schlüssel hinterlegt`, 500);
+
+        const articleTopics = Array.isArray(assetArticle.topics) ? assetArticle.topics as string[] : [];
+        const signalForAsset = {
+          ...assetSignal,
+          company: resolveAssetCompany(assetAnswers, assetSignal, assetArticle),
+          topics: articleTopics.length ? articleTopics : (assetSignal.signal_id ? [assetSignal.signal_id] : []),
+          territory: assetArticle.territory || assetSignal.territory || null,
+          article_type: assetArticle.article_type || assetSignal.article_type || null,
+        };
 
         const timeoutMs = assetModelTimeoutMs(assetKind, assetAnswers);
         const forecast = await assetForecastFromDb(
@@ -7957,7 +8002,7 @@ Deno.serve(async (req: Request) => {
           .from("generated_assets").insert({
             kind: assetKind, status: "running", stage: "lesen",
             article_id: assetArticleId, signal_id: assetSignal.id,
-            company: assetSignal.company || null,
+            company: signalForAsset.company || assetSignal.company || null,
             answers: assetAnswers, payload: null,
             model: assetModel, prompt_version: ASSET_PROMPT_VERSION,
             created_by: auth?.userId || null,
@@ -8020,7 +8065,7 @@ Deno.serve(async (req: Request) => {
             return `${nachricht}\n\n${assetModel} · ${ASSET_PROMPT_VERSION} · ${formatLabel} · ${dauer} · ${tok}`;
           };
           // Prompt bauen zaehlt noch als Lesen: das Modell startet erst danach.
-          const prompt = buildAssetPrompt(assetKind, assetSignal, assetArticle, assetAnswers);
+          const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
           await abschnitt("modell");
           const callOpts = {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
@@ -8108,6 +8153,10 @@ Deno.serve(async (req: Request) => {
             rootsOffering: assetSignal.roots_offering,
             buyingCenterRoles: assetSignal.buying_center_roles,
             personName: assetSignal.person_name,
+            company: signalForAsset.company,
+            topics: signalForAsset.topics,
+            territory: signalForAsset.territory,
+            signalLabel: assetSignal.signal_label,
           };
           let payload: AssetPayload | null = null;
           let mangel = "";
@@ -8158,6 +8207,19 @@ Deno.serve(async (req: Request) => {
             return;
           }
           const usageEvent = await buchen("success", { ...kostenFelder, ...tokenFelder }, repairMs ? 2 : 1);
+          if (assetKind === "memo" && (assetAnswers as MemoAnswers).images !== "upload") {
+            await abschnitt("bilder");
+            const geminiKey = await getGeminiKey().catch(() => "");
+            if (!geminiKey) {
+              loggen("images_skip", { reason: "no_gemini_key" });
+            } else {
+              payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
+                remainingMs: ASSET_WALL_CLOCK_MS - (Date.now() - startedAt),
+                log: loggen,
+                generate: (promptText, aspect) => generateGeminiMemoImage(geminiKey, promptText, aspect),
+              });
+            }
+          }
           await abschnitt("fuellen");
           await halte(ASSET_STAGE_HOLD_MS);
           loggen("done", { tokens: result.usage.total });

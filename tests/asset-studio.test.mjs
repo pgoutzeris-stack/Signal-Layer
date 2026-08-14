@@ -471,7 +471,7 @@ test("die Ladeanzeige zeigt Abschnitt, Balken und Minutenprognose", () => {
   // Der Auftrag schreibt seinen Abschnitt auf die Zeile, das Studio liest ihn
   // beim Abfragen. Der Balken kriecht mit der gelernten Prognose, nicht frei.
   assert.match(edge, /stage: "lesen"/);
-  for (const name of ["modell", "pruefen", "fuellen"]) {
+  for (const name of ["modell", "pruefen", "bilder", "fuellen"]) {
     assert.ok(edge.includes(`abschnitt("${name}")`), `Abschnitt ${name} wird nicht gemeldet`);
   }
   assert.match(studio, /const ABSCHNITTE = \[/);
@@ -705,8 +705,15 @@ test("die Ansprache bindet die ROOTS-Leistung an about_fit und kennt den Adressa
   assert.equal(firma.addressee, "company");
   const auto = backend.normalizeAssetAnswers("memo", {});
   assert.equal(auto.addressee, "auto");
+  assert.equal(auto.company, "");
+  assert.equal(auto.images, "auto");
   assert.equal("reader_side" in auto, false);
   assert.equal("confidential" in auto, false);
+  const override = backend.normalizeAssetAnswers("memo", {
+    company_mode: "custom", company_text: "Aeffe", images: "upload",
+  });
+  assert.equal(override.company, "Aeffe");
+  assert.equal(override.images, "upload");
 });
 
 test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", () => {
@@ -742,7 +749,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.5");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.6");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -752,6 +759,10 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(karussell, /Aufruf im sichtbaren Pointe-Feld/);
   assert.doesNotMatch(karussell, /letzte ist F, I oder K/);
   assert.match(memoPrompt, /Türöffner/);
+  assert.match(memoPrompt, /nur Briefing, kein Aufdruck/);
+  assert.match(studio, /key: "company_mode"/);
+  assert.match(studio, /key: "images"/);
+  assert.match(studio, /Gemini entscheidet die Motive/);
 });
 
 test("Tilden und Sterne zählen nicht gegen die Zeichenschwelle", () => {
@@ -819,7 +830,7 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   assert.match(memo.about_fit, /100 Tage/);
 });
 
-test("Prompt v1.5 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
+test("Prompt v1.6 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -1030,3 +1041,89 @@ test("unbelegte Ziffern in der Ansprache fallen durch, qualitative Benchmarks ni
   assert.equal(ok.benchmarks.length, 3);
   assert.equal(ok.kpis.length, 0);
 });
+
+test("der LinkedIn-Kicker kommt aus der Artikelfamilie, nicht vom Zielkunden", () => {
+  assert.equal(backend.assetThemeKicker({
+    topics: ["marketing_insights"], company: "Deichmann",
+  }), "MARKETING INSIGHTS");
+  assert.equal(backend.assetThemeKicker({
+    signal_id: "fmcg_retail_signale", company: "Aeffe",
+  }), "FMCG / RETAIL");
+  const prompt = backend.buildAssetPrompt("linkedin", {
+    company: "Deichmann", topics: ["ki_performance"], signal_label: "KI & Performance",
+  }, { title: "A", content_de: "Der Artikel." }, backend.normalizeAssetAnswers("linkedin", {}));
+  assert.match(prompt, /KI & PERFORMANCE/);
+  assert.match(prompt, /NIE den Firmennamen des Zielkunden/);
+  assert.match(prompt, /ROOTS Consultants/);
+  assert.doesNotMatch(prompt, /benennt das Thema\./);
+
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{
+      variant: "E", kicker: "DEICHMANN", title: "Die Marke führt das Quartal",
+      stat: { value: "14 %", label: "Anteil, 2025" }, footer_left: "Deichmann",
+    }],
+  }), backend.normalizeAssetAnswers("linkedin", {}), {
+    articleText: "14 % Anteil 2025. Die Marke führt das Quartal.",
+    company: "Deichmann",
+    topics: ["marketing_insights"],
+  });
+  assert.equal(payload.slides[0].kicker, "MARKETING INSIGHTS");
+  assert.equal(payload.slides[0].footer_left, "ROOTS Consultants");
+  assert.match(studio, /function themeKicker/);
+  assert.match(studio, /footer_left: "ROOTS Consultants"/);
+  assert.doesNotMatch(studio, /kicker: company \? company\.toUpperCase/);
+});
+
+test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt optional an", async () => {
+  assert.equal(backend.MEMO_SHOT_ASPECT.benchmark.w / backend.MEMO_SHOT_ASPECT.benchmark.h, 46 / 28);
+  assert.equal(backend.MEMO_SHOT_ASPECT.potential.w / backend.MEMO_SHOT_ASPECT.potential.h, 52 / 36);
+  assert.equal(backend.MEMO_SHOT_PIXELS.benchmark.w / backend.MEMO_SHOT_PIXELS.benchmark.h, 46 / 28);
+  assert.equal(backend.MEMO_SHOT_PIXELS.potential.w / backend.MEMO_SHOT_PIXELS.potential.h, 52 / 36);
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
+  const slots = backend.memoImageSlots(memo);
+  assert.equal(slots.length, 6);
+  assert.equal(slots[0].geminiAspect, "16:9");
+  assert.equal(slots[3].geminiAspect, "3:2");
+  const parsed = backend.parseGeminiInlineImage({
+    candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/jpeg", data: "abc".repeat(40) } }] } }],
+  });
+  assert.equal(parsed.mime, "image/jpeg");
+  const uri = backend.memoImageDataUri(parsed.mime, parsed.data);
+  assert.match(uri, /^data:image\/jpeg;base64,/);
+  const filled = await backend.fillMemoImages(memo, backend.normalizeAssetAnswers("memo", { images: "auto" }), {
+    remainingMs: 120_000,
+    generate: async () => uri,
+  });
+  assert.equal(filled.benchmarks[0].image.src, uri);
+  const uploadMemo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", { images: "upload" }));
+  const skipped = await backend.fillMemoImages(uploadMemo, backend.normalizeAssetAnswers("memo", { images: "upload" }), {
+    remainingMs: 120_000,
+    generate: async () => { throw new Error("sollte nicht laufen"); },
+  });
+  assert.equal(skipped.benchmarks[0].image, undefined);
+  assert.equal(backend.ASSET_EDITED_HTML_LIMIT, 900_000);
+  assert.match(studio, /SAVE_LIMIT = 900000/);
+  assert.match(studio, /function openCropper/);
+  assert.match(studio, /function coverCrop/);
+  assert.match(studio, /MEMO_SHOT_PIXELS/);
+  assert.match(edge, /generateGeminiMemoImage/);
+  assert.match(edge, /GEMINI_IMAGE_MODEL/);
+  assert.match(edge, /fillMemoImages/);
+});
+
+test("das erkannte Unternehmen ist Briefing und überschreibbar", () => {
+  assert.equal(backend.resolveAssetCompany(
+    backend.normalizeAssetAnswers("memo", { company_mode: "auto" }),
+    { company: "Xpeng" },
+    { primary_company: "Aeffe" },
+  ), "Xpeng");
+  assert.equal(backend.resolveAssetCompany(
+    backend.normalizeAssetAnswers("memo", { company_mode: "custom", company_text: "Hugo Boss" }),
+    { company: "Xpeng" },
+  ), "Hugo Boss");
+  assert.match(studio, /companyFrom/);
+  assert.match(studio, /primary_company/);
+  assert.match(studio, /Nur Briefing/);
+  assert.match(edge, /resolveAssetCompany/);
+});
+
