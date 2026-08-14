@@ -209,13 +209,13 @@ test("Sales heisst Ansprache", () => {
 });
 
 test("die Werkbank bearbeitet in Echtzeit", () => {
-  // Nachweis ueber die Bausteine: bearbeitbare Felder, schwebende Leiste mit
-  // allen Formatbefehlen, Bildtausch, Variantenwechsel.
+  // Nachweis ueber die Bausteine: bearbeitbare Felder, Ribbon plus schwebende
+  // Leiste, Bildtausch, Variantenwechsel.
   for (const befehl of ["bold", "italic", "underline", "smaller", "larger", "left", "center", "right", "color", "list", "undo", "redo"]) {
     assert.ok(studio.includes(`data-fmt="${befehl}"`), `Formatbefehl ${befehl} fehlt`);
   }
   assert.match(studio, /data-act="img-pick"/);
-  assert.match(studio, /data-act="img-pos"/);
+  assert.match(studio, /class="as-img-btn"/);
   assert.match(studio, /data-act="variant"/);
   assert.match(studio, /function harvest\(\)/);
 });
@@ -1663,6 +1663,10 @@ test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   assert.match(studio, /function slotsHtml/);
   assert.match(studio, /data-act="form-img-pick"/);
   assert.match(studio, /function openCropper/);
+  assert.match(studio, /function openCropSheet/);
+  assert.match(studio, /as-crop-drop/);
+  assert.match(studio, /data-act="crop-browse"/);
+  assert.match(studio, /data-crop-mode="smart"/);
   assert.match(studio, /cropState\.uid === "form"/);
   assert.match(studio, /data-act="cancel-generate"/);
   assert.match(studio, /data-act="close-popup"/);
@@ -1683,5 +1687,27 @@ test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   const prompt = backend.buildAssetPrompt("memo", { company: "Coca-Cola" }, { title: "A" }, ohne);
   assert.match(prompt, /Kein Unternehmensname im Briefing/);
   assert.doesNotMatch(prompt, /für Coca-Cola/);
+});
+
+test("Bearbeiten: Platzhalter, Crop-Popup, Zoom, Rundung und leise Auswahl", () => {
+  assert.doesNotMatch(studio, /Bild zuschneiden/);
+  assert.match(studio, /class="as-img-btn"/);
+  assert.match(studio, /as-crop-drop/);
+  assert.match(studio, /function openCropSheet/);
+  assert.match(studio, /data-crop-mode="fill"/);
+  assert.match(studio, /data-crop-mode="smart"/);
+  assert.match(studio, /function smartCropPan/);
+  assert.match(studio, /state\.viewZoom/);
+  assert.match(studio, /onStageWheel/);
+  assert.match(studio, /fmtBar\.className = "as-fmt"/);
+  assert.match(studio, /lastFmtPos/);
+  assert.match(studio, /as-pagehost/);
+  assert.match(studio, /radial-gradient\(ellipse at 28% 38%/);
+  assert.match(studio, /box-shadow:0 0 0 1\.5px rgba\(100,116,139/);
+  assert.match(studio, /span\[data-field\]\[contenteditable="true"\]/);
+  assert.doesNotMatch(studio, /data-stagearea data-act="toggle-fs"/);
+  assert.match(studio, /as-pagehost"><div class="as-scaler"/);
+  assert.match(studio, /as-pagehost">[\s\S]*as-prev-big/);
+  assert.match(studio, /\.as-stage--memo \.em-page\{border-radius:14px/);
 });
 
