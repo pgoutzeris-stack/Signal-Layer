@@ -2074,6 +2074,41 @@ export function assetHangReason(
   return null;
 }
 
+const ASSET_DRAFT_TEXT_MAX = 100_000;
+const ASSET_FINISH_KICK_MAX = 4;
+const ASSET_FINISH_HANDOFF_AFTER_MS = 20_000;
+
+/** Rohtext der letzten gelungenen Modellantwort, für ein frisches Isolat. */
+export function assetDraftTextFromLog(log: unknown): string {
+  const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const text = String(rows[i]?.text || "").trim();
+    if (rows[i]?.event === "model_ok" && text) return text.slice(0, ASSET_DRAFT_TEXT_MAX);
+  }
+  return "";
+}
+
+export function assetFinishKickCount(log: unknown): number {
+  const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
+  return rows.filter((row) => row?.event === "handoff" || row?.event === "finish_start").length;
+}
+
+/**
+ * Text ist da, das Schreib-Isolat aber tot: Prüfung und Motive in einem
+ * neuen Isolat anstoßen, statt den Entwurf nach 180 s Stille zu verwerfen.
+ */
+export function assetFinishHandoffDue(
+  row: { status?: unknown; stage?: unknown; updated_at?: unknown; created_at?: unknown; run_log?: unknown },
+  nowMs = Date.now(),
+): boolean {
+  if (String(row.status || "") !== "running") return false;
+  if (!assetDraftTextFromLog(row.run_log)) return false;
+  if (assetFinishKickCount(row.run_log) >= ASSET_FINISH_KICK_MAX) return false;
+  const stage = String(row.stage || "");
+  if (!["pruefen", "bilder", "fuellen", "modell"].includes(stage)) return false;
+  return assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs) >= ASSET_FINISH_HANDOFF_AFTER_MS;
+}
+
 export function assetStageLabel(stage: string): string {
   switch (String(stage || "")) {
     case "recherchieren": return "bei der Vorreiter-Recherche";

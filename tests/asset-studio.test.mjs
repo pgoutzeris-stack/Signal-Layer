@@ -103,6 +103,7 @@ test("Frontend und Backend rufen dieselben Aktionen mit denselben Namen", () => 
   assert.match(studio, /api\("list_assets"/);
   assert.match(studio, /api\("cancel_asset"/);
   assert.match(edge, /case "generate_asset"/);
+  assert.match(edge, /case "finish_asset"/);
   assert.match(edge, /case "save_asset"/);
   assert.match(edge, /case "list_assets"/);
   assert.match(edge, /case "cancel_asset"/);
@@ -111,6 +112,7 @@ test("Frontend und Backend rufen dieselben Aktionen mit denselben Namen", () => 
   assert.ok(editorBlock.includes('"cancel_asset"'));
   assert.ok(!editorBlock.includes('"save_asset"'));
   assert.ok(!editorBlock.includes('"list_assets"'));
+  assert.ok(!editorBlock.includes('"finish_asset"'));
 });
 
 test("Tokens und Kosten stehen auch auf der Assetzeile", () => {
@@ -629,6 +631,24 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   backend.applyAssetPulse(log, { phase: "writing", chars: 40 }, now - 1_000, now);
   assert.equal(log.length, 1);
   assert.equal(log[0].chars, 40);
+  const draftLog = [
+    { event: "model_ok", text: "{\"title\":\"These\"}" },
+    { event: "stage", stage: "pruefen" },
+  ];
+  assert.equal(backend.assetDraftTextFromLog(draftLog), "{\"title\":\"These\"}");
+  const xpengTot = {
+    status: "running",
+    stage: "pruefen",
+    created_at: iso(now - 180_000),
+    updated_at: iso(now - 25_000),
+    run_log: draftLog,
+  };
+  assert.equal(backend.assetFinishHandoffDue(xpengTot, now), true);
+  assert.equal(backend.assetFinishHandoffDue({ ...xpengTot, updated_at: iso(now - 5_000) }, now), false);
+  assert.equal(backend.assetFinishHandoffDue({
+    ...xpengTot,
+    run_log: [...draftLog, { event: "handoff" }, { event: "finish_start" }, { event: "handoff" }, { event: "handoff" }],
+  }, now), false);
 });
 
 test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () => {
@@ -1330,7 +1350,12 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.equal(backend.ASSET_STREAM_KEEPALIVE_MS, 8_000);
   assert.equal(backend.ASSET_FIRST_BYTE_STALE_MS, 180_000);
   assert.equal(backend.MEMO_IMAGE_FETCH_MS, 90_000);
-  assert.match(edge, /MEMO_IMAGE_FETCH_MS/);
+  assert.match(edge, /triggerSelf\(\{ action: "finish_asset"/);
+  assert.match(edge, /handoff.*finish_asset/);
+  assert.match(edge, /async function finishGeneratedAsset/);
+  assert.match(edge, /text: String\(result\.text/);
+  assert.match(studio, /Prüfung läuft in einem neuen Schritt weiter/);
+  assert.match(studio, /Entwurf ist geprüft/);
   assert.equal(backend.geminiFinishAllowsParse("STOP"), true);
   assert.equal(backend.geminiFinishAllowsParse("MAX_TOKENS"), true);
   assert.equal(backend.geminiFinishAllowsParse("SAFETY"), false);
