@@ -1296,12 +1296,16 @@ function normalizeLinkedin(
     throw new Error("Nach dem Entfernen unsichtbarer Felder blieb kein Slide mit Inhalt.");
   }
 
-  const postText = richText(raw.post_text, 1_300)
-    || [kept[0].title, kept[0].takeaway || kept[0].subtitle].filter(Boolean).join("\n\n");
-  rejectUnattested([postText, ...kept.map(slidePlain)].join("\n"), corpus, "Beitrag oder Slides");
-  rejectRepeatedLeadNumbers(kept);
+  const eindeutig = dropRepeatedLeadNumberSlides(kept);
+  if (!eindeutig.length) {
+    throw new Error("Nach dem Entfernen doppelter Leitkennzahlen blieb kein Slide mit Inhalt.");
+  }
 
-  return { theme: answers.theme, post_text: postText, slides: kept };
+  const postText = richText(raw.post_text, 1_300)
+    || [eindeutig[0].title, eindeutig[0].takeaway || eindeutig[0].subtitle].filter(Boolean).join("\n\n");
+  rejectUnattested([postText, ...eindeutig.map(slidePlain)].join("\n"), corpus, "Beitrag oder Slides");
+
+  return { theme: answers.theme, post_text: postText, slides: eindeutig };
 }
 
 /** Dieselbe Ziffer auf zwei Folien. post_text darf alle Zahlen noch einmal nennen. */
@@ -1320,19 +1324,21 @@ function leadNumberKeys(value: string): string[] {
   return [...keys];
 }
 
-function rejectRepeatedLeadNumbers(slides: AssetSlide[]): void {
-  const firstSeen = new Map<string, number>();
-  for (let i = 0; i < slides.length; i += 1) {
-    for (const n of leadNumberKeys(slidePlain(slides[i]))) {
-      const prev = firstSeen.get(n);
-      if (prev !== undefined) {
-        throw new Error(
-          `Die Kennzahl ${n} steht auf Folie ${prev + 1} und Folie ${i + 1}. Jede Zahl nur auf einer Folie.`,
-        );
-      }
-      firstSeen.set(n, i);
-    }
+/**
+ * Spaetere Folie mit einer schon genannten Zahl streichen, nicht das ganze
+ * Karussell verwerfen. Ein zweiter Modellaufruf hat am 13.8.2026 das Isolate
+ * getoetet; die erste Antwort war nach dem Streichen brauchbar.
+ */
+function dropRepeatedLeadNumberSlides(slides: AssetSlide[]): AssetSlide[] {
+  const firstSeen = new Set<string>();
+  const kept: AssetSlide[] = [];
+  for (const slide of slides) {
+    const keys = leadNumberKeys(slidePlain(slide));
+    if (keys.some((n) => firstSeen.has(n))) continue;
+    for (const n of keys) firstSeen.add(n);
+    kept.push(slide);
   }
+  return kept;
 }
 
 function normalizeMemo(
@@ -1455,6 +1461,15 @@ export const ASSET_STAGE_HOLD_MS = 2_000;
 
 /** Paid-Plan-Isolate (400 s) minus Schreibpuffer. */
 export const ASSET_WALL_CLOCK_MS = 380_000;
+
+/**
+ * get_asset laeuft in einem neuen Isolate. Nach dem Tod des Auftrags-Isolats
+ * (~400 s) darf die Abfrage eine stehengebliebene running-Zeile schliessen.
+ */
+export const ASSET_STALE_MS = 400_000;
+
+export const ASSET_HANG_ERROR =
+  "Der Auftrag hat zu lange gedauert und wurde abgebrochen. Bitte denselben Auftrag noch einmal starten.";
 
 export function assetOutputTokenBudget(kind: AssetKind, answers: AssetAnswers): number {
   if (kind === "memo") return 4_000;
