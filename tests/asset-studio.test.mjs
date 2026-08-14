@@ -104,6 +104,7 @@ test("Frontend und Backend rufen dieselben Aktionen mit denselben Namen", () => 
   assert.match(studio, /api\("cancel_asset"/);
   assert.match(edge, /case "generate_asset"/);
   assert.match(edge, /case "finish_asset"/);
+  assert.match(edge, /case "retry_asset_model"/);
   assert.match(edge, /case "save_asset"/);
   assert.match(edge, /case "list_assets"/);
   assert.match(edge, /case "cancel_asset"/);
@@ -113,6 +114,7 @@ test("Frontend und Backend rufen dieselben Aktionen mit denselben Namen", () => 
   assert.ok(!editorBlock.includes('"save_asset"'));
   assert.ok(!editorBlock.includes('"list_assets"'));
   assert.ok(!editorBlock.includes('"finish_asset"'));
+  assert.ok(!editorBlock.includes('"retry_asset_model"'));
 });
 
 test("Tokens und Kosten stehen auch auf der Assetzeile", () => {
@@ -572,7 +574,8 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.match(edge, /applyAssetPulse/);
   assert.match(edge, /async function schliesseHangingAsset/);
   assert.match(edge, /assetHangReason/);
-  assert.match(edge, /schliesseHangingAsset\(admin, geladen/);
+  assert.match(edge, /schliesseHangingAsset\(admin, row/);
+  assert.match(edge, /pflegeLaufendesAsset\(admin, geladen/);
   assert.match(edge, /EDITOR_ACTIONS[\s\S]*generate_asset/);
   assert.doesNotMatch(studio, /Der Auftrag läuft weiter/);
   assert.match(studio, /sieben Minuten nicht fertig/);
@@ -649,6 +652,21 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
     ...xpengTot,
     run_log: [...draftLog, { event: "handoff" }, { event: "finish_start" }, { event: "handoff" }, { event: "handoff" }],
   }, now), false);
+  const totModell = {
+    status: "running",
+    stage: "modell",
+    created_at: iso(now - 330_000),
+    updated_at: iso(now - 185_000),
+    run_log: [{ event: "model_start" }, { event: "pulse", phase: "thinking", thinking_chars: 33093 }],
+  };
+  assert.equal(backend.assetModelRetryDue(totModell, now), true);
+  assert.equal(backend.assetModelRetryDue({ ...totModell, updated_at: iso(now - 5_000) }, now), false);
+  assert.equal(backend.assetModelRetryDue({
+    ...totModell,
+    run_log: [...totModell.run_log, { event: "retry_model" }, { event: "retry_model" }],
+  }, now), false);
+  assert.equal(backend.assetFinishHandoffDue(totModell, now), false);
+  assert.equal(backend.assetWriterLostLock([{ event: "retry_model" }]), true);
 });
 
 test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () => {
@@ -1353,8 +1371,12 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.match(edge, /triggerSelf\(\{ action: "finish_asset"/);
   assert.match(edge, /handoff.*finish_asset/);
   assert.match(edge, /async function finishGeneratedAsset/);
+  assert.match(edge, /async function retryGeneratedAssetModel/);
+  assert.match(edge, /assetModelRetryDue/);
+  assert.match(edge, /pflegeLaufendesAsset/);
   assert.match(edge, /text: String\(result\.text/);
   assert.match(studio, /Prüfung läuft in einem neuen Schritt weiter/);
+  assert.match(studio, /Schreiben wird in einem neuen Schritt wiederholt/);
   assert.match(studio, /Entwurf ist geprüft/);
   assert.equal(backend.geminiFinishAllowsParse("STOP"), true);
   assert.equal(backend.geminiFinishAllowsParse("MAX_TOKENS"), true);
