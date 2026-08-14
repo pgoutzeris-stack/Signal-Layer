@@ -174,6 +174,90 @@ function errorResponse(requestOrigin: string | null, message: string, status = 4
 }
 
 // ---------------------------------------------------------------------------
+// Bremse fuer abgewiesene Anfragen
+// ---------------------------------------------------------------------------
+// Die Function ist mit --no-verify-jwt deployt und damit fuer jeden im Netz
+// erreichbar. Sie weist Fremde zwar korrekt ab, aber jede Abweisung kostet
+// einen Aufruf und im Auth-Gate eine Auth- oder Datenbankabfrage. Gezaehlt wird
+// deshalb ausschliesslich, was am Gate scheitert. Wer sich gueltig ausweist -
+// angemeldete Nutzer, Cron, Crawler-Worker, Selbstaufrufe mit Service-Role -
+// erreicht die Zaehlung nie und kann folglich auch nie gebremst werden.
+//
+// Der Zaehler liegt im Arbeitsspeicher des Isolats, nicht in der Datenbank: ein
+// Schreibvorgang pro abgewiesener Anfrage waere genau die Last, die hier
+// verhindert werden soll. Mehrere Isolate zaehlen getrennt, die Grenze wirkt
+// also weicher als die Zahl vermuten laesst - zum Daempfen einer Flut reicht
+// das, und es kann nichts blockieren, was funktionieren soll.
+const REJECT_WINDOW_MS = 60_000;
+const REJECT_LIMIT = 40;
+const REJECT_BLOCK_MS = 60_000;
+const REJECT_MAX_TRACKED = 5_000;
+
+type RejectEntry = { count: number; windowStart: number; blockedUntil: number };
+const rejectCounters = new Map<string, RejectEntry>();
+
+// Ohne erkennbaren Absender wird nicht gebremst. Lieber eine Anfrage zu viel
+// durchlassen als eine echte abweisen.
+function rejectKey(req: Request): string | null {
+  const forwarded = req.headers.get("x-forwarded-for") || "";
+  const ip = forwarded.split(",")[0].trim() || (req.headers.get("x-real-ip") || "").trim();
+  return ip || null;
+}
+
+function pruneRejectCounters(now: number): void {
+  for (const [key, entry] of rejectCounters) {
+    if (entry.blockedUntil <= now && now - entry.windowStart > REJECT_WINDOW_MS) {
+      rejectCounters.delete(key);
+    }
+  }
+}
+
+function isRejectBlocked(req: Request): boolean {
+  const key = rejectKey(req);
+  if (!key) return false;
+  const entry = rejectCounters.get(key);
+  return Boolean(entry && entry.blockedUntil > Date.now());
+}
+
+function recordRejection(req: Request): void {
+  const key = rejectKey(req);
+  if (!key) return;
+  const now = Date.now();
+  let entry = rejectCounters.get(key);
+  if (!entry || now - entry.windowStart > REJECT_WINDOW_MS) {
+    if (!entry) {
+      if (rejectCounters.size >= REJECT_MAX_TRACKED) pruneRejectCounters(now);
+      // Speicher gedeckelt: im Zweifel nicht mitzaehlen statt unbegrenzt wachsen.
+      if (rejectCounters.size >= REJECT_MAX_TRACKED) return;
+    }
+    entry = { count: 0, windowStart: now, blockedUntil: 0 };
+    rejectCounters.set(key, entry);
+  }
+  entry.count += 1;
+  if (entry.count > REJECT_LIMIT) {
+    entry.blockedUntil = now + REJECT_BLOCK_MS;
+    entry.count = 0;
+    entry.windowStart = now;
+  }
+}
+
+function unauthorizedResponse(req: Request, origin: string | null): Response {
+  recordRejection(req);
+  return errorResponse(origin, "Unauthorized", 401);
+}
+
+function rejectBlockedResponse(origin: string | null): Response {
+  return new Response(JSON.stringify({ error: "Too many requests" }), {
+    status: 429,
+    headers: {
+      ...getCorsHeaders(origin),
+      "Content-Type": "application/json",
+      "Retry-After": String(Math.ceil(REJECT_BLOCK_MS / 1000)),
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Env / Admin client
 // ---------------------------------------------------------------------------
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -4602,6 +4686,13 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: getCorsHeaders(origin) });
   }
+
+  // Gesperrt ist nur, wer sich kurz zuvor wiederholt nicht ausweisen konnte.
+  // Der Vorabbruch spart genau die Auth- und Datenbankabfragen, die das Gate
+  // sonst fuer jede fremde Anfrage ausloest. Angemeldete Nutzer, Cron, Worker
+  // und Selbstaufrufe landen hier nie, weil sie nie gezaehlt werden.
+  if (isRejectBlocked(req)) return rejectBlockedResponse(origin);
+
   if (req.method !== "POST") {
     return errorResponse(origin, "Method not allowed", 405);
   }
@@ -4623,15 +4714,15 @@ Deno.serve(async (req: Request) => {
   if (["browser_queue_status", "browser_claim_jobs", "browser_submit_job", "browser_submit_source_job"].includes(action)) {
     const workerSecret = await getBrowserBatchSecret();
     const authorization = req.headers.get("authorization") || "";
-    if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return errorResponse(origin, "Unauthorized", 401);
+    if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return unauthorizedResponse(req, origin);
   } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs"].includes(action)) {
-    if (!isInternalCall(req)) return errorResponse(origin, "Unauthorized", 401);
+    if (!isInternalCall(req)) return unauthorizedResponse(req, origin);
   } else if (["process_analysis_worker", "process_analysis_batches"].includes(action)) {
     // Queue recovery may be started by the protected pg_cron/watchdog path;
     // every subsequent hop still self-authenticates with the service role.
     if (!isInternalCall(req)) {
       isScheduled = await isScheduledTrigger(req);
-      if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
+      if (!isScheduled) return unauthorizedResponse(req, origin);
     }
   } else if (action === "reformat_recent_articles") {
     // Self-refires via the service-role bearer; a user may also kick it off.
@@ -4639,7 +4730,7 @@ Deno.serve(async (req: Request) => {
       auth = await requireAuth(req);
       if (!auth) {
         isScheduled = await isScheduledTrigger(req);
-        if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
+        if (!isScheduled) return unauthorizedResponse(req, origin);
       }
     }
   } else if (action === "get_company_profile") {
@@ -4649,7 +4740,7 @@ Deno.serve(async (req: Request) => {
     isScheduled = await isScheduledTrigger(req);
     if (!isScheduled) {
       auth = await requireAuth(req);
-      if (!auth) return errorResponse(origin, "Unauthorized", 401);
+      if (!auth) return unauthorizedResponse(req, origin);
     }
   } else if (action === "set_ops_guard") {
     // Wird vom externen Waechter in GitHub Actions aufgerufen, der Anmeldung und
@@ -4664,14 +4755,14 @@ Deno.serve(async (req: Request) => {
       isScheduled = await isScheduledTrigger(req);
       if (!isScheduled) {
         auth = await requireAuth(req);
-        if (!auth) return errorResponse(origin, "Unauthorized", 401);
+        if (!auth) return unauthorizedResponse(req, origin);
       }
     }
   } else if (["resume_stalled_crawls", "resume_classification_backfill", "preview_classification", "classify_test_article", "start_classification_backfill"].includes(action)) {
     isScheduled = await isScheduledTrigger(req);
     if (!isScheduled) {
       auth = await requireAuth(req);
-      if (!auth) return errorResponse(origin, "Unauthorized", 401);
+      if (!auth) return unauthorizedResponse(req, origin);
     }
   } else if (["start_simple_run", "process_simple_run"].includes(action)) {
     // The simple analysis is a backend job: it is started from the operating
@@ -4681,7 +4772,7 @@ Deno.serve(async (req: Request) => {
       isScheduled = await isScheduledTrigger(req);
       if (!isScheduled) {
         auth = await requireAuth(req);
-        if (!auth) return errorResponse(origin, "Unauthorized", 401);
+        if (!auth) return unauthorizedResponse(req, origin);
       }
     }
   } else if (action === "process_simple_trigger_backfill") {
@@ -4689,17 +4780,17 @@ Deno.serve(async (req: Request) => {
     // gestartet; er ist kein frei aufrufbarer Analyse-Endpunkt.
     if (!isInternalCall(req)) {
       isScheduled = await isScheduledTrigger(req);
-      if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
+      if (!isScheduled) return unauthorizedResponse(req, origin);
     }
   } else if (action === "run_crawl") {
     auth = await requireAuth(req);
     if (!auth) {
       isScheduled = await isScheduledTrigger(req);
-      if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
+      if (!isScheduled) return unauthorizedResponse(req, origin);
     }
   } else {
     auth = await requireAuth(req);
-    if (!auth) return errorResponse(origin, "Unauthorized", 401);
+    if (!auth) return unauthorizedResponse(req, origin);
   }
 
   // Das normale Laden eines Steckbriefs bleibt lesbar. Eine ausdrücklich
