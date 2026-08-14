@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
 
@@ -172,6 +173,28 @@ test("the prompt receives descriptions only for family-relevant ROOTS services",
   assert.match(selected, /Die ersten 100 Tage als CMO: ROOTS priorisiert/);
   assert.match(selected, /Marketing Audit: ROOTS analysiert/);
   assert.doesNotMatch(selected, /D2P & Artwork Management/);
+});
+
+test("DeepSeek empty content is truncated reasoning, not a silent model", () => {
+  const empty = pipeline.parseDeepseekSimpleCompletion({
+    choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "langes Denken" } }],
+    usage: { prompt_tokens: 4800, completion_tokens: 4500, total_tokens: 9300, completion_tokens_details: { reasoning_tokens: 4500 } },
+  });
+  assert.equal(empty.text, "");
+  assert.equal(empty.usage.thinking, 4500);
+  assert.equal(empty.usage.output, 0);
+  assert.match(pipeline.deepseekEmptyAnswerMessage(empty, 4500) || "", /abgeschnitten/);
+
+  const ok = pipeline.parseDeepseekSimpleCompletion({
+    choices: [{ finish_reason: "stop", message: { content: "{\"is_signal\":true}" } }],
+    usage: { prompt_tokens: 4800, completion_tokens: 4000, total_tokens: 8800, completion_tokens_details: { reasoning_tokens: 3500 } },
+  });
+  assert.equal(ok.text, "{\"is_signal\":true}");
+  assert.equal(pipeline.deepseekEmptyAnswerMessage(ok, 8192), null);
+  assert.equal(pipeline.SIMPLE_DEEPSEEK_MAX_TOKENS, 8192);
+  const source = readFileSync(new URL("../supabase/functions/signal-layer/pipeline-simple.ts", import.meta.url), "utf8");
+  assert.match(source, /reasoning_effort: "low"/);
+  assert.match(source, /thinking: \{ type: "enabled" \}/);
 });
 
 test("all six-pillar services remain dynamically reachable", () => {
