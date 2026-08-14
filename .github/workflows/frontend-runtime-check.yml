@@ -7,16 +7,20 @@ on:
       - "app.js"
       - "simple-mode.js"
       - "status-state.mjs"
+      - "simple-view-state.mjs"
       - "index.html"
       - "tests/frontend-status.test.mjs"
+      - "tests/frontend-simple-view.test.mjs"
       - ".github/workflows/frontend-runtime-check.yml"
   pull_request:
     paths:
       - "app.js"
       - "simple-mode.js"
       - "status-state.mjs"
+      - "simple-view-state.mjs"
       - "index.html"
       - "tests/frontend-status.test.mjs"
+      - "tests/frontend-simple-view.test.mjs"
       - ".github/workflows/frontend-runtime-check.yml"
 
 permissions:
@@ -35,5 +39,6 @@ jobs:
           node --check app.js
           node --check simple-mode.js
           node --check status-state.mjs
+          node --check simple-view-state.mjs
       - name: Test startup status states
-        run: node --test tests/frontend-status.test.mjs
+        run: node --test tests/frontend-status.test.mjs tests/frontend-simple-view.test.mjs
