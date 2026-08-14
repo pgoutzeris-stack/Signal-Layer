@@ -105,6 +105,8 @@ import {
   assetOutputTokenBudget,
   assetRepairTimeoutMs,
   assetResponseSchema,
+  assetStageStaleMs,
+  assetStaleErrorText,
   assetTimeoutErrorText,
   buildAssetPrompt,
   buildAssetRepairPrompt,
@@ -2924,6 +2926,33 @@ async function assetForecastFromDb(
   } catch {
     return { ms: fallbackMs, sample_count: 0, median_tokens: null, scope: "fallback" };
   }
+}
+
+async function schliesseHangingAsset(
+  admin: ReturnType<typeof getAdminClient>,
+  row: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (String(row.status || "") !== "running") return null;
+  const created = Date.parse(String(row.created_at || ""));
+  const updated = Date.parse(String(row.updated_at || row.created_at || ""));
+  const jetzt = Date.now();
+  const wall = Number.isFinite(created) ? jetzt - created : 0;
+  const stageAge = Number.isFinite(updated) ? jetzt - updated : wall;
+  const limit = assetStageStaleMs(String(row.stage || ""), String(row.kind || ""), row.answers);
+  if (stageAge < limit && wall < ASSET_STALE_MS) return null;
+  const nachricht = wall >= ASSET_STALE_MS
+    ? ASSET_HANG_ERROR
+    : assetStaleErrorText(String(row.model || ""), String(row.stage || ""), stageAge);
+  await admin.schema("signal_layer").from("generated_assets")
+    .update({
+      status: "error",
+      error_message: nachricht,
+      duration_ms: wall || stageAge,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", row.id)
+    .eq("status", "running");
+  return { ...row, status: "error", error_message: nachricht, duration_ms: wall || stageAge };
 }
 
 async function fetchMitLimit(
@@ -8209,6 +8238,7 @@ Deno.serve(async (req: Request) => {
           const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
           if (!(await nochAktiv())) return;
           await abschnitt("modell");
+          loggen("model_start", { timeout_ms: timeoutMs });
           const callOpts = {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
             schema: assetResponseSchema(assetKind, assetAnswers, [
@@ -8421,7 +8451,12 @@ Deno.serve(async (req: Request) => {
         if (listKind) query = query.eq("kind", listKind);
         const { data: liste, error: listError } = await query;
         if (listError) return errorResponse(origin, listError.message, 500);
-        return corsResponse(origin, { assets: liste || [] });
+        const adminList = getAdminClient();
+        const assets = await Promise.all((liste || []).map(async (row) => {
+          const geschlossen = await schliesseHangingAsset(adminList, row as Record<string, unknown>);
+          return geschlossen || row;
+        }));
+        return corsResponse(origin, { assets });
       }
 
       case "get_asset": {
@@ -8432,24 +8467,8 @@ Deno.serve(async (req: Request) => {
           .from("generated_assets").select("*").eq("id", gefragteId).maybeSingle();
         if (ladeFehler) return errorResponse(origin, ladeFehler.message, 500);
         if (!geladen) return errorResponse(origin, "Asset nicht gefunden", 404);
-        if (geladen.status === "running") {
-          const seit = Date.parse(String(geladen.created_at || ""));
-          if (Number.isFinite(seit) && Date.now() - seit >= ASSET_STALE_MS) {
-            await admin.schema("signal_layer").from("generated_assets")
-              .update({
-                status: "error",
-                error_message: ASSET_HANG_ERROR,
-                duration_ms: Date.now() - seit,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", gefragteId)
-              .eq("status", "running");
-            const { data: erneut } = await admin.schema("signal_layer")
-              .from("generated_assets").select("*").eq("id", gefragteId).maybeSingle();
-            return corsResponse(origin, { asset: erneut || { ...geladen, status: "error", error_message: ASSET_HANG_ERROR } });
-          }
-        }
-        return corsResponse(origin, { asset: geladen });
+        const geschlossen = await schliesseHangingAsset(admin, geladen as Record<string, unknown>);
+        return corsResponse(origin, { asset: geschlossen || geladen });
       }
 
       case "save_asset": {
