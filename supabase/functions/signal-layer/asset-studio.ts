@@ -2077,6 +2077,7 @@ export function assetHangReason(
 const ASSET_DRAFT_TEXT_MAX = 100_000;
 const ASSET_FINISH_KICK_MAX = 4;
 const ASSET_FINISH_HANDOFF_AFTER_MS = 20_000;
+export const ASSET_MODEL_RETRY_MAX = 2;
 
 /** Rohtext der letzten gelungenen Modellantwort, für ein frisches Isolat. */
 export function assetDraftTextFromLog(log: unknown): string {
@@ -2107,6 +2108,33 @@ export function assetFinishHandoffDue(
   const stage = String(row.stage || "");
   if (!["pruefen", "bilder", "fuellen", "modell"].includes(stage)) return false;
   return assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs) >= ASSET_FINISH_HANDOFF_AFTER_MS;
+}
+
+export function assetModelRetryCount(log: unknown): number {
+  const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
+  return rows.filter((row) => row?.event === "retry_model").length;
+}
+
+/** Ein neuer Schreiber oder die Prüfung hat den Auftrag übernommen. */
+export function assetWriterLostLock(log: unknown): boolean {
+  const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
+  return rows.some((row) => row?.event === "retry_model" || row?.event === "handoff" || row?.event === "finish_start");
+}
+
+/**
+ * DeepSeek denkt, der Stream stirbt, kein Text: statt den Auftrag zu
+ * beenden, schreibt ein frisches Isolat denselben Prompt noch einmal.
+ * Xpeng 14.8.2026: 147 s Denken, dann 181 s Stille in modell.
+ */
+export function assetModelRetryDue(
+  row: { status?: unknown; stage?: unknown; updated_at?: unknown; created_at?: unknown; run_log?: unknown },
+  nowMs = Date.now(),
+): boolean {
+  if (String(row.status || "") !== "running") return false;
+  if (assetDraftTextFromLog(row.run_log)) return false;
+  if (String(row.stage || "") !== "modell") return false;
+  if (assetModelRetryCount(row.run_log) >= ASSET_MODEL_RETRY_MAX) return false;
+  return assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs) >= ASSET_FIRST_BYTE_STALE_MS;
 }
 
 export function assetStageLabel(stage: string): string {

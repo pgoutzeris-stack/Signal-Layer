@@ -799,8 +799,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1030";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1030";
+  import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1115";
+  import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1115";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1194,6 +1194,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "model_start") return "Modellaufruf gestartet";
     if (event === "model_ok") return "Text angekommen";
     if (event === "handoff") return "Prüfung läuft in einem neuen Schritt weiter";
+    if (event === "retry_model") return "Schreiben wird in einem neuen Schritt wiederholt";
     if (event === "finish_start") return "Belege und Längen werden geprüft";
     if (event === "payload_ok") return "Entwurf ist geprüft";
     if (event === "benchmarks_ok") {

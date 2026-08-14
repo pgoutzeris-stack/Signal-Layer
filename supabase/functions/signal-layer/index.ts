@@ -112,6 +112,8 @@ import {
   assetDraftTextFromLog,
   assetFinishHandoffDue,
   assetHangReason,
+  assetModelRetryDue,
+  assetWriterLostLock,
   assetHeartbeatAgeMs,
   assetHeartbeatErrorText,
   assetMangelIsRepairable,
@@ -3056,6 +3058,37 @@ async function schliesseHangingAsset(
   return { ...row, status: "error", error_message: nachricht, duration_ms: wall || stille };
 }
 
+async function pflegeLaufendesAsset(
+  admin: ReturnType<typeof getAdminClient>,
+  row: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (String(row.status || "") !== "running") return null;
+  const startedAt = Date.parse(String(row.created_at || "")) || Date.now();
+  const runLog = Array.isArray(row.run_log)
+    ? [...row.run_log as Record<string, unknown>[]]
+    : [];
+  if (assetFinishHandoffDue(row)) {
+    runLog.push({ t: Date.now() - startedAt, event: "handoff", to: "finish_asset", via: "watchdog" });
+    await admin.schema("signal_layer").from("generated_assets").update({
+      run_log: runLog,
+      updated_at: new Date().toISOString(),
+    }).eq("id", row.id).eq("status", "running");
+    triggerSelf({ action: "finish_asset", asset_id: String(row.id) }, 15_000);
+    return { ...row, run_log, updated_at: new Date().toISOString() };
+  }
+  if (assetModelRetryDue(row)) {
+    runLog.push({ t: Date.now() - startedAt, event: "retry_model", via: "watchdog" });
+    await admin.schema("signal_layer").from("generated_assets").update({
+      run_log: runLog,
+      stage: "modell",
+      updated_at: new Date().toISOString(),
+    }).eq("id", row.id).eq("status", "running");
+    triggerSelf({ action: "retry_asset_model", asset_id: String(row.id) }, 15_000);
+    return { ...row, run_log, stage: "modell", updated_at: new Date().toISOString() };
+  }
+  return schliesseHangingAsset(admin, row);
+}
+
 async function fetchMitLimit(
   url: string,
   init: RequestInit,
@@ -4970,6 +5003,132 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
   }
 }
 
+/**
+ * Das Schreib-Isolat ist nach einem toten Stream nicht mehr zu gebrauchen.
+ * Derselbe Prompt laeuft in einem frischen Isolat, danach wieder finish_asset.
+ */
+async function retryGeneratedAssetModel(assetId: string): Promise<void> {
+  const admin = getAdminClient();
+  const { data: row } = await admin.schema("signal_layer").from("generated_assets")
+    .select("*").eq("id", assetId).maybeSingle();
+  if (!row || String(row.status) !== "running") return;
+  if (assetDraftTextFromLog(row.run_log)) {
+    triggerSelf({ action: "finish_asset", asset_id: assetId }, 15_000);
+    return;
+  }
+
+  const startedAt = Date.parse(String(row.created_at || "")) || Date.now();
+  const runLog: Record<string, unknown>[] = Array.isArray(row.run_log)
+    ? [...row.run_log as Record<string, unknown>[]]
+    : [];
+  const loggen = (event: string, extra: Record<string, unknown> = {}) => {
+    runLog.push({ t: Date.now() - startedAt, event, ...extra });
+  };
+  const persist = (fields: Record<string, unknown>) => admin.schema("signal_layer")
+    .from("generated_assets")
+    .update({
+      run_log: runLog,
+      duration_ms: Date.now() - startedAt,
+      updated_at: new Date().toISOString(),
+      ...fields,
+    })
+    .eq("id", assetId)
+    .eq("status", "running");
+
+  try {
+    const assetKind = String(row.kind || "");
+    if (!isAssetKind(assetKind)) {
+      loggen("error", { code: "kind", message: "Unbekannte Assetart." });
+      await persist({ status: "error", error_message: "Unbekannte Assetart." });
+      return;
+    }
+
+    const [{ data: assetSignal }, { data: assetArticle, error: assetArticleError }] = await Promise.all([
+      admin.schema("signal_layer").from("simple_signals").select("*")
+        .eq("id", row.signal_id).maybeSingle(),
+      admin.schema("signal_layer").from("articles")
+        .select("id, title, title_de, url, published_at, content, cleaned_content, content_de, topics, territory, article_type, primary_company")
+        .eq("id", row.article_id).maybeSingle(),
+    ]);
+    if (assetArticleError || !assetArticle || !assetSignal) {
+      loggen("error", { code: "context", message: "Artikel oder Signal fehlt." });
+      await persist({ status: "error", error_message: "Artikel oder Signal für den neuen Schreibversuch fehlt." });
+      return;
+    }
+
+    const assetAnswers = normalizeAssetAnswers(assetKind, row.answers);
+    const articleTopics = Array.isArray(assetArticle.topics) ? assetArticle.topics as string[] : [];
+    const signalForAsset = {
+      ...assetSignal,
+      company: resolveAssetCompany(assetAnswers, assetSignal, assetArticle),
+      topics: articleTopics.length ? articleTopics : (assetSignal.signal_id ? [assetSignal.signal_id] : []),
+      territory: assetArticle.territory || assetSignal.territory || null,
+      article_type: assetArticle.article_type || assetSignal.article_type || null,
+    };
+    const assetConfig = await getPipelineConfig();
+    const assetModel = String(row.model || assetConfig.ai.simple_model || SIMPLE_MODEL);
+    const assetKey = await modelApiKey(assetModel);
+    if (!assetKey) {
+      await persist({ status: "error", error_message: `Für ${assetModel} ist kein API-Schlüssel hinterlegt` });
+      return;
+    }
+
+    let lastPulseAt = 0;
+    const onPulse = async (info: AssetPulse) => {
+      applyAssetPulse(runLog, { model: assetModel, ...info }, startedAt);
+      const now = Date.now();
+      if (now - lastPulseAt < ASSET_HEARTBEAT_PULSE_MS) return;
+      lastPulseAt = now;
+      await persist({});
+    };
+
+    const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
+    loggen("model_start", { stream: true, retry: true });
+    await persist({ stage: "modell" });
+    const result = await callJsonModel({
+      model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
+      schema: assetResponseSchema(assetKind, assetAnswers, [
+        assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
+      ].filter(Boolean).join("\n")),
+      maxOutputTokens: assetOutputTokenBudget(assetKind, assetAnswers),
+      maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
+      temperature: 0.35,
+      onPulse,
+      attempts: 2,
+      timeoutMs: assetModelTimeoutMs(assetKind, assetAnswers),
+      prompt,
+    });
+    if (!result.ok) {
+      loggen("model_fail", { status: result.status, error: String(result.error || "").slice(0, 300), retry: true });
+      await persist({
+        status: "error",
+        error_message: (result.error || "Der neue Schreibversuch ist fehlgeschlagen.").slice(0, 2000),
+      });
+      return;
+    }
+    loggen("model_ok", {
+      tokens: result.usage.total, thinking: result.usage.thinking, output: result.usage.output,
+      text: String(result.text || "").slice(0, 100_000),
+    });
+    loggen("handoff", { to: "finish_asset" });
+    const tokenFelder = {
+      input_tokens: result.usage.input + result.usage.cachedInput,
+      output_tokens: result.usage.output,
+      thinking_tokens: result.usage.thinking,
+      total_tokens: result.usage.total,
+    };
+    await persist({
+      stage: "pruefen",
+      ...tokenFelder,
+      cached_input_tokens: result.usage.cachedInput,
+    });
+    triggerSelf({ action: "finish_asset", asset_id: assetId }, 15_000);
+  } catch (fehler) {
+    loggen("error", { code: "retry_model", message: String(fehler).slice(0, 500) });
+    await persist({ status: "error", error_message: String(fehler).slice(0, 2000) }).catch(() => {});
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
@@ -5008,7 +5167,7 @@ Deno.serve(async (req: Request) => {
     const workerSecret = await getBrowserBatchSecret();
     const authorization = req.headers.get("authorization") || "";
     if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return unauthorizedResponse(req, origin);
-  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs", "finish_asset"].includes(action)) {
+  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs", "finish_asset", "retry_asset_model"].includes(action)) {
     if (!isInternalCall(req)) return unauthorizedResponse(req, origin);
   } else if (["process_analysis_worker", "process_analysis_batches"].includes(action)) {
     // Queue recovery may be started by the protected pg_cron/watchdog path;
@@ -8662,6 +8821,13 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { ok: true, asset_id: finishId });
       }
 
+      case "retry_asset_model": {
+        const retryId = String(body.asset_id || "");
+        if (!retryId) return errorResponse(origin, "asset_id fehlt");
+        EdgeRuntime.waitUntil(retryGeneratedAssetModel(retryId));
+        return corsResponse(origin, { ok: true, asset_id: retryId });
+      }
+
       case "generate_asset": {
         const assetCapacity = await checkCapacity("asset");
         if (!assetCapacity.ok) return capacityResponse(origin, assetCapacity);
@@ -8727,15 +8893,21 @@ Deno.serve(async (req: Request) => {
         // schreibt den Fehler, solange die Zeile noch running ist.
         const waechter = setTimeout(() => {
           const seit = Date.parse(String(assetRow.created_at || "")) || Date.now();
-          void getAdminClient().schema("signal_layer").from("generated_assets")
-            .update({
-              status: "error",
-              error_message: ASSET_HANG_ERROR,
-              duration_ms: Date.now() - seit,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", assetRow.id)
-            .eq("status", "running");
+          void (async () => {
+            const { data: live } = await getAdminClient().schema("signal_layer").from("generated_assets")
+              .select("status, run_log").eq("id", assetRow.id).maybeSingle();
+            if (String(live?.status || "") !== "running") return;
+            if (assetDraftTextFromLog(live?.run_log) || assetWriterLostLock(live?.run_log)) return;
+            await getAdminClient().schema("signal_layer").from("generated_assets")
+              .update({
+                status: "error",
+                error_message: ASSET_HANG_ERROR,
+                duration_ms: Date.now() - seit,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", assetRow.id)
+              .eq("status", "running");
+          })();
         }, ASSET_WALL_CLOCK_MS);
 
         const arbeit = (async () => {
@@ -8849,6 +9021,7 @@ Deno.serve(async (req: Request) => {
                 throw new Error(`${grund}\n\nOhne drei belastbare Vorreiter kann das Memo nicht gebaut werden. Im Fragebogen eigene Vorreiter eintragen.`);
               }
             }
+            await persist({ answers: assetAnswers });
           }
           const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
           if (!(await nochAktiv())) return;
@@ -8896,6 +9069,10 @@ Deno.serve(async (req: Request) => {
             attempt = 1,
             tokens: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number; total_tokens?: number } = {},
           ) => {
+            const { data: live } = await admin.schema("signal_layer").from("generated_assets")
+              .select("status, run_log").eq("id", assetRow.id).maybeSingle();
+            if (String(live?.status || "") !== "running") return;
+            if (assetDraftTextFromLog(live?.run_log) || assetWriterLostLock(live?.run_log)) return;
             loggen("error", { code, message: nachricht.slice(0, 500), tokens: tokens.total_tokens || 0 });
             await buchen("error", { ...kosten, error_code: code, error_message: nachricht.slice(0, 3000) }, attempt);
             await persist({
@@ -8945,6 +9122,10 @@ Deno.serve(async (req: Request) => {
           triggerSelf({ action: "finish_asset", asset_id: assetRow.id }, 15_000);
           return;
         })().catch(async (fehler) => {
+          const { data: live } = await getAdminClient().schema("signal_layer").from("generated_assets")
+            .select("status, run_log").eq("id", assetRow.id).maybeSingle();
+          if (String(live?.status || "") !== "running") return;
+          if (assetDraftTextFromLog(live?.run_log) || assetWriterLostLock(live?.run_log)) return;
           await getAdminClient().schema("signal_layer").from("generated_assets")
             .update({
               status: "error",
@@ -8992,8 +9173,8 @@ Deno.serve(async (req: Request) => {
         if (listError) return errorResponse(origin, listError.message, 500);
         const adminList = getAdminClient();
         const assets = await Promise.all((liste || []).map(async (row) => {
-          const geschlossen = await schliesseHangingAsset(adminList, row as Record<string, unknown>);
-          return geschlossen || row;
+          const gepflegt = await pflegeLaufendesAsset(adminList, row as Record<string, unknown>);
+          return gepflegt || row;
         }));
         return corsResponse(origin, { assets });
       }
@@ -9006,23 +9187,8 @@ Deno.serve(async (req: Request) => {
           .from("generated_assets").select("*").eq("id", gefragteId).maybeSingle();
         if (ladeFehler) return errorResponse(origin, ladeFehler.message, 500);
         if (!geladen) return errorResponse(origin, "Asset nicht gefunden", 404);
-        if (assetFinishHandoffDue(geladen)) {
-          const startedAt = Date.parse(String(geladen.created_at || "")) || Date.now();
-          const runLog = Array.isArray(geladen.run_log)
-            ? [...geladen.run_log as Record<string, unknown>[]]
-            : [];
-          runLog.push({ t: Date.now() - startedAt, event: "handoff", to: "finish_asset", via: "watchdog" });
-          await admin.schema("signal_layer").from("generated_assets").update({
-            run_log: runLog,
-            updated_at: new Date().toISOString(),
-          }).eq("id", geladen.id).eq("status", "running");
-          triggerSelf({ action: "finish_asset", asset_id: geladen.id }, 15_000);
-          return corsResponse(origin, {
-            asset: { ...geladen, run_log: runLog, updated_at: new Date().toISOString() },
-          });
-        }
-        const geschlossen = await schliesseHangingAsset(admin, geladen as Record<string, unknown>);
-        return corsResponse(origin, { asset: geschlossen || geladen });
+        const gepflegt = await pflegeLaufendesAsset(admin, geladen as Record<string, unknown>);
+        return corsResponse(origin, { asset: gepflegt || geladen });
       }
 
       case "save_asset": {
