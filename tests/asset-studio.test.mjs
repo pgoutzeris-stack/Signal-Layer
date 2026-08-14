@@ -364,12 +364,18 @@ test("die Vorschau ist ein Kasten, Memo blaettert seitenweise", () => {
   assert.match(studio, /as-prev-big\[data-kind="memo"\]\{aspect-ratio:210\/297;\}/);
   assert.doesNotMatch(studio, /210\/891/);
   assert.match(studio, /#as-overlay \.as-prev-big\{[^}]*padding:0/);
+  assert.match(studio, /#as-overlay \.as-prev-big\{[^}]*border:0/);
+  assert.match(studio, /as-prev-host/);
   assert.match(studio, /\.em-page\.is-off\{display:none/);
-  assert.match(studio, /Seite \$\{state\.prevIndex \+ 1\} von \$\{MEMO_SEITEN\}/);
-  assert.match(studio, /isMemo \? MEMO_SEITEN/);
+  assert.match(studio, /\.as-frame\.is-off\{display:none/);
+  assert.match(studio, /wort = isMemo \? "Seite"/);
+  assert.match(studio, /if \(isMemo\) return MEMO_SEITEN/);
+  assert.match(studio, /function markiereMemoSeiten/);
+  assert.match(studio, /function zeigeAktiveFolie/);
+  assert.match(studio, /availH \/ h/);
+  assert.doesNotMatch(studio, /isMemo && availH/);
   assert.match(studio, /MEMO_SEITE_PX\.h/);
   assert.doesNotMatch(studio, /3368/);
-  assert.match(studio, /function zeigeAktiveMemoSeite/);
   assert.match(studio, /classList\.remove\("is-off"\)/);
 });
 

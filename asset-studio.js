@@ -376,12 +376,15 @@ const CHROME_CSS = `
 #as-overlay .as-split2-form::-webkit-scrollbar-thumb{background:var(--line,#e2e8f0); border-radius:99px;}
 #as-overlay .as-split2-prev{position:sticky; top:0; display:flex; flex-direction:column; gap:8px; height:100%; min-height:0;}
 #as-overlay .as-prev-label{font-size:.68rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--muted,#475569);}
-/* Ein Kasten, ein Radius. Das Asset fuellt ihn kantenbuendig, ohne Innenabstand. */
-#as-overlay .as-prev-big{width:100%; aspect-ratio:1080/1350; max-height:100%; min-height:240px;
+/* Die Flaeche nimmt den Rest, die Kachel selbst ist genau das Asset. */
+#as-overlay .as-prev-host{flex:1 1 auto; min-height:0; width:100%; display:flex; align-items:center; justify-content:center;}
+#as-overlay .as-prev-big{max-width:100%; max-height:100%; min-height:0;
   box-sizing:border-box; display:flex; align-items:flex-start; justify-content:flex-start;
-  overflow:hidden; padding:0;
-  border:1px solid var(--line,#e2e8f0); border-radius:14px; background:#fff; position:relative;}
+  overflow:hidden; padding:0; border:0; border-radius:14px; background:#fff; position:relative;
+  box-shadow:0 12px 40px rgba(15,23,42,.14);}
+#as-overlay .as-prev-big[data-kind="linkedin"]{aspect-ratio:1080/1350;}
 #as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:210/297;}
+#as-overlay .as-prev-big:has(.as-prev-empty){width:auto; height:100%; max-width:100%;}
 #as-overlay .as-prev-scale{display:block; transform-origin:top left; flex:0 0 auto;}
 #as-overlay .as-prev-scale .as-stage,
 #as-overlay .as-prev-scale .li{box-shadow:none; border-radius:0;}
@@ -497,17 +500,14 @@ const CHROME_CSS = `
 #as-overlay .as-error strong{font-size:14px; color:var(--danger,#dc2626);}
 #as-overlay .as-error p{margin:0; font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word;}
 
-#as-overlay .as-work{display:grid; grid-template-columns:1fr 296px; gap:20px; align-items:start; min-height:100%;}
+#as-overlay .as-content:has(.as-work){overflow:hidden; display:flex; flex-direction:column;}
+#as-overlay .as-work{display:grid; grid-template-columns:1fr 296px; gap:20px; align-items:stretch;
+  flex:1; min-height:0; height:100%;}
 #as-overlay .as-work:not(:has(.as-inspector)){grid-template-columns:1fr;}
-#as-overlay .as-content:has(.as-work[data-kind="memo"]){overflow:hidden; display:flex; flex-direction:column;}
-#as-overlay .as-content:has(.as-work[data-kind="memo"]) .as-work{
-  flex:1; min-height:0; height:100%; align-items:stretch;
-}
-#as-overlay .as-work[data-kind="memo"] .as-stagearea{
-  min-height:0; height:100%; overflow:hidden; justify-content:center;
-}
-#as-overlay .as-stagearea{display:flex; flex-direction:column; gap:22px; align-items:center; min-width:0;}
-#as-overlay .as-frame{width:100%; display:flex; flex-direction:column; gap:8px; align-items:center; position:relative;}
+#as-overlay .as-stagearea{display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-width:0; min-height:0; height:100%; overflow:hidden; position:relative;}
+#as-overlay .as-frame{width:auto; max-width:100%; display:flex; flex-direction:column; gap:8px; align-items:center; position:relative;}
+#as-overlay .as-frame.is-off{display:none !important;}
 #as-overlay .as-scaler{position:relative; margin:0 auto; overflow:hidden; border-radius:14px;
   box-shadow:var(--shadow-lg,0 12px 40px rgba(15,23,42,.14));}
 #as-overlay .as-scaler > .as-stage{position:absolute; top:0; left:0; transform-origin:top left; border-radius:0;}
@@ -521,7 +521,7 @@ const CHROME_CSS = `
   font:inherit; font-size:13px; padding:6px 10px; border-radius:9px;
   border:1px solid var(--line,#e2e8f0); background:var(--bg,#fff); color:inherit;
 }
-#as-overlay .as-stage--memo{height:297mm; background:transparent;}
+#as-overlay .as-stage--memo{width:210mm !important; height:297mm !important; background:transparent;}
 #as-overlay .as-stage--memo .em-page.is-off{display:none !important;}
 
 #as-overlay .as-inspector{
@@ -622,8 +622,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0300";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0300";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0410";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0410";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -781,7 +781,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <div class="as-split2-form">${formHtml()}</div>
         <div class="as-split2-prev">
           <span class="as-prev-label">Vorschau</span>
-          <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
+          <div class="as-prev-host">
+            <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
+          </div>
         </div>
       </div>`;
     }
@@ -815,8 +817,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function livePreviewHtml() {
     if (isMemo) {
       if (state.prevIndex >= MEMO_SEITEN) state.prevIndex = 0;
-      const html = memoHtml(demoMemo(), false).replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, "");
-      return `<span class="as-prev-scale">${html}</span>${memoNavHtml()}`;
+      const html = markiereMemoSeiten(memoHtml(demoMemo(), false).replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, ""));
+      return `<span class="as-prev-scale">${html}</span>${blaetterNavHtml()}`;
     }
     // Entscheidet das Modell das Layout, gibt es nichts zu zeigen. Eine
     // beliebige Kachel waere geraten und damit irrefuehrend.
@@ -828,26 +830,32 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ? (state.answers.slide_mix === "custom" ? arten[state.prevIndex] : "")
       : state.answers.variant;
     if (!variante || variante === "auto" || !VARIANT_KEYS.includes(variante)) return platzhalterHtml();
-    const blaettern = carousel && arten.length > 1
-      ? `<div class="as-prev-nav">
-          <button type="button" data-act="prev-back" aria-label="Vorherige Slide"><i class="fa-solid fa-chevron-left"></i></button>
-          <span>Slide ${state.prevIndex + 1} von ${arten.length}</span>
-          <button type="button" data-act="prev-fwd" aria-label="Nächste Slide"><i class="fa-solid fa-chevron-right"></i></button>
-        </div>`
-      : "";
-    return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${blaettern}`;
+    return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${blaetterNavHtml()}`;
   }
 
-  function memoNavHtml() {
+  function blaetterAnzahl() {
+    if (isMemo) return MEMO_SEITEN;
+    if (state.step === "form") return Math.max(1, gewaehlteArten().length);
+    return Math.max(1, state.slides.length);
+  }
+
+  function blaetterNavHtml() {
+    const n = blaetterAnzahl();
+    if (n <= 1) return "";
+    const wort = isMemo ? "Seite" : "Slide";
     return `<div class="as-prev-nav">
-      <button type="button" data-act="prev-back" aria-label="Vorherige Seite"><i class="fa-solid fa-chevron-left"></i></button>
-      <span>Seite ${state.prevIndex + 1} von ${MEMO_SEITEN}</span>
-      <button type="button" data-act="prev-fwd" aria-label="Nächste Seite"><i class="fa-solid fa-chevron-right"></i></button>
+      <button type="button" data-act="prev-back" aria-label="Zurück"><i class="fa-solid fa-chevron-left"></i></button>
+      <span>${wort} ${state.prevIndex + 1} von ${n}</span>
+      <button type="button" data-act="prev-fwd" aria-label="Weiter"><i class="fa-solid fa-chevron-right"></i></button>
     </div>`;
   }
 
-  function vorschauAnzahl() {
-    return isMemo ? MEMO_SEITEN : Math.max(1, gewaehlteArten().length);
+  function markiereMemoSeiten(html) {
+    let n = 0;
+    return html.replace(/class="em-page/g, () => {
+      const i = n++;
+      return i === state.prevIndex ? 'class="em-page' : 'class="em-page is-off';
+    });
   }
 
   /** Nur die aktuelle Memo-Seite ist sichtbar, damit die Bühne eine A4-Seite misst. */
@@ -857,6 +865,31 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!seiten.length) return;
     if (state.prevIndex < 0 || state.prevIndex >= seiten.length) state.prevIndex = 0;
     seiten.forEach((seite, i) => seite.classList.toggle("is-off", i !== state.prevIndex));
+  }
+
+  function legeMemoSeiteMass(stage) {
+    if (!stage?.classList.contains("as-stage--memo")) return;
+    stage.style.width = "210mm";
+    stage.style.height = "297mm";
+  }
+
+  function zeigeAktiveFolie() {
+    if (isMemo) {
+      zeigeAktiveMemoSeite();
+      return;
+    }
+    const frames = [...shell.querySelectorAll("[data-stagearea] > .as-frame")];
+    if (!frames.length) return;
+    if (state.prevIndex < 0 || state.prevIndex >= frames.length) state.prevIndex = 0;
+    frames.forEach((frame, i) => frame.classList.toggle("is-off", i !== state.prevIndex));
+  }
+
+  function aktualisiereBlaetterLabel() {
+    const n = blaetterAnzahl();
+    const wort = isMemo ? "Seite" : "Slide";
+    shell.querySelectorAll(".as-prev-nav span").forEach((el) => {
+      el.textContent = `${wort} ${state.prevIndex + 1} von ${n}`;
+    });
   }
 
   /**
@@ -1545,17 +1578,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!area) return;
     if (isMemo) {
       if (!state.memo) return;
-      area.innerHTML = `<div class="as-frame">${memoNavHtml()}<div class="as-scaler">${memoHtml(state.memo)}</div></div>`;
+      if (state.prevIndex >= MEMO_SEITEN) state.prevIndex = 0;
+      area.innerHTML = `<div class="as-frame"><div class="as-scaler">${markiereMemoSeiten(memoHtml(state.memo))}</div></div>${blaetterNavHtml()}`;
     } else {
       if (!state.slides.length) return;
+      if (state.prevIndex >= state.slides.length) state.prevIndex = 0;
       area.innerHTML = state.slides.map((slide, index) => `
-        <div class="as-frame" data-uid="${attr(slide.uid)}">
+        <div class="as-frame${index === state.prevIndex ? "" : " is-off"}" data-uid="${attr(slide.uid)}">
           ${editable ? slideTools(slide, index) : ""}
           <div class="as-scaler">${slideHtml(slide)}</div>
         </div>`).join("")
-        + (editable && isCarousel()
-          ? `<button type="button" class="as-btn as-btn--ghost" data-act="slide-add"><i class="fa-solid fa-plus"></i>Slide hinzufügen</button>`
-          : "");
+        + blaetterNavHtml();
     }
     if (editable) {
       area.querySelectorAll("[data-field]").forEach((node) => {
@@ -1601,7 +1634,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <button type="button" class="as-btn as-btn--icon" data-act="slide-up" title="Nach oben" aria-label="Nach oben"><i class="fa-solid fa-arrow-up"></i></button>
       <button type="button" class="as-btn as-btn--icon" data-act="slide-down" title="Nach unten" aria-label="Nach unten"><i class="fa-solid fa-arrow-down"></i></button>
       <button type="button" class="as-btn as-btn--icon" data-act="slide-copy" title="Duplizieren" aria-label="Duplizieren"><i class="fa-regular fa-copy"></i></button>
-      <button type="button" class="as-btn as-btn--icon" data-act="slide-del" title="Löschen" aria-label="Löschen"><i class="fa-regular fa-trash-can"></i></button>` : "";
+      <button type="button" class="as-btn as-btn--icon" data-act="slide-del" title="Löschen" aria-label="Löschen"><i class="fa-regular fa-trash-can"></i></button>
+      <button type="button" class="as-btn as-btn--ghost" data-act="slide-add"><i class="fa-solid fa-plus"></i>Slide hinzufügen</button>` : "";
     return `<div class="as-slidetools" data-uid="${attr(slide.uid)}">
       <span class="as-num">Slide ${index + 1}</span>
       <select data-act="variant" aria-label="Variante">${opts}</select>
@@ -1617,16 +1651,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Passt die grosse Vorschau in ihre Spalte ein. Gleiche Rechnung wie fitStages. */
   function fitPreview() {
     const box = shell.querySelector("[data-livepreview]");
+    const host = box?.closest(".as-prev-host");
     const inner = box?.querySelector(".as-prev-scale");
     const stage = inner?.querySelector(".as-stage");
     // Ohne Buehne steht dort der Platzhalter - nichts einzupassen.
     if (!box || !inner || !stage) return;
     zeigeAktiveMemoSeite(box);
-    const breite = box.clientWidth || 1;
-    const hoehe = Math.max(box.clientHeight, 240);
+    legeMemoSeiteMass(stage);
+    const flaeche = host || box;
+    const breite = flaeche.clientWidth || 1;
+    const hoehe = Math.max(flaeche.clientHeight || 0, 240);
     const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
     const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
     const faktor = Math.min(breite / w, hoehe / h);
+    box.style.width = `${Math.round(w * faktor)}px`;
+    box.style.height = `${Math.round(h * faktor)}px`;
     inner.style.transform = `scale(${faktor})`;
     inner.style.width = `${w}px`;
     inner.style.height = `${h}px`;
@@ -1640,15 +1679,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function fitStages() {
     const area = shell.querySelector("[data-stagearea]");
     if (!area) return;
+    zeigeAktiveFolie();
     const availW = Math.max(240, area.clientWidth);
     const availH = Math.max(0, area.clientHeight);
     area.querySelectorAll(".as-scaler").forEach((scaler) => {
       const stage = scaler.querySelector(".as-stage");
       if (!stage) return;
-      zeigeAktiveMemoSeite(scaler);
+      legeMemoSeiteMass(stage);
       const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
       const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
-      const scale = isMemo && availH > 80
+      const scale = availH > 80
         ? Math.min(1, availW / w, availH / h)
         : Math.min(1, availW / w);
       scaler.style.width = `${Math.round(w * scale)}px`;
@@ -1873,6 +1913,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   #as-overlay .as-slidetools, #as-overlay .as-fmt, #as-overlay .as-prev-nav, #as-overlay [data-as-chrome]{display:none !important;}
   #as-overlay .as-main, #as-overlay .as-content{overflow:visible !important; padding:0 !important; border:0 !important;}
   #as-overlay .as-work{display:block !important;}
+  #as-overlay .as-stagearea{overflow:visible !important; height:auto !important;}
+  #as-overlay .as-frame.is-off{display:flex !important;}
   #as-overlay .as-scaler{width:auto !important; height:auto !important; box-shadow:none !important; overflow:visible !important; border-radius:0 !important;}
   #as-overlay .as-scaler > .as-stage{position:static !important; transform:none !important;}
   ${bruch}
@@ -2001,6 +2043,7 @@ ${stages}${post}
     harvest();
     const fresh = normalizeSlide({ variant: "B", footer_left: state.slides[0]?.footerLeft || company });
     state.slides.splice(after + 1, 0, fresh);
+    state.prevIndex = after + 1;
     mountStages(true);
   }
 
@@ -2011,6 +2054,7 @@ ${stages}${post}
     const copy = JSON.parse(JSON.stringify(state.slides[index]));
     copy.uid = uid();
     state.slides.splice(index + 1, 0, copy);
+    state.prevIndex = index + 1;
     mountStages(true);
   }
 
@@ -2062,7 +2106,7 @@ ${stages}${post}
     if (act === "toggle-layout") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
     if (act === "toggle-arten") { state.multiOffen = !state.multiOffen; zeichneForm(); return; }
     if (act === "prev-back" || act === "prev-fwd") {
-      const anzahl = vorschauAnzahl();
+      const anzahl = blaetterAnzahl();
       const richtung = act === "prev-fwd" ? 1 : -1;
       state.prevIndex = (state.prevIndex + richtung + anzahl) % anzahl;
       const box = shell.querySelector("[data-livepreview]");
@@ -2071,9 +2115,8 @@ ${stages}${post}
         fitPreview();
         return;
       }
-      zeigeAktiveMemoSeite();
-      const label = shell.querySelector("[data-stagearea] .as-prev-nav span");
-      if (label) label.textContent = `Seite ${state.prevIndex + 1} von ${MEMO_SEITEN}`;
+      zeigeAktiveFolie();
+      aktualisiereBlaetterLabel();
       fitStages();
       return;
     }
