@@ -6,6 +6,43 @@ const studio = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf
 const edge = readFileSync(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
 const backend = await import("../supabase/functions/signal-layer/asset-studio.ts");
 
+function dreiBenchmarks() {
+  return [
+    { name: "Marke A", text: "Hat den Hebel gezogen.", tag: "Eigenmarke zuerst", image_hint: "Regal" },
+    { name: "Marke B", text: "Hat den Kanal umgebaut.", tag: "Kanal vor Fläche", image_hint: "Shop" },
+    { name: "Marke C", text: "Hat die Marke geschärft.", tag: "Klarheit vor Breite", image_hint: "Kampagne" },
+  ];
+}
+
+function dreiPotenziale() {
+  return [
+    { title: "Vom Sortiment zur Marke", finding: "Eigenmarken stehen unverbunden.", potential: "ROOTS bündelt sie unter einer Führung.", image_hint: "Packshot" },
+    { title: "Vom Kanal zum System", finding: "Online und Fläche laufen getrennt.", potential: "Eine Handschrift über beide.", image_hint: "Store" },
+    { title: "Von der Kampagne zur Linie", finding: "Jede Saison neu erfunden.", potential: "Eine Linie, die hält.", image_hint: "Kampagne" },
+  ];
+}
+
+function memoRoh(extra = {}) {
+  return {
+    title: "Der Umbau braucht eine Entscheidung",
+    standfirst: "Lage und Beleg aus dem Artikel",
+    market_title: "Der Markt verschiebt sich",
+    market_p1: "Was im Markt passiert ist.",
+    market_p2: "Warum der Moment jetzt ist.",
+    kpis: [{ value: "14 %", label: "Anteil" }],
+    benchmark_title: "Vorreiter ziehen denselben Hebel",
+    benchmark_lead: "Drei Marken haben vorgemacht.",
+    benchmarks: dreiBenchmarks(),
+    potentials_title: "Drei Hebel für das Unternehmen",
+    potentials_lead: "Der Check zeigt drei Ansatzpunkte.",
+    potentials: dreiPotenziale(),
+    cta: "Sollen wir den Check gemeinsam durchgehen?",
+    about_fit: "ROOTS setzt hier mit Marketing Audit an.",
+    sources: ["Artikel · Blatt · 2026"],
+    ...extra,
+  };
+}
+
 test("beide Seiten kennen dieselben Assetarten und Varianten", () => {
   assert.deepEqual([...backend.ASSET_KINDS], ["linkedin", "memo"]);
   // Das Frontend fuehrt die Varianten in VARIANT_KEYS; ein Buchstabe, den nur
@@ -28,21 +65,12 @@ test("die Nutzlast des Backends passt zu den Feldern, die das Frontend liest", (
   }
   assert.equal(linkedin.theme, "dark");
 
-  const memo = backend.normalizeAssetPayload("memo", JSON.stringify({
-    title: "Der Umbau braucht eine Entscheidung",
-    standfirst: "Lage und Beleg",
-    kpis: [{ value: "14 %", label: "Anteil" }],
-    situation: [{ lead: "Anlass", text: "Grund" }],
-    options: [
-      { name: "Die Marke zuerst positionieren", pro: "schnell", contra: "teuer" },
-      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Zeit" },
-    ],
-    recommendation: "Weg A",
-    next_step: "Termin",
-  }), backend.normalizeAssetAnswers("memo", {}));
-  for (const feld of ["kicker", "title", "standfirst", "kpis", "situation", "options", "recommendation", "next_step", "cta", "sources", "confidential"]) {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
+  for (const feld of ["title", "standfirst", "market_title", "market_p1", "market_p2", "kpis", "benchmark_title", "benchmark_lead", "benchmarks", "potentials_title", "potentials_lead", "potentials", "cta", "about_fit", "sources"]) {
     assert.ok(feld in memo, `Memo-Feld ${feld} fehlt`);
   }
+  assert.equal(memo.benchmarks.length, 3);
+  assert.equal(memo.potentials.length, 3);
 });
 
 test("eine selbst gelieferte Storyline geht nicht verloren", () => {
@@ -205,6 +233,7 @@ test("Vorschau und fertiges Asset benutzen denselben Weg", () => {
   assert.match(studio, /function slideHtml\(slide, editable = true\)/);
   assert.match(studio, /function livePreviewHtml\(\)/);
   assert.match(studio, /slideHtml\(demoSlide\(variante\), false\)/);
+  assert.match(studio, /memoHtml\(demoMemo\(\), false\)/);
   // Schleifen fuer Aufzaehlung, Kennzahlen und Schritte
   assert.match(studio, /function expandRepeats\(html, slide\)/);
   for (const feld of ["bullets", "stats", "steps"]) {
@@ -383,7 +412,7 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
   assert.equal(backend.assetOutputTokenBudget("linkedin", single), 3_000);
   assert.equal(backend.assetOutputTokenBudget("linkedin", carousel4), 8_000);
   assert.equal(backend.assetOutputTokenBudget("linkedin", carousel6), 8_000);
-  assert.equal(backend.assetOutputTokenBudget("memo", memo), 4_000);
+  assert.equal(backend.assetOutputTokenBudget("memo", memo), 6_000);
   assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 20_000);
 
   // Ein gezielter zweiter Versuch, solange Isolat und Kill-Grenze Platz lassen.
@@ -625,35 +654,26 @@ test("post_text behält Absätze und das Leerzeichen vor Prozent", () => {
   assert.match(payload.post_text, /Jetzt den Termin setzen$/);
 });
 
-test("die Ansprache erzwingt ROOTS-Leistung, Rolle und echte Optionen", () => {
-  const memo = backend.normalizeAssetPayload("memo", JSON.stringify({
-    title: "Der Umbau braucht eine Entscheidung",
-    standfirst: "Lage und Beleg aus dem Artikel",
-    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
-    options: [
-      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
-      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
-      { name: "Nichts tun", pro: "Keine Kosten", contra: "Risiko bleibt" },
-    ],
-    recommendation: "Audit wählen",
-    next_step: "Nächste Woche klären",
-  }), backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }), {
+test("die Ansprache bindet die ROOTS-Leistung an about_fit und kennt den Adressaten", () => {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    about_fit: "Audit wählen",
+  })), backend.normalizeAssetAnswers("memo", { addressee: "company" }), {
     rootsOffering: "Marketing Audit + Markenstrategie",
-    buyingCenterRoles: ["Marketingleitung"],
   });
-  assert.match(memo.recommendation, /Marketing Audit/);
-  assert.match(memo.next_step, /Marketingleitung/);
-  assert.equal(memo.options.some((option) => /nichts tun/i.test(option.name)), false);
-  assert.equal(memo.confidential, "");
-  const intern = backend.normalizeAssetAnswers("memo", { reader_side: "intern", note: "intern" });
-  assert.equal(intern.reader_side, "intern");
-  assert.equal(intern.confidential, "Vertraulich · nur intern");
-  const kundeTrotzVermerk = backend.normalizeAssetAnswers("memo", { reader_side: "kunde", note: "intern" });
-  assert.equal(kundeTrotzVermerk.reader_side, "kunde");
-  assert.equal(kundeTrotzVermerk.confidential, "");
+  assert.match(memo.about_fit, /Marketing Audit/);
+  const person = backend.normalizeAssetAnswers("memo", { addressee: "person" });
+  assert.equal(person.addressee, "person");
+  const mehrere = backend.normalizeAssetAnswers("memo", { adressat: "mehrere" });
+  assert.equal(mehrere.addressee, "persons");
+  const firma = backend.normalizeAssetAnswers("memo", { audience: "unternehmen" });
+  assert.equal(firma.addressee, "company");
+  const auto = backend.normalizeAssetAnswers("memo", {});
+  assert.equal(auto.addressee, "auto");
+  assert.equal("reader_side" in auto, false);
+  assert.equal("confidential" in auto, false);
 });
 
-test("Prompt und Studio kennen Feldkarte, Leserseite und Überlauf-Gate", () => {
+test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", () => {
   const prompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
     backend.normalizeAssetAnswers("linkedin", {}));
   assert.doesNotMatch(prompt, /Der Kontrast/);
@@ -664,19 +684,29 @@ test("Prompt und Studio kennen Feldkarte, Leserseite und Überlauf-Gate", () => 
   const memoPrompt = backend.buildAssetPrompt("memo",
     { company: "Aeffe", roots_offering: "Marketing Audit + Markenstrategie", buying_center_roles: ["Vertrieb"] },
     { title: "A", content_de: "Der Artikel." },
-    backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }));
-  assert.match(memoPrompt, /Leserseite: Kundenpapier/);
+    backend.normalizeAssetAnswers("memo", { addressee: "company" }));
+  assert.match(memoPrompt, /<ziel>/);
+  assert.match(memoPrompt, /<zusammenhang>/);
+  assert.match(memoPrompt, /01 Marktdynamik/);
+  assert.match(memoPrompt, /Benchmarks/);
+  assert.match(memoPrompt, /Potenziale/);
   assert.match(memoPrompt, /Marketing Audit \+ Markenstrategie/);
-  assert.match(memoPrompt, /eine bis drei Kennzahlen/);
-  assert.match(memoPrompt, /Nichtstun/);
-  assert.match(studio, /key: "reader_side"/);
+  assert.match(memoPrompt, /about_fit/);
+  assert.doesNotMatch(memoPrompt, /Leserseite/);
+  assert.doesNotMatch(memoPrompt, /Nichtstun/);
+  assert.doesNotMatch(memoPrompt, /confidential/);
+  assert.doesNotMatch(studio, /label: "Vermerk"/);
+  assert.match(studio, /key: "addressee"/);
+  assert.doesNotMatch(studio, /key: "reader_side"/);
+  assert.doesNotMatch(studio, /key: "focus"/);
+  assert.doesNotMatch(studio, /key: "note"/);
   assert.match(studio, /function kachelUeberlauf/);
   assert.match(studio, /scrollWidth > 1082/);
   assert.match(studio, /Folie \$\{ueber\.join/);
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.4");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.5");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -685,7 +715,7 @@ test("Prompt und Studio kennen Feldkarte, Leserseite und Überlauf-Gate", () => 
     backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 }));
   assert.match(karussell, /Aufruf im sichtbaren Pointe-Feld/);
   assert.doesNotMatch(karussell, /letzte ist F, I oder K/);
-  assert.match(memoPrompt, /ROOTS handelt/);
+  assert.match(memoPrompt, /Türöffner/);
 });
 
 test("Tilden und Sterne zählen nicht gegen die Zeichenschwelle", () => {
@@ -728,46 +758,32 @@ test("unbelegte Ziffern im Begleittext fallen durch, Jahreszahlen nicht", () => 
   assert.deepEqual(backend.claimedNumbers("Klarna startet am 31.07.2026, 14 % verlieren den Überblick."), ["14"]);
 });
 
-test("Kundenpapier setzt ROOTS als Handelnden, nicht die Kundenrolle", () => {
-  const memo = backend.normalizeAssetPayload("memo", JSON.stringify({
-    title: "Der Umbau braucht eine Entscheidung",
-    standfirst: "Lage und Beleg aus dem Artikel",
-    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
-    options: [
-      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
-      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
-    ],
-    recommendation: "Audit wählen",
-    next_step: "In zwei Wochen einen Termin setzen",
-  }), backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }), {
+test("about_fit injiziert die ROOTS-Leistung, ohne eine Rolle anzuhängen", () => {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    about_fit: "Audit wählen",
+    cta: "Sollen wir den Check gemeinsam durchgehen?",
+  })), backend.normalizeAssetAnswers("memo", { addressee: "person" }), {
     rootsOffering: "Brand Audit",
     buyingCenterRoles: ["Marketingleiter"],
+    personName: "Christian Wiegand",
   });
-  assert.match(memo.next_step, /Marketingleiter/);
-  assert.match(memo.next_step, /Gespräch mit/);
-  assert.doesNotMatch(memo.next_step, /^Marketingleiter:/);
+  assert.match(memo.about_fit, /Brand Audit/);
+  assert.doesNotMatch(memo.cta, /Gespräch mit/);
+  assert.doesNotMatch(memo.about_fit, /Gespräch mit/);
 });
 
 test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
-  const memo = backend.normalizeAssetPayload("memo", JSON.stringify({
-    title: "Der Umbau braucht eine Entscheidung",
-    standfirst: "Lage und Beleg aus dem Artikel",
-    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
-    options: [
-      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
-      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
-    ],
-    recommendation: "Die ersten 100 Tage als CMO begleiten",
-    next_step: "Termin setzen",
-  }), backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }), {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    about_fit: "Die ersten 100 Tage als CMO begleiten",
+  })), backend.normalizeAssetAnswers("memo", { addressee: "person" }), {
     articleText: "Christian Wiegand übernimmt die Marketingleitung.",
     rootsOffering: "Die ersten 100 Tage als CMO + Markenpositionierung",
     buyingCenterRoles: ["Marketingleiter"],
   });
-  assert.match(memo.recommendation, /100 Tage/);
+  assert.match(memo.about_fit, /100 Tage/);
 });
 
-test("Prompt v1.4 kennt Bühne, Steckbrief und Kennzahlenliste", () => {
+test("Prompt v1.5 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -799,10 +815,14 @@ test("Prompt v1.4 kennt Bühne, Steckbrief und Kennzahlenliste", () => {
   const memo = backend.buildAssetPrompt("memo",
     { company: "Xpeng", roots_offering: "Marketing Audit", buying_center_roles: ["Marketingleitung"] },
     { title: "A", content_de: "Der Artikel ohne Zahl." },
-    backend.normalizeAssetAnswers("memo", { reader_side: "kunde" }));
-  assert.match(memo, /<signalfelder>/);
-  assert.match(memo, /roots_leistung gehört in recommendation/);
-  assert.match(memo, /evidence und artikel speisen situation/);
+    backend.normalizeAssetAnswers("memo", { addressee: "company" }));
+  assert.match(memo, /<ziel>/);
+  assert.match(memo, /roots_leistung/);
+  assert.match(memo, /about_fit/);
+  assert.match(memo, /genau drei/);
+  assert.doesNotMatch(memo, /<signalfelder>/);
+  assert.doesNotMatch(memo, /recommendation/);
+  assert.doesNotMatch(memo, /situation/);
 });
 
 test("Zahlwörter und Brüche brauchen denselben Beleg wie Ziffern", () => {
@@ -866,25 +886,15 @@ test("Infografik-Zeichnungen tragen Platzhalter statt Beispielzahlen", async () 
   assert.doesNotMatch(tpl.ASSET_LAYOUTS.T6, /Bestandsaufnahme/);
 });
 
-test("Ansprache injiziert Leistung und Rolle nur wenn sie fehlen", () => {
-  const answers = backend.normalizeAssetAnswers("memo", { reader_side: "kunde" });
-  const voll = backend.normalizeAssetPayload("memo", JSON.stringify({
-    title: "Der Umbau braucht eine Entscheidung",
-    standfirst: "Lage und Beleg aus dem Artikel",
-    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
-    options: [
-      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
-      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
-    ],
-    recommendation: "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.",
-    next_step: "ROOTS schlägt der Marketingleitung in den kommenden zwei Wochen einen Termin vor.",
-  }), answers, {
+test("Ansprache injiziert die Leistung nur wenn sie in about_fit fehlt", () => {
+  const answers = backend.normalizeAssetAnswers("memo", { addressee: "company" });
+  const voll = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    about_fit: "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.",
+  })), answers, {
     rootsOffering: "Marketing Audit + Markenstrategie",
     buyingCenterRoles: ["Marketingleitung"],
   });
-  assert.equal(voll.recommendation, "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.");
-  assert.equal(voll.next_step, "ROOTS schlägt der Marketingleitung in den kommenden zwei Wochen einen Termin vor.");
-  assert.doesNotMatch(voll.next_step, /Gespräch mit.*Gespräch mit/);
+  assert.equal(voll.about_fit, "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.");
 });
 
 test("dieselbe Leitkennzahl auf einer spaeteren Folie wird gestrichen", () => {
@@ -930,42 +940,63 @@ test("dieselbe Leitkennzahl auf einer spaeteren Folie wird gestrichen", () => {
   assert.equal(ok.slides[0].stat.value.includes("14"), true);
 });
 
-test("Person im next_step zählt als Adressat, Optionsname braucht ein Verb", () => {
-  const answers = backend.normalizeAssetAnswers("memo", { reader_side: "kunde" });
-  const basis = {
-    title: "Der Umbau braucht eine Entscheidung",
-    standfirst: "Lage und Beleg aus dem Artikel",
-    situation: [{ lead: "Anlass", text: "Was passiert ist." }],
-    recommendation: "Die Marke zuerst positionieren. ROOTS setzt hier mit Marketing Audit an.",
-  };
-  const mitPerson = backend.normalizeAssetPayload("memo", JSON.stringify({
-    ...basis,
-    options: [
-      { name: "Die Marke zuerst positionieren", pro: "Klarheit", contra: "Zeit" },
-      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
-    ],
-    next_step: "ROOTS schlägt Christian Wiegand in den kommenden zwei Wochen einen Termin vor.",
-  }), answers, {
+test("Person im Signal wird Adressat, ohne Gespräch-mit-Rolle anzuhängen", () => {
+  const answers = backend.normalizeAssetAnswers("memo", { addressee: "person" });
+  const mitPerson = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    about_fit: "ROOTS setzt hier mit Marketing Audit an.",
+    cta: "Sollen wir den Check gemeinsam durchgehen?",
+  })), answers, {
     rootsOffering: "Marketing Audit",
     buyingCenterRoles: ["Marketingleiter"],
     personName: "Christian Wiegand",
   });
-  assert.equal(mitPerson.next_step, "ROOTS schlägt Christian Wiegand in den kommenden zwei Wochen einen Termin vor.");
-  assert.doesNotMatch(mitPerson.next_step, /Gespräch mit/);
+  assert.equal(mitPerson.about_fit, "ROOTS setzt hier mit Marketing Audit an.");
+  assert.doesNotMatch(mitPerson.cta, /Gespräch mit/);
 
-  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify({
-    ...basis,
-    options: [
-      { name: "Technologie-Fokus", pro: "Klarheit", contra: "Zeit" },
-      { name: "Den Vertrieb zuerst ausbauen", pro: "Reichweite", contra: "Kosten" },
-    ],
-    next_step: "Termin setzen",
-  }), answers, { buyingCenterRoles: ["Marketingleiter"] }), /Stichwort/);
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    benchmarks: dreiBenchmarks().slice(0, 2),
+  })), answers), /drei Benchmarks/);
 
   const memoPrompt = backend.buildAssetPrompt("memo",
-    { company: "Xpeng", person_name: "Christian Wiegand", buying_center_roles: ["Marketingleiter"] },
+    { company: "Xpeng", person_name: "Christian Wiegand", person_role: "CMO", buying_center_roles: ["Marketingleiter"] },
     { title: "A", content_de: "Der Artikel." },
     answers);
   assert.match(memoPrompt, /Christian Wiegand/);
-  assert.match(memoPrompt, /keine Rolle extra/);
+  assert.match(memoPrompt, /Adressat, verbindlich/);
+  assert.doesNotMatch(memoPrompt, /keine Rolle extra/);
+  assert.doesNotMatch(memoPrompt, /Gespräch mit/);
+});
+
+test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
+  const tpl = await import("../memo-template.js");
+  assert.match(tpl.MEMO_TEMPLATE, /as-stage--memo/);
+  assert.equal((tpl.MEMO_TEMPLATE.match(/em-page/g) || []).length, 3);
+  assert.match(tpl.MEMO_TEMPLATE, /01 · Marktdynamik/);
+  assert.match(tpl.MEMO_TEMPLATE, /02 · Benchmarks/);
+  assert.match(tpl.MEMO_TEMPLATE, /03 · Potenziale/);
+  assert.match(tpl.MEMO_TEMPLATE, /Kontakt aufnehmen/);
+  assert.match(tpl.MEMO_TEMPLATE, /\{\{title\}\}/);
+  assert.match(tpl.MEMO_TEMPLATE, /\{\{market_title\}\}/);
+  assert.match(tpl.MEMO_TEMPLATE, /\{\{bm1_name\}\}/);
+  assert.match(tpl.MEMO_TEMPLATE, /\{\{pot1_finding\}\}/);
+  assert.match(tpl.MEMO_TEMPLATE, /\{\{cta\}\}/);
+  assert.match(tpl.MEMO_TEMPLATE, /\{\{about_fit\}\}/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.as-stage--memo/);
+  assert.match(studio, /from "\.\/memo-template\.js/);
+  assert.match(studio, /MEMO_TEMPLATE/);
+  assert.match(studio, /availH \/ h/);
+});
+
+test("unbelegte Ziffern in der Ansprache fallen durch, qualitative Benchmarks nicht", () => {
+  const answers = backend.normalizeAssetAnswers("memo", {});
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    market_p1: "70 % der Händler haben umgestellt.",
+    kpis: [],
+  })), answers, { articleText: "Der Markt bewegt sich. Vorreiter ziehen den Hebel." }), /unbelegte Zahlen/);
+
+  const ok = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    kpis: [],
+  })), answers, { articleText: "Der Markt bewegt sich. Vorreiter ziehen den Hebel." });
+  assert.equal(ok.benchmarks.length, 3);
+  assert.equal(ok.kpis.length, 0);
 });

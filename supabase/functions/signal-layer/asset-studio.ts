@@ -2,13 +2,13 @@
 // Asset Studio
 //
 // Aus einem geprueften Signal entsteht entweder ein LinkedIn-Asset (Marketing)
-// oder eine Entscheidervorlage (Sales). Dieses Modul kennt weder Datenbank noch
+// oder das Executive Memo (Sales). Dieses Modul kennt weder Datenbank noch
 // HTTP: es baut den Prompt, liefert das Antwortschema und haertet die
 // Modellantwort zu einer Nutzlast, auf deren Form sich das Frontend verlassen
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.4";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.5";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -91,14 +91,10 @@ export type LinkedinAnswers = {
 };
 
 export type MemoAnswers = {
-  audience: "geschaeftsfuehrung" | "marketingleitung" | "vertrieb" | "beirat";
-  /** Wer das Papier liest. Unabhaengig vom Adressaten im Briefkopf. */
-  reader_side: "kunde" | "intern";
-  scope: "one_page" | "two_pages";
-  focus: "lage" | "optionen" | "schritt";
+  /** Wen das Papier anredet. auto = aus Signal (Person, Rollen, Firma). */
+  addressee: "auto" | "person" | "persons" | "company";
   storyline: string;
   cta: string;
-  confidential: "" | "Vertraulich · nur intern";
 };
 
 export type AssetNormalizeContext = {
@@ -146,21 +142,25 @@ export type LinkedinPayload = {
   slides: AssetSlide[];
 };
 
-export type MemoOption = { name: string; pro: string; contra: string };
-export type MemoPoint = { lead: string; text: string };
+export type MemoBenchmark = { name: string; text: string; tag: string; image_hint: string };
+export type MemoPotential = { title: string; finding: string; potential: string; image_hint: string };
 
 export type MemoPayload = {
-  kicker: string;
   title: string;
   standfirst: string;
+  market_title: string;
+  market_p1: string;
+  market_p2: string;
   kpis: AssetStat[];
-  situation: MemoPoint[];
-  options: MemoOption[];
-  recommendation: string;
-  next_step: string;
+  benchmark_title: string;
+  benchmark_lead: string;
+  benchmarks: MemoBenchmark[];
+  potentials_title: string;
+  potentials_lead: string;
+  potentials: MemoPotential[];
   cta: string;
+  about_fit: string;
   sources: string[];
-  confidential: string;
 };
 
 export type AssetPayload = LinkedinPayload | MemoPayload;
@@ -478,24 +478,14 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
         .slice(0, 8),
     };
   }
-  const audience = pick(source, "audience", "adressat");
-  const scope = pick(source, "scope", "umfang");
-  const focus = pick(source, "focus", "schwerpunkt");
-  const note = pick(source, "confidential", "vermerk", "note");
-  const readerRaw = pick(source, "reader_side", "leserseite", "reader");
-  const intern = /intern|roots-intern|roots intern/i.test(readerRaw)
-    || (/vertraulich|intern|^true$|^ja$|^1$/i.test(note) && !readerRaw);
+  const adressat = pick(source, "addressee", "adressat", "audience");
   return {
-    audience: /beirat/i.test(audience) ? "beirat"
-      : /vertrieb|sales/i.test(audience) ? "vertrieb"
-      : /marketing/i.test(audience) ? "marketingleitung"
-      : "geschaeftsfuehrung",
-    reader_side: intern ? "intern" : "kunde",
-    scope: /zwei|two|^2/i.test(scope) ? "two_pages" : "one_page",
-    focus: /option/i.test(focus) ? "optionen" : /schritt|next/i.test(focus) ? "schritt" : "lage",
+    addressee: /persons|mehrere|buying.?center/i.test(adressat) ? "persons"
+      : /person|einzeln/i.test(adressat) ? "person"
+      : /company|unternehmen|firma/i.test(adressat) ? "company"
+      : "auto",
     storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
     cta: choiceText(source, ["cta"], ["cta_text"], 240),
-    confidential: intern && /vertraulich|intern|^true$|^ja$|^1$/i.test(note) ? "Vertraulich · nur intern" : "",
   };
 }
 
@@ -727,7 +717,7 @@ export function allowedSlideKeys(answers: LinkedinAnswers, articleText = ""): As
 const ASSETTYP_BRIEFING = `<assettypen>
 LinkedIn Einzelbild: eine These, ein Gedanke. Genau ein sichtbares Feld trägt die Pointe. Foto-Layouts C, D und J nur, wenn der Nutzer sie gewählt hat; die Datei kommt vom Nutzer.
 LinkedIn Karussell: Folge von Gedanken, keine Wiederholung. Erste Folie setzt die These. Jede mittlere Folie einen Beleg oder Gegensatz. Dieselbe Ziffer darf nicht auf zwei Folien die Pointe tragen. Letzte Folie den Aufruf im sichtbaren Feld (F, I oder K passen oft).
-Ansprache: Entscheiderpapier in einer Minute. Lage aus dem Artikel. Optionen-name ist ein Satz mit Verb, kein Stichwort. Empfehlung nennt eine Option plus roots_leistung. next_step ist ein Angebot von ROOTS an person oder eine Rolle aus betroffene_rollen — nicht beides hintereinander.
+Ansprache: immer dasselbe Executive Memo, drei Seiten. Kein internes Vermerk, keine Optionsmatrix. Cover setzt den Moment. Seite 2 belegt ihn (Markt, Kennzahlen, drei Benchmarks). Seite 3 macht ihn für den Adressaten konkret (drei Potenziale) und holt das Gespräch.
 </assettypen>`;
 
 const LEITKENNZAHL = `<leitkennzahl>
@@ -807,71 +797,68 @@ ${daten}
 Antworte ausschliesslich mit einem JSON-Objekt nach dem verlangten Schema, ohne Text davor oder danach.`;
 }
 
-const MEMO_AUDIENCE_LABEL: Record<MemoAnswers["audience"], string> = {
-  geschaeftsfuehrung: "Geschäftsführung",
-  marketingleitung: "Marketingleitung",
-  vertrieb: "Vertrieb",
-  beirat: "Beirat",
-};
-
-const MEMO_FOCUS_LABEL: Record<MemoAnswers["focus"], string> = {
-  lage: "Lage und Anlass",
-  optionen: "Handlungsoptionen",
-  schritt: "Nächster Schritt",
-};
+function memoAddresseeLine(answers: MemoAnswers, signal: AssetSignalInput): string {
+  const person = asData(signal.person_name, 120);
+  const rollen = list(signal.buying_center_roles, 6, 80);
+  const firma = asData(signal.company, 120) || "das Unternehmen";
+  if (answers.addressee === "person") {
+    return person
+      ? `Adressat, verbindlich: ${person}${signal.person_role ? `, ${asData(signal.person_role, 80)}` : ""}. Sprache an diese eine Person.`
+      : `Adressat: die verantwortliche Person. Im Signal steht keine; nimm ${firma}.`;
+  }
+  if (answers.addressee === "persons") {
+    return rollen.length
+      ? `Adressat, verbindlich: mehrere Rollen (${rollen.join(", ")}). Kein einzelner Briefkopf-Name.`
+      : `Adressat: das Buying Center von ${firma}.`;
+  }
+  if (answers.addressee === "company") {
+    return `Adressat, verbindlich: ${firma} als Unternehmen, nicht eine Einzelperson.`;
+  }
+  if (person) return `Adressat: das Modell wählt sinnvoll. Person im Signal: ${person}. Sonst Rollen (${rollen.join(", ") || "keine"}) oder ${firma}.`;
+  if (rollen.length) return `Adressat: das Modell wählt sinnvoll. Rollen im Signal: ${rollen.join(", ")}. Sonst ${firma}.`;
+  return `Adressat: das Modell wählt sinnvoll, hier ${firma}.`;
+}
 
 function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: string): string {
-  const unternehmen = asData(signal.company, 120) || "das Unternehmen";
   const leistung = asData(signal.roots_offering, 240);
-  const rollen = list(signal.buying_center_roles, 6, 80);
-  const leser = answers.reader_side === "intern"
-    ? "Leserseite: ROOTS-intern. Arbeitsaufträge an das eigene Team sind erlaubt. Der Vermerk „Vertraulich · nur intern\" gilt nur hier."
-    : "Leserseite: Kundenpapier. Kein interner Vermerk, keine Arbeitsaufträge an den Kunden, als wäre er Mitarbeitender. next_step: ROOTS handelt (schlägt Termin oder Angebot vor). Die Rolle aus betroffene_rollen ist Adressat, nicht der Imperativ-Täter.";
   const auftrag = [
-    `Adressat: ${MEMO_AUDIENCE_LABEL[answers.audience]}. Das ist die Rolle im Briefkopf, nicht die Leserseite.`,
-    leser,
-    `Umfang: ${answers.scope === "two_pages" ? "zwei Seiten, also ausführlichere Punkte" : "eine Seite, also knappe Punkte"}.`,
-    `Schwerpunkt: ${MEMO_FOCUS_LABEL[answers.focus]}, dieser Teil trägt das Dokument.`,
+    memoAddresseeLine(answers, signal),
     answers.storyline
-      ? `Storyline, verbindlich: ${answers.storyline}`
-      : "Storyline: entwickle sie selbst aus signal und artikel.",
+      ? `Inhalt, verbindlich: ${answers.storyline}`
+      : "Inhalt: das Modell schreibt aus signal und artikel.",
     answers.cta
-      ? `Handlungsaufruf, verbindlich: ${answers.cta}`
-      : "Handlungsaufruf: formuliere ihn selbst, konkret und ohne Werbeton.",
-    leistung ? `ROOTS-Leistung, verbindlich in recommendation nennen: ${leistung}.` : "",
-    asData(signal.person_name, 120)
-      ? `person im Signal: ${asData(signal.person_name, 120)}. next_step darf diese Person als Adressat nennen; dann keine Rolle extra anhängen.`
-      : "",
-    rollen.length
-      ? (answers.reader_side === "intern"
-        ? `next_step nennt eine dieser Rollen als handelnde Verantwortung: ${rollen.join(", ")}.`
-        : `next_step nennt eine dieser Rollen als Adressat des ROOTS-Angebots: ${rollen.join(", ")}.`)
-      : "",
+      ? `Handlungsaufruf, verbindlich in cta (die Frage im blauen Band): ${answers.cta}`
+      : "cta: eine Gesprächsfrage, die den Adressaten meint. Der Knopftext ist fest „Kontakt aufnehmen“.",
+    leistung ? `ROOTS-Leistung ${leistung} gehört in about_fit, einen Satz, warum ROOTS hier ansetzt.` : "",
   ].filter(Boolean).join("\n");
 
-  return `Du erstellst eine Entscheidervorlage für ROOTS Brand Strategy Consultants aus einem geprüften Signal. Sie liegt einer Entscheiderin oder einem Entscheider vor und muss in einer Minute lesbar sein.
+  return `Du erstellst das ROOTS Executive Memo. Es ist immer dasselbe Dokument aus drei A4-Seiten. Ziel: in einer Minute steht fest, warum jetzt gehandelt werden muss, und ROOTS holt das Gespräch. Es ist ein Türöffner, keine Strategiearbeit, keine Optionsmatrix, kein internes Vermerk.
 
 ${ASSETTYP_BRIEFING}
+<ziel>
+Das Memo überzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu sprechen. Cover = der strategische Moment. Seite 2 belegt ihn. Seite 3 macht ihn für DIESES Unternehmen konkret und endet mit dem Angebot.
+</ziel>
+<zusammenhang>
+title und standfirst auf dem Cover sind die These. market_title und die KPIs belegen, dass der Markt sich bewegt. Die drei benchmarks zeigen Vorreiter, die denselben Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation.
+</zusammenhang>
 <auftrag>
 ${auftrag}
 </auftrag>
-<signalfelder>
-roots_leistung gehört in recommendation, nicht in die Lage.
-betroffene_rollen ist der Adressat von next_step, nicht der Imperativ-Täter im Kundenpapier.
-evidence und artikel speisen situation. Das ist keine interne ROOTS-Lage.
-</signalfelder>
-${LEITKENNZAHL}
 <aufbau>
-kicker: „Entscheidervorlage · ${unternehmen}“.
-title: der Action Title, eine These mit Verb, höchstens 15 Wörter.
-standfirst: der tragende Gedanke in einem Satz, dahinter ein stützender Beleg aus dem Artikel.
-kpis: eine bis drei Kennzahlen mit kurzem value und erklärendem label. Nur belegte, ausgeschriebene Zahlen aus kennzahlen_im_artikel. Liegt keine Ziffer vor, lass kpis leer — erfinde keine qualitativen Ersatzgrössen als Zahl.
-situation: zwei bis vier Punkte zu Lage und Anlass, je mit lead als Stichwort und text als Satz. Nur aus artikel und evidence.
-options: zwei bis drei Handlungsoptionen mit name, pro und contra. name ist ein Satz mit Verb, kein Stichwort („Technologie-Fokus“ ist unbrauchbar, „Die Marke zuerst positionieren“ trägt). Optionen unterscheiden sich in der Sache, nicht im Zeitpunkt. Nichtstun, Abwarten und „später dasselbe" sind keine Optionen.
-recommendation: die Empfehlung in einem Satz, sie benennt eine der Optionen und die ROOTS-Leistung aus roots_leistung.
-next_step: ein Angebot von ROOTS an person oder eine Rolle aus betroffene_rollen, mit zeitlichem Bezug. Die Person aus dem Signal zählt als Adressat. Kein zweiter Satz „Gespräch mit Rolle“, wenn der Adressat schon genannt ist. Kein Arbeitsauftrag an den Kunden.
-cta: der Text des Handlungsknopfs, höchstens fünf Wörter.
-sources: die verwendeten Quellen im Format „Titel · Herausgeber · Jahr“, nur was in signal oder artikel steht.
+title: Action Title, These mit Verb, höchstens 15 Wörter. Der strategische Moment für das Unternehmen.
+standfirst: ein bis zwei Sätze, warum der Moment jetzt ist. Beleg aus dem Artikel, keine zweite These.
+market_title: Überschrift von 01 Marktdynamik. Die Kategorie oder der Markt, nicht das Unternehmen.
+market_p1, market_p2: je ein Absatz. Lage des Marktes, dann warum der Moment jetzt ist. Zahlen nur aus kennzahlen_im_artikel.
+kpis: drei oder vier belegte Kennzahlen. value kurz, label erklärt den Bezug. Leer, wenn keine Ziffer vorliegt.
+benchmark_title: Überschrift von 02. Was Vorreiter richtig machen.
+benchmark_lead: ein Satz, worin der Hebel liegt.
+benchmarks: genau drei. name ist die Firma oder Marke (fett), text der Beleg ohne erfundene Zahl, tag die Lehre in wenigen Worten, image_hint das Motiv in Worten. Qualitative Analogie ist erlaubt, Ziffern nur mit Beleg.
+potentials_title: Überschrift von 03. Der Channel- oder Lage-Check DIESES Unternehmens.
+potentials_lead: ein Satz, wie viele Ansatzpunkte der Check zeigt.
+potentials: genau drei. title mit Verb oder Gegensatz („vom … zur …“). finding = belegter Zustand aus artikel oder evidence. potential = was ROOTS daraus macht, ohne erfundene Zahl. image_hint das Motiv.
+cta: die Frage im blauen Band, an den Adressaten, ohne Werbeton.
+about_fit: ein Satz, der roots_leistung an diesen Fall bindet. Der ROOTS-Stammtext davor ist fest.
+sources: „Titel · Herausgeber · Jahr“, nur Belege aus signal oder artikel.
 </aufbau>
 ${SPRACHREGELN}
 ${BELEGREGELN}
@@ -898,9 +885,8 @@ export function buildAssetPrompt(
 // Antwortschema in Gemini-Form. describeSchema in index.ts baut daraus den
 // JSON-Hinweis fuer Anbieter, die kein Schema erzwingen koennen.
 //
-// theme und confidential stehen bewusst nicht im Schema: beide entscheidet der
-// Fragebogen, nicht das Modell. normalizeAssetPayload setzt sie aus den
-// Antworten.
+// theme steht bewusst nicht im Schema: das entscheidet der Fragebogen,
+// nicht das Modell. normalizeAssetPayload setzt sie aus den Antworten.
 // ---------------------------------------------------------------------------
 const STAT_SCHEMA = {
   type: "OBJECT",
@@ -961,42 +947,46 @@ export const ASSET_SCHEMA_LINKEDIN = {
   },
 };
 
+const BENCH_SCHEMA = {
+  type: "OBJECT",
+  required: ["name", "text", "tag"],
+  properties: {
+    name: { type: "STRING", description: "Firma oder Marke des Vorreiters." },
+    text: { type: "STRING", description: "Beleg, was der Vorreiter getan hat. Ziffern nur mit Artikelbeleg." },
+    tag: { type: "STRING", description: "Übertragbare Lehre in wenigen Worten." },
+    image_hint: { type: "STRING", description: "Bildmotiv in Worten. Die Datei kommt vom Nutzer." },
+  },
+};
+
+const POT_SCHEMA = {
+  type: "OBJECT",
+  required: ["title", "finding", "potential"],
+  properties: {
+    title: { type: "STRING", description: "Hebel mit Verb oder Gegensatz, etwa „vom … zur …“." },
+    finding: { type: "STRING", description: "Befund: belegter Zustand aus artikel oder evidence." },
+    potential: { type: "STRING", description: "Was ROOTS daraus macht, ohne erfundene Zahl." },
+    image_hint: { type: "STRING", description: "Bildmotiv in Worten. Die Datei kommt vom Nutzer." },
+  },
+};
+
 export const ASSET_SCHEMA_MEMO = {
   type: "OBJECT",
-  required: ["kicker", "title", "standfirst", "situation", "options", "recommendation", "next_step", "cta", "sources"],
+  required: ["title", "standfirst", "market_title", "market_p1", "benchmarks", "potentials", "cta"],
   properties: {
-    kicker: { type: "STRING", description: "„Entscheidervorlage · Unternehmen“." },
     title: { type: "STRING", description: "Action Title, These mit Verb, höchstens 15 Wörter." },
-    standfirst: { type: "STRING", description: "Tragender Gedanke in einem Satz plus ein stützender Beleg." },
-    kpis: { type: "ARRAY", items: STAT_SCHEMA, description: "Eine bis drei belegte Kennzahlen. Leer, wenn keine Ziffer vorliegt." },
-    situation: {
-      type: "ARRAY",
-      description: "Zwei bis vier Punkte zu Lage und Anlass.",
-      items: {
-        type: "OBJECT",
-        required: ["lead", "text"],
-        properties: {
-          lead: { type: "STRING", description: "Stichwort des Punkts." },
-          text: { type: "STRING", description: "Ein Satz, belegt." },
-        },
-      },
-    },
-    options: {
-      type: "ARRAY",
-      description: "Zwei bis drei Optionen, die sich in der Sache unterscheiden. Nichtstun ist keine Option.",
-      items: {
-        type: "OBJECT",
-        required: ["name", "pro", "contra"],
-        properties: {
-          name: { type: "STRING", description: "Satz mit Verb, kein Stichwort." },
-          pro: { type: "STRING" },
-          contra: { type: "STRING" },
-        },
-      },
-    },
-    recommendation: { type: "STRING", description: "Empfehlung in einem Satz, benennt eine Option und die ROOTS-Leistung." },
-    next_step: { type: "STRING", description: "Angebot von ROOTS an person oder eine betroffene Rolle, mit zeitlichem Bezug. Kein zweiter Satz, wenn der Adressat schon genannt ist." },
-    cta: { type: "STRING", description: "Text des Handlungsknopfs, höchstens fünf Wörter." },
+    standfirst: { type: "STRING", description: "Ein bis zwei Sätze, warum der Moment jetzt ist." },
+    market_title: { type: "STRING", description: "Überschrift von 01 Marktdynamik. Kategorie oder Markt, nicht das Unternehmen." },
+    market_p1: { type: "STRING", description: "Erster Absatz: Lage des Marktes." },
+    market_p2: { type: "STRING", description: "Zweiter Absatz: warum der Moment jetzt ist." },
+    kpis: { type: "ARRAY", items: STAT_SCHEMA, description: "Drei oder vier belegte Kennzahlen. Leer, wenn keine Ziffer vorliegt." },
+    benchmark_title: { type: "STRING", description: "Überschrift von 02 Benchmarks." },
+    benchmark_lead: { type: "STRING", description: "Ein Satz, worin der Hebel der Vorreiter liegt." },
+    benchmarks: { type: "ARRAY", items: BENCH_SCHEMA, description: "Genau drei Vorreiter." },
+    potentials_title: { type: "STRING", description: "Überschrift von 03 Potenziale." },
+    potentials_lead: { type: "STRING", description: "Ein Satz, wie viele Ansatzpunkte der Check zeigt." },
+    potentials: { type: "ARRAY", items: POT_SCHEMA, description: "Genau drei Potenziale für DIESES Unternehmen." },
+    cta: { type: "STRING", description: "Gesprächsfrage im blauen Band. Der Knopftext ist fest." },
+    about_fit: { type: "STRING", description: "Ein Satz, der roots_leistung an diesen Fall bindet." },
     sources: { type: "ARRAY", items: { type: "STRING" }, description: "„Titel · Herausgeber · Jahr“, nur belegte Quellen." },
   },
 };
@@ -1077,19 +1067,6 @@ function mentions(haystack: string, needle: string): boolean {
   if (hay.includes(nadel.slice(0, Math.min(24, nadel.length)))) return true;
   const token = nadel.split(/\s+/).find((teil) => teil.length > 3) || "";
   return Boolean(token) && hay.includes(token);
-}
-
-function isScheinoption(option: MemoOption): boolean {
-  const name = option.name.toLowerCase();
-  return /nichts\s*tun|nichtstun|abwarten|status\s*quo|keine aktion|aussitzen|spaeter dasselbe|später dasselbe/.test(name);
-}
-
-/** Ein Wort ist Stichwort. Zwei/drei Wörter ohne Verb auch. */
-function isStichwortOption(name: string): boolean {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length <= 1) return true;
-  if (words.length >= 4) return false;
-  return !/\b[A-Za-zÄÖÜäöüß]{4,}(en|eln|ern|iert)\b/.test(name);
 }
 
 export function placePointe(slide: AssetSlide, last: boolean): AssetSlide {
@@ -1341,88 +1318,86 @@ function dropRepeatedLeadNumberSlides(slides: AssetSlide[]): AssetSlide[] {
   return kept;
 }
 
+function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 3).map((entry) => {
+    const item = record(entry);
+    return {
+      name: text(item.name, 80),
+      text: text(item.text, 420),
+      tag: text(item.tag, 80),
+      image_hint: text(item.image_hint, 200),
+    };
+  }).filter((item) => item.name || item.text);
+}
+
+function normalizePotentials(raw: unknown): MemoPotential[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 3).map((entry) => {
+    const item = record(entry);
+    return {
+      title: text(item.title, 120),
+      finding: text(item.finding, 320),
+      potential: text(item.potential, 320),
+      image_hint: text(item.image_hint, 200),
+    };
+  }).filter((item) => item.title || item.finding || item.potential);
+}
+
 function normalizeMemo(
   raw: Record<string, unknown>,
-  answers: MemoAnswers,
+  _answers: MemoAnswers,
   context: AssetNormalizeContext,
 ): MemoPayload {
   const title = capWords(text(raw.title, 160), 15);
   const standfirst = text(raw.standfirst, 400);
-  const situation = (Array.isArray(raw.situation) ? raw.situation : []).slice(0, 4).map((entry) => {
-    const point = record(entry);
-    return { lead: text(point.lead, 80), text: text(point.text, 300) };
-  }).filter((point) => point.lead || point.text);
-  const optionsRoh = (Array.isArray(raw.options) ? raw.options : []).slice(0, 3).map((entry) => {
-    const option = record(entry);
-    return { name: text(option.name, 80), pro: text(option.pro, 240), contra: text(option.contra, 240) };
-  }).filter((option) => option.name);
-  const ohneSchein = optionsRoh.filter((option) => !isScheinoption(option));
-  const options = ohneSchein.length ? ohneSchein : optionsRoh;
-  let recommendation = text(raw.recommendation, 400);
-  let nextStep = text(raw.next_step, 400);
+  const benchmarks = normalizeBenchmarks(raw.benchmarks);
+  const potentials = normalizePotentials(raw.potentials);
+  let aboutFit = text(raw.about_fit, 400);
 
   const leistung = String(context.rootsOffering || "").trim();
-  if (leistung && leistung.toLowerCase() !== "keine" && !mentions(recommendation, leistung)) {
-    recommendation = [recommendation, `ROOTS setzt hier mit ${leistung} an.`].filter(Boolean).join(" ");
-  }
-  const rollen = Array.isArray(context.buyingCenterRoles)
-    ? context.buyingCenterRoles.map((rolle) => String(rolle || "").trim()).filter(Boolean)
-    : [];
-  const person = String(context.personName || "").trim();
-  const hatAdressat = (person && mentions(nextStep, person))
-    || rollen.some((rolle) => mentions(nextStep, rolle));
-  if (rollen.length && !hatAdressat) {
-    nextStep = answers.reader_side === "intern"
-      ? (nextStep ? `${rollen[0]}: ${nextStep}` : `${rollen[0]} setzt den nächsten Schritt in den kommenden zwei Wochen.`)
-      : (nextStep
-        ? `${nextStep} Gespräch mit ${rollen[0]}.`
-        : `ROOTS schlägt ${rollen[0]} in den kommenden zwei Wochen einen Termin vor.`);
+  if (leistung && leistung.toLowerCase() !== "keine" && !mentions(aboutFit, leistung)) {
+    aboutFit = [aboutFit, `ROOTS setzt hier mit ${leistung} an.`].filter(Boolean).join(" ");
   }
 
-  // Ein Titel allein ist noch keine Vorlage: ohne Standfirst, Lage oder
-  // Empfehlung bliebe das Dokument eine Ueberschrift auf leerem Papier.
-  if (!title || !(standfirst || recommendation || situation.length)) {
-    const fehlt = [
-      !title ? "title" : "",
-      !standfirst ? "standfirst" : "",
-      !recommendation ? "recommendation" : "",
-      !situation.length ? "situation" : "",
-    ].filter(Boolean);
+  if (!title || !standfirst) {
+    const fehlt = [!title ? "title" : "", !standfirst ? "standfirst" : ""].filter(Boolean);
     throw new Error(`Der Ansprache fehlen tragende Felder: ${fehlt.join(", ")}. Geliefert wurden: ${Object.keys(raw).join(", ") || "keine Felder"}.`);
   }
-
-  if (options.length < 2) {
-    throw new Error("Memo braucht zwei echte Optionen, keine Scheinoptionen.");
+  if (benchmarks.length < 3) {
+    throw new Error(`Das Memo braucht genau drei Benchmarks. Geliefert: ${benchmarks.length}.`);
   }
-  for (const opt of options) {
-    if (isStichwortOption(opt.name)) {
-      throw new Error(
-        `Optionsname „${opt.name}“ ist ein Stichwort. Schreib einen Satz mit Verb.`,
-      );
-    }
+  if (potentials.length < 3) {
+    throw new Error(`Das Memo braucht genau drei Potenziale. Geliefert: ${potentials.length}.`);
   }
 
   const corpus = [context.articleText, context.rootsOffering].filter(Boolean).join("\n");
-  const kpis = stats(raw.kpis, 3).filter((eintrag) => !corpus || !digitKey(eintrag.value) || numberIsAttested(eintrag.value, corpus));
+  const kpis = stats(raw.kpis, 4).filter((eintrag) => !corpus || !digitKey(eintrag.value) || numberIsAttested(eintrag.value, corpus));
 
   const memo: MemoPayload = {
-    kicker: text(raw.kicker, 120) || "Entscheidervorlage",
     title,
     standfirst,
+    market_title: text(raw.market_title, 160),
+    market_p1: richText(raw.market_p1, 700),
+    market_p2: richText(raw.market_p2, 700),
     kpis,
-    situation,
-    options,
-    recommendation,
-    next_step: nextStep,
-    cta: text(raw.cta, 80),
-    sources: list(raw.sources, 5, 200),
-    confidential: answers.reader_side === "intern" ? answers.confidential : "",
+    benchmark_title: text(raw.benchmark_title, 160),
+    benchmark_lead: text(raw.benchmark_lead, 320),
+    benchmarks,
+    potentials_title: text(raw.potentials_title, 160),
+    potentials_lead: text(raw.potentials_lead, 320),
+    potentials,
+    cta: text(raw.cta, 240),
+    about_fit: aboutFit,
+    sources: list(raw.sources, 6, 200),
   };
   rejectUnattested([
-    memo.title, memo.standfirst, memo.recommendation, memo.next_step, memo.cta,
-    ...memo.situation.flatMap((punkt) => [punkt.lead, punkt.text]),
-    ...memo.options.flatMap((option) => [option.name, option.pro, option.contra]),
+    memo.title, memo.standfirst, memo.market_title, memo.market_p1, memo.market_p2,
+    memo.benchmark_title, memo.benchmark_lead, memo.potentials_title, memo.potentials_lead,
+    memo.cta, memo.about_fit,
     ...memo.kpis.flatMap((kpi) => [kpi.value, kpi.label]),
+    ...memo.benchmarks.flatMap((eintrag) => [eintrag.name, eintrag.text, eintrag.tag, eintrag.image_hint]),
+    ...memo.potentials.flatMap((eintrag) => [eintrag.title, eintrag.finding, eintrag.potential, eintrag.image_hint]),
     ...memo.sources,
   ].join("\n"), corpus, "Die Ansprache");
   return memo;
@@ -1472,7 +1447,7 @@ export const ASSET_HANG_ERROR =
   "Der Auftrag hat zu lange gedauert und wurde abgebrochen. Bitte denselben Auftrag noch einmal starten.";
 
 export function assetOutputTokenBudget(kind: AssetKind, answers: AssetAnswers): number {
-  if (kind === "memo") return 4_000;
+  if (kind === "memo") return 6_000;
   return (answers as LinkedinAnswers).asset_type === "carousel" ? 8_000 : 3_000;
 }
 

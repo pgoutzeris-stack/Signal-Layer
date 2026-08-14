@@ -6,8 +6,6 @@
 /* ─────────────────────────  Konstanten und Vorgaben  ───────────────────────── */
 
 const LOGO_PATH = "assets/roots-logo.png";
-const LOGO_SUBTITLE = "BRAND STRATEGY CONSULTANTS";
-const FOOTER_DOMAIN = "roots-consultants.com";
 const SAVE_LIMIT = 400000;
 
 // Nur diese Varianten sind vertraglich zugesagt; J fehlt bewusst.
@@ -98,20 +96,14 @@ const FORM_LINKEDIN = [
 
 const FORM_MEMO = [
   {
-    key: "audience",
+    key: "addressee",
     label: "Adressat",
-    options: [["geschaeftsfuehrung", "Geschäftsführung"], ["marketingleitung", "Marketingleitung"], ["vertrieb", "Vertrieb"], ["beirat", "Beirat"]],
-  },
-  {
-    key: "focus",
-    label: "Schwerpunkt",
-    options: [["lage", "Lage und Anlass"], ["optionen", "Handlungsoptionen"], ["schritt", "Nächster Schritt"]],
-  },
-  { key: "scope", label: "Umfang", options: [["1", "Eine Seite"], ["2", "Zwei Seiten"]] },
-  {
-    key: "reader_side",
-    label: "Leserseite",
-    options: [["kunde", "Kundenpapier"], ["intern", "ROOTS-intern"]],
+    options: [
+      ["auto", "Modell entscheidet aus dem Signal"],
+      ["person", "Eine Person aus dem Signal"],
+      ["persons", "Mehrere Personen / Buying Center"],
+      ["company", "Das Unternehmen allgemein"],
+    ],
   },
   {
     key: "storyline",
@@ -122,10 +114,9 @@ const FORM_MEMO = [
   {
     key: "cta",
     label: "Handlungsaufruf",
-    options: [["auto", "Modell schlägt vor"], ["custom", "Eigener Text"]],
-    free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Termin abstimmen" },
+    options: [["auto", "Modell schreibt die Gesprächsfrage"], ["custom", "Eigene Frage"]],
+    free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Sollen wir den Check gemeinsam durchgehen?" },
   },
-  { key: "note", label: "Vermerk", options: [["keiner", "ohne"], ["intern", "Vertraulich · nur intern"]] },
 ];
 
 /* ─────────────────────────  Stile der Bühne  ───────────────────────── */
@@ -387,7 +378,7 @@ const CHROME_CSS = `
 #as-overlay .as-prev-big{width:100%; aspect-ratio:1080/1350; max-height:100%; min-height:240px;
   display:flex; align-items:flex-start; justify-content:center; overflow:hidden;
   border:1px solid var(--line,#e2e8f0); border-radius:14px; background:var(--surface,#f8fafc); padding:12px;}
-#as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:794/1123;}
+#as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:210/891; width:auto; max-width:100%; height:100%;}
 #as-overlay .as-prev-scale{display:block; transform-origin:top left; flex:0 0 auto;}
 #as-overlay .as-prev-scale .as-stage{box-shadow:0 10px 30px rgba(15,23,42,.12);}
 @container (max-width: 860px){
@@ -497,6 +488,14 @@ const CHROME_CSS = `
 #as-overlay .as-error p{margin:0; font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word;}
 
 #as-overlay .as-work{display:grid; grid-template-columns:1fr 296px; gap:20px; align-items:start; min-height:100%;}
+#as-overlay .as-work:not(:has(.as-inspector)){grid-template-columns:1fr;}
+#as-overlay .as-content:has(.as-work[data-kind="memo"]){overflow:hidden; display:flex; flex-direction:column;}
+#as-overlay .as-content:has(.as-work[data-kind="memo"]) .as-work{
+  flex:1; min-height:0; height:100%; align-items:stretch;
+}
+#as-overlay .as-work[data-kind="memo"] .as-stagearea{
+  min-height:0; height:100%; overflow:hidden; justify-content:center;
+}
 #as-overlay .as-stagearea{display:flex; flex-direction:column; gap:22px; align-items:center; min-width:0;}
 #as-overlay .as-frame{width:100%; display:flex; flex-direction:column; gap:8px; align-items:center;}
 #as-overlay .as-slidetools{
@@ -609,7 +608,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0045";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0115";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0115";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -668,7 +668,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   overlay.setAttribute("aria-label", isMemo ? "Ansprache" : "LinkedIn-Asset");
 
   const styleIsland = document.createElement("style");
-  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${STAGE_CSS}\n${printCss(isMemo)}`;
+  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}\n${printCss(isMemo)}`;
   overlay.appendChild(styleIsland);
 
   const shell = document.createElement("div");
@@ -784,9 +784,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           </div>
         </div>`;
       }
-      return `<div class="as-stagearea" data-stagearea></div>`;
+      return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
+        <div class="as-stagearea" data-stagearea></div>
+      </div>`;
     }
-    return `<div class="as-work">
+      return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
       <div class="as-stagearea" data-stagearea></div>
       ${inspectorHtml()}
     </div>`;
@@ -796,7 +798,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Grosse Vorschau rechts. Dieselbe Vorlage wie das Ergebnis, kein Modellaufruf. */
   function livePreviewHtml() {
-    if (isMemo) return `<span class="as-prev-scale">${memoHtml(demoMemo(), false)}</span>`;
+    if (isMemo) {
+      const html = memoHtml(demoMemo(), false).replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, "");
+      return `<span class="as-prev-scale">${html}</span>`;
+    }
     // Entscheidet das Modell das Layout, gibt es nichts zu zeigen. Eine
     // beliebige Kachel waere geraten und damit irrefuehrend.
     const arten = gewaehlteArten();
@@ -881,15 +886,35 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function demoMemo() {
+    const firma = company || "das Unternehmen";
     return normalizeMemo({
-      title: "Der Anlass verlangt eine Entscheidung im Quartal",
-      standfirst: "Ein Satz zur Lage, gefolgt von dem Beleg, der ihn traegt.",
-      kpis: [{ value: "14 %", label: "Bezug, Jahr" }, { value: "6", label: "Wochen" }, { value: "3", label: "Rollen" }],
-      situation: [{ lead: "Anlass", text: "Was gerade passiert ist." }, { lead: "Engstelle", text: "Woran es haengt." }],
-      options: [{ name: "Weg A", pro: "Wirkt breit", contra: "Bindet Kapazitaet" }, { name: "Weg B", pro: "Schnell sichtbar", contra: "Engstelle bleibt" }],
-      recommendation: "Die Empfehlung in einem Satz.",
-      next_step: "Der naechste Schritt mit Verantwortlichkeit.",
-      cta: "Termin abstimmen",
+      title: `${firma} muss die Marke jetzt als Hebel ziehen`,
+      standfirst: "Der Markt hat sich bewegt. Wer denselben Hebel schon gezogen hat, setzt die neue Messlatte. Dieser Check macht den Moment für den Adressaten konkret.",
+      market_title: "Der Markt belohnt, wer die Marke führt",
+      market_p1: "Anbieter, die Sortiment, Kanal und Auftritt als eine Handschrift führen, gewinnen Sichtbarkeit und Tempo.",
+      market_p2: "Wer den Hebel liegen lässt, bleibt in der Fläche vergleichbar und im Dialog austauschbar.",
+      kpis: [
+        { value: "3", label: "Hebel im Check" },
+        { value: "1", label: "strategischer Moment" },
+        { value: "4", label: "Wochen bis zum Gespräch" },
+      ],
+      benchmark_title: "Vorreiter ziehen denselben Hebel",
+      benchmark_lead: "Drei Marken haben vorgemacht, was übertragbar ist.",
+      benchmarks: [
+        { name: "Vorreiter A", text: "Hat die Eigenmarke zur Leitmarke gemacht und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche", image_hint: "Regal mit Eigenmarke" },
+        { name: "Vorreiter B", text: "Hat Kanal und Fläche unter eine Handschrift gestellt.", tag: "Eine Linie, zwei Kanäle", image_hint: "Storefront" },
+        { name: "Vorreiter C", text: "Hat Kampagnen durch eine haltbare Linie ersetzt.", tag: "Linie vor Saison", image_hint: "Kampagnenmotiv" },
+      ],
+      potentials_title: `Drei Hebel für ${firma}`,
+      potentials_lead: "Der Check zeigt drei Ansatzpunkte, die sich aus dem Signal ergeben.",
+      potentials: [
+        { title: "Vom Sortiment zur Marke", finding: "Die Eigenmarken stehen unverbunden nebeneinander.", potential: "ROOTS bündelt sie unter einer Führung.", image_hint: "Packshots" },
+        { title: "Vom Kanal zum System", finding: "Online und Fläche sprechen unterschiedlich.", potential: "Eine Handschrift über beide Kanäle.", image_hint: "Verkaufsfläche" },
+        { title: "Von der Kampagne zur Linie", finding: "Jede Saison wird der Auftritt neu erfunden.", potential: "Eine Linie, die über die Saison hält.", image_hint: "Kampagne" },
+      ],
+      cta: `Sollen wir den Check für ${firma} gemeinsam durchgehen?`,
+      about_fit: "ROOTS setzt hier mit Markenstrategie und Marketing Operations an.",
+      sources: [],
     });
   }
 
@@ -1164,52 +1189,84 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     };
   }
 
+  function emptyImage() {
+    return { src: "", pos: "50% 50%" };
+  }
+
+  function imageAt(model, key) {
+    if (!model) return emptyImage();
+    const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(String(key || ""));
+    if (treffer) {
+      const liste = model[treffer[1]];
+      const eintrag = Array.isArray(liste) ? liste[Number(treffer[2])] : null;
+      return eintrag?.image || emptyImage();
+    }
+    return model.image || emptyImage();
+  }
+
+  function setImageAt(model, key, image) {
+    if (!model) return;
+    const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(String(key || ""));
+    if (treffer) {
+      const liste = model[treffer[1]];
+      const eintrag = Array.isArray(liste) ? liste[Number(treffer[2])] : null;
+      if (eintrag) eintrag.image = image;
+      return;
+    }
+    if ("image" in model) model.image = image;
+  }
+
+  function padItems(list, count) {
+    const out = Array.isArray(list) && list.length ? list.slice() : [];
+    while (out.length < count) out.push({});
+    return out.slice(0, count);
+  }
+
   function normalizeMemo(raw) {
     const src = raw && typeof raw === "object" ? raw : {};
-    const kpis = toArray(src.kpis);
-    const situation = toArray(src.situation);
-    const options = toArray(src.options);
+    const kpis = padItems(toArray(src.kpis), 4);
+    const benchmarks = padItems(toArray(src.benchmarks), 3);
+    const potentials = padItems(toArray(src.potentials), 3);
     return {
       uid: uid(),
-      kicker: String(src.kicker || `Ansprache${company ? ` · ${company}` : ""}`),
       title: String(src.title || ""),
       standfirst: String(src.standfirst || ""),
-      kpis: (kpis.length ? kpis : [{}, {}, {}]).slice(0, 3).map((item) => ({
+      market_title: String(src.market_title || ""),
+      market_p1: String(src.market_p1 || ""),
+      market_p2: String(src.market_p2 || ""),
+      kpis: kpis.map((item) => ({
         value: String(item?.value || ""),
         label: String(item?.label || ""),
       })),
-      situation: (situation.length ? situation : [{}, {}, {}]).map((item) => ({
-        lead: String(item?.lead || ""),
-        text: String(item?.text || ""),
-      })),
-      options: (options.length ? options : [{}, {}]).map((item) => ({
+      benchmark_title: String(src.benchmark_title || ""),
+      benchmark_lead: String(src.benchmark_lead || ""),
+      benchmarks: benchmarks.map((item) => ({
         name: String(item?.name || ""),
-        pro: String(item?.pro || ""),
-        contra: String(item?.contra || ""),
+        text: String(item?.text || ""),
+        tag: String(item?.tag || ""),
+        image_hint: String(item?.image_hint || ""),
+        image: {
+          src: String(item?.image?.src || ""),
+          pos: String(item?.image?.pos || "50% 50%"),
+        },
       })),
-      recommendation: String(src.recommendation || ""),
-      nextStep: String(src.next_step || ""),
+      potentials_title: String(src.potentials_title || ""),
+      potentials_lead: String(src.potentials_lead || ""),
+      potentials: potentials.map((item) => ({
+        title: String(item?.title || ""),
+        finding: String(item?.finding || ""),
+        potential: String(item?.potential || ""),
+        image_hint: String(item?.image_hint || ""),
+        image: {
+          src: String(item?.image?.src || ""),
+          pos: String(item?.image?.pos || "50% 50%"),
+        },
+      })),
       cta: String(src.cta || ""),
+      about_fit: String(src.about_fit || ""),
       sources: toArray(src.sources).map((line) => String(line || "")),
-      confidential: String(src.confidential || (state.answers.note === "intern" ? "Vertraulich · nur intern" : "")),
       html: {},
     };
-  }
-
-  /* ── Felder: Modellwert oder bereits bearbeitetes HTML ── */
-
-  function fieldHtml(model, path, fallback = "") {
-    const edited = model.html?.[path];
-    if (typeof edited === "string") return edited;
-    return esc(fallback);
-  }
-
-  function field(tag, cls, model, path, value, placeholder, extra = "") {
-    return `<${tag} class="${cls} as-edit" data-field="${attr(path)}" data-ph="${attr(placeholder)}"${extra}>${fieldHtml(model, path, value)}</${tag}>`;
-  }
-
-  function lockup() {
-    return `<span class="as-lockup"><img src="${attr(state.logo)}" alt="ROOTS"><span>${esc(LOGO_SUBTITLE)}</span></span>`;
   }
 
   /* ── Bühne: LinkedIn-Slide aus der echten Vorlage ── */
@@ -1312,76 +1369,102 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   /** Fotos bekommen die Bedienung der Werkbank, das Logo bleibt unberuehrt. */
-  function wrapImageSlots(html, slide) {
-    const hat = Boolean(slide.image.src);
-    const ui = `<div class="as-img-ui" data-as-chrome>
-      <button type="button" data-act="img-pick">${hat ? "Bild ersetzen" : "Bild wählen"}</button>
-      ${hat ? `<input type="range" min="0" max="100" step="1" value="${Number.parseFloat(String(slide.image.pos).split(" ")[1]) || 50}" data-act="img-pos" aria-label="Ausschnitt">` : ""}
-      ${hat ? `<button type="button" data-act="img-clear">Entfernen</button>` : ""}
+  function wrapImageSlots(html, model) {
+    const uiFor = (key) => {
+      const bild = imageAt(model, key);
+      const hat = Boolean(bild.src);
+      const pos = Number.parseFloat(String(bild.pos || "50% 50%").split(" ")[1]) || 50;
+      return `<div class="as-img-ui" data-as-chrome>
+      <button type="button" data-act="img-pick" data-imgkey="${attr(key)}">${hat ? "Bild ersetzen" : "Bild wählen"}</button>
+      ${hat ? `<input type="range" min="0" max="100" step="1" value="${pos}" data-act="img-pos" data-imgkey="${attr(key)}" aria-label="Ausschnitt">` : ""}
+      ${hat ? `<button type="button" data-act="img-clear" data-imgkey="${attr(key)}">Entfernen</button>` : ""}
     </div>`;
+    };
     if (html.includes("data-imgsrc")) {
-      return html.replace(/(<img[^>]*data-imgsrc[^>]*>)/, `<span class="as-img as-img--tpl" data-imgslot>$1${ui}</span>`);
+      return html.replace(/(<img[^>]*data-imgsrc[^>]*>)/g, (imgTag) => {
+        const key = /data-imgkey="([^"]+)"/.exec(imgTag)?.[1] || "image";
+        return `<span class="as-img as-img--tpl" data-imgslot data-imgkey="${attr(key)}">${imgTag}${uiFor(key)}</span>`;
+      });
     }
     // Hintergrundbild (Vollbild und Zitat ueber Bild): Slot als Auflage.
     if (/background-image:url\(/.test(html)) {
       return html.replace(/(<div style="position:absolute;inset:0;background-image:url\([^)]*\)[^"]*"><\/div>)/,
-        `$1<span class="as-img as-img--bg" data-imgslot>${ui}</span>`);
+        `$1<span class="as-img as-img--bg" data-imgslot data-imgkey="image">${uiFor("image")}</span>`);
     }
     return html;
   }
 
   function memoHtml(memo, editable = true) {
-    const kpis = memo.kpis.map((item, i) => `<div class="as-kpi">
-      ${field("p", "as-kpival", memo, `kpis.${i}.value`, item.value, "Zahl")}
-      ${field("p", "as-kpilabel", memo, `kpis.${i}.label`, item.label, "Bezug")}
-    </div>`).join("");
-    const situation = memo.situation.map((item, i) => `<div class="as-point">
-      ${field("p", "as-pointlead", memo, `situation.${i}.lead`, item.lead, "Punkt")}
-      ${field("p", "as-pointtext", memo, `situation.${i}.text`, item.text, "Text")}
-    </div>`).join("");
-    const options = memo.options.map((item, i) => `<div class="as-option">
-      ${field("p", "as-optname", memo, `options.${i}.name`, item.name, "Option")}
-      <div class="as-optline"><i>Pro</i>${field("span", "as-optval", memo, `options.${i}.pro`, item.pro, "Argument")}</div>
-      <div class="as-optline"><i>Contra</i>${field("span", "as-optval", memo, `options.${i}.contra`, item.contra, "Einwand")}</div>
-    </div>`).join("");
-    const sources = memo.sources.length || typeof memo.html["sources"] === "string"
-      ? `<div class="as-sources"><b>Quellen</b>${field("div", "as-sourcelist", memo, "sources", memo.sources.join(" · "), "Quelle · Herausgeber · Jahr")}</div>`
-      : "";
-    const html = `<div class="as-stage as-stage--a4" data-stage data-uid="${attr(memo.uid)}" data-theme="${attr(state.stage.theme)}" data-accent="${attr(state.stage.accent)}" data-corners="${attr(state.stage.corners)}">
-      <header class="as-head">
-        ${lockup()}
-        <div>
-          ${field("p", "as-kicker", memo, "kicker", memo.kicker, "Ansprache")}
-          ${memo.confidential ? field("span", "as-conf", memo, "confidential", memo.confidential, "Vermerk") : ""}
-        </div>
-      </header>
-      ${field("h1", "as-title", memo, "title", memo.title, "Action Title")}
-      ${field("p", "as-standfirst", memo, "standfirst", memo.standfirst, "Governing Thought")}
-      <div class="as-kpis">${kpis}</div>
-      <div class="as-cols">
-        <section><h2 class="as-colhead">Lage und Anlass</h2>${situation}</section>
-        <section><h2 class="as-colhead">Handlungsoptionen</h2>${options}</section>
-      </div>
-      ${state.stage.band ? `<div class="as-band">
-        <div>
-          <span class="as-bandhead">Empfehlung</span>
-          ${field("p", "as-bandtext", memo, "recommendation", memo.recommendation, "Empfehlung")}
-          ${field("p", "as-bandnext", memo, "next_step", memo.nextStep, "Nächster Schritt")}
-        </div>
-        ${field("span", "as-cta", memo, "cta", memo.cta, "CTA")}
-      </div>` : ""}
-      ${sources}
-      <footer class="as-foot">
-        <span>ROOTS Brand Strategy Consultants GmbH · ${esc(FOOTER_DOMAIN)}</span>
-        ${field("span", "as-docid", memo, "doc_id", docId(), "Kennung")}
-      </footer>
-    </div>`;
-    return editable ? html : html.replace(/ contenteditable="true"/g, "");
+    const werte = {
+      uid: memo.uid,
+      logo: state.logo || LOGO_PATH,
+      title: memo.title,
+      standfirst: memo.standfirst,
+      market_title: memo.market_title,
+      market_p1: memo.market_p1,
+      market_p2: memo.market_p2,
+      benchmark_title: memo.benchmark_title,
+      benchmark_lead: memo.benchmark_lead,
+      potentials_title: memo.potentials_title,
+      potentials_lead: memo.potentials_lead,
+      cta: memo.cta,
+      about_fit: memo.about_fit,
+      sources: memo.sources.filter(Boolean).join(" · "),
+    };
+    (memo.kpis || []).forEach((kpi, i) => {
+      werte[`kpi${i + 1}_value`] = kpi?.value || "";
+      werte[`kpi${i + 1}_label`] = kpi?.label || "";
+    });
+    (memo.benchmarks || []).forEach((eintrag, i) => {
+      werte[`bm${i + 1}_name`] = eintrag?.name || "";
+      werte[`bm${i + 1}_text`] = eintrag?.text || "";
+      werte[`bm${i + 1}_tag`] = eintrag?.tag || "";
+      werte[`bm${i + 1}_hint`] = eintrag?.image_hint || "";
+      werte[`bm${i + 1}_image`] = eintrag?.image?.src || "";
+      werte[`bm${i + 1}_pos`] = eintrag?.image?.pos || "50% 50%";
+    });
+    (memo.potentials || []).forEach((eintrag, i) => {
+      werte[`pot${i + 1}_title`] = eintrag?.title || "";
+      werte[`pot${i + 1}_finding`] = eintrag?.finding || "";
+      werte[`pot${i + 1}_potential`] = eintrag?.potential || "";
+      werte[`pot${i + 1}_hint`] = eintrag?.image_hint || "";
+      werte[`pot${i + 1}_image`] = eintrag?.image?.src || "";
+      werte[`pot${i + 1}_pos`] = eintrag?.image?.pos || "50% 50%";
+    });
+    let html = MEMO_TEMPLATE.replace(/\{\{([a-z0-9_]+)\}\}/g, (_m, name) => {
+      const wert = werte[name];
+      if (name === "logo" || name.endsWith("_image") || name.endsWith("_pos") || name === "uid") {
+        return attr(wert || "");
+      }
+      const pfad = memoFieldPath(name);
+      const bearbeitet = pfad ? memo.html?.[pfad] : undefined;
+      if (typeof bearbeitet === "string") return bearbeitet;
+      return markiere(esc(wert || ""));
+    });
+    html = wrapImageSlots(html, memo);
+    if (editable) {
+      html = html.replace(/data-field="([a-z0-9_.]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
+    }
+    return html;
   }
 
-  function docId() {
-    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    return `Ansprache · ${stamp}`;
+  /** Platzhaltername der Vorlage auf den data-field-Pfad der Werkbank. */
+  function memoFieldPath(name) {
+    const einfach = {
+      title: "title", standfirst: "standfirst",
+      market_title: "market_title", market_p1: "market_p1", market_p2: "market_p2",
+      benchmark_title: "benchmark_title", benchmark_lead: "benchmark_lead",
+      potentials_title: "potentials_title", potentials_lead: "potentials_lead",
+      cta: "cta", about_fit: "about_fit", sources: "sources",
+    };
+    if (einfach[name]) return einfach[name];
+    const kpi = /^kpi(\d+)_(value|label)$/.exec(name);
+    if (kpi) return `kpis.${Number(kpi[1]) - 1}.${kpi[2]}`;
+    const bm = /^bm(\d+)_(name|text|tag|hint)$/.exec(name);
+    if (bm) return `benchmarks.${Number(bm[1]) - 1}.${bm[2] === "hint" ? "image_hint" : bm[2]}`;
+    const pot = /^pot(\d+)_(title|finding|potential|hint)$/.exec(name);
+    if (pot) return `potentials.${Number(pot[1]) - 1}.${pot[2] === "hint" ? "image_hint" : pot[2]}`;
+    return "";
   }
 
   /* ── Bühnen einhängen und einpassen ── */
@@ -1470,7 +1553,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const breite = box.clientWidth || 1;
     const hoehe = Math.max(box.clientHeight, 240);
     const w = stage.offsetWidth || (isMemo ? 794 : 1080);
-    const h = stage.offsetHeight || (isMemo ? 1123 : 1350);
+    const h = stage.offsetHeight || (isMemo ? 3368 : 1350);
     const faktor = Math.min(breite / w, hoehe / h);
     inner.style.transform = `scale(${faktor})`;
     inner.style.width = `${w}px`;
@@ -1485,13 +1568,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function fitStages() {
     const area = shell.querySelector("[data-stagearea]");
     if (!area) return;
-    const avail = Math.max(240, area.clientWidth);
+    const availW = Math.max(240, area.clientWidth);
+    const availH = Math.max(0, area.clientHeight);
     area.querySelectorAll(".as-scaler").forEach((scaler) => {
       const stage = scaler.querySelector(".as-stage");
       if (!stage) return;
-      const w = stage.offsetWidth || 1080;
-      const h = stage.offsetHeight || 1350;
-      const scale = Math.min(1, avail / w);
+      const w = stage.offsetWidth || (isMemo ? 794 : 1080);
+      const h = stage.offsetHeight || (isMemo ? 3368 : 1350);
+      const scale = isMemo && availH > 80
+        ? Math.min(1, availW / w, availH / h)
+        : Math.min(1, availW / w);
       scaler.style.width = `${Math.round(w * scale)}px`;
       scaler.style.height = `${Math.round(h * scale)}px`;
       stage.style.transform = `scale(${scale})`;
@@ -1513,13 +1599,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       });
       // Nur wenn die Variante gerade einen Bildplatz zeigt, darf das Bild aus
       // dem DOM gelesen werden. Sonst löscht ein Variantenwechsel das Motiv.
-      const slot = stage.querySelector("[data-imgslot]");
-      if (slot && model.image) {
+      stage.querySelectorAll("[data-imgslot]").forEach((slot) => {
+        const key = slot.getAttribute("data-imgkey") || "image";
         const img = slot.querySelector("img");
-        model.image = img
+        setImageAt(model, key, img
           ? { src: img.getAttribute("src") || "", pos: img.style.objectPosition || "50% 50%" }
-          : { src: "", pos: model.image.pos };
-      }
+          : { src: "", pos: imageAt(model, key).pos });
+      });
     });
     const post = shell.querySelector("[data-post]");
     if (post) state.postText = post.value;
@@ -1644,8 +1730,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /* ── Bilder ── */
 
-  function pickImage(stageEl) {
-    state.pendingImage = stageEl.getAttribute("data-uid");
+  function pickImage(stageEl, key) {
+    state.pendingImage = `${stageEl.getAttribute("data-uid")}::${key || "image"}`;
     fileInput.value = "";
     fileInput.click();
   }
@@ -1680,14 +1766,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files && fileInput.files[0];
-    const targetUid = state.pendingImage;
+    const pending = String(state.pendingImage || "");
     state.pendingImage = null;
+    const [targetUid, imgKey = "image"] = pending.split("::");
     if (!file || !targetUid) return;
     try {
       const dataUri = await readImage(file);
       harvest();
       const model = modelByUid(targetUid);
-      if (model && model.image) model.image = { src: dataUri, pos: "50% 50%" };
+      setImageAt(model, imgKey, { src: dataUri, pos: "50% 50%" });
       mountStages(state.step === "edit");
     } catch (err) {
       showSaveHint(err && err.message ? err.message : "Das Bild konnte nicht geladen werden.");
@@ -1698,6 +1785,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function printCss(memoKind) {
     const page = memoKind ? "size:A4; margin:0;" : "size:1080px 1350px; margin:0;";
+    const bruch = memoKind
+      ? `#as-overlay .as-stage--memo{break-after:auto; page-break-after:auto;}
+  #as-overlay .as-stage--memo .em-page{break-after:page; page-break-after:always;}
+  #as-overlay .as-stage--memo .em-page:last-child{break-after:auto; page-break-after:auto;}`
+      : `#as-overlay .as-stage{break-after:page; page-break-after:always;}
+  #as-overlay .as-stagearea > .as-frame:last-of-type .as-stage{break-after:auto; page-break-after:auto;}`;
     return `
 @page{${page}}
 @media print{
@@ -1709,8 +1802,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   #as-overlay .as-work{display:block !important;}
   #as-overlay .as-scaler{width:auto !important; height:auto !important; box-shadow:none !important;}
   #as-overlay .as-scaler > .as-stage{position:static !important; transform:none !important;}
-  #as-overlay .as-stage{break-after:page; page-break-after:always;}
-  #as-overlay .as-stagearea > .as-frame:last-of-type .as-stage{break-after:auto; page-break-after:auto;}
+  ${bruch}
 }`;
   }
 
@@ -1738,6 +1830,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const post = !isMemo && state.postText.trim()
       ? `\n<!-- Beitragstext\n${state.postText.replace(/--+>/g, "-->")}\n-->`
       : "";
+    const css = isMemo
+      ? `${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}`
+      : `${ASSET_TEMPLATE_CSS}\n${STAGE_CSS}`;
+    const printBreak = isMemo
+      ? `.as-stage--memo{break-after:auto; page-break-after:auto;} .as-stage--memo .em-page{break-after:page; page-break-after:always;} .as-stage--memo .em-page:last-child{break-after:auto; page-break-after:auto;}`
+      : `.as-stage{break-after:page; page-break-after:always;} .as-stage:last-of-type{break-after:auto; page-break-after:auto;}`;
     return `<!doctype html>
 <html lang="de">
 <head>
@@ -1749,8 +1847,8 @@ html,body{margin:0;padding:0;}
 body{background:#eef2f7; display:flex; flex-direction:column; align-items:center; gap:24px; padding:24px;}
 @media print{body{background:#fff; gap:0; padding:0;}}
 @page{${isMemo ? "size:A4; margin:0;" : "size:1080px 1350px; margin:0;"}}
-@media print{.as-stage{break-after:page; page-break-after:always;} .as-stage:last-of-type{break-after:auto; page-break-after:auto;}}
-${STAGE_CSS}
+@media print{${printBreak}}
+${css}
 </style>
 </head>
 <body>
@@ -1767,7 +1865,7 @@ ${stages}${post}
     const link = document.createElement("a");
     const stamp = new Date().toISOString().slice(0, 10);
     link.href = url;
-    link.download = `${isMemo ? "entscheidervorlage" : "linkedin-asset"}-${stamp}.html`;
+    link.download = `${isMemo ? "executive-memo" : "linkedin-asset"}-${stamp}.html`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1919,11 +2017,14 @@ ${stages}${post}
     if (act === "print") { harvest(); window.print(); return; }
     if (act === "save") { save(); return; }
     if (act === "copy-post") { copyPost(); return; }
-    if (act === "img-pick" && stageEl) { pickImage(stageEl); return; }
+    if (act === "img-pick" && stageEl) {
+      pickImage(stageEl, hit.getAttribute("data-imgkey") || "image");
+      return;
+    }
     if (act === "img-clear" && stageEl) {
       harvest();
       const model = modelByUid(stageEl.getAttribute("data-uid"));
-      if (model && model.image) model.image = { src: "", pos: "50% 50%" };
+      setImageAt(model, hit.getAttribute("data-imgkey") || "image", { src: "", pos: "50% 50%" });
       mountStages(state.step === "edit");
       return;
     }
@@ -1948,7 +2049,9 @@ ${stages}${post}
     const hit = event.target.closest("[data-act]");
     if (hit && hit.getAttribute("data-act") === "img-pos") {
       const stageEl = hit.closest("[data-stage]");
-      const img = stageEl ? stageEl.querySelector("[data-imgslot] img") : null;
+      const key = hit.getAttribute("data-imgkey") || "image";
+      const slot = stageEl?.querySelector(`[data-imgslot][data-imgkey="${CSS.escape(key)}"]`);
+      const img = slot?.querySelector("img") || stageEl?.querySelector("[data-imgslot] img");
       if (img) img.style.objectPosition = `50% ${hit.value}%`;
     }
   }
