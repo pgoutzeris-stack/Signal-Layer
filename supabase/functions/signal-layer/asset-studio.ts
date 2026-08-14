@@ -2051,17 +2051,33 @@ export function assetHeartbeatAgeMs(updatedAt: unknown, nowMs = Date.now()): num
   return Number.isFinite(t) ? Math.max(0, nowMs - t) : Number.POSITIVE_INFINITY;
 }
 
+export function assetOwnerClockStartMs(
+  row: { created_at?: unknown; run_log?: unknown },
+): number {
+  const created = Date.parse(String(row.created_at || ""));
+  const rows = Array.isArray(row.run_log) ? row.run_log as Array<Record<string, unknown>> : [];
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const event = String(rows[i]?.event || "");
+    if (event === "retry_model" || event === "handoff" || event === "finish_start") {
+      const t = Number(rows[i]?.t);
+      if (Number.isFinite(created) && Number.isFinite(t)) return created + t;
+    }
+  }
+  return created;
+}
+
 /**
  * Lebt, solange die Zeile frisch ist. Die Stufe darf Minuten dauern.
  * Nur Stille oder der Plattform-Tod des Isolats beenden den Auftrag.
+ * Nach retry/handoff gilt die Uhr des neuen Isolats, nicht created_at.
  */
 export function assetHangReason(
   row: { status?: unknown; created_at?: unknown; updated_at?: unknown; run_log?: unknown },
   nowMs = Date.now(),
 ): AssetHangReason | null {
   if (String(row.status || "") !== "running") return null;
-  const created = Date.parse(String(row.created_at || ""));
-  const wall = Number.isFinite(created) ? nowMs - created : 0;
+  const start = assetOwnerClockStartMs(row);
+  const wall = Number.isFinite(start) ? nowMs - start : 0;
   if (wall >= ASSET_STALE_MS) return "isolate";
   const age = assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs);
   const log = Array.isArray(row.run_log) ? row.run_log as Array<Record<string, unknown>> : [];

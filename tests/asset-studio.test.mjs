@@ -627,6 +627,19 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.equal(backend.assetHangReason(keinByte, now), "silent");
   const tot = { ...lebend, created_at: iso(now - 401_000), updated_at: iso(now - 1_000) };
   assert.equal(backend.assetHangReason(tot, now), "isolate");
+  const retryLebt = {
+    status: "running",
+    stage: "modell",
+    created_at: iso(now - 410_000),
+    updated_at: iso(now - 2_000),
+    run_log: [
+      { t: 0, event: "model_start" },
+      { t: 330_000, event: "retry_model" },
+      { t: 332_000, event: "pulse", phase: "thinking", chars: 0, thinking_chars: 12 },
+    ],
+  };
+  assert.equal(backend.assetHangReason(retryLebt, now), null);
+  assert.equal(backend.assetOwnerClockStartMs(retryLebt), now - 80_000);
   assert.match(backend.assetHeartbeatErrorText("deepseek-v4-pro", "modell", 45_000, "silent"), /seit 45 Sekunden nichts mehr gesendet/);
   const sse = backend.parseDeepseekSseData('{"choices":[{"delta":{"reasoning_content":"Hmm"}}]}');
   assert.equal(sse?.reasoning, "Hmm");
