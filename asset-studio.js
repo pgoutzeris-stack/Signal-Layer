@@ -609,7 +609,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260813-2355";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0045";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1084,14 +1084,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
   }
 
-  /** Fragt den Auftrag ab, bis er fertig ist. Bis zu sechs Minuten. */
+  /** Fragt den Auftrag ab, bis er fertig ist. Bis zu sieben Minuten. */
   async function warteAufAsset(id) {
-    // Muss ueber dem Zeitfenster des Modells liegen (bis 280 s beim
-    // 6-Slide-Karussell), sonst gibt die Anzeige auf, waehrend der Auftrag
-    // noch laeuft, und das fertige Ergebnis sieht niemand.
-    // 800 ms, dann 1,0 / 1,2 s: unter der 2 s Pause von pruefen/fuellen,
-    // damit die Anzeige die kurzen Abschnitte nicht ueberspringt.
-    const bis = Date.now() + 360_000;
+    // Ueber Watchdog (380 s) und Isolate (~400 s), damit die letzte Abfrage
+    // eine stehengebliebene Zeile als Fehler sieht statt einer leeren Uhr.
+    const bis = Date.now() + 420_000;
     let wartezeit = 800;
     while (Date.now() < bis) {
       await new Promise((r) => setTimeout(r, wartezeit));
@@ -1101,7 +1098,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ladeAbschnittSetzen(row.stage);
       if (row.status && row.status !== "running") return row;
     }
-    throw new Error("Der Entwurf ist nach sechs Minuten nicht fertig geworden. Der Auftrag läuft weiter, versuche es in einer Minute erneut.");
+    throw new Error("Der Entwurf ist nach sieben Minuten nicht fertig geworden. Bitte denselben Auftrag noch einmal starten.");
   }
 
   function adoptPayload(raw) {
