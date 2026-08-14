@@ -423,6 +423,7 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
   assert.equal(backend.assetRepairTimeoutMs(350_000), null);
   assert.match(edge, /assetRepairTimeoutMs/);
   assert.match(edge, /buildAssetRepairPrompt/);
+  assert.match(edge, /assetMangelIsRepairable\(mangel\)/);
   assert.match(backend.buildAssetRepairPrompt("PROMPT", "kein JSON-Objekt"), /<repair>/);
   assert.match(backend.buildAssetRepairPrompt("PROMPT", "kein JSON-Objekt"), /PROMPT/);
   // Die Rohantwort steht im Fehlerereignis, sonst ist der Fall hinterher weg.
@@ -445,28 +446,25 @@ test("der Entwurf laeuft als Hintergrundauftrag, nicht in der Anfrage", () => {
   assert.match(studio, /fertig\.error_message/);
 });
 
-test("die Ladeanzeige folgt dem gemeldeten Abschnitt, nicht der Uhr", () => {
+test("die Ladeanzeige zeigt Abschnitt, Balken und Minutenprognose", () => {
   // Der Auftrag schreibt seinen Abschnitt auf die Zeile, das Studio liest ihn
-  // beim Abfragen. Ein Durchblaettern nach der Uhr behauptet Fortschritt, den
-  // niemand kennt.
+  // beim Abfragen. Der Balken kriecht mit der gelernten Prognose, nicht frei.
   assert.match(edge, /stage: "lesen"/);
   for (const name of ["modell", "pruefen", "fuellen"]) {
     assert.ok(edge.includes(`abschnitt("${name}")`), `Abschnitt ${name} wird nicht gemeldet`);
   }
   assert.match(studio, /const ABSCHNITTE = \[/);
   assert.match(studio, /ladeAbschnittSetzen\(row\.stage\)/);
-  // Schrittpunkte zeigen die Position, kein endloser Schimmer.
-  assert.match(studio, /as-load-step/);
-  assert.doesNotMatch(studio, /as-load-bar/);
-  assert.doesNotMatch(studio, /as-schimmer/);
-  // Kein Ring um das Icon, nur ein leises Atmen. Und keine Zeitprognose.
-  assert.doesNotMatch(studio, /as-puls/);
-  assert.doesNotMatch(studio, /box-shadow:0 0 0 14px/);
+  assert.match(studio, /as-load-bar/);
+  assert.match(studio, /as-load-bar-fill/);
+  assert.match(studio, /@keyframes as-bar-flow/);
+  assert.match(studio, /noch ca\./);
+  assert.match(studio, /function minutenLabel/);
+  assert.doesNotMatch(studio, /\$\{sekunden\} s/);
+  assert.doesNotMatch(studio, /as-load-step/);
   assert.doesNotMatch(studio, /bis zwei Minuten/);
-  assert.match(studio, /@keyframes as-atem/);
   // "fertig" gehoert zu keinem Schritt; ohne Filter sprang die Anzeige zurueck.
   assert.match(studio, /ABSCHNITTE\.some\(\(\[key\]\) => key === name\)/);
-  // Pruefen und Fuellen halten lang genug, dass die Abfrage sie sieht.
   assert.equal(backend.ASSET_STAGE_HOLD_MS, 2_000);
   assert.match(edge, /halte\(ASSET_STAGE_HOLD_MS\)/);
   assert.match(studio, /wartezeit = 800/);
@@ -503,6 +501,20 @@ test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", 
   assert.match(edge, /ASSET_HANG_ERROR/);
 });
 
+test("die Zeitprognose lernt aus gespeicherten Assets, Fehler stehen im Laufprotokoll", () => {
+  const migration = readFileSync(new URL("../supabase/migrations/20260814001500_asset_forecast_and_run_log.sql", import.meta.url), "utf8");
+  assert.match(migration, /function signal_layer.asset_duration_forecast/);
+  assert.match(migration, /run_log jsonb/);
+  assert.match(migration, /forecast_ms integer/);
+  assert.match(edge, /rpc\("asset_duration_forecast"/);
+  assert.match(edge, /forecast_ms: forecast.ms/);
+  assert.match(edge, /fail_early/);
+  assert.match(edge, /loggen\("error"/);
+  assert.match(edge, /duration_ms: Date.now\(\) - startedAt/);
+  assert.match(studio, /forecast_ms/);
+  assert.match(studio, /state\.forecastMs/);
+});
+
 test("ein haengender Auftrag wird geschlossen, kein zweites Modellrennen", () => {
   // AbortSignal.timeout hat den DeepSeek-Fetch nicht abgebrochen. Promise.race
   // gibt spaetestens nach dem Fenster zurueck, der Waechter schreibt den Fehler
@@ -519,8 +531,11 @@ test("ein haengender Auftrag wird geschlossen, kein zweites Modellrennen", () =>
   assert.doesNotMatch(studio, /Der Auftrag läuft weiter/);
   assert.match(studio, /sieben Minuten nicht fertig/);
   const assetSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
-  assert.match(assetSrc, /function dropRepeatedLeadNumberSlides/);
-  assert.doesNotMatch(assetSrc, /rejectRepeatedLeadNumbers/);
+  assert.match(assetSrc, /function rejectRepeatedLeadNumbers/);
+  assert.doesNotMatch(assetSrc, /dropRepeatedLeadNumberSlides/);
+  assert.equal(backend.assetMangelIsRepairable("Die Antwort war kein JSON-Objekt. Angekommen ist: x"), true);
+  assert.equal(backend.assetMangelIsRepairable("Die Kennzahl 24 steht auf Folie 1 und Folie 2."), false);
+  assert.equal(backend.assetMangelIsRepairable("Das Karussell braucht genau 4 Folien, das Modell hat 3 geliefert (G, H, K)."), false);
 });
 
 test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () => {
@@ -725,7 +740,7 @@ test("Tilden und Sterne zählen nicht gegen die Zeichenschwelle", () => {
       title: "Nicht ~~Umsatz~~, sondern Verantwortung entscheidet über BNPL",
       takeaway: "Jetzt die Risiken prüfen", footer_left: "ROOTS",
     }],
-  }), backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 }));
+  }), backend.normalizeAssetAnswers("linkedin", { asset_type: "single" }));
   assert.match(payload.slides[0].title, /BNPL/);
   assert.ok(backend.withoutMarkup(payload.slides[0].title).length <= 60);
 });
@@ -897,23 +912,10 @@ test("Ansprache injiziert die Leistung nur wenn sie in about_fit fehlt", () => {
   assert.equal(voll.about_fit, "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.");
 });
 
-test("dieselbe Leitkennzahl auf einer spaeteren Folie wird gestrichen", () => {
+test("dieselbe Leitkennzahl auf zwei Folien ist ein Fehler, keine stillen drei Folien", () => {
   const answers = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 });
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen.";
-  const zwei = backend.normalizeAssetPayload("linkedin", JSON.stringify({
-    post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
-    slides: [
-      { variant: "G", kicker: "BNPL", title: "Junge Nutzer verlieren den Überblick", myth: "BNPL bleibt ein Jugendphänomen", fact: "24 Prozent der unter 30 verlieren den Überblick", footer_left: "ROOTS" },
-      { variant: "H", kicker: "ZAHLEN", title: "Zwei Anteile tragen die Lage", stats: [
-        { value: "24 %", label: "unter 30" },
-        { value: "38 %", label: "junge Erwachsene" },
-      ], footer_left: "ROOTS" },
-    ],
-  }), answers, { articleText: artikel });
-  assert.equal(zwei.slides.length, 1);
-  assert.equal(zwei.slides[0].variant, "G");
-
-  const klarna = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
     post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
     slides: [
       { variant: "B", kicker: "BNPL", title: "Klarna verschiebt den Kauf", subtitle: "Der Überblick bricht weg", footer_left: "ROOTS" },
@@ -924,20 +926,27 @@ test("dieselbe Leitkennzahl auf einer spaeteren Folie wird gestrichen", () => {
       ], footer_left: "ROOTS" },
       { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
     ],
-  }), answers, { articleText: artikel });
-  assert.equal(klarna.slides.length, 3);
-  assert.deepEqual(klarna.slides.map((s) => s.variant), ["B", "G", "K"]);
+  }), answers, { articleText: artikel }), /Kennzahl 24.*Folie 2.*Folie 3/);
 
-  const ok = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
     post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
     slides: [
       { variant: "E", kicker: "BNPL", title: "Der Überblick bricht weg", stat: { value: "14 %", label: "verlieren den Überblick" }, footer_left: "ROOTS" },
       { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
       { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
     ],
+  }), answers, { articleText: artikel }), /genau 4 Folien.*3 geliefert/);
+
+  const ok = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
+    slides: [
+      { variant: "B", kicker: "BNPL", title: "Klarna verschiebt den Kauf", subtitle: "Der Überblick bricht weg", footer_left: "ROOTS" },
+      { variant: "E", kicker: "BNPL", title: "Der Überblick bricht weg", stat: { value: "14 %", label: "verlieren den Überblick" }, footer_left: "ROOTS" },
+      { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
+      { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
+    ],
   }), answers, { articleText: artikel });
-  assert.equal(ok.slides.length, 3);
-  assert.equal(ok.slides[0].stat.value.includes("14"), true);
+  assert.equal(ok.slides.length, 4);
 });
 
 test("Person im Signal wird Adressat, ohne Gespräch-mit-Rolle anzuhängen", () => {

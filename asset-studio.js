@@ -454,23 +454,30 @@ const CHROME_CSS = `
 }
 #as-overlay .as-free:focus{outline:none; border-color:var(--brand,#206efb); box-shadow:var(--shadow-focus,0 0 0 3px rgba(32,110,251,.15));}
 
-/* Ladeanzeige: das Icon pulsiert leicht, sonst nichts. Die Schrittpunkte zeigen,
-   wo der Auftrag steht - der Abschnitt kommt vom Auftrag selbst. */
+/* Ladeanzeige: ein Balken fuer den Abschnitt, Minuten statt Sekunden,
+   Prognose aus den gespeicherten Laeufen derselben Art. */
 #as-overlay .as-load{display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:14px; min-height:300px; text-align:center; padding:24px;}
-#as-overlay .as-load-icon{color:var(--brand,#206efb); font-size:1.9rem; line-height:1;
-  animation:as-atem 2s ease-in-out infinite;}
-@keyframes as-atem{0%,100%{opacity:.55;} 50%{opacity:1;}}
+  gap:16px; min-height:300px; text-align:center; padding:28px 24px; width:min(460px, 100%); margin:0 auto;}
+#as-overlay .as-load-icon{color:var(--brand,#206efb); font-size:1.7rem; line-height:1;}
 #as-overlay .as-load-text{margin:0; font-size:1rem; font-weight:700; color:var(--ink,#0f172a);
   animation:as-auf .45s ease-out;}
 @keyframes as-auf{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
-#as-overlay .as-load-steps{display:flex; align-items:center; gap:6px;}
-#as-overlay .as-load-step{width:26px; height:4px; border-radius:99px; background:var(--line,#e2e8f0); transition:background .3s;}
-#as-overlay .as-load-step.is-done{background:var(--brand,#206efb);}
-#as-overlay .as-load-step.is-now{background:var(--brand,#206efb); animation:as-atem 1.4s ease-in-out infinite;}
-#as-overlay .as-load-meta{margin:0; font-size:.76rem; color:var(--muted,#475569); font-variant-numeric:tabular-nums;}
+#as-overlay .as-load-bar{
+  width:100%; height:8px; border-radius:99px; background:var(--line,#e2e8f0);
+  overflow:hidden; position:relative;
+}
+#as-overlay .as-load-bar-fill{
+  display:block; height:100%; border-radius:inherit; width:8%;
+  background:linear-gradient(90deg,#1d4ed8,#206efb,#7dd3fc,#206efb);
+  background-size:220% 100%;
+  animation:as-bar-flow 1.8s linear infinite;
+  transition:width .45s cubic-bezier(.22,1,.36,1);
+}
+@keyframes as-bar-flow{from{background-position:200% 0;} to{background-position:0 0;}}
+#as-overlay .as-load-meta{margin:0; font-size:.8rem; color:var(--muted,#475569); font-variant-numeric:tabular-nums; line-height:1.45;}
 @media (prefers-reduced-motion: reduce){
-  #as-overlay .as-load-icon, #as-overlay .as-load-step.is-now, #as-overlay .as-load-text{animation:none; opacity:1;}
+  #as-overlay .as-load-text, #as-overlay .as-load-bar-fill{animation:none; opacity:1;}
+  #as-overlay .as-load-bar-fill{background:#206efb;}
 }
 
 #as-overlay .as-loader{display:flex; align-items:center; justify-content:center; min-height:280px;}
@@ -608,8 +615,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0115";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0115";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0145";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0145";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -658,6 +665,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ladeAbschnitt: "lesen",
     ladeStart: 0,
     ladeUhr: 0,
+    forecastMs: 0,
   };
 
   const cleanups = [];
@@ -834,30 +842,62 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ["fuellen", "fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
   ];
 
+  function minutenLabel(ms) {
+    const min = Math.max(0, Number(ms) || 0) / 60_000;
+    if (min < 0.15) return "weniger als 1 Min";
+    const gerundet = Math.round(min * 10) / 10;
+    const text = Number.isInteger(gerundet) ? String(gerundet) : String(gerundet).replace(".", ",");
+    return `${text} Min`;
+  }
+
+  function ladeFortschritt() {
+    const i = Math.max(0, ABSCHNITTE.findIndex(([key]) => key === state.ladeAbschnitt));
+    const floor = [0.04, 0.12, 0.84, 0.93][i] ?? 0.04;
+    const ceil = [0.12, 0.84, 0.93, 0.99][i] ?? 0.99;
+    const elapsed = state.ladeStart ? Date.now() - state.ladeStart : 0;
+    const eta = state.forecastMs > 8_000 ? state.forecastMs : 90_000;
+    const zeit = Math.min(0.97, elapsed / eta);
+    return Math.round(Math.max(floor, Math.min(ceil, Math.max(floor, zeit))) * 100);
+  }
+
+  function ladeMetaText() {
+    const elapsed = state.ladeStart ? Date.now() - state.ladeStart : 0;
+    const eta = state.forecastMs > 8_000 ? state.forecastMs : 0;
+    const rest = eta ? Math.max(0, eta - elapsed) : 0;
+    if (!eta) return minutenLabel(elapsed);
+    if (elapsed > eta + 15_000) return `${minutenLabel(elapsed)} · etwas länger als üblich`;
+    return `${minutenLabel(elapsed)} · noch ca. ${minutenLabel(rest)}`;
+  }
+
   function ladeanzeigeHtml() {
     const i = Math.max(0, ABSCHNITTE.findIndex(([key]) => key === state.ladeAbschnitt));
     const [, icon, text] = ABSCHNITTE[i];
-    const sekunden = state.ladeStart ? Math.round((Date.now() - state.ladeStart) / 1000) : 0;
-    const punkte = ABSCHNITTE.map((_, n) =>
-      `<span class="as-load-step${n < i ? " is-done" : n === i ? " is-now" : ""}"></span>`).join("");
+    const pct = ladeFortschritt();
     return `<div class="as-load" role="status" aria-live="polite">
       <div class="as-load-icon"><i class="fa-solid ${icon}"></i></div>
       <p class="as-load-text">${esc(text)}</p>
-      <div class="as-load-steps" aria-label="Schritt ${i + 1} von ${ABSCHNITTE.length}">${punkte}</div>
-      <p class="as-load-meta">${sekunden} s</p>
+      <div class="as-load-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Schritt ${i + 1} von ${ABSCHNITTE.length}">
+        <span class="as-load-bar-fill" style="width:${pct}%"></span>
+      </div>
+      <p class="as-load-meta">${esc(ladeMetaText())}</p>
     </div>`;
   }
 
-  /** Nur die Sekunden laufen von selbst. Den Abschnitt meldet der Auftrag. */
+  /** Balken und Minuten laufen von selbst. Den Abschnitt meldet der Auftrag. */
   function ladeTaktStart() {
     ladeTaktStop();
     state.ladeStart = Date.now();
     state.ladeAbschnitt = "lesen";
     state.ladeUhr = window.setInterval(() => {
       if (!state.busy) { ladeTaktStop(); return; }
+      const fill = shell.querySelector(".as-load-bar-fill");
+      const bar = shell.querySelector(".as-load-bar");
       const meta = shell.querySelector(".as-load-meta");
-      if (meta && state.ladeStart) meta.textContent = `${Math.round((Date.now() - state.ladeStart) / 1000)} s`;
-    }, 1_000);
+      const pct = ladeFortschritt();
+      if (fill) fill.style.width = `${pct}%`;
+      if (bar) bar.setAttribute("aria-valuenow", String(pct));
+      if (meta) meta.textContent = ladeMetaText();
+    }, 200);
   }
 
   function ladeTaktStop() {
@@ -1090,6 +1130,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       state.assetId = row.id || null;
+      state.forecastMs = Number(row.forecast_ms) || state.forecastMs || 0;
       // Der Auftrag laeuft im Hintergrund weiter: ein Modellaufruf dauert laenger
       // als der Browser eine Anfrage offen haelt. Also fragen statt warten.
       const fertig = row.status === "running" ? await warteAufAsset(row.id) : row;
@@ -1121,6 +1162,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const res = await api("get_asset", { asset_id: id });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       ladeAbschnittSetzen(row.stage);
+      if (Number(row.forecast_ms) > 0) state.forecastMs = Number(row.forecast_ms);
       if (row.status && row.status !== "running") return row;
     }
     throw new Error("Der Entwurf ist nach sieben Minuten nicht fertig geworden. Bitte denselben Auftrag noch einmal starten.");
