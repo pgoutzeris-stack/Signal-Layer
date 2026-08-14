@@ -1977,6 +1977,38 @@ export const ASSET_STALE_MS = 400_000;
 export const ASSET_HANG_ERROR =
   "Der Auftrag hat zu lange gedauert und wurde abgebrochen. Bitte denselben Auftrag noch einmal starten.";
 
+/**
+ * Der DeepSeek-Fetch kann die Timer im selben Isolat aushungern: weder
+ * fetchMitLimit noch der 380-s-Waechter schreiben dann. get_asset laeuft in
+ * einem neuen Isolat und schliesst die Zeile, sobald die aktuelle Stufe ihr
+ * Fenster ueberschreitet. Belegt 14.8.2026: Memo blieb 401 s auf modell, ohne
+ * model_ok, bis ASSET_STALE_MS griff.
+ */
+export function assetStageStaleMs(stage: string, kind: string, answers: unknown): number {
+  const art = isAssetKind(kind) ? kind : "linkedin";
+  const parsed = normalizeAssetAnswers(art, answers && typeof answers === "object" ? answers : {});
+  const modell = assetModelTimeoutMs(art, parsed);
+  switch (String(stage || "")) {
+    case "lesen": return 25_000;
+    case "recherchieren": return MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS + 20_000;
+    case "modell": return modell + 20_000;
+    case "pruefen": return ASSET_STAGE_HOLD_MS + 25_000;
+    case "bilder": return 90_000;
+    case "fuellen": return ASSET_STAGE_HOLD_MS + 20_000;
+    default: return ASSET_STALE_MS;
+  }
+}
+
+export function assetStaleErrorText(model: string, stage: string, waitedMs: number): string {
+  const sek = Math.max(1, Math.round(Number(waitedMs) / 1000));
+  const wo = stage === "recherchieren" ? "bei der Vorreiter-Recherche"
+    : stage === "modell" ? "beim Schreiben"
+    : stage === "bilder" ? "bei den Motiven"
+    : stage === "pruefen" ? "beim Prüfen"
+    : "in diesem Schritt";
+  return `${model || "Das Modell"} ist ${wo} nach ${sek} Sekunden nicht weitergekommen. Bitte denselben Auftrag noch einmal starten.`;
+}
+
 export function assetOutputTokenBudget(kind: AssetKind, answers: AssetAnswers): number {
   if (kind === "memo") return 6_000;
   return (answers as LinkedinAnswers).asset_type === "carousel" ? 8_000 : 3_000;

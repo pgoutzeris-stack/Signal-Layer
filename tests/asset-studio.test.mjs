@@ -555,15 +555,17 @@ test("die Zeitprognose lernt aus gespeicherten Assets, Fehler stehen im Laufprot
 test("ein haengender Auftrag wird geschlossen, kein zweites Modellrennen", () => {
   // AbortSignal.timeout hat den DeepSeek-Fetch nicht abgebrochen. Promise.race
   // gibt spaetestens nach dem Fenster zurueck, der Waechter schreibt den Fehler
-  // nur solange die Zeile noch running ist, get_asset raeumt Zombies nach 400 s.
+  // nur solange die Zeile noch running ist. Am 14.8.2026 blieb ein Memo 401 s
+  // auf modell, weil der Fetch die Timer im Isolat aushungerte: get_asset muss
+  // die Stufe selbst schliessen, nicht erst nach 400 s.
   assert.match(edge, /async function fetchMitLimit/);
   assert.match(edge, /fetchMitLimit\(endpoint/);
   assert.match(edge, /Promise\.race/);
   assert.match(edge, /err\.name = "TimeoutError"/);
   assert.match(edge, /setTimeout\(\(\) => \{/);
-  assert.match(edge, /\.eq\("id", assetRow\.id\)\s*\.eq\("status", "running"\)/);
-  assert.match(edge, /Date\.now\(\) - seit >= ASSET_STALE_MS/);
-  assert.match(edge, /\.eq\("id", gefragteId\)\s*\.eq\("status", "running"\)/);
+  assert.match(edge, /async function schliesseHangingAsset/);
+  assert.match(edge, /assetStageStaleMs/);
+  assert.match(edge, /schliesseHangingAsset\(admin, geladen/);
   assert.match(edge, /EDITOR_ACTIONS[\s\S]*generate_asset/);
   assert.doesNotMatch(studio, /Der Auftrag läuft weiter/);
   assert.match(studio, /sieben Minuten nicht fertig/);
@@ -573,6 +575,11 @@ test("ein haengender Auftrag wird geschlossen, kein zweites Modellrennen", () =>
   assert.equal(backend.assetMangelIsRepairable("Die Antwort war kein JSON-Objekt. Angekommen ist: x"), true);
   assert.equal(backend.assetMangelIsRepairable("Die Kennzahl 24 steht auf Folie 1 und Folie 2."), false);
   assert.equal(backend.assetMangelIsRepairable("Das Karussell braucht genau 4 Folien, das Modell hat 3 geliefert (G, H, K)."), false);
+  const memo = backend.normalizeAssetAnswers("memo", {});
+  assert.equal(backend.assetStageStaleMs("modell", "memo", memo), 220_000);
+  assert.equal(backend.assetStageStaleMs("recherchieren", "memo", memo), 60_000);
+  assert.ok(backend.assetStageStaleMs("modell", "memo", memo) < backend.ASSET_STALE_MS);
+  assert.match(backend.assetStaleErrorText("deepseek-v4-pro", "modell", 220_000), /beim Schreiben nach 220 Sekunden/);
 });
 
 test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () => {
