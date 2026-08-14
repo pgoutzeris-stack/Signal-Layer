@@ -576,6 +576,8 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.match(edge, /assetHangReason/);
   assert.match(edge, /schliesseHangingAsset\(admin, row/);
   assert.match(edge, /pflegeLaufendesAsset\(admin, geladen/);
+  assert.match(edge, /return \{ \.\.\.row, run_log: runLog/);
+  assert.doesNotMatch(edge, /return \{ \.\.\.row, run_log,/);
   assert.match(edge, /EDITOR_ACTIONS[\s\S]*generate_asset/);
   assert.doesNotMatch(studio, /Der Auftrag läuft weiter/);
   assert.match(studio, /sieben Minuten nicht fertig/);

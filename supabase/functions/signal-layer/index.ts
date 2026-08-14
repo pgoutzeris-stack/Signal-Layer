@@ -3074,7 +3074,7 @@ async function pflegeLaufendesAsset(
       updated_at: new Date().toISOString(),
     }).eq("id", row.id).eq("status", "running");
     triggerSelf({ action: "finish_asset", asset_id: String(row.id) }, 15_000);
-    return { ...row, run_log, updated_at: new Date().toISOString() };
+    return { ...row, run_log: runLog, updated_at: new Date().toISOString() };
   }
   if (assetModelRetryDue(row)) {
     runLog.push({ t: Date.now() - startedAt, event: "retry_model", via: "watchdog" });
@@ -3084,7 +3084,7 @@ async function pflegeLaufendesAsset(
       updated_at: new Date().toISOString(),
     }).eq("id", row.id).eq("status", "running");
     triggerSelf({ action: "retry_asset_model", asset_id: String(row.id) }, 15_000);
-    return { ...row, run_log, stage: "modell", updated_at: new Date().toISOString() };
+    return { ...row, run_log: runLog, stage: "modell", updated_at: new Date().toISOString() };
   }
   return schliesseHangingAsset(admin, row);
 }
