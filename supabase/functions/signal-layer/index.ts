@@ -109,6 +109,8 @@ import {
   MemoPayload,
   applyAssetPulse,
   assertMemoBenchmarkBriefs,
+  assetDraftTextFromLog,
+  assetFinishHandoffDue,
   assetHangReason,
   assetHeartbeatAgeMs,
   assetHeartbeatErrorText,
@@ -4677,6 +4679,297 @@ async function tagArticle(
   }
 }
 
+/**
+ * Nach einem langen Stream ist das Schreib-Isolat oft tot. Prüfung, Reparatur
+ * und Motive laufen deshalb in einem neuen Isolat, mit dem gespeicherten Text.
+ */
+async function finishGeneratedAsset(assetId: string): Promise<void> {
+  const admin = getAdminClient();
+  const { data: row } = await admin.schema("signal_layer").from("generated_assets")
+    .select("*").eq("id", assetId).maybeSingle();
+  if (!row || String(row.status) !== "running") return;
+  const draft = assetDraftTextFromLog(row.run_log);
+  if (!draft) return;
+
+  const startedAt = Date.parse(String(row.created_at || "")) || Date.now();
+  const runLog: Record<string, unknown>[] = Array.isArray(row.run_log)
+    ? [...row.run_log as Record<string, unknown>[]]
+    : [];
+  const loggen = (event: string, extra: Record<string, unknown> = {}) => {
+    runLog.push({ t: Date.now() - startedAt, event, ...extra });
+  };
+  const persist = (fields: Record<string, unknown>) => admin.schema("signal_layer")
+    .from("generated_assets")
+    .update({
+      run_log: runLog,
+      duration_ms: Date.now() - startedAt,
+      updated_at: new Date().toISOString(),
+      ...fields,
+    })
+    .eq("id", assetId)
+    .eq("status", "running");
+  const halte = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const abschnitt = async (name: string) => {
+    loggen("stage", { stage: name });
+    await persist({ stage: name });
+  };
+
+  try {
+    loggen("finish_start");
+    await abschnitt("pruefen");
+    await halte(ASSET_STAGE_HOLD_MS);
+
+    const existing = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+      ? row.payload as Record<string, unknown>
+      : null;
+    let payload: AssetPayload | null = existing && (existing.slides || existing.title || existing.benchmarks)
+      ? existing as AssetPayload
+      : null;
+
+    const assetKind = String(row.kind || "");
+    if (!isAssetKind(assetKind)) {
+      loggen("error", { code: "kind", message: "Unbekannte Assetart." });
+      await persist({ status: "error", error_message: "Unbekannte Assetart." });
+      return;
+    }
+
+    const [{ data: assetSignal }, { data: assetArticle, error: assetArticleError }] = await Promise.all([
+      admin.schema("signal_layer").from("simple_signals").select("*")
+        .eq("id", row.signal_id).maybeSingle(),
+      admin.schema("signal_layer").from("articles")
+        .select("id, title, title_de, url, published_at, content, cleaned_content, content_de, topics, territory, article_type, primary_company")
+        .eq("id", row.article_id).maybeSingle(),
+    ]);
+    if (assetArticleError || !assetArticle || !assetSignal) {
+      loggen("error", { code: "context", message: "Artikel oder Signal fehlt." });
+      await persist({ status: "error", error_message: "Artikel oder Signal für die Prüfung fehlt." });
+      return;
+    }
+
+    const assetAnswers = normalizeAssetAnswers(assetKind, row.answers);
+    const articleTopics = Array.isArray(assetArticle.topics) ? assetArticle.topics as string[] : [];
+    const signalForAsset = {
+      ...assetSignal,
+      company: resolveAssetCompany(assetAnswers, assetSignal, assetArticle),
+      topics: articleTopics.length ? articleTopics : (assetSignal.signal_id ? [assetSignal.signal_id] : []),
+      territory: assetArticle.territory || assetSignal.territory || null,
+      article_type: assetArticle.article_type || assetSignal.article_type || null,
+    };
+    const assetContext = {
+      articleText: [
+        assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
+        assetSignal.evidence, assetSignal.why_de, assetSignal.summary_de, assetSignal.headline_de,
+      ].filter(Boolean).join("\n"),
+      rootsOffering: assetSignal.roots_offering,
+      buyingCenterRoles: assetSignal.buying_center_roles,
+      personName: assetSignal.person_name,
+      company: signalForAsset.company,
+      topics: signalForAsset.topics,
+      territory: signalForAsset.territory,
+      signalLabel: assetSignal.signal_label,
+      benchmarkCorpus: assetKind === "memo"
+        ? memoBenchmarkCorpus((assetAnswers as MemoAnswers).benchmarks || [])
+        : null,
+    };
+
+    const cachedInput = Number(row.cached_input_tokens || 0);
+    const inputTokens = Number(row.input_tokens || 0);
+    let result: ModelCallResult = {
+      ok: true, status: 200, error: "", text: draft, attempts: 1,
+      usage: {
+        input: Math.max(0, inputTokens - cachedInput),
+        cachedInput,
+        output: Number(row.output_tokens || 0),
+        thinking: Number(row.thinking_tokens || 0),
+        total: Number(row.total_tokens || 0),
+      },
+    };
+    const assetModel = String(row.model || "");
+    const tokenFelderVon = (usage: typeof result.usage) => ({
+      input_tokens: usage.input + usage.cachedInput, output_tokens: usage.output,
+      thinking_tokens: usage.thinking, total_tokens: usage.total,
+    });
+    let kostenFelder: Record<string, unknown> = {};
+    try {
+      kostenFelder = await modelCostFields(assetModel, result.usage);
+    } catch {
+      kostenFelder = zeroCostFields(assetModel);
+    }
+    let tokenFelder = tokenFelderVon(result.usage);
+
+    let lastPulseAt = 0;
+    const onPulse = async (info: AssetPulse) => {
+      applyAssetPulse(runLog, { model: assetModel, ...info }, startedAt);
+      const now = Date.now();
+      if (now - lastPulseAt < ASSET_HEARTBEAT_PULSE_MS) return;
+      lastPulseAt = now;
+      await persist({});
+    };
+    const usageBasis = {
+      article_id: row.article_id, operation: "asset_generation", model: assetModel,
+      prompt_version: String(row.prompt_version || ASSET_PROMPT_VERSION),
+    };
+    const buchen = async (
+      status: "success" | "error",
+      extra: Record<string, unknown>,
+      attempt: number,
+    ) => {
+      const { data } = await admin.schema("signal_layer").from("ai_usage_events")
+        .insert({
+          ...usageBasis, ...extra, status, attempt,
+          duration_ms: Date.now() - startedAt,
+        }).select("id").maybeSingle();
+      return data;
+    };
+    const scheitern = async (
+      nachricht: string,
+      code: string,
+      kosten: Record<string, unknown>,
+      attempt = 1,
+      tokens: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number; total_tokens?: number } = {},
+    ) => {
+      loggen("error", { code, message: nachricht.slice(0, 500), tokens: tokens.total_tokens || 0 });
+      await buchen("error", { ...kosten, error_code: code, error_message: nachricht.slice(0, 3000) }, attempt);
+      await persist({
+        status: "error",
+        error_message: nachricht.slice(0, 2000),
+        ...tokens,
+      });
+    };
+    const klartextVon = (roh: string, status: number) =>
+      /insufficient balance|spending cap/i.test(roh)
+        ? `Beim Anbieter ${assetModel} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`
+        : /invalid api key|unauthorized|401/i.test(roh)
+          ? `Der API-Schlüssel für ${assetModel} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`
+          : /rate limit|429/i.test(roh)
+            ? `${assetModel} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`
+            : /empty completion/i.test(roh)
+              ? `${assetModel} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${roh}). Ein kürzerer Fragebogen oder weniger Slides hilft.`
+              : /timeout|aborted/i.test(roh)
+                ? assetHeartbeatErrorText(assetModel, "modell", ASSET_HEARTBEAT_STALE_MS, "silent")
+                : `${assetModel} hat mit ${status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
+
+    let mangel = "";
+    if (!payload) {
+      try {
+        payload = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
+      } catch (fehler) {
+        mangel = fehler instanceof Error ? fehler.message : String(fehler);
+      }
+    }
+
+    const darfReparieren = !payload && assetMangelIsRepairable(mangel);
+    const repairMs = darfReparieren ? assetRepairTimeoutMs(Date.now() - startedAt) : null;
+    if (!payload && !darfReparieren) {
+      loggen("fail_early", { mangel: mangel.slice(0, 400) });
+    }
+    if (!payload && repairMs) {
+      loggen("repair", { mangel: mangel.slice(0, 400) });
+      await buchen("error", {
+        ...kostenFelder, ...tokenFelder, error_code: "invalid_response",
+        error_message: `${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`.slice(0, 3000),
+      }, 1);
+      await abschnitt("modell");
+      const assetKey = await modelApiKey(assetModel);
+      if (!assetKey) {
+        await persist({ status: "error", error_message: `Für ${assetModel} ist kein API-Schlüssel hinterlegt` });
+        return;
+      }
+      const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
+      result = await callJsonModel({
+        model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
+        schema: assetResponseSchema(assetKind, assetAnswers, [
+          assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
+        ].filter(Boolean).join("\n")),
+        maxOutputTokens: assetOutputTokenBudget(assetKind, assetAnswers),
+        maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
+        temperature: 0.35,
+        onPulse,
+        attempts: 1,
+        timeoutMs: repairMs,
+        prompt: buildAssetRepairPrompt(prompt, mangel),
+      });
+      if (!result.ok) {
+        await scheitern(klartextVon(result.error || "", result.status), `http_${result.status || "network"}`, zeroCostFields(assetModel), 2);
+        return;
+      }
+      loggen("model_ok", {
+        tokens: result.usage.total, thinking: result.usage.thinking, output: result.usage.output,
+        text: String(result.text || "").slice(0, 100_000),
+      });
+      await abschnitt("pruefen");
+      await halte(ASSET_STAGE_HOLD_MS);
+      try {
+        kostenFelder = await modelCostFields(assetModel, result.usage);
+      } catch {
+        kostenFelder = zeroCostFields(assetModel);
+      }
+      tokenFelder = tokenFelderVon(result.usage);
+      mangel = "";
+      try {
+        payload = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
+      } catch (fehler) {
+        mangel = fehler instanceof Error ? fehler.message : String(fehler);
+      }
+    }
+
+    if (!payload) {
+      await scheitern(`${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`,
+        "invalid_response", { ...kostenFelder, ...tokenFelder }, repairMs ? 2 : 1, tokenFelder);
+      return;
+    }
+
+    // Entwurf steht. Ab hier darf nichts mehr den Text verwerfen — auch nicht
+    // ein fehlgeschlagenes Motiv.
+    loggen("payload_ok");
+    const usageEvent = row.usage_event_id
+      ? { id: row.usage_event_id }
+      : await buchen("success", { ...kostenFelder, ...tokenFelder }, repairMs ? 2 : 1);
+    await persist({
+      payload, ...tokenFelder, cached_input_tokens: result.usage.cachedInput,
+      usage_event_id: usageEvent?.id || null,
+      cost_usd: kostenFelder.estimated_cost_usd ?? null, cost_eur: kostenFelder.estimated_cost_eur ?? null,
+      native_cost: kostenFelder.native_cost ?? null, pricing_currency: kostenFelder.pricing_currency ?? null,
+      pricing_version: kostenFelder.pricing_version ?? null,
+    });
+
+    if (assetKind === "memo" && (assetAnswers as MemoAnswers).images !== "upload") {
+      await abschnitt("bilder");
+      const geminiKey = await getGeminiKey().catch(() => "");
+      if (!geminiKey) {
+        loggen("images_skip", { reason: "no_gemini_key" });
+      } else {
+        try {
+          payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
+            remainingMs: ASSET_WALL_CLOCK_MS - (Date.now() - startedAt),
+            log: async (event, extra) => {
+              loggen(event, extra || {});
+              await persist({ payload });
+            },
+            generate: (promptText, aspect) => generateGeminiMemoImage(geminiKey, promptText, aspect),
+          });
+        } catch (fehler) {
+          loggen("images_skip", { reason: String(fehler).slice(0, 300) });
+        }
+      }
+    }
+
+    await abschnitt("fuellen");
+    await halte(ASSET_STAGE_HOLD_MS);
+    loggen("done", { tokens: result.usage.total });
+    await persist({
+      status: "done", stage: "fertig", payload, error_message: null, usage_event_id: usageEvent?.id || null,
+      ...tokenFelder, cached_input_tokens: result.usage.cachedInput,
+      cost_usd: kostenFelder.estimated_cost_usd ?? null, cost_eur: kostenFelder.estimated_cost_eur ?? null,
+      native_cost: kostenFelder.native_cost ?? null, pricing_currency: kostenFelder.pricing_currency ?? null,
+      pricing_version: kostenFelder.pricing_version ?? null,
+    });
+  } catch (fehler) {
+    loggen("error", { code: "finish", message: String(fehler).slice(0, 500) });
+    await persist({ status: "error", error_message: String(fehler).slice(0, 2000) }).catch(() => {});
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
@@ -4715,7 +5008,7 @@ Deno.serve(async (req: Request) => {
     const workerSecret = await getBrowserBatchSecret();
     const authorization = req.headers.get("authorization") || "";
     if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return unauthorizedResponse(req, origin);
-  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs"].includes(action)) {
+  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs", "finish_asset"].includes(action)) {
     if (!isInternalCall(req)) return unauthorizedResponse(req, origin);
   } else if (["process_analysis_worker", "process_analysis_batches"].includes(action)) {
     // Queue recovery may be started by the protected pg_cron/watchdog path;
@@ -8362,6 +8655,13 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { ok: true, processed: articles.length, updated });
       }
 
+      case "finish_asset": {
+        const finishId = String(body.asset_id || "");
+        if (!finishId) return errorResponse(origin, "asset_id fehlt");
+        EdgeRuntime.waitUntil(finishGeneratedAsset(finishId));
+        return corsResponse(origin, { ok: true, asset_id: finishId });
+      }
+
       case "generate_asset": {
         const assetCapacity = await checkCapacity("asset");
         if (!assetCapacity.ok) return capacityResponse(origin, assetCapacity);
@@ -8624,107 +8924,26 @@ Deno.serve(async (req: Request) => {
           }
           loggen("model_ok", {
             tokens: result.usage.total, thinking: result.usage.thinking, output: result.usage.output,
+            text: String(result.text || "").slice(0, 100_000),
           });
-
-          await abschnitt("pruefen");
-          await halte(ASSET_STAGE_HOLD_MS);
-          const tokenFelderVon = (usage: typeof result.usage) => ({
-            input_tokens: usage.input + usage.cachedInput, output_tokens: usage.output,
-            thinking_tokens: usage.thinking, total_tokens: usage.total,
-          });
-          let kostenFelder = await modelCostFields(assetModel, result.usage);
-          let tokenFelder = tokenFelderVon(result.usage);
-          const assetContext = {
-            articleText: [
-              assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
-              assetSignal.evidence, assetSignal.why_de, assetSignal.summary_de, assetSignal.headline_de,
-            ].filter(Boolean).join("\n"),
-            rootsOffering: assetSignal.roots_offering,
-            buyingCenterRoles: assetSignal.buying_center_roles,
-            personName: assetSignal.person_name,
-            company: signalForAsset.company,
-            topics: signalForAsset.topics,
-            territory: signalForAsset.territory,
-            signalLabel: assetSignal.signal_label,
-            benchmarkCorpus: assetKind === "memo"
-              ? memoBenchmarkCorpus((assetAnswers as MemoAnswers).benchmarks || [])
-              : null,
+          loggen("handoff", { to: "finish_asset" });
+          const tokenFelder = {
+            input_tokens: result.usage.input + result.usage.cachedInput,
+            output_tokens: result.usage.output,
+            thinking_tokens: result.usage.thinking,
+            total_tokens: result.usage.total,
           };
-          let payload: AssetPayload | null = null;
-          let mangel = "";
-          try {
-            payload = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
-          } catch (fehler) {
-            mangel = fehler instanceof Error ? fehler.message : String(fehler);
-          }
-
-          // Unlesbares JSON: ein gezielter zweiter Versuch, wenn Zeit bleibt.
-          // Inhaltliche Maengel (doppelte Zahl, falsche Folienzahl) sind ein
-          // frueher Fehler mit Log, kein zweites Modellrennen.
-          const darfReparieren = !payload && assetMangelIsRepairable(mangel);
-          const repairMs = darfReparieren ? assetRepairTimeoutMs(Date.now() - startedAt) : null;
-          if (!payload && !darfReparieren) {
-            loggen("fail_early", { mangel: mangel.slice(0, 400) });
-          }
-          if (!payload && repairMs) {
-            loggen("repair", { mangel: mangel.slice(0, 400) });
-            await buchen("error", {
-              ...kostenFelder, ...tokenFelder, error_code: "invalid_response",
-              error_message: `${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`.slice(0, 3000),
-            }, 1);
-            await abschnitt("modell");
-            result = await callJsonModel({
-              ...callOpts, attempts: 1, timeoutMs: repairMs,
-              prompt: buildAssetRepairPrompt(prompt, mangel),
-            });
-            if (!result.ok) {
-              await scheitern(klartextVon(result.error || "", result.status), `http_${result.status || "network"}`, zeroCostFields(assetModel), 2);
-              return;
-            }
-            await abschnitt("pruefen");
-            await halte(ASSET_STAGE_HOLD_MS);
-            kostenFelder = await modelCostFields(assetModel, result.usage);
-            tokenFelder = tokenFelderVon(result.usage);
-            mangel = "";
-            try {
-              payload = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
-            } catch (fehler) {
-              mangel = fehler instanceof Error ? fehler.message : String(fehler);
-            }
-          }
-
-          if (!payload) {
-            await scheitern(`${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`,
-              "invalid_response", { ...kostenFelder, ...tokenFelder }, repairMs ? 2 : 1, tokenFelder);
-            return;
-          }
-          const usageEvent = await buchen("success", { ...kostenFelder, ...tokenFelder }, repairMs ? 2 : 1);
-          if (assetKind === "memo" && (assetAnswers as MemoAnswers).images !== "upload") {
-            await abschnitt("bilder");
-            const geminiKey = await getGeminiKey().catch(() => "");
-            if (!geminiKey) {
-              loggen("images_skip", { reason: "no_gemini_key" });
-            } else {
-              payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
-                remainingMs: ASSET_WALL_CLOCK_MS - (Date.now() - startedAt),
-                log: async (event, extra) => {
-                  loggen(event, extra || {});
-                  await persist({});
-                },
-                generate: (promptText, aspect) => generateGeminiMemoImage(geminiKey, promptText, aspect),
-              });
-            }
-          }
-          await abschnitt("fuellen");
-          await halte(ASSET_STAGE_HOLD_MS);
-          loggen("done", { tokens: result.usage.total });
           await persist({
-            status: "done", stage: "fertig", payload, error_message: null, usage_event_id: usageEvent?.id || null,
-            ...tokenFelder, cached_input_tokens: result.usage.cachedInput,
-            cost_usd: kostenFelder.estimated_cost_usd ?? null, cost_eur: kostenFelder.estimated_cost_eur ?? null,
-            native_cost: kostenFelder.native_cost ?? null, pricing_currency: kostenFelder.pricing_currency ?? null,
-            pricing_version: kostenFelder.pricing_version ?? null,
+            stage: "pruefen",
+            ...tokenFelder,
+            cached_input_tokens: result.usage.cachedInput,
           });
+          // Frisches Isolat: dieses hier stirbt nach einem langen Stream oft
+          // genau zwischen Text und Prüfung (Xpeng 14.8.2026, 147 s dann tot).
+          // Der 380-s-Wächter gilt nur fürs Schreiben, nicht für die Prüfung.
+          clearTimeout(waechter);
+          triggerSelf({ action: "finish_asset", asset_id: assetRow.id }, 15_000);
+          return;
         })().catch(async (fehler) => {
           await getAdminClient().schema("signal_layer").from("generated_assets")
             .update({
@@ -8787,6 +9006,21 @@ Deno.serve(async (req: Request) => {
           .from("generated_assets").select("*").eq("id", gefragteId).maybeSingle();
         if (ladeFehler) return errorResponse(origin, ladeFehler.message, 500);
         if (!geladen) return errorResponse(origin, "Asset nicht gefunden", 404);
+        if (assetFinishHandoffDue(geladen)) {
+          const startedAt = Date.parse(String(geladen.created_at || "")) || Date.now();
+          const runLog = Array.isArray(geladen.run_log)
+            ? [...geladen.run_log as Record<string, unknown>[]]
+            : [];
+          runLog.push({ t: Date.now() - startedAt, event: "handoff", to: "finish_asset", via: "watchdog" });
+          await admin.schema("signal_layer").from("generated_assets").update({
+            run_log: runLog,
+            updated_at: new Date().toISOString(),
+          }).eq("id", geladen.id).eq("status", "running");
+          triggerSelf({ action: "finish_asset", asset_id: geladen.id }, 15_000);
+          return corsResponse(origin, {
+            asset: { ...geladen, run_log: runLog, updated_at: new Date().toISOString() },
+          });
+        }
         const geschlossen = await schliesseHangingAsset(admin, geladen as Record<string, unknown>);
         return corsResponse(origin, { asset: geschlossen || geladen });
       }
