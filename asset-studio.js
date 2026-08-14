@@ -7,6 +7,9 @@
 
 const LOGO_PATH = "assets/roots-logo.png";
 const SAVE_LIMIT = 400000;
+// Drei A4-Seiten, in der Vorschau einzeln. 210 mm × 297 mm bei 96 dpi.
+const MEMO_SEITEN = 3;
+const MEMO_SEITE_PX = { w: 794, h: 1123 };
 
 // Nur diese Varianten sind vertraglich zugesagt; J fehlt bewusst.
 const VARIANTS = [
@@ -373,21 +376,22 @@ const CHROME_CSS = `
 #as-overlay .as-split2-form::-webkit-scrollbar-thumb{background:var(--line,#e2e8f0); border-radius:99px;}
 #as-overlay .as-split2-prev{position:sticky; top:0; display:flex; flex-direction:column; gap:8px; height:100%; min-height:0;}
 #as-overlay .as-prev-label{font-size:.68rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--muted,#475569);}
-/* Der Kasten traegt sein Seitenverhaeltnis selbst: so haengt die Vorschau nicht
-   davon ab, ob die Hoehe von oben durchgereicht wird. */
+/* Ein Kasten, ein Radius. Das Asset fuellt ihn kantenbuendig, ohne Innenabstand. */
 #as-overlay .as-prev-big{width:100%; aspect-ratio:1080/1350; max-height:100%; min-height:240px;
-  display:flex; align-items:flex-start; justify-content:center; overflow:hidden;
-  border:1px solid var(--line,#e2e8f0); border-radius:14px; background:var(--surface,#f8fafc); padding:12px;}
-#as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:210/891; width:auto; max-width:100%; height:100%;}
+  box-sizing:border-box; display:flex; align-items:flex-start; justify-content:flex-start;
+  overflow:hidden; padding:0;
+  border:1px solid var(--line,#e2e8f0); border-radius:14px; background:#fff; position:relative;}
+#as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:210/297;}
 #as-overlay .as-prev-scale{display:block; transform-origin:top left; flex:0 0 auto;}
-#as-overlay .as-prev-scale .as-stage{box-shadow:0 10px 30px rgba(15,23,42,.12);}
+#as-overlay .as-prev-scale .as-stage,
+#as-overlay .as-prev-scale .li{box-shadow:none; border-radius:0;}
 @container (max-width: 860px){
   #as-overlay .as-split2{grid-template-columns:1fr; grid-template-rows:auto minmax(220px, 40vh);}
   #as-overlay .as-split2-prev{position:static;}
 }
 /* Die Buehne aus der Vorlage traegt ihre Masse selbst, damit das Einpassen
    nicht auf einen zusammengefallenen Rahmen rechnet. */
-#as-overlay .as-stage--tpl{width:1080px; height:1350px; flex:0 0 auto; overflow:hidden; border-radius:inherit;}
+#as-overlay .as-stage--tpl{width:1080px; height:1350px; flex:0 0 auto; overflow:hidden; border-radius:0;}
 
 /* Bildplatz in der Vorlage: die Bedienung liegt als Auflage darauf. */
 #as-overlay .as-img--tpl{position:relative; display:block;}
@@ -403,7 +407,7 @@ const CHROME_CSS = `
 #as-overlay .as-prev-empty b{font-size:.92rem; color:var(--ink,#0f172a);}
 #as-overlay .as-prev-empty span{font-size:.78rem;}
 #as-overlay .as-prev-nav{position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
-  display:flex; align-items:center; gap:4px; padding:3px 5px; background:#fff;
+  z-index:5; display:flex; align-items:center; gap:4px; padding:3px 5px; background:#fff;
   border:1px solid var(--line,#e2e8f0); border-radius:99px; box-shadow:0 6px 18px rgba(15,23,42,.12);}
 #as-overlay .as-prev-nav span{font-size:.7rem; font-weight:700; color:var(--muted,#475569); padding:0 4px;}
 #as-overlay .as-prev-nav button{width:26px; height:26px; display:flex; align-items:center; justify-content:center;
@@ -411,7 +415,6 @@ const CHROME_CSS = `
 #as-overlay .as-prev-nav button:hover{background:var(--brand-light,#eff6ff);}
 #as-overlay .as-prev-note{position:absolute; bottom:10px; right:14px; font-size:.7rem; font-weight:600;
   color:var(--muted,#475569); background:#fff; border:1px solid var(--line,#e2e8f0); border-radius:99px; padding:2px 8px;}
-#as-overlay .as-prev-big{position:relative;}
 
 /* Weisses Dropdown fuer das Layout. Eine Karte, die sich oeffnet, mit Miniatur
    je Zeile - kein natives select, weil dort kein Bild moeglich ist. */
@@ -504,7 +507,11 @@ const CHROME_CSS = `
   min-height:0; height:100%; overflow:hidden; justify-content:center;
 }
 #as-overlay .as-stagearea{display:flex; flex-direction:column; gap:22px; align-items:center; min-width:0;}
-#as-overlay .as-frame{width:100%; display:flex; flex-direction:column; gap:8px; align-items:center;}
+#as-overlay .as-frame{width:100%; display:flex; flex-direction:column; gap:8px; align-items:center; position:relative;}
+#as-overlay .as-scaler{position:relative; margin:0 auto; overflow:hidden; border-radius:14px;
+  box-shadow:var(--shadow-lg,0 12px 40px rgba(15,23,42,.14));}
+#as-overlay .as-scaler > .as-stage{position:absolute; top:0; left:0; transform-origin:top left; border-radius:0;}
+#as-overlay .as-scaler .li{border-radius:0;}
 #as-overlay .as-slidetools{
   width:100%; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
   background:var(--bg,#fff); border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:8px 10px;
@@ -514,8 +521,8 @@ const CHROME_CSS = `
   font:inherit; font-size:13px; padding:6px 10px; border-radius:9px;
   border:1px solid var(--line,#e2e8f0); background:var(--bg,#fff); color:inherit;
 }
-#as-overlay .as-scaler{position:relative; margin:0 auto; box-shadow:var(--shadow-lg,0 12px 40px rgba(15,23,42,.14));}
-#as-overlay .as-scaler > .as-stage{position:absolute; top:0; left:0; transform-origin:top left;}
+#as-overlay .as-stage--memo{height:297mm; background:transparent;}
+#as-overlay .as-stage--memo .em-page.is-off{display:none !important;}
 
 #as-overlay .as-inspector{
   position:sticky; top:0; display:flex; flex-direction:column; gap:16px;
@@ -615,8 +622,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0145";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0145";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0300";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0300";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -807,8 +814,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Grosse Vorschau rechts. Dieselbe Vorlage wie das Ergebnis, kein Modellaufruf. */
   function livePreviewHtml() {
     if (isMemo) {
+      if (state.prevIndex >= MEMO_SEITEN) state.prevIndex = 0;
       const html = memoHtml(demoMemo(), false).replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, "");
-      return `<span class="as-prev-scale">${html}</span>`;
+      return `<span class="as-prev-scale">${html}</span>${memoNavHtml()}`;
     }
     // Entscheidet das Modell das Layout, gibt es nichts zu zeigen. Eine
     // beliebige Kachel waere geraten und damit irrefuehrend.
@@ -828,6 +836,27 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         </div>`
       : "";
     return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${blaettern}`;
+  }
+
+  function memoNavHtml() {
+    return `<div class="as-prev-nav">
+      <button type="button" data-act="prev-back" aria-label="Vorherige Seite"><i class="fa-solid fa-chevron-left"></i></button>
+      <span>Seite ${state.prevIndex + 1} von ${MEMO_SEITEN}</span>
+      <button type="button" data-act="prev-fwd" aria-label="Nächste Seite"><i class="fa-solid fa-chevron-right"></i></button>
+    </div>`;
+  }
+
+  function vorschauAnzahl() {
+    return isMemo ? MEMO_SEITEN : Math.max(1, gewaehlteArten().length);
+  }
+
+  /** Nur die aktuelle Memo-Seite ist sichtbar, damit die Bühne eine A4-Seite misst. */
+  function zeigeAktiveMemoSeite(wurzel = shell) {
+    if (!isMemo || !wurzel) return;
+    const seiten = [...wurzel.querySelectorAll(".em-page")];
+    if (!seiten.length) return;
+    if (state.prevIndex < 0 || state.prevIndex >= seiten.length) state.prevIndex = 0;
+    seiten.forEach((seite, i) => seite.classList.toggle("is-off", i !== state.prevIndex));
   }
 
   /**
@@ -1516,7 +1545,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!area) return;
     if (isMemo) {
       if (!state.memo) return;
-      area.innerHTML = `<div class="as-frame"><div class="as-scaler">${memoHtml(state.memo)}</div></div>`;
+      area.innerHTML = `<div class="as-frame">${memoNavHtml()}<div class="as-scaler">${memoHtml(state.memo)}</div></div>`;
     } else {
       if (!state.slides.length) return;
       area.innerHTML = state.slides.map((slide, index) => `
@@ -1592,10 +1621,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const stage = inner?.querySelector(".as-stage");
     // Ohne Buehne steht dort der Platzhalter - nichts einzupassen.
     if (!box || !inner || !stage) return;
+    zeigeAktiveMemoSeite(box);
     const breite = box.clientWidth || 1;
     const hoehe = Math.max(box.clientHeight, 240);
-    const w = stage.offsetWidth || (isMemo ? 794 : 1080);
-    const h = stage.offsetHeight || (isMemo ? 3368 : 1350);
+    const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
+    const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
     const faktor = Math.min(breite / w, hoehe / h);
     inner.style.transform = `scale(${faktor})`;
     inner.style.width = `${w}px`;
@@ -1615,8 +1645,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     area.querySelectorAll(".as-scaler").forEach((scaler) => {
       const stage = scaler.querySelector(".as-stage");
       if (!stage) return;
-      const w = stage.offsetWidth || (isMemo ? 794 : 1080);
-      const h = stage.offsetHeight || (isMemo ? 3368 : 1350);
+      zeigeAktiveMemoSeite(scaler);
+      const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
+      const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
       const scale = isMemo && availH > 80
         ? Math.min(1, availW / w, availH / h)
         : Math.min(1, availW / w);
@@ -1828,8 +1859,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function printCss(memoKind) {
     const page = memoKind ? "size:A4; margin:0;" : "size:1080px 1350px; margin:0;";
     const bruch = memoKind
-      ? `#as-overlay .as-stage--memo{break-after:auto; page-break-after:auto;}
-  #as-overlay .as-stage--memo .em-page{break-after:page; page-break-after:always;}
+      ? `#as-overlay .as-stage--memo{height:891mm !important; background:#eef2f7 !important; break-after:auto; page-break-after:auto;}
+  #as-overlay .as-stage--memo .em-page{display:flex !important; break-after:page; page-break-after:always;}
   #as-overlay .as-stage--memo .em-page:last-child{break-after:auto; page-break-after:auto;}`
       : `#as-overlay .as-stage{break-after:page; page-break-after:always;}
   #as-overlay .as-stagearea > .as-frame:last-of-type .as-stage{break-after:auto; page-break-after:auto;}`;
@@ -1839,10 +1870,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   body > *:not(#as-overlay){display:none !important;}
   #as-overlay{position:static !important; display:block !important; background:#fff !important; overflow:visible !important;}
   #as-overlay .as-rail, #as-overlay .as-topbar, #as-overlay .as-inspector,
-  #as-overlay .as-slidetools, #as-overlay .as-fmt, #as-overlay [data-as-chrome]{display:none !important;}
+  #as-overlay .as-slidetools, #as-overlay .as-fmt, #as-overlay .as-prev-nav, #as-overlay [data-as-chrome]{display:none !important;}
   #as-overlay .as-main, #as-overlay .as-content{overflow:visible !important; padding:0 !important; border:0 !important;}
   #as-overlay .as-work{display:block !important;}
-  #as-overlay .as-scaler{width:auto !important; height:auto !important; box-shadow:none !important;}
+  #as-overlay .as-scaler{width:auto !important; height:auto !important; box-shadow:none !important; overflow:visible !important; border-radius:0 !important;}
   #as-overlay .as-scaler > .as-stage{position:static !important; transform:none !important;}
   ${bruch}
 }`;
@@ -1862,6 +1893,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         node.removeAttribute("spellcheck");
       });
       clone.querySelectorAll("[data-ph]").forEach((node) => node.removeAttribute("data-ph"));
+      clone.querySelectorAll(".em-page.is-off").forEach((node) => node.classList.remove("is-off"));
+      if (clone.classList.contains("as-stage--memo")) clone.style.height = "891mm";
       return clone.outerHTML;
     });
   }
@@ -2029,12 +2062,19 @@ ${stages}${post}
     if (act === "toggle-layout") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
     if (act === "toggle-arten") { state.multiOffen = !state.multiOffen; zeichneForm(); return; }
     if (act === "prev-back" || act === "prev-fwd") {
-      const anzahl = Math.max(1, gewaehlteArten().length);
+      const anzahl = vorschauAnzahl();
       const richtung = act === "prev-fwd" ? 1 : -1;
       state.prevIndex = (state.prevIndex + richtung + anzahl) % anzahl;
       const box = shell.querySelector("[data-livepreview]");
-      if (box) box.innerHTML = livePreviewHtml();
-      fitPreview();
+      if (box) {
+        box.innerHTML = livePreviewHtml();
+        fitPreview();
+        return;
+      }
+      zeigeAktiveMemoSeite();
+      const label = shell.querySelector("[data-stagearea] .as-prev-nav span");
+      if (label) label.textContent = `Seite ${state.prevIndex + 1} von ${MEMO_SEITEN}`;
+      fitStages();
       return;
     }
     if (act === "pick-art") {

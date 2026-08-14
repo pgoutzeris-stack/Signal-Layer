@@ -358,6 +358,21 @@ test("durch die gewaehlten Slides laesst sich blaettern", () => {
   assert.match(studio, /if \(state\.prevIndex >= arten\.length\) state\.prevIndex = 0/);
 });
 
+test("die Vorschau ist ein Kasten, Memo blaettert seitenweise", () => {
+  // Drei Memo-Seiten untereinander in einer Kachel war falsch: die Vorschau
+  // zeigt eine A4-Seite kantenbuendig, vor und zurueck wechselt die Seite.
+  assert.match(studio, /as-prev-big\[data-kind="memo"\]\{aspect-ratio:210\/297;\}/);
+  assert.doesNotMatch(studio, /210\/891/);
+  assert.match(studio, /#as-overlay \.as-prev-big\{[^}]*padding:0/);
+  assert.match(studio, /\.em-page\.is-off\{display:none/);
+  assert.match(studio, /Seite \$\{state\.prevIndex \+ 1\} von \$\{MEMO_SEITEN\}/);
+  assert.match(studio, /isMemo \? MEMO_SEITEN/);
+  assert.match(studio, /MEMO_SEITE_PX\.h/);
+  assert.doesNotMatch(studio, /3368/);
+  assert.match(studio, /function zeigeAktiveMemoSeite/);
+  assert.match(studio, /classList\.remove\("is-off"\)/);
+});
+
 test("fetter Vorspann und Streichung ueberleben den Platzhalter", () => {
   // Derselbe Fehler wie beim durchgestrichenen Wort, nur breiter: der fette
   // Vorspann stand in den gebauten Assets als <b> im Kernaussage-Band und in
