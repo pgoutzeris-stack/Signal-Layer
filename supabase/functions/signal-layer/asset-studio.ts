@@ -1263,26 +1263,33 @@ function normalizeLinkedin(
       : `Alle ${roh} gelieferten Slides waren inhaltsleer: kein Titel, kein Zitat, keine Kennzahl, keine Aufzählung.`);
   }
 
-  // Zu viele Slides werden gekappt, zu wenige nicht erfunden: ein leerer Slide
-  // waere im Beitrag sichtbar, ein fehlender faellt niemandem auf.
+  // Zu viele Folien werden gekappt. Zu wenige sind ein Fehler: der Nutzer hat
+  // eine Zahl eingestellt, ein stilles 3-Folien-Karussell waere die falsche Ausgabe.
   const limit = carousel ? Math.min(answers.slides || 8, 8) : 1;
+  if (carousel && slides.length < limit) {
+    const varianten = slides.map((slide) => slide.variant).join(", ") || "keine";
+    throw new Error(
+      `Das Karussell braucht genau ${limit} Folien, das Modell hat ${slides.length} geliefert (${varianten}).`,
+    );
+  }
   const kept = slides.slice(0, limit)
     .map((slide, index, alle) => dropHiddenFields(placePointe(slide, index === alle.length - 1)))
     .filter(slideHasSubstance);
   if (!kept.length) {
     throw new Error("Nach dem Entfernen unsichtbarer Felder blieb kein Slide mit Inhalt.");
   }
-
-  const eindeutig = dropRepeatedLeadNumberSlides(kept);
-  if (!eindeutig.length) {
-    throw new Error("Nach dem Entfernen doppelter Leitkennzahlen blieb kein Slide mit Inhalt.");
+  if (carousel && kept.length !== limit) {
+    throw new Error(
+      `Das Karussell braucht genau ${limit} Folien, nach der Prüfung bleiben ${kept.length}.`,
+    );
   }
 
   const postText = richText(raw.post_text, 1_300)
-    || [eindeutig[0].title, eindeutig[0].takeaway || eindeutig[0].subtitle].filter(Boolean).join("\n\n");
-  rejectUnattested([postText, ...eindeutig.map(slidePlain)].join("\n"), corpus, "Beitrag oder Slides");
+    || [kept[0].title, kept[0].takeaway || kept[0].subtitle].filter(Boolean).join("\n\n");
+  rejectUnattested([postText, ...kept.map(slidePlain)].join("\n"), corpus, "Beitrag oder Slides");
+  rejectRepeatedLeadNumbers(kept);
 
-  return { theme: answers.theme, post_text: postText, slides: eindeutig };
+  return { theme: answers.theme, post_text: postText, slides: kept };
 }
 
 /** Dieselbe Ziffer auf zwei Folien. post_text darf alle Zahlen noch einmal nennen. */
@@ -1301,21 +1308,28 @@ function leadNumberKeys(value: string): string[] {
   return [...keys];
 }
 
-/**
- * Spaetere Folie mit einer schon genannten Zahl streichen, nicht das ganze
- * Karussell verwerfen. Ein zweiter Modellaufruf hat am 13.8.2026 das Isolate
- * getoetet; die erste Antwort war nach dem Streichen brauchbar.
- */
-function dropRepeatedLeadNumberSlides(slides: AssetSlide[]): AssetSlide[] {
-  const firstSeen = new Set<string>();
-  const kept: AssetSlide[] = [];
-  for (const slide of slides) {
-    const keys = leadNumberKeys(slidePlain(slide));
-    if (keys.some((n) => firstSeen.has(n))) continue;
-    for (const n of keys) firstSeen.add(n);
-    kept.push(slide);
+function rejectRepeatedLeadNumbers(slides: AssetSlide[]): void {
+  const firstSeen = new Map<string, number>();
+  for (let i = 0; i < slides.length; i += 1) {
+    for (const n of leadNumberKeys(slidePlain(slides[i]))) {
+      const prev = firstSeen.get(n);
+      if (prev !== undefined) {
+        throw new Error(
+          `Die Kennzahl ${n} steht auf Folie ${prev + 1} (${slides[prev].variant}) und Folie ${i + 1} (${slides[i].variant}). Jede Zahl nur auf einer Folie.`,
+        );
+      }
+      firstSeen.set(n, i);
+    }
   }
-  return kept;
+}
+
+/**
+ * Nur unlesbare Antworten werden ein zweites Mal versucht. Inhaltliche
+ * Maengel (doppelte Zahl, falsche Folienzahl, unbelegte Ziffer) sind ein
+ * Fehler, den man im Log sieht und am Prompt nachschaerfen kann.
+ */
+export function assetMangelIsRepairable(mangel: string): boolean {
+  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer/i.test(String(mangel || ""));
 }
 
 function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {
