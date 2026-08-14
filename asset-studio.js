@@ -400,6 +400,7 @@ const CHROME_CSS = `
 #as-overlay .as-steps li[data-state="active"] b{background:var(--brand,#206efb); color:#fff;}
 
 #as-overlay .as-main{display:grid; grid-template-rows:auto minmax(0, 1fr); min-width:0; min-height:0; overflow:hidden;}
+#as-overlay .as-main:has(.as-ribbon){grid-template-rows:auto auto minmax(0, 1fr);}
 #as-overlay .as-topbar{
   display:flex; align-items:center; justify-content:space-between; gap:16px;
   padding:16px 24px; border-bottom:1px solid var(--line,#e2e8f0); background:var(--bg,#fff);
@@ -424,6 +425,60 @@ const CHROME_CSS = `
 #as-overlay .as-btn--primary:hover{background:var(--brand-dark,#165fd9); border-color:var(--brand-dark,#165fd9); color:#fff;}
 #as-overlay .as-btn--ghost{border-style:dashed;}
 #as-overlay .as-btn--icon{padding:8px 10px;}
+#as-overlay .as-btn--icon.as-close{
+  width:36px; height:36px; padding:0; display:grid; place-items:center; border-radius:10px;
+}
+
+#as-overlay .as-ribbon{
+  display:flex; align-items:center; gap:4px; flex-wrap:wrap;
+  padding:8px 16px; border-bottom:1px solid var(--line,#e2e8f0);
+  background:#f8fafc;
+}
+#as-overlay .as-ribbon[data-open="1"]{display:flex;}
+#as-overlay .as-ribbon button{
+  border:0; background:transparent; border-radius:8px; width:34px; height:34px;
+  display:grid; place-items:center; font-size:13px; color:#0f172a;
+}
+#as-overlay .as-ribbon button:hover{background:#fff; color:var(--brand,#206efb); box-shadow:0 0 0 1px var(--line,#e2e8f0);}
+#as-overlay .as-ribbon hr{width:1px; height:22px; border:0; background:var(--line,#e2e8f0); margin:0 4px;}
+#as-overlay .as-ribbon .as-swatch{width:16px; height:16px; border-radius:999px; border:1px solid rgba(15,23,42,.18); display:block;}
+#as-overlay .as-ribbon select{
+  font:inherit; font-size:12px; height:34px; border:1px solid var(--line,#e2e8f0);
+  border-radius:8px; background:#fff; padding:0 8px; color:#0f172a;
+}
+
+#as-overlay .as-fs-btn{
+  position:absolute; right:10px; bottom:10px; z-index:8;
+  width:36px; height:36px; border-radius:10px;
+  border:1px solid var(--line,#e2e8f0); background:#fff; color:#0f172a;
+  box-shadow:0 6px 18px rgba(15,23,42,.12);
+  display:grid; place-items:center;
+}
+#as-overlay .as-fs-btn:hover{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
+#as-overlay .as-fs-exit{
+  display:none; position:absolute; top:12px; right:12px; z-index:60;
+  width:40px; height:40px; border-radius:12px;
+  border:1px solid var(--line,#e2e8f0); background:#fff; color:#0f172a;
+  box-shadow:0 8px 24px rgba(15,23,42,.16);
+  place-items:center;
+}
+#as-overlay.as-fs-open .as-fs-exit{display:grid;}
+#as-overlay.as-fs-open{grid-template-columns:1fr;}
+#as-overlay.as-fs-open .as-rail,
+#as-overlay.as-fs-open .as-topbar,
+#as-overlay.as-fs-open .as-ribbon,
+#as-overlay.as-fs-open .as-split2-form,
+#as-overlay.as-fs-open .as-inspector,
+#as-overlay.as-fs-open .as-prev-label{display:none !important;}
+#as-overlay.as-fs-open .as-main{grid-template-rows:minmax(0,1fr);}
+#as-overlay.as-fs-open .as-content{padding:16px 56px 16px 16px;}
+#as-overlay.as-fs-open .as-split2{grid-template-columns:1fr;}
+#as-overlay.as-fs-open .as-split2-prev{height:100%;}
+#as-overlay.as-fs-open .as-work{grid-template-columns:1fr;}
+
+#as-overlay .em-shot-hint{display:none !important;}
+
+#as-overlay .as-fmt{display:none !important;}
 
 #as-overlay .as-form{max-width:none; display:flex; flex-direction:column; gap:0;}
 /* Jede Frage ist ein Abschnitt mit Trennlinie statt einer freien Lücke: so
@@ -448,7 +503,7 @@ const CHROME_CSS = `
 #as-overlay .as-split2-prev{position:sticky; top:0; display:flex; flex-direction:column; gap:8px; height:100%; min-height:0;}
 #as-overlay .as-prev-label{font-size:.68rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--muted,#475569);}
 /* Die Flaeche nimmt den Rest, die Kachel selbst ist genau das Asset. */
-#as-overlay .as-prev-host{flex:1 1 auto; min-height:0; width:100%; display:flex; align-items:center; justify-content:center;}
+#as-overlay .as-prev-host{flex:1 1 auto; min-height:0; width:100%; display:flex; align-items:center; justify-content:center; position:relative;}
 #as-overlay .as-prev-big{max-width:100%; max-height:100%; min-height:0;
   box-sizing:border-box; display:flex; align-items:flex-start; justify-content:flex-start;
   overflow:hidden; padding:0; border:0; border-radius:14px; background:#fff; position:relative;
@@ -642,7 +697,7 @@ const CHROME_CSS = `
 
 #as-overlay .as-content:has(.as-work){overflow:hidden; display:flex; flex-direction:column;}
 #as-overlay .as-work{display:grid; grid-template-columns:1fr 296px; gap:20px; align-items:stretch;
-  flex:1; min-height:0; height:100%;}
+  flex:1; min-height:0; height:100%; position:relative;}
 #as-overlay .as-work:not(:has(.as-inspector)){grid-template-columns:1fr;}
 #as-overlay .as-stagearea{display:flex; flex-direction:column; align-items:center; justify-content:center;
   min-width:0; min-height:0; height:100%; overflow:hidden; position:relative;}
@@ -685,11 +740,9 @@ const CHROME_CSS = `
 }
 
 #as-overlay .as-fmt{
-  position:fixed; z-index:12100; display:none; gap:2px; align-items:center; flex-wrap:nowrap;
-  background:var(--bg,#fff); border:1px solid var(--line,#e2e8f0); border-radius:12px;
-  padding:5px; box-shadow:var(--shadow-lg,0 12px 40px rgba(15,23,42,.14));
+  display:none;
 }
-#as-overlay .as-fmt[data-open="1"]{display:flex;}
+#as-overlay .as-fmt[data-open="1"]{display:none;}
 #as-overlay .as-fmt button{
   border:0; background:transparent; border-radius:8px; width:30px; height:30px;
   display:grid; place-items:center; font-size:13px;
@@ -832,9 +885,9 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1819";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1819";
-import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-1819";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1948";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1948";
+import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-1948";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -935,6 +988,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     </div>`;
   overlay.appendChild(cropOverlay);
 
+  const fsExit = document.createElement("button");
+  fsExit.type = "button";
+  fsExit.className = "as-fs-exit";
+  fsExit.setAttribute("data-act", "toggle-fs");
+  fsExit.setAttribute("aria-label", "Vollbild beenden");
+  fsExit.innerHTML = `<i class="fa-solid fa-xmark"></i>`;
+  overlay.appendChild(fsExit);
+
   // Das Studio gehoert in das Artikel-Popup, nicht darueber: der Artikel bleibt
   // stehen, das Studio legt sich als Ebene in denselben Rahmen, und Schliessen
   // gibt den Artikel unveraendert frei - ohne Nachladen.
@@ -981,6 +1042,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           <h2>${esc(headline())}</h2>
           <div class="as-topactions">${topActions()}</div>
         </header>
+        ${state.step === "edit" ? `<div class="as-ribbon" data-ribbon role="toolbar" aria-label="Formatierung"></div>` : ""}
         <div class="as-content">${stepContent()}</div>
       </div>`;
     // Direkt und noch einmal nach dem Umbruch: in einem verborgenen Tab
@@ -1013,7 +1075,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     if (state.step === "draft") {
       if (state.busy || !state.payload) {
-        return `<button type="button" class="as-btn" data-act="cancel-generate"><i class="fa-solid fa-xmark"></i>Abbrechen</button>`;
+        return `<button type="button" class="as-btn as-btn--icon as-close" data-act="close-popup" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>`;
       }
       return `<button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Fragebogen</button><button type="button" class="as-btn as-btn--primary" data-act="to-edit"><i class="fa-solid fa-pen-to-square"></i>Bearbeiten</button>`;
     }
@@ -1029,7 +1091,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <div class="as-split2-prev">
           <span class="as-prev-label">Vorschau</span>
           <div class="as-prev-host">
-            <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
+            <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview data-act="toggle-fs">${livePreviewHtml()}</div>
+            <button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="Vollbild"><i class="fa-solid fa-expand"></i></button>
           </div>
         </div>
       </div>`;
@@ -1049,12 +1112,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         </div>`;
       }
       return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
-        <div class="as-stagearea" data-stagearea></div>
+        <div class="as-stagearea" data-stagearea data-act="toggle-fs"></div>
+        <button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="Vollbild"><i class="fa-solid fa-expand"></i></button>
       </div>`;
     }
       return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
       <div class="as-stagearea" data-stagearea></div>
       ${inspectorHtml()}
+      <button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="Vollbild"><i class="fa-solid fa-expand"></i></button>
     </div>`;
   }
 
@@ -2190,7 +2255,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
     html = wrapImageSlots(html, memo);
     if (editable) {
-      html = html.replace(/data-field="([a-z0-9_.]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
+      html = html.replace(/data-field="((?!benchmarks\.\d+\.image_hint)(?!potentials\.\d+\.image_hint)[a-z0-9_.]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
     }
     return html;
   }
@@ -2235,6 +2300,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     if (editable) {
       area.querySelectorAll("[data-field]").forEach((node) => {
+        const pfad = String(node.getAttribute("data-field") || "");
+        if (/\.image_hint$/.test(pfad)) return;
         node.setAttribute("contenteditable", "true");
         node.setAttribute("spellcheck", "false");
       });
@@ -2395,21 +2462,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     </aside>`;
   }
 
-  /* ── Schwebende Formatierungsleiste ── */
+  /* ── Formatierungsleiste (Word-Leiste, immer sichtbar) ── */
 
   let fmtBar = null;
+  let lastField = null;
 
   function mountFormatBar() {
-    if (fmtBar && fmtBar.isConnected) return;
-    fmtBar = document.createElement("div");
-    fmtBar.className = "as-fmt";
-    fmtBar.setAttribute("role", "toolbar");
-    fmtBar.setAttribute("aria-label", "Formatierung");
-    fmtBar.innerHTML = `
+    const host = shell.querySelector("[data-ribbon]");
+    if (!host) return;
+    host.innerHTML = `
       <button type="button" data-fmt="bold" title="Fett" aria-label="Fett"><i class="fa-solid fa-bold"></i></button>
       <button type="button" data-fmt="italic" title="Kursiv" aria-label="Kursiv"><i class="fa-solid fa-italic"></i></button>
       <button type="button" data-fmt="underline" title="Unterstrichen" aria-label="Unterstrichen"><i class="fa-solid fa-underline"></i></button>
       <hr>
+      <select data-fmt="fontsize" aria-label="Schriftgröße">
+        <option value="">Größe</option>
+        <option value="12">12</option>
+        <option value="14">14</option>
+        <option value="16">16</option>
+        <option value="18">18</option>
+        <option value="22">22</option>
+        <option value="28">28</option>
+        <option value="36">36</option>
+      </select>
       <button type="button" data-fmt="smaller" title="Kleiner" aria-label="Kleiner"><i class="fa-solid fa-minus"></i></button>
       <button type="button" data-fmt="larger" title="Größer" aria-label="Größer"><i class="fa-solid fa-plus"></i></button>
       <hr>
@@ -2426,10 +2501,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <hr>
       <button type="button" data-fmt="undo" title="Rückgängig" aria-label="Rückgängig"><i class="fa-solid fa-rotate-left"></i></button>
       <button type="button" data-fmt="redo" title="Wiederholen" aria-label="Wiederholen"><i class="fa-solid fa-rotate-right"></i></button>`;
-    overlay.appendChild(fmtBar);
-    // Ein Mausklick auf die Leiste darf die Textauswahl nicht aufheben.
-    fmtBar.addEventListener("mousedown", (event) => event.preventDefault());
-    fmtBar.addEventListener("click", onFormat);
+    fmtBar = host;
+    fmtBar.setAttribute("data-open", "1");
+    host.addEventListener("mousedown", (event) => {
+      if (event.target.closest("select")) return;
+      event.preventDefault();
+    });
+    host.addEventListener("click", onFormat);
+    host.addEventListener("change", onFormatChange);
   }
 
   function editableOf(node) {
@@ -2439,33 +2518,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function currentField() {
     const sel = document.getSelection();
-    if (!sel || sel.rangeCount === 0) return null;
-    return editableOf(sel.anchorNode);
+    if (sel && sel.rangeCount > 0) {
+      const field = editableOf(sel.anchorNode);
+      if (field) return field;
+    }
+    return lastField && lastField.isConnected ? lastField : null;
   }
 
   function updateFormatBar() {
     if (state.step !== "edit" || !fmtBar) return;
-    const sel = document.getSelection();
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed || !currentField()) {
-      fmtBar.setAttribute("data-open", "0");
-      return;
-    }
-    const rect = sel.getRangeAt(0).getBoundingClientRect();
-    if (!rect || (!rect.width && !rect.height)) {
-      fmtBar.setAttribute("data-open", "0");
-      return;
-    }
     fmtBar.setAttribute("data-open", "1");
-    const width = fmtBar.offsetWidth || 420;
-    const left = Math.min(Math.max(8, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - 8);
-    const top = rect.top - (fmtBar.offsetHeight || 40) - 10;
-    fmtBar.style.left = `${Math.round(left)}px`;
-    fmtBar.style.top = `${Math.round(top < 8 ? rect.bottom + 10 : top)}px`;
   }
 
   function onFormat(event) {
     const btn = event.target.closest("[data-fmt]");
-    if (!btn) return;
+    if (!btn || btn.tagName === "SELECT") return;
     event.preventDefault();
     const cmd = btn.getAttribute("data-fmt");
     const target = currentField();
@@ -2481,7 +2548,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const next = cmd === "larger" ? size * 1.08 : size / 1.08;
       target.style.fontSize = `${Math.round(Math.min(240, Math.max(8, next)) * 10) / 10}px`;
     }
-    updateFormatBar();
+  }
+
+  function onFormatChange(event) {
+    const sel = event.target.closest("select[data-fmt='fontsize']");
+    if (!sel) return;
+    const target = currentField();
+    const px = Number(sel.value);
+    if (!target || !px) return;
+    target.style.fontSize = `${px}px`;
+    sel.value = "";
+  }
+
+  function toggleFullscreen() {
+    overlay.classList.toggle("as-fs-open");
+    const open = overlay.classList.contains("as-fs-open");
+    overlay.querySelectorAll(".as-fs-btn i").forEach((icon) => {
+      icon.className = open ? "fa-solid fa-compress" : "fa-solid fa-expand";
+    });
+    overlay.querySelectorAll(".as-fs-btn").forEach((btn) => {
+      btn.setAttribute("aria-label", open ? "Vollbild beenden" : "Vollbild");
+    });
+    fitPreview();
+    fitStages();
   }
 
   /* ── Bilder ── */
@@ -2724,7 +2813,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   body > *:not(#as-overlay){display:none !important;}
   #as-overlay{position:static !important; display:block !important; background:#fff !important; overflow:visible !important;}
   #as-overlay .as-rail, #as-overlay .as-topbar, #as-overlay .as-inspector,
-  #as-overlay .as-slidetools, #as-overlay .as-fmt, #as-overlay .as-prev-nav, #as-overlay [data-as-chrome]{display:none !important;}
+  #as-overlay .as-slidetools, #as-overlay .as-fmt, #as-overlay .as-ribbon, #as-overlay .as-fs-btn, #as-overlay .as-fs-exit, #as-overlay .as-prev-nav, #as-overlay [data-as-chrome]{display:none !important;}
   #as-overlay .as-main, #as-overlay .as-content{overflow:visible !important; padding:0 !important; border:0 !important;}
   #as-overlay .as-work{display:block !important;}
   #as-overlay .as-stagearea{overflow:visible !important; height:auto !important;}
@@ -2919,7 +3008,15 @@ ${stages}${post}
       close();
       return;
     }
-    if (act === "generate") { generate(); return; }
+    if (act === "close-popup") {
+      const id = state.assetId;
+      if (state.busy && id) {
+        try { void api("cancel_asset", { asset_id: id }); } catch { /* Popup geht trotzdem zu */ }
+      }
+      close();
+      return;
+    }
+    if (act === "toggle-fs") { toggleFullscreen(); return; }
     if (act === "cancel-generate") { void cancelGenerate(); return; }
     if (act === "to-form") {
       state.busy = false;
@@ -3055,6 +3152,10 @@ ${stages}${post}
       cropOverlay.hidden = true;
       return;
     }
+    if (overlay.classList.contains("as-fs-open")) {
+      toggleFullscreen();
+      return;
+    }
     close();
   }
 
@@ -3083,6 +3184,10 @@ ${stages}${post}
   on(overlay, "click", (event) => event.stopPropagation());
   on(overlay, "change", onChange);
   on(overlay, "input", onInput);
+  on(overlay, "focusin", (event) => {
+    const field = event.target.closest?.("[data-field]");
+    if (field && field.getAttribute("contenteditable") === "true") lastField = field;
+  });
   on(document, "keydown", onKeyDown, true);
   on(document, "selectionchange", onSelectionChange);
   on(window, "resize", () => { fitStages(); fitPreview(); });
