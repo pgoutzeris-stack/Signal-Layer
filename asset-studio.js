@@ -6,7 +6,26 @@
 /* ─────────────────────────  Konstanten und Vorgaben  ───────────────────────── */
 
 const LOGO_PATH = "assets/roots-logo.png";
-const SAVE_LIMIT = 400000;
+const SAVE_LIMIT = 900000;
+// Platzhalter-Geometrie des Executive Memo. Uploads werden auf dieses
+// Seitenverhältnis gezwungen, bevor sie in den Slot kommen.
+const MEMO_SHOT_ASPECT = { benchmark: { w: 46, h: 28 }, potential: { w: 52, h: 36 } };
+const MEMO_SHOT_PIXELS = { benchmark: { w: 920, h: 560 }, potential: { w: 936, h: 648 } };
+const LINKEDIN_SHOT_PIXELS = { w: 1080, h: 1350 };
+const TOPIC_KICKERS = {
+  customer_insights: "CUSTOMER INSIGHTS",
+  marketing_insights: "MARKETING INSIGHTS",
+  fmcg_retail_signale: "FMCG / RETAIL",
+  sub_branchen_insight: "SUB-BRANCHE",
+  ki_performance: "KI & PERFORMANCE",
+  kunde: "KUNDE",
+  buying_center: "BUYING CENTER",
+  wachstumstreiber: "WACHSTUMSTREIBER",
+  markenaktivierung: "MARKENAKTIVIERUNG",
+  marke_im_wandel: "MARKE IM WANDEL",
+  operational_excellence: "OPERATIONAL EXCELLENCE",
+  empowered_marketers: "EMPOWERED MARKETERS",
+};
 // Drei A4-Seiten, in der Vorschau einzeln. 210 mm × 297 mm bei 96 dpi.
 const MEMO_SEITEN = 3;
 const MEMO_SEITE_PX = { w: 794, h: 1123 };
@@ -97,30 +116,54 @@ const FORM_LINKEDIN = [
   },
 ];
 
-const FORM_MEMO = [
-  {
-    key: "addressee",
-    label: "Adressat",
-    options: [
-      ["auto", "Modell entscheidet aus dem Signal"],
-      ["person", "Eine Person aus dem Signal"],
-      ["persons", "Mehrere Personen / Buying Center"],
-      ["company", "Das Unternehmen allgemein"],
-    ],
-  },
-  {
-    key: "storyline",
-    label: "Inhalt",
-    options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich gebe den Text vor"]],
-    free: { key: "storyline_text", on: "custom", rows: 5, platzhalter: "Kernaussage, Stichpunkte oder fertiger Text" },
-  },
-  {
-    key: "cta",
-    label: "Handlungsaufruf",
-    options: [["auto", "Modell schreibt die Gesprächsfrage"], ["custom", "Eigene Frage"]],
-    free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Sollen wir den Check gemeinsam durchgehen?" },
-  },
-];
+function memoQuestions(firma) {
+  const erkannt = String(firma || "").trim();
+  return [
+    {
+      key: "addressee",
+      label: "Adressat",
+      options: [
+        ["auto", "Modell entscheidet aus dem Signal"],
+        ["person", "Eine Person aus dem Signal"],
+        ["persons", "Mehrere Personen / Buying Center"],
+        ["company", "Das Unternehmen allgemein"],
+      ],
+    },
+    {
+      key: "company_mode",
+      label: "Unternehmen",
+      hint: "Nur Briefing für das Modell. Der Name erscheint nicht auf dem Memo.",
+      options: [
+        ["auto", erkannt ? `Erkannt: ${erkannt}` : "Aus dem Signal übernehmen"],
+        ["custom", "Anderes Unternehmen"],
+      ],
+      free: { key: "company_text", on: "custom", rows: 1, platzhalter: "Firmenname" },
+    },
+    {
+      key: "storyline",
+      label: "Inhalt",
+      options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich gebe den Text vor"]],
+      free: { key: "storyline_text", on: "custom", rows: 5, platzhalter: "Kernaussage, Stichpunkte oder fertiger Text" },
+    },
+    {
+      key: "cta",
+      label: "Handlungsaufruf",
+      options: [["auto", "Modell schreibt die Gesprächsfrage"], ["custom", "Eigene Frage"]],
+      free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Sollen wir den Check gemeinsam durchgehen?" },
+    },
+    {
+      key: "images",
+      label: "Bilder",
+      hint: "Jedes Motiv muss den Platzhalter füllen: Benchmark 46×28 mm, Potenzial 52×36 mm.",
+      options: [
+        ["auto", "Gemini entscheidet die Motive"],
+        ["upload", "Eigene Bilder zuschneiden"],
+      ],
+    },
+  ];
+}
+
+const FORM_MEMO = memoQuestions("");
 
 /* ─────────────────────────  Stile der Bühne  ───────────────────────── */
 
@@ -573,7 +616,31 @@ const CHROME_CSS = `
 #as-overlay .as-img-ui input[type="range"]{width:110px; accent-color:#206efb;}
 
 #as-overlay .as-hint{font-size:12px; line-height:1.5; color:var(--muted,#475569); margin:0;}
+#as-overlay .as-q > .as-hint{margin-top:-2px;}
 #as-overlay .as-file{display:none;}
+
+#as-overlay .as-crop{
+  position:absolute; inset:0; z-index:80;
+  background:rgba(15,23,42,.46); display:grid; place-items:center; padding:24px;
+}
+#as-overlay .as-crop[hidden]{display:none;}
+#as-overlay .as-crop-card{
+  width:min(560px,100%); background:#fff; border-radius:18px; padding:22px 22px 18px;
+  box-shadow:0 24px 60px rgba(15,23,42,.28); display:flex; flex-direction:column; gap:14px;
+}
+#as-overlay .as-crop-card h3{margin:0; font-size:18px;}
+#as-overlay .as-crop-frame{
+  width:100%; overflow:hidden; border-radius:12px; border:1px solid #e2e8f0;
+  background:#f8fafc; position:relative; cursor:grab; touch-action:none;
+}
+#as-overlay .as-crop-frame:active{cursor:grabbing;}
+#as-overlay .as-crop-img{
+  position:absolute; left:50%; top:50%; max-width:none;
+  transform-origin:center center; pointer-events:none; user-select:none;
+}
+#as-overlay .as-crop-actions{display:flex; justify-content:flex-end; gap:8px;}
+#as-overlay .as-crop-zoom{display:flex; align-items:center; gap:12px; font-size:13px; color:#475569;}
+#as-overlay .as-crop-zoom input{flex:1; accent-color:#206efb;}
 
 @media (max-width:1180px){
   #as-overlay{grid-template-columns:1fr;}
@@ -601,6 +668,36 @@ function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function companyFrom(source) {
+  return String(
+    source?.primary_company
+    || source?.company
+    || (toArray(source?.tier1_companies)[0] || ""),
+  ).trim();
+}
+
+function themeKicker(source = {}) {
+  for (const topic of toArray(source.topics)) {
+    if (TOPIC_KICKERS[topic]) return TOPIC_KICKERS[topic];
+  }
+  if (TOPIC_KICKERS[source.signal_id]) return TOPIC_KICKERS[source.signal_id];
+  if (TOPIC_KICKERS[source.territory]) return TOPIC_KICKERS[source.territory];
+  const label = String(source.signal_label || "").trim();
+  if (label) return label.replace(/[_-]+/g, " ").toUpperCase().slice(0, 26);
+  return "INSIGHT";
+}
+
+function cropSpecFor(key) {
+  const name = String(key || "");
+  if (name.startsWith("benchmarks.")) {
+    return { ...MEMO_SHOT_PIXELS.benchmark, mm: MEMO_SHOT_ASPECT.benchmark, label: "Benchmark" };
+  }
+  if (name.startsWith("potentials.")) {
+    return { ...MEMO_SHOT_PIXELS.potential, mm: MEMO_SHOT_ASPECT.potential, label: "Potenzial" };
+  }
+  return { ...LINKEDIN_SHOT_PIXELS, mm: { w: 1080, h: 1350 }, label: "Folie" };
+}
+
 function uid() {
   return `s${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -622,8 +719,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0410";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0410";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0705";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0705";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -649,9 +746,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   const api = typeof callApi === "function" ? callApi : async () => { throw new Error("Keine Verbindung zum Server verfügbar."); };
   const assetKind = kind === "memo" ? "memo" : "linkedin";
   const isMemo = assetKind === "memo";
-  const questions = isMemo ? FORM_MEMO : FORM_LINKEDIN;
   const source = signal && typeof signal === "object" ? signal : {};
-  const company = String(source.company || (toArray(source.tier1_companies)[0] || "")).trim();
+  const company = companyFrom(source);
+  const questions = isMemo ? memoQuestions(company) : FORM_LINKEDIN;
 
   const state = {
     step: "form",
@@ -695,6 +792,24 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   fileInput.accept = "image/*";
   fileInput.className = "as-file";
   overlay.appendChild(fileInput);
+
+  const cropOverlay = document.createElement("div");
+  cropOverlay.className = "as-crop";
+  cropOverlay.hidden = true;
+  cropOverlay.innerHTML = `
+    <div class="as-crop-card">
+      <h3>Bild in den Platzhalter legen</h3>
+      <p class="as-hint" data-crop-hint>Nur der Ausschnitt im Rahmen landet im Asset.</p>
+      <div class="as-crop-frame" data-crop-frame>
+        <img class="as-crop-img" data-crop-img alt="">
+      </div>
+      <label class="as-crop-zoom">Zoom <input type="range" data-crop-zoom min="100" max="280" step="1" value="100"></label>
+      <div class="as-crop-actions">
+        <button type="button" class="as-btn" data-act="crop-cancel">Abbrechen</button>
+        <button type="button" class="as-btn as-btn--primary" data-act="crop-ok">Zuschneiden</button>
+      </div>
+    </div>`;
+  overlay.appendChild(cropOverlay);
 
   // Das Studio gehoert in das Artikel-Popup, nicht darueber: der Artikel bleibt
   // stehen, das Studio legt sich als Ebene in denselben Rahmen, und Schliessen
@@ -901,6 +1016,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ["lesen", "fa-file-lines", "Signal und Artikel werden gelesen"],
     ["modell", "fa-brain", isMemo ? "Das Modell entwickelt die Ansprache" : "Das Modell schreibt Titel und Kernaussage"],
     ["pruefen", "fa-list-check", "Belege und Längen werden geprüft"],
+    ["bilder", "fa-image", "Gemini erzeugt die Motive"],
     ["fuellen", "fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
   ];
 
@@ -914,8 +1030,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function ladeFortschritt() {
     const i = Math.max(0, ABSCHNITTE.findIndex(([key]) => key === state.ladeAbschnitt));
-    const floor = [0.04, 0.12, 0.84, 0.93][i] ?? 0.04;
-    const ceil = [0.12, 0.84, 0.93, 0.99][i] ?? 0.99;
+    const floor = [0.04, 0.12, 0.78, 0.88, 0.95][i] ?? 0.04;
+    const ceil = [0.12, 0.78, 0.88, 0.95, 0.99][i] ?? 0.99;
     const elapsed = state.ladeStart ? Date.now() - state.ladeStart : 0;
     const eta = state.forecastMs > 8_000 ? state.forecastMs : 90_000;
     const zeit = Math.min(0.97, elapsed / eta);
@@ -988,9 +1104,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function demoMemo() {
-    const firma = company || "das Unternehmen";
+    const gemini = state.answers.images !== "upload";
+    const hint = (kind) => gemini
+      ? `Gemini füllt dieses ${kind}-Motiv (Platzhalter bleibt).`
+      : `Eigenes Bild hier zuschneiden, genau in den ${kind}-Platzhalter.`;
     return normalizeMemo({
-      title: `${firma} muss die Marke jetzt als Hebel ziehen`,
+      title: "Die Marke muss jetzt als Hebel gezogen werden",
       standfirst: "Der Markt hat sich bewegt. Wer denselben Hebel schon gezogen hat, setzt die neue Messlatte. Dieser Check macht den Moment für den Adressaten konkret.",
       market_title: "Der Markt belohnt, wer die Marke führt",
       market_p1: "Anbieter, die Sortiment, Kanal und Auftritt als eine Handschrift führen, gewinnen Sichtbarkeit und Tempo.",
@@ -1003,18 +1122,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       benchmark_title: "Vorreiter ziehen denselben Hebel",
       benchmark_lead: "Drei Marken haben vorgemacht, was übertragbar ist.",
       benchmarks: [
-        { name: "Vorreiter A", text: "Hat die Eigenmarke zur Leitmarke gemacht und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche", image_hint: "Regal mit Eigenmarke" },
-        { name: "Vorreiter B", text: "Hat Kanal und Fläche unter eine Handschrift gestellt.", tag: "Eine Linie, zwei Kanäle", image_hint: "Storefront" },
-        { name: "Vorreiter C", text: "Hat Kampagnen durch eine haltbare Linie ersetzt.", tag: "Linie vor Saison", image_hint: "Kampagnenmotiv" },
+        { name: "Vorreiter A", text: "Hat die Eigenmarke zur Leitmarke gemacht und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche", image_hint: hint("Benchmark") },
+        { name: "Vorreiter B", text: "Hat Kanal und Fläche unter eine Handschrift gestellt.", tag: "Eine Linie, zwei Kanäle", image_hint: hint("Benchmark") },
+        { name: "Vorreiter C", text: "Hat Kampagnen durch eine haltbare Linie ersetzt.", tag: "Linie vor Saison", image_hint: hint("Benchmark") },
       ],
-      potentials_title: `Drei Hebel für ${firma}`,
+      potentials_title: "Drei Hebel für den Adressaten",
       potentials_lead: "Der Check zeigt drei Ansatzpunkte, die sich aus dem Signal ergeben.",
       potentials: [
-        { title: "Vom Sortiment zur Marke", finding: "Die Eigenmarken stehen unverbunden nebeneinander.", potential: "ROOTS bündelt sie unter einer Führung.", image_hint: "Packshots" },
-        { title: "Vom Kanal zum System", finding: "Online und Fläche sprechen unterschiedlich.", potential: "Eine Handschrift über beide Kanäle.", image_hint: "Verkaufsfläche" },
-        { title: "Von der Kampagne zur Linie", finding: "Jede Saison wird der Auftritt neu erfunden.", potential: "Eine Linie, die über die Saison hält.", image_hint: "Kampagne" },
+        { title: "Vom Sortiment zur Marke", finding: "Die Eigenmarken stehen unverbunden nebeneinander.", potential: "ROOTS bündelt sie unter einer Führung.", image_hint: hint("Potenzial") },
+        { title: "Vom Kanal zum System", finding: "Online und Fläche sprechen unterschiedlich.", potential: "Eine Handschrift über beide Kanäle.", image_hint: hint("Potenzial") },
+        { title: "Von der Kampagne zur Linie", finding: "Jede Saison wird der Auftritt neu erfunden.", potential: "Eine Linie, die über die Saison hält.", image_hint: hint("Potenzial") },
       ],
-      cta: `Sollen wir den Check für ${firma} gemeinsam durchgehen?`,
+      cta: "Sollen wir den Check gemeinsam durchgehen?",
       about_fit: "ROOTS setzt hier mit Markenstrategie und Marketing Operations an.",
       sources: [],
     });
@@ -1024,7 +1143,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function demoSlide(variant) {
     return normalizeSlide({
       variant,
-      kicker: company ? company.toUpperCase().slice(0, 26) : "KICKER",
+      kicker: themeKicker(source),
       title: "Ein Satz, der etwas behauptet",
       subtitle: "Zwei Zeilen Einordnung, die die Behauptung stuetzen.",
       quote: "Ein Zitat mit Haltung, zwei Zeilen lang.",
@@ -1036,7 +1155,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       myth: "Die verbreitete Behauptung.",
       fact: "Der Befund, der ihr widerspricht.",
       takeaway: "**Folge:** Struktur ist Standard, entscheidend ist die Handschrift.",
-      footer_left: company || "ROOTS Brand Strategy Consultants",
+      footer_left: "ROOTS Consultants",
       // Nur dieses Layout lebt von der Streichung, deshalb traegt sein
       // Beispieltext die Markierung.
       ...(variant === "K" ? { title: "Nicht mehr ~~Tools~~, sondern mehr Handschrift" } : {}),
@@ -1143,9 +1262,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         </label>`;
       }).join("");
       const free = q.free && state.answers[q.key] === q.free.on
-        ? `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}">${esc(state.answers[q.free.key] || "")}</textarea>`
+        ? (Number(q.free.rows) === 1
+          ? `<input class="as-free" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}" value="${esc(state.answers[q.free.key] || "")}">`
+          : `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}">${esc(state.answers[q.free.key] || "")}</textarea>`)
         : "";
-      return `<div class="as-q"><label>${esc(q.label)}</label><div class="as-opts">${opts}</div>${free}</div>`;
+      const hinweis = q.hint ? `<p class="as-hint">${esc(q.hint)}</p>` : "";
+      return `<div class="as-q"><label>${esc(q.label)}</label>${hinweis}<div class="as-opts">${opts}</div>${free}</div>`;
     }).join("");
     return `<form class="as-form" data-form>${rows}</form>`;
   }
@@ -1199,6 +1321,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (fertig.status === "error") throw new Error(fertig.error_message || "Der Entwurf ist fehlgeschlagen.");
       state.assetId = fertig.id || state.assetId;
       adoptPayload(fertig.payload || fertig);
+      await compactAdoptedImages();
       state.busy = false;
       ladeTaktStop();
       render();
@@ -1277,7 +1400,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       myth: String(src.myth || ""),
       fact: String(src.fact || ""),
       takeaway: String(src.takeaway || ""),
-      footerLeft: String(src.footer_left || company || "ROOTS Brand Strategy Consultants"),
+      footerLeft: String(src.footer_left || "ROOTS Consultants"),
       imageHint: String(src.image_hint || ""),
       slot_a: String(src.slot_a || ""),
       slot_b: String(src.slot_b || ""),
@@ -1438,7 +1561,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       slot_center: slide.slot_center || "",
       // Nur bei den Datenlayouts: die Zeile ueber dem Titel. Nicht den Kicker
       // wiederholen, der steht schon oben rechts in der Kachel.
-      eyebrow: company ? `Abbildung · ${company}` : "Abbildung",
+      eyebrow: "Abbildung",
       image: slide.image.src || "",
     };
     (slide.stats || []).forEach((eintrag, i) => {
@@ -1479,7 +1602,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const hat = Boolean(bild.src);
       const pos = Number.parseFloat(String(bild.pos || "50% 50%").split(" ")[1]) || 50;
       return `<div class="as-img-ui" data-as-chrome>
-      <button type="button" data-act="img-pick" data-imgkey="${attr(key)}">${hat ? "Bild ersetzen" : "Bild wählen"}</button>
+      <button type="button" data-act="img-pick" data-imgkey="${attr(key)}">${hat ? "Ausschnitt ersetzen" : "Bild zuschneiden"}</button>
       ${hat ? `<input type="range" min="0" max="100" step="1" value="${pos}" data-act="img-pos" data-imgkey="${attr(key)}" aria-label="Ausschnitt">` : ""}
       ${hat ? `<button type="button" data-act="img-clear" data-imgkey="${attr(key)}">Entfernen</button>` : ""}
     </div>`;
@@ -1843,55 +1966,198 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /* ── Bilder ── */
 
+  const cropState = {
+    uid: "", key: "", img: null, panX: 0.5, panY: 0.5, zoom: 1,
+    dragging: false, lastX: 0, lastY: 0,
+  };
+
+  function loadHtmlImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Die Bilddatei konnte nicht gelesen werden."));
+      img.src = src;
+    });
+  }
+
+  function coverCrop(img, outW, outH, panX = 0.5, panY = 0.5, zoom = 1) {
+    const target = outW / outH;
+    const imgW = img.naturalWidth || img.width;
+    const imgH = img.naturalHeight || img.height;
+    if (!imgW || !imgH) return "";
+    const z = Math.max(1, Number(zoom) || 1);
+    let cropW;
+    let cropH;
+    if (imgW / imgH > target) {
+      cropH = imgH / z;
+      cropW = cropH * target;
+    } else {
+      cropW = imgW / z;
+      cropH = cropW / target;
+    }
+    cropW = Math.min(cropW, imgW);
+    cropH = Math.min(cropH, imgH);
+    const x = Math.max(0, (imgW - cropW) * panX);
+    const y = Math.max(0, (imgH - cropH) * panY);
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+    ctx.drawImage(img, x, y, cropW, cropH, 0, 0, outW, outH);
+    try { return canvas.toDataURL("image/jpeg", 0.62); } catch (_) { return ""; }
+  }
+
+  async function fitSlotImage(src, spec) {
+    if (!src) return "";
+    try {
+      const img = await loadHtmlImage(src);
+      return coverCrop(img, spec.w, spec.h, 0.5, 0.5, 1) || src;
+    } catch (_) {
+      return src;
+    }
+  }
+
+  async function compactAdoptedImages() {
+    if (isMemo && state.memo) {
+      for (const [liste, kind] of [[state.memo.benchmarks, "benchmark"], [state.memo.potentials, "potential"]]) {
+        const spec = MEMO_SHOT_PIXELS[kind];
+        for (const eintrag of liste) {
+          if (eintrag?.image?.src) {
+            eintrag.image.src = await fitSlotImage(eintrag.image.src, spec);
+            eintrag.image.pos = "50% 50%";
+          }
+        }
+      }
+      return;
+    }
+    for (const slide of state.slides) {
+      if (slide.image?.src) {
+        slide.image.src = await fitSlotImage(slide.image.src, LINKEDIN_SHOT_PIXELS);
+        slide.image.pos = "50% 50%";
+      }
+    }
+  }
+
+  function cropFrameEl() { return cropOverlay.querySelector("[data-crop-frame]"); }
+  function cropImgEl() { return cropOverlay.querySelector("[data-crop-img]"); }
+
+  function layoutCropPreview() {
+    const frame = cropFrameEl();
+    const el = cropImgEl();
+    const img = cropState.img;
+    if (!frame || !el || !img) return;
+    const fw = frame.clientWidth || 1;
+    const fh = frame.clientHeight || 1;
+    const cover = Math.max(fw / img.naturalWidth, fh / img.naturalHeight) * cropState.zoom;
+    const dw = img.naturalWidth * cover;
+    const dh = img.naturalHeight * cover;
+    const maxX = Math.max(0, dw - fw);
+    const maxY = Math.max(0, dh - fh);
+    const x = (0.5 - cropState.panX) * maxX;
+    const y = (0.5 - cropState.panY) * maxY;
+    el.style.width = `${dw}px`;
+    el.style.height = `${dh}px`;
+    el.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+  }
+
+  function openCropper(file, uid, key) {
+    const spec = cropSpecFor(key);
+    const reader = new FileReader();
+    reader.onerror = () => showSaveHint("Die Bilddatei konnte nicht gelesen werden.");
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => showSaveHint("Die Bilddatei konnte nicht gelesen werden.");
+      img.onload = () => {
+        cropState.uid = uid;
+        cropState.key = key;
+        cropState.img = img;
+        cropState.panX = 0.5;
+        cropState.panY = 0.5;
+        cropState.zoom = 1;
+        const hint = cropOverlay.querySelector("[data-crop-hint]");
+        if (hint) {
+          hint.textContent = spec.mm && spec.mm.w < 200
+            ? `${spec.label}: ${spec.mm.w} × ${spec.mm.h} mm. Nur dieser Ausschnitt landet im Memo.`
+            : `${spec.label}: ${spec.w} × ${spec.h} Pixel. Nur dieser Ausschnitt landet auf der Folie.`;
+        }
+        const frame = cropFrameEl();
+        if (frame) frame.style.aspectRatio = `${spec.w} / ${spec.h}`;
+        const zoom = cropOverlay.querySelector("[data-crop-zoom]");
+        if (zoom) zoom.value = "100";
+        const el = cropImgEl();
+        if (el) el.src = img.src;
+        cropOverlay.hidden = false;
+        requestAnimationFrame(layoutCropPreview);
+      };
+      img.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function confirmCrop() {
+    if (!cropState.img || !cropState.uid) {
+      cropOverlay.hidden = true;
+      return;
+    }
+    const spec = cropSpecFor(cropState.key);
+    const src = coverCrop(cropState.img, spec.w, spec.h, cropState.panX, cropState.panY, cropState.zoom);
+    cropOverlay.hidden = true;
+    if (!src) {
+      showSaveHint("Der Ausschnitt konnte nicht erzeugt werden.");
+      return;
+    }
+    harvest();
+    const model = modelByUid(cropState.uid);
+    setImageAt(model, cropState.key, { src, pos: "50% 50%" });
+    mountStages(state.step === "edit");
+  }
+
   function pickImage(stageEl, key) {
     state.pendingImage = `${stageEl.getAttribute("data-uid")}::${key || "image"}`;
     fileInput.value = "";
     fileInput.click();
   }
 
-  // Rohbilder aus der Kamera sprengen jedes Speicherlimit, deshalb einmal
-  // herunterrechnen, bevor sie als Data-URI im Dokument landen.
-  function readImage(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error("Die Bilddatei konnte nicht gelesen werden."));
-      reader.onload = () => {
-        const raw = String(reader.result || "");
-        if (raw.length < 220000) { resolve(raw); return; }
-        const img = new Image();
-        img.onerror = () => resolve(raw);
-        img.onload = () => {
-          const max = 1400;
-          const scale = Math.min(1, max / Math.max(img.naturalWidth || max, img.naturalHeight || max));
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round((img.naturalWidth || max) * scale));
-          canvas.height = Math.max(1, Math.round((img.naturalHeight || max) * scale));
-          const ctx = canvas.getContext("2d");
-          if (!ctx) { resolve(raw); return; }
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          try { resolve(canvas.toDataURL("image/jpeg", 0.82)); } catch (_) { resolve(raw); }
-        };
-        img.src = raw;
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  fileInput.addEventListener("change", async () => {
+  fileInput.addEventListener("change", () => {
     const file = fileInput.files && fileInput.files[0];
     const pending = String(state.pendingImage || "");
     state.pendingImage = null;
     const [targetUid, imgKey = "image"] = pending.split("::");
     if (!file || !targetUid) return;
-    try {
-      const dataUri = await readImage(file);
-      harvest();
-      const model = modelByUid(targetUid);
-      setImageAt(model, imgKey, { src: dataUri, pos: "50% 50%" });
-      mountStages(state.step === "edit");
-    } catch (err) {
-      showSaveHint(err && err.message ? err.message : "Das Bild konnte nicht geladen werden.");
-    }
+    openCropper(file, targetUid, imgKey);
+  });
+
+  cropOverlay.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest("[data-crop-frame]")) return;
+    cropState.dragging = true;
+    cropState.lastX = event.clientX;
+    cropState.lastY = event.clientY;
+    event.target.setPointerCapture?.(event.pointerId);
+  });
+  cropOverlay.addEventListener("pointermove", (event) => {
+    if (!cropState.dragging || !cropState.img) return;
+    const frame = cropFrameEl();
+    if (!frame) return;
+    const dx = event.clientX - cropState.lastX;
+    const dy = event.clientY - cropState.lastY;
+    cropState.lastX = event.clientX;
+    cropState.lastY = event.clientY;
+    const fw = frame.clientWidth || 1;
+    const fh = frame.clientHeight || 1;
+    const cover = Math.max(fw / cropState.img.naturalWidth, fh / cropState.img.naturalHeight) * cropState.zoom;
+    const maxX = Math.max(1, cropState.img.naturalWidth * cover - fw);
+    const maxY = Math.max(1, cropState.img.naturalHeight * cover - fh);
+    cropState.panX = Math.min(1, Math.max(0, cropState.panX - dx / maxX));
+    cropState.panY = Math.min(1, Math.max(0, cropState.panY - dy / maxY));
+    layoutCropPreview();
+  });
+  cropOverlay.addEventListener("pointerup", () => { cropState.dragging = false; });
+  cropOverlay.addEventListener("pointercancel", () => { cropState.dragging = false; });
+  cropOverlay.addEventListener("input", (event) => {
+    if (event.target?.getAttribute("data-crop-zoom") == null) return;
+    cropState.zoom = Math.max(1, Number(event.target.value || 100) / 100);
+    layoutCropPreview();
   });
 
   /* ── Ausgabe ── */
@@ -2041,7 +2307,7 @@ ${stages}${post}
 
   function addSlide(after = state.slides.length - 1) {
     harvest();
-    const fresh = normalizeSlide({ variant: "B", footer_left: state.slides[0]?.footerLeft || company });
+    const fresh = normalizeSlide({ variant: "B", footer_left: state.slides[0]?.footerLeft || "ROOTS Consultants" });
     state.slides.splice(after + 1, 0, fresh);
     state.prevIndex = after + 1;
     mountStages(true);
@@ -2142,6 +2408,8 @@ ${stages}${post}
     if (act === "print") { harvest(); window.print(); return; }
     if (act === "save") { save(); return; }
     if (act === "copy-post") { copyPost(); return; }
+    if (act === "crop-cancel") { cropOverlay.hidden = true; return; }
+    if (act === "crop-ok") { confirmCrop(); return; }
     if (act === "img-pick" && stageEl) {
       pickImage(stageEl, hit.getAttribute("data-imgkey") || "image");
       return;
@@ -2186,6 +2454,10 @@ ${stages}${post}
     // Ohne Stopp würde der Backdrop-Zweig der App das Artikel-Popup mitschließen.
     event.stopPropagation();
     event.preventDefault();
+    if (!cropOverlay.hidden) {
+      cropOverlay.hidden = true;
+      return;
+    }
     close();
   }
 

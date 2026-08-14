@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.5";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.6";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -39,8 +39,9 @@ export function isLayoutKey(value: unknown): value is AssetLayoutKey {
   return (ASSET_LAYOUT_KEYS as readonly string[]).includes(String(value ?? ""));
 }
 
-/** Obergrenze fuer den in der Werkbank bearbeiteten Stand. */
-export const ASSET_EDITED_HTML_LIMIT = 400_000;
+/** Obergrenze fuer den in der Werkbank bearbeiteten Stand. Sechs Memo-Motive
+ *  als komprimierte JPEGs brauchen Kopf; roh waeren sie zu gross. */
+export const ASSET_EDITED_HTML_LIMIT = 900_000;
 
 // Der Artikeltext ist der teuerste Teil des Prompts. Mehr als dieser Ausschnitt
 // bringt fuer ein Asset nichts: die Aussage steht im Signal, der Artikel liefert
@@ -52,6 +53,7 @@ const ASSET_ARTICLE_CHARS = 6_000;
 // ---------------------------------------------------------------------------
 export type AssetSignalInput = {
   lane?: string | null;
+  signal_id?: string | null;
   signal_label?: string | null;
   headline_de?: string | null;
   why_de?: string | null;
@@ -65,6 +67,9 @@ export type AssetSignalInput = {
   person_name?: string | null;
   person_role?: string | null;
   buying_center_roles?: string[] | null;
+  topics?: string[] | null;
+  territory?: string | null;
+  article_type?: string | null;
 };
 
 export type AssetArticleInput = {
@@ -93,6 +98,10 @@ export type LinkedinAnswers = {
 export type MemoAnswers = {
   /** Wen das Papier anredet. auto = aus Signal (Person, Rollen, Firma). */
   addressee: "auto" | "person" | "persons" | "company";
+  /** Override aus dem Fragebogen. Leer = erkanntes Unternehmen aus dem Signal. */
+  company: string;
+  /** auto = Gemini fuellt die Motive. upload = der Nutzer schneidet selbst zu. */
+  images: "auto" | "upload";
   storyline: string;
   cta: string;
 };
@@ -102,6 +111,10 @@ export type AssetNormalizeContext = {
   rootsOffering?: string | null;
   buyingCenterRoles?: string[] | null;
   personName?: string | null;
+  company?: string | null;
+  topics?: string[] | null;
+  territory?: string | null;
+  signalLabel?: string | null;
 };
 
 export type AssetAnswers = LinkedinAnswers | MemoAnswers;
@@ -142,8 +155,21 @@ export type LinkedinPayload = {
   slides: AssetSlide[];
 };
 
-export type MemoBenchmark = { name: string; text: string; tag: string; image_hint: string };
-export type MemoPotential = { title: string; finding: string; potential: string; image_hint: string };
+export type MemoImage = { src: string; pos: string };
+export type MemoBenchmark = {
+  name: string;
+  text: string;
+  tag: string;
+  image_hint: string;
+  image?: MemoImage;
+};
+export type MemoPotential = {
+  title: string;
+  finding: string;
+  potential: string;
+  image_hint: string;
+  image?: MemoImage;
+};
 
 export type MemoPayload = {
   title: string;
@@ -479,11 +505,14 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
     };
   }
   const adressat = pick(source, "addressee", "adressat", "audience");
+  const images = pick(source, "images", "bilder");
   return {
     addressee: /persons|mehrere|buying.?center/i.test(adressat) ? "persons"
       : /person|einzeln/i.test(adressat) ? "person"
       : /company|unternehmen|firma/i.test(adressat) ? "company"
       : "auto",
+    company: choiceText(source, ["company_mode", "company"], ["company_text", "firma"], 160),
+    images: /upload|eigen|eigene|manual|selbst/i.test(images) ? "upload" : "auto",
     storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
     cta: choiceText(source, ["cta"], ["cta_text"], 240),
   };
@@ -530,6 +559,9 @@ function signalBlock(signal: AssetSignalInput, article: AssetArticleInput): stri
   const zeilen = [
     `spur: ${asData(signal.lane, 40) || "unbekannt"}`,
     `signalfamilie: ${asData(signal.signal_label, 120) || "nicht benannt"}`,
+    `kategorie: ${list(signal.topics, 8, 80).join(", ") || asData(signal.signal_id, 80) || "nicht benannt"}`,
+    `territorium: ${asData(signal.territory, 80) || "keins"}`,
+    `artikeltyp: ${asData(signal.article_type, 80) || "unbekannt"}`,
     `unternehmen: ${asData(signal.company, 160) || "nicht benannt"}`,
     `weitere_unternehmen: ${list(signal.tier1_companies, 6, 80).join(", ") || "keine"}`,
     `überschrift: ${asData(signal.headline_de, 300)}`,
@@ -745,9 +777,107 @@ Auszeichnungen im Text, weil nur der Text weiss, wo sie hingehoeren: **Vorspann*
 </varianten>`;
 }
 
-function linkedinPrompt(answers: LinkedinAnswers, daten: string, articleText: string): string {
+/** Kicker oben rechts: Artikelfamilie, nie der Zielkunde. */
+export const ASSET_TOPIC_KICKERS: Record<string, string> = {
+  customer_insights: "CUSTOMER INSIGHTS",
+  marketing_insights: "MARKETING INSIGHTS",
+  fmcg_retail_signale: "FMCG / RETAIL",
+  sub_branchen_insight: "SUB-BRANCHE",
+  ki_performance: "KI & PERFORMANCE",
+  kunde: "KUNDE",
+  buying_center: "BUYING CENTER",
+};
+
+export const ASSET_TERRITORY_KICKERS: Record<string, string> = {
+  wachstumstreiber: "WACHSTUMSTREIBER",
+  markenaktivierung: "MARKENAKTIVIERUNG",
+  marke_im_wandel: "MARKE IM WANDEL",
+  operational_excellence: "OPERATIONAL EXCELLENCE",
+  empowered_marketers: "EMPOWERED MARKETERS",
+};
+
+function kickerFromToken(value: unknown): string {
+  const token = String(value || "").trim();
+  if (!token) return "";
+  return ASSET_TOPIC_KICKERS[token]
+    || ASSET_TERRITORY_KICKERS[token]
+    || token.replace(/[_-]+/g, " ").toUpperCase().slice(0, 26);
+}
+
+export function assetThemeKicker(signal: AssetSignalInput = {}): string {
+  for (const topic of signal.topics || []) {
+    const kicker = kickerFromToken(topic);
+    if (kicker) return kicker;
+  }
+  const ausId = kickerFromToken(signal.signal_id);
+  if (ausId && (ASSET_TOPIC_KICKERS[String(signal.signal_id || "")] || ASSET_TERRITORY_KICKERS[String(signal.signal_id || "")])) {
+    return ausId;
+  }
+  const ausTerritorium = kickerFromToken(signal.territory);
+  if (ausTerritorium) return ausTerritorium;
+  const ausLabel = kickerFromToken(signal.signal_label);
+  if (ausLabel) return ausLabel;
+  if (String(signal.lane || "") === "sales") return "SALES INSIGHT";
+  return "INSIGHT";
+}
+
+export function resolveAssetCompany(
+  answers: AssetAnswers,
+  signal: AssetSignalInput,
+  article?: { primary_company?: string | null },
+): string {
+  const override = "company" in answers ? String((answers as MemoAnswers).company || "").trim() : "";
+  if (override) return override.slice(0, 160);
+  return String(
+    signal.company
+    || article?.primary_company
+    || (Array.isArray(signal.tier1_companies) ? signal.tier1_companies[0] : "")
+    || "",
+  ).trim().slice(0, 160);
+}
+
+function looksLikeCompany(value: string, firma: string): boolean {
+  const name = String(firma || "").trim();
+  if (name.length < 3) return false;
+  return String(value || "").toLowerCase().includes(name.toLowerCase());
+}
+
+function applyLinkedinChrome(
+  slides: AssetSlide[],
+  context: AssetNormalizeContext,
+  answers: LinkedinAnswers,
+): AssetSlide[] {
+  const theme = assetThemeKicker({
+    topics: context.topics,
+    territory: context.territory,
+    signal_label: context.signalLabel,
+    company: context.company,
+  });
+  const firma = String(context.company || "").trim();
+  const quelle = answers.sources || "ROOTS Consultants";
+  const out = slides.map((slide) => ({
+    ...slide,
+    kicker: !slide.kicker || looksLikeCompany(slide.kicker, firma) ? theme : slide.kicker,
+    footer_left: !slide.footer_left || looksLikeCompany(slide.footer_left, firma)
+      ? quelle
+      : slide.footer_left,
+  }));
+  const unique = new Set(out.map((slide) => slide.kicker));
+  if (out.length > 1 && unique.size > 2) {
+    return out.map((slide) => ({ ...slide, kicker: theme }));
+  }
+  return out;
+}
+
+function linkedinPrompt(
+  answers: LinkedinAnswers,
+  daten: string,
+  articleText: string,
+  signal: AssetSignalInput,
+): string {
   const carousel = answers.asset_type === "carousel";
   const erlaubt = allowedSlideKeys(answers, articleText);
+  const thema = assetThemeKicker(signal);
   const auftrag = [
     carousel
       ? `Format: Carousel mit ${answers.slides} Slides, nicht mehr.`
@@ -767,7 +897,7 @@ function linkedinPrompt(answers: LinkedinAnswers, daten: string, articleText: st
       : "Handlungsaufruf: formuliere ihn selbst, sachlich und ohne Werbeton.",
     answers.sources
       ? `Quellen, die genannt werden sollen: ${answers.sources}`
-      : "Quellen: nenne in footer_left die Quelle aus dem Artikel oder ROOTS als Absender.",
+      : "Quellen: nenne in footer_left die belegte Artikelquelle oder ROOTS Consultants. Niemals den Zielkunden.",
   ].join("\n");
 
   return `Du erstellst ein LinkedIn-Asset für ROOTS Brand Strategy Consultants aus einem geprüften Signal.
@@ -779,11 +909,11 @@ ${auftrag}
 ${variantenBlock(erlaubt, carousel)}
 ${LEITKENNZAHL}
 <aufbau>
-kicker: Versalien, höchstens 26 Zeichen, benennt das Thema.
+kicker: Versalien, höchstens 26 Zeichen. Das THEMA der Artikelfamilie, oben rechts wie in den ROOTS-Mustern. Vorgabe für alle Folien dieses Posts: ${thema}. Höchstens eine kurze Unterzeile derselben Familie (zum Beispiel THEMA / UNTERTHEMA), niemals ein neuer Begriff je Folie. NIE den Firmennamen des Zielkunden, NIE die Marke aus unternehmen.
 title: die These des Slides, ein Verb, höchstens 15 Wörter.
 subtitle: trägt ein Argument, nicht die Wiederholung des Titels.
 takeaway: nur bei Varianten, die es zeichnen (K, L, S, T). Sonst die Pointe ins sichtbare Feld.
-footer_left: Absender oder Quelle, kurz.
+footer_left: unten links. Immer „ROOTS Consultants“ oder die belegte Artikelquelle. NIE den Zielkunden. Die Domain rechts ist fest.
 image_hint: das Bildmotiv in Worten, nur bei C, D und J.
 slot_a bis slot_center: nur bei Infografiken, die diese Slots zeichnen.
 post_text: der Begleittext des Beitrags, höchstens 1300 Zeichen, erste Zeile ist der Aufhänger, letzter Absatz der Handlungsaufruf. Absätze bleiben Absätze. Keine Ziffer und kein Zahlwort, die nicht im Artikel stehen.${carousel ? `
@@ -800,7 +930,7 @@ Antworte ausschliesslich mit einem JSON-Objekt nach dem verlangten Schema, ohne 
 function memoAddresseeLine(answers: MemoAnswers, signal: AssetSignalInput): string {
   const person = asData(signal.person_name, 120);
   const rollen = list(signal.buying_center_roles, 6, 80);
-  const firma = asData(signal.company, 120) || "das Unternehmen";
+  const firma = asData(answers.company, 120) || asData(signal.company, 120) || "das Unternehmen";
   if (answers.addressee === "person") {
     return person
       ? `Adressat, verbindlich: ${person}${signal.person_role ? `, ${asData(signal.person_role, 80)}` : ""}. Sprache an diese eine Person.`
@@ -821,8 +951,13 @@ function memoAddresseeLine(answers: MemoAnswers, signal: AssetSignalInput): stri
 
 function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: string): string {
   const leistung = asData(signal.roots_offering, 240);
+  const firma = asData(answers.company, 160) || asData(signal.company, 160) || "das Unternehmen";
+  const bilder = answers.images === "upload"
+    ? "Bilder: der Nutzer lädt sie selbst. Schreibe image_hint als Motivbeschreibung für den Platzhalter."
+    : "Bilder: Gemini erzeugt die Motive aus image_hint. Beschreibe je Slot ein konkretes, textfreies Fotomotiv.";
   const auftrag = [
     memoAddresseeLine(answers, signal),
+    `Unternehmen (nur Briefing, kein Aufdruck): ${firma}. Der Name darf nicht als Kicker, Cover-Label, Titelzusatz („für ${firma}“) oder market_title erscheinen. Die drei Seiten bleiben ohne Firmenaufdruck; die Lage dieses Unternehmens steckt in den Potenzialen.`,
     answers.storyline
       ? `Inhalt, verbindlich: ${answers.storyline}`
       : "Inhalt: das Modell schreibt aus signal und artikel.",
@@ -830,6 +965,7 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
       ? `Handlungsaufruf, verbindlich in cta (die Frage im blauen Band): ${answers.cta}`
       : "cta: eine Gesprächsfrage, die den Adressaten meint. Der Knopftext ist fest „Kontakt aufnehmen“.",
     leistung ? `ROOTS-Leistung ${leistung} gehört in about_fit, einen Satz, warum ROOTS hier ansetzt.` : "",
+    bilder,
   ].filter(Boolean).join("\n");
 
   return `Du erstellst das ROOTS Executive Memo. Es ist immer dasselbe Dokument aus drei A4-Seiten. Ziel: in einer Minute steht fest, warum jetzt gehandelt werden muss, und ROOTS holt das Gespräch. Es ist ein Türöffner, keine Strategiearbeit, keine Optionsmatrix, kein internes Vermerk.
@@ -877,7 +1013,7 @@ export function buildAssetPrompt(
   const daten = signalBlock(signal, article);
   const body = String(article.content_de || article.cleaned_content || article.content || "");
   return kind === "linkedin"
-    ? linkedinPrompt(answers as LinkedinAnswers, daten, body)
+    ? linkedinPrompt(answers as LinkedinAnswers, daten, body, signal)
     : memoPrompt(answers as MemoAnswers, signal, daten);
 }
 
@@ -1289,7 +1425,11 @@ function normalizeLinkedin(
   rejectUnattested([postText, ...kept.map(slidePlain)].join("\n"), corpus, "Beitrag oder Slides");
   rejectRepeatedLeadNumbers(kept);
 
-  return { theme: answers.theme, post_text: postText, slides: kept };
+  return {
+    theme: answers.theme,
+    post_text: postText,
+    slides: applyLinkedinChrome(kept, context, answers),
+  };
 }
 
 /** Dieselbe Ziffer auf zwei Folien. post_text darf alle Zahlen noch einmal nennen. */
@@ -1433,6 +1573,171 @@ export function normalizeAssetPayload(
   return kind === "linkedin"
     ? normalizeLinkedin(parsed, answers as LinkedinAnswers, context)
     : normalizeMemo(parsed, answers as MemoAnswers, context);
+}
+
+// ---------------------------------------------------------------------------
+// Memo-Motive: Gemini erzeugt, der Nutzer schneidet zu. Das Seitenlayout
+// (46 mm × 28 mm Benchmark, 52 mm × 36 mm Potenzial) bleibt unverändert.
+// ---------------------------------------------------------------------------
+export const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
+export const GEMINI_IMAGE_FALLBACK_MODEL = "gemini-2.0-flash-preview-image-generation";
+export const MEMO_IMAGE_DATA_URI_MAX = 280_000;
+export const MEMO_IMAGE_CONCURRENCY = 3;
+export const MEMO_IMAGE_MIN_REMAINING_MS = 40_000;
+
+export const MEMO_SHOT_ASPECT = {
+  benchmark: { w: 46, h: 28 },
+  potential: { w: 52, h: 36 },
+} as const;
+
+export const MEMO_SHOT_PIXELS = {
+  benchmark: { w: 920, h: 560 },
+  potential: { w: 936, h: 648 },
+} as const;
+
+export type MemoImageSlot = {
+  key: string;
+  kind: "benchmark" | "potential";
+  index: number;
+  hint: string;
+  aspectMm: { w: number; h: number };
+  pixels: { w: number; h: number };
+  geminiAspect: "16:9" | "3:2" | "4:3";
+};
+
+export function geminiAspectForShot(kind: "benchmark" | "potential"): "16:9" | "3:2" | "4:3" {
+  return kind === "benchmark" ? "16:9" : "3:2";
+}
+
+export function memoImageSlots(payload: MemoPayload): MemoImageSlot[] {
+  const benchmarks = (payload.benchmarks || []).slice(0, 3).map((eintrag, index) => ({
+    key: `benchmarks.${index}`,
+    kind: "benchmark" as const,
+    index,
+    hint: eintrag.image_hint || eintrag.tag || eintrag.name,
+    aspectMm: MEMO_SHOT_ASPECT.benchmark,
+    pixels: MEMO_SHOT_PIXELS.benchmark,
+    geminiAspect: geminiAspectForShot("benchmark"),
+  }));
+  const potentials = (payload.potentials || []).slice(0, 3).map((eintrag, index) => ({
+    key: `potentials.${index}`,
+    kind: "potential" as const,
+    index,
+    hint: eintrag.image_hint || eintrag.title,
+    aspectMm: MEMO_SHOT_ASPECT.potential,
+    pixels: MEMO_SHOT_PIXELS.potential,
+    geminiAspect: geminiAspectForShot("potential"),
+  }));
+  return [...benchmarks, ...potentials];
+}
+
+export function memoImagePrompt(slot: MemoImageSlot): string {
+  const rahmen = `${slot.aspectMm.w}×${slot.aspectMm.h} mm, landscape, fill the frame`;
+  return [
+    "Photorealistic editorial photograph for a one-page executive memo.",
+    "No text, no logos, no watermarks, no captions, no UI.",
+    `Composition: ${rahmen}. Documentary lighting, European retail or brand context.`,
+    `Subject: ${slot.hint || "brand and retail scene"}.`,
+  ].join(" ");
+}
+
+export function geminiImageRequestBody(prompt: string, aspect: string): Record<string, unknown> {
+  return {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: { aspectRatio: aspect || "16:9" },
+    },
+  };
+}
+
+export function parseGeminiInlineImage(payload: unknown): { mime: string; data: string } | null {
+  const root = record(payload);
+  const candidates = Array.isArray(root.candidates) ? root.candidates : [];
+  for (const candidate of candidates) {
+    const content = record(record(candidate).content);
+    const parts = Array.isArray(content.parts) ? content.parts : [];
+    for (const part of parts) {
+      const inline = record(record(part).inlineData || record(part).inline_data);
+      const data = String(inline.data || "").replace(/\s+/g, "");
+      const mime = String(inline.mimeType || inline.mime_type || "image/png");
+      if (data.length > 80) return { mime, data };
+    }
+  }
+  return null;
+}
+
+export function memoImageDataUri(mime: string, data: string): string | null {
+  const clean = String(data || "").replace(/\s+/g, "");
+  if (!clean) return null;
+  const uri = `data:${mime || "image/jpeg"};base64,${clean}`;
+  if (uri.length > MEMO_IMAGE_DATA_URI_MAX) return null;
+  return uri;
+}
+
+export function attachMemoSlotImage(payload: MemoPayload, key: string, src: string): MemoPayload {
+  const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(key);
+  if (!treffer || !src) return payload;
+  const liste = treffer[1] === "benchmarks" ? payload.benchmarks : payload.potentials;
+  const eintrag = liste[Number(treffer[2])] as (MemoBenchmark | MemoPotential | undefined);
+  if (!eintrag) return payload;
+  eintrag.image = { src, pos: "50% 50%" };
+  return payload;
+}
+
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      out[index] = await fn(items[index], index);
+    }
+  };
+  const n = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return out;
+}
+
+export async function fillMemoImages(
+  payload: MemoPayload,
+  answers: MemoAnswers,
+  opts: {
+    generate: (prompt: string, aspect: string) => Promise<string | null>;
+    remainingMs: number;
+    log?: (event: string, extra?: Record<string, unknown>) => void;
+  },
+): Promise<MemoPayload> {
+  if (answers.images === "upload") {
+    opts.log?.("images_skip", { reason: "upload" });
+    return payload;
+  }
+  if (opts.remainingMs < MEMO_IMAGE_MIN_REMAINING_MS) {
+    opts.log?.("images_skip", { reason: "wall_clock", remaining_ms: opts.remainingMs });
+    return payload;
+  }
+  const slots = memoImageSlots(payload);
+  const filled = { ok: 0, fail: 0 };
+  await mapLimit(slots, MEMO_IMAGE_CONCURRENCY, async (slot) => {
+    try {
+      const src = await opts.generate(memoImagePrompt(slot), slot.geminiAspect);
+      if (src) {
+        attachMemoSlotImage(payload, slot.key, src);
+        filled.ok += 1;
+      } else {
+        filled.fail += 1;
+      }
+    } catch {
+      filled.fail += 1;
+    }
+  });
+  opts.log?.("images_done", filled);
+  return payload;
 }
 
 // ---------------------------------------------------------------------------
