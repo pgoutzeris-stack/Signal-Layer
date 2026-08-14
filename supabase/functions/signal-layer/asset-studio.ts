@@ -2350,18 +2350,123 @@ export function assetHeartbeatErrorText(
   return `${model || "Das Modell"} hat ${assetStageLabel(stage)} seit ${sek} Sekunden nichts mehr gesendet. Der Auftrag wurde wegen der stillen Verbindung beendet, nicht weil er zu lange gedauert hat. Bitte denselben Auftrag noch einmal starten.`;
 }
 
-/** Letzten Pulse ersetzen, damit das Protokoll nicht mit Impulsen vollaeuft. */
+/**
+ * Gleichen Schritt ersetzen, damit das Protokoll nicht vollaeuft.
+ * `since` bleibt der Beginn der Phase, damit die Restzeit das Tempo kennt.
+ * Denken und Schreiben bleiben zwei Eintraege, sonst fehlt die Trennlinie.
+ */
 export function applyAssetPulse(
   log: Record<string, unknown>[],
   extra: AssetPulse,
   startedAt: number,
   nowMs = Date.now(),
 ): Record<string, unknown>[] {
-  const entry: Record<string, unknown> = { t: nowMs - startedAt, event: "pulse", ...extra };
+  const t = nowMs - startedAt;
   const last = log[log.length - 1];
-  if (last && last.event === "pulse") log[log.length - 1] = entry;
+  const same = Boolean(last && last.event === "pulse" && last.phase === extra.phase);
+  const since = same ? Number(last?.since ?? last?.t ?? t) : t;
+  const entry: Record<string, unknown> = { t, since, event: "pulse", ...extra };
+  if (same) log[log.length - 1] = entry;
   else log.push(entry);
   return log;
+}
+
+export type AssetPaceBucket = {
+  ms: number;
+  p75_ms: number;
+  chars: number;
+  p75_chars: number;
+};
+
+function percentileSorted(sorted: number[], q: number): number {
+  if (!sorted.length) return 0;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] * (1 - (pos - lo)) + sorted[hi] * (pos - lo);
+}
+
+function paceBucket(valuesMs: number[], valuesChars: number[]): Partial<AssetPaceBucket> {
+  const ms = [...valuesMs].filter((n) => n >= 2_000).sort((a, b) => a - b);
+  const chars = [...valuesChars].filter((n) => n >= 200).sort((a, b) => a - b);
+  const out: Partial<AssetPaceBucket> = {};
+  if (ms.length) {
+    out.ms = Math.round(percentileSorted(ms, 0.5));
+    out.p75_ms = Math.round(percentileSorted(ms, 0.75));
+  }
+  if (chars.length) {
+    out.chars = Math.round(percentileSorted(chars, 0.5));
+    out.p75_chars = Math.round(percentileSorted(chars, 0.75));
+  }
+  return out;
+}
+
+/** Denk- und Schreibfenster aus einem Laufprotokoll, auch ohne `since`. */
+export function assetRunPaceFromLog(log: unknown): {
+  thinkChars: number;
+  thinkMs: number;
+  writeChars: number;
+  writeMs: number;
+} {
+  const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
+  let modelStart = 0;
+  let thinkChars = 0;
+  let writeChars = 0;
+  let lastThinkT: number | null = null;
+  let thinkSince: number | null = null;
+  let writeSince: number | null = null;
+  let lastWriteT: number | null = null;
+  let sawThinkPulse = false;
+  for (const row of rows) {
+    const event = String(row?.event || "");
+    if (event === "stage" && row?.stage === "modell") modelStart = Number(row.t || 0);
+    if (event === "model_start" || event === "retry_model") modelStart = Number(row.t || 0);
+    if (event !== "pulse") continue;
+    const tc = Number(row.thinking_chars || 0);
+    const c = Number(row.chars || 0);
+    if (tc > thinkChars) thinkChars = tc;
+    if (row.phase === "thinking") {
+      sawThinkPulse = true;
+      lastThinkT = Number(row.t || 0);
+      thinkSince = Number(row.since ?? thinkSince ?? modelStart);
+    }
+    if (row.phase === "writing") {
+      if (writeSince == null) writeSince = Number(row.since ?? row.t ?? 0);
+      lastWriteT = Number(row.t || 0);
+      if (c > writeChars) writeChars = c;
+    }
+  }
+  const thinkMs = sawThinkPulse && lastThinkT != null
+    ? Math.max(0, lastThinkT - (thinkSince ?? modelStart))
+    : 0;
+  const writeMs = writeSince != null && lastWriteT != null
+    ? Math.max(0, lastWriteT - writeSince)
+    : 0;
+  return {
+    thinkChars,
+    thinkMs,
+    writeChars,
+    writeMs: writeMs >= 1_500 ? writeMs : 0,
+  };
+}
+
+export function summarizeAssetPace(logs: unknown[]): {
+  think: Partial<AssetPaceBucket>;
+  write: Partial<AssetPaceBucket>;
+} {
+  const thinkMs: number[] = [];
+  const thinkChars: number[] = [];
+  const writeMs: number[] = [];
+  const writeChars: number[] = [];
+  for (const log of logs) {
+    const row = assetRunPaceFromLog(log);
+    if (row.thinkMs >= 5_000) thinkMs.push(row.thinkMs);
+    if (row.thinkChars >= 200) thinkChars.push(row.thinkChars);
+    if (row.writeMs >= 2_000) writeMs.push(row.writeMs);
+    if (row.writeChars >= 200) writeChars.push(row.writeChars);
+  }
+  return { think: paceBucket(thinkMs, thinkChars), write: paceBucket(writeMs, writeChars) };
 }
 
 export function parseDeepseekSseData(data: string): {

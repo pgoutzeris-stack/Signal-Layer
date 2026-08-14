@@ -562,6 +562,9 @@ test("die Zeitprognose lernt aus gespeicherten Assets, Fehler stehen im Laufprot
   assert.match(edge, /rpc\("asset_duration_forecast"/);
   assert.match(edge, /forecast_ms: forecast.ms/);
   assert.match(edge, /stages: forecast.stages/);
+  assert.match(edge, /think: forecast.think/);
+  assert.match(edge, /write: forecast.write/);
+  assert.match(edge, /summarizeAssetPace/);
   assert.match(edge, /p_images: kind === "memo"/);
   assert.match(edge, /fail_early/);
   assert.match(edge, /loggen\("error"/);
@@ -617,6 +620,12 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
   });
   assert.ok(schreibt < 120_000, `schreiben ${schreibt}`);
 
+  const denktLog = [
+    { t: 0, event: "start", think: { ms: 115_000, p75_ms: 145_000, chars: 32_000, p75_chars: 40_000 }, write: { ms: 22_000, chars: 5_400 } },
+    { t: 10_000, event: "stage", stage: "modell" },
+    { t: 10_000, event: "model_start" },
+    { t: 127_000, event: "pulse", phase: "thinking", thinking_chars: 33540, since: 10_000 },
+  ];
   const denkt = eta.assetEtaRemainingMs({
     kind: "memo",
     answers: { images: "auto", benchmarks: "auto" },
@@ -624,15 +633,23 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
     elapsedMs: 127_000,
     forecastMs: 111_000,
     stages: { modell: 107_000, recherchieren: 6_000, bilder: 12_000, pruefen: 2_500, fuellen: 2_000 },
-    runLog: [
-      { t: 0, event: "start" },
-      { t: 10_000, event: "stage", stage: "modell" },
-      { t: 10_000, event: "model_start" },
-      { t: 127_000, event: "pulse", phase: "thinking", thinking_chars: 33540 },
-    ],
+    runLog: denktLog,
   });
-  assert.ok(denkt >= 90_000, `denken ${denkt}`);
+  // 33 540 von 40 000 Zeichen, 287 Zeichen/s → ~23 s Denken plus Schreiben und Motive.
+  assert.ok(denkt > 45_000 && denkt < 90_000, `denken ${denkt}`);
+  const denktSpaeter = eta.assetEtaRemainingMs({
+    kind: "memo",
+    answers: { images: "auto", benchmarks: "auto" },
+    stage: "modell",
+    elapsedMs: 147_000,
+    forecastMs: 111_000,
+    stages: { modell: 107_000, recherchieren: 6_000, bilder: 12_000, pruefen: 2_500, fuellen: 2_000 },
+    runLog: denktLog,
+  });
+  assert.ok(denkt - denktSpaeter > 16_000 && denkt - denktSpaeter < 24_000, `takt ${denkt} → ${denktSpaeter}`);
   assert.ok(denkt > schreibt, "Denken muss länger restzeigen als Schreiben");
+  const etaSrc = readFileSync(new URL("../asset-eta.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(etaSrc, /90_000/);
   assert.match(studio, /asset-eta\.mjs/);
   assert.match(studio, /data-eta-text/);
   assert.match(studio, /fa-hourglass-half/);
@@ -723,9 +740,20 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   const done = backend.parseDeepseekSseData("[DONE]");
   assert.equal(done?.done, true);
   const log = backend.applyAssetPulse([], { phase: "writing", chars: 12 }, now - 1_000, now);
-  backend.applyAssetPulse(log, { phase: "writing", chars: 40 }, now - 1_000, now);
+  backend.applyAssetPulse(log, { phase: "writing", chars: 40 }, now - 1_000, now + 400);
   assert.equal(log.length, 1);
   assert.equal(log[0].chars, 40);
+  assert.equal(log[0].since, 1_000);
+  const phasen = backend.applyAssetPulse([], { phase: "thinking", thinking_chars: 100 }, now - 5_000, now - 4_000);
+  backend.applyAssetPulse(phasen, { phase: "thinking", thinking_chars: 800 }, now - 5_000, now - 2_000);
+  backend.applyAssetPulse(phasen, { phase: "writing", chars: 2_400, thinking_chars: 800 }, now - 5_000, now);
+  assert.equal(phasen.length, 2);
+  assert.equal(phasen[0].phase, "thinking");
+  assert.equal(phasen[0].since, 1_000);
+  assert.equal(phasen[1].phase, "writing");
+  const pace = backend.summarizeAssetPace([phasen]);
+  assert.ok(pace.think.chars >= 800);
+  assert.ok(pace.write.chars >= 2_400);
   const draftLog = [
     { event: "model_ok", text: "{\"title\":\"These\"}" },
     { event: "stage", stage: "pruefen" },
