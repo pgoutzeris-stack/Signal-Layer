@@ -86,6 +86,9 @@ import {
 import {
   ASSET_EDITED_HTML_LIMIT,
   ASSET_HANG_ERROR,
+  ASSET_FIRST_BYTE_STALE_MS,
+  ASSET_HEARTBEAT_PULSE_MS,
+  ASSET_HEARTBEAT_STALE_MS,
   ASSET_MAX_TOTAL_TOKENS,
   ASSET_PROMPT_VERSION,
   ASSET_STAGE_HOLD_MS,
@@ -93,21 +96,23 @@ import {
   ASSET_SYSTEM_TEXT,
   ASSET_WALL_CLOCK_MS,
   AssetPayload,
+  AssetPulse,
   GEMINI_IMAGE_FALLBACK_MODEL,
   GEMINI_IMAGE_MODEL,
   MEMO_BENCHMARK_RESEARCH_MODEL,
   MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS,
   MemoAnswers,
   MemoPayload,
+  applyAssetPulse,
   assertMemoBenchmarkBriefs,
+  assetHangReason,
+  assetHeartbeatAgeMs,
+  assetHeartbeatErrorText,
   assetMangelIsRepairable,
   assetModelTimeoutMs,
   assetOutputTokenBudget,
   assetRepairTimeoutMs,
   assetResponseSchema,
-  assetStageStaleMs,
-  assetStaleErrorText,
-  assetTimeoutErrorText,
   buildAssetPrompt,
   buildAssetRepairPrompt,
   buildMemoBenchmarkResearchPrompt,
@@ -120,7 +125,9 @@ import {
   normalizeAssetAnswers,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
+  parseDeepseekSseData,
   parseGeminiInlineImage,
+  parseGeminiSseData,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
   resolveAssetCompany,
@@ -2886,6 +2893,8 @@ type ModelCallOptions = {
   attempts?: number;
   /** "text" für Freitextantworten wie die Übersetzung. */
   format?: "json" | "text";
+  /** Tokenweise Impulse. Ohne Angabe bleibt der Aufruf ein Block-Fetch. */
+  onPulse?: (info: AssetPulse) => void | Promise<void>;
 };
 
 type ModelCallResult = {
@@ -2932,27 +2941,28 @@ async function schliesseHangingAsset(
   admin: ReturnType<typeof getAdminClient>,
   row: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
-  if (String(row.status || "") !== "running") return null;
+  const grund = assetHangReason(row);
+  if (!grund) return null;
   const created = Date.parse(String(row.created_at || ""));
-  const updated = Date.parse(String(row.updated_at || row.created_at || ""));
   const jetzt = Date.now();
   const wall = Number.isFinite(created) ? jetzt - created : 0;
-  const stageAge = Number.isFinite(updated) ? jetzt - updated : wall;
-  const limit = assetStageStaleMs(String(row.stage || ""), String(row.kind || ""), row.answers);
-  if (stageAge < limit && wall < ASSET_STALE_MS) return null;
-  const nachricht = wall >= ASSET_STALE_MS
-    ? ASSET_HANG_ERROR
-    : assetStaleErrorText(String(row.model || ""), String(row.stage || ""), stageAge);
+  const stille = assetHeartbeatAgeMs(row.updated_at || row.created_at, jetzt);
+  const nachricht = assetHeartbeatErrorText(
+    String(row.model || ""),
+    String(row.stage || ""),
+    stille,
+    grund,
+  );
   await admin.schema("signal_layer").from("generated_assets")
     .update({
       status: "error",
       error_message: nachricht,
-      duration_ms: wall || stageAge,
+      duration_ms: wall || stille,
       updated_at: new Date().toISOString(),
     })
     .eq("id", row.id)
     .eq("status", "running");
-  return { ...row, status: "error", error_message: nachricht, duration_ms: wall || stageAge };
+  return { ...row, status: "error", error_message: nachricht, duration_ms: wall || stille };
 }
 
 async function fetchMitLimit(
@@ -2980,6 +2990,52 @@ async function fetchMitLimit(
   }
 }
 
+/**
+ * Liest SSE. Jedes ankommende Byte ist ein Lebenszeichen. Timer im Isolat
+ * sind best effort; die frische updated_at-Zeile ist der echte Waechter.
+ */
+async function leseSse(
+  response: Response,
+  onData: (data: string) => void | Promise<void>,
+  onByte?: () => void | Promise<void>,
+): Promise<void> {
+  const verarbeite = async (block: string) => {
+    for (const line of block.split("\n")) {
+      const trimmed = line.trimEnd();
+      if (trimmed.startsWith(":")) {
+        await onByte?.();
+        continue;
+      }
+      if (!trimmed.startsWith("data:")) continue;
+      const data = trimmed.slice(5).trimStart();
+      if (!data) continue;
+      await onByte?.();
+      await onData(data);
+    }
+  };
+  if (!response.body) {
+    await verarbeite((await response.text()).replace(/\r\n/g, "\n"));
+    return;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (value && value.byteLength) await onByte?.();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+    let nl = buf.indexOf("\n");
+    while (nl >= 0) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      if (line.trim()) await verarbeite(line);
+      nl = buf.indexOf("\n");
+    }
+  }
+  if (buf.trim()) await verarbeite(buf);
+}
+
 async function generateGeminiMemoImage(
   apiKey: string,
   prompt: string,
@@ -2993,7 +3049,7 @@ async function generateGeminiMemoImage(
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify(geminiImageRequestBody(prompt, aspect)),
-      }, 22_000);
+      }, ASSET_HEARTBEAT_STALE_MS);
       if (!response.ok) continue;
       const json = await response.json();
       const inline = parseGeminiInlineImage(json);
@@ -3007,24 +3063,13 @@ async function generateGeminiMemoImage(
   return null;
 }
 
-function groundingTitles(candidate: Record<string, unknown> | null): string[] {
-  const meta = candidate?.groundingMetadata as Record<string, unknown> | undefined;
-  const chunks = Array.isArray(meta?.groundingChunks) ? meta!.groundingChunks as unknown[] : [];
-  const titles: string[] = [];
-  for (const chunk of chunks) {
-    const web = (chunk as Record<string, unknown>).web as Record<string, unknown> | undefined;
-    const title = String(web?.title || "").trim();
-    if (title) titles.push(title.slice(0, 80));
-  }
-  return titles;
-}
-
 async function callGeminiWithGoogleSearch(
   apiKey: string,
   model: string,
   prompt: string,
+  onPulse?: (info: AssetPulse) => void | Promise<void>,
 ): Promise<{ text: string; titles: string[]; searchQueries: number }> {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
   const response = await fetchMitLimit(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
@@ -3037,27 +3082,34 @@ async function callGeminiWithGoogleSearch(
   if (!response.ok) {
     throw new Error(`Die Vorreiter-Recherche ist fehlgeschlagen (${response.status}).`);
   }
-  const payload = await response.json() as Record<string, unknown>;
-  const candidate = (Array.isArray(payload.candidates) ? payload.candidates[0] : null) as Record<string, unknown> | null;
-  if (!candidate) throw new Error("Die Vorreiter-Recherche hat keine Antwort geliefert.");
-  const finish = String(candidate.finishReason ?? "");
+  await onPulse?.({ phase: "headers", model, chars: 0 });
+  let text = "";
+  let titles: string[] = [];
+  let searchQueries = 0;
+  let finish = "";
+  await leseSse(response, async (data) => {
+    const chunk = parseGeminiSseData(data);
+    if (!chunk) return;
+    if (chunk.text) text += chunk.text;
+    if (chunk.titles?.length) titles = chunk.titles;
+    if (chunk.searchQueries) searchQueries = chunk.searchQueries;
+    if (chunk.finish) finish = chunk.finish;
+    await onPulse?.({ phase: "search", model, chars: text.length });
+  }, () => onPulse?.({ phase: "search", model, chars: text.length }));
+  if (!text.trim()) throw new Error("Die Vorreiter-Recherche hat keine Antwort geliefert.");
   if (finish && finish !== "STOP") {
     throw new Error("Die Vorreiter-Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Vorreiter eintragen.");
   }
-  const parts = ((candidate.content as Record<string, unknown> | undefined)?.parts ?? []) as Array<Record<string, unknown>>;
-  const text = parts.map((part) => String(part.text ?? "")).join("\n");
-  const titles = groundingTitles(candidate);
-  const meta = candidate.groundingMetadata as Record<string, unknown> | undefined;
-  const queries = Array.isArray(meta?.webSearchQueries) ? meta!.webSearchQueries.length : (titles.length ? 1 : 0);
-  return { text, titles, searchQueries: queries };
+  return { text, titles, searchQueries: searchQueries || (titles.length ? 1 : 0) };
 }
 
 async function researchMemoBenchmarksWithGemini(
   apiKey: string,
   model: string,
   prompt: string,
+  onPulse?: (info: AssetPulse) => void | Promise<void>,
 ): Promise<{ briefs: ReturnType<typeof normalizeMemoBenchmarkResearch>; searchQueries: number }> {
-  const gefunden = await callGeminiWithGoogleSearch(apiKey, model, prompt);
+  const gefunden = await callGeminiWithGoogleSearch(apiKey, model, prompt, onPulse);
   return {
     briefs: normalizeMemoBenchmarkResearch(parseLooseJsonObject(gefunden.text), gefunden.titles),
     searchQueries: gefunden.searchQueries,
@@ -3068,13 +3120,138 @@ async function reviewMemoBenchmarksWithGemini(
   apiKey: string,
   model: string,
   prompt: string,
+  onPulse?: (info: AssetPulse) => void | Promise<void>,
 ): Promise<{ ok: boolean; grund: string; searchQueries: number }> {
-  const gefunden = await callGeminiWithGoogleSearch(apiKey, model, prompt);
+  const gefunden = await callGeminiWithGoogleSearch(apiKey, model, prompt, onPulse);
   const verdict = parseMemoBenchmarkReview(parseLooseJsonObject(gefunden.text));
   return { ...verdict, searchQueries: gefunden.searchQueries };
 }
 
+async function callJsonModelStreaming(options: ModelCallOptions): Promise<ModelCallResult> {
+  const provider = modelProvider(options.model);
+  const wantsJson = (options.format ?? "json") === "json";
+  const attemptsAllowed = options.attempts ?? 3;
+  const schemaHint = provider === "deepseek" && wantsJson && options.schema
+    ? `\n\n<answer_format>Antworte ausschliesslich mit einem JSON-Objekt in genau dieser Struktur, ohne Text davor oder danach:\n${describeSchema(options.schema)}</answer_format>`
+    : "";
+  const endpoint = provider === "deepseek"
+    ? "https://api.deepseek.com/chat/completions"
+    : `https://generativelanguage.googleapis.com/v1beta/models/${options.model}:streamGenerateContent?alt=sse`;
+  const headers = provider === "deepseek"
+    ? { "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` }
+    : { "Content-Type": "application/json", "x-goog-api-key": options.apiKey };
+  const body = provider === "deepseek"
+    ? JSON.stringify({
+      model: options.model,
+      messages: [
+        ...(options.systemText ? [{ role: "system", content: options.systemText }] : []),
+        { role: "user", content: options.prompt + schemaHint },
+      ],
+      ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
+      max_tokens: options.maxTotalTokens
+        ?? Math.min(Math.max(options.maxOutputTokens, 3_000) + 2_500, 8_192),
+      temperature: options.temperature ?? 0,
+      stream: true,
+      stream_options: { include_usage: true },
+    })
+    : JSON.stringify({
+      ...(options.systemText ? { systemInstruction: { parts: [{ text: options.systemText }] } } : {}),
+      contents: [{ role: "user", parts: [{ text: options.prompt }] }],
+      generationConfig: {
+        ...(wantsJson ? { responseMimeType: "application/json" } : {}),
+        ...(wantsJson && options.schema ? { responseSchema: options.schema } : {}),
+        maxOutputTokens: options.maxOutputTokens,
+        ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+        thinkingConfig: options.model.startsWith("gemini-2.5-")
+          ? { thinkingBudget: options.thinkingLevel === "minimal" ? 0 : 512 }
+          : { thinkingLevel: options.thinkingLevel || "minimal" },
+      },
+    });
+
+  const pulse = options.onPulse || (() => {});
+  let lastError = "";
+  let attemptsUsed = 0;
+  for (let attempt = 1; attempt <= attemptsAllowed; attempt += 1) {
+    attemptsUsed = attempt;
+    try {
+      const response = await fetchMitLimit(
+        endpoint,
+        { method: "POST", headers, body },
+        ASSET_FIRST_BYTE_STALE_MS,
+      );
+      if (!response.ok) {
+        lastError = await response.text();
+        const hardStop = /spending cap|insufficient balance|invalid api key|unauthorized/i.test(lastError);
+        const retryable = !hardStop && (response.status === 429 || [500, 502, 503, 504].includes(response.status));
+        if (!retryable || attempt === attemptsAllowed) {
+          return { ok: false, text: "", status: response.status, error: lastError, usage: EMPTY_MODEL_USAGE, attempts: attemptsUsed };
+        }
+      } else {
+        await pulse({ phase: "headers", model: options.model, chars: 0, thinking_chars: 0 });
+        let content = "";
+        let reasoning = "";
+        let usage = EMPTY_MODEL_USAGE;
+        await leseSse(response, async (data) => {
+          if (provider === "deepseek") {
+            const chunk = parseDeepseekSseData(data);
+            if (!chunk || chunk.done) return;
+            if (chunk.reasoning) reasoning += chunk.reasoning;
+            if (chunk.content) content += chunk.content;
+            if (chunk.usage) {
+              const cached = chunk.usage.prompt_cache_hit_tokens;
+              const promptTokens = chunk.usage.prompt_tokens;
+              const completion = chunk.usage.completion_tokens;
+              const thinking = chunk.usage.reasoning_tokens;
+              usage = {
+                input: chunk.usage.prompt_cache_miss_tokens || Math.max(promptTokens - cached, 0),
+                cachedInput: cached,
+                output: Math.max(completion - thinking, 0),
+                thinking,
+                total: chunk.usage.total_tokens || promptTokens + completion,
+              };
+            }
+            await pulse({
+              phase: content ? "writing" : "thinking",
+              model: options.model,
+              chars: content.length,
+              thinking_chars: reasoning.length,
+            });
+            return;
+          }
+          const chunk = parseGeminiSseData(data);
+          if (!chunk?.text) return;
+          content += chunk.text;
+          await pulse({ phase: "writing", model: options.model, chars: content.length });
+        }, () => pulse({
+          phase: content ? "writing" : "thinking",
+          model: options.model,
+          chars: content.length,
+          thinking_chars: reasoning.length,
+        }));
+        if (!content.trim()) {
+          return {
+            ok: false, status: response.status,
+            error: `empty completion, reasoning used ${usage.thinking} of ${usage.output + usage.thinking} tokens`,
+            text: "", attempts: attemptsUsed, usage,
+          };
+        }
+        return { ok: true, status: response.status, error: "", text: content, usage, attempts: attemptsUsed };
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      const zeitAbgelaufen = error instanceof Error
+        && (error.name === "TimeoutError" || error.name === "AbortError");
+      if (zeitAbgelaufen || attempt === attemptsAllowed) {
+        return { ok: false, text: "", status: 0, error: lastError, usage: EMPTY_MODEL_USAGE, attempts: attemptsUsed };
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500 * (2 ** (attempt - 1))));
+  }
+  return { ok: false, text: "", status: 0, error: lastError, usage: EMPTY_MODEL_USAGE, attempts: attemptsUsed };
+}
+
 async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult> {
+  if (options.onPulse) return callJsonModelStreaming(options);
   const provider = modelProvider(options.model);
   const wantsJson = (options.format ?? "json") === "json";
   const attemptsAllowed = options.attempts ?? 3;
@@ -8095,10 +8272,9 @@ Deno.serve(async (req: Request) => {
         };
 
         const timeoutMs = assetModelTimeoutMs(assetKind, assetAnswers);
-        const researchMs = assetKind === "memo" ? MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS : 0;
         const forecast = await assetForecastFromDb(
           admin, assetKind, assetAnswers as { asset_type?: string; slides?: number },
-          Math.round((timeoutMs + researchMs) * 0.85),
+          Math.round((timeoutMs + (assetKind === "memo" ? 20_000 : 0)) * 0.85),
         );
 
         // Der Auftrag wird angelegt und sofort quittiert. Ein Modellaufruf dauert
@@ -8151,6 +8327,14 @@ Deno.serve(async (req: Request) => {
             })
             .eq("id", assetRow.id)
             .eq("status", "running");
+          let lastPulseAt = 0;
+          const onPulse = async (info: AssetPulse) => {
+            applyAssetPulse(runLog, { model: assetModel, ...info }, startedAt);
+            const now = Date.now();
+            if (now - lastPulseAt < ASSET_HEARTBEAT_PULSE_MS) return;
+            lastPulseAt = now;
+            await persist({});
+          };
           const nochAktiv = async () => {
             const { data } = await admin.schema("signal_layer").from("generated_assets")
               .select("status").eq("id", assetRow.id).maybeSingle();
@@ -8195,6 +8379,7 @@ Deno.serve(async (req: Request) => {
                     geminiKey,
                     researchModel,
                     buildMemoBenchmarkReviewPrompt(signalForAsset, assetArticle, memoAnswers),
+                    onPulse,
                   );
                   loggen("benchmarks_review", {
                     model: researchModel,
@@ -8222,6 +8407,7 @@ Deno.serve(async (req: Request) => {
                   geminiKey,
                   researchModel,
                   buildMemoBenchmarkResearchPrompt(signalForAsset, assetArticle, memoAnswers),
+                  onPulse,
                 );
                 memoAnswers.benchmarks = assertMemoBenchmarkBriefs(gefunden.briefs, firma, { allowExample: true });
                 loggen("benchmarks_ok", {
@@ -8238,7 +8424,7 @@ Deno.serve(async (req: Request) => {
           const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
           if (!(await nochAktiv())) return;
           await abschnitt("modell");
-          loggen("model_start", { timeout_ms: timeoutMs });
+          loggen("model_start", { stream: true });
           const callOpts = {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
             schema: assetResponseSchema(assetKind, assetAnswers, [
@@ -8252,6 +8438,7 @@ Deno.serve(async (req: Request) => {
             //   Carousel 6   6.084 + 1.069 = 7.153
             maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
             temperature: 0.35,
+            onPulse,
           };
           let result = await callJsonModel({
             ...callOpts, prompt, attempts: 2, timeoutMs,
@@ -8297,7 +8484,7 @@ Deno.serve(async (req: Request) => {
                   : /empty completion/i.test(roh)
                     ? `${assetModel} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${roh}). Ein kürzerer Fragebogen oder weniger Slides hilft.`
                     : /timeout|aborted/i.test(roh)
-                      ? assetTimeoutErrorText(assetModel, timeoutMs)
+                      ? assetHeartbeatErrorText(assetModel, "modell", ASSET_HEARTBEAT_STALE_MS, "silent")
                       : `${assetModel} hat mit ${status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
 
           if (!result.ok) {
@@ -8390,7 +8577,10 @@ Deno.serve(async (req: Request) => {
             } else {
               payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
                 remainingMs: ASSET_WALL_CLOCK_MS - (Date.now() - startedAt),
-                log: loggen,
+                log: (event, extra) => {
+                  loggen(event, extra || {});
+                  void persist({});
+                },
                 generate: (promptText, aspect) => generateGeminiMemoImage(geminiKey, promptText, aspect),
               });
             }

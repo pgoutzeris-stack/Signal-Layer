@@ -555,7 +555,7 @@ export const MEMO_BENCHMARK_EXAMPLE: MemoBenchmarkBrief[] = [
   },
 ];
 
-export const MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS = 40_000;
+export const MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS = 90_000;
 export const MEMO_BENCHMARK_RESEARCH_MODEL = "gemini-2.5-flash";
 
 function briefFromParts(name: unknown, textValue: unknown, tag: unknown, source: unknown): MemoBenchmarkBrief {
@@ -1937,6 +1937,7 @@ export async function fillMemoImages(
   const filled = { ok: 0, fail: 0 };
   await mapLimit(slots, MEMO_IMAGE_CONCURRENCY, async (slot) => {
     try {
+      opts.log?.("image_start", { key: slot.key });
       const src = await opts.generate(memoImagePrompt(slot), slot.geminiAspect);
       if (src) {
         attachMemoSlotImage(payload, slot.key, src);
@@ -1974,39 +1975,170 @@ export const ASSET_WALL_CLOCK_MS = 380_000;
  */
 export const ASSET_STALE_MS = 400_000;
 
+/**
+ * Ohne neues Byte so lange: die Verbindung steht. Nicht die Gesamtdauer.
+ * Belegt 14.8.2026: DeepSeek lieferte nach der Recherche null Bytes, das
+ * Isolat hungerte seine eigenen Timer aus, get_asset sah erst nach 401 s
+ * den Tod. Ein Impuls alle paar Sekunden haette den Hang nach 45 s erkannt
+ * und einen langsamen, aber lebenden Lauf nicht abgebrochen.
+ */
+export const ASSET_HEARTBEAT_STALE_MS = 45_000;
+
+/** Bis zum ersten Byte darf die Suche oder das Denken laenger brauchen. */
+export const ASSET_FIRST_BYTE_STALE_MS = 90_000;
+
+/** So oft darf ein Pulse die Zeile anfassen, ohne die Datenbank zu flutten. */
+export const ASSET_HEARTBEAT_PULSE_MS = 2_500;
+
 export const ASSET_HANG_ERROR =
-  "Der Auftrag hat zu lange gedauert und wurde abgebrochen. Bitte denselben Auftrag noch einmal starten.";
+  "Der Auftrag hat das technische Zeitfenster der Funktion (knapp sieben Minuten) ausgeschöpft. Bitte denselben Auftrag noch einmal starten.";
+
+export type AssetHangReason = "silent" | "isolate";
+
+export type AssetPulse = {
+  phase?: string;
+  chars?: number;
+  thinking_chars?: number;
+  model?: string;
+};
+
+export function assetHeartbeatAgeMs(updatedAt: unknown, nowMs = Date.now()): number {
+  const t = Date.parse(String(updatedAt || ""));
+  return Number.isFinite(t) ? Math.max(0, nowMs - t) : Number.POSITIVE_INFINITY;
+}
 
 /**
- * Der DeepSeek-Fetch kann die Timer im selben Isolat aushungern: weder
- * fetchMitLimit noch der 380-s-Waechter schreiben dann. get_asset laeuft in
- * einem neuen Isolat und schliesst die Zeile, sobald die aktuelle Stufe ihr
- * Fenster ueberschreitet. Belegt 14.8.2026: Memo blieb 401 s auf modell, ohne
- * model_ok, bis ASSET_STALE_MS griff.
+ * Lebt, solange die Zeile frisch ist. Die Stufe darf Minuten dauern.
+ * Nur Stille oder der Plattform-Tod des Isolats beenden den Auftrag.
  */
-export function assetStageStaleMs(stage: string, kind: string, answers: unknown): number {
-  const art = isAssetKind(kind) ? kind : "linkedin";
-  const parsed = normalizeAssetAnswers(art, answers && typeof answers === "object" ? answers : {});
-  const modell = assetModelTimeoutMs(art, parsed);
+export function assetHangReason(
+  row: { status?: unknown; created_at?: unknown; updated_at?: unknown; run_log?: unknown },
+  nowMs = Date.now(),
+): AssetHangReason | null {
+  if (String(row.status || "") !== "running") return null;
+  const created = Date.parse(String(row.created_at || ""));
+  const wall = Number.isFinite(created) ? nowMs - created : 0;
+  if (wall >= ASSET_STALE_MS) return "isolate";
+  const age = assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs);
+  const log = Array.isArray(row.run_log) ? row.run_log as Array<Record<string, unknown>> : [];
+  const last = log[log.length - 1];
+  const event = String(last?.event || "");
+  const wartetAufErstesByte = !event || event === "start" || event === "stage" || event === "model_start";
+  const limit = wartetAufErstesByte ? ASSET_FIRST_BYTE_STALE_MS : ASSET_HEARTBEAT_STALE_MS;
+  if (age >= limit) return "silent";
+  return null;
+}
+
+export function assetStageLabel(stage: string): string {
   switch (String(stage || "")) {
-    case "lesen": return 25_000;
-    case "recherchieren": return MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS + 20_000;
-    case "modell": return modell + 20_000;
-    case "pruefen": return ASSET_STAGE_HOLD_MS + 25_000;
-    case "bilder": return 90_000;
-    case "fuellen": return ASSET_STAGE_HOLD_MS + 20_000;
-    default: return ASSET_STALE_MS;
+    case "recherchieren": return "bei der Vorreiter-Recherche";
+    case "modell": return "beim Schreiben";
+    case "bilder": return "bei den Motiven";
+    case "pruefen": return "beim Prüfen";
+    default: return "in diesem Schritt";
   }
 }
 
-export function assetStaleErrorText(model: string, stage: string, waitedMs: number): string {
-  const sek = Math.max(1, Math.round(Number(waitedMs) / 1000));
-  const wo = stage === "recherchieren" ? "bei der Vorreiter-Recherche"
-    : stage === "modell" ? "beim Schreiben"
-    : stage === "bilder" ? "bei den Motiven"
-    : stage === "pruefen" ? "beim Prüfen"
-    : "in diesem Schritt";
-  return `${model || "Das Modell"} ist ${wo} nach ${sek} Sekunden nicht weitergekommen. Bitte denselben Auftrag noch einmal starten.`;
+export function assetHeartbeatErrorText(
+  model: string,
+  stage: string,
+  silentMs: number,
+  reason: AssetHangReason = "silent",
+): string {
+  if (reason === "isolate") return ASSET_HANG_ERROR;
+  const sek = Math.max(1, Math.round(Number(silentMs) / 1000));
+  return `${model || "Das Modell"} hat ${assetStageLabel(stage)} seit ${sek} Sekunden nichts mehr gesendet. Der Auftrag wurde wegen der stillen Verbindung beendet, nicht weil er zu lange gedauert hat. Bitte denselben Auftrag noch einmal starten.`;
+}
+
+/** Letzten Pulse ersetzen, damit das Protokoll nicht mit Impulsen vollaeuft. */
+export function applyAssetPulse(
+  log: Record<string, unknown>[],
+  extra: AssetPulse,
+  startedAt: number,
+  nowMs = Date.now(),
+): Record<string, unknown>[] {
+  const entry: Record<string, unknown> = { t: nowMs - startedAt, event: "pulse", ...extra };
+  const last = log[log.length - 1];
+  if (last && last.event === "pulse") log[log.length - 1] = entry;
+  else log.push(entry);
+  return log;
+}
+
+export function parseDeepseekSseData(data: string): {
+  done?: boolean;
+  content?: string;
+  reasoning?: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    prompt_cache_hit_tokens: number;
+    prompt_cache_miss_tokens: number;
+    reasoning_tokens: number;
+  } | null;
+} | null {
+  const raw = String(data || "").trim();
+  if (!raw) return null;
+  if (raw === "[DONE]") return { done: true };
+  try {
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    const choice = Array.isArray(json.choices) ? json.choices[0] as Record<string, unknown> : undefined;
+    const delta = (choice?.delta || choice?.message || {}) as Record<string, unknown>;
+    const usageRaw = json.usage && typeof json.usage === "object"
+      ? json.usage as Record<string, unknown>
+      : null;
+    const details = usageRaw?.completion_tokens_details && typeof usageRaw.completion_tokens_details === "object"
+      ? usageRaw.completion_tokens_details as Record<string, unknown>
+      : {};
+    return {
+      content: typeof delta.content === "string" ? delta.content : undefined,
+      reasoning: typeof delta.reasoning_content === "string" ? delta.reasoning_content : undefined,
+      usage: usageRaw ? {
+        prompt_tokens: Number(usageRaw.prompt_tokens || 0),
+        completion_tokens: Number(usageRaw.completion_tokens || 0),
+        total_tokens: Number(usageRaw.total_tokens || 0),
+        prompt_cache_hit_tokens: Number(usageRaw.prompt_cache_hit_tokens || 0),
+        prompt_cache_miss_tokens: Number(usageRaw.prompt_cache_miss_tokens || 0),
+        reasoning_tokens: Number(details.reasoning_tokens || 0),
+      } : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function parseGeminiSseData(data: string): {
+  text?: string;
+  finish?: string;
+  titles?: string[];
+  searchQueries?: number;
+} | null {
+  const raw = String(data || "").trim();
+  if (!raw) return null;
+  try {
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    const candidate = (Array.isArray(json.candidates) ? json.candidates[0] : null) as Record<string, unknown> | null;
+    if (!candidate) return {};
+    const parts = (((candidate.content as Record<string, unknown> | undefined)?.parts) ?? []) as Array<Record<string, unknown>>;
+    const text = parts.map((part) => String(part.text ?? "")).join("");
+    const meta = candidate.groundingMetadata as Record<string, unknown> | undefined;
+    const chunks = Array.isArray(meta?.groundingChunks) ? meta!.groundingChunks as unknown[] : [];
+    const titles: string[] = [];
+    for (const chunk of chunks) {
+      const web = (chunk as Record<string, unknown>).web as Record<string, unknown> | undefined;
+      const title = String(web?.title || "").trim();
+      if (title) titles.push(title.slice(0, 80));
+    }
+    const queries = Array.isArray(meta?.webSearchQueries) ? meta!.webSearchQueries.length : 0;
+    return {
+      text: text || undefined,
+      finish: candidate.finishReason ? String(candidate.finishReason) : undefined,
+      titles,
+      searchQueries: queries || (titles.length ? 1 : 0),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function assetOutputTokenBudget(kind: AssetKind, answers: AssetAnswers): number {
