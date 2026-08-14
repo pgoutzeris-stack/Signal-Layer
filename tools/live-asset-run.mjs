@@ -36,7 +36,7 @@ async function api(action, payload) {
 
 async function warte(id) {
   const gesehen = [];
-  const bis = Date.now() + 360_000;
+  const bis = Date.now() + 420_000;
   let wartezeit = 800;
   while (Date.now() < bis) {
     await new Promise((r) => setTimeout(r, wartezeit));
@@ -46,7 +46,7 @@ async function warte(id) {
     if (gesehen[gesehen.length - 1] !== stage) gesehen.push(stage);
     if (asset.status && asset.status !== "running") return { asset, gesehen };
   }
-  throw new Error("nach sechs Minuten nicht fertig");
+  throw new Error("nach sieben Minuten nicht fertig");
 }
 
 const zeilen = [];

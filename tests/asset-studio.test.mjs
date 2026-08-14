@@ -493,9 +493,34 @@ test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", 
   );
   // Ein Timeout darf keinen zweiten Versuch ausloesen: der denkt genauso lange.
   assert.match(edge, /zeitAbgelaufen \|\| attempt === attemptsAllowed/);
-  // Das Studio bleibt ueber dem groessten Fenster (280 s), sonst gibt die
-  // Anzeige auf, waehrend der Auftrag noch laeuft.
-  assert.match(studio, /Date\.now\(\) \+ 360_000/);
+  // Das Studio bleibt ueber Watchdog (380 s) und Isolate (~400 s), sonst gibt
+  // die Anzeige auf, bevor get_asset eine stehengebliebene Zeile schliesst.
+  assert.match(studio, /Date\.now\(\) \+ 420_000/);
+  assert.equal(backend.ASSET_WALL_CLOCK_MS, 380_000);
+  assert.equal(backend.ASSET_STALE_MS, 400_000);
+  assert.match(edge, /ASSET_WALL_CLOCK_MS/);
+  assert.match(edge, /ASSET_STALE_MS/);
+  assert.match(edge, /ASSET_HANG_ERROR/);
+});
+
+test("ein haengender Auftrag wird geschlossen, kein zweites Modellrennen", () => {
+  // AbortSignal.timeout hat den DeepSeek-Fetch nicht abgebrochen. Promise.race
+  // gibt spaetestens nach dem Fenster zurueck, der Waechter schreibt den Fehler
+  // nur solange die Zeile noch running ist, get_asset raeumt Zombies nach 400 s.
+  assert.match(edge, /async function fetchMitLimit/);
+  assert.match(edge, /fetchMitLimit\(endpoint/);
+  assert.match(edge, /Promise\.race/);
+  assert.match(edge, /err\.name = "TimeoutError"/);
+  assert.match(edge, /setTimeout\(\(\) => \{/);
+  assert.match(edge, /\.eq\("id", assetRow\.id\)\s*\.eq\("status", "running"\)/);
+  assert.match(edge, /Date\.now\(\) - seit >= ASSET_STALE_MS/);
+  assert.match(edge, /\.eq\("id", gefragteId\)\s*\.eq\("status", "running"\)/);
+  assert.match(edge, /EDITOR_ACTIONS[\s\S]*generate_asset/);
+  assert.doesNotMatch(studio, /Der Auftrag läuft weiter/);
+  assert.match(studio, /sieben Minuten nicht fertig/);
+  const assetSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
+  assert.match(assetSrc, /function dropRepeatedLeadNumberSlides/);
+  assert.doesNotMatch(assetSrc, /rejectRepeatedLeadNumbers/);
 });
 
 test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () => {
@@ -872,10 +897,10 @@ test("Ansprache injiziert die Leistung nur wenn sie in about_fit fehlt", () => {
   assert.equal(voll.about_fit, "Audit wählen. ROOTS setzt hier mit Marketing Audit + Markenstrategie an.");
 });
 
-test("dieselbe Leitkennzahl auf zwei Folien ist unbrauchbar", () => {
+test("dieselbe Leitkennzahl auf einer spaeteren Folie wird gestrichen", () => {
   const answers = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 });
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen.";
-  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
+  const zwei = backend.normalizeAssetPayload("linkedin", JSON.stringify({
     post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
     slides: [
       { variant: "G", kicker: "BNPL", title: "Junge Nutzer verlieren den Überblick", myth: "BNPL bleibt ein Jugendphänomen", fact: "24 Prozent der unter 30 verlieren den Überblick", footer_left: "ROOTS" },
@@ -884,7 +909,24 @@ test("dieselbe Leitkennzahl auf zwei Folien ist unbrauchbar", () => {
         { value: "38 %", label: "junge Erwachsene" },
       ], footer_left: "ROOTS" },
     ],
-  }), answers, { articleText: artikel }), /Kennzahl 24.*Folie 1.*Folie 2/);
+  }), answers, { articleText: artikel });
+  assert.equal(zwei.slides.length, 1);
+  assert.equal(zwei.slides[0].variant, "G");
+
+  const klarna = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
+    slides: [
+      { variant: "B", kicker: "BNPL", title: "Klarna verschiebt den Kauf", subtitle: "Der Überblick bricht weg", footer_left: "ROOTS" },
+      { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
+      { variant: "H", kicker: "ZAHLEN", title: "Zwei Anteile tragen die Lage", stats: [
+        { value: "24 %", label: "unter 30" },
+        { value: "38 %", label: "junge Erwachsene" },
+      ], footer_left: "ROOTS" },
+      { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
+    ],
+  }), answers, { articleText: artikel });
+  assert.equal(klarna.slides.length, 3);
+  assert.deepEqual(klarna.slides.map((s) => s.variant), ["B", "G", "K"]);
 
   const ok = backend.normalizeAssetPayload("linkedin", JSON.stringify({
     post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",

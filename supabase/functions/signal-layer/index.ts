@@ -85,10 +85,13 @@ import {
 } from "./company-profile.ts";
 import {
   ASSET_EDITED_HTML_LIMIT,
+  ASSET_HANG_ERROR,
   ASSET_MAX_TOTAL_TOKENS,
   ASSET_PROMPT_VERSION,
   ASSET_STAGE_HOLD_MS,
+  ASSET_STALE_MS,
   ASSET_SYSTEM_TEXT,
+  ASSET_WALL_CLOCK_MS,
   AssetPayload,
   assetModelTimeoutMs,
   assetOutputTokenBudget,
@@ -2872,6 +2875,35 @@ type ModelCallResult = {
   error: string;
 };
 
+/**
+ * AbortSignal.timeout hat am 13.8.2026 den DeepSeek-Fetch nicht abgebrochen.
+ * Promise.race gibt spaetestens nach timeoutMs zurueck, auch wenn abort haengt.
+ */
+async function fetchMitLimit(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const ac = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const ablauf = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      ac.abort();
+      const err = new Error("timeout");
+      err.name = "TimeoutError";
+      reject(err);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      fetch(url, { ...init, signal: ac.signal }),
+      ablauf,
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult> {
   const provider = modelProvider(options.model);
   const wantsJson = (options.format ?? "json") === "json";
@@ -2923,7 +2955,7 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
   for (let attempt = 1; attempt <= attemptsAllowed; attempt += 1) {
     attemptsUsed = attempt;
     try {
-      response = await fetch(endpoint, { method: "POST", headers, body, signal: AbortSignal.timeout(timeoutMs) });
+      response = await fetchMitLimit(endpoint, { method: "POST", headers, body }, timeoutMs);
       if (response.ok) break;
       lastError = await response.text();
       const hardStop = /spending cap|insufficient balance|invalid api key|unauthorized/i.test(lastError);
@@ -7898,6 +7930,19 @@ Deno.serve(async (req: Request) => {
           }).select("*").single();
         if (assetInsertError) return errorResponse(origin, assetInsertError.message, 500);
 
+        // Wenn der Fetch haengt, stirbt das Isolate ohne catch. Dieser Waechter
+        // schreibt den Fehler, solange die Zeile noch running ist.
+        const waechter = setTimeout(() => {
+          void getAdminClient().schema("signal_layer").from("generated_assets")
+            .update({
+              status: "error",
+              error_message: ASSET_HANG_ERROR,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", assetRow.id)
+            .eq("status", "running");
+        }, ASSET_WALL_CLOCK_MS);
+
         const arbeit = (async () => {
           const startedAt = Date.now();
           const abschnitt = (name: string) => admin.schema("signal_layer")
@@ -8040,7 +8085,7 @@ Deno.serve(async (req: Request) => {
           await getAdminClient().schema("signal_layer").from("generated_assets")
             .update({ status: "error", error_message: String(fehler).slice(0, 2000), updated_at: new Date().toISOString() })
             .eq("id", assetRow.id);
-        });
+        }).finally(() => clearTimeout(waechter));
         EdgeRuntime.waitUntil(arbeit);
         return corsResponse(origin, { asset: assetRow });
       }
@@ -8048,10 +8093,27 @@ Deno.serve(async (req: Request) => {
       case "get_asset": {
         const gefragteId = String(body.asset_id || "");
         if (!gefragteId) return errorResponse(origin, "asset_id fehlt");
-        const { data: geladen, error: ladeFehler } = await getAdminClient().schema("signal_layer")
+        const admin = getAdminClient();
+        const { data: geladen, error: ladeFehler } = await admin.schema("signal_layer")
           .from("generated_assets").select("*").eq("id", gefragteId).maybeSingle();
         if (ladeFehler) return errorResponse(origin, ladeFehler.message, 500);
         if (!geladen) return errorResponse(origin, "Asset nicht gefunden", 404);
+        if (geladen.status === "running") {
+          const seit = Date.parse(String(geladen.created_at || ""));
+          if (Number.isFinite(seit) && Date.now() - seit >= ASSET_STALE_MS) {
+            await admin.schema("signal_layer").from("generated_assets")
+              .update({
+                status: "error",
+                error_message: ASSET_HANG_ERROR,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", gefragteId)
+              .eq("status", "running");
+            const { data: erneut } = await admin.schema("signal_layer")
+              .from("generated_assets").select("*").eq("id", gefragteId).maybeSingle();
+            return corsResponse(origin, { asset: erneut || { ...geladen, status: "error", error_message: ASSET_HANG_ERROR } });
+          }
+        }
         return corsResponse(origin, { asset: geladen });
       }
 
