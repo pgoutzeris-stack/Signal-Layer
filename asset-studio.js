@@ -12,6 +12,11 @@ const SAVE_LIMIT = 900000;
 const MEMO_SHOT_ASPECT = { benchmark: { w: 46, h: 28 }, potential: { w: 52, h: 36 } };
 const MEMO_SHOT_PIXELS = { benchmark: { w: 920, h: 560 }, potential: { w: 936, h: 648 } };
 const LINKEDIN_SHOT_PIXELS = { w: 1080, h: 1350 };
+const BENCH_EXAMPLE = [
+  { name: "Decathlon", text: "Hat die Eigenmarken unter eine Führung gestellt und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche" },
+  { name: "IKEA", text: "Führt Store und Online mit derselben Handschrift statt getrennter Auftritte.", tag: "Eine Linie, zwei Kanäle" },
+  { name: "Zara", text: "Hat Saisonkampagnen durch eine haltbare Linie ersetzt, die über die Kollektion trägt.", tag: "Linie vor Saison" },
+];
 const TOPIC_KICKERS = {
   customer_insights: "CUSTOMER INSIGHTS",
   marketing_insights: "MARKETING INSIGHTS",
@@ -150,6 +155,15 @@ function memoQuestions(firma) {
       label: "Handlungsaufruf",
       options: [["auto", "Modell schreibt die Gesprächsfrage"], ["custom", "Eigene Frage"]],
       free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Sollen wir den Check gemeinsam durchgehen?" },
+    },
+    {
+      key: "benchmarks",
+      label: "Vorreiter",
+      hint: "Drei Marken, die denselben Hebel schon gezogen haben — nicht die Adressatenfirma. Gemini sucht aktuelle Fälle per Google. Eigene Angaben brauchen Name, Handlung und Lehre; das Beispiel zeigt nur die Form.",
+      options: [
+        ["auto", "Gemini recherchiert aktuelle Vorreiter"],
+        ["custom", "Eigene Vorreiter"],
+      ],
     },
     {
       key: "images",
@@ -503,29 +517,57 @@ const CHROME_CSS = `
 }
 #as-overlay .as-free:focus{outline:none; border-color:var(--brand,#206efb); box-shadow:var(--shadow-focus,0 0 0 3px rgba(32,110,251,.15));}
 
-/* Ladeanzeige: ein Balken fuer den Abschnitt, Minuten statt Sekunden,
-   Prognose aus den gespeicherten Laeufen derselben Art. */
+#as-overlay .as-benches{display:flex; flex-direction:column; gap:10px; margin-top:4px;}
+#as-overlay .as-bench{
+  display:grid; grid-template-columns:1fr; gap:6px;
+  border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:10px 12px; background:var(--surface,#f8fafc);
+}
+#as-overlay .as-bench b{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted,#475569);}
+#as-overlay .as-bench input, #as-overlay .as-bench textarea{
+  width:100%; border:1px solid var(--line,#e2e8f0); border-radius:9px; padding:8px 10px;
+  font:inherit; font-size:13px; background:#fff; color:inherit;
+}
+#as-overlay .as-bench textarea{min-height:52px; resize:vertical;}
+#as-overlay .as-pill{
+  align-self:flex-start; border:1px solid var(--line,#e2e8f0); background:#fff;
+  border-radius:999px; padding:6px 12px; font-size:12px; font-weight:700;
+}
+#as-overlay .as-pill:hover{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
+#as-overlay .as-form-error{
+  border:1px solid var(--danger,#dc2626); background:#fef2f2; color:#991b1b;
+  border-radius:12px; padding:10px 12px; font-size:13px; line-height:1.45; margin:0 0 8px;
+}
+
+/* Ladeanzeige: echte Abschnitte, gerundete Minuten, pulsierender Balken. */
 #as-overlay .as-load{display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:16px; min-height:300px; text-align:center; padding:28px 24px; width:min(460px, 100%); margin:0 auto;}
-#as-overlay .as-load-icon{color:var(--brand,#206efb); font-size:1.7rem; line-height:1;}
-#as-overlay .as-load-text{margin:0; font-size:1rem; font-weight:700; color:var(--ink,#0f172a);
-  animation:as-auf .45s ease-out;}
-@keyframes as-auf{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+  gap:14px; min-height:300px; text-align:center; padding:28px 24px; width:min(420px, 100%); margin:0 auto;}
+#as-overlay .as-load-icon{color:var(--brand,#206efb); font-size:1.7rem; line-height:1;
+  animation:as-pulse 1.4s ease-in-out infinite;}
+@keyframes as-pulse{0%,100%{transform:scale(1); opacity:1;} 50%{transform:scale(1.12); opacity:.72;}}
+#as-overlay .as-load-text{margin:0; font-size:1.05rem; font-weight:700; color:var(--ink,#0f172a);}
+#as-overlay .as-load-eta{margin:0; font-size:.95rem; font-weight:600; color:var(--ink,#0f172a);}
 #as-overlay .as-load-bar{
-  width:100%; height:8px; border-radius:99px; background:var(--line,#e2e8f0);
+  width:100%; height:10px; border-radius:99px; background:var(--line,#e2e8f0);
   overflow:hidden; position:relative;
 }
 #as-overlay .as-load-bar-fill{
   display:block; height:100%; border-radius:inherit; width:8%;
   background:linear-gradient(90deg,#1d4ed8,#206efb,#7dd3fc,#206efb);
   background-size:220% 100%;
-  animation:as-bar-flow 1.8s linear infinite;
+  animation:as-bar-flow 1.6s linear infinite, as-bar-pulse 1.4s ease-in-out infinite;
   transition:width .45s cubic-bezier(.22,1,.36,1);
 }
+#as-overlay .as-load-bar::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);
+  animation:as-bar-shimmer 1.5s ease-in-out infinite;
+}
 @keyframes as-bar-flow{from{background-position:200% 0;} to{background-position:0 0;}}
-#as-overlay .as-load-meta{margin:0; font-size:.8rem; color:var(--muted,#475569); font-variant-numeric:tabular-nums; line-height:1.45;}
+@keyframes as-bar-pulse{0%,100%{filter:brightness(1);} 50%{filter:brightness(1.35);}}
+@keyframes as-bar-shimmer{from{transform:translateX(-100%);} to{transform:translateX(100%);}}
+#as-overlay .as-load-meta{margin:0; font-size:.8rem; color:var(--muted,#475569); line-height:1.45;}
 @media (prefers-reduced-motion: reduce){
-  #as-overlay .as-load-text, #as-overlay .as-load-bar-fill{animation:none; opacity:1;}
+  #as-overlay .as-load-icon, #as-overlay .as-load-bar-fill, #as-overlay .as-load-bar::after{animation:none; opacity:1;}
   #as-overlay .as-load-bar-fill{background:#206efb;}
 }
 
@@ -719,8 +761,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0705";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0705";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-0735";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-0735";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -756,6 +798,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     payload: null,
     assetId: null,
     error: "",
+    formError: "",
     busy: false,
     logo: LOGO_PATH,
     stage: { theme: "light", accent: "brand", band: true, corners: "round" },
@@ -829,6 +872,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Entscheidung, die niemand getroffen hat.
     for (const q of list) out[q.key] = q.art === "multi" ? "" : q.options[0][0];
     for (const q of list) if (q.free) out[q.free.key] = "";
+    if (isMemo) {
+      for (let i = 0; i < 3; i += 1) {
+        out[`bench_${i}_name`] = "";
+        out[`bench_${i}_text`] = "";
+        out[`bench_${i}_tag`] = "";
+      }
+    }
     return out;
   }
 
@@ -1014,37 +1064,48 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    */
   const ABSCHNITTE = [
     ["lesen", "fa-file-lines", "Signal und Artikel werden gelesen"],
+    ["recherchieren", "fa-magnifying-glass", "Gemini recherchiert aktuelle Vorreiter"],
     ["modell", "fa-brain", isMemo ? "Das Modell entwickelt die Ansprache" : "Das Modell schreibt Titel und Kernaussage"],
     ["pruefen", "fa-list-check", "Belege und Längen werden geprüft"],
     ["bilder", "fa-image", "Gemini erzeugt die Motive"],
     ["fuellen", "fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
   ];
 
-  function minutenLabel(ms) {
-    const min = Math.max(0, Number(ms) || 0) / 60_000;
-    if (min < 0.15) return "weniger als 1 Min";
-    const gerundet = Math.round(min * 10) / 10;
-    const text = Number.isInteger(gerundet) ? String(gerundet) : String(gerundet).replace(".", ",");
-    return `${text} Min`;
+  function zeitLabel(ms) {
+    const sek = Math.max(0, Number(ms) || 0) / 1000;
+    if (sek < 20) return "gleich";
+    if (sek < 50) return "unter 1 Min";
+    const min = Math.round(sek / 60);
+    if (min <= 1) return "etwa 1 Min";
+    return `etwa ${min} Min`;
   }
 
   function ladeFortschritt() {
     const i = Math.max(0, ABSCHNITTE.findIndex(([key]) => key === state.ladeAbschnitt));
-    const floor = [0.04, 0.12, 0.78, 0.88, 0.95][i] ?? 0.04;
-    const ceil = [0.12, 0.78, 0.88, 0.95, 0.99][i] ?? 0.99;
+    const floor = [0.04, 0.10, 0.22, 0.78, 0.88, 0.95][i] ?? 0.04;
+    const ceil = [0.10, 0.22, 0.78, 0.88, 0.95, 0.99][i] ?? 0.99;
     const elapsed = state.ladeStart ? Date.now() - state.ladeStart : 0;
     const eta = state.forecastMs > 8_000 ? state.forecastMs : 90_000;
     const zeit = Math.min(0.97, elapsed / eta);
     return Math.round(Math.max(floor, Math.min(ceil, Math.max(floor, zeit))) * 100);
   }
 
+  function ladeEtaText() {
+    const elapsed = state.ladeStart ? Date.now() - state.ladeStart : 0;
+    const eta = state.forecastMs > 8_000 ? state.forecastMs : 0;
+    if (!eta) return "Das dauert einen Moment";
+    if (elapsed > eta + 20_000) return "Dauert etwas länger als üblich";
+    const rest = Math.max(0, eta - elapsed);
+    if (rest < 20_000) return "Gleich fertig";
+    return `Noch ${zeitLabel(rest)}`;
+  }
+
   function ladeMetaText() {
     const elapsed = state.ladeStart ? Date.now() - state.ladeStart : 0;
     const eta = state.forecastMs > 8_000 ? state.forecastMs : 0;
-    const rest = eta ? Math.max(0, eta - elapsed) : 0;
-    if (!eta) return minutenLabel(elapsed);
-    if (elapsed > eta + 15_000) return `${minutenLabel(elapsed)} · etwas länger als üblich`;
-    return `${minutenLabel(elapsed)} · noch ca. ${minutenLabel(rest)}`;
+    const seit = elapsed < 20_000 ? "gerade gestartet" : `läuft seit ${zeitLabel(elapsed).replace(/^etwa /, "")}`;
+    if (!eta) return seit;
+    return `Typisch ${zeitLabel(eta).replace(/^etwa /, "")} · ${seit}`;
   }
 
   function ladeanzeigeHtml() {
@@ -1057,6 +1118,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <div class="as-load-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Schritt ${i + 1} von ${ABSCHNITTE.length}">
         <span class="as-load-bar-fill" style="width:${pct}%"></span>
       </div>
+      <p class="as-load-eta">${esc(ladeEtaText())}</p>
       <p class="as-load-meta">${esc(ladeMetaText())}</p>
     </div>`;
   }
@@ -1071,10 +1133,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const fill = shell.querySelector(".as-load-bar-fill");
       const bar = shell.querySelector(".as-load-bar");
       const meta = shell.querySelector(".as-load-meta");
+      const eta = shell.querySelector(".as-load-eta");
       const pct = ladeFortschritt();
       if (fill) fill.style.width = `${pct}%`;
       if (bar) bar.setAttribute("aria-valuenow", String(pct));
       if (meta) meta.textContent = ladeMetaText();
+      if (eta) eta.textContent = ladeEtaText();
     }, 200);
   }
 
@@ -1245,6 +1309,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return `<span class="as-mini"><span class="as-mini-in">${html}</span></span>`;
   }
 
+  function benchesHtml() {
+    const zeilen = [0, 1, 2].map((i) => `
+      <div class="as-bench">
+        <b>Vorreiter ${i + 1}</b>
+        <input data-bench="${i}-name" placeholder="Name der Marke oder Firma" value="${esc(state.answers[`bench_${i}_name`] || "")}" aria-label="Vorreiter ${i + 1} Name">
+        <textarea data-bench="${i}-text" rows="2" placeholder="Was sie konkret getan haben (eine Handlung, kein Slogan)" aria-label="Vorreiter ${i + 1} Handlung">${esc(state.answers[`bench_${i}_text`] || "")}</textarea>
+        <input data-bench="${i}-tag" placeholder="Lehre in wenigen Worten, z. B. Marke vor Fläche" value="${esc(state.answers[`bench_${i}_tag`] || "")}" aria-label="Vorreiter ${i + 1} Lehre">
+      </div>`).join("");
+    return `<div class="as-benches">
+      ${zeilen}
+      <button type="button" class="as-pill" data-act="bench-example">Beispielform einsetzen</button>
+    </div>`;
+  }
+
   function formHtml() {
     const rows = questions.filter((q) => !q.when || q.when(state.answers)).map((q) => {
       if (q.art === "dropdown") return dropdownHtml(q);
@@ -1267,9 +1345,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           : `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}">${esc(state.answers[q.free.key] || "")}</textarea>`)
         : "";
       const hinweis = q.hint ? `<p class="as-hint">${esc(q.hint)}</p>` : "";
-      return `<div class="as-q"><label>${esc(q.label)}</label>${hinweis}<div class="as-opts">${opts}</div>${free}</div>`;
+      const benches = q.key === "benchmarks" && state.answers.benchmarks === "custom" ? benchesHtml() : "";
+      return `<div class="as-q"><label>${esc(q.label)}</label>${hinweis}<div class="as-opts">${opts}</div>${free}${benches}</div>`;
     }).join("");
-    return `<form class="as-form" data-form>${rows}</form>`;
+    const fehler = state.formError ? `<p class="as-form-error">${esc(state.formError)}</p>` : "";
+    return `<form class="as-form" data-form>${fehler}${rows}</form>`;
   }
 
   /** Formular und Vorschau in einem Zug neu zeichnen. */
@@ -1293,12 +1373,50 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         if (box) state.answers[q.free.key] = box.value;
       }
     }
+    form.querySelectorAll("[data-bench]").forEach((box) => {
+      const key = box.getAttribute("data-bench") || "";
+      const [i, feld] = key.split("-");
+      if (feld) state.answers[`bench_${i}_${feld}`] = box.value;
+    });
+  }
+
+  function eigeneVorreiter() {
+    return [0, 1, 2].map((i) => ({
+      name: String(state.answers[`bench_${i}_name`] || "").trim(),
+      text: String(state.answers[`bench_${i}_text`] || "").trim(),
+      tag: String(state.answers[`bench_${i}_tag`] || "").trim(),
+    }));
+  }
+
+  function eigeneVorreiterPruefen() {
+    const liste = eigeneVorreiter();
+    const voll = liste.filter((item) => item.name && item.text && item.tag);
+    if (voll.length < 3) {
+      return "Bitte drei Vorreiter mit Name, Handlung und Lehre. Beispiel: Decathlon | Hat die Eigenmarken unter eine Führung gestellt | Marke vor Fläche";
+    }
+    const beispiel = BENCH_EXAMPLE.map((item) => item.name.toLowerCase()).sort().join("|");
+    const namen = liste.map((item) => item.name.toLowerCase()).sort().join("|");
+    if (namen === beispiel) {
+      return "Das Beispiel zeigt nur die Form. Bitte drei Vorreiter einsetzen, die denselben Hebel wie dieses Signal schon gezogen haben.";
+    }
+    const duenn = liste.find((item) => item.text.length < 24);
+    if (duenn) return `„${duenn.name}“ braucht eine konkrete Handlung, nicht nur den Namen.`;
+    return "";
   }
 
   /* ── Schritt 2: Entwurf erzeugen ── */
 
   async function generate() {
     readForm();
+    if (isMemo && state.answers.benchmarks === "custom") {
+      const mangel = eigeneVorreiterPruefen();
+      if (mangel) {
+        state.formError = mangel;
+        zeichneForm();
+        return;
+      }
+    }
+    state.formError = "";
     state.step = "draft";
     state.busy = true;
     state.error = "";
@@ -2410,6 +2528,17 @@ ${stages}${post}
     if (act === "copy-post") { copyPost(); return; }
     if (act === "crop-cancel") { cropOverlay.hidden = true; return; }
     if (act === "crop-ok") { confirmCrop(); return; }
+    if (act === "bench-example") {
+      BENCH_EXAMPLE.forEach((item, i) => {
+        state.answers[`bench_${i}_name`] = item.name;
+        state.answers[`bench_${i}_text`] = item.text;
+        state.answers[`bench_${i}_tag`] = item.tag;
+      });
+      state.answers.benchmarks = "custom";
+      state.formError = "Das ist nur die Form. Bitte Name, Handlung und Lehre durch Vorreiter zu diesem Signal ersetzen.";
+      zeichneForm();
+      return;
+    }
     if (act === "img-pick" && stageEl) {
       pickImage(stageEl, hit.getAttribute("data-imgkey") || "image");
       return;
