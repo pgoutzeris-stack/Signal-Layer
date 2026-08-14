@@ -895,6 +895,7 @@ test("die Ansprache bindet die ROOTS-Leistung an about_fit, ohne Adressat-Frage"
   assert.equal(auto.company_named, "yes");
   assert.equal(auto.company, "");
   assert.equal(auto.images, "auto");
+  assert.equal(auto.memo_track, "theme");
   assert.equal("addressee" in auto, false);
   assert.equal("reader_side" in auto, false);
   assert.equal("confidential" in auto, false);
@@ -945,7 +946,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.9");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.10");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -957,6 +958,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(memoPrompt, /Türöffner/);
   assert.match(memoPrompt, /<anlass>/);
   assert.match(memoPrompt, /nicht die Personalie/i);
+  assert.match(memoPrompt, /<sonderfall>/);
   assert.match(memoPrompt, /nur Briefing, kein Aufdruck/);
   assert.match(studio, /key: "company_mode"/);
   assert.match(studio, /key: "images"/);
@@ -1019,16 +1021,15 @@ test("about_fit injiziert die ROOTS-Leistung, ohne eine Rolle anzuhängen", () =
 
 test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
-    about_fit: "Die ersten 100 Tage als CMO begleiten",
-  })), backend.normalizeAssetAnswers("memo", { addressee: "person" }), {
-    articleText: "Christian Wiegand übernimmt die Marketingleitung.",
-    rootsOffering: "Die ersten 100 Tage als CMO + Markenpositionierung",
-    buyingCenterRoles: ["Marketingleiter"],
+    about_fit: "ROOTS setzt mit dem 360-Grad-Audit an",
+  })), backend.normalizeAssetAnswers("memo", {}), {
+    articleText: "Der Markt verschiebt sich.",
+    rootsOffering: "360-Grad-Audit + Markenpositionierung",
   });
-  assert.match(memo.about_fit, /100 Tage/);
+  assert.match(memo.about_fit, /360/);
 });
 
-test("Prompt v1.9 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
+test("Prompt v1.10 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -1067,6 +1068,7 @@ test("Prompt v1.9 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   assert.match(memo, /about_fit/);
   assert.match(memo, /genau drei/);
   assert.match(memo, /nicht die Personalie/i);
+  assert.match(memo, /<sonderfall>/);
   assert.doesNotMatch(memo, /<signalfelder>/);
   assert.doesNotMatch(memo, /recommendation/);
   assert.doesNotMatch(memo, /situation/);
@@ -1259,16 +1261,51 @@ test("das Executive Memo hebt auf die Herausforderung, nicht auf die Nachricht",
   assert.match(gut.title, /Marke braucht Position/);
   assert.doesNotMatch(gut.title, /Wiegand|Marketingchef|übernimmt/i);
   assert.doesNotMatch(gut.standfirst, /Wiegand|übernimmt/i);
+  assert.doesNotMatch(gut.about_fit, /100\s*Tage/i);
 
-  const cmoAgenda = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
     title: "Die ersten 100 Tage brauchen eine klare Agenda",
     standfirst: "Ein Führungswechsel macht die Positionierung zur ersten Aufgabe, nicht zur Nachricht.",
-  })), answers, { ...kontext, articleText: `${artikel} Die ersten 100 Tage.` });
-  assert.match(cmoAgenda.title, /Agenda/);
+    about_fit: "ROOTS begleitet die ersten 100 Tage als CMO.",
+  })), answers, { ...kontext, articleText: `${artikel} Die ersten 100 Tage.` }), /100-Tage-CMO-Sprache/);
 
   assert.equal(backend.assetMangelIsRepairable("Das Cover erzählt die Personalie, nicht die Cover-These."), true);
   assert.equal(backend.assetMangelIsRepairable("Der Cover-Titel ist ein Nachrichtenslogan ohne Beratungshebel."), true);
+  assert.equal(backend.assetMangelIsRepairable("Das Executive Memo enthält 100-Tage-CMO-Sprache."), true);
   assert.match(edge, /signalHeadline: assetSignal.headline_de/);
+  assert.match(edge, /CMO_HUNDRED_DAYS_WIP/);
+});
+
+test("CMO-Wechsel und 100-Tage-CMO bleiben getrennt vom Executive Memo", () => {
+  assert.equal(backend.isCmoHundredDaysSignal({ signal_id: "cmo_wechsel" }), true);
+  assert.equal(backend.isCmoHundredDaysSignal({ topics: ["cmo_wechsel"] }), true);
+  assert.equal(backend.isCmoHundredDaysSignal({
+    roots_offering: "Die ersten 100 Tage als CMO + Markenpositionierung + Brand Audit",
+  }), true);
+  assert.equal(backend.isCmoHundredDaysSignal({ roots_offering: "Markenpositionierung + Brand Audit" }), false);
+  assert.equal(
+    backend.stripCmoHundredDaysOffering("Die ersten 100 Tage als CMO + Markenpositionierung + Brand Audit"),
+    "Markenpositionierung + Brand Audit",
+  );
+  const prompt = backend.buildAssetPrompt("memo", {
+    signal_id: "cmo_wechsel",
+    company: "Xpeng",
+    roots_offering: "Die ersten 100 Tage als CMO + Markenpositionierung + Brand Audit",
+    roots_link_de: "Xpeng soll in Deutschland positioniert werden. ROOTS priorisiert die Markenhebel für die ersten 100 Tage.",
+  }, { title: "A", content_de: "Der Artikel." }, backend.normalizeAssetAnswers("memo", {}));
+  assert.match(prompt, /<sonderfall>/);
+  assert.match(prompt, /Markenpositionierung/);
+  assert.match(prompt, /Brand Audit/);
+  assert.doesNotMatch(prompt, /roots_leistung: Die ersten 100 Tage als CMO/);
+  assert.doesNotMatch(prompt, /für die ersten 100 Tage/);
+  const cmo = backend.normalizeAssetAnswers("memo", { memo_track: "cmo100" });
+  assert.equal(cmo.memo_track, "cmo100");
+  assert.equal(backend.CMO_HUNDRED_DAYS_WIP.includes("noch in Ausarbeitung"), true);
+  assert.match(studio, /key: "memo_track"/);
+  assert.match(studio, /Thematisches Executive Memo/);
+  assert.match(studio, /noch in Ausarbeitung/);
+  assert.match(studio, /function isCmoHundredDaysSignal/);
+  assert.match(edge, /memo_track === "cmo100"/);
 });
 
 test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {

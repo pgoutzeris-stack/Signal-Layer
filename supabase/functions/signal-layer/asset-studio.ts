@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.9";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.10";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -114,7 +114,56 @@ export type MemoAnswers = {
   benchmarks: MemoBenchmarkBrief[];
   storyline: string;
   cta: string;
+  /** theme = Executive Memo. cmo100 = eigener Sonderfall, derzeit Platzhalter. */
+  memo_track: "theme" | "cmo100";
 };
+
+/** 100-Tage-CMO ist kein Executive Memo und noch nicht gebaut. */
+export const CMO_HUNDRED_DAYS_WIP =
+  "Das 100-Tage-CMO-Dokument ist noch in Ausarbeitung. Es ist kein Executive Memo. Bitte das thematische Executive Memo wählen.";
+
+const CMO_HUNDRED_DAYS_RE = /100[\s-]*tage.{0,80}cmo|cmo.{0,80}100[\s-]*tage|erste[n]?\s+100[\s-]*tage/i;
+
+export function isCmoHundredDaysSignal(signal: {
+  signal_id?: string | null;
+  topics?: string[] | null;
+  roots_offering?: string | null;
+  matched_offering?: string | null;
+} = {}): boolean {
+  const id = String(signal.signal_id || "").trim().toLowerCase();
+  if (id === "cmo_wechsel") return true;
+  const topics = (signal.topics || []).map((teil) => String(teil || "").trim().toLowerCase());
+  if (topics.includes("cmo_wechsel")) return true;
+  const offering = String(signal.roots_offering || signal.matched_offering || "");
+  return CMO_HUNDRED_DAYS_RE.test(offering);
+}
+
+/** Streicht die 100-Tage-CMO-Leistung, andere ROOTS-Leistungen bleiben. */
+export function stripCmoHundredDaysOffering(offering: string): string {
+  return String(offering || "")
+    .split(/\s*\+\s*/)
+    .map((teil) => teil.trim())
+    .filter((teil) => teil && !CMO_HUNDRED_DAYS_RE.test(teil) && !/erste[n]?\s+100[\s-]*tage/i.test(teil))
+    .join(" + ");
+}
+
+export function stripCmoHundredDaysText(value: string): string {
+  return String(value || "")
+    .replace(/für die ersten 100[\s-]*tage/gi, "")
+    .replace(/die ersten 100[\s-]*tage(?: als CMO)?/gi, "")
+    .replace(/100[\s-]*tage(?:-|\s+)?CMO/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+\./g, ".")
+    .trim();
+}
+
+export function thematicMemoSignal(signal: AssetSignalInput): AssetSignalInput {
+  return {
+    ...signal,
+    roots_offering: stripCmoHundredDaysOffering(String(signal.roots_offering || "")),
+    roots_link_de: stripCmoHundredDaysText(String(signal.roots_link_de || "")),
+  };
+}
 
 export type AssetNormalizeContext = {
   articleText?: string;
@@ -563,6 +612,9 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
     benchmarks: parseMemoBenchmarkBriefs(source),
     storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
     cta: choiceText(source, ["cta"], ["cta_text"], 240),
+    memo_track: /cmo100|100\s*tage|hundert\s*tage/i.test(pick(source, "memo_track", "track", "unterlage"))
+      ? "cmo100"
+      : "theme",
   };
 }
 
@@ -1197,7 +1249,7 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
     firmaZeile,
     answers.storyline
       ? `Inhalt, verbindlich: ${answers.storyline}`
-      : "Inhalt: Signal und Artikel sind der Anlass und der Beleg. Die Cover-These ist die Markt- oder Markenherausforderung, an der ROOTS andockt (roots_anschluss, roots_leistung, begründung). Nicht die Personalie, nicht die Nachrichtenüberschrift.",
+      : "Inhalt: Signal und Artikel sind der Anlass und der Beleg. Die Cover-These ist die Markt- oder Markenherausforderung, an der ROOTS andockt (roots_anschluss, roots_leistung, begründung). Nicht die Personalie, nicht die Nachrichtenüberschrift, nicht die 100-Tage-CMO-Agenda.",
     answers.cta
       ? `CTA, verbindlich in cta (die Frage im blauen Band): ${answers.cta}`
       : "cta: eine Gesprächsfrage. Der Knopftext ist fest „Kontakt aufnehmen“.",
@@ -1220,6 +1272,9 @@ Dafür liest du zuerst roots_anschluss, roots_leistung und begründung. Der Arti
 Seite 2 (Markt, KPIs, Benchmarks) zeigt, wie Vorreiter denselben Hebel schon gezogen haben. Seite 3 (Potenziale, about_fit) zeigt, wo ROOTS konkret liefert.
 Ein Führungswechsel, eine Kampagne oder eine Zahl ist nur dann Cover-Stoff, wenn du daraus die offene Aufgabe machst, nicht die Meldung.
 </anlass>
+<sonderfall>
+Eine 100-Tage-CMO-Unterlage ist ein anderes Dokument, nicht dieses Memo. Auch wenn roots_leistung, roots_anschluss oder der Anlass ein CMO-Wechsel oder „Die ersten 100 Tage als CMO“ enthalten: dieses Executive Memo behandelt ausschließlich die thematische Markt- oder Markenherausforderung. Keine 100-Tage-Agenda, keine CMO-Onboarding-Sprache, keine ersten 100 Tage in title, standfirst, about_fit, Potenzialen oder CTA.
+</sonderfall>
 <zusammenhang>
 title und standfirst auf dem Cover sind die Herausforderung. market_title und die KPIs belegen, dass der Markt sich bewegt. Die drei benchmarks zeigen Vorreiter, die denselben Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation. Nichts erzählt die Signalüberschrift noch einmal.
 </zusammenhang>
@@ -1256,14 +1311,15 @@ export function buildAssetPrompt(
   article: AssetArticleInput,
   answers: AssetAnswers,
 ): string {
-  const daten = signalBlock(signal, article);
+  const signalForKind = kind === "memo" ? thematicMemoSignal(signal) : signal;
+  const daten = signalBlock(signalForKind, article);
   const body = String(article.content_de || article.cleaned_content || article.content || "");
-  if (kind === "linkedin") return linkedinPrompt(answers as LinkedinAnswers, daten, body, signal);
+  if (kind === "linkedin") return linkedinPrompt(answers as LinkedinAnswers, daten, body, signalForKind);
   const memo = answers as MemoAnswers;
   const vorreiter = memo.benchmarks.length >= 3
     ? `\n${formatVorreiterBlock(memo.benchmarks, memo.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\n<belegregeln_vorreiter>\nDie drei Vorreiter in <vorreiter> gelten als belegt, inklusive ihrer Quellen. Andere Zahlen weiter nur aus kennzahlen_im_artikel.\n</belegregeln_vorreiter>`
     : "";
-  return memoPrompt(memo, signal, daten + vorreiter);
+  return memoPrompt(memo, signalForKind, daten + vorreiter);
 }
 
 // ---------------------------------------------------------------------------
@@ -1718,7 +1774,7 @@ function rejectRepeatedLeadNumbers(slides: AssetSlide[]): void {
  * bleiben ein harter Fehler: die kommen nicht von einer Tippvariante.
  */
 export function assetMangelIsRepairable(mangel: string): boolean {
-  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|ungefüllte Zeichnungs-Slots|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel/i.test(String(mangel || ""));
+  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|ungefüllte Zeichnungs-Slots|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel|100-Tage-CMO-Sprache/i.test(String(mangel || ""));
 }
 
 function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {
@@ -1827,6 +1883,19 @@ function rejectMemoNewsRetelling(
   }
 }
 
+function rejectMemoCmoHundredDays(memo: MemoPayload): void {
+  const text = [
+    memo.title, memo.standfirst, memo.market_title, memo.market_p1, memo.market_p2,
+    memo.benchmark_title, memo.benchmark_lead, memo.potentials_title, memo.potentials_lead,
+    memo.cta, memo.about_fit,
+    ...memo.benchmarks.flatMap((eintrag) => [eintrag.name, eintrag.text, eintrag.tag]),
+    ...memo.potentials.flatMap((eintrag) => [eintrag.title, eintrag.finding, eintrag.potential]),
+  ].join("\n");
+  if (/100[\s-]*tage|erste[n]?\s+(?:hundert|100)[\s-]*tage/i.test(text)) {
+    throw new Error("Das Executive Memo enthält 100-Tage-CMO-Sprache. Das ist ein eigener Sonderfall, nicht dieses Memo. Formuliere die thematische Herausforderung ohne Onboarding-Agenda.");
+  }
+}
+
 function normalizePotentials(raw: unknown): MemoPotential[] {
   if (!Array.isArray(raw)) return [];
   return raw.slice(0, 3).map((entry) => {
@@ -1859,7 +1928,7 @@ function normalizeMemo(
   const potentials = normalizePotentials(raw.potentials);
   let aboutFit = text(raw.about_fit, 400);
 
-  const leistung = String(context.rootsOffering || "").trim();
+  const leistung = stripCmoHundredDaysOffering(String(context.rootsOffering || "")).trim();
   if (leistung && leistung.toLowerCase() !== "keine" && !mentions(aboutFit, leistung)) {
     aboutFit = [aboutFit, `ROOTS setzt hier mit ${leistung} an.`].filter(Boolean).join(" ");
   }
@@ -1905,6 +1974,7 @@ function normalizeMemo(
     ...memo.sources,
   ].join("\n"), corpus, "Die Ansprache");
   rejectMemoNewsRetelling(memo, context);
+  rejectMemoCmoHundredDays(memo);
   return memo;
 }
 
@@ -2414,5 +2484,5 @@ export function assetRepairTimeoutMs(elapsedMs: number): number | null {
 
 export function buildAssetRepairPrompt(prompt: string, mangel: string): string {
   const grund = mangel.replace(/\s+/g, " ").trim().slice(0, 400);
-  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. 13,3 % und 13,3 Prozent sind dieselbe Zahl. Erfinde keine Zahlen, die nicht im Artikel stehen. Passt keine Kennzahl-Variante (E, H, L), wähle eine Textfolie aus der erlaubten Liste — nicht dieselbe Variante mit leerer Zahl. Ist der Mangel die Cover-These: Signal bleibt Anlass, title nennt die Herausforderung an der ROOTS andockt, nicht die Nachricht und nicht die Personalie.</repair>`;
+  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. 13,3 % und 13,3 Prozent sind dieselbe Zahl. Erfinde keine Zahlen, die nicht im Artikel stehen. Passt keine Kennzahl-Variante (E, H, L), wähle eine Textfolie aus der erlaubten Liste — nicht dieselbe Variante mit leerer Zahl. Ist der Mangel die Cover-These: Signal bleibt Anlass, title nennt die Herausforderung an der ROOTS andockt, nicht die Nachricht und nicht die Personalie. Keine 100-Tage-CMO-Sprache im Executive Memo.</repair>`;
 }

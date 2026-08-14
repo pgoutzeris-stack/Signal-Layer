@@ -98,6 +98,7 @@ import {
   ASSET_WALL_CLOCK_MS,
   AssetPayload,
   AssetPulse,
+  CMO_HUNDRED_DAYS_WIP,
   GEMINI_IMAGE_FALLBACK_MODEL,
   GEMINI_IMAGE_MODEL,
   MEMO_BENCHMARK_RESEARCH_MODEL,
@@ -137,6 +138,7 @@ import {
   parseDeepseekSseData,
   parseGeminiInlineImage,
   parseGeminiSseData,
+  stripCmoHundredDaysOffering,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
   resolveAssetCompany,
@@ -4804,7 +4806,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
         assetSignal.evidence, assetSignal.why_de, assetSignal.summary_de, assetSignal.headline_de,
       ].filter(Boolean).join("\n"),
-      rootsOffering: assetSignal.roots_offering,
+      rootsOffering: stripCmoHundredDaysOffering(String(assetSignal.roots_offering || "")),
       buyingCenterRoles: assetSignal.buying_center_roles,
       personName: assetSignal.person_name,
       signalHeadline: assetSignal.headline_de,
@@ -8850,6 +8852,9 @@ Deno.serve(async (req: Request) => {
         const assetArticleId = String(body.article_id || "");
         if (!assetArticleId) return errorResponse(origin, "article_id fehlt");
         const assetAnswers = normalizeAssetAnswers(assetKind, body.answers);
+        if (assetKind === "memo" && (assetAnswers as MemoAnswers).memo_track === "cmo100") {
+          return errorResponse(origin, CMO_HUNDRED_DAYS_WIP);
+        }
 
         const admin = getAdminClient();
         const [{ data: assetSignal }, { data: assetArticle, error: assetArticleError }] = await Promise.all([
