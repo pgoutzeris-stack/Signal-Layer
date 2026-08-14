@@ -591,14 +591,16 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
     run_log: [{ t: 175_000, event: "pulse", phase: "thinking", chars: 0, thinking_chars: 800 }],
   };
   assert.equal(backend.assetHangReason(lebend, now), null);
-  // Denken ohne Schreib-Bytes: 50 s Stille ist kein Hang (First-Byte 90 s).
+  // Denken ohne Schreib-Bytes: 50 s und 95 s Stille sind kein Hang (First-Byte 180 s).
   const denktNoch = {
     ...lebend,
     updated_at: iso(now - 50_000),
     run_log: [{ t: 130_000, event: "pulse", phase: "thinking", chars: 0, thinking_chars: 800 }],
   };
   assert.equal(backend.assetHangReason(denktNoch, now), null);
-  const denktZuLang = { ...denktNoch, updated_at: iso(now - 95_000) };
+  const denktWeiter = { ...denktNoch, updated_at: iso(now - 95_000) };
+  assert.equal(backend.assetHangReason(denktWeiter, now), null);
+  const denktZuLang = { ...denktNoch, updated_at: iso(now - 185_000) };
   assert.equal(backend.assetHangReason(denktZuLang, now), "silent");
   const still = {
     ...lebend,
@@ -614,7 +616,7 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
     run_log: [{ t: 0, event: "model_start" }],
   };
   assert.equal(backend.assetHangReason(wartet, now), null);
-  const keinByte = { ...wartet, created_at: iso(now - 100_000), updated_at: iso(now - 100_000) };
+  const keinByte = { ...wartet, created_at: iso(now - 190_000), updated_at: iso(now - 190_000) };
   assert.equal(backend.assetHangReason(keinByte, now), "silent");
   const tot = { ...lebend, created_at: iso(now - 401_000), updated_at: iso(now - 1_000) };
   assert.equal(backend.assetHangReason(tot, now), "isolate");
@@ -1326,6 +1328,9 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.equal(backend.MEMO_BENCHMARK_RESEARCH_ATTEMPTS, 2);
   assert.equal(backend.MEMO_BENCHMARK_RESEARCH_MAX_TOKENS, 4096);
   assert.equal(backend.ASSET_STREAM_KEEPALIVE_MS, 8_000);
+  assert.equal(backend.ASSET_FIRST_BYTE_STALE_MS, 180_000);
+  assert.equal(backend.MEMO_IMAGE_FETCH_MS, 90_000);
+  assert.match(edge, /MEMO_IMAGE_FETCH_MS/);
   assert.equal(backend.geminiFinishAllowsParse("STOP"), true);
   assert.equal(backend.geminiFinishAllowsParse("MAX_TOKENS"), true);
   assert.equal(backend.geminiFinishAllowsParse("SAFETY"), false);

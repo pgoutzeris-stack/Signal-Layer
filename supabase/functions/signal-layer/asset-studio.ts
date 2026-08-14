@@ -1829,6 +1829,8 @@ export const GEMINI_IMAGE_FALLBACK_MODEL = "gemini-2.0-flash-preview-image-gener
 export const MEMO_IMAGE_DATA_URI_MAX = 280_000;
 export const MEMO_IMAGE_CONCURRENCY = 3;
 export const MEMO_IMAGE_MIN_REMAINING_MS = 40_000;
+/** Ein Motiv braucht oft länger als 45 s; 45 s plus Fallback hat Xpeng bei den Bildern gekillt. */
+export const MEMO_IMAGE_FETCH_MS = 90_000;
 
 export const MEMO_SHOT_ASPECT = {
   benchmark: { w: 46, h: 28 },
@@ -1955,22 +1957,22 @@ export async function fillMemoImages(
   opts: {
     generate: (prompt: string, aspect: string) => Promise<string | null>;
     remainingMs: number;
-    log?: (event: string, extra?: Record<string, unknown>) => void;
+    log?: (event: string, extra?: Record<string, unknown>) => void | Promise<void>;
   },
 ): Promise<MemoPayload> {
   if (answers.images === "upload") {
-    opts.log?.("images_skip", { reason: "upload" });
+    await opts.log?.("images_skip", { reason: "upload" });
     return payload;
   }
   if (opts.remainingMs < MEMO_IMAGE_MIN_REMAINING_MS) {
-    opts.log?.("images_skip", { reason: "wall_clock", remaining_ms: opts.remainingMs });
+    await opts.log?.("images_skip", { reason: "wall_clock", remaining_ms: opts.remainingMs });
     return payload;
   }
   const slots = memoImageSlots(payload);
   const filled = { ok: 0, fail: 0 };
   await mapLimit(slots, MEMO_IMAGE_CONCURRENCY, async (slot) => {
     try {
-      opts.log?.("image_start", { key: slot.key });
+      await opts.log?.("image_start", { key: slot.key });
       const src = await opts.generate(memoImagePrompt(slot), slot.geminiAspect);
       if (src) {
         attachMemoSlotImage(payload, slot.key, src);
@@ -1982,7 +1984,7 @@ export async function fillMemoImages(
       filled.fail += 1;
     }
   });
-  opts.log?.("images_done", filled);
+  await opts.log?.("images_done", filled);
   return payload;
 }
 
@@ -2017,8 +2019,10 @@ export const ASSET_STALE_MS = 400_000;
  */
 export const ASSET_HEARTBEAT_STALE_MS = 45_000;
 
-/** Bis zum ersten Byte darf die Suche oder das Denken laenger brauchen. */
-export const ASSET_FIRST_BYTE_STALE_MS = 90_000;
+/** Bis zum ersten Schreib-Byte darf Suche, Denken oder Motiv lange brauchen.
+ * 90 s hat am 14.8.2026 Coca-Cola/Aeffe getötet: Thinking-Burst bei 147 s,
+ * danach >90 s Pause bevor JSON kam. */
+export const ASSET_FIRST_BYTE_STALE_MS = 180_000;
 
 /** So oft darf ein Pulse die Zeile anfassen, ohne die Datenbank zu flutten. */
 export const ASSET_HEARTBEAT_PULSE_MS = 2_500;
@@ -2029,8 +2033,6 @@ export const ASSET_HEARTBEAT_PULSE_MS = 2_500;
  * nach 45 s Stille, obwohl DeepSeek noch 30 000 Thinking-Zeichen unterwegs war.
  */
 export const ASSET_STREAM_KEEPALIVE_MS = 8_000;
-
-const ASSET_WAIT_PULSE_PHASES = new Set(["headers", "thinking", "search", "alive"]);
 
 export const ASSET_HANG_ERROR =
   "Der Auftrag hat das technische Zeitfenster der Funktion (knapp sieben Minuten) ausgeschöpft. Bitte denselben Auftrag noch einmal starten.";
@@ -2066,10 +2068,8 @@ export function assetHangReason(
   const last = log[log.length - 1];
   const event = String(last?.event || "");
   const phase = String(last?.phase || "");
-  const nochKeinInhalt = Number(last?.chars || 0) <= 0;
-  const wartetAufErstesByte = !event || event === "start" || event === "stage" || event === "model_start"
-    || (event === "pulse" && (ASSET_WAIT_PULSE_PHASES.has(phase) || nochKeinInhalt));
-  const limit = wartetAufErstesByte ? ASSET_FIRST_BYTE_STALE_MS : ASSET_HEARTBEAT_STALE_MS;
+  const schreibt = event === "pulse" && phase === "writing" && Number(last?.chars || 0) > 0;
+  const limit = schreibt ? ASSET_HEARTBEAT_STALE_MS : ASSET_FIRST_BYTE_STALE_MS;
   if (age >= limit) return "silent";
   return null;
 }
