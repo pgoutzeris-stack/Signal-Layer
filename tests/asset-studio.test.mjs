@@ -495,13 +495,15 @@ test("die Ladeanzeige zeigt Abschnitt, Balken und Minutenprognose", () => {
   assert.match(studio, /@keyframes as-bar-shimmer/);
   assert.match(studio, /animation:as-pulse 1.4s/);
   assert.match(studio, /as-bar-flow 1.6s linear infinite, as-bar-pulse/);
-  assert.match(studio, /function zeitLabel/);
-  assert.match(studio, /Noch \$\{zeitLabel/);
+  assert.match(studio, /assetEtaLabel/);
+  assert.match(studio, /assetEtaRemainingMs/);
   assert.match(studio, /as-load-eta/);
-  assert.match(studio, /as-load-live/);
+  assert.doesNotMatch(studio, /as-load-live/);
+  assert.doesNotMatch(studio, /as-load-meta/);
   assert.match(studio, /as-load-log/);
   assert.match(studio, /function laufEreignisText/);
-  assert.match(studio, /Kein Impuls seit/);
+  assert.doesNotMatch(studio, /Kein Impuls seit/);
+  assert.doesNotMatch(studio, /as-load-live/);
   assert.doesNotMatch(studio, /noch ca\./);
   assert.doesNotMatch(studio, /0,3/);
   assert.doesNotMatch(studio, /function minutenLabel/);
@@ -550,16 +552,71 @@ test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", 
 
 test("die Zeitprognose lernt aus gespeicherten Assets, Fehler stehen im Laufprotokoll", () => {
   const migration = readFileSync(new URL("../supabase/migrations/20260814001500_asset_forecast_and_run_log.sql", import.meta.url), "utf8");
+  const stufen = readFileSync(new URL("../supabase/migrations/20260814120000_asset_forecast_stages.sql", import.meta.url), "utf8");
   assert.match(migration, /function signal_layer.asset_duration_forecast/);
   assert.match(migration, /run_log jsonb/);
   assert.match(migration, /forecast_ms integer/);
+  assert.match(stufen, /p_images/);
+  assert.match(stufen, /p_benchmarks_mode/);
+  assert.match(stufen, /jsonb_object_agg\(stage, median_ms\)/);
   assert.match(edge, /rpc\("asset_duration_forecast"/);
   assert.match(edge, /forecast_ms: forecast.ms/);
+  assert.match(edge, /stages: forecast.stages/);
+  assert.match(edge, /p_images: kind === "memo"/);
   assert.match(edge, /fail_early/);
   assert.match(edge, /loggen\("error"/);
   assert.match(edge, /duration_ms: Date.now\(\) - startedAt/);
   assert.match(studio, /forecast_ms/);
   assert.match(studio, /state\.forecastMs/);
+  assert.match(studio, /assetEtaRemainingMs/);
+});
+
+test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
+  const eta = await import("../asset-eta.mjs");
+  assert.equal(eta.assetEtaLabel(20_000), "Verbleibt unter 1 Minute");
+  assert.equal(eta.assetEtaLabel(60_000), "Verbleibt 1 Minute");
+  assert.equal(eta.assetEtaLabel(150_000), "Verbleiben 3 Minuten");
+
+  const linkedinStart = eta.assetEtaRemainingMs({
+    kind: "linkedin", answers: { asset_type: "single" }, stage: "lesen", elapsedMs: 1_000,
+  });
+  assert.ok(linkedinStart > 60_000 && linkedinStart < 120_000, `linkedin ${linkedinStart}`);
+
+  const memoStart = eta.assetEtaRemainingMs({
+    kind: "memo", answers: { images: "auto", benchmarks: "auto" }, stage: "lesen", elapsedMs: 1_000,
+  });
+  assert.ok(memoStart > 100_000 && memoStart < 200_000, `memo ${memoStart}`);
+
+  const ohneMotive = eta.assetEtaRemainingMs({
+    kind: "memo", answers: { images: "upload" }, stage: "lesen", elapsedMs: 1_000,
+  });
+  assert.ok(ohneMotive < memoStart, "ohne Motive muss kürzer sein");
+
+  const nachRetry = eta.assetEtaRemainingMs({
+    kind: "memo",
+    answers: { images: "auto", benchmarks: "auto" },
+    stage: "modell",
+    elapsedMs: 331_000,
+    runLog: [
+      { t: 0, event: "start" },
+      { t: 5_000, event: "stage", stage: "modell" },
+      { t: 331_000, event: "retry_model" },
+    ],
+  });
+  assert.ok(nachRetry > 90_000 && nachRetry < 180_000, `retry ${nachRetry}`);
+
+  const schreibt = eta.assetEtaRemainingMs({
+    kind: "memo",
+    answers: { images: "auto" },
+    stage: "modell",
+    elapsedMs: 148_000,
+    runLog: [
+      { t: 8_000, event: "stage", stage: "modell" },
+      { t: 147_000, event: "pulse", phase: "writing", chars: 5246 },
+    ],
+  });
+  assert.ok(schreibt < 60_000, `schreiben ${schreibt}`);
+  assert.match(studio, /asset-eta\.mjs/);
 });
 
 test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", () => {
@@ -1360,8 +1417,7 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.match(studio, /data-act="bench-example"/);
   assert.match(studio, /Beispielform einsetzen/);
   assert.match(studio, /function eigeneVorreiterPruefen/);
-  assert.match(studio, /Noch \$\{zeitLabel/);
-  assert.match(studio, /Typisch \$\{zeitLabel/);
+  assert.match(studio, /assetEtaLabel/);
   assert.match(edge, /function researchMemoBenchmarksWithGemini/);
   assert.match(edge, /function reviewMemoBenchmarksWithGemini/);
   assert.match(edge, /tools: \[\{ google_search: \{\} \}\]/);
