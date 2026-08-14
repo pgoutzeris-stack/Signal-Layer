@@ -591,10 +591,19 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
     run_log: [{ t: 175_000, event: "pulse", phase: "thinking", chars: 0, thinking_chars: 800 }],
   };
   assert.equal(backend.assetHangReason(lebend, now), null);
+  // Denken ohne Schreib-Bytes: 50 s Stille ist kein Hang (First-Byte 90 s).
+  const denktNoch = {
+    ...lebend,
+    updated_at: iso(now - 50_000),
+    run_log: [{ t: 130_000, event: "pulse", phase: "thinking", chars: 0, thinking_chars: 800 }],
+  };
+  assert.equal(backend.assetHangReason(denktNoch, now), null);
+  const denktZuLang = { ...denktNoch, updated_at: iso(now - 95_000) };
+  assert.equal(backend.assetHangReason(denktZuLang, now), "silent");
   const still = {
     ...lebend,
     updated_at: iso(now - 50_000),
-    run_log: [{ t: 130_000, event: "pulse", phase: "thinking" }],
+    run_log: [{ t: 130_000, event: "pulse", phase: "writing", chars: 40 }],
   };
   assert.equal(backend.assetHangReason(still, now), "silent");
   const wartet = {
@@ -1309,6 +1318,25 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.match(edge, /streamGenerateContent\?alt=sse/);
   assert.match(edge, /simple_research_model \|\| MEMO_BENCHMARK_RESEARCH_MODEL/);
   assert.match(edge, /MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS/);
+  assert.match(edge, /thinkingBudget: 0/);
+  assert.match(edge, /MEMO_BENCHMARK_RESEARCH_MAX_TOKENS/);
+  assert.match(edge, /MEMO_BENCHMARK_RESEARCH_ATTEMPTS/);
+  assert.match(edge, /ASSET_STREAM_KEEPALIVE_MS/);
+  assert.match(edge, /setInterval\(\(\) => \{ void onByte\(\); \}, ASSET_STREAM_KEEPALIVE_MS\)/);
+  assert.equal(backend.MEMO_BENCHMARK_RESEARCH_ATTEMPTS, 2);
+  assert.equal(backend.MEMO_BENCHMARK_RESEARCH_MAX_TOKENS, 4096);
+  assert.equal(backend.ASSET_STREAM_KEEPALIVE_MS, 8_000);
+  assert.equal(backend.geminiFinishAllowsParse("STOP"), true);
+  assert.equal(backend.geminiFinishAllowsParse("MAX_TOKENS"), true);
+  assert.equal(backend.geminiFinishAllowsParse("SAFETY"), false);
+  const thought = backend.parseGeminiSseData(JSON.stringify({
+    candidates: [{
+      content: { parts: [{ thought: true, text: "intern" }, { text: "{\"ok\":true}" }] },
+      finishReason: "STOP",
+    }],
+  }));
+  assert.equal(thought?.text, "{\"ok\":true}");
+  assert.equal(thought?.finish, "STOP");
 });
 
 test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {

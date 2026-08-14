@@ -586,6 +586,10 @@ export const MEMO_BENCHMARK_EXAMPLE: MemoBenchmarkBrief[] = [
 
 export const MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS = 90_000;
 export const MEMO_BENCHMARK_RESEARCH_MODEL = "gemini-2.5-flash";
+/** Ein Versuch reicht oft nicht: Suche plus JSON endet bei Flash gern mit MAX_TOKENS. */
+export const MEMO_BENCHMARK_RESEARCH_ATTEMPTS = 2;
+/** Antwortbudget ohne Thinking. 2400 plus Default-Thinking hat am 14.8.2026 leere Streams geliefert. */
+export const MEMO_BENCHMARK_RESEARCH_MAX_TOKENS = 4_096;
 
 function briefFromParts(name: unknown, textValue: unknown, tag: unknown, source: unknown): MemoBenchmarkBrief {
   return {
@@ -2019,6 +2023,15 @@ export const ASSET_FIRST_BYTE_STALE_MS = 90_000;
 /** So oft darf ein Pulse die Zeile anfassen, ohne die Datenbank zu flutten. */
 export const ASSET_HEARTBEAT_PULSE_MS = 2_500;
 
+/**
+ * Solange das Isolat lebt, muss updated_at frisch bleiben, auch wenn das
+ * Modell gerade denkt und keine SSE-Bytes schickt. 14.8.2026: Memos starben
+ * nach 45 s Stille, obwohl DeepSeek noch 30 000 Thinking-Zeichen unterwegs war.
+ */
+export const ASSET_STREAM_KEEPALIVE_MS = 8_000;
+
+const ASSET_WAIT_PULSE_PHASES = new Set(["headers", "thinking", "search", "alive"]);
+
 export const ASSET_HANG_ERROR =
   "Der Auftrag hat das technische Zeitfenster der Funktion (knapp sieben Minuten) ausgeschöpft. Bitte denselben Auftrag noch einmal starten.";
 
@@ -2052,7 +2065,10 @@ export function assetHangReason(
   const log = Array.isArray(row.run_log) ? row.run_log as Array<Record<string, unknown>> : [];
   const last = log[log.length - 1];
   const event = String(last?.event || "");
-  const wartetAufErstesByte = !event || event === "start" || event === "stage" || event === "model_start";
+  const phase = String(last?.phase || "");
+  const nochKeinInhalt = Number(last?.chars || 0) <= 0;
+  const wartetAufErstesByte = !event || event === "start" || event === "stage" || event === "model_start"
+    || (event === "pulse" && (ASSET_WAIT_PULSE_PHASES.has(phase) || nochKeinInhalt));
   const limit = wartetAufErstesByte ? ASSET_FIRST_BYTE_STALE_MS : ASSET_HEARTBEAT_STALE_MS;
   if (age >= limit) return "silent";
   return null;
@@ -2149,7 +2165,10 @@ export function parseGeminiSseData(data: string): {
     const candidate = (Array.isArray(json.candidates) ? json.candidates[0] : null) as Record<string, unknown> | null;
     if (!candidate) return {};
     const parts = (((candidate.content as Record<string, unknown> | undefined)?.parts) ?? []) as Array<Record<string, unknown>>;
-    const text = parts.map((part) => String(part.text ?? "")).join("");
+    const text = parts
+      .filter((part) => part.thought !== true)
+      .map((part) => String(part.text ?? ""))
+      .join("");
     const meta = candidate.groundingMetadata as Record<string, unknown> | undefined;
     const chunks = Array.isArray(meta?.groundingChunks) ? meta!.groundingChunks as unknown[] : [];
     const titles: string[] = [];
@@ -2168,6 +2187,12 @@ export function parseGeminiSseData(data: string): {
   } catch {
     return null;
   }
+}
+
+/** STOP ist ideal. MAX_TOKENS darf durch, wenn genug JSON da ist. */
+export function geminiFinishAllowsParse(finish: string): boolean {
+  const wert = String(finish || "").toUpperCase();
+  return !wert || wert === "STOP" || wert === "MAX_TOKENS";
 }
 
 export function assetOutputTokenBudget(kind: AssetKind, answers: AssetAnswers): number {
