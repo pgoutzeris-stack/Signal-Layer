@@ -70,6 +70,7 @@ import {
   SIMPLE_REJECT_LABELS,
   classifySimpleArticle,
   generateSimpleTrigger,
+  requestedSimpleArticleIds,
   simpleResultUsedAi,
   simpleModelOption,
   simpleRuleManifest,
@@ -7280,16 +7281,26 @@ Deno.serve(async (req: Request) => {
           }
         }
         const admin = getAdminClient();
-        const requestedLimit = Number((body as { article_limit?: number }).article_limit || SIMPLE_ARTICLE_LIMIT);
-        const articleLimit = Math.min(
-          Math.max(Number.isFinite(requestedLimit) ? Math.round(requestedLimit) : SIMPLE_ARTICLE_LIMIT, 1),
-          SIMPLE_MAX_ARTICLE_LIMIT,
-        );
-        // Simple mode never crawls. It re-reads the newest stored articles.
-        const { data: newest, error: newestError } = await admin.schema("signal_layer").from("articles")
-          .select("id").order("crawled_at", { ascending: false }).limit(articleLimit);
-        if (newestError) return errorResponse(origin, newestError.message, 500);
-        const articleIds = (newest || []).map((row: { id: string }) => row.id);
+        const payload = body as { article_limit?: number; article_ids?: unknown };
+        const requestedIds = requestedSimpleArticleIds(payload.article_ids, SIMPLE_MAX_ARTICLE_LIMIT);
+        let articleIds: string[];
+        let articleLimit: number;
+        if (Array.isArray(payload.article_ids)) {
+          if (!requestedIds.length) return errorResponse(origin, "Keine gültigen Artikel-IDs.", 400);
+          articleIds = requestedIds;
+          articleLimit = articleIds.length;
+        } else {
+          const requestedLimit = Number(payload.article_limit || SIMPLE_ARTICLE_LIMIT);
+          articleLimit = Math.min(
+            Math.max(Number.isFinite(requestedLimit) ? Math.round(requestedLimit) : SIMPLE_ARTICLE_LIMIT, 1),
+            SIMPLE_MAX_ARTICLE_LIMIT,
+          );
+          // Simple mode never crawls. It re-reads the newest stored articles.
+          const { data: newest, error: newestError } = await admin.schema("signal_layer").from("articles")
+            .select("id").order("crawled_at", { ascending: false }).limit(articleLimit);
+          if (newestError) return errorResponse(origin, newestError.message, 500);
+          articleIds = (newest || []).map((row: { id: string }) => row.id);
+        }
         // A parallel run would spend AI budget twice on the same articles.
         await admin.schema("signal_layer").from("simple_runs")
           .update({ status: "error", error_message: "Durch neuen Lauf ersetzt.", finished_at: new Date().toISOString() })
