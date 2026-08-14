@@ -263,18 +263,47 @@ export function digitKey(value: string): string {
 }
 
 /**
+ * Vergleichsschlüssel: 13,3 % und 13,3 Prozent und 13.3 werden dieselbe Zahl.
+ * digitKey allein macht aus 13,3 die Ziffern 133 und hält sie für 133 Prozent.
+ */
+export function numericTokenKey(value: string): string {
+  const tokens = claimedNumbers(value);
+  let token = tokens[0] || "";
+  if (!token) {
+    // "13.3%" sieht claimedNumbers als 13. März. Als Leitkennzahl ist es 13,3.
+    const dezimal = String(value || "").replace(/\u00a0/g, " ").match(/(?<!\d)(\d+[,.]\d+)(?!\d)/);
+    if (dezimal) token = dezimal[1];
+  }
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(token)) return token.replace(/\./g, "");
+  if (/^\d{1,3}(?:,\d{3})+$/.test(token)) return token.replace(/,/g, "");
+  if (/^\d+,\d+$/.test(token)) return token.replace(",", ".");
+  if (/^\d+\.\d+$/.test(token)) return token;
+  if (token) return digitKey(token);
+  const digits = digitKey(value);
+  return digits.length >= 2 ? digits : "";
+}
+
+/**
  * "25 %" zaehlt nur, wenn 25 als eigene Zahl im Artikel steht, nicht als
  * Teil von 2025. "etwa ein Viertel" ist keine Ziffer 25.
+ * "13,3 %" zaehlt, wenn der Artikel "13,3 Prozent" oder "13.3%" schreibt.
  */
 export function numberIsAttested(value: string, corpus: string): boolean {
-  const digits = digitKey(value);
-  if (!digits || !corpus) return false;
+  const claim = String(value || "").replace(/\u00a0/g, " ").trim();
+  if (!claim || !corpus) return false;
   const nackt = corpus.replace(/\u00a0/g, " ");
-  if (nackt.includes(String(value || "").trim())) return true;
+  if (nackt.includes(claim)) return true;
+  const claimKey = numericTokenKey(claim);
+  if (!claimKey) return false;
+  const corpusKeys = new Set(
+    claimedNumbers(nackt).map((token) => numericTokenKey(token)).filter(Boolean),
+  );
+  if (corpusKeys.has(claimKey)) return true;
+  if (!/^\d+$/.test(claimKey)) return false;
   try {
-    return new RegExp(`(?<!\\d)${digits}(?!\\d)`).test(nackt);
+    return new RegExp(`(?<!\\d)${claimKey}(?!\\d)`).test(nackt);
   } catch {
-    return nackt.includes(digits);
+    return nackt.includes(claimKey);
   }
 }
 
@@ -1668,12 +1697,12 @@ function rejectRepeatedLeadNumbers(slides: AssetSlide[]): void {
 }
 
 /**
- * Nur unlesbare Antworten werden ein zweites Mal versucht. Inhaltliche
- * Maengel (doppelte Zahl, falsche Folienzahl, unbelegte Ziffer) sind ein
- * Fehler, den man im Log sieht und am Prompt nachschaerfen kann.
+ * Unlesbare JSON-Antworten und eine falsch gewählte Kennzahl-Folie dürfen
+ * ein zweites Mal versucht werden. Doppelte Zahlen und falsche Folienzahl
+ * bleiben ein harter Fehler: die kommen nicht von einer Tippvariante.
  */
 export function assetMangelIsRepairable(mangel: string): boolean {
-  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer/i.test(String(mangel || ""));
+  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|ungefüllte Zeichnungs-Slots/i.test(String(mangel || ""));
 }
 
 function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {
@@ -2175,5 +2204,5 @@ export function assetRepairTimeoutMs(elapsedMs: number): number | null {
 
 export function buildAssetRepairPrompt(prompt: string, mangel: string): string {
   const grund = mangel.replace(/\s+/g, " ").trim().slice(0, 400);
-  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. Erfinde keine Zahlen, die nicht im Artikel stehen. Unbelegte Kennzahl-Folien nicht nach B umbiegen: eine andere belegte Variante wählen.</repair>`;
+  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. 13,3 % und 13,3 Prozent sind dieselbe Zahl. Erfinde keine Zahlen, die nicht im Artikel stehen. Passt keine Kennzahl-Variante (E, H, L), wähle eine Textfolie aus der erlaubten Liste — nicht dieselbe Variante mit leerer Zahl.</repair>`;
 }
