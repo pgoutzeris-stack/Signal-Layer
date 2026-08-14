@@ -4807,6 +4807,8 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       rootsOffering: assetSignal.roots_offering,
       buyingCenterRoles: assetSignal.buying_center_roles,
       personName: assetSignal.person_name,
+      signalHeadline: assetSignal.headline_de,
+      articleTitle: assetArticle.title_de || assetArticle.title || null,
       company: signalForAsset.company,
       topics: signalForAsset.topics,
       territory: signalForAsset.territory,

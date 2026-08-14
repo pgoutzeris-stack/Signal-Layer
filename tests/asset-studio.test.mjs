@@ -945,7 +945,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.8");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.9");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -955,6 +955,8 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(karussell, /Aufruf im sichtbaren Pointe-Feld/);
   assert.doesNotMatch(karussell, /letzte ist F, I oder K/);
   assert.match(memoPrompt, /Türöffner/);
+  assert.match(memoPrompt, /<anlass>/);
+  assert.match(memoPrompt, /nicht die Personalie/i);
   assert.match(memoPrompt, /nur Briefing, kein Aufdruck/);
   assert.match(studio, /key: "company_mode"/);
   assert.match(studio, /key: "images"/);
@@ -1026,7 +1028,7 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   assert.match(memo.about_fit, /100 Tage/);
 });
 
-test("Prompt v1.8 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
+test("Prompt v1.9 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -1060,9 +1062,11 @@ test("Prompt v1.8 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
     { title: "A", content_de: "Der Artikel ohne Zahl." },
     backend.normalizeAssetAnswers("memo", { addressee: "company" }));
   assert.match(memo, /<ziel>/);
+  assert.match(memo, /<anlass>/);
   assert.match(memo, /roots_leistung/);
   assert.match(memo, /about_fit/);
   assert.match(memo, /genau drei/);
+  assert.match(memo, /nicht die Personalie/i);
   assert.doesNotMatch(memo, /<signalfelder>/);
   assert.doesNotMatch(memo, /recommendation/);
   assert.doesNotMatch(memo, /situation/);
@@ -1199,9 +1203,72 @@ test("Person im Signal wird Adressat, ohne Gespräch-mit-Rolle anzuhängen", () 
     { title: "A", content_de: "Der Artikel." },
     answers);
   assert.match(memoPrompt, /Christian Wiegand/);
+  assert.match(memoPrompt, /<anlass>/);
+  assert.match(memoPrompt, /nicht die Geschichte/);
   assert.doesNotMatch(memoPrompt, /Adressat, verbindlich/);
   assert.doesNotMatch(memoPrompt, /keine Rolle extra/);
   assert.doesNotMatch(memoPrompt, /Gespräch mit/);
+});
+
+test("das Executive Memo hebt auf die Herausforderung, nicht auf die Nachricht", () => {
+  const answers = backend.normalizeAssetAnswers("memo", {});
+  const artikel = "Christian Wiegand übernimmt die Marketingleitung. Der Platzhirsch streicht 8.000 Stellen.";
+  const kontext = {
+    articleText: artikel,
+    personName: "Christian Wiegand",
+    signalHeadline: "Ein erfahrener Marketingchef baut die Marke auf, während der Platzhirsch abbaut",
+    articleTitle: "Xpeng holt Christian Wiegand",
+    rootsOffering: "Die ersten 100 Tage als CMO + Markenpositionierung + Brand Audit",
+  };
+
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Ein erfahrener Marketingchef baut die Marke auf, während der Platzhirsch abbaut",
+    standfirst: "Der neue CMO mit Erfahrung übernimmt den Markenaufbau.",
+  })), answers, kontext), /Amt oder Person|Personalie/);
+
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Aufbauen, während andere abbauen",
+    standfirst: "Wer kürzt, verliert Sichtbarkeit. Wer aufbaut, setzt die Handschrift.",
+  })), answers, kontext), /Nachrichtenslogan|Beratungshebel/);
+
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Wiegand übernimmt die Marketingleitung",
+    standfirst: "Der Wechsel schafft einen Moment für die Marke.",
+  })), answers, kontext), /Personalie/);
+
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Die Marke braucht eine klare Position in Deutschland",
+    standfirst: "Christian Wiegand übernimmt die Marketingleitung und soll den Aufbau führen.",
+  })), answers, kontext), /Personalie/);
+
+  const lidl = {
+    articleText: "Lidl ernennt eine neue Marketingleiterin. Eigenmarken wachsen.",
+    personName: "Anna Beispiel",
+    signalHeadline: "Lidl ernennt neue Marketingleiterin",
+    articleTitle: "Führungswechsel im Handel",
+  };
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Lidl ernennt eine neue Marketingleiterin",
+    standfirst: "Der Wechsel fällt in eine Phase wachsender Eigenmarken.",
+  })), answers, lidl), /Personalie|Signalüberschrift|Amt oder Person/);
+
+  const gut = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Eine neue Marke braucht Position, bevor der Markt sie einordnet",
+    standfirst: "Ohne Handschrift wird der Auftritt zur Importnische. Der Moment zwingt zur Positionierung.",
+  })), answers, kontext);
+  assert.match(gut.title, /Marke braucht Position/);
+  assert.doesNotMatch(gut.title, /Wiegand|Marketingchef|übernimmt/i);
+  assert.doesNotMatch(gut.standfirst, /Wiegand|übernimmt/i);
+
+  const cmoAgenda = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Die ersten 100 Tage brauchen eine klare Agenda",
+    standfirst: "Ein Führungswechsel macht die Positionierung zur ersten Aufgabe, nicht zur Nachricht.",
+  })), answers, { ...kontext, articleText: `${artikel} Die ersten 100 Tage.` });
+  assert.match(cmoAgenda.title, /Agenda/);
+
+  assert.equal(backend.assetMangelIsRepairable("Das Cover erzählt die Personalie, nicht die Cover-These."), true);
+  assert.equal(backend.assetMangelIsRepairable("Der Cover-Titel ist ein Nachrichtenslogan ohne Beratungshebel."), true);
+  assert.match(edge, /signalHeadline: assetSignal.headline_de/);
 });
 
 test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
