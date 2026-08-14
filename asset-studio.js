@@ -593,9 +593,6 @@ const CHROME_CSS = `
 @keyframes as-bar-flow{from{background-position:200% 0;} to{background-position:0 0;}}
 @keyframes as-bar-pulse{0%,100%{filter:brightness(1);} 50%{filter:brightness(1.35);}}
 @keyframes as-bar-shimmer{from{transform:translateX(-100%);} to{transform:translateX(100%);}}
-#as-overlay .as-load-meta{margin:0; font-size:.8rem; color:var(--muted,#475569); line-height:1.45;}
-#as-overlay .as-load-live{margin:0; font-size:.85rem; font-weight:600; color:var(--ink,#0f172a); line-height:1.4;}
-#as-overlay .as-load-live.is-still{color:#b45309;}
 #as-overlay .as-load-log{
   margin:4px 0 0; padding:0; list-style:none; width:100%; text-align:left;
   font-size:.78rem; color:var(--muted,#475569); line-height:1.4;
@@ -799,8 +796,9 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-  import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1115";
-  import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1115";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1205";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1205";
+import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-1205";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1118,41 +1116,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ["fuellen", "fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
   ];
 
-  function zeitLabel(ms) {
-    const sek = Math.max(0, Number(ms) || 0) / 1000;
-    if (sek < 20) return "gleich";
-    if (sek < 50) return "unter 1 Min";
-    const min = Math.round(sek / 60);
-    if (min <= 1) return "etwa 1 Min";
-    return `etwa ${min} Min`;
+  function laufMs() {
+    if (state.ladeStart) return Math.max(0, Date.now() - state.ladeStart);
+    return 0;
+  }
+
+  function restMs() {
+    return assetEtaRemainingMs({
+      kind: isMemo ? "memo" : "linkedin",
+      answers: state.answers || {},
+      stage: state.ladeAbschnitt || "lesen",
+      runLog: state.laufLog,
+      elapsedMs: laufMs(),
+      stages: assetEtaStagesFromLog(state.laufLog),
+      forecastMs: state.forecastMs,
+    });
   }
 
   function ladeFortschritt() {
-    const i = Math.max(0, ABSCHNITTE.findIndex(([key]) => key === state.ladeAbschnitt));
-    const floor = [0.04, 0.10, 0.22, 0.78, 0.88, 0.95][i] ?? 0.04;
-    const ceil = [0.10, 0.22, 0.78, 0.88, 0.95, 0.99][i] ?? 0.99;
-    const elapsed = state.ladeStart ? Date.now() - state.ladeStart : 0;
-    const eta = state.forecastMs > 8_000 ? state.forecastMs : 90_000;
-    const zeit = Math.min(0.97, elapsed / eta);
-    return Math.round(Math.max(floor, Math.min(ceil, Math.max(floor, zeit))) * 100);
+    return assetEtaProgressPct(laufMs(), restMs());
   }
 
   function ladeEtaText() {
-    const elapsed = state.ladeStart ? Date.now() - state.ladeStart : 0;
-    const eta = state.forecastMs > 8_000 ? state.forecastMs : 0;
-    if (!eta) return "Das dauert einen Moment";
-    if (elapsed > eta + 20_000) return "Dauert etwas länger als üblich";
-    const rest = Math.max(0, eta - elapsed);
-    if (rest < 20_000) return "Gleich fertig";
-    return `Noch ${zeitLabel(rest)}`;
-  }
-
-  function ladeMetaText() {
-    const elapsed = state.ladeStart ? Date.now() - state.ladeStart : 0;
-    const eta = state.forecastMs > 8_000 ? state.forecastMs : 0;
-    const seit = elapsed < 20_000 ? "gerade gestartet" : `läuft seit ${zeitLabel(elapsed).replace(/^etwa /, "")}`;
-    if (!eta) return seit;
-    return `Typisch ${zeitLabel(eta).replace(/^etwa /, "")} · ${seit}`;
+    return assetEtaLabel(restMs());
   }
 
   function laufEreignisText(entry) {
@@ -1211,7 +1197,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function laufLogZeilen() {
     const rows = Array.isArray(state.laufLog) ? state.laufLog : [];
     const visible = [];
-    for (let i = rows.length - 1; i >= 0 && visible.length < 5; i -= 1) {
+    for (let i = rows.length - 1; i >= 0 && visible.length < 8; i -= 1) {
       const text = laufEreignisText(rows[i]);
       if (!text) continue;
       const sek = Math.max(0, Math.round(Number(rows[i]?.t || 0) / 1000));
@@ -1220,27 +1206,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return visible.reverse();
   }
 
-  function ladeLiveText() {
-    const age = state.updatedAt ? Date.now() - Date.parse(state.updatedAt) : (state.ladeStart ? Date.now() - state.ladeStart : 0);
-    const sek = Number.isFinite(age) ? Math.max(0, Math.round(age / 1000)) : 0;
-    const last = Array.isArray(state.laufLog) ? state.laufLog[state.laufLog.length - 1] : null;
-    const pulse = last && last.event === "pulse";
-    if (pulse && sek < 20) return laufEreignisText(last);
-    if (sek >= 40) return `Kein Impuls seit ${sek} s — die Verbindung wird geprüft`;
-    if (sek >= 12) return `Letzter Impuls vor ${sek} s — läuft noch`;
-    return pulse ? laufEreignisText(last) : "Wartet auf das erste Lebenszeichen";
-  }
-
-  function ladeLiveStill() {
-    const age = state.updatedAt ? Date.now() - Date.parse(state.updatedAt) : 0;
-    return Number.isFinite(age) && age >= 40_000;
-  }
-
   function ladeanzeigeHtml() {
     const i = Math.max(0, ABSCHNITTE.findIndex(([key]) => key === state.ladeAbschnitt));
     const [, icon, text] = ABSCHNITTE[i];
     const pct = ladeFortschritt();
-    const still = ladeLiveStill();
     const log = laufLogZeilen();
     return `<div class="as-load" role="status" aria-live="polite">
       <div class="as-load-icon"><i class="fa-solid ${icon}"></i></div>
@@ -1249,36 +1218,31 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <span class="as-load-bar-fill" style="width:${pct}%"></span>
       </div>
       <p class="as-load-eta">${esc(ladeEtaText())}</p>
-      <p class="as-load-live${still ? " is-still" : ""}">${esc(ladeLiveText())}</p>
-      <p class="as-load-meta">${esc(ladeMetaText())}</p>
       ${log.length ? `<ul class="as-load-log">${log.map((row) => `<li><b>${row.sek} s</b><span>${esc(row.text)}</span></li>`).join("")}</ul>` : ""}
       <div class="as-load-actions"><button type="button" class="as-btn" data-act="cancel-generate">Abbrechen</button></div>
     </div>`;
   }
 
-  /** Balken und Minuten laufen von selbst. Den Abschnitt meldet der Auftrag. */
-  function ladeTaktStart() {
+  /** Balken und Restzeit laufen von selbst. Den Abschnitt meldet der Auftrag. */
+  function ladeTaktStart(neu = false) {
     ladeTaktStop();
-    state.ladeStart = Date.now();
-    state.ladeAbschnitt = "lesen";
-    state.laufLog = [];
-    state.updatedAt = "";
+    if (neu) {
+      state.ladeStart = Date.now();
+      state.ladeAbschnitt = "lesen";
+      state.laufLog = [];
+      state.updatedAt = "";
+    } else if (!state.ladeStart) {
+      state.ladeStart = Date.now();
+    }
     state.ladeUhr = window.setInterval(() => {
       if (!state.busy) { ladeTaktStop(); return; }
       const fill = shell.querySelector(".as-load-bar-fill");
       const bar = shell.querySelector(".as-load-bar");
-      const meta = shell.querySelector(".as-load-meta");
       const eta = shell.querySelector(".as-load-eta");
-      const live = shell.querySelector(".as-load-live");
       const pct = ladeFortschritt();
       if (fill) fill.style.width = `${pct}%`;
       if (bar) bar.setAttribute("aria-valuenow", String(pct));
-      if (meta) meta.textContent = ladeMetaText();
       if (eta) eta.textContent = ladeEtaText();
-      if (live) {
-        live.textContent = ladeLiveText();
-        live.classList.toggle("is-still", ladeLiveStill());
-      }
     }, 200);
   }
 
@@ -1303,16 +1267,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (Array.isArray(row.run_log)) state.laufLog = row.run_log;
     if (row.updated_at) state.updatedAt = String(row.updated_at);
     if (Number(row.forecast_ms) > 0) state.forecastMs = Number(row.forecast_ms);
+    const created = Date.parse(String(row.created_at || ""));
+    if (Number.isFinite(created)) state.ladeStart = created;
     const stage = row.stage;
     if (stage && stage !== state.ladeAbschnitt && ABSCHNITTE.some(([key]) => key === stage)) {
       ladeAbschnittSetzen(stage);
       return;
     }
-    const live = shell.querySelector(".as-load-live");
-    if (live) {
-      live.textContent = ladeLiveText();
-      live.classList.toggle("is-still", ladeLiveStill());
-    }
+    const eta = shell.querySelector(".as-load-eta");
+    if (eta) eta.textContent = ladeEtaText();
+    const fill = shell.querySelector(".as-load-bar-fill");
+    const bar = shell.querySelector(".as-load-bar");
+    const pct = ladeFortschritt();
+    if (fill) fill.style.width = `${pct}%`;
+    if (bar) bar.setAttribute("aria-valuenow", String(pct));
     const logBox = shell.querySelector(".as-load-log");
     const zeilen = laufLogZeilen();
     const html = zeilen.length
@@ -1320,8 +1288,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       : "";
     if (logBox) logBox.outerHTML = html || `<ul class="as-load-log"></ul>`;
     else if (html) {
-      const meta = shell.querySelector(".as-load-meta");
-      if (meta) meta.insertAdjacentHTML("afterend", html);
+      const etaNode = shell.querySelector(".as-load-eta");
+      if (etaNode) etaNode.insertAdjacentHTML("afterend", html);
     }
   }
 
@@ -1659,6 +1627,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         state.error = "";
         state.cancelRequested = false;
         render();
+        if (row.created_at) {
+          const t = Date.parse(row.created_at);
+          if (Number.isFinite(t)) state.ladeStart = t;
+        }
+        if (Array.isArray(row.run_log)) state.laufLog = row.run_log;
         ladeTaktStart();
         const fertig = await warteAufAsset(row.id);
         if (state.cancelRequested) return;
@@ -1795,7 +1768,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.error = "";
     state.cancelRequested = false;
     render();
-    ladeTaktStart();
+    ladeTaktStart(true);
     try {
       const gewaehlt = state.answers.variant;
       const antworten = { ...state.answers, layout: gewaehlt };

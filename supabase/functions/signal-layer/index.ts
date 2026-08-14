@@ -3006,27 +3006,38 @@ type ModelCallResult = {
 async function assetForecastFromDb(
   admin: ReturnType<typeof getAdminClient>,
   kind: string,
-  answers: { asset_type?: string; slides?: number },
+  answers: { asset_type?: string; slides?: number; images?: string; benchmarks_mode?: string },
   fallbackMs: number,
-): Promise<{ ms: number; sample_count: number; median_tokens: number | null; scope: string }> {
+): Promise<{ ms: number; sample_count: number; median_tokens: number | null; scope: string; stages: Record<string, number> }> {
   try {
     const { data } = await admin.schema("signal_layer").rpc("asset_duration_forecast", {
       p_kind: kind,
       p_asset_type: kind === "linkedin" ? (answers.asset_type || "single") : null,
       p_slides: kind === "linkedin" ? (answers.slides || 1) : null,
+      p_images: kind === "memo" ? (answers.images || "auto") : null,
+      p_benchmarks_mode: kind === "memo" ? (answers.benchmarks_mode || "auto") : null,
     });
     const row = data && typeof data === "object" && !Array.isArray(data)
       ? data as Record<string, unknown>
       : {};
     const median = Number(row.median_ms);
+    const rawStages = row.stages && typeof row.stages === "object" && !Array.isArray(row.stages)
+      ? row.stages as Record<string, unknown>
+      : {};
+    const stages: Record<string, number> = {};
+    for (const [key, value] of Object.entries(rawStages)) {
+      const ms = Number(value);
+      if (Number.isFinite(ms) && ms >= 500) stages[key] = Math.round(ms);
+    }
     return {
       ms: Number.isFinite(median) && median >= 8_000 ? Math.round(median) : fallbackMs,
       sample_count: Number(row.sample_count) || 0,
       median_tokens: Number.isFinite(Number(row.median_tokens)) ? Number(row.median_tokens) : null,
       scope: String(row.scope || ""),
+      stages,
     };
   } catch {
-    return { ms: fallbackMs, sample_count: 0, median_tokens: null, scope: "fallback" };
+    return { ms: fallbackMs, sample_count: 0, median_tokens: null, scope: "fallback", stages: {} };
   }
 }
 
@@ -8868,7 +8879,7 @@ Deno.serve(async (req: Request) => {
 
         const timeoutMs = assetModelTimeoutMs(assetKind, assetAnswers);
         const forecast = await assetForecastFromDb(
-          admin, assetKind, assetAnswers as { asset_type?: string; slides?: number },
+          admin, assetKind, assetAnswers as { asset_type?: string; slides?: number; images?: string; benchmarks_mode?: string },
           Math.round((timeoutMs + (assetKind === "memo" ? 20_000 : 0)) * 0.85),
         );
 
@@ -8885,7 +8896,7 @@ Deno.serve(async (req: Request) => {
             model: assetModel, prompt_version: ASSET_PROMPT_VERSION,
             created_by: auth?.userId || null,
             forecast_ms: forecast.ms,
-            run_log: [{ t: 0, event: "start", forecast_ms: forecast.ms, sample_count: forecast.sample_count, scope: forecast.scope }],
+            run_log: [{ t: 0, event: "start", forecast_ms: forecast.ms, sample_count: forecast.sample_count, scope: forecast.scope, stages: forecast.stages }],
           }).select("*").single();
         if (assetInsertError) return errorResponse(origin, assetInsertError.message, 500);
 

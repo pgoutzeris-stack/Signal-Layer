@@ -5,7 +5,7 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260805-1130";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260814-1115";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260814-1205";
 
 let sb = null;
 let sources = [];
