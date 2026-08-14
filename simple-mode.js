@@ -13,7 +13,7 @@
 // Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
-import { simpleCurrentVersionLabel, simpleLaneCountLabel } from "./simple-view-state.mjs?v=20260804-2355";
+import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionMenu } from "./simple-view-state.mjs?v=20260814-2025";
 
 let ctx = null;
 let els = {};
@@ -27,6 +27,7 @@ let simpleRules = null;
 const signalsByLane = { marketing: [], sales: [] };
 let rejectedRows = [];
 let selectedVersion = "";
+let currentVersionLabel = "";
 let versionList = [];
 const companyFilterState = { kind: "tier1", selected: [] };
 const companyFilterIndex = { tier1: [], company: [] };
@@ -339,11 +340,18 @@ async function loadVersions() {
   try {
     const { versions, current } = await ctx.callApi("list_simple_versions");
     versionList = versions || [];
+    currentVersionLabel = String(current || "");
     if (!els.version) return;
-    const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
-    els.version.innerHTML = `<option value="current">${esc(simpleCurrentVersionLabel(versionList, current))}</option>${versionList
-      .map((entry) => `<option value="${esc(entry.version)}" ${entry.version === selectedVersion ? "selected" : ""}>Version ${esc(entry.version)} · ${entry.archived_signals ?? entry.signals} Signale · ${esc(date(entry.first_seen_at))}</option>`)
-      .join("")}`;
+    const previous = els.version.value;
+    const { historical } = simpleVersionMenu(versionList, currentVersionLabel);
+    const currentSelected = !selectedVersion || selectedVersion === currentVersionLabel;
+    els.version.innerHTML = [
+      `<option value="current"${currentSelected ? " selected" : ""}>${esc(simpleCurrentVersionLabel(versionList, currentVersionLabel))}</option>`,
+      ...historical.map((entry) => `<option value="${esc(entry.version)}"${entry.version === selectedVersion ? " selected" : ""}>${esc(simpleHistoricalVersionLabel(entry))}</option>`),
+    ].join("");
+    if (previous === currentVersionLabel || currentSelected) els.version.value = "current";
+    else if ([...els.version.options].some((option) => option.value === previous)) els.version.value = previous;
+    ctx.enhanceHeaderSelects?.();
   } catch (_error) { /* Auswahl bleibt bei der aktuellen Pipeline */ }
 }
 
@@ -400,6 +408,7 @@ async function pollStatus() {
       || Number(triggerBackfill?.cursor || 0) !== Number(previousTrigger?.cursor || 0);
     const finished = (previous?.status === "running" && lastRun?.status !== "running")
       || (previousTrigger?.status === "running" && triggerBackfill?.status !== "running");
+    if (finished || lastRun?.id !== previous?.id) await loadVersions();
     if (advanced || finished || lastRun?.id !== previous?.id) await loadResults({ statusOnly: false, keepStatus: true });
   } catch (_error) {
     /* nächster Takt versucht es erneut */
@@ -460,7 +469,9 @@ function bindUi() {
     els.companyFilterTrigger?.setAttribute("aria-expanded", "false");
   });
   els.version?.addEventListener("change", () => {
-    selectedVersion = els.version.value === "current" ? "" : els.version.value;
+    selectedVersion = els.version.value === "current" || els.version.value === currentVersionLabel
+      ? ""
+      : els.version.value;
     // Ein Regelstandswechsel beginnt bewusst ungefiltert. Sonst wirkt ein
     // zuvor gewählter Quellen-, Typ- oder Unternehmensfilter wie Datenverlust.
     resetResultFilters();
