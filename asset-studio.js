@@ -121,14 +121,26 @@ const FORM_LINKEDIN = [
   },
 ];
 
-function memoQuestions(firma) {
+function memoQuestions(firma, cmoHundredDays = false) {
   const erkannt = String(firma || "").trim();
+  const nurThema = (answers) => answers.memo_track !== "cmo100";
   return [
+    {
+      key: "memo_track",
+      label: "Welche Unterlage",
+      hint: "Ein CMO- oder Marketingleitungswechsel ist erkannt. Das Executive Memo behandelt die thematische Herausforderung. 100 Tage CMO ist ein eigener Sonderfall und noch in Ausarbeitung.",
+      options: [
+        ["theme", "Thematisches Executive Memo"],
+        ["cmo100", "100 Tage CMO"],
+      ],
+      when: () => cmoHundredDays,
+    },
     {
       key: "company_named",
       label: "Unternehmen",
       hint: "Nur Briefing für das Modell. Der Name erscheint nicht auf dem Memo.",
       muted: true,
+      when: nurThema,
       options: [
         ["yes", "Ja, das Unternehmen nennen"],
         ["no", "Nein"],
@@ -137,7 +149,7 @@ function memoQuestions(firma) {
     {
       key: "company_mode",
       label: "Welches Unternehmen",
-      when: (answers) => answers.company_named === "yes",
+      when: (answers) => answers.company_named === "yes" && nurThema(answers),
       options: [
         ["auto", erkannt ? `Erkannt: ${erkannt}` : "Aus dem Signal übernehmen"],
         ["custom", "Anderes Unternehmen"],
@@ -147,12 +159,14 @@ function memoQuestions(firma) {
     {
       key: "storyline",
       label: "Inhalt",
+      when: nurThema,
       options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich gebe den Text vor"]],
       free: { key: "storyline_text", on: "custom", rows: 5, platzhalter: "Kernaussage, Stichpunkte oder fertiger Text" },
     },
     {
       key: "benchmarks",
       label: "Benchmarking",
+      when: nurThema,
       options: [
         ["auto", "Gemini recherchiert"],
         ["custom", "Eigene Benchmarks"],
@@ -161,6 +175,7 @@ function memoQuestions(firma) {
     {
       key: "images",
       label: "Bilder",
+      when: nurThema,
       options: [
         ["auto", "Gemini entscheidet die Motive"],
         ["upload", "Eigene Bilder zuschneiden"],
@@ -169,6 +184,7 @@ function memoQuestions(firma) {
     {
       key: "cta",
       label: "CTA",
+      when: nurThema,
       options: [["auto", "Modell schreibt die Gesprächsfrage"], ["custom", "Eigene Frage"]],
       free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Sollen wir den Check gemeinsam durchgehen?" },
     },
@@ -694,6 +710,13 @@ const CHROME_CSS = `
 
 #as-overlay .as-hint{font-size:12px; line-height:1.5; color:var(--muted,#475569); margin:0;}
 #as-overlay .as-q > .as-hint{margin-top:-2px;}
+#as-overlay .as-wip{
+  margin:4px 0 12px; padding:14px 16px; border-radius:12px;
+  background:#fff7ed; border:1px solid #fdba74; color:#9a3412;
+  font-size:13px; line-height:1.5;
+}
+#as-overlay .as-wip strong{display:block; margin-bottom:4px; font-size:13px;}
+#as-overlay .as-wip p{margin:0;}
 #as-overlay .as-file{display:none;}
 
 #as-overlay .as-crop{
@@ -743,6 +766,15 @@ function attr(value) {
 
 function toArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function isCmoHundredDaysSignal(source = {}) {
+  const id = String(source.signal_id || "").trim().toLowerCase();
+  if (id === "cmo_wechsel") return true;
+  const topics = toArray(source.topics).map((teil) => String(teil || "").trim().toLowerCase());
+  if (topics.includes("cmo_wechsel")) return true;
+  const offering = String(source.matched_offering || source.roots_offering || "");
+  return /100[\s-]*tage.{0,80}cmo|cmo.{0,80}100[\s-]*tage|erste[n]?\s+100[\s-]*tage/i.test(offering);
 }
 
 function companyFrom(source) {
@@ -796,9 +828,9 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1205";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1205";
-import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-1205";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-1430";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-1430";
+import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-1430";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -826,7 +858,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   const isMemo = assetKind === "memo";
   const source = signal && typeof signal === "object" ? signal : {};
   const company = companyFrom(source);
-  const questions = isMemo ? memoQuestions(company) : FORM_LINKEDIN;
+  const cmoHundredDays = isMemo && isCmoHundredDaysSignal(source);
+  const questions = isMemo ? memoQuestions(company, cmoHundredDays) : FORM_LINKEDIN;
 
   const state = {
     step: "form",
@@ -1026,6 +1059,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Grosse Vorschau rechts. Dieselbe Vorlage wie das Ergebnis, kein Modellaufruf. */
   function livePreviewHtml() {
     if (isMemo) {
+      if (state.answers.memo_track === "cmo100") {
+        return `<div class="as-prev-empty">
+          <i class="fa-solid fa-hourglass-half"></i>
+          <b>100 Tage CMO</b>
+          <span>Noch in Ausarbeitung, kein Executive Memo</span>
+        </div>`;
+      }
       if (state.prevIndex >= MEMO_SEITEN) state.prevIndex = 0;
       const html = markiereMemoSeiten(memoHtml(applyFormImages(demoMemo()), false).replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, ""));
       return `<span class="as-prev-scale">${html}</span>${blaetterNavHtml()}`;
@@ -1605,6 +1645,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     a.storyline_text = src.storyline || "";
     a.cta = src.cta ? "custom" : "auto";
     a.cta_text = src.cta || "";
+    a.memo_track = src.memo_track === "cmo100" ? "cmo100" : "theme";
     if (src.asset_type) a.asset_type = src.asset_type;
     if (src.variant) a.variant = src.variant;
     if (src.theme === "dark") a.look = "dunkel";
@@ -1694,8 +1735,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const slots = q.key === "images" && state.answers.images === "upload" ? slotsHtml() : "";
       return `<div class="as-q${q.muted ? " as-q--muted" : ""}"><label>${esc(q.label)}</label>${hinweis}<div class="as-opts">${opts}</div>${free}${benches}${slots}</div>`;
     }).join("");
+    const wip = isMemo && state.answers.memo_track === "cmo100"
+      ? `<div class="as-wip"><strong>100 Tage CMO</strong><p>Diese Unterlage ist ein eigener Sonderfall und noch in Ausarbeitung. Sie ist kein Executive Memo. Für diesen Fall bitte das thematische Executive Memo wählen.</p></div>`
+      : "";
     const fehler = state.formError ? `<p class="as-form-error">${esc(state.formError)}</p>` : "";
-    return `<form class="as-form" data-form>${fehler}${rows}</form>`;
+    return `<form class="as-form" data-form>${fehler}${rows}${wip}</form>`;
   }
 
   /** Formular und Vorschau in einem Zug neu zeichnen. */
@@ -1754,6 +1798,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   async function generate() {
     readForm();
+    if (isMemo && state.answers.memo_track === "cmo100") {
+      state.formError = "Das 100-Tage-CMO-Dokument ist noch in Ausarbeitung. Es ist kein Executive Memo. Bitte das thematische Executive Memo wählen.";
+      zeichneForm();
+      return;
+    }
     if (isMemo && state.answers.benchmarks === "custom") {
       const mangel = eigeneVorreiterPruefen();
       if (mangel) {
