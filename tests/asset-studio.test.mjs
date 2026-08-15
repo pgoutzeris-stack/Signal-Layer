@@ -594,7 +594,11 @@ test("die Zeitprognose lernt aus gespeicherten Assets, Fehler stehen im Laufprot
   assert.match(stufen, /jsonb_object_agg\(stage, median_ms\)/);
   assert.match(edge, /rpc\("asset_duration_forecast"/);
   assert.match(edge, /const p75 = Number\(row.p75_ms\)/);
-  assert.match(edge, /memoFloor = kind === "memo" \? 8 \* 60 \* 1000/);
+  assert.match(edge, /fromDb \|\| fallbackMs/);
+  assert.doesNotMatch(edge, /memoFloor/);
+  const learn = readFileSync(new URL("../supabase/migrations/20260815113000_asset_forecast_learn_long_runs.sql", import.meta.url), "utf8");
+  assert.match(learn, /duration_ms between 8000 and 1200000/);
+  assert.match(learn, /median_tokens/);
   assert.match(edge, /forecast_ms: forecast.ms/);
   assert.match(edge, /stages: forecast.stages/);
   assert.match(edge, /think: forecast.think/);
@@ -623,13 +627,12 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
   const memoStart = eta.assetEtaRemainingMs({
     kind: "memo", answers: { images: "auto", benchmarks: "auto" }, stage: "lesen", elapsedMs: 1_000,
   });
-  assert.ok(memoStart >= 7 * 60 * 1000 && memoStart < 11 * 60 * 1000, `memo ${memoStart}`);
+  assert.ok(memoStart > 180_000 && memoStart < 280_000, `memo ${memoStart}`);
 
   const ohneMotive = eta.assetEtaRemainingMs({
     kind: "memo", answers: { images: "upload" }, stage: "lesen", elapsedMs: 1_000,
   });
   assert.ok(ohneMotive < memoStart, "ohne Motive muss kürzer sein");
-  assert.ok(ohneMotive >= 6 * 60 * 1000, `ohne Motive ${ohneMotive}`);
 
   const nachRetry = eta.assetEtaRemainingMs({
     kind: "memo",
@@ -642,7 +645,7 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
       { t: 331_000, event: "retry_model" },
     ],
   });
-  assert.ok(nachRetry > 150_000 && nachRetry < 400_000, `retry ${nachRetry}`);
+  assert.ok(nachRetry > 150_000 && nachRetry < 280_000, `retry ${nachRetry}`);
 
   const schreibt = eta.assetEtaRemainingMs({
     kind: "memo",
@@ -1529,6 +1532,27 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
     generate: async () => uri,
   });
   assert.equal(filled.benchmarks[0].image.src, uri);
+  const called = [];
+  const already = await backend.fillMemoImages(
+    backend.applyMemoImageUploads(
+      backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {})),
+      { "benchmarks.0": { src: uri, pos: "50% 50%" } },
+    ),
+    backend.normalizeAssetAnswers("memo", { images: "auto" }),
+    {
+      remainingMs: 120_000,
+      generate: async () => { called.push(1); return uri; },
+    },
+  );
+  assert.equal(already.benchmarks[0].image.src, uri);
+  assert.equal(called.length, 5);
+  const big = backend.memoImageDataUri("image/png", "A".repeat(400_000));
+  assert.match(big, /^data:image\/png;base64,/);
+  assert.ok(big.length > 280_000);
+  const uploads = backend.memoImageUploadsFromBody({
+    image_uploads: { "benchmarks.1": { src: uri, pos: "40% 40%" } },
+  });
+  assert.equal(uploads["benchmarks.1"].src, uri);
   const uploadMemo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", { images: "upload" }));
   const skipped = await backend.fillMemoImages(uploadMemo, backend.normalizeAssetAnswers("memo", { images: "upload" }), {
     remainingMs: 120_000,
@@ -1539,10 +1563,17 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
   assert.match(studio, /SAVE_LIMIT = 900000/);
   assert.match(studio, /function openCropper/);
   assert.match(studio, /function coverCrop/);
-  assert.match(studio, /MEMO_SHOT_PIXELS/);
+  assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(edge, /generateGeminiMemoImage/);
   assert.match(edge, /GEMINI_IMAGE_MODEL/);
   assert.match(edge, /fillMemoImages/);
+  assert.match(edge, /image_uploads/);
+  assert.match(edge, /applyMemoImageUploads/);
+  assert.match(edge, /remainingMs: ASSET_WALL_CLOCK_MS,/);
+  const assetSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
+  assert.match(assetSrc, /image_fail/);
+  assert.match(assetSrc, /imageOutputOptions/);
+  assert.equal(backend.MEMO_IMAGE_DATA_URI_MAX, 3_500_000);
 });
 
 test("das erkannte Unternehmen ist überschreibbar und steht im Titel, wenn genannt", () => {

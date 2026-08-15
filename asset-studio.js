@@ -1027,7 +1027,7 @@ function sanitizeFragment(html) {
 
 import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-2100";
-import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260815-1215";
+import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260815-1230";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -2060,6 +2060,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         kind: assetKind,
         article_id: articleId || null,
         answers: antworten,
+        image_uploads: isMemo ? state.formImages : undefined,
       });
       if (state.cancelRequested) return;
       const row = res && typeof res === "object" ? (res.asset || res) : {};

@@ -128,12 +128,14 @@ import {
   buildAssetRepairPrompt,
   buildMemoBenchmarkResearchPrompt,
   buildMemoBenchmarkReviewPrompt,
+  applyMemoImageUploads,
   fillMemoImages,
   geminiFinishAllowsParse,
   geminiImageRequestBody,
   isAssetKind,
   memoBenchmarkCorpus,
   memoImageDataUri,
+  memoImageUploadsFromBody,
   normalizeAssetAnswers,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
@@ -3125,11 +3127,9 @@ async function assetForecastFromDb(
       const ms = Number(value);
       if (Number.isFinite(ms) && ms >= 500) stages[key] = Math.round(ms);
     }
-    const fromDb = Math.max(
-      Number.isFinite(p75) && p75 >= 8_000 ? Math.round(p75) : 0,
-      Number.isFinite(median) && median >= 8_000 ? Math.round(median) : 0,
-    );
-    const memoFloor = kind === "memo" ? 8 * 60 * 1000 : 0;
+    const fromDb = Number.isFinite(p75) && p75 >= 8_000
+      ? Math.round(p75)
+      : (Number.isFinite(median) && median >= 8_000 ? Math.round(median) : 0);
     const { data: recent } = await admin.schema("signal_layer").from("generated_assets")
       .select("run_log")
       .eq("kind", kind)
@@ -3138,7 +3138,7 @@ async function assetForecastFromDb(
       .limit(40);
     const pace = summarizeAssetPace((recent || []).map((item) => item.run_log));
     return {
-      ms: Math.max(fromDb, fallbackMs, memoFloor) || fallbackMs,
+      ms: fromDb || fallbackMs,
       sample_count: Number(row.sample_count) || 0,
       median_tokens: Number.isFinite(Number(row.median_tokens)) ? Number(row.median_tokens) : null,
       scope: String(row.scope || ""),
@@ -3290,25 +3290,43 @@ async function generateGeminiMemoImage(
   aspect: string,
 ): Promise<string | null> {
   const models = [GEMINI_IMAGE_MODEL, GEMINI_IMAGE_FALLBACK_MODEL];
+  const contents = [{ role: "user", parts: [{ text: prompt }] }];
+  const bodies = [
+    geminiImageRequestBody(prompt, aspect),
+    { contents, generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: aspect || "16:9" } } },
+  ];
+  let lastError = "empty";
   for (const model of models) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-      const response = await fetchMitLimit(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-        body: JSON.stringify(geminiImageRequestBody(prompt, aspect)),
-      }, MEMO_IMAGE_FETCH_MS);
-      if (!response.ok) continue;
-      const json = await response.json();
-      const inline = parseGeminiInlineImage(json);
-      if (!inline) continue;
-      const uri = memoImageDataUri(inline.mime, inline.data);
-      if (uri) return uri;
-    } catch {
-      // Naechstes Modell. Ein fehlendes Motiv darf den Textentwurf nicht kippen.
+    for (const body of bodies) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        const response = await fetchMitLimit(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify(body),
+        }, MEMO_IMAGE_FETCH_MS);
+        if (!response.ok) {
+          lastError = `${model}:http_${response.status}`;
+          continue;
+        }
+        const json = await response.json();
+        const inline = parseGeminiInlineImage(json);
+        if (!inline) {
+          lastError = `${model}:no_inline`;
+          continue;
+        }
+        const uri = memoImageDataUri(inline.mime, inline.data);
+        if (!uri) {
+          lastError = `${model}:too_large:${inline.data.length}`;
+          continue;
+        }
+        return uri;
+      } catch (fehler) {
+        lastError = `${model}:${fehler instanceof Error ? fehler.message : String(fehler)}`.slice(0, 240);
+      }
     }
   }
-  return null;
+  throw new Error(lastError);
 }
 
 async function callGeminiWithGoogleSearchOnce(
@@ -4863,6 +4881,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     const existing = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
       ? row.payload as Record<string, unknown>
       : null;
+    const storedUploads = existing?.image_uploads;
     let payload: AssetPayload | null = existing && (existing.slides || existing.title || existing.benchmarks)
       ? existing as AssetPayload
       : null;
@@ -5077,6 +5096,10 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       pricing_version: kostenFelder.pricing_version ?? null,
     });
 
+    if (assetKind === "memo" && payload) {
+      payload = applyMemoImageUploads(payload as MemoPayload, storedUploads);
+    }
+
     if (assetKind === "memo" && (assetAnswers as MemoAnswers).images !== "upload") {
       await abschnitt("bilder");
       const geminiKey = await getGeminiKey().catch(() => "");
@@ -5085,7 +5108,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       } else {
         try {
           payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
-            remainingMs: ASSET_WALL_CLOCK_MS - (Date.now() - startedAt),
+            remainingMs: ASSET_WALL_CLOCK_MS,
             log: async (event, extra) => {
               loggen(event, extra || {});
               await persist({ payload });
@@ -8991,12 +9014,13 @@ Deno.serve(async (req: Request) => {
         // 70 Sekunden und mehr; der Browser bricht eine Anfrage nach etwa 60 ab
         // und meldet nur "Load failed". Die Arbeit laeuft deshalb im Hintergrund
         // weiter, das Frontend fragt den Auftrag ab.
+        const imageUploads = assetKind === "memo" ? memoImageUploadsFromBody(body) : null;
         const { data: assetRow, error: assetInsertError } = await admin.schema("signal_layer")
           .from("generated_assets").insert({
             kind: assetKind, status: "running", stage: "lesen",
             article_id: assetArticleId, signal_id: assetSignal.id,
             company: signalForAsset.company || assetSignal.company || null,
-            answers: assetAnswers, payload: null,
+            answers: assetAnswers, payload: imageUploads ? { image_uploads: imageUploads } : null,
             model: assetModel, prompt_version: ASSET_PROMPT_VERSION,
             created_by: auth?.userId || null,
             forecast_ms: forecast.ms,
