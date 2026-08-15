@@ -668,7 +668,8 @@ const CHROME_CSS = `
 #as-overlay .as-draft em{font-style:normal; font-size:11px; color:#64748b;}
 #as-overlay .as-draft.is-error{border-color:#fecaca;}
 #as-overlay .as-draft.is-run{border-color:#bfdbfe;}
-#as-overlay .as-load-actions{margin-top:4px;}
+#as-overlay .as-load-actions{margin-top:4px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;}
+#as-overlay .as-load-hint{margin:4px 0 0; max-width:28rem; font-size:12px; line-height:1.45; color:#64748b;}
 
 /* Ladeanzeige: echte Abschnitte, gerundete Minuten, pulsierender Balken. */
 #as-overlay .as-load{display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -1026,7 +1027,7 @@ function sanitizeFragment(html) {
 
 import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-2100";
-import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260814-2100";
+import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260815-1215";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1038,7 +1039,7 @@ export function closeAssetStudio() {
   if (openInstance) openInstance.close();
 }
 
-export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host } = {}) {
+export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify } = {}) {
   // Zwei Studios gleichzeitig würden sich Tastatur und Auswahl streitig machen.
   // Eine Instanz, deren Overlay nicht mehr im Dokument haengt, ist aber keine
   // Instanz mehr: sie entsteht, wenn das Popup unter dem Studio geschlossen
@@ -1073,6 +1074,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     pendingImage: null,
     formImages: {},
     cancelRequested: false,
+    leftRunning: false,
     drafts: [],
     draftsOpen: false,
     draftsUhr: 0,
@@ -1486,7 +1488,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </div>
       <p class="as-load-eta"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span data-eta-text>${esc(ladeEtaText())}</span></p>
       ${log.length ? `<ul class="as-load-log">${log.map((row) => `<li><b>${row.sek} s</b><span>${esc(row.text)}</span></li>`).join("")}</ul>` : ""}
-      <div class="as-load-actions"><button type="button" class="as-btn" data-act="cancel-generate">Abbrechen</button></div>
+      <p class="as-load-hint">Zurück lässt den Entwurf weiterlaufen. Sie bekommen eine Benachrichtigung, wenn er fertig ist.</p>
+      <div class="as-load-actions">
+        <button type="button" class="as-btn" data-act="leave-generate">Zurück</button>
+        <button type="button" class="as-btn" data-act="cancel-generate">Abbrechen</button>
+      </div>
     </div>`;
   }
 
@@ -1894,6 +1900,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         state.busy = true;
         state.error = "";
         state.cancelRequested = false;
+        state.leftRunning = false;
         render();
         if (row.created_at) {
           const t = Date.parse(row.created_at);
@@ -2043,6 +2050,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.busy = true;
     state.error = "";
     state.cancelRequested = false;
+    state.leftRunning = false;
     render();
     ladeTaktStart(true);
     try {
@@ -2083,10 +2091,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   async function warteAufAsset(id) {
     let wartezeit = 800;
     for (;;) {
-      if (state.cancelRequested) return { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
+      if (state.cancelRequested) return state.leftRunning
+        ? { id, status: "running" }
+        : { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
       await new Promise((r) => setTimeout(r, wartezeit));
       wartezeit = Math.min(wartezeit + 200, 1_200);
-      if (state.cancelRequested) return { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
+      if (state.cancelRequested) return state.leftRunning
+        ? { id, status: "running" }
+        : { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
       const res = await api("get_asset", { asset_id: id });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       uebernehmeLaufstand(row);
@@ -2994,8 +3006,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   async function cancelGenerate() {
-    if (!state.busy && state.step !== "draft") return;
     state.cancelRequested = true;
+    state.leftRunning = false;
     const id = state.assetId;
     state.busy = false;
     ladeTaktStop();
@@ -3286,7 +3298,7 @@ ${stages}${post}
     const id = frame ? frame.getAttribute("data-uid") : null;
 
     if (act === "close") {
-      if (state.busy) { void cancelGenerate(); return; }
+      if (state.busy) { close(); return; }
       if (state.step !== "form") {
         state.step = "form";
         state.error = "";
@@ -3299,14 +3311,11 @@ ${stages}${post}
     }
     if (act === "generate") { void generate(); return; }
     if (act === "close-popup") {
-      const id = state.assetId;
-      if (state.busy && id) {
-        try { void api("cancel_asset", { asset_id: id }); } catch { /* Popup geht trotzdem zu */ }
-      }
       close();
       return;
     }
     if (act === "toggle-fs") { toggleFullscreen(); return; }
+    if (act === "leave-generate") { close(); return; }
     if (act === "cancel-generate") { void cancelGenerate(); return; }
     if (act === "to-form") {
       state.busy = false;
@@ -3534,6 +3543,12 @@ ${stages}${post}
   /* ── Abbau ── */
 
   function close() {
+    if (state.busy) {
+      state.leftRunning = true;
+      if (typeof notify === "function") {
+        notify("Der Entwurf läuft weiter. Sie bekommen eine Benachrichtigung, wenn er fertig ist.");
+      }
+    }
     state.cancelRequested = true;
     while (cleanups.length) {
       const off = cleanups.pop();

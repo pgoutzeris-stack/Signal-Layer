@@ -3,9 +3,15 @@
 
 export const ASSET_ETA_STAGES = ["lesen", "recherchieren", "modell", "pruefen", "bilder", "fuellen"];
 
+/** Memo-Läufe mit Motiven brauchen oft 7–10 Minuten. Der Median (~2 Min)
+ *  darf die Anzeige nicht auf „Verbleibend 2 Minuten“ drücken. */
+export const MEMO_ETA_FLOOR_MS = 8 * 60 * 1000;
+export const MEMO_ETA_FLOOR_NO_IMAGES_MS = 7 * 60 * 1000;
+const MEMO_ETA_STRETCH_MS = 3 * 60 * 1000;
+
 const PACE_FALLBACK = {
   memo: {
-    think: { ms: 115_000, p75_ms: 145_000, chars: 32_000, p75_chars: 40_000 },
+    think: { ms: 180_000, p75_ms: 280_000, chars: 40_000, p75_chars: 72_000 },
     write: { ms: 22_000, p75_ms: 35_000, chars: 5_400, p75_chars: 6_200 },
   },
   linkedin: {
@@ -26,6 +32,23 @@ export function assetEtaFallbackStages(kind, answers = {}) {
   }
   if (memo && answers.images !== "upload") stages.bilder = 45_000;
   return stages;
+}
+
+export function assetEtaFloorMs(kind, answers = {}) {
+  if (kind !== "memo") return 0;
+  return answers.images === "upload" ? MEMO_ETA_FLOOR_NO_IMAGES_MS : MEMO_ETA_FLOOR_MS;
+}
+
+function denkUeberzieht(chars, phaseSpent, think) {
+  return chars >= think.p75_chars || phaseSpent >= think.p75_ms;
+}
+
+function stretchRest(rest, overtimeMs) {
+  return Math.max(
+    rest,
+    MEMO_ETA_STRETCH_MS,
+    Math.round(MEMO_ETA_STRETCH_MS + Math.max(0, overtimeMs) * 0.4),
+  );
 }
 
 export function assetEtaStageApplies(kind, answers, stage) {
@@ -178,8 +201,33 @@ export function assetEtaRemainingMs({
   }
 
   const totalTyp = order.reduce((sum, name) => sum + Math.max(0, Number(typical[name] || 0)), 0);
-  const ziel = Number(forecastMs) > 8_000 ? Number(forecastMs) : totalTyp;
-  if (!pulse && ziel > elapsed) rest = Math.max(rest, ziel - elapsed);
+  const floor = assetEtaFloorMs(kind, answers);
+  const ziel = Math.max(
+    Number(forecastMs) > 8_000 ? Number(forecastMs) : 0,
+    totalTyp,
+    floor,
+  );
+  const writing = Boolean(pulse && pulse.phase === "writing");
+  const thinkChars = pulse && pulse.phase === "thinking" ? Number(pulse.thinking_chars || 0) : 0;
+  const thinkProgress = thinkChars / Math.max(1, pace.think.p75_chars);
+  // Solange das Modell nicht klar im Schreiben oder nah am üblichen Denkumfang
+  // ist, bleibt die 7–8-Minuten-Untergrenze stehen. Sonst kippt die Anzeige
+  // nach dem ersten Impuls auf „2 Minuten“, obwohl das Memo noch 10 Min denkt.
+  if (!writing && elapsed < ziel && thinkProgress < 0.8) {
+    rest = Math.max(rest, ziel - elapsed);
+  }
+
+  if (kind === "memo" && current === "modell") {
+    const start = stufeStartMs(runLog, "modell", elapsed);
+    const phaseSpent = Math.max(0, elapsed - start);
+    if (
+      (pulse && pulse.phase === "thinking" && denkUeberzieht(thinkChars, phaseSpent, pace.think))
+      || (!pulse && elapsed > Math.max(pace.think.p75_ms, floor))
+    ) {
+      const overtime = Math.max(0, phaseSpent - pace.think.p75_ms, elapsed - Math.max(pace.think.p75_ms, floor));
+      rest = stretchRest(rest, overtime);
+    }
+  }
   return Math.max(0, Math.round(rest));
 }
 

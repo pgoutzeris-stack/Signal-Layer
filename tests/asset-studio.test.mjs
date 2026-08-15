@@ -140,11 +140,12 @@ test("die Kosten werden als asset_generation gebucht", () => {
 test("das Studio arbeitet im Rahmen des Artikel-Popups", () => {
   // Als eigene Vollflaeche wuerde es das Popup verdecken statt darin zu leben:
   // der Artikel bliebe offen im Hintergrund, der Weg zurueck waere unklar.
-  assert.match(studio, /openAssetStudio\(\{ kind, articleId, signal, callApi, escapeHtml, host \} = \{\}\)/);
+  assert.match(studio, /openAssetStudio\(\{ kind, articleId, signal, callApi, escapeHtml, host, notify \} = \{\}\)/);
   assert.match(studio, /const mount = host instanceof HTMLElement \? host : document\.body/);
   assert.match(studio, /#as-overlay\.as-in-host\{position:absolute/);
   const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
   assert.match(frontend, /host: els\.articleDetailContent/);
+  assert.match(frontend, /notify: toast/);
 });
 
 test("der Einstieg folgt dem Muster der Pruefleiste", () => {
@@ -592,6 +593,8 @@ test("die Zeitprognose lernt aus gespeicherten Assets, Fehler stehen im Laufprot
   assert.match(stufen, /p_benchmarks_mode/);
   assert.match(stufen, /jsonb_object_agg\(stage, median_ms\)/);
   assert.match(edge, /rpc\("asset_duration_forecast"/);
+  assert.match(edge, /const p75 = Number\(row.p75_ms\)/);
+  assert.match(edge, /memoFloor = kind === "memo" \? 8 \* 60 \* 1000/);
   assert.match(edge, /forecast_ms: forecast.ms/);
   assert.match(edge, /stages: forecast.stages/);
   assert.match(edge, /think: forecast.think/);
@@ -620,12 +623,13 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
   const memoStart = eta.assetEtaRemainingMs({
     kind: "memo", answers: { images: "auto", benchmarks: "auto" }, stage: "lesen", elapsedMs: 1_000,
   });
-  assert.ok(memoStart > 180_000 && memoStart < 280_000, `memo ${memoStart}`);
+  assert.ok(memoStart >= 7 * 60 * 1000 && memoStart < 11 * 60 * 1000, `memo ${memoStart}`);
 
   const ohneMotive = eta.assetEtaRemainingMs({
     kind: "memo", answers: { images: "upload" }, stage: "lesen", elapsedMs: 1_000,
   });
   assert.ok(ohneMotive < memoStart, "ohne Motive muss kürzer sein");
+  assert.ok(ohneMotive >= 6 * 60 * 1000, `ohne Motive ${ohneMotive}`);
 
   const nachRetry = eta.assetEtaRemainingMs({
     kind: "memo",
@@ -638,7 +642,7 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
       { t: 331_000, event: "retry_model" },
     ],
   });
-  assert.ok(nachRetry > 150_000 && nachRetry < 280_000, `retry ${nachRetry}`);
+  assert.ok(nachRetry > 150_000 && nachRetry < 400_000, `retry ${nachRetry}`);
 
   const schreibt = eta.assetEtaRemainingMs({
     kind: "memo",
@@ -680,6 +684,22 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
   });
   assert.ok(denkt - denktSpaeter > 16_000 && denkt - denktSpaeter < 24_000, `takt ${denkt} → ${denktSpaeter}`);
   assert.ok(denkt > schreibt, "Denken muss länger restzeigen als Schreiben");
+
+  const denktLang = eta.assetEtaRemainingMs({
+    kind: "memo",
+    answers: { images: "auto", benchmarks: "auto" },
+    stage: "modell",
+    elapsedMs: 520_000,
+    forecastMs: 111_000,
+    stages: { modell: 107_000, recherchieren: 6_000, bilder: 12_000, pruefen: 2_500, fuellen: 2_000 },
+    runLog: [
+      { t: 0, event: "start", think: { ms: 115_000, p75_ms: 145_000, chars: 32_000, p75_chars: 40_000 }, write: { ms: 22_000, chars: 5_400 } },
+      { t: 10_000, event: "stage", stage: "modell" },
+      { t: 510_000, event: "pulse", phase: "thinking", thinking_chars: 82_000, since: 10_000 },
+    ],
+  });
+  assert.ok(denktLang >= 180_000, `langes Denken muss Restzeit halten ${denktLang}`);
+
   const etaSrc = readFileSync(new URL("../asset-eta.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(etaSrc, /90_000/);
   assert.match(studio, /asset-eta\.mjs/);
@@ -1703,7 +1723,20 @@ test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   assert.match(studio, /data-crop-mode="smart"/);
   assert.match(studio, /cropState\.uid === "form"/);
   assert.match(studio, /data-act="cancel-generate"/);
+  assert.match(studio, /data-act="leave-generate"/);
   assert.match(studio, /data-act="close-popup"/);
+  assert.match(studio, /function cancelGenerate/);
+  assert.match(studio, /state\.leftRunning/);
+  assert.match(studio, /Der Entwurf läuft weiter/);
+  const closePopup = studio.slice(studio.indexOf('if (act === "close-popup")'), studio.indexOf('if (act === "toggle-fs")'));
+  assert.doesNotMatch(closePopup, /cancel_asset/);
+  const closeRail = studio.slice(studio.indexOf('if (act === "close")'), studio.indexOf('if (act === "generate")'));
+  assert.doesNotMatch(closeRail, /cancelGenerate/);
+  assert.match(edge, /async function notifyGeneratedAssetSettled/);
+  assert.match(edge, /type: "signal_layer_asset"/);
+  assert.match(edge, /ASSET_CANCELLED_MESSAGE/);
+  assert.match(edge, /function persistRunningAsset/);
+  assert.match(edge, /async function settleAssetError/);
   assert.match(studio, /data-act="toggle-fs"/);
   assert.match(studio, /as-ribbon/);
   assert.match(studio, /as-fs-btn/);
