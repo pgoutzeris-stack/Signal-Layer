@@ -261,19 +261,19 @@ test("Entwurf erzeugen ist verdrahtet und der Vorschautitel nimmt die Firma auf"
   assert.match(studio, /previewMemoTitle\(state\.answers, company\)/);
   assert.match(studio, /getAttribute\("data-free"\) === "company_text"/);
   assert.equal(previewMemoTitle({ company_named: "no" }, "Roblox"), PREVIEW_MEMO_TITLE);
-  assert.equal(PREVIEW_MEMO_TITLE, "Thema XY muss jetzt konkret werden");
-  assert.doesNotMatch(PREVIEW_MEMO_TITLE, /Hebel/);
+  assert.equal(PREVIEW_MEMO_TITLE, "Die Marke braucht jetzt eine eigene Handschrift");
+  assert.doesNotMatch(PREVIEW_MEMO_TITLE, /Hebel|Thema XY/);
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Roblox"),
-    "Wie kann Roblox Thema XY umsetzen?",
+    "Roblox: Die Marke braucht jetzt eine eigene Handschrift",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "Pille" }, "Roblox"),
-    "Wie kann Pille Thema XY umsetzen?",
+    "Pille: Die Marke braucht jetzt eine eigene Handschrift",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "  " }, "Roblox"),
-    "Wie kann das Unternehmen Thema XY umsetzen?",
+    PREVIEW_MEMO_TITLE,
   );
   const mitFirma = backend.buildAssetPrompt("memo", { company: "Roblox" }, { title: "A" },
     backend.normalizeAssetAnswers("memo", { company_named: "yes" }));

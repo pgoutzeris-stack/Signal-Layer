@@ -905,14 +905,14 @@ function companyFrom(source) {
 }
 
 /** Platzhalter-Titel der Fragebogen-Vorschau. Kein Modellaufruf. */
-export const PREVIEW_MEMO_TITLE = "Thema XY muss jetzt konkret werden";
+export const PREVIEW_MEMO_TITLE = "Die Marke braucht jetzt eine eigene Handschrift";
 
 export function previewMemoTitle(answers = {}, erkannt = "") {
   if (String(answers.company_named || "") === "no") return PREVIEW_MEMO_TITLE;
   const custom = String(answers.company_mode || "") === "custom";
   const firma = String((custom ? answers.company_text : erkannt) || "").trim();
-  if (!firma) return "Wie kann das Unternehmen Thema XY umsetzen?";
-  return `Wie kann ${firma} Thema XY umsetzen?`;
+  if (!firma) return PREVIEW_MEMO_TITLE;
+  return `${firma}: Die Marke braucht jetzt eine eigene Handschrift`;
 }
 
 function themeKicker(source = {}) {
