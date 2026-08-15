@@ -359,6 +359,87 @@ async function notifySignalLayerSettingsChanged(userId: string, change: string):
   if (notificationError) console.error("Could not create Signal Layer notifications:", notificationError.message);
 }
 
+const ASSET_CANCELLED_MESSAGE = "Vom Nutzer abgebrochen.";
+
+async function notifyGeneratedAssetSettled(row: Record<string, unknown>): Promise<void> {
+  const status = String(row.status || "");
+  if (status !== "done" && status !== "error") return;
+  if (String(row.error_message || "") === ASSET_CANCELLED_MESSAGE) return;
+  const userId = String(row.created_by || "").trim();
+  if (!userId) return;
+  const kind = String(row.kind || "");
+  const kindLabel = kind === "memo" ? "Memo" : "LinkedIn-Entwurf";
+  const title = status === "done"
+    ? `Signal Layer · ${kindLabel} fertig`
+    : `Signal Layer · ${kindLabel} fehlgeschlagen`;
+  const message = status === "done"
+    ? `Ihr ${kindLabel} liegt in Asset Studio bereit.`
+    : String(row.error_message || "Die Erzeugung ist fehlgeschlagen.").slice(0, 240);
+  const admin = getAdminClient();
+  const { error } = await admin.schema("recruiting").from("notifications").insert({
+    user_id: userId,
+    type: "signal_layer_asset",
+    title,
+    message,
+    meta: {
+      tool_id: "signal-layer",
+      asset_id: row.id,
+      article_id: row.article_id,
+      kind,
+      status,
+    },
+  });
+  if (error) console.error("Could not create Asset Studio notification:", error.message);
+}
+
+function persistRunningAsset(
+  admin: ReturnType<typeof getAdminClient>,
+  assetId: string,
+  runLog: Record<string, unknown>[],
+  startedAt: number,
+  fallback: Record<string, unknown>,
+) {
+  return (fields: Record<string, unknown>) => {
+    const req = admin.schema("signal_layer").from("generated_assets")
+      .update({
+        run_log: runLog,
+        duration_ms: Date.now() - startedAt,
+        updated_at: new Date().toISOString(),
+        ...fields,
+      })
+      .eq("id", assetId)
+      .eq("status", "running");
+    const status = String(fields.status || "");
+    if (status !== "done" && status !== "error") return req;
+    return req.select("id, created_by, kind, article_id, status, error_message").maybeSingle()
+      .then(({ data }) => {
+        if (data) void notifyGeneratedAssetSettled({ ...fallback, ...fields, ...data });
+        return { data };
+      });
+  };
+}
+
+async function settleAssetError(
+  admin: ReturnType<typeof getAdminClient>,
+  assetId: string,
+  fields: Record<string, unknown>,
+  fallback: Record<string, unknown> = {},
+): Promise<Record<string, unknown> | null> {
+  const { data } = await admin.schema("signal_layer").from("generated_assets")
+    .update({
+      updated_at: new Date().toISOString(),
+      ...fields,
+    })
+    .eq("id", assetId)
+    .eq("status", "running")
+    .select("id, created_by, kind, article_id, status, error_message")
+    .maybeSingle();
+  if (!data) return null;
+  const row = { ...fallback, ...fields, ...data };
+  void notifyGeneratedAssetSettled(row);
+  return row;
+}
+
 const SETTINGS_ACTIONS = new Set([
   "update_pipeline_settings",
   "add_source", "update_source", "set_source_login", "delete_source",
@@ -3035,6 +3116,7 @@ async function assetForecastFromDb(
       ? data as Record<string, unknown>
       : {};
     const median = Number(row.median_ms);
+    const p75 = Number(row.p75_ms);
     const rawStages = row.stages && typeof row.stages === "object" && !Array.isArray(row.stages)
       ? row.stages as Record<string, unknown>
       : {};
@@ -3043,6 +3125,11 @@ async function assetForecastFromDb(
       const ms = Number(value);
       if (Number.isFinite(ms) && ms >= 500) stages[key] = Math.round(ms);
     }
+    const fromDb = Math.max(
+      Number.isFinite(p75) && p75 >= 8_000 ? Math.round(p75) : 0,
+      Number.isFinite(median) && median >= 8_000 ? Math.round(median) : 0,
+    );
+    const memoFloor = kind === "memo" ? 8 * 60 * 1000 : 0;
     const { data: recent } = await admin.schema("signal_layer").from("generated_assets")
       .select("run_log")
       .eq("kind", kind)
@@ -3051,7 +3138,7 @@ async function assetForecastFromDb(
       .limit(40);
     const pace = summarizeAssetPace((recent || []).map((item) => item.run_log));
     return {
-      ms: Number.isFinite(median) && median >= 8_000 ? Math.round(median) : fallbackMs,
+      ms: Math.max(fromDb, fallbackMs, memoFloor) || fallbackMs,
       sample_count: Number(row.sample_count) || 0,
       median_tokens: Number.isFinite(Number(row.median_tokens)) ? Number(row.median_tokens) : null,
       scope: String(row.scope || ""),
@@ -3080,16 +3167,12 @@ async function schliesseHangingAsset(
     stille,
     grund,
   );
-  await admin.schema("signal_layer").from("generated_assets")
-    .update({
-      status: "error",
-      error_message: nachricht,
-      duration_ms: wall || stille,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", row.id)
-    .eq("status", "running");
-  return { ...row, status: "error", error_message: nachricht, duration_ms: wall || stille };
+  const settled = await settleAssetError(admin, String(row.id), {
+    status: "error",
+    error_message: nachricht,
+    duration_ms: wall || stille,
+  }, row);
+  return settled || { ...row, status: "error", error_message: nachricht, duration_ms: wall || stille };
 }
 
 async function pflegeLaufendesAsset(
@@ -4765,16 +4848,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
   const loggen = (event: string, extra: Record<string, unknown> = {}) => {
     runLog.push({ t: Date.now() - startedAt, event, ...extra });
   };
-  const persist = (fields: Record<string, unknown>) => admin.schema("signal_layer")
-    .from("generated_assets")
-    .update({
-      run_log: runLog,
-      duration_ms: Date.now() - startedAt,
-      updated_at: new Date().toISOString(),
-      ...fields,
-    })
-    .eq("id", assetId)
-    .eq("status", "running");
+  const persist = persistRunningAsset(admin, assetId, runLog, startedAt, row as Record<string, unknown>);
   const halte = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const abschnitt = async (name: string) => {
     loggen("stage", { stage: name });
@@ -5061,16 +5135,7 @@ async function retryGeneratedAssetModel(assetId: string): Promise<void> {
   const loggen = (event: string, extra: Record<string, unknown> = {}) => {
     runLog.push({ t: Date.now() - startedAt, event, ...extra });
   };
-  const persist = (fields: Record<string, unknown>) => admin.schema("signal_layer")
-    .from("generated_assets")
-    .update({
-      run_log: runLog,
-      duration_ms: Date.now() - startedAt,
-      updated_at: new Date().toISOString(),
-      ...fields,
-    })
-    .eq("id", assetId)
-    .eq("status", "running");
+  const persist = persistRunningAsset(admin, assetId, runLog, startedAt, row as Record<string, unknown>);
 
   try {
     const assetKind = String(row.kind || "");
@@ -8949,20 +9014,16 @@ Deno.serve(async (req: Request) => {
             if (!assetHangReason(live)) return;
             if (assetDraftTextFromLog(live.run_log) || assetWriterLostLock(live.run_log)) return;
             const seit = Date.parse(String(assetRow.created_at || "")) || Date.now();
-            await getAdminClient().schema("signal_layer").from("generated_assets")
-              .update({
-                status: "error",
-                error_message: assetHeartbeatErrorText(
-                  String(live.model || ""),
-                  String(live.stage || ""),
-                  assetHeartbeatAgeMs(live.updated_at || live.created_at),
-                  "silent",
-                ),
-                duration_ms: Date.now() - seit,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", assetRow.id)
-              .eq("status", "running");
+            await settleAssetError(getAdminClient(), String(assetRow.id), {
+              status: "error",
+              error_message: assetHeartbeatErrorText(
+                String(live.model || ""),
+                String(live.stage || ""),
+                assetHeartbeatAgeMs(live.updated_at || live.created_at),
+                "silent",
+              ),
+              duration_ms: Date.now() - seit,
+            }, { ...assetRow, ...live });
           })();
         }, ASSET_WALL_CLOCK_MS);
 
@@ -8974,16 +9035,7 @@ Deno.serve(async (req: Request) => {
           const loggen = (event: string, extra: Record<string, unknown> = {}) => {
             runLog.push({ t: Date.now() - startedAt, event, ...extra });
           };
-          const persist = (fields: Record<string, unknown>) => admin.schema("signal_layer")
-            .from("generated_assets")
-            .update({
-              run_log: runLog,
-              duration_ms: Date.now() - startedAt,
-              updated_at: new Date().toISOString(),
-              ...fields,
-            })
-            .eq("id", assetRow.id)
-            .eq("status", "running");
+          const persist = persistRunningAsset(admin, String(assetRow.id), runLog, startedAt, assetRow as Record<string, unknown>);
           let lastPulseAt = 0;
           const onPulse = async (info: AssetPulse) => {
             applyAssetPulse(runLog, { model: assetModel, ...info }, startedAt);
@@ -9182,15 +9234,11 @@ Deno.serve(async (req: Request) => {
             .select("status, run_log").eq("id", assetRow.id).maybeSingle();
           if (String(live?.status || "") !== "running") return;
           if (assetDraftTextFromLog(live?.run_log) || assetWriterLostLock(live?.run_log)) return;
-          await getAdminClient().schema("signal_layer").from("generated_assets")
-            .update({
-              status: "error",
-              error_message: String(fehler).slice(0, 2000),
-              duration_ms: Date.now() - Date.parse(String(assetRow.created_at || "")) || null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", assetRow.id)
-            .eq("status", "running");
+          await settleAssetError(getAdminClient(), String(assetRow.id), {
+            status: "error",
+            error_message: String(fehler).slice(0, 2000),
+            duration_ms: Date.now() - Date.parse(String(assetRow.created_at || "")) || null,
+          }, assetRow as Record<string, unknown>);
         }).finally(() => clearTimeout(waechter));
         EdgeRuntime.waitUntil(arbeit);
         return corsResponse(origin, { asset: assetRow });
@@ -9203,7 +9251,7 @@ Deno.serve(async (req: Request) => {
           .from("generated_assets")
           .update({
             status: "error",
-            error_message: "Vom Nutzer abgebrochen.",
+            error_message: ASSET_CANCELLED_MESSAGE,
             updated_at: new Date().toISOString(),
           })
           .eq("id", cancelId)
@@ -9220,7 +9268,7 @@ Deno.serve(async (req: Request) => {
         if (listKind && !isAssetKind(listKind)) return errorResponse(origin, "kind muss linkedin oder memo sein");
         let query = getAdminClient().schema("signal_layer")
           .from("generated_assets")
-          .select("id, kind, status, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message")
+          .select("id, kind, status, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, article_id")
           .eq("article_id", listArticleId)
           .order("created_at", { ascending: false })
           .limit(40);
