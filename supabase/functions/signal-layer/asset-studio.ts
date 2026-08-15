@@ -2046,7 +2046,7 @@ export function normalizeAssetPayload(
 // ---------------------------------------------------------------------------
 export const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 export const GEMINI_IMAGE_FALLBACK_MODEL = "gemini-2.0-flash-preview-image-generation";
-export const MEMO_IMAGE_DATA_URI_MAX = 280_000;
+export const MEMO_IMAGE_DATA_URI_MAX = 3_500_000;
 export const MEMO_IMAGE_CONCURRENCY = 3;
 export const MEMO_IMAGE_MIN_REMAINING_MS = 40_000;
 /** Ein Motiv braucht oft länger als 45 s; 45 s plus Fallback hat Xpeng bei den Bildern gekillt. */
@@ -2113,7 +2113,11 @@ export function geminiImageRequestBody(prompt: string, aspect: string): Record<s
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
       responseModalities: ["TEXT", "IMAGE"],
-      imageConfig: { aspectRatio: aspect || "16:9" },
+      imageConfig: {
+        aspectRatio: aspect || "16:9",
+        imageSize: "1K",
+        imageOutputOptions: { mimeType: "image/jpeg" },
+      },
     },
   };
 }
@@ -2171,6 +2175,47 @@ export async function mapLimit<T, R>(
   return out;
 }
 
+export function applyMemoImageUploads(payload: MemoPayload, uploads: unknown): MemoPayload {
+  const bag = uploads && typeof uploads === "object" && !Array.isArray(uploads)
+    ? uploads as Record<string, unknown>
+    : {};
+  for (const [key, value] of Object.entries(bag)) {
+    const src = typeof value === "string"
+      ? value
+      : String((value && typeof value === "object" ? (value as { src?: unknown }).src : "") || "");
+    if (src.startsWith("data:image/")) attachMemoSlotImage(payload, key, src);
+  }
+  return payload;
+}
+
+export function memoImageUploadsFromBody(body: unknown): Record<string, MemoImage> | null {
+  const root = body && typeof body === "object" && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : {};
+  const raw = root.image_uploads;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out: Record<string, MemoImage> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const src = typeof value === "string"
+      ? value
+      : String((value && typeof value === "object" ? (value as { src?: unknown }).src : "") || "");
+    if (!src.startsWith("data:image/")) continue;
+    const pos = value && typeof value === "object"
+      ? String((value as { pos?: unknown }).pos || "50% 50%")
+      : "50% 50%";
+    out[key] = { src, pos };
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+export function memoSlotHasImage(payload: MemoPayload, key: string): boolean {
+  const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(key);
+  if (!treffer) return false;
+  const liste = treffer[1] === "benchmarks" ? payload.benchmarks : payload.potentials;
+  const eintrag = liste[Number(treffer[2])] as (MemoBenchmark | MemoPotential | undefined);
+  return Boolean(eintrag?.image?.src && String(eintrag.image.src).startsWith("data:image/"));
+}
+
 export async function fillMemoImages(
   payload: MemoPayload,
   answers: MemoAnswers,
@@ -2188,7 +2233,11 @@ export async function fillMemoImages(
     await opts.log?.("images_skip", { reason: "wall_clock", remaining_ms: opts.remainingMs });
     return payload;
   }
-  const slots = memoImageSlots(payload);
+  const slots = memoImageSlots(payload).filter((slot) => !memoSlotHasImage(payload, slot.key));
+  if (!slots.length) {
+    await opts.log?.("images_skip", { reason: "already_filled" });
+    return payload;
+  }
   const filled = { ok: 0, fail: 0 };
   await mapLimit(slots, MEMO_IMAGE_CONCURRENCY, async (slot) => {
     try {
@@ -2199,9 +2248,11 @@ export async function fillMemoImages(
         filled.ok += 1;
       } else {
         filled.fail += 1;
+        await opts.log?.("image_fail", { key: slot.key, error: "empty" });
       }
-    } catch {
+    } catch (fehler) {
       filled.fail += 1;
+      await opts.log?.("image_fail", { key: slot.key, error: String(fehler).slice(0, 240) });
     }
   });
   await opts.log?.("images_done", filled);
