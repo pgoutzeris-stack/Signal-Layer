@@ -905,14 +905,14 @@ function companyFrom(source) {
 }
 
 /** Platzhalter-Titel der Fragebogen-Vorschau. Kein Modellaufruf. */
-export const PREVIEW_MEMO_TITLE = "Die Marke braucht jetzt eine eigene Handschrift";
+export const PREVIEW_MEMO_TITLE = "KI im Jahr 2026: Chancen und Herausforderungen";
 
 export function previewMemoTitle(answers = {}, erkannt = "") {
   if (String(answers.company_named || "") === "no") return PREVIEW_MEMO_TITLE;
   const custom = String(answers.company_mode || "") === "custom";
   const firma = String((custom ? answers.company_text : erkannt) || "").trim();
   if (!firma) return PREVIEW_MEMO_TITLE;
-  return `${firma}: Die Marke braucht jetzt eine eigene Handschrift`;
+  return `Wie kann ${firma} Thema XY umsetzen?`;
 }
 
 function themeKicker(source = {}) {
@@ -2077,13 +2077,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
   }
 
-  /** Fragt den Auftrag ab, bis er fertig ist. Bis zu sieben Minuten. */
+  /** Fragt den Auftrag ab, bis er fertig ist. Kein Zeitlimit: solange der
+   *  Server running meldet (Puls lebt), wartet das Studio. Abbruch nur durch
+   *  den Nutzer oder wenn der Auftrag selbst auf done/error geht. */
   async function warteAufAsset(id) {
-    // Ueber Watchdog (380 s) und Isolate (~400 s), damit die letzte Abfrage
-    // eine stehengebliebene Zeile als Fehler sieht statt einer leeren Uhr.
-    const bis = Date.now() + 420_000;
     let wartezeit = 800;
-    while (Date.now() < bis) {
+    for (;;) {
       if (state.cancelRequested) return { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
       await new Promise((r) => setTimeout(r, wartezeit));
       wartezeit = Math.min(wartezeit + 200, 1_200);
@@ -2093,7 +2092,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       uebernehmeLaufstand(row);
       if (row.status && row.status !== "running") return row;
     }
-    throw new Error("Der Entwurf ist nach sieben Minuten nicht fertig geworden. Bitte denselben Auftrag noch einmal starten.");
   }
 
   function adoptPayload(raw) {

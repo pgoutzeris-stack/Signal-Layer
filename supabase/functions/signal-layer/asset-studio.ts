@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.12";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.13";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -1278,16 +1278,16 @@ Das Memo überzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu spre
 </ziel>
 <hebel>
 Zuerst roots_anschluss, dann roots_leistung, dann begründung. Das ist die Übersetzung, die ROOTS schon geleistet hat. Daraus entsteht das Memo.
-title sagt die Herausforderung in der Sprache des Falls (Häuser, Profile, Handschrift, Kanal, Portfolio), nicht den Produktnamen (Markenstrategie, Marketing Audit, Brand Audit).
+title sagt die Herausforderung in der Sprache des Falls (Häuser, Profile, Handschrift, Kanal, Portfolio, Positionierung), nicht den Produktnamen (Markenstrategie, Marketing Audit, Brand Audit) und nicht Beratungsjargon wie „Hebel ziehen“.
 Die drei benchmarks zeigen Vorreiter, die denselben ROOTS-Hebel schon gezogen haben — denselben Mechanismus, nicht dieselbe Nachricht (Sanierung, Übernahme, Personalie).
 Die drei potentials übersetzen genau diese Leistung auf den Adressaten. about_fit nennt roots_leistung erst am Schluss.
 </hebel>
 <titel>
 ${nennen
-    ? `title ist ein Action Title mit ${firma} im Satz: ein Satz mit Verb, höchstens 15 Wörter. Die Herausforderung aus roots_anschluss, der Name macht den Fall erkennbar. Muster, nicht abschreiben: „Wie kann ${firma} zwei Häuser mit eigener Handschrift führen?“ „${firma}: Historische Profile brauchen eine eigene Linie.“`
-    : "title ist ein Action Title im Sinn einer Governing Message: ein Satz mit Verb, höchstens 15 Wörter, konkret genug, dass jemand den Fall erkennt, ohne die Nachricht gelesen zu haben."}
-Schwach: die Leistung wird zum Subjekt („Markenstrategie wird zum Hebel…“), oder die Meldung wird nacherzählt („Verbindliches Angebot über 115 Millionen…“), oder ein Slogan ohne Aufgabe („Aufbauen, während andere abbauen“)${nennen ? `, oder ${firma} nur als Briefkopf ohne Aufgabe` : ""}.
-Stark: die offene Aufgabe aus roots_anschluss als These. Beispielmuster, nicht abschreiben: „Zwei Traditionsmarken brauchen eigene Profile, bevor die Gruppe sie trennt.“ „Historische Häuser überleben die Aufspaltung nur mit eigener Handschrift.“
+    ? `title ist ein Whitepaper-Titel mit ${firma} im Satz: die Herausforderung aus roots_anschluss, konkret, thematisch, höchstens 15 Wörter. Muster, nicht abschreiben: „Wie kann ${firma} zwei Häuser mit eigener Handschrift führen?“ „${firma}: Chancen in der Markenpositionierung.“`
+    : "title ist ein Whitepaper-Titel zur Herausforderung: konkret, thematisch, höchstens 15 Wörter. Muster, nicht abschreiben: „KI im Handel: Chancen und Herausforderungen.“ „Die Chancen in der Markenpositionierung.“ „Zwei Traditionsmarken brauchen eigene Profile, bevor die Gruppe sie trennt.“"}
+Schwach: Beratungsjargon ohne Thema („Hebel ziehen“), Platzhalter („Thema XY“), die Leistung als Subjekt („Markenstrategie wird zum Hebel…“), die Meldung nacherzählt, ein Slogan ohne Aufgabe${nennen ? `, oder ${firma} nur als Briefkopf ohne Aufgabe` : ""}.
+Stark: die offene Aufgabe aus roots_anschluss als These, so dass jemand das Thema erkennt, ohne die Nachricht gelesen zu haben.
 standfirst: ein bis zwei Sätze, warum diese Aufgabe JETZT anliegt. Ein Beleg aus dem Artikel als Timing, keine zweite These, keine Pressemitteilung.
 </titel>
 <anlass>
@@ -1305,7 +1305,7 @@ title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss.
 ${auftrag}
 </auftrag>
 <aufbau>
-title: Action Title, These mit Verb, höchstens 15 Wörter. Die Herausforderung aus roots_anschluss, nicht die Leistung, nicht die Meldung${nennen ? `, mit ${firma} im Satz` : ", kein Firmenname"}.
+title: Whitepaper-Titel, These mit Verb, höchstens 15 Wörter. Die Herausforderung aus roots_anschluss, nicht die Leistung, nicht die Meldung${nennen ? `, mit ${firma} im Satz` : ", kein Firmenname"}.
 standfirst: ein bis zwei Sätze, warum diese Herausforderung jetzt anliegt. Beleg aus dem Artikel als Timing, keine zweite These, keine Ernennung, kein Deal-Text.
 market_title: Überschrift von 01 Marktdynamik. Die Kategorie oder der Markt, nicht das Unternehmen.
 market_p1, market_p2: je ein Absatz. Lage des Marktes, dann warum der Moment jetzt ist. Zahlen nur aus kennzahlen_im_artikel.
@@ -2288,17 +2288,15 @@ export function assetOwnerClockStartMs(
 
 /**
  * Lebt, solange die Zeile frisch ist. Die Stufe darf Minuten dauern.
- * Nur Stille oder der Plattform-Tod des Isolats beenden den Auftrag.
- * Nach retry/handoff gilt die Uhr des neuen Isolats, nicht created_at.
+ * Nur Stille beendet den Auftrag — nicht die Gesamtdauer. Ein lebender Puls
+ * (15.8.2026: Memo dachte nach 477 s noch, das Studio hatte bei 420 s aufgegeben)
+ * darf nicht an einem Wanduhren-Limit sterben.
  */
 export function assetHangReason(
   row: { status?: unknown; created_at?: unknown; updated_at?: unknown; run_log?: unknown },
   nowMs = Date.now(),
 ): AssetHangReason | null {
   if (String(row.status || "") !== "running") return null;
-  const start = assetOwnerClockStartMs(row);
-  const wall = Number.isFinite(start) ? nowMs - start : 0;
-  if (wall >= ASSET_STALE_MS) return "isolate";
   const age = assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs);
   const log = Array.isArray(row.run_log) ? row.run_log as Array<Record<string, unknown>> : [];
   const last = log[log.length - 1];
