@@ -481,12 +481,9 @@ const CHROME_CSS = `
 
 #as-overlay .em-shot-hint{display:none !important;}
 #as-overlay .li-photo-hint{display:none !important;}
-#as-overlay .em-shot,
+#as-overlay .em-shot:not(:has(img[src]:not([src=""]))),
 #as-overlay .as-img--tpl:not(:has(img[src]:not([src=""]))){
-  background:
-    radial-gradient(ellipse at 28% 38%, #d7e4f7 0%, transparent 54%),
-    radial-gradient(ellipse at 78% 72%, #b7c9e4 0%, transparent 48%),
-    linear-gradient(165deg, #eef3f9 0%, #cfdbea 100%);
+  background:#eff6ff;
 }
 #as-overlay .em-shot:has(img[src]:not([src=""])){
   background:var(--status-bg,#f8fafc);
@@ -494,8 +491,7 @@ const CHROME_CSS = `
 #as-overlay .em-shot:not(:has(img[src]:not([src=""])))::after,
 #as-overlay .as-img--tpl:not(:has(img[src]:not([src=""])))::after{
   content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
-  background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'><rect x='10' y='16' width='44' height='32' rx='6' stroke='%238899a6' stroke-width='2'/><circle cx='22' cy='28' r='4' fill='%238899a6'/><path d='M14 42l12-12 8 8 6-6 10 10' stroke='%238899a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/38% no-repeat;
-  opacity:.55;
+  background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'><rect x='3' y='5' width='18' height='14' rx='2' stroke='%23206efb' stroke-width='1.75'/><circle cx='8.2' cy='10' r='1.4' fill='%23206efb'/><path d='M5 17l4.2-4.2 2.6 2.6 2.4-2.4L19 17' stroke='%23206efb' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/28px 28px no-repeat;
 }
 
 #as-overlay [data-field][contenteditable="true"]{
@@ -909,14 +905,14 @@ function companyFrom(source) {
 }
 
 /** Platzhalter-Titel der Fragebogen-Vorschau. Kein Modellaufruf. */
-export const PREVIEW_MEMO_TITLE = "Die Marke muss jetzt als Hebel gezogen werden";
+export const PREVIEW_MEMO_TITLE = "Thema XY muss jetzt konkret werden";
 
 export function previewMemoTitle(answers = {}, erkannt = "") {
   if (String(answers.company_named || "") === "no") return PREVIEW_MEMO_TITLE;
   const custom = String(answers.company_mode || "") === "custom";
   const firma = String((custom ? answers.company_text : erkannt) || "").trim();
-  if (!firma) return "Wie kann das Unternehmen den Hebel jetzt ziehen?";
-  return `Wie kann ${firma} den Hebel jetzt ziehen?`;
+  if (!firma) return "Wie kann das Unternehmen Thema XY umsetzen?";
+  return `Wie kann ${firma} Thema XY umsetzen?`;
 }
 
 function themeKicker(source = {}) {
