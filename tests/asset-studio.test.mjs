@@ -255,6 +255,34 @@ test("Vorschau und fertiges Asset benutzen denselben Weg", () => {
   assert.doesNotMatch(vorschauBlock, /api\(/);
 });
 
+test("Entwurf erzeugen ist verdrahtet und der Vorschautitel nimmt die Firma auf", async () => {
+  const { previewMemoTitle, PREVIEW_MEMO_TITLE } = await import("../asset-studio.js");
+  assert.match(studio, /if \(act === "generate"\) \{ void generate\(\); return; \}/);
+  assert.match(studio, /previewMemoTitle\(state\.answers, company\)/);
+  assert.match(studio, /getAttribute\("data-free"\) === "company_text"/);
+  assert.equal(previewMemoTitle({ company_named: "no" }, "Roblox"), PREVIEW_MEMO_TITLE);
+  assert.equal(
+    previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Roblox"),
+    "Wie kann Roblox den Hebel jetzt ziehen?",
+  );
+  assert.equal(
+    previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "Pille" }, "Roblox"),
+    "Wie kann Pille den Hebel jetzt ziehen?",
+  );
+  assert.equal(
+    previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "  " }, "Roblox"),
+    "Wie kann das Unternehmen den Hebel jetzt ziehen?",
+  );
+  const mitFirma = backend.buildAssetPrompt("memo", { company: "Roblox" }, { title: "A" },
+    backend.normalizeAssetAnswers("memo", { company_named: "yes" }));
+  assert.match(mitFirma, /Unternehmen nennen: Roblox/);
+  assert.match(mitFirma, /Wie kann Roblox/);
+  const ohneFirma = backend.buildAssetPrompt("memo", { company: "Roblox" }, { title: "A" },
+    backend.normalizeAssetAnswers("memo", { company_named: "no" }));
+  assert.match(ohneFirma, /Kein Unternehmensname im Briefing/);
+  assert.doesNotMatch(ohneFirma, /Unternehmen nennen: Roblox/);
+});
+
 test("das Vorlagen-CSS wirkt nur auf der Buehne", async () => {
   const tpl = await import("../asset-templates.js");
   const css = tpl.ASSET_TEMPLATE_CSS;
@@ -996,7 +1024,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.11");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.12");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -1009,7 +1037,9 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(memoPrompt, /<anlass>/);
   assert.match(memoPrompt, /nicht die Personalie/i);
   assert.match(memoPrompt, /<sonderfall>/);
-  assert.match(memoPrompt, /nur Briefing, kein Aufdruck/);
+  assert.match(memoPrompt, /Unternehmen nennen: Aeffe/);
+  assert.match(memoPrompt, /Wie kann Aeffe/);
+  assert.match(memoPrompt, /mit Aeffe im Satz/);
   assert.match(studio, /key: "company_mode"/);
   assert.match(studio, /key: "images"/);
   assert.match(studio, /Gemini entscheidet die Motive/);
@@ -1491,7 +1521,7 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
   assert.match(edge, /fillMemoImages/);
 });
 
-test("das erkannte Unternehmen ist Briefing und überschreibbar", () => {
+test("das erkannte Unternehmen ist überschreibbar und steht im Titel, wenn genannt", () => {
   assert.equal(backend.resolveAssetCompany(
     backend.normalizeAssetAnswers("memo", { company_mode: "auto" }),
     { company: "Xpeng" },
@@ -1503,7 +1533,7 @@ test("das erkannte Unternehmen ist Briefing und überschreibbar", () => {
   ), "Hugo Boss");
   assert.match(studio, /companyFrom/);
   assert.match(studio, /primary_company/);
-  assert.match(studio, /Nur Briefing/);
+  assert.match(studio, /Nur bei Ja steht der Name im Cover-Titel/);
   assert.match(edge, /resolveAssetCompany/);
 });
 
@@ -1655,7 +1685,7 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
 
 test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   assert.match(studio, /key: "company_named"/);
-  assert.match(studio, /Nur Briefing für das Modell/);
+  assert.match(studio, /Nur bei Ja steht der Name im Cover-Titel/);
   assert.doesNotMatch(studio, /key: "addressee"/);
   assert.match(studio, /label: "CTA"/);
   assert.match(studio, /label: "Benchmarking"/);

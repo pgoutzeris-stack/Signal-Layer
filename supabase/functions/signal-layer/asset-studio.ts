@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.11";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.12";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -103,7 +103,7 @@ export type MemoBenchmarkBrief = {
 };
 
 export type MemoAnswers = {
-  /** Ob das Modell einen Firmennamen als Briefing bekommt. */
+  /** Ob der Firmenname im Cover-Titel steht. */
   company_named: "yes" | "no";
   /** Override aus dem Fragebogen. Leer = erkanntes Unternehmen aus dem Signal. */
   company: string;
@@ -1252,9 +1252,10 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
   const vorreiter = answers.benchmarks.length >= 3
     ? `Vorreiter, verbindlich:\n${formatVorreiterBlock(answers.benchmarks, answers.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\nÜbernimm name, text und tag. Formuliere höchstens sprachlich. Zahlen nur wie dort angegeben. Erfinde keine vierte Marke und ersetze keine Namen.`
     : "Vorreiter: genau drei, die denselben Hebel schon gezogen haben. Nur aus <vorreiter> oder aus artikel.";
-  const firmaZeile = answers.company_named === "no" || !firma
-    ? "Kein Unternehmensname im Briefing. Die drei Seiten bleiben ohne Firmenaufdruck."
-    : `Unternehmen (nur Briefing, kein Aufdruck): ${firma}. Der Name darf nicht als Kicker, Cover-Label, Titelzusatz („für ${firma}“) oder market_title erscheinen. Die drei Seiten bleiben ohne Firmenaufdruck; die Lage dieses Unternehmens steckt in den Potenzialen.`;
+  const nennen = answers.company_named !== "no" && Boolean(firma);
+  const firmaZeile = !nennen
+    ? "Kein Unternehmensname im Briefing. title und die drei Seiten bleiben ohne Firmenname."
+    : `Unternehmen nennen: ${firma}. Der Cover-Titel (title) enthält ${firma} als Teil der Herausforderung, nicht als Briefkopf und nicht als Nachsatz „für ${firma}“. Muster, Tonlage nicht abschreiben: „Wie kann ${firma} …?“ oder „${firma}: …“. market_title bleibt die Kategorie ohne Firmenname. Kicker und Labels bleiben ohne Firmenaufdruck. Potenziale sprechen DIESES Unternehmen an.`;
   const auftrag = [
     "Sprache an eine Entscheiderin oder einen Entscheider, ohne Briefkopf-Name.",
     firmaZeile,
@@ -1282,8 +1283,10 @@ Die drei benchmarks zeigen Vorreiter, die denselben ROOTS-Hebel schon gezogen ha
 Die drei potentials übersetzen genau diese Leistung auf den Adressaten. about_fit nennt roots_leistung erst am Schluss.
 </hebel>
 <titel>
-title ist ein Action Title im Sinn einer Governing Message: ein Satz mit Verb, höchstens 15 Wörter, konkret genug, dass jemand den Fall erkennt, ohne die Nachricht gelesen zu haben.
-Schwach: die Leistung wird zum Subjekt („Markenstrategie wird zum Hebel…“), oder die Meldung wird nacherzählt („Verbindliches Angebot über 115 Millionen…“), oder ein Slogan ohne Aufgabe („Aufbauen, während andere abbauen“).
+${nennen
+    ? `title ist ein Action Title mit ${firma} im Satz: ein Satz mit Verb, höchstens 15 Wörter. Die Herausforderung aus roots_anschluss, der Name macht den Fall erkennbar. Muster, nicht abschreiben: „Wie kann ${firma} zwei Häuser mit eigener Handschrift führen?“ „${firma}: Historische Profile brauchen eine eigene Linie.“`
+    : "title ist ein Action Title im Sinn einer Governing Message: ein Satz mit Verb, höchstens 15 Wörter, konkret genug, dass jemand den Fall erkennt, ohne die Nachricht gelesen zu haben."}
+Schwach: die Leistung wird zum Subjekt („Markenstrategie wird zum Hebel…“), oder die Meldung wird nacherzählt („Verbindliches Angebot über 115 Millionen…“), oder ein Slogan ohne Aufgabe („Aufbauen, während andere abbauen“)${nennen ? `, oder ${firma} nur als Briefkopf ohne Aufgabe` : ""}.
 Stark: die offene Aufgabe aus roots_anschluss als These. Beispielmuster, nicht abschreiben: „Zwei Traditionsmarken brauchen eigene Profile, bevor die Gruppe sie trennt.“ „Historische Häuser überleben die Aufspaltung nur mit eigener Handschrift.“
 standfirst: ein bis zwei Sätze, warum diese Aufgabe JETZT anliegt. Ein Beleg aus dem Artikel als Timing, keine zweite These, keine Pressemitteilung.
 </titel>
@@ -1302,7 +1305,7 @@ title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss.
 ${auftrag}
 </auftrag>
 <aufbau>
-title: Action Title, These mit Verb, höchstens 15 Wörter. Die Herausforderung aus roots_anschluss, nicht die Leistung, nicht die Meldung, kein Name.
+title: Action Title, These mit Verb, höchstens 15 Wörter. Die Herausforderung aus roots_anschluss, nicht die Leistung, nicht die Meldung${nennen ? `, mit ${firma} im Satz` : ", kein Firmenname"}.
 standfirst: ein bis zwei Sätze, warum diese Herausforderung jetzt anliegt. Beleg aus dem Artikel als Timing, keine zweite These, keine Ernennung, kein Deal-Text.
 market_title: Überschrift von 01 Marktdynamik. Die Kategorie oder der Markt, nicht das Unternehmen.
 market_p1, market_p2: je ein Absatz. Lage des Marktes, dann warum der Moment jetzt ist. Zahlen nur aus kennzahlen_im_artikel.

@@ -138,8 +138,7 @@ function memoQuestions(firma, cmoHundredDays = false) {
     {
       key: "company_named",
       label: "Unternehmen",
-      hint: "Nur Briefing für das Modell. Der Name erscheint nicht auf dem Memo.",
-      muted: true,
+      hint: "Nur bei Ja steht der Name im Cover-Titel. Nein lässt den Titel ohne Firma.",
       when: nurThema,
       options: [
         ["yes", "Ja, das Unternehmen nennen"],
@@ -404,6 +403,7 @@ const CHROME_CSS = `
 #as-overlay .as-topbar{
   display:flex; align-items:center; justify-content:space-between; gap:16px;
   padding:16px 24px; border-bottom:1px solid var(--line,#e2e8f0); background:var(--bg,#fff);
+  position:relative; z-index:12;
 }
 #as-overlay .as-topbar h2{margin:0; font-size:17px; font-weight:700;}
 #as-overlay .as-topactions{display:flex; gap:8px; flex-wrap:wrap;}
@@ -548,7 +548,7 @@ const CHROME_CSS = `
 #as-overlay .as-prev-big[data-kind="linkedin"]{aspect-ratio:1080/1350;}
 #as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:210/297;}
 #as-overlay .as-prev-big:has(.as-prev-empty){width:auto; height:100%; max-width:100%;}
-#as-overlay .as-prev-scale{display:block; transform-origin:top left; flex:0 0 auto;}
+#as-overlay .as-prev-scale{display:block; transform-origin:top left; flex:0 0 auto; pointer-events:none;}
 #as-overlay .as-prev-scale .as-stage,
 #as-overlay .as-prev-scale .li{box-shadow:none; border-radius:0;}
 @container (max-width: 860px){
@@ -906,6 +906,17 @@ function companyFrom(source) {
     || source?.company
     || (toArray(source?.tier1_companies)[0] || ""),
   ).trim();
+}
+
+/** Platzhalter-Titel der Fragebogen-Vorschau. Kein Modellaufruf. */
+export const PREVIEW_MEMO_TITLE = "Die Marke muss jetzt als Hebel gezogen werden";
+
+export function previewMemoTitle(answers = {}, erkannt = "") {
+  if (String(answers.company_named || "") === "no") return PREVIEW_MEMO_TITLE;
+  const custom = String(answers.company_mode || "") === "custom";
+  const firma = String((custom ? answers.company_text : erkannt) || "").trim();
+  if (!firma) return "Wie kann das Unternehmen den Hebel jetzt ziehen?";
+  return `Wie kann ${firma} den Hebel jetzt ziehen?`;
 }
 
 function themeKicker(source = {}) {
@@ -1568,7 +1579,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ? `Gemini füllt dieses ${kind}-Motiv (Platzhalter bleibt).`
       : `Eigenes Bild hier zuschneiden, genau in den ${kind}-Platzhalter.`;
     return normalizeMemo({
-      title: "Die Marke muss jetzt als Hebel gezogen werden",
+      title: previewMemoTitle(state.answers, company),
       standfirst: "Der Markt hat sich bewegt. Wer denselben Hebel schon gezogen hat, setzt die neue Messlatte. Dieser Check macht den Moment für den Adressaten konkret.",
       market_title: "Der Markt belohnt, wer die Marke führt",
       market_p1: "Anbieter, die Sortiment, Kanal und Auftritt als eine Handschrift führen, gewinnen Sichtbarkeit und Tempo.",
@@ -3292,6 +3303,7 @@ ${stages}${post}
       close();
       return;
     }
+    if (act === "generate") { void generate(); return; }
     if (act === "close-popup") {
       const id = state.assetId;
       if (state.busy && id) {
@@ -3422,8 +3434,15 @@ ${stages}${post}
   }
 
   function onInput(event) {
-    /* Der Ausschnitt sitzt im Crop-Popup, nicht mehr als Schieberegler auf der Folie. */
-    void event;
+    if (state.step !== "form") return;
+    const free = event.target.closest?.("[data-free]");
+    if (!free) return;
+    // Nur die Vorschau, nicht das Formular: sonst verliert das Feld den Fokus.
+    readForm();
+    if (free.getAttribute("data-free") === "company_text") {
+      const node = shell.querySelector('[data-livepreview] [data-field="title"]');
+      if (node) node.textContent = previewMemoTitle(state.answers, company);
+    }
   }
 
   function onKeyDown(event) {
