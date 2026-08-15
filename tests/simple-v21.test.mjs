@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 
 const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
 
-test("the canonical ROOTS match runs as a separate v2.5 ruleset", () => {
-  assert.equal(pipeline.SIMPLE_VERSION, "2.5");
-  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.5");
+test("the canonical ROOTS match runs as a separate v2.6 ruleset", () => {
+  assert.equal(pipeline.SIMPLE_VERSION, "2.6");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.6");
 });
 
 test("canonicalizes safe model variants to exact ROOTS database labels", () => {
@@ -229,4 +229,116 @@ test("all six-pillar services remain dynamically reachable", () => {
     "Das Unternehmen baut eine Marketing Academy mit Curriculum, Kompetenzmodell und Lernpfaden auf.",
   );
   assert.match(selected, /Marketing Academy Entwicklung/);
+});
+
+function familyIds(article) {
+  const padded = {
+    ...article,
+    cleaned_content: `${article.cleaned_content} Der redaktionelle Kern beschreibt den Anlass ausführlich genug für eine belastbare Prüfung.`,
+  };
+  return pipeline.prefilterSimpleArticle(padded).families.map((family) => family.id);
+}
+
+test("v2.6 prefilter recovers the missed ROOTS occasions", () => {
+  assert.ok(familyIds({
+    id: "d2p",
+    title: "Cloudbasiertes Farbmanagement für den Verpackungsdruck",
+    cleaned_content: "Siegwerk und X-Rite führen Colorwerk FastMatch Cloud ein. Die Lösung vereint Farbformulierung, Farbkorrektur und Qualitätskontrolle über mehrere Druckmaschinen, Standorte und den gesamten Artwork-Prozess.",
+  }).includes("design_to_print"));
+
+  assert.ok(familyIds({
+    id: "paper",
+    title: "Material als Markenbotschafter: Papierverpackungen schaffen Vertrauen",
+    cleaned_content: "Papierbasierte Verpackungen stehen bei Verbrauchern für Recyclingfähigkeit. Das kann für Marken zum strategischen Vorteil werden, erklärt Alexander Rauer von Koehler Paper.",
+  }).includes("marken_strategie"));
+
+  assert.ok(familyIds({
+    id: "w2p",
+    title: "From prototype to production: how web-to-print solutions are reshaping packaging design",
+    cleaned_content: "Web-to-print is a new way to move packaging from an approved idea into production without the manual middle. The workflow standardises artwork across sites.",
+  }).includes("design_to_print"));
+
+  assert.ok(familyIds({
+    id: "pl",
+    title: "Fleischersatz: Livekindly will Private-Label-Produzenten übernehmen",
+    cleaned_content: "Livekindly Collective setzt die Einkaufstour fort und will Dalco Food schlucken, einen Fleischersatz-Hersteller aus den Niederlanden, der bislang vorrangig für Handelsmarken und Private Label produziert.",
+  }).includes("eigenmarken_launch"));
+
+  assert.ok(familyIds({
+    id: "cmo",
+    title: "Von Manchester United zur Sporthilfe: Tanja Hettel übernimmt Marketingressort",
+    cleaned_content: "Tanja Hettel wird neue Marketingvorständin der Deutschen Sporthilfe. Sie übernimmt das Marketingressort und verantwortet Marke, Vertrieb und Events.",
+  }).includes("cmo_wechsel"));
+
+  assert.ok(familyIds({
+    id: "galeria",
+    title: "Warenhauskonzern: Galeria schafft Transformation Office für Neuausrichtung",
+    cleaned_content: "Galeria bündelt die Neuausrichtung in einem Transformation Office. Der Warenhauskonzern soll Sortiment, Fläche und das Handelsmodell neu ordnen.",
+  }).includes("strategiewechsel"));
+
+  assert.ok(familyIds({
+    id: "penny",
+    title: "Filialnetze: Mehr Platz für die Discounter-Sortimente",
+    cleaned_content: "Penny räumt das Filialnetz auf. Die Discounter schaffen mehr Fläche für die Sortimente und ziehen schwache Standorte zusammen.",
+  }).includes("strategiewechsel"));
+
+  assert.ok(familyIds({
+    id: "brand",
+    title: "Wie KI die Funktion der Marke verändert",
+    cleaned_content: "Marke ist keine reine Positionierungsfrage mehr. Sie wird zur Infrastruktur. Generative KI definiert die wichtigste Disziplin des Marketings neu.",
+  }).includes("marken_strategie"));
+
+  assert.ok(familyIds({
+    id: "consistency",
+    title: "Wissenschaft trifft Praxis: Markenkonsistenz immer gültiges Markengesetz?",
+    cleaned_content: "Prof. Baumgarth berichtet über Markenführung und Markenkonsistenz. Die Studie zeigt, wann Konsistenz den Markenwert stärkt.",
+  }).includes("marken_strategie"));
+
+  assert.ok(familyIds({
+    id: "kiads",
+    title: "Kennzeichnungspflicht: So stehen die Deutschen zu KI-generierten Werbebotschaften",
+    cleaned_content: "Eine neue Studie zeigt, warum transparente Kennzeichnung entscheidend für die Akzeptanz von KI-Inhalten in der Werbung ist.",
+  }).includes("customer_insights"));
+
+  assert.ok(familyIds({
+    id: "yougov",
+    title: "Yougov Consumer-Index: Der Fußball half, zumindest ein bisschen",
+    cleaned_content: "Der deutsche Lebensmittelhandel rettete sich in ein bescheidenes Plus. Monatsgewinner waren die Drogeriemärkte.",
+  }).includes("customer_insights"));
+
+  assert.ok(familyIds({
+    id: "events",
+    title: "3 Praxisbeispiele: Wie Influencer-Events zum Relevanzmodell für Marken werden",
+    cleaned_content: "Daniel Ackermann erklärt, warum Followerzahlen im Influencer-Marketing an Grenzen stoßen und Events zum Relevanzmodell für Marken werden.",
+  }).includes("marketing_strategie"));
+});
+
+test("v2.6 cuts LZ and New Business paywalls before the prefilter", () => {
+  const lede = "Livekindly Collective will Dalco Food schlucken, einen Hersteller für Handelsmarken und Private Label.";
+  const body = `${lede}\n\nSie haben Fragen oder Anmerkungen zu diesem Artikel?\n${"Kontaktieren Sie die Redaktion wegen Nutzungsrechten. ".repeat(6)}`;
+  const editorial = pipeline.deterministicEditorialCore(body);
+  assert.equal(editorial.trimmed, true);
+  assert.equal(editorial.text, lede);
+});
+
+test("an unproven model tail no longer discards the article", () => {
+  const core = "Pernod Ricard setzt bei Beefeater auf eine neue globale Leadagentur für die alkoholfreie Kampagne.";
+  const resolved = pipeline.resolveEditorialCoreForClassification(
+    `${core}\n\nSeit über 50 Jahren liefert new business Nachrichten für Entscheider in Agenturen.`,
+    true,
+    "dieser satz steht so nicht im artikel und ist auch viel zu frei erfunden",
+    pipeline.deterministicEditorialCore(`${core}\n\nSeit über 50 Jahren liefert new business Nachrichten für Entscheider in Agenturen.`),
+  );
+  assert.equal(resolved.boundaryValid, true);
+  assert.match(resolved.text, /Beefeater/);
+});
+
+test("the v2.6 prompt names the recovered ROOTS occasions and offerings", () => {
+  const source = readFileSync(new URL("../supabase/functions/signal-layer/pipeline-simple.ts", import.meta.url), "utf8");
+  assert.match(source, /<recognition_rules>/);
+  assert.match(source, /Marketingressort/);
+  assert.match(source, /Web-to-Print/);
+  assert.match(source, /Handelsmarkenstrategie/);
+  assert.match(source, /Customer Insights/);
+  assert.match(source, /unbelegter Fremdblock verwirft das Signal nicht mehr|Ein unbelegtes Modell-Endzitat darf den Artikel nicht verwerfen/);
 });
