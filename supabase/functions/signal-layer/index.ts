@@ -8939,19 +8939,25 @@ Deno.serve(async (req: Request) => {
           }).select("*").single();
         if (assetInsertError) return errorResponse(origin, assetInsertError.message, 500);
 
-        // Wenn der Fetch haengt, stirbt das Isolate ohne catch. Dieser Waechter
-        // schreibt den Fehler, solange die Zeile noch running ist.
+        // Nur wenn der Puls tot ist: ein lebendes Modell darf das Isolat-Fenster
+        // ueberschreiten, get_asset schliesst ausschliesslich bei Stille.
         const waechter = setTimeout(() => {
-          const seit = Date.parse(String(assetRow.created_at || "")) || Date.now();
           void (async () => {
             const { data: live } = await getAdminClient().schema("signal_layer").from("generated_assets")
-              .select("status, run_log").eq("id", assetRow.id).maybeSingle();
-            if (String(live?.status || "") !== "running") return;
-            if (assetDraftTextFromLog(live?.run_log) || assetWriterLostLock(live?.run_log)) return;
+              .select("id, status, stage, model, created_at, updated_at, run_log").eq("id", assetRow.id).maybeSingle();
+            if (!live || String(live.status || "") !== "running") return;
+            if (!assetHangReason(live)) return;
+            if (assetDraftTextFromLog(live.run_log) || assetWriterLostLock(live.run_log)) return;
+            const seit = Date.parse(String(assetRow.created_at || "")) || Date.now();
             await getAdminClient().schema("signal_layer").from("generated_assets")
               .update({
                 status: "error",
-                error_message: ASSET_HANG_ERROR,
+                error_message: assetHeartbeatErrorText(
+                  String(live.model || ""),
+                  String(live.stage || ""),
+                  assetHeartbeatAgeMs(live.updated_at || live.created_at),
+                  "silent",
+                ),
                 duration_ms: Date.now() - seit,
                 updated_at: new Date().toISOString(),
               })

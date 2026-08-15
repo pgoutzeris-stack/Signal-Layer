@@ -261,15 +261,15 @@ test("Entwurf erzeugen ist verdrahtet und der Vorschautitel nimmt die Firma auf"
   assert.match(studio, /previewMemoTitle\(state\.answers, company\)/);
   assert.match(studio, /getAttribute\("data-free"\) === "company_text"/);
   assert.equal(previewMemoTitle({ company_named: "no" }, "Roblox"), PREVIEW_MEMO_TITLE);
-  assert.equal(PREVIEW_MEMO_TITLE, "Die Marke braucht jetzt eine eigene Handschrift");
-  assert.doesNotMatch(PREVIEW_MEMO_TITLE, /Hebel|Thema XY/);
+  assert.equal(PREVIEW_MEMO_TITLE, "KI im Jahr 2026: Chancen und Herausforderungen");
+  assert.doesNotMatch(PREVIEW_MEMO_TITLE, /Hebel/);
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Roblox"),
-    "Roblox: Die Marke braucht jetzt eine eigene Handschrift",
+    "Wie kann Roblox Thema XY umsetzen?",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "Pille" }, "Roblox"),
-    "Pille: Die Marke braucht jetzt eine eigene Handschrift",
+    "Wie kann Pille Thema XY umsetzen?",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "  " }, "Roblox"),
@@ -570,9 +570,11 @@ test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", 
   );
   // Ein Timeout darf keinen zweiten Versuch ausloesen: der denkt genauso lange.
   assert.match(edge, /zeitAbgelaufen \|\| attempt === attemptsAllowed/);
-  // Das Studio bleibt ueber Watchdog (380 s) und Isolate (~400 s), sonst gibt
-  // die Anzeige auf, bevor get_asset eine stehengebliebene Zeile schliesst.
-  assert.match(studio, /Date\.now\(\) \+ 420_000/);
+  // Das Studio wartet, solange der Auftrag running ist. Ein 7-Minuten-Cap
+  // hat am 15.8.2026 ein noch denkendes Memo abgebrochen (Puls bei 477 s).
+  assert.doesNotMatch(studio, /Date\.now\(\) \+ 420_000/);
+  assert.doesNotMatch(studio, /sieben Minuten nicht fertig/);
+  assert.match(studio, /for \(;;\) \{/);
   assert.equal(backend.ASSET_WALL_CLOCK_MS, 380_000);
   assert.equal(backend.ASSET_STALE_MS, 400_000);
   assert.match(edge, /ASSET_WALL_CLOCK_MS/);
@@ -704,7 +706,7 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.doesNotMatch(edge, /return \{ \.\.\.row, run_log,/);
   assert.match(edge, /EDITOR_ACTIONS[\s\S]*generate_asset/);
   assert.doesNotMatch(studio, /Der Auftrag läuft weiter/);
-  assert.match(studio, /sieben Minuten nicht fertig/);
+  assert.doesNotMatch(studio, /sieben Minuten nicht fertig/);
   const assetSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
   assert.match(assetSrc, /function rejectRepeatedLeadNumbers/);
   assert.doesNotMatch(assetSrc, /dropRepeatedLeadNumberSlides/);
@@ -749,8 +751,8 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.equal(backend.assetHangReason(wartet, now), null);
   const keinByte = { ...wartet, created_at: iso(now - 190_000), updated_at: iso(now - 190_000) };
   assert.equal(backend.assetHangReason(keinByte, now), "silent");
-  const tot = { ...lebend, created_at: iso(now - 401_000), updated_at: iso(now - 1_000) };
-  assert.equal(backend.assetHangReason(tot, now), "isolate");
+  const totAberPuls = { ...lebend, created_at: iso(now - 401_000), updated_at: iso(now - 1_000) };
+  assert.equal(backend.assetHangReason(totAberPuls, now), null);
   const retryLebt = {
     status: "running",
     stage: "modell",
@@ -1026,7 +1028,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.12");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.13");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -1290,7 +1292,7 @@ test("Person im Signal wird Adressat, ohne Gespräch-mit-Rolle anzuhängen", () 
   assert.match(memoPrompt, /<anlass>/);
   assert.match(memoPrompt, /<hebel>/);
   assert.match(memoPrompt, /<titel>/);
-  assert.match(memoPrompt, /Action Title/);
+  assert.match(memoPrompt, /Whitepaper-Titel/);
   assert.match(memoPrompt, /nicht die Geschichte/);
   assert.doesNotMatch(memoPrompt, /Adressat, verbindlich/);
   assert.doesNotMatch(memoPrompt, /keine Rolle extra/);
