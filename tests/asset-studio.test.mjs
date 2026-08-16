@@ -725,6 +725,10 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.match(edge, /assetHangReason/);
   assert.match(edge, /schliesseHangingAsset\(admin, row/);
   assert.match(edge, /pflegeLaufendesAsset\(admin, geladen/);
+  assert.match(edge, /assetFinishSettleDue/);
+  assert.match(edge, /event === "images_done"/);
+  assert.match(edge, /void persist\(\{\}\)/);
+  assert.match(edge, /ASSET_STREAM_KEEPALIVE_MS/);
   assert.match(edge, /return \{ \.\.\.row, run_log: runLog/);
   assert.doesNotMatch(edge, /return \{ \.\.\.row, run_log,/);
   assert.match(edge, /EDITOR_ACTIONS[\s\S]*generate_asset/);
@@ -825,8 +829,31 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.equal(backend.assetFinishHandoffDue({ ...xpengTot, updated_at: iso(now - 5_000) }, now), false);
   assert.equal(backend.assetFinishHandoffDue({
     ...xpengTot,
-    run_log: [...draftLog, { event: "handoff" }, { event: "finish_start" }, { event: "handoff" }, { event: "handoff" }],
+    run_log: [...draftLog, { event: "finish_start" }, { event: "finish_start" }, { event: "finish_start" }, { event: "finish_start" }],
   }, now), false);
+  // handoff und finish_start sind ein Zyklus, nicht zwei Kicks.
+  const aeffeZyklus = {
+    status: "running",
+    stage: "fuellen",
+    kind: "memo",
+    created_at: iso(now - 590_000),
+    updated_at: iso(now - 25_000),
+    payload: { title: "Aeffe muss historische Marken neu ausrichten" },
+    run_log: [
+      { event: "model_ok", text: "{\"title\":\"These\"}" },
+      { event: "handoff" }, { event: "finish_start" },
+      { event: "handoff" }, { event: "finish_start" },
+      { event: "stage", stage: "fuellen" },
+    ],
+  };
+  assert.equal(backend.assetKeepablePayload(aeffeZyklus), true);
+  assert.equal(backend.assetFinishSettleDue(aeffeZyklus, now), true);
+  assert.equal(backend.assetFinishHandoffDue(aeffeZyklus, now), false);
+  assert.equal(backend.assetFinishSettleDue({ ...aeffeZyklus, updated_at: iso(now - 5_000) }, now), false);
+  const bilderKurz = { ...aeffeZyklus, stage: "bilder", updated_at: iso(now - 25_000) };
+  assert.equal(backend.assetFinishSettleDue(bilderKurz, now), false);
+  assert.equal(backend.assetFinishSettleDue({ ...bilderKurz, updated_at: iso(now - 95_000) }, now), true);
+  assert.match(backend.assetHeartbeatErrorText("deepseek-v4-pro", "fuellen", 181_000, "silent"), /beim Fertigstellen/);
   const totModell = {
     status: "running",
     stage: "modell",

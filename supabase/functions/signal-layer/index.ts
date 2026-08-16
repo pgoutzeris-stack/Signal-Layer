@@ -114,6 +114,7 @@ import {
   assertMemoBenchmarkBriefs,
   assetDraftTextFromLog,
   assetFinishHandoffDue,
+  assetFinishSettleDue,
   assetHangReason,
   assetModelRetryDue,
   assetWriterLostLock,
@@ -3180,10 +3181,30 @@ async function pflegeLaufendesAsset(
   row: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
   if (String(row.status || "") !== "running") return null;
+  // list_assets liefert keine run_log. Ohne sie keinen Hang schließen:
+  // Aeffe 16.8.2026 starb sonst als "dieser Schritt", obwohl die Nutzlast lag.
+  if (row.run_log === undefined && !assetFinishSettleDue(row)) return null;
   const startedAt = Date.parse(String(row.created_at || "")) || Date.now();
   const runLog = Array.isArray(row.run_log)
     ? [...row.run_log as Record<string, unknown>[]]
     : [];
+  if (assetFinishSettleDue(row)) {
+    const fields: Record<string, unknown> = {
+      status: "done",
+      stage: "fertig",
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    };
+    if (Array.isArray(row.run_log)) {
+      runLog.push({ t: Date.now() - startedAt, event: "settle_done", via: "watchdog" });
+      fields.run_log = runLog;
+    }
+    const { data: settled } = await admin.schema("signal_layer").from("generated_assets").update(fields)
+      .eq("id", row.id).eq("status", "running")
+      .select("id, created_by, kind, article_id, status, error_message").maybeSingle();
+    if (settled) void notifyGeneratedAssetSettled({ ...row, ...settled, status: "done", error_message: null });
+    return { ...row, ...settled, status: "done", stage: "fertig", error_message: null, run_log: fields.run_log ?? row.run_log };
+  }
   if (assetFinishHandoffDue(row)) {
     runLog.push({ t: Date.now() - startedAt, event: "handoff", to: "finish_asset", via: "watchdog" });
     await admin.schema("signal_layer").from("generated_assets").update({
@@ -5106,17 +5127,20 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       if (!geminiKey) {
         loggen("images_skip", { reason: "no_gemini_key" });
       } else {
+        const beat = setInterval(() => { void persist({}); }, ASSET_STREAM_KEEPALIVE_MS);
         try {
           payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
             remainingMs: ASSET_WALL_CLOCK_MS,
             log: async (event, extra) => {
               loggen(event, extra || {});
-              await persist({ payload });
+              await persist(event === "images_done" ? { payload } : {});
             },
             generate: (promptText, aspect) => generateGeminiMemoImage(geminiKey, promptText, aspect),
           });
         } catch (fehler) {
           loggen("images_skip", { reason: String(fehler).slice(0, 300) });
+        } finally {
+          clearInterval(beat);
         }
       }
     }
@@ -9292,7 +9316,7 @@ Deno.serve(async (req: Request) => {
         if (listKind && !isAssetKind(listKind)) return errorResponse(origin, "kind muss linkedin oder memo sein");
         let query = getAdminClient().schema("signal_layer")
           .from("generated_assets")
-          .select("id, kind, status, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, article_id, title:payload->>title, slide_title:payload->slides->0->>title")
+          .select("id, kind, status, stage, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, article_id, title:payload->>title, slide_title:payload->slides->0->>title")
           .eq("article_id", listArticleId)
           .order("created_at", { ascending: false })
           .limit(40);
