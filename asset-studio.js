@@ -3068,11 +3068,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   async function compactAdoptedImages() {
     if (isMemo && state.memo) {
+      // Ein Logo darf nicht angeschnitten werden, also contain auf Weiss. Ein
+      // Potenzial-Foto muss die Kachel füllen: contain hat weisse Ränder in das
+      // Bild gebrannt, die Rundung der Kachel war damit unsichtbar (16.8.2026).
       for (const [liste, kind] of [[state.memo.benchmarks, "benchmark"], [state.memo.potentials, "potential"]]) {
         const spec = MEMO_SHOT_PIXELS[kind];
+        const opts = kind === "benchmark" ? { fit: "contain" } : {};
         for (const eintrag of liste) {
           if (eintrag?.image?.src) {
-            eintrag.image.src = await fitSlotImage(eintrag.image.src, spec, { fit: "contain" });
+            eintrag.image.src = await fitSlotImage(eintrag.image.src, spec, opts);
             eintrag.image.pos = "50% 50%";
           }
         }
