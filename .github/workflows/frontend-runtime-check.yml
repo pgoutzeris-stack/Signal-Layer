@@ -40,5 +40,6 @@ jobs:
           node --check simple-mode.js
           node --check status-state.mjs
           node --check simple-view-state.mjs
+          node --input-type=module -e "import('./simple-mode.js')"
       - name: Test startup status states
         run: node --test tests/frontend-status.test.mjs tests/frontend-simple-view.test.mjs
