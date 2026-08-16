@@ -176,7 +176,7 @@ function memoQuestions(firma, cmoHundredDays = false) {
       label: "Bilder",
       when: nurThema,
       options: [
-        ["auto", "Gemini entscheidet die Motive"],
+        ["auto", "Passende Fotos recherchieren"],
         ["upload", "Eigene Bilder zuschneiden"],
       ],
     },
@@ -1059,7 +1059,7 @@ function sanitizeFragment(html) {
 }
 
 import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1310";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1330";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1430,7 +1430,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ["recherchieren", "fa-magnifying-glass", "Gemini recherchiert aktuelle Benchmarks"],
     ["modell", "fa-brain", isMemo ? "Das Modell entwickelt die Ansprache" : "Das Modell schreibt Titel und Kernaussage"],
     ["pruefen", "fa-list-check", "Belege und Längen werden geprüft"],
-    ["bilder", "fa-image", "Gemini erzeugt die Motive"],
+    ["bilder", "fa-image", "Passende Fotos werden gesucht"],
     ["fuellen", "fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
   ];
 
@@ -1491,7 +1491,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (name === "recherchieren") return "Benchmark-Recherche gestartet";
       if (name === "modell") return "Schreiben gestartet";
       if (name === "pruefen") return "Belege werden geprüft";
-      if (name === "bilder") return "Motive werden erzeugt";
+      if (name === "bilder") return "Fotos werden gesucht";
       if (name === "fuellen") return "Vorlage wird gefüllt";
       return "Nächster Schritt";
     }
@@ -1507,7 +1507,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     if (event === "benchmarks_user") return "Eigene Benchmarks übernommen";
     if (event === "image_start") return "Ein Motiv wird erzeugt";
-    if (event === "images_done") return "Motive fertig";
+    if (event === "images_done") return "Fotos gefunden";
     if (event === "done") return "Entwurf steht";
     return "";
   }
@@ -1876,7 +1876,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (a.benchmarks_mode === "custom") teile.push("eigene Benchmarks");
     else if (isMemo) teile.push("Gemini-Benchmarks");
     if (a.images === "upload") teile.push("eigene Bilder");
-    else if (isMemo) teile.push("Gemini-Motive");
+    else if (isMemo) teile.push("recherchierte Fotos");
     if (a.cta) teile.push("eigener CTA");
     if (a.storyline) teile.push("eigener Inhalt");
     if (a.asset_type === "carousel") teile.push(`Karussell ${a.slides || ""}`.trim());

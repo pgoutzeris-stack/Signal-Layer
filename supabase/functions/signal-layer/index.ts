@@ -100,14 +100,15 @@ import {
   AssetPayload,
   AssetPulse,
   CMO_HUNDRED_DAYS_WIP,
-  GEMINI_IMAGE_FALLBACK_MODEL,
-  GEMINI_IMAGE_MODEL,
   MEMO_BENCHMARK_RESEARCH_MODEL,
   MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS,
   MEMO_BENCHMARK_RESEARCH_ATTEMPTS,
   MEMO_BENCHMARK_RESEARCH_MAX_TOKENS,
   MEMO_IMAGE_FETCH_MS,
+  MEMO_PHOTO_BYTES_MAX,
+  MEMO_PHOTO_USER_AGENT,
   MemoAnswers,
+  MemoImageSlot,
   MemoPayload,
   applyAssetPulse,
   summarizeAssetPace,
@@ -129,28 +130,39 @@ import {
   buildAssetRepairPrompt,
   buildMemoBenchmarkResearchPrompt,
   buildMemoBenchmarkReviewPrompt,
+  buildMemoPhotoResearchPrompt,
   applyMemoImageUploads,
   fillMemoImages,
   geminiFinishAllowsParse,
-  geminiImageRequestBody,
-  geminiInteractionsRequestBody,
   isAssetKind,
+  isAllowedMemoPhotoUrl,
   memoBenchmarkCorpus,
   memoImageDataUri,
   memoImageUploadsFromBody,
   memoPayloadHasSlotImages,
   memoSlotImageSrc,
+  negativeBenchmarkNames,
   normalizeAssetAnswers,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
   parseDeepseekSseData,
-  parseGeminiInlineImage,
-  parseGeminiInteractionImage,
+  parseCommonsPhotoHits,
   parseGeminiSseData,
-  stripCmoHundredDaysOffering,
-  stripCmoHundredDaysText,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
+  parseMemoPhotoResearch,
+  parseWikipediaOpenSearch,
+  parseWikipediaSummaryImage,
+  parseWikidataEntityImage,
+  parseWikidataSearchId,
+  commonsPhotoSearchApiUrl,
+  wikipediaOpenSearchApiUrl,
+  wikipediaSummaryApiUrl,
+  wikidataEntityApiUrl,
+  wikidataSearchApiUrl,
+  wikimediaFilePathUrl,
+  stripCmoHundredDaysOffering,
+  stripCmoHundredDaysText,
   resolveAssetCompany,
 } from "./asset-studio.ts";
 
@@ -3327,77 +3339,132 @@ async function attachGeneratedAssetImage(
   return { ok: true };
 }
 
-async function generateGeminiMemoImage(
-  apiKey: string,
-  prompt: string,
-  aspect: string,
-): Promise<string | null> {
-  const models = [GEMINI_IMAGE_MODEL, GEMINI_IMAGE_FALLBACK_MODEL];
-  const contents = [{ role: "user", parts: [{ text: prompt }] }];
-  const generateBodies = [
-    geminiImageRequestBody(prompt, aspect),
-    {
-      contents,
-      generationConfig: {
-        responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: { aspectRatio: aspect || "16:9" },
-      },
-    },
-  ];
-  let lastError = "empty";
-  const versuch = async (
-    label: string,
-    url: string,
-    body: Record<string, unknown>,
-    parse: (payload: unknown) => { mime: string; data: string } | null,
-  ): Promise<string | null> => {
-    try {
-      const response = await fetchMitLimit(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-        body: JSON.stringify(body),
-      }, MEMO_IMAGE_FETCH_MS);
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        lastError = `${label}:http_${response.status}:${text.replace(/\s+/g, " ").slice(0, 160)}`;
-        return null;
-      }
-      const json = await response.json();
-      const inline = parse(json);
-      if (!inline) {
-        lastError = `${label}:no_inline`;
-        return null;
-      }
-      const uri = memoImageDataUri(inline.mime, inline.data);
-      if (!uri) {
-        lastError = `${label}:too_large:${inline.data.length}`;
-        return null;
-      }
-      return uri;
-    } catch (fehler) {
-      lastError = `${label}:${fehler instanceof Error ? fehler.message : String(fehler)}`.slice(0, 240);
+async function fetchJsonQuiet(url: string, timeoutMs = 12_000): Promise<unknown | null> {
+  try {
+    const response = await fetchMitLimit(url, {
+      headers: { Accept: "application/json", "User-Agent": MEMO_PHOTO_USER_AGENT },
+    }, timeoutMs);
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       return null;
     }
-  };
-  for (const model of models) {
-    const viaInteractions = await versuch(
-      `${model}:interactions`,
-      "https://generativelanguage.googleapis.com/v1beta/interactions",
-      geminiInteractionsRequestBody(prompt, aspect, model),
-      parseGeminiInteractionImage,
-    );
-    if (viaInteractions) return viaInteractions;
-    for (const [i, body] of generateBodies.entries()) {
-      const viaGenerate = await versuch(
-        `${model}:generateContent${i ? `:b${i}` : ""}`,
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        body,
-        parseGeminiInlineImage,
-      );
-      if (viaGenerate) return viaGenerate;
-    }
+    return await response.json();
+  } catch {
+    return null;
   }
-  throw new Error(lastError);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function downloadMemoPhoto(url: string): Promise<string | null> {
+  if (!url.startsWith("https://")) return null;
+  try {
+    const response = await fetchMitLimit(url, {
+      headers: { Accept: "image/*,*/*", "User-Agent": MEMO_PHOTO_USER_AGENT },
+    }, MEMO_IMAGE_FETCH_MS);
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const finalUrl = response.url || url;
+    if (!isAllowedMemoPhotoUrl(finalUrl) && !finalUrl.includes("upload.wikimedia.org")) {
+      await response.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const mime = (response.headers.get("content-type") || "image/jpeg").split(";")[0].trim().toLowerCase();
+    if (!/^image\/(jpeg|jpg|png|webp|gif|svg\+xml)$/.test(mime)) {
+      await response.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const buf = new Uint8Array(await response.arrayBuffer());
+    if (buf.byteLength < 80 || buf.byteLength > MEMO_PHOTO_BYTES_MAX) return null;
+    return memoImageDataUri(mime === "image/jpg" ? "image/jpeg" : mime, bytesToBase64(buf));
+  } catch {
+    return null;
+  }
+}
+
+async function researchWikipediaPhoto(subject: string): Promise<string | null> {
+  for (const lang of ["de", "en"] as const) {
+    const open = await fetchJsonQuiet(wikipediaOpenSearchApiUrl(lang, subject));
+    const title = parseWikipediaOpenSearch(open) || subject;
+    const summary = await fetchJsonQuiet(wikipediaSummaryApiUrl(lang, title));
+    const hit = parseWikipediaSummaryImage(summary);
+    if (!hit) continue;
+    const uri = await downloadMemoPhoto(hit.url);
+    if (uri) return uri;
+  }
+  return null;
+}
+
+async function researchCommonsPhoto(subject: string, query: string): Promise<string | null> {
+  const raw = await fetchJsonQuiet(commonsPhotoSearchApiUrl(query));
+  const hits = parseCommonsPhotoHits(raw, subject);
+  for (const hit of hits.slice(0, 3)) {
+    const uri = await downloadMemoPhoto(hit.url);
+    if (uri) return uri;
+  }
+  return null;
+}
+
+async function researchWikidataPhoto(subject: string): Promise<string | null> {
+  const search = await fetchJsonQuiet(wikidataSearchApiUrl(subject));
+  const id = parseWikidataSearchId(search);
+  if (!id) return null;
+  const entity = await fetchJsonQuiet(wikidataEntityApiUrl(id));
+  const file = parseWikidataEntityImage(entity);
+  if (!file) return null;
+  return downloadMemoPhoto(wikimediaFilePathUrl(file));
+}
+
+async function findMemoSlotPhotoLocal(slot: MemoImageSlot): Promise<string | null> {
+  const wiki = await researchWikipediaPhoto(slot.subject);
+  if (wiki) return wiki;
+  const data = await researchWikidataPhoto(slot.subject);
+  if (data) return data;
+  for (const query of slot.queries.slice(0, 3)) {
+    const commons = await researchCommonsPhoto(slot.subject, query);
+    if (commons) return commons;
+  }
+  return null;
+}
+
+function createMemoPhotoFinder(apiKey: string, model: string) {
+  const bySubject = new Map<string, Promise<string | null>>();
+  const geminiUrls: Record<string, string> = {};
+  return {
+    fetchPhoto: async (slot: MemoImageSlot): Promise<string | null> => {
+      const key = slot.subject.toLowerCase();
+      if (!bySubject.has(key)) bySubject.set(key, findMemoSlotPhotoLocal(slot));
+      const local = await bySubject.get(key);
+      if (local) return local;
+      const url = geminiUrls[slot.key];
+      if (!url) return null;
+      const uri = await downloadMemoPhoto(url);
+      if (uri) bySubject.set(key, Promise.resolve(uri));
+      return uri;
+    },
+    prepareRetry: async (slots: MemoImageSlot[]) => {
+      if (!apiKey || !slots.length) return;
+      try {
+        const gefunden = await callGeminiWithGoogleSearch(
+          apiKey,
+          model,
+          buildMemoPhotoResearchPrompt(slots),
+        );
+        Object.assign(geminiUrls, parseMemoPhotoResearch(parseLooseJsonObject(gefunden.text)));
+      } catch {
+        /* ohne Treffer bleiben die Slots leer */
+      }
+    },
+  };
 }
 
 async function callGeminiWithGoogleSearchOnce(
@@ -5190,13 +5257,16 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     if (assetKind === "memo" && (assetAnswers as MemoAnswers).images !== "upload") {
       await abschnitt("bilder");
       const geminiKey = await getGeminiKey().catch(() => "");
-      if (!geminiKey) {
-        loggen("images_skip", { reason: "no_gemini_key" });
-      } else {
-        const beat = setInterval(() => { void persist({}); }, ASSET_STREAM_KEEPALIVE_MS);
-        try {
-          payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
+      const beat = setInterval(() => { void persist({}); }, ASSET_STREAM_KEEPALIVE_MS);
+      const finder = createMemoPhotoFinder(
+        geminiKey,
+        MEMO_BENCHMARK_RESEARCH_MODEL,
+      );
+      try {
+        payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
             remainingMs: Math.max(0, ASSET_WALL_CLOCK_MS - (Date.now() - startedAt)),
+            fetchPhoto: finder.fetchPhoto,
+            prepareRetry: finder.prepareRetry,
             log: async (event, extra) => {
               loggen(event, extra || {});
               if (event === "image_ok") {
@@ -5218,14 +5288,12 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
               }
               await persist({});
             },
-            generate: (promptText, aspect) => generateGeminiMemoImage(geminiKey, promptText, aspect),
           });
         } catch (fehler) {
           loggen("images_incomplete", { reason: String(fehler).slice(0, 300) });
         } finally {
           clearInterval(beat);
         }
-      }
     }
 
     if (
@@ -9267,18 +9335,65 @@ Deno.serve(async (req: Request) => {
                 throw new Error("Für die Benchmark-Recherche ist kein Gemini-Schlüssel hinterlegt. Im Fragebogen eigene Benchmarks eintragen.");
               }
               try {
-                const gefunden = await researchMemoBenchmarksWithGemini(
-                  geminiKey,
-                  researchModel,
-                  buildMemoBenchmarkResearchPrompt(signalForAsset, assetArticle, memoAnswers),
-                  onPulse,
-                );
-                memoAnswers.benchmarks = assertMemoBenchmarkBriefs(gefunden.briefs, firma, { allowExample: true });
-                loggen("benchmarks_ok", {
-                  model: researchModel,
-                  search_queries: gefunden.searchQueries,
-                  names: memoAnswers.benchmarks.map((item) => item.name),
-                });
+                const exclude: string[] = [];
+                let letzter: Error | null = null;
+                let okBriefs: typeof memoAnswers.benchmarks | null = null;
+                for (let attempt = 1; attempt <= 2; attempt += 1) {
+                  try {
+                    const gefunden = await researchMemoBenchmarksWithGemini(
+                      geminiKey,
+                      researchModel,
+                      buildMemoBenchmarkResearchPrompt(signalForAsset, assetArticle, memoAnswers, { exclude }),
+                      onPulse,
+                    );
+                    const negativ = negativeBenchmarkNames(gefunden.briefs);
+                    if (negativ.length) {
+                      exclude.push(...negativ);
+                      letzter = new Error(`Negativer Fall verworfen: ${negativ.join(", ")}. Benchmarks brauchen einen positiven Ausgang.`);
+                      continue;
+                    }
+                    const briefs = assertMemoBenchmarkBriefs(gefunden.briefs, firma, { allowExample: true });
+                    try {
+                      const pruefung = await reviewMemoBenchmarksWithGemini(
+                        geminiKey,
+                        researchModel,
+                        buildMemoBenchmarkReviewPrompt(
+                          signalForAsset,
+                          assetArticle,
+                          { ...memoAnswers, benchmarks: briefs },
+                        ),
+                        onPulse,
+                      );
+                      loggen("benchmarks_review", {
+                        model: researchModel,
+                        ok: pruefung.ok,
+                        search_queries: pruefung.searchQueries,
+                      });
+                      if (!pruefung.ok) {
+                        exclude.push(...briefs.map((item) => item.name));
+                        letzter = new Error(pruefung.grund || "Die recherchierten Benchmarks passen nicht.");
+                        continue;
+                      }
+                    } catch (reviewFehler) {
+                      const grund = reviewFehler instanceof Error ? reviewFehler.message : String(reviewFehler);
+                      loggen("benchmarks_review_skip", { reason: grund.slice(0, 300) });
+                    }
+                    okBriefs = briefs;
+                    loggen("benchmarks_ok", {
+                      model: researchModel,
+                      search_queries: gefunden.searchQueries,
+                      names: briefs.map((item) => item.name),
+                    });
+                    letzter = null;
+                    break;
+                  } catch (inner) {
+                    letzter = inner instanceof Error ? inner : new Error(String(inner));
+                  }
+                }
+                if (!okBriefs) {
+                  throw letzter || new Error("Die Benchmark-Recherche hat keine positiven Fälle geliefert.");
+                }
+                memoAnswers.benchmarks = okBriefs;
               } catch (fehler) {
                 const grund = fehler instanceof Error ? fehler.message : String(fehler);
                 throw new Error(`${grund}\n\nOhne drei belastbare Benchmarks kann das Memo nicht gebaut werden. Im Fragebogen eigene Benchmarks eintragen.`);

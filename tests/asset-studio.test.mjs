@@ -1151,7 +1151,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.13");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.14");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -1169,7 +1169,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(memoPrompt, /mit Aeffe im Satz/);
   assert.match(studio, /key: "company_mode"/);
   assert.match(studio, /key: "images"/);
-  assert.match(studio, /Gemini entscheidet die Motive/);
+  assert.match(studio, /Passende Fotos recherchieren/);
 });
 
 test("Tilden und Sterne zählen nicht gegen die Zeichenschwelle", () => {
@@ -1615,37 +1615,65 @@ test("der LinkedIn-Kicker kommt aus der Artikelfamilie, nicht vom Zielkunden", (
   assert.doesNotMatch(studio, /kicker: company \? company\.toUpperCase/);
 });
 
-test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt optional an", async () => {
+test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Fotos", async () => {
   assert.equal(backend.MEMO_SHOT_ASPECT.benchmark.w / backend.MEMO_SHOT_ASPECT.benchmark.h, 46 / 28);
   assert.equal(backend.MEMO_SHOT_ASPECT.potential.w / backend.MEMO_SHOT_ASPECT.potential.h, 52 / 36);
   assert.equal(backend.MEMO_SHOT_PIXELS.benchmark.w / backend.MEMO_SHOT_PIXELS.benchmark.h, 46 / 28);
   assert.equal(backend.MEMO_SHOT_PIXELS.potential.w / backend.MEMO_SHOT_PIXELS.potential.h, 52 / 36);
   const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
-  const slots = backend.memoImageSlots(memo);
+  const slots = backend.memoImageSlots(memo, "Puma");
   assert.equal(slots.length, 6);
+  assert.equal(slots[0].subject, "Marke A");
+  assert.ok(slots[0].queries.some((q) => /store|Fabrik|logo/i.test(q)));
+  assert.equal(slots[3].subject, "Puma");
   assert.equal(slots[0].geminiAspect, "16:9");
   assert.equal(slots[3].geminiAspect, "3:2");
-  const parsed = backend.parseGeminiInlineImage({
-    candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/jpeg", data: "abc".repeat(40) } }] } }],
+  assert.equal(backend.isAllowedMemoPhotoUrl("https://upload.wikimedia.org/wikipedia/commons/a/ab/Nike_store.jpg"), true);
+  assert.equal(backend.isAllowedMemoPhotoUrl("https://commons.wikimedia.org/wiki/Special:FilePath/Bahlsen.jpg?width=1200"), true);
+  assert.equal(backend.isAllowedMemoPhotoUrl("https://evil.example/ai.png"), false);
+  const commonsHits = backend.parseCommonsPhotoHits({
+    query: {
+      pages: {
+        "1": {
+          title: "File:Nike Town London store.jpg",
+          imageinfo: [{ mime: "image/jpeg", thumburl: "https://upload.wikimedia.org/wikipedia/commons/thumb/n/nike.jpg", url: "https://upload.wikimedia.org/wikipedia/commons/n/nike.jpg" }],
+        },
+        "2": {
+          title: "File:Random map.svg",
+          imageinfo: [{ mime: "image/svg+xml", url: "https://upload.wikimedia.org/wikipedia/commons/m/map.svg" }],
+        },
+      },
+    },
+  }, "Nike");
+  assert.equal(commonsHits[0].source, "wikimedia_commons");
+  assert.match(commonsHits[0].url, /nike/i);
+  const wikiHit = backend.parseWikipediaSummaryImage({
+    title: "Bahlsen",
+    originalimage: { source: "https://upload.wikimedia.org/wikipedia/commons/b/ba/Bahlsen_Hannover.jpg" },
   });
-  assert.equal(parsed.mime, "image/jpeg");
-  const uri = backend.memoImageDataUri(parsed.mime, parsed.data);
+  assert.match(wikiHit.url, /Bahlsen/);
+  assert.equal(backend.parseWikidataSearchId({ search: [{ id: "Q123" }] }), "Q123");
+  assert.equal(backend.parseWikidataEntityImage({
+    entities: { Q123: { claims: { P18: [{ mainsnak: { datavalue: { value: "Nike_HQ.jpg" } } }] } } },
+  }), "Nike_HQ.jpg");
+  const photoPrompt = backend.buildMemoPhotoResearchPrompt(slots.slice(0, 1));
+  assert.match(photoPrompt, /keine KI-Grafik/i);
+  assert.match(photoPrompt, /upload\.wikimedia\.org/);
+  const parsedPhotos = backend.parseMemoPhotoResearch({
+    photos: [{ key: "benchmarks.0", url: "https://upload.wikimedia.org/wikipedia/commons/n/nike.jpg" }],
+  });
+  assert.match(parsedPhotos["benchmarks.0"], /nike/i);
+  const uri = backend.memoImageDataUri("image/jpeg", "abc".repeat(40));
   assert.match(uri, /^data:image\/jpeg;base64,/);
   const events = [];
   const filled = await backend.fillMemoImages(memo, backend.normalizeAssetAnswers("memo", { images: "auto" }), {
     remainingMs: 120_000,
-    generate: async () => uri,
+    fetchPhoto: async () => uri,
     log: async (event) => events.push(event),
   });
   assert.equal(filled.benchmarks[0].image.src, uri);
   assert.ok(events.includes("image_ok"));
   assert.ok(events.includes("images_done"));
-  const interaction = backend.parseGeminiInteractionImage({
-    output_image: { mime_type: "image/jpeg", data: "abc".repeat(40) },
-  });
-  assert.equal(interaction.mime, "image/jpeg");
-  assert.equal(backend.GEMINI_IMAGE_MODEL, "gemini-3.1-flash-image");
-  assert.equal(backend.GEMINI_IMAGE_FALLBACK_MODEL, "gemini-2.5-flash-image");
   const retryEvents = [];
   let versuche = 0;
   const retried = await backend.fillMemoImages(
@@ -1653,7 +1681,7 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
     backend.normalizeAssetAnswers("memo", { images: "auto" }),
     {
       remainingMs: 120_000,
-      generate: async () => {
+      fetchPhoto: async () => {
         versuche += 1;
         if (versuche <= 6) throw new Error("http_400");
         return uri;
@@ -1672,7 +1700,7 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
     backend.normalizeAssetAnswers("memo", { images: "auto" }),
     {
       remainingMs: 120_000,
-      generate: async () => { called.push(1); return uri; },
+      fetchPhoto: async () => { called.push(1); return uri; },
     },
   );
   assert.equal(already.benchmarks[0].image.src, uri);
@@ -1687,7 +1715,7 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
   const uploadMemo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", { images: "upload" }));
   const skipped = await backend.fillMemoImages(uploadMemo, backend.normalizeAssetAnswers("memo", { images: "upload" }), {
     remainingMs: 120_000,
-    generate: async () => { throw new Error("sollte nicht laufen"); },
+    fetchPhoto: async () => { throw new Error("sollte nicht laufen"); },
   });
   assert.equal(skipped.benchmarks[0].image, undefined);
   assert.equal(backend.ASSET_EDITED_HTML_LIMIT, 900_000);
@@ -1695,18 +1723,20 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
   assert.match(studio, /function openCropper/);
   assert.match(studio, /function coverCrop/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
-  assert.match(edge, /generateGeminiMemoImage/);
-  assert.match(edge, /GEMINI_IMAGE_MODEL/);
+  assert.match(studio, /Passende Fotos recherchieren/);
+  assert.match(edge, /createMemoPhotoFinder/);
+  assert.match(edge, /researchWikipediaPhoto/);
+  assert.match(edge, /researchWikidataPhoto/);
+  assert.match(edge, /researchCommonsPhoto/);
   assert.match(edge, /fillMemoImages/);
   assert.match(edge, /attach_asset_image/);
   assert.match(edge, /image_uploads/);
   assert.match(edge, /applyMemoImageUploads/);
   assert.match(edge, /remainingMs: Math.max\(0, ASSET_WALL_CLOCK_MS/);
-  assert.match(edge, /v1beta\/interactions/);
   assert.match(edge, /images_incomplete/);
   const assetSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
   assert.match(assetSrc, /image_fail/);
-  assert.match(assetSrc, /geminiInteractionsRequestBody/);
+  assert.match(assetSrc, /echte Fotos per Metadaten/);
   assert.match(assetSrc, /images_retry/);
   assert.equal(backend.MEMO_IMAGE_DATA_URI_MAX, 100 * 1024 * 1024);
   assert.match(assetSrc, /Nur pathologische Payloads/);
@@ -1745,6 +1775,20 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.doesNotThrow(() => backend.assertMemoBenchmarkBriefs(beispiel, "", { allowExample: true }));
   assert.throws(() => backend.assertMemoBenchmarkBriefs(eigene, "Lidl"), /Adressatenfirma/);
   assert.throws(() => backend.assertMemoBenchmarkBriefs(eigene.slice(0, 2), ""), /genau drei Benchmarks/);
+  const bahlsen = [
+    {
+      name: "Bahlsen",
+      text: "Hat 2021 ein radikal reduziertes Verpackungsdesign eingeführt. Es führte am Regal zu einem Rückgang der Verkaufszahlen und wurde nach einer Woche zurückgenommen.",
+      tag: "Kunde zuerst",
+      source: "",
+    },
+    eigene[1],
+    eigene[2],
+  ];
+  assert.equal(backend.benchmarkOutcomeLooksNegative(bahlsen[0].text), true);
+  assert.equal(backend.benchmarkOutcomeLooksNegative("Hat den Rückgang der Retouren halbiert und den Auftritt vereinheitlicht."), false);
+  assert.deepEqual(backend.negativeBenchmarkNames(bahlsen), ["Bahlsen"]);
+  assert.throws(() => backend.assertMemoBenchmarkBriefs(bahlsen, ""), /negativ/);
   assert.throws(() => backend.assertMemoBenchmarkBriefs([
     { name: "Lidl", text: "zu kurz", tag: "x", source: "" },
     eigene[1], eigene[2],
@@ -1789,7 +1833,15 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.match(research, /Hugo Boss/);
   assert.match(research, /Markenstrategie/);
   assert.match(research, /nicht die Nachrichtenmeldung/);
+  assert.match(research, /Ausgang, zwingend positiv/);
   assert.match(research, /{"benchmarks"/);
+  const researchExclude = backend.buildMemoBenchmarkResearchPrompt(
+    { company: "Hugo Boss" },
+    { title: "Handelsstudie" },
+    backend.normalizeAssetAnswers("memo", {}),
+    { exclude: ["Bahlsen"] },
+  );
+  assert.match(researchExclude, /<ausgeschlossen>Bahlsen<\/ausgeschlossen>/);
 
   const review = backend.buildMemoBenchmarkReviewPrompt(
     { headline_de: "Eigenmarken brauchen eine Führung", company: "Hugo Boss" },
@@ -1798,6 +1850,7 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   );
   assert.match(review, /Google Search ist Pflicht/);
   assert.match(review, /Lidl/);
+  assert.match(review, /Ausgang POSITIV/);
   assert.match(review, /{"ok":true}/);
   assert.equal(backend.parseMemoBenchmarkReview({ ok: true }).ok, true);
   assert.equal(backend.parseMemoBenchmarkReview({ ok: false, grund: "Nike ist Füllsel" }).ok, false);
@@ -1836,7 +1889,9 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.match(edge, /tools: \[\{ google_search: \{\} \}\]/);
   assert.match(edge, /buildMemoBenchmarkResearchPrompt/);
   assert.match(edge, /buildMemoBenchmarkReviewPrompt/);
-  assert.match(edge, /BENCHMARK_PASSUNG:/);
+  assert.match(edge, /negativeBenchmarkNames/);
+  assert.match(edge, /Negativer Fall verworfen/);
+  assert.match(edge, /createMemoPhotoFinder/);
   assert.match(edge, /Im Fragebogen eigene Benchmarks eintragen/);
   assert.match(edge, /function callGeminiWithGoogleSearch/);
   assert.match(edge, /streamGenerateContent\?alt=sse/);
@@ -1851,7 +1906,7 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.equal(backend.MEMO_BENCHMARK_RESEARCH_MAX_TOKENS, 4096);
   assert.equal(backend.ASSET_STREAM_KEEPALIVE_MS, 8_000);
   assert.equal(backend.ASSET_FIRST_BYTE_STALE_MS, 180_000);
-  assert.equal(backend.MEMO_IMAGE_FETCH_MS, 90_000);
+  assert.equal(backend.MEMO_IMAGE_FETCH_MS, 20_000);
   assert.match(edge, /triggerSelf\(\{ action: "finish_asset"/);
   assert.match(edge, /handoff.*finish_asset/);
   assert.match(edge, /async function finishGeneratedAsset/);

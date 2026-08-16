@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.13";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.14";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -107,7 +107,7 @@ export type MemoAnswers = {
   company_named: "yes" | "no";
   /** Override aus dem Fragebogen. Leer = erkanntes Unternehmen aus dem Signal. */
   company: string;
-  /** auto = Gemini fuellt die Motive. upload = der Nutzer schneidet selbst zu. */
+  /** auto = echte Fotos per Recherche. upload = der Nutzer schneidet selbst zu. */
   images: "auto" | "upload";
   /** auto = Gemini recherchiert Benchmarks. custom = der Nutzer liefert drei. */
   benchmarks_mode: "auto" | "custom";
@@ -700,6 +700,20 @@ export function isExampleBenchmarkSet(briefs: MemoBenchmarkBrief[]): boolean {
   return names === example;
 }
 
+/** Flops, Rücknahmen und Sales-Drops sind kein Benchmark, auch wenn der Hebel derselbe war. */
+const BENCHMARK_NEGATIVE_RE = /\b(gescheitert|scheitern|fehlschlag|misserfolg|misslungen|desaster|flop\b|skandal|boykott|rückruf|rueckruf|umsatzrückgang|absatzrückgang|verkaufsrückgang|rückgang der (verkauf|umsatz|absatz)|zurueckgenommen|zurückgenommen|zurueckgezogen|zurückgezogen|recalled|backlash|rolled[\s-]?back|withdrawn|sales[\s-]+(drop|decline|fell|slump)|failed|failure)\b/i;
+
+export function benchmarkOutcomeLooksNegative(text: string): boolean {
+  return BENCHMARK_NEGATIVE_RE.test(String(text || ""));
+}
+
+export function negativeBenchmarkNames(briefs: MemoBenchmarkBrief[]): string[] {
+  return briefs
+    .filter((item) => benchmarkOutcomeLooksNegative(`${item.text} ${item.tag}`))
+    .map((item) => item.name)
+    .filter(Boolean);
+}
+
 export function assertMemoBenchmarkBriefs(
   briefs: MemoBenchmarkBrief[],
   addresseeCompany = "",
@@ -720,6 +734,9 @@ export function assertMemoBenchmarkBriefs(
     }
     if (firma && item.name.toLowerCase() === firma) {
       throw new Error("Die Adressatenfirma ist kein Benchmark. Drei andere Marken, die denselben Hebel schon gezogen haben.");
+    }
+    if (benchmarkOutcomeLooksNegative(`${item.text} ${item.tag}`)) {
+      throw new Error(`„${item.name}“ ist kein Benchmark: der Ausgang ist negativ. Nur Fälle, die gewirkt haben — keine Flops, Rücknahmen oder Sales-Drops.`);
     }
   }
   return kept.slice(0, 3);
@@ -764,8 +781,8 @@ ${hebel || asData(article.title_de || article.title, 240) || "nicht benannt"}
 ${liste}
 </benchmarks>
 
-ok=true nur wenn alle drei denselben ROOTS-Hebel schon gezogen haben (die Leistung und den Anschluss), nicht nur dieselbe Nachricht oder Branche, und keine die Adressatenfirma ist.
-Wenn ein Name unbelegt ist oder der Mechanismus ein anderer: ok=false.
+ok=true nur wenn alle drei denselben ROOTS-Hebel schon gezogen haben (die Leistung und den Anschluss), der Ausgang POSITIV war, nicht nur dieselbe Nachricht oder Branche, und keine die Adressatenfirma ist.
+ok=false wenn ein Name unbelegt ist, der Mechanismus ein anderer ist, oder der Fall ein Flop / eine Rücknahme / ein Sales-Drop ist.
 Antworte ausschliesslich mit JSON:
 {"ok":true} oder {"ok":false,"grund":"Ein Satz auf Deutsch, welche Marke nicht passt und warum."}`;
 }
@@ -780,6 +797,7 @@ export function buildMemoBenchmarkResearchPrompt(
   signal: AssetSignalInput,
   article: AssetArticleInput,
   answers: MemoAnswers,
+  opts: { exclude?: string[] } = {},
 ): string {
   const firma = asData(answers.company, 160) || asData(signal.company, 160) || "";
   const hebel = [
@@ -793,6 +811,7 @@ export function buildMemoBenchmarkResearchPrompt(
     asData(signal.signal_label, 120),
   ].filter(Boolean).join(" · ");
   const titel = asData(article.title_de || article.title, 240);
+  const exclude = (opts.exclude || []).map((name) => name.trim()).filter(Boolean);
   return `Du recherchierst drei Benchmarks für ein ROOTS Executive Memo. Google Search ist Pflicht.
 
 <hebel>
@@ -800,7 +819,7 @@ ${hebel || titel || "nicht benannt"}
 </hebel>
 <sektor>${sektor || "unbekannt"}</sektor>
 <adressat>${firma || "nicht benannt"}</adressat>
-
+${exclude.length ? `<ausgeschlossen>${exclude.join(", ")}</ausgeschlossen>\n` : ""}
 Auftrag:
 Der Hebel ist roots_leistung plus roots_anschluss, nicht die Nachrichtenmeldung.
 Finde genau drei echte Marken oder Firmen, die DIESEN Beratungshebel schon gezogen haben.
@@ -810,8 +829,14 @@ Nicht Apple/Nike/Amazon als Füllsel, wenn der Hebel ein Handels-, Marken- oder 
 Aktuell: bevorzugt die letzten fünf Jahre. Qualitative Handlung, Zahlen nur wenn die Suche sie belegt.
 tag ist die übertragbare Lehre in wenigen Worten, kein Slogan.
 
+Ausgang, zwingend positiv:
+Ein Benchmark ist nur eine Marke, deren Handlung GEWIRKT hat — Wachstum, Share, Wahrnehmung, Tempo oder eine Umsetzung, die hält.
+Kein Benchmark: Flops, Rücknahmen, Sales-Drops, Skandale, nach kurzer Zeit zurückgezogene Designs oder Kampagnen.
+Beispiel, das NICHT zählt: ein Redesign, das am Regal verloren hat und nach einer Woche zurückgenommen wurde.
+Wenn die Suche einen negativen Fall findet, verwirf ihn und nimm eine andere Marke.
+${exclude.length ? `Nimm keine der Marken aus <ausgeschlossen>.\n` : ""}
 Antworte ausschliesslich mit JSON:
-{"benchmarks":[{"name":"Marke","text":"Was sie konkret getan hat.","tag":"Lehre","source":"Titel · Medium · Jahr"}]}`;
+{"benchmarks":[{"name":"Marke","text":"Was sie konkret getan hat und warum es gewirkt hat.","tag":"Lehre","source":"Titel · Medium · Jahr"}]}`;
 }
 
 export function normalizeMemoBenchmarkResearch(raw: unknown, groundingTitles: string[] = []): MemoBenchmarkBrief[] {
@@ -1248,7 +1273,7 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
   const firma = asData(answers.company, 160) || asData(signal.company, 160) || "";
   const bilder = answers.images === "upload"
     ? "Bilder: der Nutzer lädt sie selbst. Schreibe image_hint als Motivbeschreibung für den Platzhalter."
-    : "Bilder: Gemini erzeugt die Motive aus image_hint. Beschreibe je Slot ein konkretes, textfreies Fotomotiv.";
+    : "Bilder: echte Fotos werden recherchiert (Store, Fabrik, Hauptsitz, Logo). image_hint nennt das reale Motiv — kein KI-Bild.";
   const benchmarks = answers.benchmarks.length >= 3
     ? `Benchmarks, verbindlich:\n${formatBenchmarkBlock(answers.benchmarks, answers.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\nÜbernimm name, text und tag. Formuliere höchstens sprachlich. Zahlen nur wie dort angegeben. Erfinde keine vierte Marke und ersetze keine Namen.`
     : "Benchmarks: genau drei, die denselben Hebel schon gezogen haben. Nur aus <benchmarks> oder aus artikel.";
@@ -1279,7 +1304,7 @@ Das Memo überzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu spre
 <hebel>
 Zuerst roots_anschluss, dann roots_leistung, dann begründung. Das ist die Übersetzung, die ROOTS schon geleistet hat. Daraus entsteht das Memo.
 title sagt die Herausforderung in der Sprache des Falls (Häuser, Profile, Handschrift, Kanal, Portfolio, Positionierung), nicht den Produktnamen (Markenstrategie, Marketing Audit, Brand Audit) und nicht Beratungsjargon wie „Hebel ziehen“.
-Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben — denselben Mechanismus, nicht dieselbe Nachricht (Sanierung, Übernahme, Personalie).
+Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben — denselben Mechanismus, nicht dieselbe Nachricht (Sanierung, Übernahme, Personalie). Nur Erfolge: die Handlung hat gewirkt. Keine Flops, Rücknahmen oder Sales-Drops.
 Die drei potentials übersetzen genau diese Leistung auf den Adressaten. about_fit nennt roots_leistung erst am Schluss.
 </hebel>
 <titel>
@@ -1299,7 +1324,7 @@ Ein Führungswechsel, eine Kampagne, eine Transaktion oder eine Zahl ist nur dan
 Eine 100-Tage-CMO-Unterlage ist ein anderes Dokument, nicht dieses Memo. Auch wenn roots_leistung, roots_anschluss oder der Anlass ein CMO-Wechsel oder „Die ersten 100 Tage als CMO“ enthalten: dieses Executive Memo behandelt ausschließlich die thematische Markt- oder Markenherausforderung. Keine 100-Tage-Agenda, keine CMO-Onboarding-Sprache, keine ersten 100 Tage in title, standfirst, about_fit, Potenzialen oder CTA.
 </sonderfall>
 <zusammenhang>
-title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss. market_title und die KPIs belegen, dass der Markt sich bewegt. Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel in der Sprache des Falls, ohne den Leistungsnamen zu wiederholen. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation. Nichts erzählt die Signalüberschrift noch einmal.
+title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss. market_title und die KPIs belegen, dass der Markt sich bewegt. Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Nur positive Ausgänge. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel in der Sprache des Falls, ohne den Leistungsnamen zu wiederholen. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation. Nichts erzählt die Signalüberschrift noch einmal.
 </zusammenhang>
 <auftrag>
 ${auftrag}
@@ -1312,7 +1337,7 @@ market_p1, market_p2: je ein Absatz. Lage des Marktes, dann warum der Moment jet
 kpis: drei oder vier belegte Kennzahlen. value in einer Zeile, ohne Umbruch, z. B. 14 % oder 329 Mio. €. label erklärt den Bezug. Leer, wenn keine Ziffer vorliegt.
 benchmark_title: Überschrift von 02. Was Benchmarks am selben Hebel richtig machen.
 benchmark_lead: ein Satz, worin der ROOTS-Hebel liegt, nicht die Nachricht.
-benchmarks: genau drei. name, text und tag kommen aus <benchmarks>, wenn der Block steht. Sonst qualitative Analogie aus artikel zum selben Hebel. Ziffern nur mit Beleg.
+benchmarks: genau drei. name, text und tag kommen aus <benchmarks>, wenn der Block steht. Sonst qualitative Analogie aus artikel zum selben Hebel. Ziffern nur mit Beleg. Nur positive Ausgänge, keine gescheiterten Versuche.
 potentials_title: Überschrift von 03. Der Channel- oder Lage-Check DIESES Unternehmens.
 potentials_lead: ein Satz, wie viele Ansatzpunkte der Check zeigt.
 potentials: genau drei. title mit Verb oder Gegensatz („vom … zur …“), höchstens acht Wörter. finding = belegter Zustand, ein bis zwei kurze Sätze. potential = was ROOTS daraus macht, ein bis zwei kurze Sätze, ohne erfundene Zahl. Beide Felder müssen auf der Karte über dem Futter bleiben. image_hint das Motiv.
@@ -1416,7 +1441,7 @@ const BENCH_SCHEMA = {
   required: ["name", "text", "tag"],
   properties: {
     name: { type: "STRING", description: "Firma oder Marke des Benchmarks." },
-    text: { type: "STRING", description: "Beleg, was der Benchmark getan hat. Ziffern nur mit Artikelbeleg." },
+    text: { type: "STRING", description: "Beleg, was der Benchmark getan hat und warum es gewirkt hat. Kein Flop. Ziffern nur mit Artikelbeleg." },
     tag: { type: "STRING", description: "Übertragbare Lehre in wenigen Worten." },
     image_hint: { type: "STRING", description: "Bildmotiv in Worten. Die Datei kommt vom Nutzer." },
   },
@@ -1445,7 +1470,7 @@ export const ASSET_SCHEMA_MEMO = {
     kpis: { type: "ARRAY", items: STAT_SCHEMA, description: "Drei oder vier belegte Kennzahlen. Leer, wenn keine Ziffer vorliegt." },
     benchmark_title: { type: "STRING", description: "Überschrift von 02 Benchmarks." },
     benchmark_lead: { type: "STRING", description: "Ein Satz, worin der Hebel der Benchmarks liegt." },
-    benchmarks: { type: "ARRAY", items: BENCH_SCHEMA, description: "Genau drei Benchmarks." },
+    benchmarks: { type: "ARRAY", items: BENCH_SCHEMA, description: "Genau drei Benchmarks mit positivem Ausgang." },
     potentials_title: { type: "STRING", description: "Überschrift von 03 Potenziale." },
     potentials_lead: { type: "STRING", description: "Ein Satz, wie viele Ansatzpunkte der Check zeigt." },
     potentials: { type: "ARRAY", items: POT_SCHEMA, description: "Genau drei Potenziale für DIESES Unternehmen." },
@@ -2041,17 +2066,18 @@ export function normalizeAssetPayload(
 }
 
 // ---------------------------------------------------------------------------
-// Memo-Motive: Gemini erzeugt, der Nutzer schneidet zu. Das Seitenlayout
-// (46 mm × 28 mm Benchmark, 52 mm × 36 mm Potenzial) bleibt unverändert.
+// Memo-Motive: echte Fotos per Metadaten und Recherche, der Nutzer schneidet
+// zu. Das Seitenlayout (46 mm × 28 mm Benchmark, 52 mm × 36 mm Potenzial)
+// bleibt unverändert. Keine KI-generierten Bilder.
 // ---------------------------------------------------------------------------
-export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
-export const GEMINI_IMAGE_FALLBACK_MODEL = "gemini-2.5-flash-image";
+export const MEMO_PHOTO_USER_AGENT = "ROOTS-Signal-Layer/1.0 (memo photos; hello@roots-consultants.com)";
 /** Nur pathologische Payloads. Ein Motiv von ein paar MB darf nicht still verworfen werden. */
 export const MEMO_IMAGE_DATA_URI_MAX = 100 * 1024 * 1024;
 export const MEMO_IMAGE_CONCURRENCY = 3;
 export const MEMO_IMAGE_MIN_REMAINING_MS = 40_000;
-/** Ein Motiv braucht oft länger als 45 s; 45 s plus Fallback hat Xpeng bei den Bildern gekillt. */
-export const MEMO_IMAGE_FETCH_MS = 90_000;
+/** Download eines gefundenen Fotos, nicht Modell-Generierung. */
+export const MEMO_IMAGE_FETCH_MS = 20_000;
+export const MEMO_PHOTO_BYTES_MAX = 8 * 1024 * 1024;
 
 export const MEMO_SHOT_ASPECT = {
   benchmark: { w: 46, h: 28 },
@@ -2067,115 +2093,251 @@ export type MemoImageSlot = {
   key: string;
   kind: "benchmark" | "potential";
   index: number;
+  subject: string;
   hint: string;
+  queries: string[];
   aspectMm: { w: number; h: number };
   pixels: { w: number; h: number };
   geminiAspect: "16:9" | "3:2" | "4:3";
+};
+
+export type MemoPhotoHit = {
+  url: string;
+  source: string;
+  query: string;
 };
 
 export function geminiAspectForShot(kind: "benchmark" | "potential"): "16:9" | "3:2" | "4:3" {
   return kind === "benchmark" ? "16:9" : "3:2";
 }
 
-export function memoImageSlots(payload: MemoPayload): MemoImageSlot[] {
-  const benchmarks = (payload.benchmarks || []).slice(0, 3).map((eintrag, index) => ({
-    key: `benchmarks.${index}`,
-    kind: "benchmark" as const,
-    index,
-    hint: eintrag.image_hint || eintrag.tag || eintrag.name,
-    aspectMm: MEMO_SHOT_ASPECT.benchmark,
-    pixels: MEMO_SHOT_PIXELS.benchmark,
-    geminiAspect: geminiAspectForShot("benchmark"),
-  }));
-  const potentials = (payload.potentials || []).slice(0, 3).map((eintrag, index) => ({
-    key: `potentials.${index}`,
-    kind: "potential" as const,
-    index,
-    hint: eintrag.image_hint || eintrag.title,
-    aspectMm: MEMO_SHOT_ASPECT.potential,
-    pixels: MEMO_SHOT_PIXELS.potential,
-    geminiAspect: geminiAspectForShot("potential"),
-  }));
+export function memoPhotoQueries(subject: string, hint = ""): string[] {
+  const name = String(subject || "").trim();
+  if (!name) return [];
+  const extra = String(hint || "").trim();
+  const liste = [
+    extra && !new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i").test(extra)
+      ? `${name} ${extra}` : "",
+    `${name} store`,
+    `${name} headquarters`,
+    `${name} factory`,
+    `${name} Filiale`,
+    `${name} Hauptsitz`,
+    `${name} Fabrik`,
+    `${name} logo`,
+    name,
+  ].filter(Boolean);
+  return [...new Set(liste)];
+}
+
+export function memoImageSlots(payload: MemoPayload, addressee = ""): MemoImageSlot[] {
+  const adressat = String(addressee || "").trim();
+  const benchmarks = (payload.benchmarks || []).slice(0, 3).map((eintrag, index) => {
+    const subject = String(eintrag.name || "").trim() || "brand";
+    const hint = eintrag.image_hint || eintrag.tag || eintrag.name;
+    return {
+      key: `benchmarks.${index}`,
+      kind: "benchmark" as const,
+      index,
+      subject,
+      hint,
+      queries: memoPhotoQueries(subject, hint),
+      aspectMm: MEMO_SHOT_ASPECT.benchmark,
+      pixels: MEMO_SHOT_PIXELS.benchmark,
+      geminiAspect: geminiAspectForShot("benchmark"),
+    };
+  });
+  const potentials = (payload.potentials || []).slice(0, 3).map((eintrag, index) => {
+    const subject = adressat || String(eintrag.title || "").trim() || "brand";
+    const hint = eintrag.image_hint || eintrag.title;
+    return {
+      key: `potentials.${index}`,
+      kind: "potential" as const,
+      index,
+      subject,
+      hint,
+      queries: memoPhotoQueries(subject, hint),
+      aspectMm: MEMO_SHOT_ASPECT.potential,
+      pixels: MEMO_SHOT_PIXELS.potential,
+      geminiAspect: geminiAspectForShot("potential"),
+    };
+  });
   return [...benchmarks, ...potentials];
 }
 
-export function memoImagePrompt(slot: MemoImageSlot): string {
-  const rahmen = `${slot.aspectMm.w}×${slot.aspectMm.h} mm, landscape, fill the frame`;
-  return [
-    "Photorealistic editorial photograph for a one-page executive memo.",
-    "No text, no logos, no watermarks, no captions, no UI.",
-    `Composition: ${rahmen}. Documentary lighting, European retail or brand context.`,
-    `Subject: ${slot.hint || "brand and retail scene"}.`,
-  ].join(" ");
+export function wikipediaOpenSearchApiUrl(lang: "de" | "en", query: string): string {
+  const params = new URLSearchParams({
+    action: "opensearch",
+    search: query,
+    limit: "1",
+    namespace: "0",
+    format: "json",
+    origin: "*",
+  });
+  return `https://${lang}.wikipedia.org/w/api.php?${params}`;
 }
 
-export function geminiImageRequestBody(prompt: string, aspect: string): Record<string, unknown> {
-  return {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseModalities: ["IMAGE"],
-      imageConfig: {
-        aspectRatio: aspect || "16:9",
-        imageSize: "1K",
-      },
-    },
-  };
+export function wikipediaSummaryApiUrl(lang: "de" | "en", title: string): string {
+  return `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
 }
 
-export function geminiInteractionsRequestBody(
-  prompt: string,
-  aspect: string,
-  model: string,
-): Record<string, unknown> {
-  return {
-    model,
-    input: [{ type: "text", text: prompt }],
-    response_format: {
-      type: "image",
-      mime_type: "image/jpeg",
-      aspect_ratio: aspect || "16:9",
-      image_size: "1K",
-    },
-  };
+export function commonsPhotoSearchApiUrl(query: string): string {
+  const params = new URLSearchParams({
+    action: "query",
+    generator: "search",
+    gsrsearch: query,
+    gsrnamespace: "6",
+    gsrlimit: "8",
+    prop: "imageinfo",
+    iiprop: "url|mime|size",
+    iiurlwidth: "1200",
+    format: "json",
+    origin: "*",
+  });
+  return `https://commons.wikimedia.org/w/api.php?${params}`;
 }
 
-export function parseGeminiInlineImage(payload: unknown): { mime: string; data: string } | null {
-  const root = record(payload);
-  const candidates = Array.isArray(root.candidates) ? root.candidates : [];
-  for (const candidate of candidates) {
-    const content = record(record(candidate).content);
-    const parts = Array.isArray(content.parts) ? content.parts : [];
-    for (const part of parts) {
-      const inline = record(record(part).inlineData || record(part).inline_data);
-      const data = String(inline.data || "").replace(/\s+/g, "");
-      const mime = String(inline.mimeType || inline.mime_type || "image/jpeg");
-      if (data.length > 80) return { mime, data };
-    }
+export function wikidataSearchApiUrl(query: string): string {
+  const params = new URLSearchParams({
+    action: "wbsearchentities",
+    search: query,
+    language: "en",
+    uselang: "de",
+    type: "item",
+    limit: "1",
+    format: "json",
+    origin: "*",
+  });
+  return `https://www.wikidata.org/w/api.php?${params}`;
+}
+
+export function wikidataEntityApiUrl(id: string): string {
+  const params = new URLSearchParams({
+    action: "wbgetentities",
+    ids: id,
+    props: "claims",
+    format: "json",
+    origin: "*",
+  });
+  return `https://www.wikidata.org/w/api.php?${params}`;
+}
+
+export function wikimediaFilePathUrl(filename: string, width = 1200): string {
+  const file = String(filename || "").replace(/^File:/i, "").trim().replace(/ /g, "_");
+  return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(file)}?width=${width}`;
+}
+
+export function isAllowedMemoPhotoUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    if (host === "upload.wikimedia.org") return true;
+    if (host === "commons.wikimedia.org" && /Special:FilePath/i.test(url.pathname)) return true;
+    if (host.endsWith(".wikipedia.org") && /\/thumb\//i.test(url.pathname)) return true;
+    return false;
+  } catch {
+    return false;
   }
-  return null;
 }
 
-export function parseGeminiInteractionImage(payload: unknown): { mime: string; data: string } | null {
-  const root = record(payload);
-  const from = (value: unknown): { mime: string; data: string } | null => {
-    const item = record(value);
-    const data = String(item.data || item.b64_json || "").replace(/\s+/g, "");
-    if (data.length <= 80) return null;
-    return { mime: String(item.mime_type || item.mimeType || "image/jpeg"), data };
-  };
-  const direct = from(root.output_image);
-  if (direct) return direct;
-  const steps = Array.isArray(root.steps) ? root.steps : [];
-  for (const step of steps) {
-    const content = Array.isArray(record(step).content) ? record(step).content as unknown[] : [];
-    for (const block of content) {
-      const item = record(block);
-      if (String(item.type || "") !== "image" && !item.data) continue;
-      const hit = from(block);
-      if (hit) return hit;
+export function parseWikipediaOpenSearch(raw: unknown): string {
+  if (!Array.isArray(raw) || !Array.isArray(raw[1])) return "";
+  return String(raw[1][0] || "").trim();
+}
+
+export function parseWikipediaSummaryImage(raw: unknown): MemoPhotoHit | null {
+  const root = record(raw);
+  const original = record(root.originalimage);
+  const thumb = record(root.thumbnail);
+  const url = String(thumb.source || original.source || "").trim();
+  if (!isAllowedMemoPhotoUrl(url) && !String(url).includes("upload.wikimedia.org")) return null;
+  if (!url.startsWith("https://")) return null;
+  return { url, source: "wikipedia", query: String(root.title || "") };
+}
+
+export function commonsPhotoScore(title: string, mime: string, subject: string): number {
+  const name = title.toLowerCase();
+  const brand = String(subject || "").toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  if (brand.length && !brand.some((w) => name.includes(w))) return -20;
+  if (/\b(map|flag|icon|signature|coat of arms|diagram|chart|svg)\b/i.test(title)) return -8;
+  let score = 0;
+  const kind = String(mime || "").toLowerCase();
+  if (kind.includes("jpeg") || kind.includes("jpg")) score += 5;
+  else if (kind.includes("png") || kind.includes("webp")) score += 3;
+  else if (kind.includes("svg")) score += 1;
+  else return -5;
+  if (/\b(store|shop|retail|factory|fabrik|headquarters|hauptsitz|filiale|building|campus|office|bakery)\b/i.test(title)) score += 4;
+  if (/\blogo\b/i.test(title)) score += 1;
+  return score;
+}
+
+export function parseCommonsPhotoHits(raw: unknown, subject: string): MemoPhotoHit[] {
+  const pages = record(record(raw).query).pages;
+  const bag = pages && typeof pages === "object" ? pages as Record<string, unknown> : {};
+  return Object.values(bag).map((page) => {
+    const item = record(page);
+    const title = String(item.title || "");
+    const info = record(Array.isArray(item.imageinfo) ? item.imageinfo[0] : {});
+    const mime = String(info.mime || "");
+    const url = String(info.thumburl || info.url || "");
+    return { title, mime, url, score: commonsPhotoScore(title, mime, subject) };
+  }).filter((hit) => hit.score > 0 && hit.url.startsWith("https://"))
+    .sort((a, b) => b.score - a.score)
+    .map((hit) => ({ url: hit.url, source: "wikimedia_commons", query: hit.title }));
+}
+
+export function parseWikidataSearchId(raw: unknown): string {
+  const liste = Array.isArray(record(raw).search) ? record(raw).search as unknown[] : [];
+  const first = record(liste[0]);
+  return String(first.id || "").trim();
+}
+
+export function parseWikidataEntityImage(raw: unknown): string {
+  const entities = record(record(raw).entities);
+  const ids = Object.keys(entities);
+  if (!ids.length) return "";
+  const claims = record(record(entities[ids[0]]).claims);
+  const pickClaim = (prop: string): string => {
+    const liste = Array.isArray(claims[prop]) ? claims[prop] as unknown[] : [];
+    for (const entry of liste) {
+      const value = record(record(record(entry).mainsnak).datavalue).value;
+      const name = String(value || "").trim();
+      if (name) return name;
     }
+    return "";
+  };
+  return pickClaim("P18") || pickClaim("P154");
+}
+
+export function buildMemoPhotoResearchPrompt(slots: MemoImageSlot[]): string {
+  const liste = slots.map((slot) =>
+    `${slot.key}: ${slot.subject} — ${slot.kind === "benchmark" ? "Benchmark-Marke" : "Adressat"} — Store, Fabrik, Hauptsitz, Filiale oder Logo`).join("\n");
+  return `Finde für jedes Motiv ein echtes Foto. Keine KI-Grafik, kein Midjourney, kein generiertes Bild.
+Nur direkte Bild-URLs von upload.wikimedia.org (Wikimedia Commons oder Wikipedia).
+Bevorzugt: Filiale, Store, Fabrik, Hauptsitz, Produkt in der Fläche, sonst das Logo.
+
+<motive>
+${liste}
+</motive>
+
+Antworte ausschliesslich mit JSON:
+{"photos":[{"key":"benchmarks.0","url":"https://upload.wikimedia.org/wikipedia/commons/...","credit":"Wikimedia Commons"}]}`;
+}
+
+export function parseMemoPhotoResearch(raw: unknown): Record<string, string> {
+  const root = record(raw);
+  const liste = Array.isArray(root.photos) ? root.photos : Array.isArray(root.images) ? root.images : [];
+  const out: Record<string, string> = {};
+  for (const entry of liste) {
+    const item = record(entry);
+    const key = String(item.key || item.slot || "").trim();
+    const url = String(item.url || item.src || "").trim();
+    if (!key || !url.startsWith("https://")) continue;
+    if (!isAllowedMemoPhotoUrl(url) && !url.includes("upload.wikimedia.org")) continue;
+    out[key] = url;
   }
-  return parseGeminiInlineImage(payload);
+  return out;
 }
 
 export function memoImageDataUri(mime: string, data: string): string | null {
@@ -2271,7 +2433,7 @@ export function memoPayloadHasSlotImages(payload: unknown): boolean {
   return memoImageSlots(p).some((slot) => memoSlotHasImage(p, slot.key));
 }
 
-/** Gemini hat Motive geliefert, die Nutzlast in der Zeile hat sie aber nicht. */
+/** Recherche hat Motive geliefert, die Nutzlast in der Zeile hat sie aber nicht. */
 export function assetMemoImagesIncomplete(row: {
   kind?: unknown;
   payload?: unknown;
@@ -2299,9 +2461,10 @@ export async function fillMemoImages(
   payload: MemoPayload,
   answers: MemoAnswers,
   opts: {
-    generate: (prompt: string, aspect: string) => Promise<string | null>;
+    fetchPhoto: (slot: MemoImageSlot) => Promise<string | null>;
     remainingMs: number;
     log?: (event: string, extra?: Record<string, unknown>) => void | Promise<void>;
+    prepareRetry?: (slots: MemoImageSlot[]) => void | Promise<void>;
   },
 ): Promise<MemoPayload> {
   if (answers.images === "upload") {
@@ -2312,7 +2475,7 @@ export async function fillMemoImages(
     await opts.log?.("images_skip", { reason: "wall_clock", remaining_ms: opts.remainingMs });
     return payload;
   }
-  const slots = memoImageSlots(payload).filter((slot) => !memoSlotHasImage(payload, slot.key));
+  const slots = memoImageSlots(payload, answers.company).filter((slot) => !memoSlotHasImage(payload, slot.key));
   if (!slots.length) {
     await opts.log?.("images_skip", { reason: "already_filled" });
     return payload;
@@ -2320,12 +2483,12 @@ export async function fillMemoImages(
   const filled = { ok: 0, fail: 0 };
   const eines = async (slot: MemoImageSlot) => {
     try {
-      await opts.log?.("image_start", { key: slot.key });
-      const src = await opts.generate(memoImagePrompt(slot), slot.geminiAspect);
+      await opts.log?.("image_start", { key: slot.key, subject: slot.subject });
+      const src = await opts.fetchPhoto(slot);
       if (src) {
         attachMemoSlotImage(payload, slot.key, src);
         filled.ok += 1;
-        await opts.log?.("image_ok", { key: slot.key });
+        await opts.log?.("image_ok", { key: slot.key, subject: slot.subject });
       } else {
         filled.fail += 1;
         await opts.log?.("image_fail", { key: slot.key, error: "empty" });
@@ -2336,12 +2499,13 @@ export async function fillMemoImages(
     }
   };
   await mapLimit(slots, MEMO_IMAGE_CONCURRENCY, eines);
-  const nochmal = memoImageSlots(payload).filter((slot) => !memoSlotHasImage(payload, slot.key));
+  const nochmal = memoImageSlots(payload, answers.company).filter((slot) => !memoSlotHasImage(payload, slot.key));
   if (nochmal.length) {
     filled.fail = nochmal.length;
+    await opts.prepareRetry?.(nochmal);
     await opts.log?.("images_retry", { n: nochmal.length });
     await mapLimit(nochmal, 1, eines);
-    filled.fail = memoImageSlots(payload).filter((slot) => !memoSlotHasImage(payload, slot.key)).length;
+    filled.fail = memoImageSlots(payload, answers.company).filter((slot) => !memoSlotHasImage(payload, slot.key)).length;
   }
   await opts.log?.("images_done", filled);
   return payload;
