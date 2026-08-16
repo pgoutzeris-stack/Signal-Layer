@@ -2044,8 +2044,8 @@ export function normalizeAssetPayload(
 // Memo-Motive: Gemini erzeugt, der Nutzer schneidet zu. Das Seitenlayout
 // (46 mm × 28 mm Benchmark, 52 mm × 36 mm Potenzial) bleibt unverändert.
 // ---------------------------------------------------------------------------
-export const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
-export const GEMINI_IMAGE_FALLBACK_MODEL = "gemini-2.0-flash-preview-image-generation";
+export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
+export const GEMINI_IMAGE_FALLBACK_MODEL = "gemini-2.5-flash-image";
 /** Nur pathologische Payloads. Ein Motiv von ein paar MB darf nicht still verworfen werden. */
 export const MEMO_IMAGE_DATA_URI_MAX = 100 * 1024 * 1024;
 export const MEMO_IMAGE_CONCURRENCY = 3;
@@ -2113,12 +2113,28 @@ export function geminiImageRequestBody(prompt: string, aspect: string): Record<s
   return {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
-      responseModalities: ["TEXT", "IMAGE"],
+      responseModalities: ["IMAGE"],
       imageConfig: {
         aspectRatio: aspect || "16:9",
         imageSize: "1K",
-        imageOutputOptions: { mimeType: "image/jpeg" },
       },
+    },
+  };
+}
+
+export function geminiInteractionsRequestBody(
+  prompt: string,
+  aspect: string,
+  model: string,
+): Record<string, unknown> {
+  return {
+    model,
+    input: [{ type: "text", text: prompt }],
+    response_format: {
+      type: "image",
+      mime_type: "image/jpeg",
+      aspect_ratio: aspect || "16:9",
+      image_size: "1K",
     },
   };
 }
@@ -2132,11 +2148,34 @@ export function parseGeminiInlineImage(payload: unknown): { mime: string; data: 
     for (const part of parts) {
       const inline = record(record(part).inlineData || record(part).inline_data);
       const data = String(inline.data || "").replace(/\s+/g, "");
-      const mime = String(inline.mimeType || inline.mime_type || "image/png");
+      const mime = String(inline.mimeType || inline.mime_type || "image/jpeg");
       if (data.length > 80) return { mime, data };
     }
   }
   return null;
+}
+
+export function parseGeminiInteractionImage(payload: unknown): { mime: string; data: string } | null {
+  const root = record(payload);
+  const from = (value: unknown): { mime: string; data: string } | null => {
+    const item = record(value);
+    const data = String(item.data || item.b64_json || "").replace(/\s+/g, "");
+    if (data.length <= 80) return null;
+    return { mime: String(item.mime_type || item.mimeType || "image/jpeg"), data };
+  };
+  const direct = from(root.output_image);
+  if (direct) return direct;
+  const steps = Array.isArray(root.steps) ? root.steps : [];
+  for (const step of steps) {
+    const content = Array.isArray(record(step).content) ? record(step).content as unknown[] : [];
+    for (const block of content) {
+      const item = record(block);
+      if (String(item.type || "") !== "image" && !item.data) continue;
+      const hit = from(block);
+      if (hit) return hit;
+    }
+  }
+  return parseGeminiInlineImage(payload);
 }
 
 export function memoImageDataUri(mime: string, data: string): string | null {
@@ -2251,9 +2290,8 @@ export function assetMemoImagesIncomplete(row: {
   if (rows.some((eintrag) => String(eintrag.event || "") === "images_skip")) return false;
   return rows.some((eintrag) => {
     const event = String(eintrag.event || "");
-    if (event === "image_ok") return true;
-    if (event === "images_done") return Number(eintrag.ok || 0) > 0;
-    return false;
+    return event === "image_ok" || event === "image_fail" || event === "image_start"
+      || event === "images_done" || event === "images_retry" || event === "images_incomplete";
   });
 }
 
@@ -2280,7 +2318,7 @@ export async function fillMemoImages(
     return payload;
   }
   const filled = { ok: 0, fail: 0 };
-  await mapLimit(slots, MEMO_IMAGE_CONCURRENCY, async (slot) => {
+  const eines = async (slot: MemoImageSlot) => {
     try {
       await opts.log?.("image_start", { key: slot.key });
       const src = await opts.generate(memoImagePrompt(slot), slot.geminiAspect);
@@ -2296,7 +2334,15 @@ export async function fillMemoImages(
       filled.fail += 1;
       await opts.log?.("image_fail", { key: slot.key, error: String(fehler).slice(0, 240) });
     }
-  });
+  };
+  await mapLimit(slots, MEMO_IMAGE_CONCURRENCY, eines);
+  const nochmal = memoImageSlots(payload).filter((slot) => !memoSlotHasImage(payload, slot.key));
+  if (nochmal.length) {
+    filled.fail = nochmal.length;
+    await opts.log?.("images_retry", { n: nochmal.length });
+    await mapLimit(nochmal, 1, eines);
+    filled.fail = memoImageSlots(payload).filter((slot) => !memoSlotHasImage(payload, slot.key)).length;
+  }
   await opts.log?.("images_done", filled);
   return payload;
 }

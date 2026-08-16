@@ -133,6 +133,7 @@ import {
   fillMemoImages,
   geminiFinishAllowsParse,
   geminiImageRequestBody,
+  geminiInteractionsRequestBody,
   isAssetKind,
   memoBenchmarkCorpus,
   memoImageDataUri,
@@ -144,6 +145,7 @@ import {
   normalizeMemoBenchmarkResearch,
   parseDeepseekSseData,
   parseGeminiInlineImage,
+  parseGeminiInteractionImage,
   parseGeminiSseData,
   stripCmoHundredDaysOffering,
   stripCmoHundredDaysText,
@@ -3332,39 +3334,67 @@ async function generateGeminiMemoImage(
 ): Promise<string | null> {
   const models = [GEMINI_IMAGE_MODEL, GEMINI_IMAGE_FALLBACK_MODEL];
   const contents = [{ role: "user", parts: [{ text: prompt }] }];
-  const bodies = [
+  const generateBodies = [
     geminiImageRequestBody(prompt, aspect),
-    { contents, generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: aspect || "16:9", imageOutputOptions: { mimeType: "image/jpeg" } } } },
+    {
+      contents,
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { aspectRatio: aspect || "16:9" },
+      },
+    },
   ];
   let lastError = "empty";
-  for (const model of models) {
-    for (const body of bodies) {
-      try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-        const response = await fetchMitLimit(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-          body: JSON.stringify(body),
-        }, MEMO_IMAGE_FETCH_MS);
-        if (!response.ok) {
-          lastError = `${model}:http_${response.status}`;
-          continue;
-        }
-        const json = await response.json();
-        const inline = parseGeminiInlineImage(json);
-        if (!inline) {
-          lastError = `${model}:no_inline`;
-          continue;
-        }
-        const uri = memoImageDataUri(inline.mime, inline.data);
-        if (!uri) {
-          lastError = `${model}:too_large:${inline.data.length}`;
-          continue;
-        }
-        return uri;
-      } catch (fehler) {
-        lastError = `${model}:${fehler instanceof Error ? fehler.message : String(fehler)}`.slice(0, 240);
+  const versuch = async (
+    label: string,
+    url: string,
+    body: Record<string, unknown>,
+    parse: (payload: unknown) => { mime: string; data: string } | null,
+  ): Promise<string | null> => {
+    try {
+      const response = await fetchMitLimit(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify(body),
+      }, MEMO_IMAGE_FETCH_MS);
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        lastError = `${label}:http_${response.status}:${text.replace(/\s+/g, " ").slice(0, 160)}`;
+        return null;
       }
+      const json = await response.json();
+      const inline = parse(json);
+      if (!inline) {
+        lastError = `${label}:no_inline`;
+        return null;
+      }
+      const uri = memoImageDataUri(inline.mime, inline.data);
+      if (!uri) {
+        lastError = `${label}:too_large:${inline.data.length}`;
+        return null;
+      }
+      return uri;
+    } catch (fehler) {
+      lastError = `${label}:${fehler instanceof Error ? fehler.message : String(fehler)}`.slice(0, 240);
+      return null;
+    }
+  };
+  for (const model of models) {
+    const viaInteractions = await versuch(
+      `${model}:interactions`,
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
+      geminiInteractionsRequestBody(prompt, aspect, model),
+      parseGeminiInteractionImage,
+    );
+    if (viaInteractions) return viaInteractions;
+    for (const [i, body] of generateBodies.entries()) {
+      const viaGenerate = await versuch(
+        `${model}:generateContent${i ? `:b${i}` : ""}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        body,
+        parseGeminiInlineImage,
+      );
+      if (viaGenerate) return viaGenerate;
     }
   }
   throw new Error(lastError);
@@ -5166,7 +5196,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         const beat = setInterval(() => { void persist({}); }, ASSET_STREAM_KEEPALIVE_MS);
         try {
           payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
-            remainingMs: ASSET_WALL_CLOCK_MS,
+            remainingMs: Math.max(0, ASSET_WALL_CLOCK_MS - (Date.now() - startedAt)),
             log: async (event, extra) => {
               loggen(event, extra || {});
               if (event === "image_ok") {
@@ -5191,11 +5221,27 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
             generate: (promptText, aspect) => generateGeminiMemoImage(geminiKey, promptText, aspect),
           });
         } catch (fehler) {
-          loggen("images_skip", { reason: String(fehler).slice(0, 300) });
+          loggen("images_incomplete", { reason: String(fehler).slice(0, 300) });
         } finally {
           clearInterval(beat);
         }
       }
+    }
+
+    if (
+      assetKind === "memo"
+      && (assetAnswers as MemoAnswers).images !== "upload"
+      && payload
+      && !memoPayloadHasSlotImages(payload)
+      && !runLog.some((eintrag) => String(eintrag.event || "") === "images_skip")
+    ) {
+      loggen("images_incomplete", { reason: "none_attached" });
+      await persist({
+        status: "error",
+        error_message: "Die Motive sind fehlgeschlagen. Bitte denselben Auftrag noch einmal starten.",
+        payload,
+      });
+      return;
     }
 
     await abschnitt("fuellen");
