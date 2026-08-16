@@ -1151,7 +1151,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.15");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.16");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -1167,9 +1167,11 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(memoPrompt, /Unternehmen nennen: Aeffe/);
   assert.match(memoPrompt, /Wie kann Aeffe/);
   assert.match(memoPrompt, /mit Aeffe im Satz/);
+  assert.match(memoPrompt, /thematische Fotos/);
+  assert.match(memoPrompt, /kurze Szene zum Finding/);
   assert.match(studio, /key: "company_mode"/);
   assert.match(studio, /key: "images"/);
-  assert.match(studio, /Unternehmenslogos recherchieren/);
+  assert.match(studio, /Logos und Motive recherchieren/);
 });
 
 test("Tilden und Sterne zählen nicht gegen die Zeichenschwelle", () => {
@@ -1566,6 +1568,7 @@ test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
   assert.match(tpl.MEMO_TEMPLATE_CSS, /padding-bottom:72mm/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-shot\{[^}]*background:#fff/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-shot img[^}]*object-fit:contain/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-pot \.em-shot img[^}]*object-fit:cover/);
   assert.match(studio, /from "\.\/memo-template\.js/);
   assert.match(studio, /MEMO_TEMPLATE/);
   assert.match(studio, /availH \/ h/);
@@ -1627,8 +1630,18 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.equal(slots.length, 6);
   assert.equal(slots[0].subject, "Marke A");
   assert.ok(slots[0].queries.some((q) => /logo/i.test(q)));
-  assert.equal(slots[3].subject, "Puma");
-  assert.equal(backend.memoImageSlots(memo).filter((slot) => slot.kind === "potential").every((slot) => slot.subject === ""), true);
+  assert.equal(slots[3].subject, "Vom Sortiment zur Marke");
+  assert.equal(slots[3].company, "Puma");
+  assert.ok(slots[3].queries.every((q) => !/\blogo\b/i.test(q)));
+  assert.ok(slots[3].queries.some((q) => /sortiment|marke|packshot|store|kampagne|laden/i.test(q)));
+  assert.deepEqual(
+    backend.memoImageSlots(memo).filter((slot) => slot.kind === "potential").map((slot) => slot.subject),
+    ["Vom Sortiment zur Marke", "Vom Kanal zum System", "Von der Kampagne zur Linie"],
+  );
+  assert.equal(new Set(slots.filter((slot) => slot.kind === "potential").map((slot) => slot.subject)).size, 3);
+  assert.equal(backend.worldvectorlogoSlugCandidates("Volkswagen")[0], "volkswagen-1");
+  assert.match(backend.worldvectorlogoCdnUrl("volkswagen-1"), /volkswagen-1\.svg$/);
+  assert.ok(backend.worldvectorlogoSlugCandidates("Audi").includes("audi-2"));
   assert.equal(slots[0].geminiAspect, "16:9");
   assert.equal(slots[3].geminiAspect, "3:2");
   assert.equal(backend.isAllowedMemoPhotoUrl("https://cdn.worldvectorlogo.com/logos/puma-logo.svg"), true);
@@ -1638,6 +1651,10 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.equal(backend.isAllowedMemoPhotoUrl("https://upload.wikimedia.org/wikipedia/commons/j/jeff_bezos.jpg"), false);
   assert.equal(backend.isAllowedMemoPhotoUrl("https://upload.wikimedia.org/wikipedia/commons/s/skyline.jpg"), false);
   assert.equal(backend.isAllowedMemoPhotoUrl("https://evil.example/ai.png"), false);
+  assert.equal(backend.isAllowedMemoSceneUrl("https://upload.wikimedia.org/wikipedia/commons/n/nike-town-store.jpg"), true);
+  assert.equal(backend.isAllowedMemoSceneUrl("https://upload.wikimedia.org/wikipedia/commons/a/ab/Nike_logo.svg"), false);
+  assert.equal(backend.isAllowedMemoSceneUrl("https://cdn.worldvectorlogo.com/logos/puma-logo.svg"), false);
+  assert.equal(backend.isAllowedMemoSceneUrl("https://upload.wikimedia.org/wikipedia/commons/j/jeff_bezos.jpg"), false);
   const commonsHits = backend.parseCommonsPhotoHits({
     query: {
       pages: {
@@ -1667,23 +1684,59 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.equal(backend.parseWikidataEntityImage({
     entities: { Q123: { claims: { P18: [{ mainsnak: { datavalue: { value: "Nike_HQ.jpg" } } }] } } },
   }), "Nike_HQ.jpg");
+  assert.equal(backend.parseWikidataLogoImage({
+    entities: { Q246: { claims: {
+      P18: [{ mainsnak: { datavalue: { value: "VW_Werk.jpg" } } }],
+      P154: [{ mainsnak: { datavalue: { value: "Volkswagen logo 2019.svg" } } }],
+    } } },
+  }), "Volkswagen logo 2019.svg");
   const photoPrompt = backend.buildMemoPhotoResearchPrompt(slots.slice(0, 1));
   assert.match(photoPrompt, /Unternehmenslogo/);
   assert.match(photoPrompt, /og:image/);
   assert.match(photoPrompt, /cdn\.worldvectorlogo\.com/);
   assert.match(photoPrompt, /Kein Porträt/);
+  assert.match(photoPrompt, /volkswagen-1/);
+  const scenePrompt = backend.buildMemoPhotoResearchPrompt(slots.slice(3, 4));
+  assert.match(scenePrompt, /Wikimedia-Commons-Foto/);
+  assert.match(scenePrompt, /Kein Unternehmenslogo/);
+  assert.match(scenePrompt, /Vom Sortiment zur Marke/);
   const parsedPhotos = backend.parseMemoPhotoResearch({
     photos: [
       { key: "benchmarks.0", url: "https://cdn.worldvectorlogo.com/logos/nike-4.svg" },
       { key: "benchmarks.1", url: "https://upload.wikimedia.org/wikipedia/commons/j/jeff_bezos.jpg" },
+      { key: "potentials.0", url: "https://www.glossier.com/cdn/shop/files/glossier-logo.png" },
     ],
   });
   assert.match(parsedPhotos["benchmarks.0"], /worldvectorlogo/);
   assert.equal(parsedPhotos["benchmarks.1"], undefined);
-  const officialLogo = backend.parseMemoPhotoResearch({
-    photos: [{ key: "potentials.0", url: "https://www.glossier.com/cdn/shop/files/glossier-logo.png" }],
+  assert.equal(parsedPhotos["potentials.0"], undefined);
+  const parsedScenes = backend.parseMemoSceneResearch({
+    photos: [
+      { key: "potentials.0", url: "https://upload.wikimedia.org/wikipedia/commons/n/nike-town-store.jpg" },
+      { key: "potentials.1", url: "https://cdn.worldvectorlogo.com/logos/puma-logo.svg" },
+      { key: "benchmarks.0", url: "https://upload.wikimedia.org/wikipedia/commons/n/nike-town-store.jpg" },
+    ],
   });
-  assert.match(officialLogo["potentials.0"], /glossier-logo/);
+  assert.match(parsedScenes["potentials.0"], /nike-town-store/);
+  assert.equal(parsedScenes["potentials.1"], undefined);
+  assert.equal(parsedScenes["benchmarks.0"], undefined);
+  const sceneHits = backend.parseCommonsSceneHits({
+    query: {
+      pages: {
+        "1": {
+          title: "File:Retail store interior campaign.jpg",
+          imageinfo: [{ mime: "image/jpeg", thumburl: "https://upload.wikimedia.org/wikipedia/commons/r/retail-store.jpg", url: "https://upload.wikimedia.org/wikipedia/commons/r/retail-store.jpg" }],
+        },
+        "2": {
+          title: "File:Puma logo.svg",
+          imageinfo: [{ mime: "image/svg+xml", url: "https://upload.wikimedia.org/wikipedia/commons/p/puma-logo.svg" }],
+        },
+      },
+    },
+  }, ["store", "kampagne"]);
+  assert.equal(sceneHits[0].source, "wikimedia_commons");
+  assert.match(sceneHits[0].url, /retail-store/);
+  assert.equal(sceneHits.length, 1);
   const uri = backend.memoImageDataUri("image/jpeg", "abc".repeat(40));
   assert.match(uri, /^data:image\/jpeg;base64,/);
   const events = [];
@@ -1752,10 +1805,14 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(studio, /fillStyle = opts\.fill \|\| "#fff"/);
   assert.match(studio, /fit: "contain"/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
-  assert.match(studio, /Unternehmenslogos recherchieren/);
+  assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
   assert.match(edge, /findMemoCompanyLogo/);
   assert.match(edge, /findMemoSlotLogo/);
+  assert.match(edge, /findMemoSlotScene/);
+  assert.match(edge, /probeWorldvectorlogo/);
+  assert.match(edge, /findMemoWikidataLogo/);
+  assert.match(edge, /parseWikidataLogoImage/);
   assert.match(edge, /researchWikimediaLogo/);
   assert.match(edge, /researchCompanyLogo/);
   assert.match(edge, /assetSignal\.tier1_companies/);
@@ -1767,7 +1824,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(edge, /images_incomplete/);
   const assetSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
   assert.match(assetSrc, /image_fail/);
-  assert.match(assetSrc, /Unternehmenslogos wie im Tier-1-Steckbrief/);
+  assert.match(assetSrc, /Seite 2 Unternehmenslogos/);
+  assert.match(assetSrc, /thematische Commons-Fotos/);
   assert.match(assetSrc, /images_retry/);
   assert.equal(backend.MEMO_IMAGE_DATA_URI_MAX, 100 * 1024 * 1024);
   assert.match(assetSrc, /Nur pathologische Payloads/);

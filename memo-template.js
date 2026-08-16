@@ -94,6 +94,7 @@ export const MEMO_TEMPLATE_CSS = `
 .as-stage--memo .em-shot img[src=""], .as-stage--memo .em-shot img:not([src]){display:none;}
 .as-stage--memo .em-shot-hint{display:block; font-size:8px; line-height:1.4; color:var(--extra-muted); padding:10px 12px;}
 .as-stage--memo .em-shot:has(img[src]:not([src=""])) .em-shot-hint{display:none;}
+.as-stage--memo .em-pot .em-shot img, .as-stage--memo .em-pot .em-shot .as-img--tpl{object-fit:cover; padding:0; background:#111;}
 .as-stage--memo .em-bm p{font-size:10.5px; line-height:1.58; color:var(--muted); margin:0;}
 .as-stage--memo .em-bm p b{color:var(--ink);}
 .as-stage--memo .em-tag{display:inline-flex; align-items:center; gap:7px; background:var(--brand-light); border:1px solid #cfe0fd; color:var(--brand-dark); font-size:9px; font-weight:700; padding:6px 12px; border-radius:8px; margin-top:12px;}

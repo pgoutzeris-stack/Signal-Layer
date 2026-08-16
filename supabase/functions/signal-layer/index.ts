@@ -106,6 +106,7 @@ import {
   MEMO_BENCHMARK_RESEARCH_MAX_TOKENS,
   MEMO_IMAGE_FETCH_MS,
   MEMO_PHOTO_BYTES_MAX,
+  MEMO_PHOTO_USER_AGENT,
   MemoAnswers,
   MemoImageSlot,
   MemoPayload,
@@ -131,27 +132,39 @@ import {
   buildMemoBenchmarkReviewPrompt,
   buildMemoPhotoResearchPrompt,
   applyMemoImageUploads,
+  commonsPhotoSearchApiUrl,
   fillMemoImages,
   geminiFinishAllowsParse,
   isAssetKind,
   isAllowedMemoPhotoUrl,
+  isAllowedMemoSceneUrl,
   memoBenchmarkCorpus,
   memoImageDataUri,
   memoImageUploadsFromBody,
   memoPayloadHasSlotImages,
+  memoSceneKeywords,
   memoSlotImageSrc,
   negativeBenchmarkNames,
   normalizeAssetAnswers,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
+  parseCommonsSceneHits,
   parseDeepseekSseData,
   parseGeminiSseData,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
   parseMemoPhotoResearch,
+  parseMemoSceneResearch,
+  parseWikidataLogoImage,
+  parseWikidataSearchId,
   stripCmoHundredDaysOffering,
   stripCmoHundredDaysText,
   resolveAssetCompany,
+  wikidataEntityApiUrl,
+  wikidataSearchApiUrl,
+  wikimediaFilePathUrl,
+  worldvectorlogoCdnUrl,
+  worldvectorlogoSlugCandidates,
 } from "./asset-studio.ts";
 
 // ---------------------------------------------------------------------------
@@ -3336,13 +3349,17 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function downloadMemoPhoto(url: string, trusted = false): Promise<string | null> {
+async function downloadMemoPhoto(
+  url: string,
+  trusted = false,
+  allowUrl: (value: string) => boolean = isAllowedMemoPhotoUrl,
+): Promise<string | null> {
   if (!url.startsWith("https://")) return null;
   try {
     const response = await fetchMitLimit(url, {
       headers: {
         Accept: "image/svg+xml,image/png,image/webp,image/jpeg;q=0.9,*/*;q=0.2",
-        "User-Agent": "ROOTS-Signal-Layer/1.0 (verified company logo; hello@roots-consultants.com)",
+        "User-Agent": MEMO_PHOTO_USER_AGENT,
       },
     }, MEMO_IMAGE_FETCH_MS);
     if (!response.ok) {
@@ -3350,7 +3367,7 @@ async function downloadMemoPhoto(url: string, trusted = false): Promise<string |
       return null;
     }
     const finalUrl = response.url || url;
-    if (!trusted && !isAllowedMemoPhotoUrl(finalUrl)) {
+    if (!trusted && !allowUrl(finalUrl)) {
       await response.body?.cancel().catch(() => undefined);
       return null;
     }
@@ -3369,6 +3386,66 @@ async function downloadMemoPhoto(url: string, trusted = false): Promise<string |
       if (!/(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(text)) return null;
     }
     return memoImageDataUri(mime === "image/jpg" ? "image/jpeg" : mime, bytesToBase64(buf));
+  } catch {
+    return null;
+  }
+}
+
+async function probeWorldvectorlogo(company: string): Promise<string | null> {
+  const slugs = worldvectorlogoSlugCandidates(company);
+  const probe = async (slug: string): Promise<string | null> => {
+    const url = worldvectorlogoCdnUrl(slug);
+    try {
+      const response = await fetchMitLimit(url, {
+        method: "HEAD",
+        headers: { "User-Agent": MEMO_PHOTO_USER_AGENT },
+      }, 5_000);
+      const ok = response.ok;
+      await response.body?.cancel().catch(() => undefined);
+      if (ok) return url;
+      if (response.status === 405 || response.status === 501) {
+        const get = await fetchMitLimit(url, {
+          headers: { "User-Agent": MEMO_PHOTO_USER_AGENT },
+        }, 5_000);
+        const getOk = get.ok;
+        await get.body?.cancel().catch(() => undefined);
+        return getOk ? url : null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+  for (let i = 0; i < slugs.length; i += 4) {
+    const found = (await Promise.all(slugs.slice(i, i + 4).map(probe))).find(Boolean);
+    if (found) return found || null;
+  }
+  return null;
+}
+
+async function findMemoWikidataLogo(company: string): Promise<string | null> {
+  const name = String(company || "").trim();
+  if (!name) return null;
+  try {
+    const search = await fetchMitLimit(wikidataSearchApiUrl(name), {
+      headers: { Accept: "application/json", "User-Agent": MEMO_PHOTO_USER_AGENT },
+    }, 8_000);
+    if (!search.ok) {
+      await search.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const id = parseWikidataSearchId(await search.json());
+    if (!id) return null;
+    const entity = await fetchMitLimit(wikidataEntityApiUrl(id), {
+      headers: { Accept: "application/json", "User-Agent": MEMO_PHOTO_USER_AGENT },
+    }, 8_000);
+    if (!entity.ok) {
+      await entity.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const file = parseWikidataLogoImage(await entity.json());
+    if (!file) return null;
+    return wikimediaFilePathUrl(file);
   } catch {
     return null;
   }
@@ -3421,6 +3498,20 @@ async function findMemoSlotLogo(
     if (uri) return uri;
   }
   try {
+    const cdn = await probeWorldvectorlogo(name);
+    if (cdn) {
+      const uri = await downloadMemoPhoto(cdn, true);
+      if (uri) return uri;
+    }
+  } catch { /* CDN-Slug ist optional */ }
+  try {
+    const wikidata = await findMemoWikidataLogo(name);
+    if (wikidata) {
+      const uri = await downloadMemoPhoto(wikidata, true);
+      if (uri) return uri;
+    }
+  } catch { /* P154 ist optional */ }
+  try {
     const commons = await researchWikimediaLogo(name);
     if (commons?.logo_url) {
       const uri = await downloadMemoPhoto(commons.logo_url, true);
@@ -3438,20 +3529,56 @@ async function findMemoSlotLogo(
   return null;
 }
 
+async function findMemoSlotScene(
+  slot: MemoImageSlot,
+  usedUrls: Set<string>,
+): Promise<string | null> {
+  const keywords = memoSceneKeywords(slot.subject, slot.hint, slot.company);
+  for (const query of slot.queries.slice(0, 4)) {
+    try {
+      const response = await fetchMitLimit(commonsPhotoSearchApiUrl(query), {
+        headers: { Accept: "application/json", "User-Agent": MEMO_PHOTO_USER_AGENT },
+      }, 10_000);
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        continue;
+      }
+      const hits = parseCommonsSceneHits(await response.json(), keywords);
+      for (const hit of hits) {
+        if (usedUrls.has(hit.url) || !isAllowedMemoSceneUrl(hit.url)) continue;
+        const uri = await downloadMemoPhoto(hit.url, false, isAllowedMemoSceneUrl);
+        if (uri) {
+          usedUrls.add(hit.url);
+          return uri;
+        }
+      }
+    } catch { /* nächste Suchanfrage */ }
+  }
+  return null;
+}
+
 function createMemoPhotoFinder(apiKey: string, model: string) {
-  const bySubject = new Map<string, Promise<string | null>>();
+  const byLogo = new Map<string, Promise<string | null>>();
+  const usedSceneUrls = new Set<string>();
   const geminiUrls: Record<string, string> = {};
   return {
     fetchPhoto: async (slot: MemoImageSlot): Promise<string | null> => {
-      const key = slot.subject.toLowerCase();
-      if (!key) return null;
-      if (!bySubject.has(key)) bySubject.set(key, findMemoSlotLogo(slot.subject, apiKey, model));
-      const local = await bySubject.get(key);
+      if (slot.kind === "benchmark") {
+        const key = slot.subject.toLowerCase();
+        if (!key) return null;
+        if (!byLogo.has(key)) byLogo.set(key, findMemoSlotLogo(slot.subject, apiKey, model));
+        const local = await byLogo.get(key);
+        if (local) return local;
+        const url = geminiUrls[slot.key];
+        if (!url || !isAllowedMemoPhotoUrl(url)) return null;
+        return downloadMemoPhoto(url, true);
+      }
+      const local = await findMemoSlotScene(slot, usedSceneUrls);
       if (local) return local;
-      const url = geminiUrls[slot.key] || geminiUrls[key];
-      if (!url) return null;
-      const uri = await downloadMemoPhoto(url, true);
-      if (uri) bySubject.set(key, Promise.resolve(uri));
+      const url = geminiUrls[slot.key];
+      if (!url || usedSceneUrls.has(url) || !isAllowedMemoSceneUrl(url)) return null;
+      const uri = await downloadMemoPhoto(url, false, isAllowedMemoSceneUrl);
+      if (uri) usedSceneUrls.add(url);
       return uri;
     },
     prepareRetry: async (slots: MemoImageSlot[]) => {
@@ -3462,7 +3589,8 @@ function createMemoPhotoFinder(apiKey: string, model: string) {
           model,
           buildMemoPhotoResearchPrompt(slots),
         );
-        Object.assign(geminiUrls, parseMemoPhotoResearch(parseLooseJsonObject(gefunden.text)));
+        const parsed = parseLooseJsonObject(gefunden.text);
+        Object.assign(geminiUrls, parseMemoPhotoResearch(parsed), parseMemoSceneResearch(parsed));
       } catch {
         /* ohne Treffer bleiben die Slots leer */
       }
