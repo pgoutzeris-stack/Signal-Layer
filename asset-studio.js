@@ -1059,7 +1059,7 @@ function sanitizeFragment(html) {
 }
 
 import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-2100";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1200";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2561,7 +2561,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * laufen aus dem Rahmen, wie beim Cucinelli-Titel. Vor dem Speichern ein Gate.
    */
   function kachelUeberlauf() {
-    if (isMemo) return [];
+    if (isMemo) {
+      const treffer = [];
+      shell.querySelectorAll("[data-stagearea] .as-stage--memo .em-page").forEach((seite, i) => {
+        if (seite.scrollHeight > seite.clientHeight + 2) treffer.push(i + 1);
+      });
+      return treffer;
+    }
     const treffer = [];
     shell.querySelectorAll("[data-stagearea] .as-stage--tpl .li").forEach((kachel, i) => {
       const ausRahmen = kachel.scrollWidth > 1082 || kachel.scrollHeight > 1352;
@@ -2577,7 +2583,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function meldeUeberlauf() {
     const treffer = kachelUeberlauf();
     if (!treffer.length) return;
-    showSaveHint(`Folie ${treffer.join(", ")} läuft über den Rahmen (1080 px). Text kürzen, bevor du speicherst.`);
+    showSaveHint(isMemo
+      ? `Seite ${treffer.join(", ")} läuft über den Rahmen. Text kürzen, bevor du speicherst.`
+      : `Folie ${treffer.join(", ")} läuft über den Rahmen (1080 px). Text kürzen, bevor du speicherst.`);
   }
 
   function slideTools(slide, index) {
@@ -3273,7 +3281,9 @@ ${stages}${post}
     }
     const ueber = kachelUeberlauf();
     if (ueber.length) {
-      showSaveHint(`Folie ${ueber.join(", ")} läuft über den Rahmen (1080 px). Text kürzen, dann speichern.`);
+      showSaveHint(isMemo
+        ? `Seite ${ueber.join(", ")} läuft über den Rahmen. Text kürzen, dann speichern.`
+        : `Folie ${ueber.join(", ")} läuft über den Rahmen (1080 px). Text kürzen, dann speichern.`);
       return;
     }
     const doc = exportDocument();

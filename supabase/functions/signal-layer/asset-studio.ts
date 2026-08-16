@@ -1309,13 +1309,13 @@ title: Whitepaper-Titel, These mit Verb, höchstens 15 Wörter. Die Herausforder
 standfirst: ein bis zwei Sätze, warum diese Herausforderung jetzt anliegt. Beleg aus dem Artikel als Timing, keine zweite These, keine Ernennung, kein Deal-Text.
 market_title: Überschrift von 01 Marktdynamik. Die Kategorie oder der Markt, nicht das Unternehmen.
 market_p1, market_p2: je ein Absatz. Lage des Marktes, dann warum der Moment jetzt ist. Zahlen nur aus kennzahlen_im_artikel.
-kpis: drei oder vier belegte Kennzahlen. value kurz, label erklärt den Bezug. Leer, wenn keine Ziffer vorliegt.
+kpis: drei oder vier belegte Kennzahlen. value in einer Zeile, ohne Umbruch, z. B. 14 % oder 329 Mio. €. label erklärt den Bezug. Leer, wenn keine Ziffer vorliegt.
 benchmark_title: Überschrift von 02. Was Vorreiter am selben Hebel richtig machen.
 benchmark_lead: ein Satz, worin der ROOTS-Hebel liegt, nicht die Nachricht.
 benchmarks: genau drei. name, text und tag kommen aus <vorreiter>, wenn der Block steht. Sonst qualitative Analogie aus artikel zum selben Hebel. Ziffern nur mit Beleg.
 potentials_title: Überschrift von 03. Der Channel- oder Lage-Check DIESES Unternehmens.
 potentials_lead: ein Satz, wie viele Ansatzpunkte der Check zeigt.
-potentials: genau drei. title mit Verb oder Gegensatz („vom … zur …“). finding = belegter Zustand aus artikel oder evidence. potential = was ROOTS daraus macht, in der Sprache des Falls, ohne erfundene Zahl. image_hint das Motiv.
+potentials: genau drei. title mit Verb oder Gegensatz („vom … zur …“), höchstens acht Wörter. finding = belegter Zustand, ein bis zwei kurze Sätze. potential = was ROOTS daraus macht, ein bis zwei kurze Sätze, ohne erfundene Zahl. Beide Felder müssen auf der Karte über dem Futter bleiben. image_hint das Motiv.
 cta: die Frage im blauen Band, an den Adressaten, ohne Werbeton.
 about_fit: ein Satz, der roots_leistung an diesen Fall bindet. Der ROOTS-Stammtext davor ist fest. Erst hier darf die Leistung beim Namen genannt werden.
 sources: „Titel · Herausgeber · Jahr“, nur Belege aus signal oder artikel.
@@ -1945,9 +1945,9 @@ function normalizePotentials(raw: unknown): MemoPotential[] {
   return raw.slice(0, 3).map((entry) => {
     const item = record(entry);
     return {
-      title: text(item.title, 120),
-      finding: text(item.finding, 320),
-      potential: text(item.potential, 320),
+      title: text(item.title, 90),
+      finding: text(item.finding, 200),
+      potential: text(item.potential, 200),
       image_hint: text(item.image_hint, 200),
     };
   }).filter((item) => item.title || item.finding || item.potential);
@@ -2209,12 +2209,52 @@ export function memoImageUploadsFromBody(body: unknown): Record<string, MemoImag
   return Object.keys(out).length ? out : null;
 }
 
-export function memoSlotHasImage(payload: MemoPayload, key: string): boolean {
+export function memoSlotImageSrc(payload: unknown, key: string): string {
   const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(key);
-  if (!treffer) return false;
-  const liste = treffer[1] === "benchmarks" ? payload.benchmarks : payload.potentials;
-  const eintrag = liste[Number(treffer[2])] as (MemoBenchmark | MemoPotential | undefined);
-  return Boolean(eintrag?.image?.src && String(eintrag.image.src).startsWith("data:image/"));
+  const p = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as MemoPayload
+    : null;
+  if (!treffer || !p) return "";
+  const liste = treffer[1] === "benchmarks" ? p.benchmarks : p.potentials;
+  const eintrag = liste?.[Number(treffer[2])] as (MemoBenchmark | MemoPotential | undefined);
+  return String(eintrag?.image?.src || "");
+}
+
+export function memoSlotHasImage(payload: MemoPayload, key: string): boolean {
+  return memoSlotImageSrc(payload, key).startsWith("data:image/");
+}
+
+export function memoPayloadHasSlotImages(payload: unknown): boolean {
+  const p = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as MemoPayload
+    : null;
+  if (!p) return false;
+  return memoImageSlots(p).some((slot) => memoSlotHasImage(p, slot.key));
+}
+
+/** Gemini hat Motive geliefert, die Nutzlast in der Zeile hat sie aber nicht. */
+export function assetMemoImagesIncomplete(row: {
+  kind?: unknown;
+  payload?: unknown;
+  answers?: unknown;
+  run_log?: unknown;
+}): boolean {
+  if (String(row.kind || "") !== "memo") return false;
+  if (memoPayloadHasSlotImages(row.payload)) return false;
+  const answers = row.answers && typeof row.answers === "object" && !Array.isArray(row.answers)
+    ? row.answers as { images?: unknown }
+    : null;
+  const imagesMode = String(answers?.images || "auto");
+  if (imagesMode === "upload" || imagesMode === "none") return false;
+  const rows = Array.isArray(row.run_log) ? row.run_log as Array<Record<string, unknown>> : [];
+  if (!rows.length) return false;
+  if (rows.some((eintrag) => String(eintrag.event || "") === "images_skip")) return false;
+  return rows.some((eintrag) => {
+    const event = String(eintrag.event || "");
+    if (event === "image_ok") return true;
+    if (event === "images_done") return Number(eintrag.ok || 0) > 0;
+    return false;
+  });
 }
 
 export async function fillMemoImages(
@@ -2247,6 +2287,7 @@ export async function fillMemoImages(
       if (src) {
         attachMemoSlotImage(payload, slot.key, src);
         filled.ok += 1;
+        await opts.log?.("image_ok", { key: slot.key });
       } else {
         filled.fail += 1;
         await opts.log?.("image_fail", { key: slot.key, error: "empty" });
@@ -2388,14 +2429,16 @@ export function assetFinishKickCount(log: unknown): number {
  * der fertige Entwurf in fuellen. Zähler ist nur noch finish_start.
  */
 export function assetFinishHandoffDue(
-  row: { status?: unknown; stage?: unknown; updated_at?: unknown; created_at?: unknown; run_log?: unknown; payload?: unknown; kind?: unknown; title?: unknown; slide_title?: unknown },
+  row: { status?: unknown; stage?: unknown; updated_at?: unknown; created_at?: unknown; run_log?: unknown; payload?: unknown; kind?: unknown; title?: unknown; slide_title?: unknown; answers?: unknown },
   nowMs = Date.now(),
 ): boolean {
   if (String(row.status || "") !== "running") return false;
   if (!assetDraftTextFromLog(row.run_log)) return false;
   if (assetFinishKickCount(row.run_log) >= ASSET_FINISH_KICK_MAX) return false;
   const stage = String(row.stage || "");
-  if (assetKeepablePayload(row) && (stage === "fuellen" || stage === "bilder")) return false;
+  if (assetKeepablePayload(row) && (stage === "fuellen" || stage === "bilder") && !assetMemoImagesIncomplete(row)) {
+    return false;
+  }
   if (!["pruefen", "bilder", "fuellen", "modell"].includes(stage)) return false;
   return assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs) >= ASSET_FINISH_HANDOFF_AFTER_MS;
 }
@@ -2431,11 +2474,16 @@ export function assetFinishSettleDue(
     kind?: unknown;
     title?: unknown;
     slide_title?: unknown;
+    answers?: unknown;
+    run_log?: unknown;
   },
   nowMs = Date.now(),
 ): boolean {
   if (String(row.status || "") !== "running") return false;
   if (!assetKeepablePayload(row)) return false;
+  if (assetMemoImagesIncomplete(row) && assetFinishKickCount(row.run_log) < ASSET_FINISH_KICK_MAX) {
+    return false;
+  }
   const stage = String(row.stage || "");
   if (stage !== "fuellen" && stage !== "bilder") return false;
   const limit = stage === "bilder" ? ASSET_BILDER_SETTLE_MS : ASSET_FINISH_HANDOFF_AFTER_MS;
