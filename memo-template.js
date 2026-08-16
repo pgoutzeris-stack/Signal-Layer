@@ -82,7 +82,7 @@ export const MEMO_TEMPLATE_CSS = `
 .as-stage--memo .em-kpi-row{display:flex; gap:8px; margin:24px 0 0;}
 .as-stage--memo .em-kpi{flex:1 1 0; min-width:0; container-type:inline-size; background:var(--status-bg); border:1px solid var(--line); border-radius:10px; padding:12px 10px;}
 .as-stage--memo .em-kpi:has(.n:empty):has(.l:empty){display:none;}
-.as-stage--memo .em-kpi .n{font-size:clamp(12px, 12cqi, 21px); font-weight:700; color:var(--brand); line-height:1.05; letter-spacing:-.4px; white-space:nowrap;}
+.as-stage--memo .em-kpi .n{font-size:clamp(12px, 12cqi, 21px); font-weight:700; color:var(--brand); line-height:1.05; letter-spacing:-.4px; white-space:nowrap; overflow:hidden;}
 .as-stage--memo .em-kpi .l{font-size:8.5px; line-height:1.45; color:var(--muted); margin-top:7px;}
 .as-stage--memo .em-sec2{margin-top:24px;}
 .as-stage--memo .em-blist{margin-top:12px;}
