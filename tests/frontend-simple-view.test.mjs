@@ -41,6 +41,7 @@ test("the version menu lists the current pipeline only once", () => {
   assert.equal(simpleVersionDateLabel(menu.historical[0]), new Date("2026-08-05T07:59:54Z").toLocaleDateString("de-DE"));
   assert.doesNotMatch(simpleHistoricalVersionLabel(menu.historical[0]), /Testlauf|Artikel/);
   assert.match(simpleFrontend, /simpleVersionMenu\(versionList, currentVersionLabel\)/);
+  assert.match(simpleFrontend, /current: currentEntry/);
   assert.match(simpleFrontend, /data-date=/);
   assert.match(simpleFrontend, /historical\.map/);
 });
@@ -54,6 +55,10 @@ test("advanced version labels count Signale and keep the date for hover", () => 
   assert.match(html, /roots-select-info-tip/);
   assert.doesNotMatch(appFrontend, /Aktive Version/);
   assert.doesNotMatch(appFrontend, /\$\{[^}]*\} Artikel ·/);
+});
+
+test("simple-mode.js can be imported", async () => {
+  await import("../simple-mode.js");
 });
 
 test("a valid ROOTS offering remains visible without a rejected explanation", () => {

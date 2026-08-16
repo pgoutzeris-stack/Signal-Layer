@@ -13,7 +13,7 @@
 // Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
-import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionMenu } from "./simple-view-state.mjs?v=20260816-1420";
+import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionMenu } from "./simple-view-state.mjs?v=20260816-1430";
 
 let ctx = null;
 let els = {};
@@ -343,14 +343,14 @@ async function loadVersions() {
     currentVersionLabel = String(current || "");
     if (!els.version) return;
     const previous = els.version.value;
-    const { current, historical } = simpleVersionMenu(versionList, currentVersionLabel);
+    const { current: currentEntry, historical } = simpleVersionMenu(versionList, currentVersionLabel);
     const currentSelected = !selectedVersion || selectedVersion === currentVersionLabel;
     const dateAttr = (entry) => {
       const date = simpleVersionDateLabel(entry);
       return date ? ` data-date="${esc(date)}"` : "";
     };
     els.version.innerHTML = [
-      `<option value="current"${currentSelected ? " selected" : ""}${dateAttr(current)}>${esc(simpleCurrentVersionLabel(versionList, currentVersionLabel))}</option>`,
+      `<option value="current"${currentSelected ? " selected" : ""}${dateAttr(currentEntry)}>${esc(simpleCurrentVersionLabel(versionList, currentVersionLabel))}</option>`,
       ...historical.map((entry) => `<option value="${esc(entry.version)}"${entry.version === selectedVersion ? " selected" : ""}${dateAttr(entry)}>${esc(simpleHistoricalVersionLabel(entry))}</option>`),
     ].join("");
     if (previous === currentVersionLabel || currentSelected) els.version.value = "current";
