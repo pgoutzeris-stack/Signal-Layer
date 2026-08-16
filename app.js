@@ -1929,6 +1929,39 @@ function mountResultsHeader() {
   intro?.remove();
 }
 
+function pinRootsSelectInfoTip(host) {
+  const tip = host.querySelector(".roots-select-info-tip");
+  if (!tip || host.hidden || !tip.textContent.trim()) return;
+  const rect = host.getBoundingClientRect();
+  const gap = 8;
+  tip.classList.add("is-pinned");
+  const width = Math.max(tip.offsetWidth, 48);
+  const height = Math.max(tip.offsetHeight, 24);
+  const left = Math.min(window.innerWidth - width / 2 - 8, Math.max(width / 2 + 8, rect.left + rect.width / 2));
+  const above = rect.top - gap - height >= 8;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${above ? rect.top - gap : rect.bottom + gap}px`;
+  tip.dataset.place = above ? "above" : "below";
+}
+
+function unpinRootsSelectInfoTip(host) {
+  const tip = host.querySelector(".roots-select-info-tip");
+  if (!tip) return;
+  tip.classList.remove("is-pinned");
+  tip.removeAttribute("data-place");
+  tip.style.left = "";
+  tip.style.top = "";
+}
+
+function bindRootsSelectInfoTip(host) {
+  if (!host || host.dataset.tipBound === "1") return;
+  host.dataset.tipBound = "1";
+  host.addEventListener("pointerenter", () => pinRootsSelectInfoTip(host));
+  host.addEventListener("pointerleave", () => unpinRootsSelectInfoTip(host));
+  host.addEventListener("focus", () => pinRootsSelectInfoTip(host));
+  host.addEventListener("blur", () => unpinRootsSelectInfoTip(host));
+}
+
 function enhanceHeaderSelects() {
   // Only native selects can expose options/selectedOptions. The company filter
   // is an independent button and used to share this styling class, which made
@@ -1950,6 +1983,7 @@ function enhanceHeaderSelects() {
     info.innerHTML = `<i class="fa-solid fa-circle-info" aria-hidden="true"></i><span class="roots-select-info-tip"></span>`;
     info.addEventListener("click", (event) => event.stopPropagation());
     info.addEventListener("pointerdown", (event) => event.stopPropagation());
+    bindRootsSelectInfoTip(info);
     const icon = document.createElement("i");
     icon.className = "fa-solid fa-chevron-down roots-select-caret";
     trigger.append(label, info, icon);
@@ -2005,6 +2039,7 @@ function enhanceHeaderSelects() {
       fillInfo(node, date);
       node.addEventListener("click", (event) => event.stopPropagation());
       node.addEventListener("pointerdown", (event) => event.stopPropagation());
+      bindRootsSelectInfoTip(node);
       return node;
     };
 

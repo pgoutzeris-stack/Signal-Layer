@@ -52,7 +52,12 @@ test("advanced version labels count Signale and keep the date for hover", () => 
   assert.match(appFrontend, /advancedVersionLabel/);
   assert.match(appFrontend, /roots-select-info/);
   assert.match(appFrontend, /fa-circle-info/);
+  assert.match(appFrontend, /bindRootsSelectInfoTip/);
+  assert.match(appFrontend, /pinRootsSelectInfoTip/);
   assert.match(html, /roots-select-info-tip/);
+  assert.match(html, /roots-select-info-tip\.is-pinned/);
+  assert.match(html, /\.signal-toolbar \{[^}]*z-index: 20/);
+  assert.match(html, /\.finding-item:hover, \.finding-item:focus-within \{ z-index: 4/);
   assert.doesNotMatch(appFrontend, /Aktive Version/);
   assert.doesNotMatch(appFrontend, /\$\{[^}]*\} Artikel ·/);
 });
