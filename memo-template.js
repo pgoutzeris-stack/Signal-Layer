@@ -89,7 +89,7 @@ export const MEMO_TEMPLATE_CSS = `
 .as-stage--memo .em-bm{display:grid; grid-template-columns:46mm 1fr; gap:24px; align-items:center;}
 .as-stage--memo .em-bm + .em-bm{border-top:1px solid var(--line); padding-top:12px; margin-top:12px;}
 .as-stage--memo .em-shot{width:100%; height:28mm; border-radius:10px; border:1px solid var(--line); background:var(--status-bg); overflow:hidden; position:relative;}
-.as-stage--memo .em-shot img, .as-stage--memo .em-shot .as-img--tpl{display:block; width:100%; height:100%; object-fit:cover;}
+.as-stage--memo .em-shot img, .as-stage--memo .em-shot .as-img--tpl{display:block; width:100%; height:100%; object-fit:contain; object-position:center; padding:6px; background:#fff; box-sizing:border-box;}
 .as-stage--memo .em-shot .as-img--tpl{position:absolute; inset:0; border-radius:inherit;}
 .as-stage--memo .em-shot img[src=""], .as-stage--memo .em-shot img:not([src]){display:none;}
 .as-stage--memo .em-shot-hint{display:block; font-size:8px; line-height:1.4; color:var(--extra-muted); padding:10px 12px;}
