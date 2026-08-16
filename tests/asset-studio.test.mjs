@@ -1573,7 +1573,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
   const assetSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
   assert.match(assetSrc, /image_fail/);
   assert.match(assetSrc, /imageOutputOptions/);
-  assert.equal(backend.MEMO_IMAGE_DATA_URI_MAX, 3_500_000);
+  assert.equal(backend.MEMO_IMAGE_DATA_URI_MAX, 100 * 1024 * 1024);
+  assert.match(assetSrc, /Nur pathologische Payloads/);
 });
 
 test("das erkannte Unternehmen ist überschreibbar und steht im Titel, wenn genannt", () => {
