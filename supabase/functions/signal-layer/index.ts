@@ -89,7 +89,6 @@ import {
   ASSET_HANG_ERROR,
   ASSET_FIRST_BYTE_STALE_MS,
   ASSET_HEARTBEAT_PULSE_MS,
-  ASSET_HEARTBEAT_STALE_MS,
   ASSET_STREAM_KEEPALIVE_MS,
   ASSET_MAX_TOTAL_TOKENS,
   ASSET_PROMPT_VERSION,
@@ -5298,7 +5297,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
             : /empty completion/i.test(roh)
               ? `${assetModel} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${roh}). Ein kürzerer Fragebogen oder weniger Slides hilft.`
               : /timeout|aborted/i.test(roh)
-                ? assetHeartbeatErrorText(assetModel, "modell", ASSET_HEARTBEAT_STALE_MS, "silent")
+                ? assetHeartbeatErrorText(assetModel, "modell", ASSET_FIRST_BYTE_STALE_MS, "silent")
                 : `${assetModel} hat mit ${status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
 
     let mangel = "";
@@ -9611,7 +9610,7 @@ Deno.serve(async (req: Request) => {
                   : /empty completion/i.test(roh)
                     ? `${assetModel} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${roh}). Ein kürzerer Fragebogen oder weniger Slides hilft.`
                     : /timeout|aborted/i.test(roh)
-                      ? assetHeartbeatErrorText(assetModel, "modell", ASSET_HEARTBEAT_STALE_MS, "silent")
+                      ? assetHeartbeatErrorText(assetModel, "modell", ASSET_FIRST_BYTE_STALE_MS, "silent")
                       : `${assetModel} hat mit ${status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
 
           if (!result.ok) {

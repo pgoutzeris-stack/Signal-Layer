@@ -785,7 +785,8 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
     run_log: [{ t: 175_000, event: "pulse", phase: "thinking", chars: 0, thinking_chars: 800 }],
   };
   assert.equal(backend.assetHangReason(lebend, now), null);
-  // Denken ohne Schreib-Bytes: 50 s und 95 s Stille sind kein Hang (First-Byte 180 s).
+  // Denken und Schreiben: 50 s und 95 s Stille sind kein Hang (First-Byte 180 s).
+  // 45 s nach dem ersten JSON-Byte hat DeepSeek-Pausen mitten im Memo getötet.
   const denktNoch = {
     ...lebend,
     updated_at: iso(now - 50_000),
@@ -801,7 +802,11 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
     updated_at: iso(now - 50_000),
     run_log: [{ t: 130_000, event: "pulse", phase: "writing", chars: 40 }],
   };
-  assert.equal(backend.assetHangReason(still, now), "silent");
+  assert.equal(backend.assetHangReason(still, now), null);
+  const stillWeiter = { ...still, updated_at: iso(now - 95_000) };
+  assert.equal(backend.assetHangReason(stillWeiter, now), null);
+  const stillZuLang = { ...still, updated_at: iso(now - 185_000) };
+  assert.equal(backend.assetHangReason(stillZuLang, now), "silent");
   const wartet = {
     status: "running",
     stage: "modell",
@@ -1995,6 +2000,7 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.equal(backend.MEMO_BENCHMARK_RESEARCH_MAX_TOKENS, 4096);
   assert.equal(backend.ASSET_STREAM_KEEPALIVE_MS, 8_000);
   assert.equal(backend.ASSET_FIRST_BYTE_STALE_MS, 180_000);
+  assert.equal(backend.ASSET_HEARTBEAT_STALE_MS, 180_000);
   assert.equal(backend.MEMO_IMAGE_FETCH_MS, 20_000);
   assert.match(edge, /triggerSelf\(\{ action: "finish_asset"/);
   assert.match(edge, /handoff.*finish_asset/);
