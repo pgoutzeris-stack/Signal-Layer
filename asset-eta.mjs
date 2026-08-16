@@ -58,10 +58,10 @@ function letzte(log, test) {
 
 function stufeStartMs(log, name, elapsedMs) {
   const rows = Array.isArray(log) ? log : [];
-  const retry = letzte(rows, (row) => row?.event === "retry_model");
+  const neu = letzte(rows, (row) => row?.event === "retry_model" || row?.event === "repair");
   const ok = letzte(rows, (row) => row?.event === "model_ok");
-  if (name === "modell" && retry && (!ok || Number(retry.t || 0) >= Number(ok.t || 0))) {
-    return Number(retry.t || 0);
+  if (name === "modell" && neu && (!ok || Number(neu.t || 0) >= Number(ok.t || 0))) {
+    return Number(neu.t || 0);
   }
   const stage = letzte(rows, (row) => row?.event === "stage" && row?.stage === name);
   if (stage) return Number(stage.t || 0);
@@ -110,13 +110,15 @@ function zielZeichen(current, typical, p75) {
 }
 
 function modellRest({ runLog, elapsed, typicalModell, later, pace }) {
-  const pulse = letzte(
-    runLog,
-    (row) => row?.event === "pulse" && (row.phase === "thinking" || row.phase === "writing"),
-  );
   const start = stufeStartMs(runLog, "modell", elapsed);
   const spent = Math.max(0, elapsed - start);
   const { think, write } = pace;
+  const pulse = letzte(
+    runLog,
+    (row) => row?.event === "pulse"
+      && (row.phase === "thinking" || row.phase === "writing")
+      && Number(row.t || 0) >= start,
+  );
 
   if (pulse && pulse.phase === "writing" && Number(pulse.chars || 0) > 0) {
     const chars = Number(pulse.chars || 0);
@@ -188,6 +190,13 @@ export function assetEtaRemainingMs({
       break;
     }
     const spent = Math.max(0, elapsed - stufeStartMs(runLog, name, elapsed));
+    if (name === "bilder") {
+      const floor = Math.max(typ, Number(assetEtaFallbackStages(kind, answers).bilder || typ));
+      let rem = Math.max(0, floor - spent);
+      if (spent > floor) rem = Math.max(40_000, Math.round(40_000 + (spent - floor) * 0.25));
+      rest += rem;
+      continue;
+    }
     rest += Math.max(0, typ - spent);
   }
 

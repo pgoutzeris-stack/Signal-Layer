@@ -598,6 +598,13 @@ test("die Zeitprognose lernt aus gespeicherten Assets, Fehler stehen im Laufprot
   assert.doesNotMatch(edge, /memoFloor/);
   const learn = readFileSync(new URL("../supabase/migrations/20260815113000_asset_forecast_learn_long_runs.sql", import.meta.url), "utf8");
   assert.match(learn, /duration_ms between 8000 and 1200000/);
+  const recent = readFileSync(new URL("../supabase/migrations/20260816120000_asset_forecast_recent_repair.sql", import.meta.url), "utf8");
+  assert.match(recent, /limit 15/);
+  assert.match(recent, /when stage = 'modell' then sum\(dur\)/);
+  assert.match(recent, /images_done/);
+  assert.match(recent, /nullif\(answers->>'images', ''\)/);
+  assert.match(edge, /median_tokens/);
+  assert.match(edge, /\.limit\(15\)/);
   assert.match(learn, /median_tokens/);
   assert.match(edge, /forecast_ms: forecast.ms/);
   assert.match(edge, /stages: forecast.stages/);
@@ -646,6 +653,32 @@ test("die Restzeit folgt dem Fall und dem laufenden Schritt", async () => {
     ],
   });
   assert.ok(nachRetry > 150_000 && nachRetry < 280_000, `retry ${nachRetry}`);
+
+  const nachRepair = eta.assetEtaRemainingMs({
+    kind: "memo",
+    answers: { images: "auto", benchmarks: "auto" },
+    stage: "modell",
+    elapsedMs: 120_000,
+    stages: { modell: 170_000, bilder: 45_000, pruefen: 2_500, fuellen: 2_000, recherchieren: 6_000 },
+    runLog: [
+      { t: 5_000, event: "stage", stage: "modell" },
+      { t: 109_000, event: "pulse", phase: "writing", chars: 4500 },
+      { t: 109_000, event: "model_ok", text: "{}" },
+      { t: 117_000, event: "repair" },
+      { t: 117_000, event: "stage", stage: "modell" },
+    ],
+  });
+  assert.ok(nachRepair > 150_000, `repair darf den alten Schreibimpuls nicht als fast fertig zählen ${nachRepair}`);
+
+  const motiveLang = eta.assetEtaRemainingMs({
+    kind: "memo",
+    answers: { images: "auto" },
+    stage: "bilder",
+    elapsedMs: 90_000,
+    stages: { bilder: 12_000, fuellen: 2_000 },
+    runLog: [{ t: 20_000, event: "stage", stage: "bilder" }, { t: 21_000, event: "image_start" }],
+  });
+  assert.ok(motiveLang > 40_000, `Motive dürfen die Restzeit nicht auf 0 drücken ${motiveLang}`);
 
   const schreibt = eta.assetEtaRemainingMs({
     kind: "memo",

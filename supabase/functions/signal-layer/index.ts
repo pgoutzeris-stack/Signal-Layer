@@ -3136,7 +3136,7 @@ async function assetForecastFromDb(
       .eq("kind", kind)
       .eq("status", "done")
       .order("created_at", { ascending: false })
-      .limit(40);
+      .limit(15);
     const pace = summarizeAssetPace((recent || []).map((item) => item.run_log));
     return {
       ms: fromDb || fallbackMs,
