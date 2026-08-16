@@ -485,6 +485,7 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
   assert.equal(backend.assetRepairTimeoutMs(190_000), null);
   assert.equal(backend.assetRepairTimeoutMs(350_000), null);
   assert.match(edge, /assetRepairTimeoutMs/);
+  assert.match(edge, /assetRepairTimeoutMs\(Date.now\(\) - isolateStartedAt\)/);
   assert.match(edge, /buildAssetRepairPrompt/);
   assert.match(edge, /assetMangelIsRepairable\(mangel\)/);
   assert.match(backend.buildAssetRepairPrompt("PROMPT", "kein JSON-Objekt"), /<repair>/);
@@ -1825,8 +1826,20 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(edge, /attach_asset_image/);
   assert.match(edge, /image_uploads/);
   assert.match(edge, /applyMemoImageUploads/);
-  assert.match(edge, /remainingMs: Math.max\(0, ASSET_WALL_CLOCK_MS/);
+  assert.match(edge, /remainingMs: assetPhaseRemainingMs\(isolateStartedAt\)/);
   assert.match(edge, /images_incomplete/);
+  const skipClock = [];
+  await backend.fillMemoImages(
+    backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {})),
+    backend.normalizeAssetAnswers("memo", { images: "auto" }),
+    {
+      remainingMs: 0,
+      fetchPhoto: async () => uri,
+      log: async (event, extra) => skipClock.push({ event, extra }),
+    },
+  );
+  assert.equal(skipClock[0]?.event, "images_skip");
+  assert.equal(skipClock[0]?.extra?.reason, "wall_clock");
   const assetSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
   assert.match(assetSrc, /image_fail/);
   assert.match(assetSrc, /Seite 2 Unternehmenslogos/);
@@ -2005,6 +2018,16 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.match(edge, /triggerSelf\(\{ action: "finish_asset"/);
   assert.match(edge, /handoff.*finish_asset/);
   assert.match(edge, /async function finishGeneratedAsset/);
+  assert.match(edge, /const isolateStartedAt = Date.now\(\)/);
+  assert.match(edge, /assetRepairTimeoutMs\(Date.now\(\) - isolateStartedAt\)/);
+  assert.match(edge, /remainingMs: assetPhaseRemainingMs\(isolateStartedAt\)/);
+  assert.doesNotMatch(edge, /ASSET_WALL_CLOCK_MS - \(Date.now\(\) - startedAt\)/);
+  const createdAt = Date.now() - 13 * 60_000;
+  assert.equal(backend.assetPhaseRemainingMs(createdAt), 0);
+  const isolateNow = Date.now();
+  assert.ok(backend.assetPhaseRemainingMs(isolateNow) >= backend.MEMO_IMAGE_MIN_REMAINING_MS);
+  assert.ok(backend.assetPhaseRemainingMs(isolateNow) > 300_000);
+  assert.ok(backend.assetPhaseRemainingMs(isolateNow - 20_000) > backend.MEMO_IMAGE_MIN_REMAINING_MS);
   assert.match(edge, /async function retryGeneratedAssetModel/);
   assert.match(edge, /assetModelRetryDue/);
   assert.match(edge, /pflegeLaufendesAsset/);

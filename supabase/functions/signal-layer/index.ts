@@ -96,6 +96,7 @@ import {
   ASSET_STALE_MS,
   ASSET_SYSTEM_TEXT,
   ASSET_WALL_CLOCK_MS,
+  assetPhaseRemainingMs,
   AssetPayload,
   AssetPulse,
   CMO_HUNDRED_DAYS_WIP,
@@ -5131,7 +5132,11 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
   const draft = assetDraftTextFromLog(row.run_log);
   if (!draft) return;
 
-  const startedAt = Date.parse(String(row.created_at || "")) || Date.now();
+  // Isolat ist frisch. created_at darf Laufprotokoll-t weiterzählen, aber
+  // Repair und Motive brauchen das Budget dieses Isolats — sonst bleibt nach
+  // 13 min Schreiben remaining_ms 0 und beide Memoseiten ohne Bilder.
+  const isolateStartedAt = Date.now();
+  const startedAt = Date.parse(String(row.created_at || "")) || isolateStartedAt;
   const runLog: Record<string, unknown>[] = Array.isArray(row.run_log)
     ? [...row.run_log as Record<string, unknown>[]]
     : [];
@@ -5310,7 +5315,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     }
 
     const darfReparieren = !payload && assetMangelIsRepairable(mangel);
-    const repairMs = darfReparieren ? assetRepairTimeoutMs(Date.now() - startedAt) : null;
+    const repairMs = darfReparieren ? assetRepairTimeoutMs(Date.now() - isolateStartedAt) : null;
     if (!payload && !darfReparieren) {
       loggen("fail_early", { mangel: mangel.slice(0, 400) });
     }
@@ -5398,7 +5403,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       );
       try {
           payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
-            remainingMs: Math.max(0, ASSET_WALL_CLOCK_MS - (Date.now() - startedAt)),
+            remainingMs: assetPhaseRemainingMs(isolateStartedAt),
             addressee: String(
               (assetAnswers as MemoAnswers).company
               || assetSignal.company
