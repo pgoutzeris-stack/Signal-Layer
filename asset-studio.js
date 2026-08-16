@@ -176,7 +176,7 @@ function memoQuestions(firma, cmoHundredDays = false) {
       label: "Bilder",
       when: nurThema,
       options: [
-        ["auto", "Unternehmenslogos recherchieren"],
+        ["auto", "Logos und Motive recherchieren"],
         ["upload", "Eigene Bilder zuschneiden"],
       ],
     },
@@ -1059,7 +1059,7 @@ function sanitizeFragment(html) {
 }
 
 import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1415";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1430,7 +1430,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ["recherchieren", "fa-magnifying-glass", "Gemini recherchiert aktuelle Benchmarks"],
     ["modell", "fa-brain", isMemo ? "Das Modell entwickelt die Ansprache" : "Das Modell schreibt Titel und Kernaussage"],
     ["pruefen", "fa-list-check", "Belege und Längen werden geprüft"],
-    ["bilder", "fa-image", "Unternehmenslogos werden gesucht"],
+    ["bilder", "fa-image", "Logos und Motive werden gesucht"],
     ["fuellen", "fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
   ];
 

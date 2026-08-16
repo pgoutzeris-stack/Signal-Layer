@@ -6,7 +6,7 @@ import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-stat
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260816-1430";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260816-1415";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260816-1500";
 
 let sb = null;
 let sources = [];
