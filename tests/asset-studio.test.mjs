@@ -1564,6 +1564,7 @@ test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-kpi \.n\{[^}]*overflow:hidden/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /-webkit-line-clamp:3/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /padding-bottom:72mm/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-shot\{[^}]*background:#fff/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-shot img[^}]*object-fit:contain/);
   assert.match(studio, /from "\.\/memo-template\.js/);
   assert.match(studio, /MEMO_TEMPLATE/);
@@ -1745,6 +1746,11 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(studio, /SAVE_LIMIT = 900000/);
   assert.match(studio, /function openCropper/);
   assert.match(studio, /function coverCrop/);
+  assert.match(studio, /isSvgDataUri/);
+  assert.match(studio, /JPEG kennt kein Alpha/);
+  assert.match(studio, /opts\.fit === "contain"/);
+  assert.match(studio, /fillStyle = opts\.fill \|\| "#fff"/);
+  assert.match(studio, /fit: "contain"/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Unternehmenslogos recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
