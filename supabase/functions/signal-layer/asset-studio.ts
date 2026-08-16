@@ -2777,13 +2777,15 @@ export const ASSET_WALL_CLOCK_MS = 380_000;
 export const ASSET_STALE_MS = 400_000;
 
 /**
- * Ohne neues Byte so lange: die Verbindung steht. Nicht die Gesamtdauer.
- * Belegt 14.8.2026: DeepSeek lieferte nach der Recherche null Bytes, das
- * Isolat hungerte seine eigenen Timer aus, get_asset sah erst nach 401 s
- * den Tod. Ein Impuls alle paar Sekunden haette den Hang nach 45 s erkannt
- * und einen langsamen, aber lebenden Lauf nicht abgebrochen.
+ * Ohne neues Lebenszeichen so lange: die Verbindung steht. Denken und
+ * Schreiben teilen dasselbe Fenster. 45 s nach dem ersten JSON-Byte hat
+ * Live-Läufe getötet (16.8.2026, „seit 46 Sekunden nichts mehr gesendet“):
+ * DeepSeek pausiert mitten im JSON, und setInterval im lesenden Isolat
+ * feuert während reader.read() nicht zuverlässig. get_asset läuft in einem
+ * frischen Isolat und sah die Zeile dann als tot. 180 s fängt eine wirklich
+ * tote Verbindung noch weit vor dem Isolate-Tod (~400 s).
  */
-export const ASSET_HEARTBEAT_STALE_MS = 45_000;
+export const ASSET_HEARTBEAT_STALE_MS = 180_000;
 
 /** Bis zum ersten Schreib-Byte darf Suche, Denken oder Motiv lange brauchen.
  * 90 s hat am 14.8.2026 Coca-Cola/Aeffe getötet: Thinking-Burst bei 147 s,
@@ -2844,13 +2846,7 @@ export function assetHangReason(
 ): AssetHangReason | null {
   if (String(row.status || "") !== "running") return null;
   const age = assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs);
-  const log = Array.isArray(row.run_log) ? row.run_log as Array<Record<string, unknown>> : [];
-  const last = log[log.length - 1];
-  const event = String(last?.event || "");
-  const phase = String(last?.phase || "");
-  const schreibt = event === "pulse" && phase === "writing" && Number(last?.chars || 0) > 0;
-  const limit = schreibt ? ASSET_HEARTBEAT_STALE_MS : ASSET_FIRST_BYTE_STALE_MS;
-  if (age >= limit) return "silent";
+  if (age >= ASSET_FIRST_BYTE_STALE_MS) return "silent";
   return null;
 }
 
