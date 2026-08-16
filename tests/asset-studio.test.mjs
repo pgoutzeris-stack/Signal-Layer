@@ -30,7 +30,7 @@ function memoRoh(extra = {}) {
     market_p1: "Was im Markt passiert ist.",
     market_p2: "Warum der Moment jetzt ist.",
     kpis: [{ value: "14 %", label: "Anteil" }],
-    benchmark_title: "Vorreiter ziehen denselben Hebel",
+    benchmark_title: "Benchmarks ziehen denselben Hebel",
     benchmark_lead: "Drei Marken haben vorgemacht.",
     benchmarks: dreiBenchmarks(),
     potentials_title: "Drei Hebel für das Unternehmen",
@@ -1574,11 +1574,11 @@ test("unbelegte Ziffern in der Ansprache fallen durch, qualitative Benchmarks ni
   assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
     market_p1: "70 % der Händler haben umgestellt.",
     kpis: [],
-  })), answers, { articleText: "Der Markt bewegt sich. Vorreiter ziehen den Hebel." }), /unbelegte Zahlen/);
+  })), answers, { articleText: "Der Markt bewegt sich. Benchmarks ziehen den Hebel." }), /unbelegte Zahlen/);
 
   const ok = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
     kpis: [],
-  })), answers, { articleText: "Der Markt bewegt sich. Vorreiter ziehen den Hebel." });
+  })), answers, { articleText: "Der Markt bewegt sich. Benchmarks ziehen den Hebel." });
   assert.equal(ok.benchmarks.length, 3);
   assert.equal(ok.kpis.length, 0);
 });
@@ -1728,7 +1728,7 @@ test("das erkannte Unternehmen ist überschreibbar und steht im Titel, wenn gena
   assert.match(edge, /resolveAssetCompany/);
 });
 
-test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", () => {
+test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", () => {
   const beispiel = backend.MEMO_BENCHMARK_EXAMPLE;
   assert.equal(beispiel.length, 3);
   assert.equal(backend.MEMO_BENCHMARK_RESEARCH_MODEL, "gemini-2.5-flash");
@@ -1744,7 +1744,7 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.throws(() => backend.assertMemoBenchmarkBriefs(beispiel, ""), /Beispiel zeigt nur die Form/);
   assert.doesNotThrow(() => backend.assertMemoBenchmarkBriefs(beispiel, "", { allowExample: true }));
   assert.throws(() => backend.assertMemoBenchmarkBriefs(eigene, "Lidl"), /Adressatenfirma/);
-  assert.throws(() => backend.assertMemoBenchmarkBriefs(eigene.slice(0, 2), ""), /genau drei Vorreiter/);
+  assert.throws(() => backend.assertMemoBenchmarkBriefs(eigene.slice(0, 2), ""), /genau drei Benchmarks/);
   assert.throws(() => backend.assertMemoBenchmarkBriefs([
     { name: "Lidl", text: "zu kurz", tag: "x", source: "" },
     eigene[1], eigene[2],
@@ -1768,9 +1768,10 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.equal(answers.benchmarks_mode, "custom");
   assert.equal(answers.benchmarks.length, 3);
   assert.equal(backend.normalizeAssetAnswers("memo", {}).benchmarks_mode, "auto");
+  assert.equal(backend.normalizeAssetAnswers("memo", { vorreiter: "custom" }).benchmarks_mode, "custom");
 
-  const block = backend.formatVorreiterBlock(eigene, "nutzer");
-  assert.match(block, /<vorreiter herkunft="nutzer">/);
+  const block = backend.formatBenchmarkBlock(eigene, "nutzer");
+  assert.match(block, /<benchmarks herkunft="nutzer">/);
   assert.match(block, /name: Lidl/);
 
   const research = backend.buildMemoBenchmarkResearchPrompt(
@@ -1802,8 +1803,8 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.equal(backend.parseMemoBenchmarkReview({ ok: false, grund: "Nike ist Füllsel" }).ok, false);
 
   const prompt = backend.buildAssetPrompt("memo", { headline_de: "Hebel", company: "Hugo Boss" }, { title: "A", content: "Text" }, answers);
-  assert.match(prompt, /<vorreiter herkunft="nutzer">/);
-  assert.match(prompt, /<belegregeln_vorreiter>/);
+  assert.match(prompt, /<benchmarks herkunft="nutzer">/);
+  assert.match(prompt, /<belegregeln_benchmarks>/);
   assert.match(prompt, /Lidl/);
 
   const gefuellt = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
@@ -1828,15 +1829,15 @@ test("Vorreiter: Gemini recherchiert, eigene Angaben haben Form und Prüfung", (
   assert.match(studio, /Gemini recherchiert/);
   assert.match(studio, /data-act="bench-example"/);
   assert.match(studio, /Beispielform einsetzen/);
-  assert.match(studio, /function eigeneVorreiterPruefen/);
+  assert.match(studio, /function eigeneBenchmarksPruefen/);
   assert.match(studio, /assetEtaLabel/);
   assert.match(edge, /function researchMemoBenchmarksWithGemini/);
   assert.match(edge, /function reviewMemoBenchmarksWithGemini/);
   assert.match(edge, /tools: \[\{ google_search: \{\} \}\]/);
   assert.match(edge, /buildMemoBenchmarkResearchPrompt/);
   assert.match(edge, /buildMemoBenchmarkReviewPrompt/);
-  assert.match(edge, /VORREITER_PASSUNG:/);
-  assert.match(edge, /Im Fragebogen eigene Vorreiter eintragen/);
+  assert.match(edge, /BENCHMARK_PASSUNG:/);
+  assert.match(edge, /Im Fragebogen eigene Benchmarks eintragen/);
   assert.match(edge, /function callGeminiWithGoogleSearch/);
   assert.match(edge, /streamGenerateContent\?alt=sse/);
   assert.match(edge, /simple_research_model \|\| MEMO_BENCHMARK_RESEARCH_MODEL/);

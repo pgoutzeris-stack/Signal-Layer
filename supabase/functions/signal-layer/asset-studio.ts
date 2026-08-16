@@ -109,7 +109,7 @@ export type MemoAnswers = {
   company: string;
   /** auto = Gemini fuellt die Motive. upload = der Nutzer schneidet selbst zu. */
   images: "auto" | "upload";
-  /** auto = Gemini recherchiert Vorreiter. custom = der Nutzer liefert drei. */
+  /** auto = Gemini recherchiert Benchmarks. custom = der Nutzer liefert drei. */
   benchmarks_mode: "auto" | "custom";
   benchmarks: MemoBenchmarkBrief[];
   storyline: string;
@@ -188,7 +188,7 @@ export type AssetNormalizeContext = {
   articleTitle?: string | null;
   /** ROOTS-Anschluss: die Übersetzung der Lage in die Herausforderung. */
   rootsLink?: string | null;
-  /** Recherchierte oder gelieferte Vorreiter, gelten als belegt. */
+  /** Recherchierte oder gelieferte Benchmarks, gelten als belegt. */
   benchmarkCorpus?: string | null;
 };
 
@@ -708,33 +708,33 @@ export function assertMemoBenchmarkBriefs(
   const firma = String(addresseeCompany || "").trim().toLowerCase();
   const kept = briefs.filter((item) => item.name && item.text && item.tag);
   if (kept.length < 3) {
-    throw new Error("Das Memo braucht genau drei Vorreiter, jeweils mit Name, Handlung und Lehre. Geliefert: "
+    throw new Error("Das Memo braucht genau drei Benchmarks, jeweils mit Name, Handlung und Lehre. Geliefert: "
       + `${kept.length}. Beispiel: Decathlon | Hat die Eigenmarken unter eine Führung gestellt | Marke vor Fläche`);
   }
   if (!opts.allowExample && isExampleBenchmarkSet(kept)) {
-    throw new Error("Das Beispiel zeigt nur die Form. Bitte drei Vorreiter einsetzen, die denselben Hebel wie dieses Signal schon gezogen haben.");
+    throw new Error("Das Beispiel zeigt nur die Form. Bitte drei Benchmarks einsetzen, die denselben Hebel wie dieses Signal schon gezogen haben.");
   }
   for (const item of kept) {
     if (item.text.length < 24) {
       throw new Error(`„${item.name}“ braucht eine konkrete Handlung, nicht nur den Namen. Was hat die Marke getan?`);
     }
     if (firma && item.name.toLowerCase() === firma) {
-      throw new Error("Die Adressatenfirma ist kein Vorreiter. Drei andere Marken, die denselben Hebel schon gezogen haben.");
+      throw new Error("Die Adressatenfirma ist kein Benchmark. Drei andere Marken, die denselben Hebel schon gezogen haben.");
     }
   }
   return kept.slice(0, 3);
 }
 
-export function formatVorreiterBlock(briefs: MemoBenchmarkBrief[], herkunft: "recherche" | "nutzer"): string {
+export function formatBenchmarkBlock(briefs: MemoBenchmarkBrief[], herkunft: "recherche" | "nutzer"): string {
   const zeilen = briefs.map((item, i) => [
     `${i + 1}. name: ${item.name}`,
     `   text: ${item.text}`,
     `   tag: ${item.tag}`,
     item.source ? `   quelle: ${item.source}` : "",
   ].filter(Boolean).join("\n")).join("\n");
-  return `<vorreiter herkunft="${herkunft}">
+  return `<benchmarks herkunft="${herkunft}">
 ${zeilen}
-</vorreiter>`;
+</benchmarks>`;
 }
 
 export function memoBenchmarkCorpus(briefs: MemoBenchmarkBrief[]): string {
@@ -754,15 +754,15 @@ export function buildMemoBenchmarkReviewPrompt(
   ].filter(Boolean).join("\n");
   const liste = answers.benchmarks.map((item, i) =>
     `${i + 1}. ${item.name} | ${item.text} | ${item.tag}`).join("\n");
-  return `Du prüfst drei vom Nutzer gelieferte Vorreiter für ein ROOTS Executive Memo. Google Search ist Pflicht.
+  return `Du prüfst drei vom Nutzer gelieferte Benchmarks für ein ROOTS Executive Memo. Google Search ist Pflicht.
 
 <hebel>
 ${hebel || asData(article.title_de || article.title, 240) || "nicht benannt"}
 </hebel>
 <adressat>${firma || "nicht benannt"}</adressat>
-<vorreiter>
+<benchmarks>
 ${liste}
-</vorreiter>
+</benchmarks>
 
 ok=true nur wenn alle drei denselben ROOTS-Hebel schon gezogen haben (die Leistung und den Anschluss), nicht nur dieselbe Nachricht oder Branche, und keine die Adressatenfirma ist.
 Wenn ein Name unbelegt ist oder der Mechanismus ein anderer: ok=false.
@@ -793,7 +793,7 @@ export function buildMemoBenchmarkResearchPrompt(
     asData(signal.signal_label, 120),
   ].filter(Boolean).join(" · ");
   const titel = asData(article.title_de || article.title, 240);
-  return `Du recherchierst drei Vorreiter für ein ROOTS Executive Memo. Google Search ist Pflicht.
+  return `Du recherchierst drei Benchmarks für ein ROOTS Executive Memo. Google Search ist Pflicht.
 
 <hebel>
 ${hebel || titel || "nicht benannt"}
@@ -1064,7 +1064,7 @@ export function allowedSlideKeys(answers: LinkedinAnswers, articleText = ""): As
 const ASSETTYP_BRIEFING = `<assettypen>
 LinkedIn Einzelbild: eine These, ein Gedanke. Genau ein sichtbares Feld trägt die Pointe. Foto-Layouts C, D und J nur, wenn der Nutzer sie gewählt hat; die Datei kommt vom Nutzer.
 LinkedIn Karussell: Folge von Gedanken, keine Wiederholung. Erste Folie setzt die These. Jede mittlere Folie einen Beleg oder Gegensatz. Dieselbe Ziffer darf nicht auf zwei Folien die Pointe tragen. Letzte Folie den Aufruf im sichtbaren Feld (F, I oder K passen oft).
-Ansprache: immer dasselbe Executive Memo, drei Seiten. Kein internes Vermerk, keine Optionsmatrix. Der rote Faden ist roots_anschluss plus roots_leistung: welche Herausforderung ROOTS hier wirklich bearbeitet. Das Signal ist der Anlass, nicht die Geschichte. Cover = Action Title dieser Herausforderung, nicht der Leistungsname, nicht die Nachricht. Seite 2 belegt denselben Hebel mit Markt und drei Vorreitern, die ihn schon gezogen haben. Seite 3 macht ihn für den Adressaten konkret. Die ROOTS-Leistung selbst steht erst in about_fit.
+Ansprache: immer dasselbe Executive Memo, drei Seiten. Kein internes Vermerk, keine Optionsmatrix. Der rote Faden ist roots_anschluss plus roots_leistung: welche Herausforderung ROOTS hier wirklich bearbeitet. Das Signal ist der Anlass, nicht die Geschichte. Cover = Action Title dieser Herausforderung, nicht der Leistungsname, nicht die Nachricht. Seite 2 belegt denselben Hebel mit Markt und drei Benchmarks, die ihn schon gezogen haben. Seite 3 macht ihn für den Adressaten konkret. Die ROOTS-Leistung selbst steht erst in about_fit.
 </assettypen>`;
 
 const LEITKENNZAHL = `<leitkennzahl>
@@ -1249,9 +1249,9 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
   const bilder = answers.images === "upload"
     ? "Bilder: der Nutzer lädt sie selbst. Schreibe image_hint als Motivbeschreibung für den Platzhalter."
     : "Bilder: Gemini erzeugt die Motive aus image_hint. Beschreibe je Slot ein konkretes, textfreies Fotomotiv.";
-  const vorreiter = answers.benchmarks.length >= 3
-    ? `Vorreiter, verbindlich:\n${formatVorreiterBlock(answers.benchmarks, answers.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\nÜbernimm name, text und tag. Formuliere höchstens sprachlich. Zahlen nur wie dort angegeben. Erfinde keine vierte Marke und ersetze keine Namen.`
-    : "Vorreiter: genau drei, die denselben Hebel schon gezogen haben. Nur aus <vorreiter> oder aus artikel.";
+  const benchmarks = answers.benchmarks.length >= 3
+    ? `Benchmarks, verbindlich:\n${formatBenchmarkBlock(answers.benchmarks, answers.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\nÜbernimm name, text und tag. Formuliere höchstens sprachlich. Zahlen nur wie dort angegeben. Erfinde keine vierte Marke und ersetze keine Namen.`
+    : "Benchmarks: genau drei, die denselben Hebel schon gezogen haben. Nur aus <benchmarks> oder aus artikel.";
   const nennen = answers.company_named !== "no" && Boolean(firma);
   const firmaZeile = !nennen
     ? "Kein Unternehmensname im Briefing. title und die drei Seiten bleiben ohne Firmenname."
@@ -1266,7 +1266,7 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
       ? `CTA, verbindlich in cta (die Frage im blauen Band): ${answers.cta}`
       : "cta: eine Gesprächsfrage. Der Knopftext ist fest „Kontakt aufnehmen“.",
     leistung ? `ROOTS-Leistung ${leistung} ist der Hebel von Cover, Benchmarks und Potenzialen. In about_fit erscheint sie erst am Ende, ein Satz. Nicht im title, nicht als Cover-Subjekt.` : "",
-    vorreiter,
+    benchmarks,
     bilder,
   ].filter(Boolean).join("\n");
 
@@ -1279,7 +1279,7 @@ Das Memo überzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu spre
 <hebel>
 Zuerst roots_anschluss, dann roots_leistung, dann begründung. Das ist die Übersetzung, die ROOTS schon geleistet hat. Daraus entsteht das Memo.
 title sagt die Herausforderung in der Sprache des Falls (Häuser, Profile, Handschrift, Kanal, Portfolio, Positionierung), nicht den Produktnamen (Markenstrategie, Marketing Audit, Brand Audit) und nicht Beratungsjargon wie „Hebel ziehen“.
-Die drei benchmarks zeigen Vorreiter, die denselben ROOTS-Hebel schon gezogen haben — denselben Mechanismus, nicht dieselbe Nachricht (Sanierung, Übernahme, Personalie).
+Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben — denselben Mechanismus, nicht dieselbe Nachricht (Sanierung, Übernahme, Personalie).
 Die drei potentials übersetzen genau diese Leistung auf den Adressaten. about_fit nennt roots_leistung erst am Schluss.
 </hebel>
 <titel>
@@ -1299,7 +1299,7 @@ Ein Führungswechsel, eine Kampagne, eine Transaktion oder eine Zahl ist nur dan
 Eine 100-Tage-CMO-Unterlage ist ein anderes Dokument, nicht dieses Memo. Auch wenn roots_leistung, roots_anschluss oder der Anlass ein CMO-Wechsel oder „Die ersten 100 Tage als CMO“ enthalten: dieses Executive Memo behandelt ausschließlich die thematische Markt- oder Markenherausforderung. Keine 100-Tage-Agenda, keine CMO-Onboarding-Sprache, keine ersten 100 Tage in title, standfirst, about_fit, Potenzialen oder CTA.
 </sonderfall>
 <zusammenhang>
-title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss. market_title und die KPIs belegen, dass der Markt sich bewegt. Die drei benchmarks zeigen Vorreiter, die denselben ROOTS-Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel in der Sprache des Falls, ohne den Leistungsnamen zu wiederholen. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation. Nichts erzählt die Signalüberschrift noch einmal.
+title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss. market_title und die KPIs belegen, dass der Markt sich bewegt. Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel in der Sprache des Falls, ohne den Leistungsnamen zu wiederholen. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation. Nichts erzählt die Signalüberschrift noch einmal.
 </zusammenhang>
 <auftrag>
 ${auftrag}
@@ -1310,9 +1310,9 @@ standfirst: ein bis zwei Sätze, warum diese Herausforderung jetzt anliegt. Bele
 market_title: Überschrift von 01 Marktdynamik. Die Kategorie oder der Markt, nicht das Unternehmen.
 market_p1, market_p2: je ein Absatz. Lage des Marktes, dann warum der Moment jetzt ist. Zahlen nur aus kennzahlen_im_artikel.
 kpis: drei oder vier belegte Kennzahlen. value in einer Zeile, ohne Umbruch, z. B. 14 % oder 329 Mio. €. label erklärt den Bezug. Leer, wenn keine Ziffer vorliegt.
-benchmark_title: Überschrift von 02. Was Vorreiter am selben Hebel richtig machen.
+benchmark_title: Überschrift von 02. Was Benchmarks am selben Hebel richtig machen.
 benchmark_lead: ein Satz, worin der ROOTS-Hebel liegt, nicht die Nachricht.
-benchmarks: genau drei. name, text und tag kommen aus <vorreiter>, wenn der Block steht. Sonst qualitative Analogie aus artikel zum selben Hebel. Ziffern nur mit Beleg.
+benchmarks: genau drei. name, text und tag kommen aus <benchmarks>, wenn der Block steht. Sonst qualitative Analogie aus artikel zum selben Hebel. Ziffern nur mit Beleg.
 potentials_title: Überschrift von 03. Der Channel- oder Lage-Check DIESES Unternehmens.
 potentials_lead: ein Satz, wie viele Ansatzpunkte der Check zeigt.
 potentials: genau drei. title mit Verb oder Gegensatz („vom … zur …“), höchstens acht Wörter. finding = belegter Zustand, ein bis zwei kurze Sätze. potential = was ROOTS daraus macht, ein bis zwei kurze Sätze, ohne erfundene Zahl. Beide Felder müssen auf der Karte über dem Futter bleiben. image_hint das Motiv.
@@ -1339,10 +1339,10 @@ export function buildAssetPrompt(
   const body = String(article.content_de || article.cleaned_content || article.content || "");
   if (kind === "linkedin") return linkedinPrompt(answers as LinkedinAnswers, daten, body, signalForKind);
   const memo = answers as MemoAnswers;
-  const vorreiter = memo.benchmarks.length >= 3
-    ? `\n${formatVorreiterBlock(memo.benchmarks, memo.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\n<belegregeln_vorreiter>\nDie drei Vorreiter in <vorreiter> gelten als belegt, inklusive ihrer Quellen. Andere Zahlen weiter nur aus kennzahlen_im_artikel.\n</belegregeln_vorreiter>`
+  const benchmarks = memo.benchmarks.length >= 3
+    ? `\n${formatBenchmarkBlock(memo.benchmarks, memo.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\n<belegregeln_benchmarks>\nDie drei Benchmarks in <benchmarks> gelten als belegt, inklusive ihrer Quellen. Andere Zahlen weiter nur aus kennzahlen_im_artikel.\n</belegregeln_benchmarks>`
     : "";
-  return memoPrompt(memo, signalForKind, daten + vorreiter);
+  return memoPrompt(memo, signalForKind, daten + benchmarks);
 }
 
 // ---------------------------------------------------------------------------
@@ -1415,8 +1415,8 @@ const BENCH_SCHEMA = {
   type: "OBJECT",
   required: ["name", "text", "tag"],
   properties: {
-    name: { type: "STRING", description: "Firma oder Marke des Vorreiters." },
-    text: { type: "STRING", description: "Beleg, was der Vorreiter getan hat. Ziffern nur mit Artikelbeleg." },
+    name: { type: "STRING", description: "Firma oder Marke des Benchmarks." },
+    text: { type: "STRING", description: "Beleg, was der Benchmark getan hat. Ziffern nur mit Artikelbeleg." },
     tag: { type: "STRING", description: "Übertragbare Lehre in wenigen Worten." },
     image_hint: { type: "STRING", description: "Bildmotiv in Worten. Die Datei kommt vom Nutzer." },
   },
@@ -1444,8 +1444,8 @@ export const ASSET_SCHEMA_MEMO = {
     market_p2: { type: "STRING", description: "Zweiter Absatz: warum der Moment jetzt ist." },
     kpis: { type: "ARRAY", items: STAT_SCHEMA, description: "Drei oder vier belegte Kennzahlen. Leer, wenn keine Ziffer vorliegt." },
     benchmark_title: { type: "STRING", description: "Überschrift von 02 Benchmarks." },
-    benchmark_lead: { type: "STRING", description: "Ein Satz, worin der Hebel der Vorreiter liegt." },
-    benchmarks: { type: "ARRAY", items: BENCH_SCHEMA, description: "Genau drei Vorreiter." },
+    benchmark_lead: { type: "STRING", description: "Ein Satz, worin der Hebel der Benchmarks liegt." },
+    benchmarks: { type: "ARRAY", items: BENCH_SCHEMA, description: "Genau drei Benchmarks." },
     potentials_title: { type: "STRING", description: "Überschrift von 03 Potenziale." },
     potentials_lead: { type: "STRING", description: "Ein Satz, wie viele Ansatzpunkte der Check zeigt." },
     potentials: { type: "ARRAY", items: POT_SCHEMA, description: "Genau drei Potenziale für DIESES Unternehmen." },
@@ -2566,7 +2566,7 @@ export function assetModelRetryDue(
 export function assetStageLabel(stage: string): string {
   switch (String(stage || "")) {
     case "lesen": return "beim Lesen";
-    case "recherchieren": return "bei der Vorreiter-Recherche";
+    case "recherchieren": return "bei der Benchmark-Recherche";
     case "modell": return "beim Schreiben";
     case "bilder": return "bei den Motiven";
     case "pruefen": return "beim Prüfen";

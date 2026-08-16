@@ -3423,7 +3423,7 @@ async function callGeminiWithGoogleSearchOnce(
     }),
   }, MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS);
   if (!response.ok) {
-    throw new Error(`Die Vorreiter-Recherche ist fehlgeschlagen (${response.status}).`);
+    throw new Error(`Die Benchmark-Recherche ist fehlgeschlagen (${response.status}).`);
   }
   await onPulse?.({ phase: "headers", model, chars: 0 });
   let text = "";
@@ -3439,9 +3439,9 @@ async function callGeminiWithGoogleSearchOnce(
     if (chunk.finish) finish = chunk.finish;
     await onPulse?.({ phase: "search", model, chars: text.length });
   }, () => onPulse?.({ phase: "search", model, chars: text.length }));
-  if (!text.trim()) throw new Error("Die Vorreiter-Recherche hat keine Antwort geliefert.");
+  if (!text.trim()) throw new Error("Die Benchmark-Recherche hat keine Antwort geliefert.");
   if (!geminiFinishAllowsParse(finish)) {
-    throw new Error("Die Vorreiter-Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Vorreiter eintragen.");
+    throw new Error("Die Benchmark-Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Benchmarks eintragen.");
   }
   return { text, titles, searchQueries: searchQueries || (titles.length ? 1 : 0) };
 }
@@ -3463,7 +3463,7 @@ async function callGeminiWithGoogleSearch(
       await onPulse?.({ phase: "search", model, chars: 0 });
     }
   }
-  throw letzter || new Error("Die Vorreiter-Recherche ist unvollständig abgebrochen.");
+  throw letzter || new Error("Die Benchmark-Recherche ist unvollständig abgebrochen.");
 }
 
 async function researchMemoBenchmarksWithGemini(
@@ -9226,7 +9226,7 @@ Deno.serve(async (req: Request) => {
             return `${nachricht}\n\n${assetModel} · ${ASSET_PROMPT_VERSION} · ${formatLabel} · ${dauer} · ${tok}`;
           };
           // Prompt bauen zaehlt noch als Lesen: das Modell startet erst danach.
-          // Vorreiter: Gemini sucht (DeepSeek hat keine Websuche) oder der Nutzer
+          // Benchmarks: Gemini sucht (DeepSeek hat keine Websuche) oder der Nutzer
           // liefert drei. Ohne drei belastbare Marken bricht das Memo spaeter ab.
           if (assetKind === "memo") {
             const memoAnswers = assetAnswers as MemoAnswers;
@@ -9251,20 +9251,20 @@ Deno.serve(async (req: Request) => {
                     search_queries: pruefung.searchQueries,
                   });
                   if (!pruefung.ok) {
-                    throw new Error(`VORREITER_PASSUNG:${pruefung.grund
-                      || "Die eigenen Vorreiter passen nicht zum Hebel dieses Signals."}`);
+                    throw new Error(`BENCHMARK_PASSUNG:${pruefung.grund
+                      || "Die eigenen Benchmarks passen nicht zum Hebel dieses Signals."}`);
                   }
                 } catch (fehler) {
                   const grund = fehler instanceof Error ? fehler.message : String(fehler);
-                  if (grund.startsWith("VORREITER_PASSUNG:")) {
-                    throw new Error(`${grund.slice("VORREITER_PASSUNG:".length)}\n\nBitte Vorreiter ersetzen oder Gemini recherchieren lassen.`);
+                  if (grund.startsWith("BENCHMARK_PASSUNG:")) {
+                    throw new Error(`${grund.slice("BENCHMARK_PASSUNG:".length)}\n\nBitte Benchmarks ersetzen oder Gemini recherchieren lassen.`);
                   }
                   loggen("benchmarks_review_skip", { reason: grund.slice(0, 300) });
                 }
               }
             } else {
               if (!geminiKey) {
-                throw new Error("Für die Vorreiter-Recherche ist kein Gemini-Schlüssel hinterlegt. Im Fragebogen eigene Vorreiter eintragen.");
+                throw new Error("Für die Benchmark-Recherche ist kein Gemini-Schlüssel hinterlegt. Im Fragebogen eigene Benchmarks eintragen.");
               }
               try {
                 const gefunden = await researchMemoBenchmarksWithGemini(
@@ -9281,7 +9281,7 @@ Deno.serve(async (req: Request) => {
                 });
               } catch (fehler) {
                 const grund = fehler instanceof Error ? fehler.message : String(fehler);
-                throw new Error(`${grund}\n\nOhne drei belastbare Vorreiter kann das Memo nicht gebaut werden. Im Fragebogen eigene Vorreiter eintragen.`);
+                throw new Error(`${grund}\n\nOhne drei belastbare Benchmarks kann das Memo nicht gebaut werden. Im Fragebogen eigene Benchmarks eintragen.`);
               }
             }
             await persist({ answers: assetAnswers });
