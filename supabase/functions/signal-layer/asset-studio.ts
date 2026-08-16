@@ -2363,6 +2363,7 @@ export function assetHangReason(
 const ASSET_DRAFT_TEXT_MAX = 100_000;
 const ASSET_FINISH_KICK_MAX = 4;
 const ASSET_FINISH_HANDOFF_AFTER_MS = 20_000;
+const ASSET_BILDER_SETTLE_MS = 90_000;
 export const ASSET_MODEL_RETRY_MAX = 2;
 
 /** Rohtext der letzten gelungenen Modellantwort, für ein frisches Isolat. */
@@ -2377,23 +2378,68 @@ export function assetDraftTextFromLog(log: unknown): string {
 
 export function assetFinishKickCount(log: unknown): number {
   const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
-  return rows.filter((row) => row?.event === "handoff" || row?.event === "finish_start").length;
+  return rows.filter((row) => row?.event === "finish_start").length;
 }
 
 /**
  * Text ist da, das Schreib-Isolat aber tot: Prüfung und Motive in einem
  * neuen Isolat anstoßen, statt den Entwurf nach 180 s Stille zu verwerfen.
+ * Aeffe 16.8.2026: handoff+finish_start wurden je 2× gezählt, danach starb
+ * der fertige Entwurf in fuellen. Zähler ist nur noch finish_start.
  */
 export function assetFinishHandoffDue(
-  row: { status?: unknown; stage?: unknown; updated_at?: unknown; created_at?: unknown; run_log?: unknown },
+  row: { status?: unknown; stage?: unknown; updated_at?: unknown; created_at?: unknown; run_log?: unknown; payload?: unknown; kind?: unknown; title?: unknown; slide_title?: unknown },
   nowMs = Date.now(),
 ): boolean {
   if (String(row.status || "") !== "running") return false;
   if (!assetDraftTextFromLog(row.run_log)) return false;
   if (assetFinishKickCount(row.run_log) >= ASSET_FINISH_KICK_MAX) return false;
   const stage = String(row.stage || "");
+  if (assetKeepablePayload(row) && (stage === "fuellen" || stage === "bilder")) return false;
   if (!["pruefen", "bilder", "fuellen", "modell"].includes(stage)) return false;
   return assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs) >= ASSET_FINISH_HANDOFF_AFTER_MS;
+}
+
+/** Nutzlast liegt schon in der Zeile. Ein zweites Isolat würde sie nur noch einmal schreiben. */
+export function assetKeepablePayload(
+  row: { kind?: unknown; payload?: unknown; title?: unknown; slide_title?: unknown },
+): boolean {
+  const p = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+    ? row.payload as Record<string, unknown>
+    : null;
+  if (p) {
+    if (Array.isArray(p.slides) && p.slides.length) return true;
+    if (String(p.title || "").trim()) return true;
+  }
+  if (String(row.title || "").trim()) return true;
+  if (String(row.slide_title || "").trim()) return true;
+  return false;
+}
+
+/**
+ * Aeffe 16.8.2026: Motive fertig, 4 MB Nutzlast gespeichert, Stufe fuellen,
+ * Isolat tot beim letzten Persist. Der Wächter hat den Entwurf verworfen.
+ * Liegt der Text (und ggf. die Motive) schon in der Zeile, Status auf done.
+ */
+export function assetFinishSettleDue(
+  row: {
+    status?: unknown;
+    stage?: unknown;
+    updated_at?: unknown;
+    created_at?: unknown;
+    payload?: unknown;
+    kind?: unknown;
+    title?: unknown;
+    slide_title?: unknown;
+  },
+  nowMs = Date.now(),
+): boolean {
+  if (String(row.status || "") !== "running") return false;
+  if (!assetKeepablePayload(row)) return false;
+  const stage = String(row.stage || "");
+  if (stage !== "fuellen" && stage !== "bilder") return false;
+  const limit = stage === "bilder" ? ASSET_BILDER_SETTLE_MS : ASSET_FINISH_HANDOFF_AFTER_MS;
+  return assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs) >= limit;
 }
 
 export function assetModelRetryCount(log: unknown): number {
@@ -2425,10 +2471,12 @@ export function assetModelRetryDue(
 
 export function assetStageLabel(stage: string): string {
   switch (String(stage || "")) {
+    case "lesen": return "beim Lesen";
     case "recherchieren": return "bei der Vorreiter-Recherche";
     case "modell": return "beim Schreiben";
     case "bilder": return "bei den Motiven";
     case "pruefen": return "beim Prüfen";
+    case "fuellen": return "beim Fertigstellen";
     default: return "in diesem Schritt";
   }
 }
