@@ -1131,7 +1131,11 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.doesNotMatch(studio, /key: "note"/);
   assert.match(studio, /function kachelUeberlauf/);
   assert.match(studio, /scrollWidth > 1082/);
-  assert.match(studio, /as-stage--memo \.em-page/);
+  assert.match(studio, /function passeMemoKpisAn/);
+  assert.match(studio, /function memoSeiteHatUeberlauf/);
+  assert.match(studio, /function passeUndPruefeMemo/);
+  assert.match(studio, /data-memomess/);
+  assert.match(studio, /em-foot-abs/);
   assert.match(studio, /Folie \$\{ueber\.join/);
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
@@ -1546,6 +1550,7 @@ test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
   assert.match(tpl.MEMO_TEMPLATE, /\{\{about_fit\}\}/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.as-stage--memo/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-kpi \.n\{[^}]*white-space:nowrap/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-kpi \.n\{[^}]*overflow:hidden/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /-webkit-line-clamp:3/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /padding-bottom:72mm/);
   assert.match(studio, /from "\.\/memo-template\.js/);

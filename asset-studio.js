@@ -1059,7 +1059,7 @@ function sanitizeFragment(html) {
 }
 
 import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1200";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1215";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2557,17 +2557,82 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   /**
+   * KPI-Wert in der Bubble halten: Schrift so weit runter, bis „328,8 Mio. €“
+   * in einer Zeile bleibt. Läuft auf einer Messkopie in echter A4-Größe, nicht
+   * auf der skalierten Vorschau.
+   */
+  function passeMemoKpisAn(wurzel) {
+    wurzel.querySelectorAll(".em-kpi .n").forEach((el) => {
+      if (!String(el.textContent || "").trim()) return;
+      el.style.fontSize = "";
+      let px = parseFloat(getComputedStyle(el).fontSize) || 21;
+      let schritte = 0;
+      while (el.scrollWidth > el.clientWidth + 0.5 && px > 10 && schritte < 28) {
+        px -= 0.5;
+        el.style.fontSize = `${px}px`;
+        schritte += 1;
+      }
+    });
+  }
+
+  function memoSeiteHatUeberlauf(seite) {
+    if (seite.scrollHeight > seite.clientHeight + 2) return true;
+    for (const el of seite.querySelectorAll(".em-kpi .n")) {
+      if (String(el.textContent || "").trim() && el.scrollWidth > el.clientWidth + 1) return true;
+    }
+    const fuss = seite.querySelector(".em-foot-abs");
+    if (!fuss) return false;
+    const oben = fuss.getBoundingClientRect().top;
+    for (const karte of seite.querySelectorAll(".em-pot")) {
+      if (karte.getBoundingClientRect().bottom > oben + 2) return true;
+    }
+    return false;
+  }
+
+  function messMemoKopie() {
+    const live = shell.querySelector("[data-stagearea] .as-stage--memo");
+    if (!live) return null;
+    const mess = live.cloneNode(true);
+    mess.removeAttribute("data-uid");
+    mess.setAttribute("data-memomess", "1");
+    mess.querySelectorAll(".em-page.is-off").forEach((seite) => seite.classList.remove("is-off"));
+    mess.querySelectorAll("[contenteditable]").forEach((node) => node.removeAttribute("contenteditable"));
+    mess.style.cssText = "position:absolute;left:-99999px;top:0;width:210mm;height:auto;background:#fff;pointer-events:none;z-index:-1;";
+    mess.querySelectorAll(".em-page").forEach((seite) => {
+      seite.style.width = "210mm";
+      seite.style.height = "297mm";
+      seite.style.overflow = "hidden";
+      seite.style.display = "flex";
+    });
+    document.body.appendChild(mess);
+    return { live, mess };
+  }
+
+  /** Alle drei Seiten messen, auch die gerade nicht sichtbare. Schrift zurück ins Original. */
+  function passeUndPruefeMemo() {
+    const paket = messMemoKopie();
+    if (!paket) return [];
+    const { live, mess } = paket;
+    passeMemoKpisAn(mess);
+    const liveKpis = live.querySelectorAll(".em-kpi .n");
+    mess.querySelectorAll(".em-kpi .n").forEach((el, i) => {
+      if (liveKpis[i]) liveKpis[i].style.fontSize = el.style.fontSize;
+    });
+    const treffer = [];
+    mess.querySelectorAll(".em-page").forEach((seite, i) => {
+      if (memoSeiteHatUeberlauf(seite)) treffer.push(i + 1);
+    });
+    mess.remove();
+    return treffer;
+  }
+
+  /**
    * Die Kachel ist 1080×1350. scrollWidth darüber heisst: Text oder Grafik
    * laufen aus dem Rahmen, wie beim Cucinelli-Titel. Vor dem Speichern ein Gate.
+   * Memo: alle A4-Seiten, KPI-Umbruch und Karte auf dem Futter.
    */
   function kachelUeberlauf() {
-    if (isMemo) {
-      const treffer = [];
-      shell.querySelectorAll("[data-stagearea] .as-stage--memo .em-page").forEach((seite, i) => {
-        if (seite.scrollHeight > seite.clientHeight + 2) treffer.push(i + 1);
-      });
-      return treffer;
-    }
+    if (isMemo) return passeUndPruefeMemo();
     const treffer = [];
     shell.querySelectorAll("[data-stagearea] .as-stage--tpl .li").forEach((kachel, i) => {
       const ausRahmen = kachel.scrollWidth > 1082 || kachel.scrollHeight > 1352;
