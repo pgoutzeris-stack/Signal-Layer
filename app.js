@@ -2,7 +2,8 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260805-1130";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260814-2025";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1420";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260816-1420";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
 import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260816-1415";
@@ -1705,9 +1706,20 @@ async function loadFindings(track) {
 async function loadAdvancedVersions() {
   try {
     const { versions, current } = await callApi("list_advanced_versions");
-    const date = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "";
-    els.signalVersion.innerHTML = `<option value="current">Aktueller Stand</option>${(versions || [])
-      .map((entry) => `<option value="${escapeHtml(entry.version)}" ${entry.version === signalSelectedVersion ? "selected" : ""}>${entry.version === current ? "Aktive Version" : "Version"} ${escapeHtml(entry.version)} · ${Number(entry.article_count || 0).toLocaleString("de-DE")} Artikel · ${escapeHtml(date(entry.last_seen_at))}</option>`)
+    const liste = versions || [];
+    const currentEntry = liste.find((entry) => entry.version === current);
+    const dateAttr = (entry) => {
+      const date = simpleVersionDateLabel({
+        first_seen_at: entry?.last_seen_at || entry?.first_seen_at,
+      });
+      return date ? ` data-date="${escapeHtml(date)}"` : "";
+    };
+    const currentLabel = currentEntry
+      ? advancedVersionLabel(currentEntry, current)
+      : "Aktueller Stand";
+    els.signalVersion.innerHTML = `<option value="current"${signalSelectedVersion ? "" : " selected"}${dateAttr(currentEntry || {})}>${escapeHtml(currentLabel)}</option>${liste
+      .filter((entry) => entry.version !== current)
+      .map((entry) => `<option value="${escapeHtml(entry.version)}"${entry.version === signalSelectedVersion ? " selected" : ""}${dateAttr(entry)}>${escapeHtml(advancedVersionLabel(entry, current))}</option>`)
       .join("")}`;
     enhanceHeaderSelects();
   } catch (_error) {
@@ -1932,9 +1944,15 @@ function enhanceHeaderSelects() {
     trigger.setAttribute("aria-haspopup", "listbox");
     trigger.setAttribute("aria-expanded", "false");
     const label = document.createElement("span");
+    const info = document.createElement("span");
+    info.className = "roots-select-info";
+    info.hidden = true;
+    info.innerHTML = `<i class="fa-solid fa-circle-info" aria-hidden="true"></i><span class="roots-select-info-tip"></span>`;
+    info.addEventListener("click", (event) => event.stopPropagation());
+    info.addEventListener("pointerdown", (event) => event.stopPropagation());
     const icon = document.createElement("i");
-    icon.className = "fa-solid fa-chevron-down";
-    trigger.append(label, icon);
+    icon.className = "fa-solid fa-chevron-down roots-select-caret";
+    trigger.append(label, info, icon);
     const menu = document.createElement("div");
     menu.className = "roots-select-menu";
     menu.setAttribute("role", "listbox");
@@ -1966,6 +1984,30 @@ function enhanceHeaderSelects() {
       return `${values.length} ${noun}`;
     };
 
+    const fillInfo = (node, date) => {
+      const tip = node.querySelector(".roots-select-info-tip");
+      const has = Boolean(date);
+      node.hidden = !has;
+      if (tip) tip.textContent = date || "";
+      if (has) {
+        node.setAttribute("aria-label", date);
+        node.tabIndex = 0;
+      } else {
+        node.removeAttribute("aria-label");
+        node.removeAttribute("tabindex");
+      }
+    };
+    const infoNode = (date) => {
+      if (!date) return null;
+      const node = document.createElement("span");
+      node.className = "roots-select-info";
+      node.innerHTML = `<i class="fa-solid fa-circle-info" aria-hidden="true"></i><span class="roots-select-info-tip"></span>`;
+      fillInfo(node, date);
+      node.addEventListener("click", (event) => event.stopPropagation());
+      node.addEventListener("pointerdown", (event) => event.stopPropagation());
+      return node;
+    };
+
     const makeOption = (option) => {
       const button = document.createElement("button");
       button.type = "button";
@@ -1975,7 +2017,11 @@ function enhanceHeaderSelects() {
         ? (isAll ? selection.length === 0 : selection.includes(option.value))
         : option.selected;
       button.className = `roots-select-option${active ? " selected" : ""}${empty ? " roots-select-option--empty" : ""}`;
-      button.textContent = option.textContent;
+      const text = document.createElement("span");
+      text.textContent = option.textContent;
+      button.append(text);
+      const dateInfo = infoNode(option.dataset.date || "");
+      if (dateInfo) button.append(dateInfo);
       button.dataset.value = option.value;
       button.setAttribute("role", "option");
       button.setAttribute("aria-selected", String(active));
@@ -2006,6 +2052,7 @@ function enhanceHeaderSelects() {
     };
     const render = () => {
       label.textContent = isGrid ? summaryLabel() : (select.selectedOptions?.[0]?.textContent || "Auswählen");
+      fillInfo(info, isGrid ? "" : (select.selectedOptions?.[0]?.dataset?.date || ""));
       const options = [...select.options];
       if (!isGrid) { menu.replaceChildren(...options.map(makeOption)); return; }
       menu.replaceChildren();

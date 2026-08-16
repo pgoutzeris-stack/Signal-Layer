@@ -7,13 +7,12 @@ export function simpleLaneCountLabel(visibleCount, totalCount, filtersActive) {
     : format(total);
 }
 
-const INCOMPLETE_RUN_ARTICLES = 100;
-
 function signalCountText(count) {
   return `${Math.max(0, Number(count) || 0).toLocaleString("de-DE")} Signale`;
 }
 
-function articleDate(iso) {
+export function simpleVersionDateLabel(entry) {
+  const iso = entry?.first_seen_at || entry?.last_run_at || entry?.last_seen_at || "";
   if (!iso) return "";
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("de-DE");
@@ -48,13 +47,14 @@ export function simpleCurrentVersionLabel(versions, currentVersion) {
 export function simpleHistoricalVersionLabel(entry) {
   const version = String(entry?.version || "");
   const signals = Number(entry?.archived_signals ?? entry?.signals ?? 0);
-  const articles = Number(entry?.archived_articles || 0);
-  const date = articleDate(entry?.first_seen_at);
-  const parts = [version, signalCountText(signals)];
-  if (articles > 0 && articles < INCOMPLETE_RUN_ARTICLES) {
-    parts.push(`${articles.toLocaleString("de-DE")} Artikel`, "Testlauf");
-  } else if (date) {
-    parts.push(date);
-  }
-  return parts.filter(Boolean).join(" · ");
+  return [version, signalCountText(signals)].filter(Boolean).join(" · ");
+}
+
+export function advancedVersionLabel(entry, currentVersion) {
+  const version = String(entry?.version || "");
+  const signals = signalCountText(entry?.article_count ?? entry?.signals ?? 0);
+  if (!version) return signals;
+  return version === currentVersion
+    ? `${version} · aktuell · ${signals}`
+    : `${version} · ${signals}`;
 }
