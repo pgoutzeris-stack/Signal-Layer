@@ -759,7 +759,8 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.match(edge, /schliesseHangingAsset\(admin, row/);
   assert.match(edge, /pflegeLaufendesAsset\(admin, geladen/);
   assert.match(edge, /assetFinishSettleDue/);
-  assert.match(edge, /event === "images_done"/);
+  assert.match(edge, /attach_asset_image/);
+  assert.match(edge, /image_ok/);
   assert.match(edge, /void persist\(\{\}\)/);
   assert.match(edge, /ASSET_STREAM_KEEPALIVE_MS/);
   assert.match(edge, /return \{ \.\.\.row, run_log: runLog/);
@@ -886,6 +887,29 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   const bilderKurz = { ...aeffeZyklus, stage: "bilder", updated_at: iso(now - 25_000) };
   assert.equal(backend.assetFinishSettleDue(bilderKurz, now), false);
   assert.equal(backend.assetFinishSettleDue({ ...bilderKurz, updated_at: iso(now - 95_000) }, now), true);
+  const pumaOhneBilder = {
+    status: "running",
+    stage: "fuellen",
+    kind: "memo",
+    answers: { images: "auto" },
+    created_at: iso(now - 160_000),
+    updated_at: iso(now - 25_000),
+    payload: { title: "Puma führt die Neupositionierung jetzt zu profitablem Wachstum" },
+    run_log: [
+      { event: "model_ok", text: "{\"title\":\"These\"}" },
+      { event: "finish_start" },
+      { event: "images_done", ok: 6, fail: 0 },
+      { event: "stage", stage: "fuellen" },
+    ],
+  };
+  assert.equal(backend.assetMemoImagesIncomplete(pumaOhneBilder), true);
+  assert.equal(backend.assetFinishSettleDue(pumaOhneBilder, now), false);
+  assert.equal(backend.assetFinishHandoffDue(pumaOhneBilder, now), true);
+  assert.equal(backend.assetMemoImagesIncomplete(aeffeZyklus), false);
+  assert.equal(backend.memoPayloadHasSlotImages({
+    benchmarks: [{ image: { src: "data:image/jpeg;base64,abc" } }],
+    potentials: [],
+  }), true);
   assert.match(backend.assetHeartbeatErrorText("deepseek-v4-pro", "fuellen", 181_000, "silent"), /beim Fertigstellen/);
   const totModell = {
     status: "running",
@@ -1107,6 +1131,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.doesNotMatch(studio, /key: "note"/);
   assert.match(studio, /function kachelUeberlauf/);
   assert.match(studio, /scrollWidth > 1082/);
+  assert.match(studio, /as-stage--memo \.em-page/);
   assert.match(studio, /Folie \$\{ueber\.join/);
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
@@ -1520,6 +1545,9 @@ test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
   assert.match(tpl.MEMO_TEMPLATE, /\{\{cta\}\}/);
   assert.match(tpl.MEMO_TEMPLATE, /\{\{about_fit\}\}/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.as-stage--memo/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-kpi \.n\{[^}]*white-space:nowrap/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /-webkit-line-clamp:3/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /padding-bottom:72mm/);
   assert.match(studio, /from "\.\/memo-template\.js/);
   assert.match(studio, /MEMO_TEMPLATE/);
   assert.match(studio, /availH \/ h/);
@@ -1587,11 +1615,15 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
   assert.equal(parsed.mime, "image/jpeg");
   const uri = backend.memoImageDataUri(parsed.mime, parsed.data);
   assert.match(uri, /^data:image\/jpeg;base64,/);
+  const events = [];
   const filled = await backend.fillMemoImages(memo, backend.normalizeAssetAnswers("memo", { images: "auto" }), {
     remainingMs: 120_000,
     generate: async () => uri,
+    log: async (event) => events.push(event),
   });
   assert.equal(filled.benchmarks[0].image.src, uri);
+  assert.ok(events.includes("image_ok"));
+  assert.ok(events.includes("images_done"));
   const called = [];
   const already = await backend.fillMemoImages(
     backend.applyMemoImageUploads(
@@ -1627,6 +1659,7 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
   assert.match(edge, /generateGeminiMemoImage/);
   assert.match(edge, /GEMINI_IMAGE_MODEL/);
   assert.match(edge, /fillMemoImages/);
+  assert.match(edge, /attach_asset_image/);
   assert.match(edge, /image_uploads/);
   assert.match(edge, /applyMemoImageUploads/);
   assert.match(edge, /remainingMs: ASSET_WALL_CLOCK_MS,/);

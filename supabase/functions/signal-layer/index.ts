@@ -137,6 +137,8 @@ import {
   memoBenchmarkCorpus,
   memoImageDataUri,
   memoImageUploadsFromBody,
+  memoPayloadHasSlotImages,
+  memoSlotImageSrc,
   normalizeAssetAnswers,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
@@ -415,9 +417,9 @@ function persistRunningAsset(
     const status = String(fields.status || "");
     if (status !== "done" && status !== "error") return req;
     return req.select("id, created_by, kind, article_id, status, error_message").maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (data) void notifyGeneratedAssetSettled({ ...fallback, ...fields, ...data });
-        return { data };
+        return { data, error };
       });
   };
 }
@@ -3305,6 +3307,24 @@ async function leseSse(
   }
 }
 
+async function attachGeneratedAssetImage(
+  admin: ReturnType<typeof getAdminClient>,
+  assetId: string,
+  key: string,
+  src: string,
+  pos = "50% 50%",
+): Promise<{ ok: boolean; error?: string }> {
+  if (!src.startsWith("data:image/")) return { ok: false, error: "invalid src" };
+  const { error } = await admin.schema("signal_layer").rpc("attach_asset_image", {
+    p_id: assetId,
+    p_key: key,
+    p_src: src,
+    p_pos: pos,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 async function generateGeminiMemoImage(
   apiKey: string,
   prompt: string,
@@ -3314,7 +3334,7 @@ async function generateGeminiMemoImage(
   const contents = [{ role: "user", parts: [{ text: prompt }] }];
   const bodies = [
     geminiImageRequestBody(prompt, aspect),
-    { contents, generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: aspect || "16:9" } } },
+    { contents, generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: aspect || "16:9", imageOutputOptions: { mimeType: "image/jpeg" } } } },
   ];
   let lastError = "empty";
   for (const model of models) {
@@ -4887,8 +4907,24 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
   const loggen = (event: string, extra: Record<string, unknown> = {}) => {
     runLog.push({ t: Date.now() - startedAt, event, ...extra });
   };
-  const persist = persistRunningAsset(admin, assetId, runLog, startedAt, row as Record<string, unknown>);
+  const persistRoh = persistRunningAsset(admin, assetId, runLog, startedAt, row as Record<string, unknown>);
   const halte = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const persist = async (fields: Record<string, unknown> = {}) => {
+    const result = await persistRoh(fields) as { error?: { message?: string } | null } | undefined;
+    if (result && typeof result === "object" && result.error) {
+      loggen("persist_fail", { message: String(result.error.message || result.error).slice(0, 240) });
+    }
+    return result;
+  };
+  const persistMitWiederholung = async (fields: Record<string, unknown>, versuche = 3) => {
+    let letzter: { error?: { message?: string } | null } | undefined;
+    for (let i = 0; i < versuche; i += 1) {
+      letzter = await persist(fields);
+      if (!letzter?.error) return letzter;
+      await halte(1_000 * (i + 1));
+    }
+    return letzter;
+  };
   const abschnitt = async (name: string) => {
     loggen("stage", { stage: name });
     await persist({ stage: name });
@@ -5133,7 +5169,24 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
             remainingMs: ASSET_WALL_CLOCK_MS,
             log: async (event, extra) => {
               loggen(event, extra || {});
-              await persist(event === "images_done" ? { payload } : {});
+              if (event === "image_ok") {
+                const key = String(extra?.key || "");
+                const src = memoSlotImageSrc(payload, key);
+                if (src) {
+                  let attached = await attachGeneratedAssetImage(admin, assetId, key, src);
+                  if (!attached.ok) {
+                    loggen("persist_fail", { key, message: String(attached.error || "attach").slice(0, 240) });
+                    await halte(800);
+                    attached = await attachGeneratedAssetImage(admin, assetId, key, src);
+                  }
+                  if (!attached.ok) {
+                    loggen("persist_fail", { key, message: String(attached.error || "attach").slice(0, 240), fatal: true });
+                  }
+                }
+                await persist({});
+                return;
+              }
+              await persist({});
             },
             generate: (promptText, aspect) => generateGeminiMemoImage(geminiKey, promptText, aspect),
           });
@@ -5148,13 +5201,21 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     await abschnitt("fuellen");
     await halte(ASSET_STAGE_HOLD_MS);
     loggen("done", { tokens: result.usage.total });
-    await persist({
-      status: "done", stage: "fertig", payload, error_message: null, usage_event_id: usageEvent?.id || null,
+    const doneFields = {
+      status: "done" as const, stage: "fertig", error_message: null, usage_event_id: usageEvent?.id || null,
       ...tokenFelder, cached_input_tokens: result.usage.cachedInput,
       cost_usd: kostenFelder.estimated_cost_usd ?? null, cost_eur: kostenFelder.estimated_cost_eur ?? null,
       native_cost: kostenFelder.native_cost ?? null, pricing_currency: kostenFelder.pricing_currency ?? null,
       pricing_version: kostenFelder.pricing_version ?? null,
-    });
+    };
+    const mitBildern = assetKind === "memo" && payload && memoPayloadHasSlotImages(payload);
+    let saved = await persistMitWiederholung(mitBildern ? doneFields : { ...doneFields, payload });
+    if (saved?.error) {
+      saved = await persistMitWiederholung(doneFields, 2);
+    } else if (mitBildern && payload) {
+      const nachzug = await persist({ payload });
+      if (nachzug?.error) loggen("persist_fail", { message: String(nachzug.error.message).slice(0, 240), phase: "payload_nachzug" });
+    }
   } catch (fehler) {
     loggen("error", { code: "finish", message: String(fehler).slice(0, 500) });
     await persist({ status: "error", error_message: String(fehler).slice(0, 2000) }).catch(() => {});
