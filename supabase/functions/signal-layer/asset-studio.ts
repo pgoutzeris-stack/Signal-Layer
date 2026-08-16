@@ -2202,6 +2202,58 @@ export function memoSceneKeywords(title: string, finding = "", hint = ""): strin
   return uniqueStrings(words).slice(0, 8);
 }
 
+function sceneNormalize(text: string): string {
+  return String(text || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss").toLowerCase();
+}
+
+/**
+ * Commons sucht im Volltext und verknuepft alle Woerter mit UND, die Dateititel
+ * sind ueberwiegend englisch. Ein deutscher Satz wie "Regal mit Eigenmarken
+ * neben Markenartikeln" trifft deshalb nichts (Intersport 16.8.2026: alle drei
+ * Potenziale leer). Das Thema wird auf zwei bis drei englische Woerter gebracht.
+ */
+const SCENE_TOPIC_TERMS: Array<[RegExp, string]> = [
+  [/eigenmarke|handelsmarke|private label|no ?name/, "private label supermarket shelf"],
+  [/markenartikel|markenprodukt|packshot|verpackung|produktfoto/, "product packaging shelf"],
+  [/regal|sortiment|warenkorb|lebensmittel|supermarkt|discounter|drogerie/, "grocery store shelf"],
+  [/trikot|jersey|fussball|football|sportartikel|sportprodukt|sportfach|sporthandel/, "sporting goods store"],
+  [/streetwear|\bmode\b|modeprodukt|fashion|textil|bekleidung|kollektion|laufsteg|runway|sneaker/, "fashion clothing store"],
+  [/\bnetz|energie|stromversorgung|solar|windkraft|ladesaule/, "electricity power lines"],
+  [/\bwerk\b|produktion|fertigung|fabrik|maschine/, "assembly line factory"],
+  [/\blager|logistik|lieferkette|versand|supply|distribution/, "warehouse logistics"],
+  [/nachhaltig|recycling|kreislauf|umwelt|second hand|reparatur/, "recycling containers"],
+  [/online|digital|ecommerce|commerce|webshop|plattform|omnichannel/, "online shopping laptop"],
+  [/preis|rabatt|discount|gunstig|aktion/, "discount supermarket store"],
+  [/kampagne|werbung|anzeige|plakat|advertis|marketing/, "shop window display"],
+  [/kunde|kundin|einkauf|beratung|verkaufsflache|erlebnis|frequenz|besucher/, "shopping customers store"],
+  [/filiale|\bladen|\bstore|geschaft|flagship|innenstadt|flache|standort/, "retail store interior"],
+  [/mitarbeiter|personal|schulung|\bteam\b|belegschaft/, "sales assistant shop"],
+  [/\bmarke\b|branding|positionierung|identitat/, "brand shop window"],
+];
+
+/**
+ * Ohne passendes Thema bleibt kein Platzhalter leer. Handel ist der Regelfall
+ * der Memos, deshalb steht die Ladenfläche vorn.
+ */
+export const MEMO_SCENE_FALLBACK_QUERIES = [
+  "retail store interior",
+  "shop window display",
+  "shopping customers store",
+];
+
+/** Themen plus Rückfall. Mehr Anfragen kosten je etwa eine halbe Sekunde. */
+export const MEMO_SCENE_QUERY_MAX = 6;
+
+export function memoSceneTopics(text: string): string[] {
+  const haystack = sceneNormalize(text);
+  const treffer: string[] = [];
+  for (const [muster, query] of SCENE_TOPIC_TERMS) {
+    if (muster.test(haystack)) treffer.push(query);
+  }
+  return uniqueStrings(treffer).slice(0, 3);
+}
+
 export function memoSceneQueries(opts: {
   title: string;
   hint?: string;
@@ -2214,15 +2266,9 @@ export function memoSceneQueries(opts: {
   const company = String(opts.company || "").trim();
   const hintIsCompany = hint && company && hint.toLowerCase() === company.toLowerCase();
   const sceneHint = hintIsCompany ? "" : hint;
-  const keywords = memoSceneKeywords(title, finding, sceneHint).slice(0, 4).join(" ");
   return uniqueStrings([
-    sceneHint && `${sceneHint} store campaign`,
-    title && `${title} store campaign`,
-    keywords && `${keywords} retail shop`,
-    keywords && `${keywords} Laden Kampagne`,
-    company && keywords && `${company} ${keywords} store`,
-    keywords && `${keywords} advertising campaign`,
-    title && `${title} photograph`,
+    ...memoSceneTopics(`${title} ${finding} ${sceneHint}`),
+    ...MEMO_SCENE_FALLBACK_QUERIES,
   ]);
 }
 
@@ -2434,9 +2480,12 @@ export function commonsSceneScore(title: string, mime: string, keywords: string[
   if (kind.includes("jpeg") || kind.includes("jpg")) score += 5;
   else if (kind.includes("png") || kind.includes("webp")) score += 3;
   else return -5;
-  if (/\b(store|shop|retail|campaign|advertis|kampagne|laden|filiale|interior|innenraum|product|produkt|shelf|regal|runway|display|boutique|flagship|storefront)\b/i.test(title)) {
+  if (/\b(store|shop|retail|campaign|advertis|kampagne|laden|filiale|interior|innenraum|product|produkt|shelf|regal|runway|display|boutique|flagship|storefront|supermarket|market|aisle|counter|warehouse|logistics|factory|production|assembly|recycling|power)\b/i.test(title)) {
     score += 6;
   }
+  // Ein Laden von 1918 illustriert kein heutiges Potenzial. Nur abwerten, nicht
+  // ausschliessen: bei duennem Angebot ist ein altes Foto besser als keines.
+  if (/(^|[^0-9])1[5-9]\d{2}([^0-9]|$)/.test(title) || /\bcirca\b/i.test(title)) score -= 6;
   const name = title.toLowerCase();
   if (keywords.some((word) => word.length > 3 && name.includes(word.toLowerCase()))) score += 3;
   return score;

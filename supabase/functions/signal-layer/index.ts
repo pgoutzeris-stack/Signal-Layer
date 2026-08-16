@@ -105,6 +105,7 @@ import {
   MEMO_BENCHMARK_RESEARCH_ATTEMPTS,
   MEMO_BENCHMARK_RESEARCH_MAX_TOKENS,
   MEMO_IMAGE_FETCH_MS,
+  MEMO_SCENE_QUERY_MAX,
   MEMO_PHOTO_BYTES_MAX,
   MEMO_PHOTO_USER_AGENT,
   MemoAnswers,
@@ -3538,7 +3539,7 @@ async function findMemoSlotScene(
   usedUrls: Set<string>,
 ): Promise<string | null> {
   const keywords = memoSceneKeywords(slot.subject, slot.hint, slot.company);
-  for (const query of slot.queries.slice(0, 4)) {
+  for (const query of slot.queries.slice(0, MEMO_SCENE_QUERY_MAX)) {
     try {
       const response = await fetchMitLimit(commonsPhotoSearchApiUrl(query), {
         headers: { Accept: "application/json", "User-Agent": MEMO_PHOTO_USER_AGENT },
@@ -3550,11 +3551,13 @@ async function findMemoSlotScene(
       const hits = parseCommonsSceneHits(await response.json(), keywords);
       for (const hit of hits) {
         if (usedUrls.has(hit.url) || !isAllowedMemoSceneUrl(hit.url)) continue;
+        // Die drei Potenziale laufen parallel und teilen sich am Ende dieselbe
+        // Rückfall-Suche. Ohne Reservierung vor dem Download bekommen alle drei
+        // denselben Treffer.
+        usedUrls.add(hit.url);
         const uri = await downloadMemoPhoto(hit.url, false, isAllowedMemoSceneUrl);
-        if (uri) {
-          usedUrls.add(hit.url);
-          return uri;
-        }
+        if (uri) return uri;
+        usedUrls.delete(hit.url);
       }
     } catch { /* nächste Suchanfrage */ }
   }
