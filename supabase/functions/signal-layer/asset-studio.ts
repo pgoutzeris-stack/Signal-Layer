@@ -2046,7 +2046,8 @@ export function normalizeAssetPayload(
 // ---------------------------------------------------------------------------
 export const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 export const GEMINI_IMAGE_FALLBACK_MODEL = "gemini-2.0-flash-preview-image-generation";
-export const MEMO_IMAGE_DATA_URI_MAX = 3_500_000;
+/** Nur pathologische Payloads. Ein Motiv von ein paar MB darf nicht still verworfen werden. */
+export const MEMO_IMAGE_DATA_URI_MAX = 100 * 1024 * 1024;
 export const MEMO_IMAGE_CONCURRENCY = 3;
 export const MEMO_IMAGE_MIN_REMAINING_MS = 40_000;
 /** Ein Motiv braucht oft länger als 45 s; 45 s plus Fallback hat Xpeng bei den Bildern gekillt. */
