@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.14";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.15";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -107,7 +107,7 @@ export type MemoAnswers = {
   company_named: "yes" | "no";
   /** Override aus dem Fragebogen. Leer = erkanntes Unternehmen aus dem Signal. */
   company: string;
-  /** auto = echte Fotos per Recherche. upload = der Nutzer schneidet selbst zu. */
+  /** auto = Unternehmenslogo wie im Steckbrief. upload = der Nutzer schneidet selbst zu. */
   images: "auto" | "upload";
   /** auto = Gemini recherchiert Benchmarks. custom = der Nutzer liefert drei. */
   benchmarks_mode: "auto" | "custom";
@@ -1273,7 +1273,7 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
   const firma = asData(answers.company, 160) || asData(signal.company, 160) || "";
   const bilder = answers.images === "upload"
     ? "Bilder: der Nutzer lädt sie selbst. Schreibe image_hint als Motivbeschreibung für den Platzhalter."
-    : "Bilder: echte Fotos werden recherchiert (Store, Fabrik, Hauptsitz, Logo). image_hint nennt das reale Motiv — kein KI-Bild.";
+    : "Bilder: das aktuelle Unternehmenslogo, dieselben Quellen wie im Steckbrief (Worldvectorlogo, offizielle Brand-Seite, Organization.logo / og:image, Wikimedia). image_hint ist der Firmenname, kein KI-Motiv.";
   const benchmarks = answers.benchmarks.length >= 3
     ? `Benchmarks, verbindlich:\n${formatBenchmarkBlock(answers.benchmarks, answers.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\nÜbernimm name, text und tag. Formuliere höchstens sprachlich. Zahlen nur wie dort angegeben. Erfinde keine vierte Marke und ersetze keine Namen.`
     : "Benchmarks: genau drei, die denselben Hebel schon gezogen haben. Nur aus <benchmarks> oder aus artikel.";
@@ -1340,7 +1340,7 @@ benchmark_lead: ein Satz, worin der ROOTS-Hebel liegt, nicht die Nachricht.
 benchmarks: genau drei. name, text und tag kommen aus <benchmarks>, wenn der Block steht. Sonst qualitative Analogie aus artikel zum selben Hebel. Ziffern nur mit Beleg. Nur positive Ausgänge, keine gescheiterten Versuche.
 potentials_title: Überschrift von 03. Der Channel- oder Lage-Check DIESES Unternehmens.
 potentials_lead: ein Satz, wie viele Ansatzpunkte der Check zeigt.
-potentials: genau drei. title mit Verb oder Gegensatz („vom … zur …“), höchstens acht Wörter. finding = belegter Zustand, ein bis zwei kurze Sätze. potential = was ROOTS daraus macht, ein bis zwei kurze Sätze, ohne erfundene Zahl. Beide Felder müssen auf der Karte über dem Futter bleiben. image_hint das Motiv.
+potentials: genau drei. title mit Verb oder Gegensatz („vom … zur …“), höchstens acht Wörter. finding = belegter Zustand, ein bis zwei kurze Sätze. potential = was ROOTS daraus macht, ein bis zwei kurze Sätze, ohne erfundene Zahl. Beide Felder müssen auf der Karte über dem Futter bleiben. image_hint der Firmenname des Adressaten.
 cta: die Frage im blauen Band, an den Adressaten, ohne Werbeton.
 about_fit: ein Satz, der roots_leistung an diesen Fall bindet. Der ROOTS-Stammtext davor ist fest. Erst hier darf die Leistung beim Namen genannt werden.
 sources: „Titel · Herausgeber · Jahr“, nur Belege aus signal oder artikel.
@@ -2066,8 +2066,9 @@ export function normalizeAssetPayload(
 }
 
 // ---------------------------------------------------------------------------
-// Memo-Motive: echte Fotos per Metadaten und Recherche, der Nutzer schneidet
-// zu. Das Seitenlayout (46 mm × 28 mm Benchmark, 52 mm × 36 mm Potenzial)
+// Memo-Motive: Unternehmenslogos wie im Tier-1-Steckbrief (Worldvectorlogo,
+// offizielle Brand-Seite / og:image, Wikimedia). Der Nutzer schneidet zu.
+// Das Seitenlayout (46 mm × 28 mm Benchmark, 52 mm × 36 mm Potenzial)
 // bleibt unverändert. Keine KI-generierten Bilder.
 // ---------------------------------------------------------------------------
 export const MEMO_PHOTO_USER_AGENT = "ROOTS-Signal-Layer/1.0 (memo photos; hello@roots-consultants.com)";
@@ -2075,7 +2076,7 @@ export const MEMO_PHOTO_USER_AGENT = "ROOTS-Signal-Layer/1.0 (memo photos; hello
 export const MEMO_IMAGE_DATA_URI_MAX = 100 * 1024 * 1024;
 export const MEMO_IMAGE_CONCURRENCY = 3;
 export const MEMO_IMAGE_MIN_REMAINING_MS = 40_000;
-/** Download eines gefundenen Fotos, nicht Modell-Generierung. */
+/** Download eines gefundenen Logos, nicht Modell-Generierung. */
 export const MEMO_IMAGE_FETCH_MS = 20_000;
 export const MEMO_PHOTO_BYTES_MAX = 8 * 1024 * 1024;
 
@@ -2114,20 +2115,11 @@ export function geminiAspectForShot(kind: "benchmark" | "potential"): "16:9" | "
 export function memoPhotoQueries(subject: string, hint = ""): string[] {
   const name = String(subject || "").trim();
   if (!name) return [];
-  const extra = String(hint || "").trim();
-  const liste = [
-    extra && !new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i").test(extra)
-      ? `${name} ${extra}` : "",
-    `${name} store`,
-    `${name} headquarters`,
-    `${name} factory`,
-    `${name} Filiale`,
-    `${name} Hauptsitz`,
-    `${name} Fabrik`,
+  return [...new Set([
     `${name} logo`,
+    `${name} wordmark`,
     name,
-  ].filter(Boolean);
-  return [...new Set(liste)];
+  ])];
 }
 
 export function memoImageSlots(payload: MemoPayload, addressee = ""): MemoImageSlot[] {
@@ -2148,7 +2140,7 @@ export function memoImageSlots(payload: MemoPayload, addressee = ""): MemoImageS
     };
   });
   const potentials = (payload.potentials || []).slice(0, 3).map((eintrag, index) => {
-    const subject = adressat || String(eintrag.title || "").trim() || "brand";
+    const subject = adressat;
     const hint = eintrag.image_hint || eintrag.title;
     return {
       key: `potentials.${index}`,
@@ -2227,14 +2219,33 @@ export function wikimediaFilePathUrl(filename: string, width = 1200): string {
   return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(file)}?width=${width}`;
 }
 
+const BLOCKED_MEMO_LOGO_HOST_PARTS = [
+  "google.com", "gstatic.com", "clearbit.com", "brandfetch.io", "logo.dev",
+  "seeklogo.com", "logos-world.net", "freepik.com", "vectorlogo.zone",
+];
+
+function memoLogoHostBlocked(host: string): boolean {
+  return BLOCKED_MEMO_LOGO_HOST_PARTS.some((part) => host === part || host.endsWith(`.${part}`));
+}
+
+function memoUrlLooksLikeLogo(path: string): boolean {
+  return /logo|wordmark|wortmarke|markenzeichen/i.test(path);
+}
+
+/** Worldvectorlogo, Commons-Logo oder offizielle Datei, deren Pfad Logo sagt. Kein Infobox-Porträt. */
 export function isAllowedMemoPhotoUrl(value: string): boolean {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:") return false;
     const host = url.hostname.toLowerCase();
-    if (host === "upload.wikimedia.org") return true;
-    if (host === "commons.wikimedia.org" && /Special:FilePath/i.test(url.pathname)) return true;
-    if (host.endsWith(".wikipedia.org") && /\/thumb\//i.test(url.pathname)) return true;
+    const path = decodeURIComponent(url.pathname);
+    if (memoLogoHostBlocked(host)) return false;
+    if (host === "cdn.worldvectorlogo.com") return true;
+    if (host === "upload.wikimedia.org") return memoUrlLooksLikeLogo(path);
+    if (host === "commons.wikimedia.org" && /Special:FilePath/i.test(url.pathname)) {
+      return memoUrlLooksLikeLogo(path);
+    }
+    if (memoUrlLooksLikeLogo(path) && /\.(svg|png|webp|jpe?g)(\?|$)/i.test(path)) return true;
     return false;
   } catch {
     return false;
@@ -2251,7 +2262,7 @@ export function parseWikipediaSummaryImage(raw: unknown): MemoPhotoHit | null {
   const original = record(root.originalimage);
   const thumb = record(root.thumbnail);
   const url = String(thumb.source || original.source || "").trim();
-  if (!isAllowedMemoPhotoUrl(url) && !String(url).includes("upload.wikimedia.org")) return null;
+  if (!isAllowedMemoPhotoUrl(url)) return null;
   if (!url.startsWith("https://")) return null;
   return { url, source: "wikipedia", query: String(root.title || "") };
 }
@@ -2312,17 +2323,22 @@ export function parseWikidataEntityImage(raw: unknown): string {
 
 export function buildMemoPhotoResearchPrompt(slots: MemoImageSlot[]): string {
   const liste = slots.map((slot) =>
-    `${slot.key}: ${slot.subject} — ${slot.kind === "benchmark" ? "Benchmark-Marke" : "Adressat"} — Store, Fabrik, Hauptsitz, Filiale oder Logo`).join("\n");
-  return `Finde für jedes Motiv ein echtes Foto. Keine KI-Grafik, kein Midjourney, kein generiertes Bild.
-Nur direkte Bild-URLs von upload.wikimedia.org (Wikimedia Commons oder Wikipedia).
-Bevorzugt: Filiale, Store, Fabrik, Hauptsitz, Produkt in der Fläche, sonst das Logo.
+    `${slot.key}: ${slot.subject} — ${slot.kind === "benchmark" ? "Benchmark-Marke" : "Adressat"}`).join("\n");
+  return `Finde für jede Firma das aktuelle Unternehmenslogo. Kein Porträt, keine Skyline, keine Handschrift, kein Produktfoto, keine KI-Grafik.
+
+Quellen in dieser Reihenfolge:
+1. Worldvectorlogo: direkte SVG von cdn.worldvectorlogo.com
+2. Organization.logo oder og:image der offiziellen Website (Meta-Tags)
+3. Wikimedia Commons, Dateiname enthält logo und den Firmennamen
+
+Nur direkte Bild-URLs (svg, png, webp, jpg).
 
 <motive>
 ${liste}
 </motive>
 
 Antworte ausschliesslich mit JSON:
-{"photos":[{"key":"benchmarks.0","url":"https://upload.wikimedia.org/wikipedia/commons/...","credit":"Wikimedia Commons"}]}`;
+{"photos":[{"key":"benchmarks.0","url":"https://cdn.worldvectorlogo.com/logos/...svg","credit":"Worldvectorlogo"}]}`;
 }
 
 export function parseMemoPhotoResearch(raw: unknown): Record<string, string> {
@@ -2334,7 +2350,7 @@ export function parseMemoPhotoResearch(raw: unknown): Record<string, string> {
     const key = String(item.key || item.slot || "").trim();
     const url = String(item.url || item.src || "").trim();
     if (!key || !url.startsWith("https://")) continue;
-    if (!isAllowedMemoPhotoUrl(url) && !url.includes("upload.wikimedia.org")) continue;
+    if (!isAllowedMemoPhotoUrl(url)) continue;
     out[key] = url;
   }
   return out;
@@ -2465,6 +2481,7 @@ export async function fillMemoImages(
     remainingMs: number;
     log?: (event: string, extra?: Record<string, unknown>) => void | Promise<void>;
     prepareRetry?: (slots: MemoImageSlot[]) => void | Promise<void>;
+    addressee?: string;
   },
 ): Promise<MemoPayload> {
   if (answers.images === "upload") {
@@ -2475,7 +2492,8 @@ export async function fillMemoImages(
     await opts.log?.("images_skip", { reason: "wall_clock", remaining_ms: opts.remainingMs });
     return payload;
   }
-  const slots = memoImageSlots(payload, answers.company).filter((slot) => !memoSlotHasImage(payload, slot.key));
+  const firma = String(opts.addressee || answers.company || "").trim();
+  const slots = memoImageSlots(payload, firma).filter((slot) => slot.subject && !memoSlotHasImage(payload, slot.key));
   if (!slots.length) {
     await opts.log?.("images_skip", { reason: "already_filled" });
     return payload;
@@ -2499,13 +2517,13 @@ export async function fillMemoImages(
     }
   };
   await mapLimit(slots, MEMO_IMAGE_CONCURRENCY, eines);
-  const nochmal = memoImageSlots(payload, answers.company).filter((slot) => !memoSlotHasImage(payload, slot.key));
+  const nochmal = memoImageSlots(payload, firma).filter((slot) => slot.subject && !memoSlotHasImage(payload, slot.key));
   if (nochmal.length) {
     filled.fail = nochmal.length;
     await opts.prepareRetry?.(nochmal);
     await opts.log?.("images_retry", { n: nochmal.length });
     await mapLimit(nochmal, 1, eines);
-    filled.fail = memoImageSlots(payload, answers.company).filter((slot) => !memoSlotHasImage(payload, slot.key)).length;
+    filled.fail = memoImageSlots(payload, firma).filter((slot) => slot.subject && !memoSlotHasImage(payload, slot.key)).length;
   }
   await opts.log?.("images_done", filled);
   return payload;

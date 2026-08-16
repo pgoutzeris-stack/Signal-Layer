@@ -106,7 +106,6 @@ import {
   MEMO_BENCHMARK_RESEARCH_MAX_TOKENS,
   MEMO_IMAGE_FETCH_MS,
   MEMO_PHOTO_BYTES_MAX,
-  MEMO_PHOTO_USER_AGENT,
   MemoAnswers,
   MemoImageSlot,
   MemoPayload,
@@ -146,21 +145,10 @@ import {
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
   parseDeepseekSseData,
-  parseCommonsPhotoHits,
   parseGeminiSseData,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
   parseMemoPhotoResearch,
-  parseWikipediaOpenSearch,
-  parseWikipediaSummaryImage,
-  parseWikidataEntityImage,
-  parseWikidataSearchId,
-  commonsPhotoSearchApiUrl,
-  wikipediaOpenSearchApiUrl,
-  wikipediaSummaryApiUrl,
-  wikidataEntityApiUrl,
-  wikidataSearchApiUrl,
-  wikimediaFilePathUrl,
   stripCmoHundredDaysOffering,
   stripCmoHundredDaysText,
   resolveAssetCompany,
@@ -3339,21 +3327,6 @@ async function attachGeneratedAssetImage(
   return { ok: true };
 }
 
-async function fetchJsonQuiet(url: string, timeoutMs = 12_000): Promise<unknown | null> {
-  try {
-    const response = await fetchMitLimit(url, {
-      headers: { Accept: "application/json", "User-Agent": MEMO_PHOTO_USER_AGENT },
-    }, timeoutMs);
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      return null;
-    }
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   const chunk = 0x8000;
@@ -3363,76 +3336,105 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function downloadMemoPhoto(url: string): Promise<string | null> {
+async function downloadMemoPhoto(url: string, trusted = false): Promise<string | null> {
   if (!url.startsWith("https://")) return null;
   try {
     const response = await fetchMitLimit(url, {
-      headers: { Accept: "image/*,*/*", "User-Agent": MEMO_PHOTO_USER_AGENT },
+      headers: {
+        Accept: "image/svg+xml,image/png,image/webp,image/jpeg;q=0.9,*/*;q=0.2",
+        "User-Agent": "ROOTS-Signal-Layer/1.0 (verified company logo; hello@roots-consultants.com)",
+      },
     }, MEMO_IMAGE_FETCH_MS);
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       return null;
     }
     const finalUrl = response.url || url;
-    if (!isAllowedMemoPhotoUrl(finalUrl) && !finalUrl.includes("upload.wikimedia.org")) {
+    if (!trusted && !isAllowedMemoPhotoUrl(finalUrl)) {
       await response.body?.cancel().catch(() => undefined);
       return null;
     }
-    const mime = (response.headers.get("content-type") || "image/jpeg").split(";")[0].trim().toLowerCase();
+    let mime = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const path = new URL(finalUrl).pathname.toLowerCase();
+    if ((!mime || mime === "application/octet-stream") && path.endsWith(".svg")) mime = "image/svg+xml";
+    if (!mime) mime = path.endsWith(".png") ? "image/png" : path.endsWith(".webp") ? "image/webp" : "image/jpeg";
     if (!/^image\/(jpeg|jpg|png|webp|gif|svg\+xml)$/.test(mime)) {
       await response.body?.cancel().catch(() => undefined);
       return null;
     }
     const buf = new Uint8Array(await response.arrayBuffer());
-    if (buf.byteLength < 80 || buf.byteLength > MEMO_PHOTO_BYTES_MAX) return null;
+    if (buf.byteLength < 40 || buf.byteLength > MEMO_PHOTO_BYTES_MAX) return null;
+    if (mime === "image/svg+xml") {
+      const text = new TextDecoder().decode(buf).replace(/^\uFEFF/, "").trimStart();
+      if (!/(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(text)) return null;
+    }
     return memoImageDataUri(mime === "image/jpg" ? "image/jpeg" : mime, bytesToBase64(buf));
   } catch {
     return null;
   }
 }
 
-async function researchWikipediaPhoto(subject: string): Promise<string | null> {
-  for (const lang of ["de", "en"] as const) {
-    const open = await fetchJsonQuiet(wikipediaOpenSearchApiUrl(lang, subject));
-    const title = parseWikipediaOpenSearch(open) || subject;
-    const summary = await fetchJsonQuiet(wikipediaSummaryApiUrl(lang, title));
-    const hit = parseWikipediaSummaryImage(summary);
-    if (!hit) continue;
-    const uri = await downloadMemoPhoto(hit.url);
-    if (uri) return uri;
-  }
+async function findMemoCompanyLogo(company: string): Promise<{ logo_url: string } | null> {
+  const name = String(company || "").trim();
+  if (!name) return null;
+  try {
+    const exact = await getTier1CompanyLogo(name);
+    if (exact?.logo_url) return exact;
+  } catch { /* Registry darf die Motivsuche nicht abbrechen. */ }
+  try {
+    const admin = getAdminClient();
+    const { data: rows } = await admin.schema("signal_layer").from("tier1_companies")
+      .select("name,aliases,logo_url")
+      .eq("active", true)
+      .not("logo_url", "is", null);
+    const needle = normalizeMatchText(name);
+    const hit = (rows || []).find((row) => {
+      const names = [row.name, ...(Array.isArray(row.aliases) ? row.aliases : [])].map(String);
+      return names.some((alias) => {
+        const hay = normalizeMatchText(alias);
+        return hay === needle || containsMatchTerm(hay, name) || containsMatchTerm(needle, alias);
+      });
+    });
+    if (hit?.logo_url) return { logo_url: String(hit.logo_url) };
+    const { data: profile } = await admin.schema("signal_layer").from("company_profiles")
+      .select("company,logo_url")
+      .not("logo_url", "is", null);
+    const stored = (profile || []).find((row) => {
+      const hay = normalizeMatchText(String(row.company || ""));
+      return hay === needle || containsMatchTerm(hay, name) || containsMatchTerm(needle, String(row.company || ""));
+    });
+    if (stored?.logo_url) return { logo_url: String(stored.logo_url) };
+  } catch { /* ohne gespeichertes Logo weiter recherchieren */ }
   return null;
 }
 
-async function researchCommonsPhoto(subject: string, query: string): Promise<string | null> {
-  const raw = await fetchJsonQuiet(commonsPhotoSearchApiUrl(query));
-  const hits = parseCommonsPhotoHits(raw, subject);
-  for (const hit of hits.slice(0, 3)) {
-    const uri = await downloadMemoPhoto(hit.url);
+async function findMemoSlotLogo(
+  subject: string,
+  apiKey: string,
+  model: string,
+): Promise<string | null> {
+  const name = String(subject || "").trim();
+  if (!name) return null;
+  const stored = await findMemoCompanyLogo(name);
+  if (stored?.logo_url) {
+    const uri = await downloadMemoPhoto(stored.logo_url, true);
     if (uri) return uri;
   }
-  return null;
-}
-
-async function researchWikidataPhoto(subject: string): Promise<string | null> {
-  const search = await fetchJsonQuiet(wikidataSearchApiUrl(subject));
-  const id = parseWikidataSearchId(search);
-  if (!id) return null;
-  const entity = await fetchJsonQuiet(wikidataEntityApiUrl(id));
-  const file = parseWikidataEntityImage(entity);
-  if (!file) return null;
-  return downloadMemoPhoto(wikimediaFilePathUrl(file));
-}
-
-async function findMemoSlotPhotoLocal(slot: MemoImageSlot): Promise<string | null> {
-  const wiki = await researchWikipediaPhoto(slot.subject);
-  if (wiki) return wiki;
-  const data = await researchWikidataPhoto(slot.subject);
-  if (data) return data;
-  for (const query of slot.queries.slice(0, 3)) {
-    const commons = await researchCommonsPhoto(slot.subject, query);
-    if (commons) return commons;
-  }
+  try {
+    const commons = await researchWikimediaLogo(name);
+    if (commons?.logo_url) {
+      const uri = await downloadMemoPhoto(commons.logo_url, true);
+      if (uri) return uri;
+    }
+  } catch { /* Commons ist optional */ }
+  if (!apiKey) return null;
+  try {
+    const focused = await researchCompanyLogo({ apiKey, model }, name);
+    if (focused.logo?.logo_url) {
+      const uri = await downloadMemoPhoto(focused.logo.logo_url, true);
+      if (uri) return uri;
+    }
+  } catch { /* Grounding ist der letzte Versuch vor prepareRetry */ }
   return null;
 }
 
@@ -3442,12 +3444,13 @@ function createMemoPhotoFinder(apiKey: string, model: string) {
   return {
     fetchPhoto: async (slot: MemoImageSlot): Promise<string | null> => {
       const key = slot.subject.toLowerCase();
-      if (!bySubject.has(key)) bySubject.set(key, findMemoSlotPhotoLocal(slot));
+      if (!key) return null;
+      if (!bySubject.has(key)) bySubject.set(key, findMemoSlotLogo(slot.subject, apiKey, model));
       const local = await bySubject.get(key);
       if (local) return local;
-      const url = geminiUrls[slot.key];
+      const url = geminiUrls[slot.key] || geminiUrls[key];
       if (!url) return null;
-      const uri = await downloadMemoPhoto(url);
+      const uri = await downloadMemoPhoto(url, true);
       if (uri) bySubject.set(key, Promise.resolve(uri));
       return uri;
     },
@@ -5263,8 +5266,15 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         MEMO_BENCHMARK_RESEARCH_MODEL,
       );
       try {
-        payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
+          payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
             remainingMs: Math.max(0, ASSET_WALL_CLOCK_MS - (Date.now() - startedAt)),
+            addressee: String(
+              (assetAnswers as MemoAnswers).company
+              || assetSignal.company
+              || assetArticle.primary_company
+              || (Array.isArray(assetSignal.tier1_companies) ? assetSignal.tier1_companies[0] : "")
+              || "",
+            ),
             fetchPhoto: finder.fetchPhoto,
             prepareRetry: finder.prepareRetry,
             log: async (event, extra) => {
