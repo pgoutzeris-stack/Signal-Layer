@@ -1640,6 +1640,45 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.equal(slots[3].company, "Puma");
   assert.ok(slots[3].queries.every((q) => !/\blogo\b/i.test(q)));
   assert.ok(slots[3].queries.some((q) => /sortiment|marke|packshot|store|kampagne|laden/i.test(q)));
+  // Commons verknüpft alle Wörter mit UND und führt englische Dateititel. Ein
+  // deutscher Satz trifft nichts (Intersport 16.8.2026: drei leere Potenziale).
+  for (const query of slots[3].queries) {
+    assert.ok(query.split(/\s+/).length <= 4, `zu lang: ${query}`);
+    assert.doesNotMatch(query, /[äöüß]|\bmit\b|\bzur\b|\bvom\b/i);
+  }
+  assert.deepEqual(
+    backend.memoSceneQueries({
+      title: "Vom Markenartikel zur Eigenmarke",
+      hint: "Regal mit Eigenmarken neben Markenartikeln, Kunde vergleicht Preise",
+      finding: "Eigenmarken stehen unverbunden neben Markenartikeln.",
+      company: "Intersport",
+    }).slice(0, 3),
+    ["private label supermarket shelf", "product packaging shelf", "grocery store shelf"],
+  );
+  assert.deepEqual(
+    backend.memoSceneTopics("Junge Leute tragen Trikots als Streetwear im Alltag"),
+    ["sporting goods store", "fashion clothing store"],
+  );
+  // Ohne erkanntes Thema bleibt kein Platzhalter leer.
+  assert.deepEqual(backend.memoSceneQueries({ title: "Ohne Thema" }), backend.MEMO_SCENE_FALLBACK_QUERIES);
+  for (const slot of slots.filter((s) => s.kind === "potential")) {
+    for (const fallback of backend.MEMO_SCENE_FALLBACK_QUERIES) {
+      assert.ok(slot.queries.includes(fallback), `${fallback} fehlt bei ${slot.key}`);
+    }
+    assert.ok(slot.queries.length <= backend.MEMO_SCENE_QUERY_MAX);
+  }
+  // Ein Laden von 1918 illustriert kein heutiges Potenzial.
+  assert.ok(
+    backend.commonsSceneScore("Discount Supermarket, Fintona.jpg", "image/jpeg")
+      > backend.commonsSceneScore("Customers shopping inside Grocery Store, circa 1918.jpg", "image/jpeg"),
+  );
+  assert.ok(backend.commonsSceneScore("N3N production at Naval Aircraft Factory c1937.jpg", "image/jpeg") < 6);
+  assert.ok(backend.commonsSceneScore("Gfp-factory-assembly-line.jpg", "image/jpeg") >= 6);
+  assert.match(edge, /slot\.queries\.slice\(0, MEMO_SCENE_QUERY_MAX\)/);
+  // Drei Potenziale laufen parallel in dieselbe Rückfall-Suche: reservieren,
+  // sonst bekommen alle denselben Treffer.
+  assert.match(edge, /usedUrls\.add\(hit\.url\);\n\s*const uri = await downloadMemoPhoto/);
+  assert.match(edge, /usedUrls\.delete\(hit\.url\)/);
   assert.deepEqual(
     backend.memoImageSlots(memo).filter((slot) => slot.kind === "potential").map((slot) => slot.subject),
     ["Vom Sortiment zur Marke", "Vom Kanal zum System", "Von der Kampagne zur Linie"],
