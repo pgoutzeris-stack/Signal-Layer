@@ -1059,7 +1059,7 @@ function sanitizeFragment(html) {
 }
 
 import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1350";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1415";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -3012,11 +3012,31 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
   }
 
-  function coverCrop(img, outW, outH, panX = 0.5, panY = 0.5, zoom = 1) {
+  function isSvgDataUri(src) {
+    return /^data:image\/svg\+xml/i.test(String(src || ""));
+  }
+
+  function coverCrop(img, outW, outH, panX = 0.5, panY = 0.5, zoom = 1, opts = {}) {
     const target = outW / outH;
     const imgW = img.naturalWidth || img.width;
     const imgH = img.naturalHeight || img.height;
     if (!imgW || !imgH) return "";
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+    // JPEG kennt kein Alpha. Ohne weisse Fläche werden transparente SVG/PNG-Logos
+    // (Puma, Burberry) zu einem schwarzen Rechteck.
+    ctx.fillStyle = opts.fill || "#fff";
+    ctx.fillRect(0, 0, outW, outH);
+    if (opts.fit === "contain") {
+      const scale = Math.min(outW / imgW, outH / imgH);
+      const dw = imgW * scale;
+      const dh = imgH * scale;
+      ctx.drawImage(img, 0, 0, imgW, imgH, (outW - dw) / 2, (outH - dh) / 2, dw, dh);
+      try { return canvas.toDataURL("image/png"); } catch (_) { return ""; }
+    }
     const z = Math.max(1, Number(zoom) || 1);
     let cropW;
     let cropH;
@@ -3031,20 +3051,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     cropH = Math.min(cropH, imgH);
     const x = Math.max(0, (imgW - cropW) * panX);
     const y = Math.max(0, (imgH - cropH) * panY);
-    const canvas = document.createElement("canvas");
-    canvas.width = outW;
-    canvas.height = outH;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return "";
     ctx.drawImage(img, x, y, cropW, cropH, 0, 0, outW, outH);
     try { return canvas.toDataURL("image/jpeg", 0.62); } catch (_) { return ""; }
   }
 
-  async function fitSlotImage(src, spec) {
+  async function fitSlotImage(src, spec, opts = {}) {
     if (!src) return "";
+    if (isSvgDataUri(src)) return src;
     try {
       const img = await loadHtmlImage(src);
-      return coverCrop(img, spec.w, spec.h, 0.5, 0.5, 1) || src;
+      return coverCrop(img, spec.w, spec.h, 0.5, 0.5, 1, opts) || src;
     } catch (_) {
       return src;
     }
@@ -3056,7 +3072,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         const spec = MEMO_SHOT_PIXELS[kind];
         for (const eintrag of liste) {
           if (eintrag?.image?.src) {
-            eintrag.image.src = await fitSlotImage(eintrag.image.src, spec);
+            eintrag.image.src = await fitSlotImage(eintrag.image.src, spec, { fit: "contain" });
             eintrag.image.pos = "50% 50%";
           }
         }
