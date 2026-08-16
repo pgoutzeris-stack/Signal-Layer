@@ -2076,6 +2076,11 @@ export const MEMO_PHOTO_USER_AGENT = "ROOTS-Signal-Layer/1.0 (memo photos; hello
 /** Nur pathologische Payloads. Ein Motiv von ein paar MB darf nicht still verworfen werden. */
 export const MEMO_IMAGE_DATA_URI_MAX = 100 * 1024 * 1024;
 export const MEMO_IMAGE_CONCURRENCY = 3;
+/**
+ * Unter diesem Rest startet der Finder nicht. Rest gilt ab Start des Isolats,
+ * das Motive fuellt — nicht ab created_at. Intersport 16.8.2026: Schreiben
+ * 13 min, danach remaining_ms 0 und images_skip wall_clock auf beiden Seiten.
+ */
 export const MEMO_IMAGE_MIN_REMAINING_MS = 40_000;
 /** Download eines gefundenen Logos, nicht Modell-Generierung. */
 export const MEMO_IMAGE_FETCH_MS = 20_000;
@@ -2769,6 +2774,14 @@ export const ASSET_STAGE_HOLD_MS = 2_000;
 
 /** Paid-Plan-Isolate (400 s) minus Schreibpuffer. */
 export const ASSET_WALL_CLOCK_MS = 380_000;
+
+/**
+ * Restzeit eines Isolats. Finish_asset misst ab Isolat-Start, nicht ab
+ * created_at: sonst ist nach langem DeepSeek-Schreiben kein Bildbudget mehr da.
+ */
+export function assetPhaseRemainingMs(phaseStartedAtMs: number, nowMs = Date.now()): number {
+  return Math.max(0, ASSET_WALL_CLOCK_MS - (nowMs - phaseStartedAtMs));
+}
 
 /**
  * get_asset laeuft in einem neuen Isolate. Nach dem Tod des Auftrags-Isolats
