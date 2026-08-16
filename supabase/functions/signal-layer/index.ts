@@ -2538,7 +2538,11 @@ async function fetchArticleContent(
       return null;
     }
     const html = await readResponseText(res);
-    if (/cf-chl-|checking your browser|just a moment|cloudflare ray id|captcha/i.test(html)) {
+    // "captcha" needs word boundaries: reCAPTCHA/hCaptcha widget config ships
+    // in the markup of perfectly readable articles (bild.de embeds
+    // "recaptchaSiteKey" on every page), and an unanchored match discarded the
+    // whole article as a bot challenge.
+    if (/cf-chl-|checking your browser|just a moment|cloudflare ray id|\bcaptcha\b/i.test(html)) {
       captureExtractionDiagnostic(diagnosticCapture, {
         code: "bot_protection", message: "Die Quelle lieferte eine Bot-/Cloudflare-Prüfseite statt des Artikels.",
         http_status: res.status, content_length: html.length, session_used: Boolean(cookieHeader),
