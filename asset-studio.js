@@ -372,6 +372,7 @@ const CHROME_CSS = `
 #as-overlay .as-rail{
   background:var(--bg,#fff); border-right:1px solid var(--line,#e2e8f0);
   padding:20px 18px; display:flex; flex-direction:column; gap:22px; overflow:auto;
+  min-height:0; height:100%;
 }
 #as-overlay .as-back{
   display:inline-flex; align-items:center; gap:10px; align-self:flex-start;
@@ -397,6 +398,29 @@ const CHROME_CSS = `
   border-color:var(--brand,#206efb); font-weight:700;
 }
 #as-overlay .as-steps li[data-state="active"] b{background:var(--brand,#206efb); color:#fff;}
+#as-overlay .as-steps li[data-act]{cursor:pointer;}
+#as-overlay .as-steps li[data-act]:hover{
+  background:var(--brand-light,#eff6ff); color:var(--brand,#206efb);
+}
+#as-overlay .as-rail-tab{
+  display:flex; align-items:center; gap:12px; margin-top:auto; width:100%; flex-shrink:0;
+  padding:11px 12px; border-radius:12px; font-size:14px; font-weight:600;
+  color:var(--muted,#475569); background:transparent; border:1px solid transparent; text-align:left;
+}
+#as-overlay .as-rail-tab:hover{
+  background:var(--brand-light,#eff6ff); color:var(--brand,#206efb); border-color:var(--brand,#206efb);
+}
+#as-overlay .as-rail-tab.is-on{
+  background:var(--brand-light,#eff6ff); color:var(--brand-dark,#165fd9);
+  border-color:var(--brand,#206efb); font-weight:700;
+}
+#as-overlay .as-rail-tab b{
+  width:24px; height:24px; border-radius:999px; flex:0 0 auto;
+  display:grid; place-items:center; font-size:11px;
+  background:var(--surface,#f8fafc); color:var(--muted,#475569);
+}
+#as-overlay .as-rail-tab.is-on b{background:var(--brand,#206efb); color:#fff;}
+#as-overlay .as-rail-tab:hover b{background:var(--brand-light,#eff6ff); color:var(--brand,#206efb);}
 
 #as-overlay .as-main{display:grid; grid-template-rows:auto minmax(0, 1fr); min-width:0; min-height:0; overflow:hidden;}
 #as-overlay .as-main:has(.as-ribbon){grid-template-rows:auto auto minmax(0, 1fr);}
@@ -631,10 +655,13 @@ const CHROME_CSS = `
 }
 #as-overlay .as-bench textarea{min-height:52px; resize:vertical;}
 #as-overlay .as-pill{
-  align-self:flex-start; border:1px solid var(--line,#e2e8f0); background:#fff;
+  align-self:flex-start; display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid var(--line,#e2e8f0); background:#fff; color:var(--ink,#0f172a);
   border-radius:999px; padding:6px 12px; font-size:12px; font-weight:700;
 }
-#as-overlay .as-pill:hover{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
+#as-overlay .as-pill:hover{
+  border-color:var(--brand,#206efb); background:var(--brand-light,#eff6ff); color:var(--brand,#206efb);
+}
 #as-overlay .as-q--muted > label, #as-overlay .as-q--muted .as-hint{color:#94a3b8;}
 #as-overlay .as-q--muted .as-hint{font-size:12px; line-height:1.45;}
 #as-overlay .as-slots{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;}
@@ -651,7 +678,7 @@ const CHROME_CSS = `
 }
 #as-overlay .as-slot-frame.is-pot{aspect-ratio:52/36;}
 #as-overlay .as-slot-frame img{width:100%; height:100%; object-fit:cover; display:block;}
-#as-overlay .as-drafts{margin-top:18px; padding-top:16px; border-top:1px solid var(--line,#e2e8f0);}
+#as-overlay .as-drafts{display:flex; flex-direction:column; gap:12px; min-height:0;}
 #as-overlay .as-drafts-head{
   width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px;
   background:transparent; border:0; padding:0; font-size:13px; font-weight:700; text-align:left;
@@ -668,8 +695,13 @@ const CHROME_CSS = `
 #as-overlay .as-draft em{font-style:normal; font-size:11px; color:#64748b;}
 #as-overlay .as-draft.is-error{border-color:#fecaca;}
 #as-overlay .as-draft.is-run{border-color:#bfdbfe;}
-#as-overlay .as-load-actions{margin-top:4px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;}
-#as-overlay .as-load-hint{margin:4px 0 0; max-width:28rem; font-size:12px; line-height:1.45; color:#64748b;}
+#as-overlay .as-load-actions{margin-top:8px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;}
+#as-overlay .as-load-actions .as-pill{
+  min-width:148px; padding:10px 22px; font-size:13px; font-weight:700;
+}
+#as-overlay .as-load-actions .as-pill-danger:hover{
+  border-color:#b42318; background:#fef3f2; color:#b42318;
+}
 
 /* Ladeanzeige: echte Abschnitte, gerundete Minuten, pulsierender Balken. */
 #as-overlay .as-load{display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -864,9 +896,10 @@ const CHROME_CSS = `
 
 @media (max-width:1180px){
   #as-overlay{grid-template-columns:1fr;}
-  #as-overlay .as-rail{flex-direction:row; align-items:center; border-right:0; border-bottom:1px solid var(--line,#e2e8f0); overflow-x:auto;}
+  #as-overlay .as-rail{flex-direction:row; align-items:center; border-right:0; border-bottom:1px solid var(--line,#e2e8f0); overflow-x:auto; height:auto;}
   #as-overlay .as-rail .as-railtitle{display:none;}
   #as-overlay .as-steps{flex-direction:row;}
+  #as-overlay .as-rail-tab{margin-top:0; margin-left:auto; width:auto;}
   #as-overlay .as-work{grid-template-columns:1fr;}
   #as-overlay .as-inspector{position:static;}
 }
@@ -1027,7 +1060,7 @@ function sanitizeFragment(html) {
 
 import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260814-2100";
-import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260815-1230";
+import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1113";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1076,7 +1109,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     cancelRequested: false,
     leftRunning: false,
     drafts: [],
-    draftsOpen: false,
+    formTab: "form",
     draftsUhr: 0,
     draftsError: "",
     ddOffen: false,
@@ -1193,6 +1226,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           ${stepItem(2, "Entwurf", "draft")}
           ${stepItem(3, "Bearbeiten", "edit")}
         </ol>
+        ${draftsTabHtml()}
       </nav>
       <div class="as-main">
         <header class="as-topbar">
@@ -1216,6 +1250,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function headline() {
+    if (state.step === "form" && state.formTab === "drafts") return "Entwürfe";
     if (state.step === "form") return isMemo ? "Ansprache" : "LinkedIn-Asset";
     if (state.step === "draft") return state.busy ? "Entwurf wird erzeugt" : "Entwurf";
     return "Bearbeiten";
@@ -1225,11 +1260,25 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const order = ["form", "draft", "edit"];
     const current = order.indexOf(state.step);
     const own = order.indexOf(key);
-    const stateName = own === current ? "active" : own < current ? "done" : "todo";
-    return `<li data-state="${stateName}"><b>${index}</b>${esc(label)}</li>`;
+    let stateName = own === current ? "active" : own < current ? "done" : "todo";
+    if (key === "form" && state.formTab === "drafts" && state.step === "form") stateName = "todo";
+    const act = key === "form" ? ` data-act="to-form"` : "";
+    return `<li data-state="${stateName}"${act}><b>${index}</b>${esc(label)}</li>`;
+  }
+
+  function draftsTabHtml() {
+    const n = Array.isArray(state.drafts) ? state.drafts.length : 0;
+    const on = state.formTab === "drafts" && state.step === "form";
+    return `<button type="button" class="as-rail-tab${on ? " is-on" : ""}" data-act="show-drafts"${on ? ` aria-current="page"` : ""}>
+      <b><i class="fa-regular fa-folder-open"></i></b>
+      Entwürfe${n ? ` (${n})` : ""}
+    </button>`;
   }
 
   function topActions() {
+    if (state.step === "form" && state.formTab === "drafts") {
+      return `<button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Fragebogen</button>`;
+    }
     if (state.step === "form") {
       return `<button type="button" class="as-btn as-btn--primary" data-act="generate"><i class="fa-solid fa-wand-magic-sparkles"></i>Entwurf erzeugen</button>`;
     }
@@ -1247,7 +1296,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // Links entscheiden, rechts sofort sehen. Die Vorschau ist dieselbe
       // Vorlage wie das spaetere Asset, nur mit Platzhaltertext.
       return `<div class="as-split2">
-        <div class="as-split2-form">${formHtml()}${draftsHtml()}</div>
+        <div class="as-split2-form">${state.formTab === "drafts" ? draftsHtml() : formHtml()}</div>
         <div class="as-split2-prev">
           <span class="as-prev-label">Vorschau</span>
           <div class="as-prev-host">
@@ -1488,10 +1537,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </div>
       <p class="as-load-eta"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span data-eta-text>${esc(ladeEtaText())}</span></p>
       ${log.length ? `<ul class="as-load-log">${log.map((row) => `<li><b>${row.sek} s</b><span>${esc(row.text)}</span></li>`).join("")}</ul>` : ""}
-      <p class="as-load-hint">Zurück lässt den Entwurf weiterlaufen. Sie bekommen eine Benachrichtigung, wenn er fertig ist.</p>
       <div class="as-load-actions">
-        <button type="button" class="as-btn" data-act="leave-generate">Zurück</button>
-        <button type="button" class="as-btn" data-act="cancel-generate">Abbrechen</button>
+        <button type="button" class="as-pill" data-act="leave-generate">Im Hintergrund</button>
+        <button type="button" class="as-pill as-pill-danger" data-act="cancel-generate">Abbrechen</button>
       </div>
     </div>`;
   }
@@ -1751,35 +1799,51 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function draftsHtml() {
-    const offen = state.draftsOpen;
     const liste = Array.isArray(state.drafts) ? state.drafts : [];
-    const zeilen = !offen ? ""
-      : state.draftsError ? `<p class="as-hint">${esc(state.draftsError)}</p>`
+    const zeilen = state.draftsError ? `<p class="as-hint">${esc(state.draftsError)}</p>`
       : !liste.length ? `<p class="as-hint">Noch keine Entwürfe für diesen Artikel.</p>`
       : `<div class="as-draft-list">${liste.map((row) => draftZeileHtml(row)).join("")}</div>`;
+    const fehler = state.formError ? `<p class="as-form-error">${esc(state.formError)}</p>` : "";
     return `<div class="as-drafts">
-      <button type="button" class="as-drafts-head" data-act="toggle-drafts" aria-expanded="${offen ? "true" : "false"}">
-        <span>Entwürfe anzeigen${liste.length ? ` (${liste.length})` : ""}</span>
-        <i class="fa-solid fa-chevron-${offen ? "up" : "down"}"></i>
-      </button>
-      ${zeilen}
+      <div class="as-drafts-head">
+        <span>Entwürfe${liste.length ? ` (${liste.length})` : ""}</span>
+      </div>
+      ${fehler}${zeilen}
     </div>`;
+  }
+
+  function draftTitel(row) {
+    const memoTitle = String(row.title || "").trim();
+    const slideTitle = String(row.slide_title || "").trim();
+    if (isMemo && memoTitle) return memoTitle;
+    if (!isMemo && slideTitle) return slideTitle;
+    if (memoTitle) return memoTitle;
+    if (slideTitle) return slideTitle;
+    const status = String(row.status || "");
+    if (status === "running") return "Entwurf läuft noch";
+    if (status === "error") return "Entwurf fehlgeschlagen";
+    return isMemo ? "Investment-Memorandum" : "LinkedIn-Asset";
+  }
+
+  function draftStatusText(status) {
+    if (status === "done") return "Fertig";
+    if (status === "running") return "Läuft gerade";
+    if (status === "error") return "Nicht fertig";
+    return "Nicht fertig";
   }
 
   function draftZeileHtml(row) {
     const status = String(row.status || "");
-    const titel = status === "done" ? "Fertiger Entwurf"
-      : status === "running" ? "Läuft gerade"
-      : "Nicht fertig";
     const wann = formatDraftWhen(row.created_at);
     const dauer = formatDraftDauer(row.duration_ms);
     const tokens = Number(row.total_tokens) > 0 ? `${Number(row.total_tokens).toLocaleString("de-DE")} Token` : "";
     const kosten = formatDraftEur(row.cost_eur);
     const meta = [wann, dauer, tokens, kosten].filter(Boolean).join(" · ");
     const klasse = status === "error" ? " is-error" : status === "running" ? " is-run" : "";
+    const unter = [draftStatusText(status), draftSettingsText(row)].filter(Boolean).join(" · ");
     return `<button type="button" class="as-draft${klasse}" data-act="open-draft" data-id="${attr(row.id)}">
-      <strong>${esc(titel)}</strong>
-      <span>${esc(draftSettingsText(row))}</span>
+      <strong>${esc(draftTitel(row))}</strong>
+      <span>${esc(unter)}</span>
       <em>${esc(meta || row.model || "")}</em>
     </button>`;
   }
@@ -1830,17 +1894,19 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     } catch (err) {
       state.draftsError = err && err.message ? String(err.message) : "Entwürfe konnten nicht geladen werden.";
     }
-    if (state.step === "form") {
+    if (state.step === "form" && state.formTab === "drafts") {
       const box = shell.querySelector(".as-drafts");
       if (box) box.outerHTML = draftsHtml();
     }
+    const tab = shell.querySelector("[data-act=\"show-drafts\"]");
+    if (tab) tab.outerHTML = draftsTabHtml();
   }
 
   function draftsTaktStart() {
     draftsTaktStop();
     void ladeDrafts();
     state.draftsUhr = window.setInterval(() => {
-      if (!state.draftsOpen || state.step !== "form") { draftsTaktStop(); return; }
+      if (state.formTab !== "drafts" || state.step !== "form") { draftsTaktStop(); return; }
       void ladeDrafts();
     }, 4_000);
   }
@@ -1888,6 +1954,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   async function openDraft(id) {
+    draftsTaktStop();
+    state.formError = "";
     try {
       const res = await api("get_asset", { asset_id: id });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
@@ -1938,8 +2006,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     } catch (err) {
       state.formError = err && err.message ? String(err.message) : "Entwurf konnte nicht geöffnet werden.";
       state.step = "form";
+      state.formTab = "drafts";
       state.busy = false;
       render();
+      draftsTaktStart();
     }
   }
 
@@ -1980,7 +2050,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function zeichneForm() {
     readForm();
     const form = shell.querySelector(".as-split2-form");
-    if (form) form.innerHTML = `${formHtml()}${draftsHtml()}`;
+    if (form) form.innerHTML = state.formTab === "drafts" ? draftsHtml() : formHtml();
     const prev = shell.querySelector("[data-livepreview]");
     if (prev) prev.innerHTML = livePreviewHtml();
     fitPreview();
@@ -2051,6 +2121,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.error = "";
     state.cancelRequested = false;
     state.leftRunning = false;
+    draftsTaktStop();
     render();
     ladeTaktStart(true);
     try {
@@ -3018,7 +3089,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (id) {
       try { await api("cancel_asset", { asset_id: id }); } catch { /* der Auftrag endet serverseitig */ }
     }
-    if (state.draftsOpen) draftsTaktStart();
+    if (state.formTab === "drafts") draftsTaktStart();
   }
 
   function pickFormImage(key) {
@@ -3302,9 +3373,15 @@ ${stages}${post}
       if (state.busy) { close(); return; }
       if (state.step !== "form") {
         state.step = "form";
+        state.formTab = "form";
         state.error = "";
         render();
-        if (state.draftsOpen) draftsTaktStart();
+        return;
+      }
+      if (state.formTab === "drafts") {
+        state.formTab = "form";
+        render();
+        draftsTaktStop();
         return;
       }
       close();
@@ -3319,21 +3396,31 @@ ${stages}${post}
     if (act === "leave-generate") { close(); return; }
     if (act === "cancel-generate") { void cancelGenerate(); return; }
     if (act === "to-form") {
+      if (state.busy) {
+        state.leftRunning = true;
+        state.cancelRequested = true;
+        ladeTaktStop();
+      }
       state.busy = false;
-      ladeTaktStop();
       state.step = "form";
+      state.formTab = "form";
       state.error = "";
       render();
-      if (state.draftsOpen) draftsTaktStart();
+      draftsTaktStop();
       return;
     }
-    if (act === "toggle-drafts") {
-      state.draftsOpen = !state.draftsOpen;
-      if (state.draftsOpen) draftsTaktStart();
-      else draftsTaktStop();
-      const box = shell.querySelector(".as-drafts");
-      if (box) box.outerHTML = draftsHtml();
-      else render();
+    if (act === "show-drafts") {
+      if (state.busy) {
+        state.leftRunning = true;
+        state.cancelRequested = true;
+        ladeTaktStop();
+      }
+      state.busy = false;
+      state.step = "form";
+      state.formTab = "drafts";
+      state.error = "";
+      render();
+      draftsTaktStart();
       return;
     }
     if (act === "open-draft") {

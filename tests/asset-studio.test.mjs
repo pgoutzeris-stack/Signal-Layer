@@ -1756,6 +1756,10 @@ test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   assert.match(studio, /cropState\.uid === "form"/);
   assert.match(studio, /data-act="cancel-generate"/);
   assert.match(studio, /data-act="leave-generate"/);
+  assert.match(studio, /Im Hintergrund/);
+  assert.match(studio, /as-pill-danger/);
+  assert.doesNotMatch(studio, /Zurück lässt den Entwurf weiterlaufen/);
+  assert.doesNotMatch(studio, /as-load-hint/);
   assert.match(studio, /data-act="close-popup"/);
   assert.match(studio, /function cancelGenerate/);
   assert.match(studio, /state\.leftRunning/);
@@ -1775,9 +1779,16 @@ test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   assert.match(studio, /em-shot-hint\{display:none/);
   assert.match(studio, /function toggleFullscreen/);
   assert.match(studio, /function cancelGenerate/);
-  assert.match(studio, /Entwürfe anzeigen/);
+  assert.match(studio, /data-act="show-drafts"/);
+  assert.match(studio, /as-rail-tab/);
+  assert.match(studio, /function draftTitel/);
+  assert.match(studio, /formTab: "form"/);
+  assert.doesNotMatch(studio, /Entwürfe anzeigen/);
+  assert.doesNotMatch(studio, /toggle-drafts/);
   assert.match(studio, /function ladeDrafts/);
   assert.match(studio, /data-act="open-draft"/);
+  assert.match(edge, /title:payload->>title/);
+  assert.match(edge, /slide_title:payload->slides->0->>title/);
   assert.match(studio, /state\.step !== "form"/);
   assert.match(edge, /Vom Nutzer abgebrochen/);
   assert.match(edge, /const nochAktiv = async/);

@@ -9292,7 +9292,7 @@ Deno.serve(async (req: Request) => {
         if (listKind && !isAssetKind(listKind)) return errorResponse(origin, "kind muss linkedin oder memo sein");
         let query = getAdminClient().schema("signal_layer")
           .from("generated_assets")
-          .select("id, kind, status, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, article_id")
+          .select("id, kind, status, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, article_id, title:payload->>title, slide_title:payload->slides->0->>title")
           .eq("article_id", listArticleId)
           .order("created_at", { ascending: false })
           .limit(40);
