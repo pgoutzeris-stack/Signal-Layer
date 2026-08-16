@@ -1059,7 +1059,7 @@ function sanitizeFragment(html) {
 }
 
 import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1215";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1310";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1427,7 +1427,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    */
   const ABSCHNITTE = [
     ["lesen", "fa-file-lines", "Signal und Artikel werden gelesen"],
-    ["recherchieren", "fa-magnifying-glass", "Gemini recherchiert aktuelle Vorreiter"],
+    ["recherchieren", "fa-magnifying-glass", "Gemini recherchiert aktuelle Benchmarks"],
     ["modell", "fa-brain", isMemo ? "Das Modell entwickelt die Ansprache" : "Das Modell schreibt Titel und Kernaussage"],
     ["pruefen", "fa-list-check", "Belege und Längen werden geprüft"],
     ["bilder", "fa-image", "Gemini erzeugt die Motive"],
@@ -1488,7 +1488,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "start") return "Auftrag gestartet";
     if (event === "stage") {
       const name = String(entry.stage || "");
-      if (name === "recherchieren") return "Vorreiter-Recherche gestartet";
+      if (name === "recherchieren") return "Benchmark-Recherche gestartet";
       if (name === "modell") return "Schreiben gestartet";
       if (name === "pruefen") return "Belege werden geprüft";
       if (name === "bilder") return "Motive werden erzeugt";
@@ -1503,9 +1503,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "payload_ok") return "Entwurf ist geprüft";
     if (event === "benchmarks_ok") {
       const names = Array.isArray(entry.names) ? entry.names.filter(Boolean).join(", ") : "";
-      return names ? `Vorreiter: ${names}` : "Vorreiter gefunden";
+      return names ? `Benchmarks: ${names}` : "Benchmarks gefunden";
     }
-    if (event === "benchmarks_user") return "Eigene Vorreiter übernommen";
+    if (event === "benchmarks_user") return "Eigene Benchmarks übernommen";
     if (event === "image_start") return "Ein Motiv wird erzeugt";
     if (event === "images_done") return "Motive fertig";
     if (event === "done") return "Entwurf steht";
@@ -1639,12 +1639,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         { value: "1", label: "strategischer Moment" },
         { value: "4", label: "Wochen bis zum Gespräch" },
       ],
-      benchmark_title: "Vorreiter ziehen denselben Hebel",
+      benchmark_title: "Benchmarks ziehen denselben Hebel",
       benchmark_lead: "Drei Marken haben vorgemacht, was übertragbar ist.",
       benchmarks: [
-        { name: "Vorreiter A", text: "Hat die Eigenmarke zur Leitmarke gemacht und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche", image_hint: hint("Benchmark") },
-        { name: "Vorreiter B", text: "Hat Kanal und Fläche unter eine Handschrift gestellt.", tag: "Eine Linie, zwei Kanäle", image_hint: hint("Benchmark") },
-        { name: "Vorreiter C", text: "Hat Kampagnen durch eine haltbare Linie ersetzt.", tag: "Linie vor Saison", image_hint: hint("Benchmark") },
+        { name: "Benchmark A", text: "Hat die Eigenmarke zur Leitmarke gemacht und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche", image_hint: hint("Benchmark") },
+        { name: "Benchmark B", text: "Hat Kanal und Fläche unter eine Handschrift gestellt.", tag: "Eine Linie, zwei Kanäle", image_hint: hint("Benchmark") },
+        { name: "Benchmark C", text: "Hat Kampagnen durch eine haltbare Linie ersetzt.", tag: "Linie vor Saison", image_hint: hint("Benchmark") },
       ],
       potentials_title: "Drei Hebel für den Adressaten",
       potentials_lead: "Der Check zeigt drei Ansatzpunkte, die sich aus dem Signal ergeben.",
@@ -2074,7 +2074,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
   }
 
-  function eigeneVorreiter() {
+  function eigeneBenchmarks() {
     return [0, 1, 2].map((i) => ({
       name: String(state.answers[`bench_${i}_name`] || "").trim(),
       text: String(state.answers[`bench_${i}_text`] || "").trim(),
@@ -2082,16 +2082,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }));
   }
 
-  function eigeneVorreiterPruefen() {
-    const liste = eigeneVorreiter();
+  function eigeneBenchmarksPruefen() {
+    const liste = eigeneBenchmarks();
     const voll = liste.filter((item) => item.name && item.text && item.tag);
     if (voll.length < 3) {
-      return "Bitte drei Vorreiter mit Name, Handlung und Lehre. Beispiel: Decathlon | Hat die Eigenmarken unter eine Führung gestellt | Marke vor Fläche";
+      return "Bitte drei Benchmarks mit Name, Handlung und Lehre. Beispiel: Decathlon | Hat die Eigenmarken unter eine Führung gestellt | Marke vor Fläche";
     }
     const beispiel = BENCH_EXAMPLE.map((item) => item.name.toLowerCase()).sort().join("|");
     const namen = liste.map((item) => item.name.toLowerCase()).sort().join("|");
     if (namen === beispiel) {
-      return "Das Beispiel zeigt nur die Form. Bitte drei Vorreiter einsetzen, die denselben Hebel wie dieses Signal schon gezogen haben.";
+      return "Das Beispiel zeigt nur die Form. Bitte drei Benchmarks einsetzen, die denselben Hebel wie dieses Signal schon gezogen haben.";
     }
     const duenn = liste.find((item) => item.text.length < 24);
     if (duenn) return `„${duenn.name}“ braucht eine konkrete Handlung, nicht nur den Namen.`;
@@ -2108,7 +2108,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return;
     }
     if (isMemo && state.answers.benchmarks === "custom") {
-      const mangel = eigeneVorreiterPruefen();
+      const mangel = eigeneBenchmarksPruefen();
       if (mangel) {
         state.formError = mangel;
         zeichneForm();
@@ -3567,7 +3567,7 @@ ${stages}${post}
         state.answers[`bench_${i}_tag`] = item.tag;
       });
       state.answers.benchmarks = "custom";
-      state.formError = "Das ist nur die Form. Bitte Name, Handlung und Lehre durch Vorreiter zu diesem Signal ersetzen.";
+      state.formError = "Das ist nur die Form. Bitte Name, Handlung und Lehre durch Benchmarks zu diesem Signal ersetzen.";
       zeichneForm();
       return;
     }
