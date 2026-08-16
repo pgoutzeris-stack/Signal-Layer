@@ -2208,32 +2208,63 @@ function sceneNormalize(text: string): string {
 }
 
 /**
- * Commons sucht im Volltext und verknuepft alle Woerter mit UND, die Dateititel
- * sind ueberwiegend englisch. Ein deutscher Satz wie "Regal mit Eigenmarken
- * neben Markenartikeln" trifft deshalb nichts (Intersport 16.8.2026: alle drei
- * Potenziale leer). Das Thema wird auf zwei bis drei englische Woerter gebracht.
+ * Commons sucht im Volltext, verknuepft alle Woerter mit UND und fuehrt
+ * englische Dateititel. Ein deutscher Satz trifft nichts (Intersport
+ * 16.8.2026: drei leere Potenziale). Gesucht wird deshalb englisch und kurz.
+ *
+ * Die Szene kommt aus dem Bildhinweis, die Branche aus dem ganzen Memo. Ein
+ * Einzelwort aus dem Titel reicht nicht: "Eigenmarken zur Modemarke
+ * entwickeln" hat sonst Eier im Supermarktregal geholt (16.8.2026).
  */
-const SCENE_TOPIC_TERMS: Array<[RegExp, string]> = [
-  [/eigenmarke|handelsmarke|private label|no ?name/, "private label supermarket shelf"],
-  [/markenartikel|markenprodukt|packshot|verpackung|produktfoto/, "product packaging shelf"],
-  [/regal|sortiment|warenkorb|lebensmittel|supermarkt|discounter|drogerie/, "grocery store shelf"],
-  [/trikot|jersey|fussball|football|sportartikel|sportprodukt|sportfach|sporthandel/, "sporting goods store"],
-  [/streetwear|\bmode\b|modeprodukt|fashion|textil|bekleidung|kollektion|laufsteg|runway|sneaker/, "fashion clothing store"],
-  [/\bnetz|energie|stromversorgung|solar|windkraft|ladesaule/, "electricity power lines"],
-  [/\bwerk\b|produktion|fertigung|fabrik|maschine/, "assembly line factory"],
-  [/\blager|logistik|lieferkette|versand|supply|distribution/, "warehouse logistics"],
-  [/nachhaltig|recycling|kreislauf|umwelt|second hand|reparatur/, "recycling containers"],
-  [/online|digital|ecommerce|commerce|webshop|plattform|omnichannel/, "online shopping laptop"],
-  [/preis|rabatt|discount|gunstig|aktion/, "discount supermarket store"],
-  [/kampagne|werbung|anzeige|plakat|advertis|marketing/, "shop window display"],
-  [/kunde|kundin|einkauf|beratung|verkaufsflache|erlebnis|frequenz|besucher/, "shopping customers store"],
-  [/filiale|\bladen|\bstore|geschaft|flagship|innenstadt|flache|standort/, "retail store interior"],
-  [/mitarbeiter|personal|schulung|\bteam\b|belegschaft/, "sales assistant shop"],
-  [/\bmarke\b|branding|positionierung|identitat/, "brand shop window"],
+type SceneSituation = { muster: RegExp; wort: string; frage: string };
+
+const SCENE_SITUATIONS: SceneSituation[] = [
+  { muster: /fussgangerzone|passanten|strassenbild|\bstrasse|alltag|street/, wort: "street", frage: "shopping street pedestrians" },
+  { muster: /online|webshop|ecommerce|commerce|\bapp\b|digital|omnichannel/, wort: "online", frage: "online shopping laptop" },
+  { muster: /lager|logistik|lieferkette|versand|distribution/, wort: "warehouse", frage: "warehouse logistics" },
+  { muster: /\bwerk\b|produktion|fertigung|fabrik|maschine|montage/, wort: "factory", frage: "assembly line factory" },
+  { muster: /schaufenster|auslage|window/, wort: "window display", frage: "shop window display" },
+  { muster: /kasse|checkout|schlange|bezahlen/, wort: "checkout", frage: "supermarket checkout" },
+  { muster: /preisschild|preisaktion|rabatt|discount|gunstig/, wort: "price tag", frage: "price tag shop" },
+  { muster: /regal|sortiment|warenkorb|shelf/, wort: "shelf", frage: "store shelf products" },
+  { muster: /verpackung|packshot|produktfoto|markenprodukt/, wort: "products", frage: "product packaging shelf" },
+  { muster: /mitarbeiter|personal|beratung|verkaufer|schulung/, wort: "assistant", frage: "sales assistant shop" },
+  { muster: /kunde|kundin|besucher|frequenz|einkauf/, wort: "customers", frage: "shopping customers store" },
+  { muster: /nachhaltig|recycling|kreislauf|second hand/, wort: "recycling", frage: "recycling containers" },
+  { muster: /eingang|storefront|fassade|filiale|standort/, wort: "storefront", frage: "storefront shop street" },
 ];
 
 /**
- * Ohne passendes Thema bleibt kein Platzhalter leer. Handel ist der Regelfall
+ * Die Branche haelt das Motiv im Fach. Ein Sporthaendler bekommt Sportflaeche,
+ * kein Lebensmittelregal.
+ */
+type SceneSector = { muster: RegExp; basis: string; fragen: string[] };
+
+const SCENE_SECTORS: SceneSector[] = [
+  { muster: /\bsport|trikot|sneaker|outdoor|fitness|laufschuh|intersport|decathlon|adidas|\bnike\b|\bpuma\b/,
+    basis: "sports shop", fragen: ["sports shop interior", "sporting goods store", "sports shop window"] },
+  { muster: /supermarkt|lebensmittel|discounter|drogerie|\brewe\b|edeka|\baldi\b|\blidl\b|kaufland|grocery/,
+    basis: "supermarket", fragen: ["supermarket interior", "supermarket shelf", "grocery store shelf"] },
+  { muster: /\bmode\b|modemarke|fashion|bekleidung|textil|couture|boutique|luxus/,
+    basis: "clothing store", fragen: ["clothing store interior", "clothing store window", "fashion boutique"] },
+  { muster: /kosmetik|beauty|parfum|pflegeprodukt/,
+    basis: "cosmetics shop", fragen: ["cosmetics shop interior", "perfume shop", "drugstore shelf"] },
+  { muster: /elektronik|technikmarkt|media markt|saturn|smartphone|consumer electronics/,
+    basis: "electronics store", fragen: ["electronics store interior", "consumer electronics store", "electronics shop"] },
+  { muster: /mobel|einrichtung|wohnen|\bikea\b|baumarkt/,
+    basis: "furniture store", fragen: ["furniture store interior", "furniture showroom", "home decor shop"] },
+  { muster: /automobil|fahrzeug|autohaus|autohandel|mobilitat/,
+    basis: "car dealership", fragen: ["car dealership showroom", "car showroom", "automobile dealership"] },
+  { muster: /energie|stromversorgung|\bnetz|solar|windkraft|versorger/,
+    basis: "power", fragen: ["electricity power lines", "power grid substation", "solar panels field"] },
+  { muster: /restaurant|gastronomie|\bcafe|backerei|systemgastronomie/,
+    basis: "restaurant", fragen: ["restaurant interior", "cafe interior", "bakery shop"] },
+  { muster: /\bbank\b|versicherung|finanzdienst|sparkasse/,
+    basis: "bank branch", fragen: ["bank branch interior", "bank office", "office meeting team"] },
+];
+
+/**
+ * Ohne erkannte Branche bleibt kein Platzhalter leer. Handel ist der Regelfall
  * der Memos, deshalb steht die Ladenfläche vorn.
  */
 export const MEMO_SCENE_FALLBACK_QUERIES = [
@@ -2242,34 +2273,58 @@ export const MEMO_SCENE_FALLBACK_QUERIES = [
   "shopping customers store",
 ];
 
-/** Themen plus Rückfall. Mehr Anfragen kosten je etwa eine halbe Sekunde. */
+/** Szene, Branche, Rückfall. Mehr Anfragen kosten je etwa eine halbe Sekunde. */
 export const MEMO_SCENE_QUERY_MAX = 6;
 
-export function memoSceneTopics(text: string): string[] {
-  const haystack = sceneNormalize(text);
-  const treffer: string[] = [];
-  for (const [muster, query] of SCENE_TOPIC_TERMS) {
-    if (muster.test(haystack)) treffer.push(query);
-  }
-  return uniqueStrings(treffer).slice(0, 3);
+/** Motivlage aus dem Bildhinweis, höchstens zwei. */
+export function memoSceneSituations(hint: string): SceneSituation[] {
+  const haystack = sceneNormalize(hint);
+  return SCENE_SITUATIONS.filter((lage) => lage.muster.test(haystack)).slice(0, 2);
 }
 
+/** Branche aus dem ganzen Memo, nicht aus einem Wort des Potenzials. */
+export function memoSceneSector(text: string): SceneSector | null {
+  const haystack = sceneNormalize(text);
+  return SCENE_SECTORS.find((fach) => fach.muster.test(haystack)) || null;
+}
+
+/**
+ * Reihenfolge: Branche mit Szene, dann die Branche allein, dann die Szene, dann
+ * der Rückfall. Erst die Szene zu fragen holt einen beliebigen Laden — für
+ * Intersport kam so ein Uhrenregal statt einer Sportfläche.
+ */
 export function memoSceneQueries(opts: {
   title: string;
   hint?: string;
   finding?: string;
   company?: string;
+  sector?: SceneSector | null;
 }): string[] {
-  const title = String(opts.title || "").trim();
   const hint = String(opts.hint || "").trim();
   const finding = String(opts.finding || "").trim();
   const company = String(opts.company || "").trim();
   const hintIsCompany = hint && company && hint.toLowerCase() === company.toLowerCase();
   const sceneHint = hintIsCompany ? "" : hint;
+  const lagen = memoSceneSituations(`${sceneHint} ${finding}`);
+  const fach = opts.sector || null;
   return uniqueStrings([
-    ...memoSceneTopics(`${title} ${finding} ${sceneHint}`),
+    ...(fach ? lagen.slice(0, 1).map((lage) => `${fach.basis} ${lage.wort}`) : []),
+    ...(fach ? fach.fragen : []),
+    ...lagen.map((lage) => lage.frage),
     ...MEMO_SCENE_FALLBACK_QUERIES,
-  ]);
+  ]).slice(0, MEMO_SCENE_QUERY_MAX);
+}
+
+/** Alles, was die Branche verrät: Adressat, Benchmarks, Markttext, Potenziale. */
+export function memoSectorText(payload: MemoPayload, addressee = ""): string {
+  const teile = [
+    addressee,
+    payload.title, payload.market_title, payload.market_p1, payload.market_p2,
+    payload.benchmark_title, payload.benchmark_lead, payload.potentials_title,
+    ...(payload.benchmarks || []).flatMap((eintrag) => [eintrag?.name, eintrag?.tag, eintrag?.text]),
+    ...(payload.potentials || []).flatMap((eintrag) => [eintrag?.title, eintrag?.finding, eintrag?.image_hint]),
+  ];
+  return teile.filter(Boolean).join(" ");
 }
 
 export function memoImageSlots(payload: MemoPayload, addressee = ""): MemoImageSlot[] {
@@ -2290,6 +2345,7 @@ export function memoImageSlots(payload: MemoPayload, addressee = ""): MemoImageS
       geminiAspect: geminiAspectForShot("benchmark"),
     };
   });
+  const sector = memoSceneSector(memoSectorText(payload, adressat));
   const potentials = (payload.potentials || []).slice(0, 3).map((eintrag, index) => {
     const subject = String(eintrag.title || "").trim();
     const hint = String(eintrag.image_hint || eintrag.finding || eintrag.title || "").trim();
@@ -2305,6 +2361,7 @@ export function memoImageSlots(payload: MemoPayload, addressee = ""): MemoImageS
         hint,
         finding: String(eintrag.finding || ""),
         company: adressat,
+        sector,
       }),
       aspectMm: MEMO_SHOT_ASPECT.potential,
       pixels: MEMO_SHOT_PIXELS.potential,
@@ -2337,9 +2394,12 @@ export function commonsPhotoSearchApiUrl(query: string): string {
     gsrsearch: query,
     gsrnamespace: "6",
     gsrlimit: "8",
-    prop: "imageinfo",
+    // Kategorien verraten Gemaelde und Stiche, die der Titel verschweigt:
+    // "Van Gogh - Interior of a restaurant.jpg" liegt in "Artworks ...".
+    prop: "imageinfo|categories",
     iiprop: "url|mime|size",
     iiurlwidth: "1200",
+    cllimit: "max",
     format: "json",
     origin: "*",
   });
@@ -2470,7 +2530,20 @@ export function commonsPhotoScore(title: string, mime: string, subject: string):
 
 export function commonsTitleLooksLikeRejectedScene(title: string): boolean {
   return /\b(portrait|porträt|headshot|mugshot|selfie|signature|unterschrift|autograph|fraktur|manuscript|handschrift|skyline|map|flag|wappen|coat of arms|diagram|chart|logo|wordmark|wortmarke|svg|dieselgate|protest|funeral)\b/i.test(title)
+    || /\b(painting|gemälde|stillleben|still life|drawing|zeichnung|engraving|lithograph|etching|woodcut|bookplate|ex libris|watercolour|watercolor|postcard|banknote)\b/i.test(title)
     || /\b(jeff|bezos|musk|zuckerberg|ceo)\b/i.test(title);
+}
+
+/**
+ * Der Titel verschweigt oft, dass die Datei ein Gemaelde oder ein Stich von
+ * 1890 ist. Die Commons-Kategorien sagen es.
+ */
+export function commonsCategoriesRejectScene(raw: unknown): boolean {
+  const liste = Array.isArray(raw) ? raw : [];
+  return liste.some((entry) => {
+    const name = String(record(entry).title || "").replace(/^Category:/i, "");
+    return /artwork|painting|gemälde|stillleben|still life|drawing|engraving|lithograph|etching|woodcut|sculpture|bookplate|ex libris|manuscript|coats? of arms|\bmaps\b|\blogos\b|portraits|author died/i.test(name);
+  });
 }
 
 export function commonsSceneScore(title: string, mime: string, keywords: string[] = []): number {
@@ -2515,7 +2588,10 @@ export function parseCommonsSceneHits(raw: unknown, keywords: string[] = []): Me
     const info = record(Array.isArray(item.imageinfo) ? item.imageinfo[0] : {});
     const mime = String(info.mime || "");
     const url = String(info.thumburl || info.url || "");
-    return { title, mime, url, score: commonsSceneScore(title, mime, keywords) };
+    const score = commonsCategoriesRejectScene(item.categories)
+      ? -20
+      : commonsSceneScore(title, mime, keywords);
+    return { title, mime, url, score };
   }).filter((hit) => hit.score > 0 && hit.url.startsWith("https://") && isAllowedMemoSceneUrl(hit.url))
     .sort((a, b) => b.score - a.score)
     .map((hit) => ({ url: hit.url, source: "wikimedia_commons", query: hit.title }));

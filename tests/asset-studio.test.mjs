@@ -3,6 +3,9 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 
 const studio = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf8");
+const memoTpl = readFileSync(new URL("../memo-template.js", import.meta.url), "utf8");
+const appJs = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const edge = readFileSync(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
 const backend = await import("../supabase/functions/signal-layer/asset-studio.ts");
 
@@ -1646,25 +1649,53 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
     assert.ok(query.split(/\s+/).length <= 4, `zu lang: ${query}`);
     assert.doesNotMatch(query, /[äöüß]|\bmit\b|\bzur\b|\bvom\b/i);
   }
-  assert.deepEqual(
-    backend.memoSceneQueries({
-      title: "Vom Markenartikel zur Eigenmarke",
-      hint: "Regal mit Eigenmarken neben Markenartikeln, Kunde vergleicht Preise",
-      finding: "Eigenmarken stehen unverbunden neben Markenartikeln.",
-      company: "Intersport",
-    }).slice(0, 3),
-    ["private label supermarket shelf", "product packaging shelf", "grocery store shelf"],
-  );
-  assert.deepEqual(
-    backend.memoSceneTopics("Junge Leute tragen Trikots als Streetwear im Alltag"),
-    ["sporting goods store", "fashion clothing store"],
-  );
-  // Ohne erkanntes Thema bleibt kein Platzhalter leer.
+  // Die Branche kommt aus dem ganzen Memo, nicht aus einem Wort des Potenzials:
+  // "Eigenmarken zur Modemarke entwickeln" hat sonst Eier im Supermarktregal
+  // geholt, obwohl das Memo für einen Sporthändler war (16.8.2026).
+  const sportMemo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    benchmarks: [
+      { name: "Decathlon", text: "Hat den Hebel gezogen.", tag: "Eigenmarke zuerst", image_hint: "Decathlon" },
+      { name: "Adidas", text: "Hat den Kanal umgebaut.", tag: "Direktvertrieb", image_hint: "Adidas" },
+      { name: "Nike", text: "Hat die Marke geschärft.", tag: "Marke vor Fläche", image_hint: "Nike" },
+    ],
+    potentials: [
+      { title: "Vom Markenartikel zur Eigenmarke", finding: "Eigenmarken stehen unverbunden.", potential: "ROOTS bündelt sie.", image_hint: "Regal mit Sportartikeln, Preisschilder, Kunde vergleicht" },
+      { title: "Superstores zum Preislabor machen", finding: "Die Fläche wirkt austauschbar.", potential: "Eine Handschrift.", image_hint: "Eingang eines Sportgeschäfts mit Preisaktionen" },
+      { title: "Eigenmarken zur Modemarke entwickeln", finding: "Trikots werden getragen.", potential: "Eine Linie, die hält.", image_hint: "Junge Menschen tragen Sporttrikots in einer Fußgängerzone" },
+    ],
+  })), backend.normalizeAssetAnswers("memo", {}));
+  const sportFach = backend.memoSceneSector(backend.memoSectorText(sportMemo, "Intersport"));
+  assert.equal(sportFach?.basis, "sports shop");
+  const sportSlots = backend.memoImageSlots(sportMemo, "Intersport").filter((s) => s.kind === "potential");
+  for (const slot of sportSlots) {
+    assert.ok(slot.queries[0].startsWith("sports shop"), `${slot.key}: ${slot.queries[0]}`);
+    assert.ok(slot.queries.some((q) => q === "sporting goods store"));
+    assert.doesNotMatch(slot.queries.join(" "), /supermarket|grocery/);
+  }
+  assert.equal(sportSlots[2].queries[0], "sports shop street");
+  // Ohne erkannte Branche bleibt kein Platzhalter leer.
   assert.deepEqual(backend.memoSceneQueries({ title: "Ohne Thema" }), backend.MEMO_SCENE_FALLBACK_QUERIES);
+  assert.equal(backend.memoSceneSector("Ein Memo ohne Fachwort"), null);
+  // Der Titel verschweigt das Gemälde, die Kategorie nicht.
+  assert.equal(backend.commonsCategoriesRejectScene([{ title: "Category:Artworks with Wikidata item" }]), true);
+  assert.equal(backend.commonsCategoriesRejectScene([{ title: "Category:Interiors of restaurants in Paris" }]), false);
+  assert.match(backend.commonsPhotoSearchApiUrl("sports shop interior"), /categories/);
+  assert.equal(backend.parseCommonsSceneHits({
+    query: {
+      pages: {
+        "1": {
+          title: "File:Van Gogh - Interior of a restaurant.jpg",
+          categories: [{ title: "Category:Artworks digital representation of 2D work" }],
+          imageinfo: [{ mime: "image/jpeg", thumburl: "https://upload.wikimedia.org/wikipedia/commons/v/van-gogh-restaurant.jpg" }],
+        },
+      },
+    },
+  }).length, 0);
   for (const slot of slots.filter((s) => s.kind === "potential")) {
-    for (const fallback of backend.MEMO_SCENE_FALLBACK_QUERIES) {
-      assert.ok(slot.queries.includes(fallback), `${fallback} fehlt bei ${slot.key}`);
-    }
+    assert.ok(
+      slot.queries.some((q) => backend.MEMO_SCENE_FALLBACK_QUERIES.includes(q)),
+      `kein Rückfall bei ${slot.key}`,
+    );
     assert.ok(slot.queries.length <= backend.MEMO_SCENE_QUERY_MAX);
   }
   // Ein Laden von 1918 illustriert kein heutiges Potenzial.
@@ -1849,6 +1880,16 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(studio, /opts\.fit === "contain"/);
   assert.match(studio, /fillStyle = opts\.fill \|\| "#fff"/);
   assert.match(studio, /fit: "contain"/);
+  // Logos contain auf Weiss, Potenzial-Fotos formatfüllend. Contain für beide
+  // hat weisse Ränder in das Foto gebrannt: die Kachel wirkte unausgefüllt und
+  // ihre Rundung verschwunden (16.8.2026).
+  assert.match(studio, /const opts = kind === "benchmark" \? \{ fit: "contain" \} : \{\};/);
+  assert.match(studio, /fitSlotImage\(eintrag\.image\.src, spec, opts\)/);
+  assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
+  // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
+  const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
+  assert.equal(studioVersion, "20260816-2245");
+  assert.match(indexHtml, /app\.js\?v=20260816-2245/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
