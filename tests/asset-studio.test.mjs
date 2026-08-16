@@ -905,6 +905,17 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.equal(backend.assetMemoImagesIncomplete(pumaOhneBilder), true);
   assert.equal(backend.assetFinishSettleDue(pumaOhneBilder, now), false);
   assert.equal(backend.assetFinishHandoffDue(pumaOhneBilder, now), true);
+  const pumaMotiveTot = {
+    ...pumaOhneBilder,
+    run_log: [
+      { event: "model_ok", text: "{\"title\":\"These\"}" },
+      { event: "finish_start" },
+      { event: "image_fail", key: "benchmarks.0", error: "http_400" },
+      { event: "images_done", ok: 0, fail: 6 },
+    ],
+  };
+  assert.equal(backend.assetMemoImagesIncomplete(pumaMotiveTot), true);
+  assert.equal(backend.assetFinishSettleDue(pumaMotiveTot, now), false);
   assert.equal(backend.assetMemoImagesIncomplete(aeffeZyklus), false);
   assert.equal(backend.memoPayloadHasSlotImages({
     benchmarks: [{ image: { src: "data:image/jpeg;base64,abc" } }],
@@ -1629,6 +1640,29 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
   assert.equal(filled.benchmarks[0].image.src, uri);
   assert.ok(events.includes("image_ok"));
   assert.ok(events.includes("images_done"));
+  const interaction = backend.parseGeminiInteractionImage({
+    output_image: { mime_type: "image/jpeg", data: "abc".repeat(40) },
+  });
+  assert.equal(interaction.mime, "image/jpeg");
+  assert.equal(backend.GEMINI_IMAGE_MODEL, "gemini-3.1-flash-image");
+  assert.equal(backend.GEMINI_IMAGE_FALLBACK_MODEL, "gemini-2.5-flash-image");
+  const retryEvents = [];
+  let versuche = 0;
+  const retried = await backend.fillMemoImages(
+    backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {})),
+    backend.normalizeAssetAnswers("memo", { images: "auto" }),
+    {
+      remainingMs: 120_000,
+      generate: async () => {
+        versuche += 1;
+        if (versuche <= 6) throw new Error("http_400");
+        return uri;
+      },
+      log: async (event) => retryEvents.push(event),
+    },
+  );
+  assert.ok(retryEvents.includes("images_retry"));
+  assert.equal(retried.benchmarks[0].image.src, uri);
   const called = [];
   const already = await backend.fillMemoImages(
     backend.applyMemoImageUploads(
@@ -1667,10 +1701,13 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und Gemini hängt opti
   assert.match(edge, /attach_asset_image/);
   assert.match(edge, /image_uploads/);
   assert.match(edge, /applyMemoImageUploads/);
-  assert.match(edge, /remainingMs: ASSET_WALL_CLOCK_MS,/);
+  assert.match(edge, /remainingMs: Math.max\(0, ASSET_WALL_CLOCK_MS/);
+  assert.match(edge, /v1beta\/interactions/);
+  assert.match(edge, /images_incomplete/);
   const assetSrc = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
   assert.match(assetSrc, /image_fail/);
-  assert.match(assetSrc, /imageOutputOptions/);
+  assert.match(assetSrc, /geminiInteractionsRequestBody/);
+  assert.match(assetSrc, /images_retry/);
   assert.equal(backend.MEMO_IMAGE_DATA_URI_MAX, 100 * 1024 * 1024);
   assert.match(assetSrc, /Nur pathologische Payloads/);
 });
