@@ -156,12 +156,19 @@ import {
   parseMemoBenchmarkReview,
   parseMemoPhotoResearch,
   parseMemoSceneResearch,
-  parseWikidataLogoImage,
-  parseWikidataSearchId,
+  parseWikidataLogoFromEntities,
+  parseWikidataSearchIds,
+  parseWikipediaOpenSearch,
+  parseWikipediaPageImages,
+  pickWikipediaLogoFile,
+  memoLogoNameVariants,
+  wikipediaOpenSearchApiUrl,
+  wikipediaPageImagesApiUrl,
+  wikipediaTitleMatchesCompany,
   stripCmoHundredDaysOffering,
   stripCmoHundredDaysText,
   resolveAssetCompany,
-  wikidataEntityApiUrl,
+  wikidataEntitiesApiUrl,
   wikidataSearchApiUrl,
   wikimediaFilePathUrl,
   worldvectorlogoCdnUrl,
@@ -3439,21 +3446,56 @@ async function findMemoWikidataLogo(company: string): Promise<string | null> {
       await search.body?.cancel().catch(() => undefined);
       return null;
     }
-    const id = parseWikidataSearchId(await search.json());
-    if (!id) return null;
-    const entity = await fetchMitLimit(wikidataEntityApiUrl(id), {
+    // Der erste Treffer ist oft eine gleichnamige Person; Frosta liegt auf
+    // Platz vier. Deshalb alle Kandidaten in einem Abruf prüfen.
+    const ids = parseWikidataSearchIds(await search.json());
+    if (!ids.length) return null;
+    const entity = await fetchMitLimit(wikidataEntitiesApiUrl(ids), {
       headers: { Accept: "application/json", "User-Agent": MEMO_PHOTO_USER_AGENT },
     }, 8_000);
     if (!entity.ok) {
       await entity.body?.cancel().catch(() => undefined);
       return null;
     }
-    const file = parseWikidataLogoImage(await entity.json());
+    const file = parseWikidataLogoFromEntities(await entity.json(), ids);
     if (!file) return null;
     return wikimediaFilePathUrl(file);
   } catch {
     return null;
   }
+}
+
+/**
+ * Letzte belegbare Quelle vor der Modellrecherche: die Logodatei aus dem
+ * Wikipedia-Artikel der Firma. Ohne Titelprüfung liefert die Suche zu
+ * "Catrice" den Artikel "Catrin Striebeck".
+ */
+async function findMemoWikipediaLogo(company: string): Promise<string | null> {
+  const name = String(company || "").trim();
+  if (!name) return null;
+  for (const lang of ["de", "en"] as const) {
+    try {
+      const suche = await fetchMitLimit(wikipediaOpenSearchApiUrl(lang, name), {
+        headers: { Accept: "application/json", "User-Agent": MEMO_PHOTO_USER_AGENT },
+      }, 8_000);
+      if (!suche.ok) {
+        await suche.body?.cancel().catch(() => undefined);
+        continue;
+      }
+      const titel = parseWikipediaOpenSearch(await suche.json());
+      if (!titel || !wikipediaTitleMatchesCompany(titel, name)) continue;
+      const seite = await fetchMitLimit(wikipediaPageImagesApiUrl(lang, titel), {
+        headers: { Accept: "application/json", "User-Agent": MEMO_PHOTO_USER_AGENT },
+      }, 8_000);
+      if (!seite.ok) {
+        await seite.body?.cancel().catch(() => undefined);
+        continue;
+      }
+      const datei = pickWikipediaLogoFile(parseWikipediaPageImages(await seite.json()), name);
+      if (datei) return wikimediaFilePathUrl(datei);
+    } catch { /* nächste Sprache */ }
+  }
+  return null;
 }
 
 async function findMemoCompanyLogo(company: string): Promise<{ logo_url: string } | null> {
@@ -3490,47 +3532,54 @@ async function findMemoCompanyLogo(company: string): Promise<{ logo_url: string 
   return null;
 }
 
+/**
+ * Belegbare Quellen der Reihe nach, für jede Namensvariante. cosnova
+ * (essence & Catrice) hat am 17.8.2026 alle Quellen verfehlt, weil nur der
+ * ganze Name gesucht wurde — Wikidata führt das Logo unter "cosnova".
+ */
 async function findMemoSlotLogo(
   subject: string,
   apiKey: string,
   model: string,
+  log?: (event: string, extra: Record<string, unknown>) => void,
 ): Promise<string | null> {
-  const name = String(subject || "").trim();
-  if (!name) return null;
-  const stored = await findMemoCompanyLogo(name);
-  if (stored?.logo_url) {
-    const uri = await downloadMemoPhoto(stored.logo_url, true);
-    if (uri) return uri;
+  const varianten = memoLogoNameVariants(subject);
+  if (!varianten.length) return null;
+  const quellen: Array<[string, (name: string) => Promise<string | null>]> = [
+    ["registry", async (name) => (await findMemoCompanyLogo(name))?.logo_url || null],
+    ["worldvectorlogo", (name) => probeWorldvectorlogo(name)],
+    ["wikidata", (name) => findMemoWikidataLogo(name)],
+    ["wikipedia", (name) => findMemoWikipediaLogo(name)],
+    ["commons", async (name) => (await researchWikimediaLogo(name))?.logo_url || null],
+  ];
+  for (const name of varianten) {
+    for (const [quelle, suche] of quellen) {
+      try {
+        const url = await suche(name);
+        if (!url) continue;
+        const uri = await downloadMemoPhoto(url, true);
+        if (uri) {
+          log?.("logo_source", { name, source: quelle });
+          return uri;
+        }
+      } catch { /* nächste Quelle */ }
+    }
+  }
+  if (!apiKey) {
+    log?.("logo_miss", { tried: varianten.join(" | "), gemini: false });
+    return null;
   }
   try {
-    const cdn = await probeWorldvectorlogo(name);
-    if (cdn) {
-      const uri = await downloadMemoPhoto(cdn, true);
-      if (uri) return uri;
-    }
-  } catch { /* CDN-Slug ist optional */ }
-  try {
-    const wikidata = await findMemoWikidataLogo(name);
-    if (wikidata) {
-      const uri = await downloadMemoPhoto(wikidata, true);
-      if (uri) return uri;
-    }
-  } catch { /* P154 ist optional */ }
-  try {
-    const commons = await researchWikimediaLogo(name);
-    if (commons?.logo_url) {
-      const uri = await downloadMemoPhoto(commons.logo_url, true);
-      if (uri) return uri;
-    }
-  } catch { /* Commons ist optional */ }
-  if (!apiKey) return null;
-  try {
-    const focused = await researchCompanyLogo({ apiKey, model }, name);
+    const focused = await researchCompanyLogo({ apiKey, model }, varianten[0]);
     if (focused.logo?.logo_url) {
       const uri = await downloadMemoPhoto(focused.logo.logo_url, true);
-      if (uri) return uri;
+      if (uri) {
+        log?.("logo_source", { name: varianten[0], source: "gemini" });
+        return uri;
+      }
     }
   } catch { /* Grounding ist der letzte Versuch vor prepareRetry */ }
+  log?.("logo_miss", { tried: varianten.join(" | "), gemini: true });
   return null;
 }
 
@@ -3564,7 +3613,11 @@ async function findMemoSlotScene(
   return null;
 }
 
-function createMemoPhotoFinder(apiKey: string, model: string) {
+function createMemoPhotoFinder(
+  apiKey: string,
+  model: string,
+  log?: (event: string, extra: Record<string, unknown>) => void,
+) {
   const byLogo = new Map<string, Promise<string | null>>();
   const usedSceneUrls = new Set<string>();
   const geminiUrls: Record<string, string> = {};
@@ -3573,7 +3626,7 @@ function createMemoPhotoFinder(apiKey: string, model: string) {
       if (slot.kind === "benchmark") {
         const key = slot.subject.toLowerCase();
         if (!key) return null;
-        if (!byLogo.has(key)) byLogo.set(key, findMemoSlotLogo(slot.subject, apiKey, model));
+        if (!byLogo.has(key)) byLogo.set(key, findMemoSlotLogo(slot.subject, apiKey, model, log));
         const local = await byLogo.get(key);
         if (local) return local;
         const url = geminiUrls[slot.key];
@@ -5403,6 +5456,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       const finder = createMemoPhotoFinder(
         geminiKey,
         MEMO_BENCHMARK_RESEARCH_MODEL,
+        (event, extra) => loggen(event, extra),
       );
       try {
           payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {

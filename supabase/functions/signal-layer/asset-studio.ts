@@ -2163,7 +2163,10 @@ export function worldvectorlogoSlugCandidates(name: string): string[] {
     ...(WORLDVECTORLOGO_SLUG_ALIASES[base] || []),
     ...(first && first !== base ? WORLDVECTORLOGO_SLUG_ALIASES[first] || [] : []),
   ];
-  const out = [
+  // Nur Slugs des ganzen Namens. Das erste Wort allein holt für "Ritter Sport
+  // GmbH & Co. KG" das fremde "ritter-1"; als eigene Namensvariante kommt es
+  // später dran, nachdem "Ritter Sport" seine Chance hatte.
+  return uniqueStrings([
     ...aliases,
     `${base}-logo`,
     `${base}-1`,
@@ -2171,15 +2174,45 @@ export function worldvectorlogoSlugCandidates(name: string): string[] {
     base,
     `${base}-3`,
     `${base}-4`,
-  ];
-  if (first && first !== base) out.push(`${first}-logo`, `${first}-1`, first);
-  return uniqueStrings(out).slice(0, 8);
+  ]).slice(0, 8);
 }
 
 export function memoLogoQueries(subject: string): string[] {
   const name = String(subject || "").trim();
   if (!name) return [];
   return uniqueStrings([`${name} logo`, `${name} wordmark`, name]);
+}
+
+const LEGAL_SUFFIX = /\s+(gmbh(\s*&\s*co\.?\s*kg)?|ag|se|kg|ohg|mbh|inc\.?|ltd\.?|llc|plc|s\.?a\.?|n\.?v\.?|b\.?v\.?|corp\.?|group|gruppe|holding)\b\.?/gi;
+
+/**
+ * Der Modellname trägt oft mehr als die Firma: "cosnova (essence & Catrice)"
+ * hat am 17.8.2026 jede Quelle verfehlt, obwohl Wikidata ein Logo für
+ * "cosnova" führt. Gesucht wird deshalb der Reihe nach: ganzer Name, Name vor
+ * der Klammer, die Marken in der Klammer, Name ohne Rechtsform.
+ */
+export function memoLogoNameVariants(subject: string): string[] {
+  const roh = String(subject || "").replace(/\s+/g, " ").trim();
+  if (!roh) return [];
+  const varianten = [roh];
+  const klammer = /[（(]([^)）]+)[)）]/.exec(roh);
+  const basis = roh.replace(/[（(][^)）]*[)）]/g, "").replace(/[\s–—-]+$/, "").trim();
+  if (basis && basis !== roh) varianten.push(basis);
+  if (klammer) {
+    for (const teil of klammer[1].split(/\s*(?:&|\+|,|\bund\b|\band\b)\s*/i)) {
+      const marke = teil.trim();
+      if (marke.length > 2) varianten.push(marke);
+    }
+  }
+  for (const name of [...varianten]) {
+    const ohneForm = name.replace(LEGAL_SUFFIX, " ").replace(/\s+/g, " ").trim();
+    if (ohneForm.length > 2 && ohneForm !== name) varianten.push(ohneForm);
+  }
+  // Zuletzt das erste Wort: "Vaude Sport GmbH" liegt als "vaude" vor. Es steht
+  // hinten, damit der genaue Name zuerst gewinnt.
+  const erstes = (basis || roh).split(/[\s,/]+/)[0] || "";
+  if (erstes.length > 3) varianten.push(erstes);
+  return uniqueStrings(varianten.filter((name) => name.length > 1)).slice(0, 5);
 }
 
 /** Alias für Benchmark-Logos. Potenziale nutzen memoSceneQueries. */
@@ -2387,6 +2420,63 @@ export function wikipediaSummaryApiUrl(lang: "de" | "en", title: string): string
   return `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
 }
 
+export function wikipediaPageImagesApiUrl(lang: "de" | "en", title: string): string {
+  const params = new URLSearchParams({
+    action: "query",
+    titles: title,
+    prop: "images",
+    imlimit: "max",
+    format: "json",
+    origin: "*",
+  });
+  return `https://${lang}.wikipedia.org/w/api.php?${params}`;
+}
+
+export function parseWikipediaPageImages(raw: unknown): string[] {
+  const pages = record(record(raw).query).pages;
+  const bag = pages && typeof pages === "object" ? pages as Record<string, unknown> : {};
+  const out: string[] = [];
+  for (const page of Object.values(bag)) {
+    const liste = Array.isArray(record(page).images) ? record(page).images as unknown[] : [];
+    for (const eintrag of liste) {
+      const titel = String(record(eintrag).title || "").trim();
+      if (titel) out.push(titel);
+    }
+  }
+  return uniqueStrings(out);
+}
+
+/**
+ * Die Volltextsuche liefert für "Catrice" den Artikel "Catrin Striebeck". Nur
+ * ein Titel, der den Namen trägt, darf sein Logo hergeben.
+ */
+export function wikipediaTitleMatchesCompany(title: string, company: string): boolean {
+  const kurz = (text: string) => sceneNormalize(text).replace(/[^a-z0-9]+/g, "");
+  const a = kurz(title);
+  const b = kurz(company);
+  if (!a || !b) return false;
+  return a.includes(b) || b.includes(a);
+}
+
+/**
+ * Jeder Wikipedia-Artikel verlinkt "Commons-logo.svg" — das Schwesterprojekt,
+ * nicht die Marke. Genommen wird eine Logodatei, deren Name die Firma trägt.
+ */
+export function pickWikipediaLogoFile(files: string[], company: string): string {
+  const marke = sceneNormalize(company).replace(/[^a-z0-9]+/g, "");
+  const brauchbar = files.filter((datei) => {
+    const name = datei.replace(/^(Datei|File|Bild):/i, "").trim();
+    if (!/\.(svg|png|webp|jpe?g)$/i.test(name)) return false;
+    if (/commons[-_ ]?logo|wikimedia|wikipedia|wiktionary|wikidata|disambig|question[-_ ]?book|padlock|ambox/i.test(name)) return false;
+    return /logo|wortmarke|wordmark|schriftzug/i.test(name);
+  });
+  const eigen = brauchbar.find((datei) => {
+    const name = sceneNormalize(datei).replace(/[^a-z0-9]+/g, "");
+    return marke.length > 2 && name.includes(marke);
+  });
+  return (eigen || brauchbar[0] || "").replace(/^(Datei|File|Bild):/i, "").trim();
+}
+
 export function commonsPhotoSearchApiUrl(query: string): string {
   const params = new URLSearchParams({
     action: "query",
@@ -2406,14 +2496,31 @@ export function commonsPhotoSearchApiUrl(query: string): string {
   return `https://commons.wikimedia.org/w/api.php?${params}`;
 }
 
-export function wikidataSearchApiUrl(query: string): string {
+/**
+ * Fünf Treffer statt einem: Frosta liegt auf Platz vier, der erste Treffer
+ * ist oft eine gleichnamige Person oder Ortschaft ohne Logo.
+ */
+export const WIKIDATA_LOGO_CANDIDATES = 5;
+
+export function wikidataSearchApiUrl(query: string, limit = WIKIDATA_LOGO_CANDIDATES): string {
   const params = new URLSearchParams({
     action: "wbsearchentities",
     search: query,
     language: "en",
     uselang: "de",
     type: "item",
-    limit: "1",
+    limit: String(limit),
+    format: "json",
+    origin: "*",
+  });
+  return `https://www.wikidata.org/w/api.php?${params}`;
+}
+
+export function wikidataEntitiesApiUrl(ids: string[]): string {
+  const params = new URLSearchParams({
+    action: "wbgetentities",
+    ids: ids.slice(0, WIKIDATA_LOGO_CANDIDATES).join("|"),
+    props: "claims",
     format: "json",
     origin: "*",
   });
@@ -2601,6 +2708,26 @@ export function parseWikidataSearchId(raw: unknown): string {
   const liste = Array.isArray(record(raw).search) ? record(raw).search as unknown[] : [];
   const first = record(liste[0]);
   return String(first.id || "").trim();
+}
+
+export function parseWikidataSearchIds(raw: unknown): string[] {
+  const liste = Array.isArray(record(raw).search) ? record(raw).search as unknown[] : [];
+  return uniqueStrings(liste.map((entry) => String(record(entry).id || "").trim()))
+    .slice(0, WIKIDATA_LOGO_CANDIDATES);
+}
+
+/** Erster Treffer mit P154, in der Reihenfolge der Suche. */
+export function parseWikidataLogoFromEntities(raw: unknown, ids: string[]): string {
+  const entities = record(record(raw).entities);
+  for (const id of ids) {
+    const claims = record(record(entities[id]).claims);
+    const liste = Array.isArray(claims.P154) ? claims.P154 as unknown[] : [];
+    for (const entry of liste) {
+      const name = String(record(record(record(entry).mainsnak).datavalue).value || "").trim();
+      if (name) return name;
+    }
+  }
+  return "";
 }
 
 export function parseWikidataEntityImage(raw: unknown): string {
