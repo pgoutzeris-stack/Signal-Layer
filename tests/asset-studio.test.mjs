@@ -2152,17 +2152,37 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   );
   assert.match(researchExclude, /<ausgeschlossen>Bahlsen<\/ausgeschlossen>/);
 
+  const reviewRecherche = backend.buildMemoBenchmarkReviewPrompt(
+    { headline_de: "Eigenmarken brauchen eine Führung", company: "Hugo Boss" },
+    { title: "Handelsstudie" },
+    answers,
+    { herkunft: "recherche" },
+  );
   const review = backend.buildMemoBenchmarkReviewPrompt(
     { headline_de: "Eigenmarken brauchen eine Führung", company: "Hugo Boss" },
     { title: "Handelsstudie" },
     answers,
   );
+  assert.match(reviewRecherche, /drei recherchierte Benchmarks/);
+  assert.match(review, /vom Nutzer gelieferte Benchmarks/);
   assert.match(review, /Google Search ist Pflicht/);
   assert.match(review, /Lidl/);
   assert.match(review, /Ausgang POSITIV/);
   assert.match(review, /{"ok":true}/);
+  assert.match(review, /Nicht ablehnen, weil die öffentliche Story enger klingt/);
+  assert.match(review, /ok=false nur wenn/);
   assert.equal(backend.parseMemoBenchmarkReview({ ok: true }).ok, true);
   assert.equal(backend.parseMemoBenchmarkReview({ ok: false, grund: "Nike ist Füllsel" }).ok, false);
+  const mitMigros = [
+    { name: "Migros", text: "Hat Eigenmarken neu geordnet und den Auftritt vereinfacht.", tag: "Marke vor Fläche", source: "" },
+    eigene[1],
+    eigene[2],
+  ];
+  assert.deepEqual(
+    backend.rejectedBenchmarkNames(mitMigros, "Migros passt nicht, da die Neuausrichtung der Eigenmarken eher zur Vereinfachung des Sortiments erfolgte."),
+    ["Migros"],
+  );
+  assert.deepEqual(backend.rejectedBenchmarkNames(mitMigros, "Keiner der Fälle trägt."), ["Migros", "H&M", "Uniqlo"]);
 
   const prompt = backend.buildAssetPrompt("memo", { headline_de: "Hebel", company: "Hugo Boss" }, { title: "A", content: "Text" }, answers);
   assert.match(prompt, /<benchmarks herkunft="nutzer">/);
@@ -2201,6 +2221,9 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.match(edge, /negativeBenchmarkNames/);
   assert.match(edge, /Negativer Fall verworfen/);
   assert.match(edge, /createMemoPhotoFinder/);
+  assert.match(edge, /rejectedBenchmarkNames/);
+  assert.match(edge, /benchmarks_review_override/);
+  assert.match(edge, /herkunft: "recherche"/);
   assert.match(edge, /Im Fragebogen eigene Benchmarks eintragen/);
   assert.match(edge, /function callGeminiWithGoogleSearch/);
   assert.match(edge, /streamGenerateContent\?alt=sse/);
