@@ -730,6 +730,18 @@ export function negativeBenchmarkNames(briefs: MemoBenchmarkBrief[]): string[] {
     .filter(Boolean);
 }
 
+/** Welche Marke die Prüfung namentlich ablehnt. Ohne Treffer bleiben alle draußen. */
+export function rejectedBenchmarkNames(briefs: MemoBenchmarkBrief[], grund: string): string[] {
+  const text = String(grund || "");
+  const hits = briefs.filter((item) => {
+    const name = String(item.name || "").trim();
+    if (name.length < 2) return false;
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`, "iu").test(text);
+  }).map((item) => item.name);
+  return hits.length ? [...new Set(hits)] : briefs.map((item) => item.name).filter(Boolean);
+}
+
 export function assertMemoBenchmarkBriefs(
   briefs: MemoBenchmarkBrief[],
   addresseeCompany = "",
@@ -778,6 +790,7 @@ export function buildMemoBenchmarkReviewPrompt(
   signal: AssetSignalInput,
   article: AssetArticleInput,
   answers: MemoAnswers,
+  opts: { herkunft?: "recherche" | "nutzer" } = {},
 ): string {
   const firma = asData(answers.company, 160) || asData(signal.company, 160) || "";
   const hebel = [
@@ -787,7 +800,10 @@ export function buildMemoBenchmarkReviewPrompt(
   ].filter(Boolean).join("\n");
   const liste = answers.benchmarks.map((item, i) =>
     `${i + 1}. ${item.name} | ${item.text} | ${item.tag}`).join("\n");
-  return `Du prüfst drei vom Nutzer gelieferte Benchmarks für ein ROOTS Executive Memo. Google Search ist Pflicht.
+  const rolle = opts.herkunft === "recherche"
+    ? "Du prüfst drei recherchierte Benchmarks für ein ROOTS Executive Memo."
+    : "Du prüfst drei vom Nutzer gelieferte Benchmarks für ein ROOTS Executive Memo.";
+  return `${rolle} Google Search ist Pflicht.
 
 <hebel>
 ${hebel || asData(article.title_de || article.title, 240) || "nicht benannt"}
@@ -797,8 +813,9 @@ ${hebel || asData(article.title_de || article.title, 240) || "nicht benannt"}
 ${liste}
 </benchmarks>
 
-ok=true nur wenn alle drei denselben ROOTS-Hebel schon gezogen haben (die Leistung und den Anschluss), der Ausgang POSITIV war, nicht nur dieselbe Nachricht oder Branche, und keine die Adressatenfirma ist.
-ok=false wenn ein Name unbelegt ist, der Mechanismus ein anderer ist, oder der Fall ein Flop / eine Rücknahme / ein Sales-Drop ist.
+ok=true wenn alle drei denselben Mechanismus wie den Hebel schon gezogen haben und der Ausgang POSITIV war. Dieselbe Marken-, Sortiments- oder Wachstumsmechanik reicht - nicht dieselbe Pressemeldung, nicht dieselbe öffentliche Begründung.
+ok=false nur wenn ein Name unbelegt ist, die Adressatenfirma vorkommt, der Fall ein Flop / eine Rücknahme / ein Sales-Drop ist, oder der Mechanismus klar ein anderer ist (z.B. Logistik oder IT statt Marke).
+Nicht ablehnen, weil die öffentliche Story enger klingt (Preis, Sortiment, Vereinfachung), solange die Handlung denselben Hebel bedient.
 Antworte ausschliesslich mit JSON:
 {"ok":true} oder {"ok":false,"grund":"Ein Satz auf Deutsch, welche Marke nicht passt und warum."}`;
 }

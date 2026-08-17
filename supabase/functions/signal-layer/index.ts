@@ -146,6 +146,7 @@ import {
   memoSceneKeywords,
   memoSlotImageSrc,
   negativeBenchmarkNames,
+  rejectedBenchmarkNames,
   normalizeAssetAnswers,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
@@ -9541,6 +9542,7 @@ Deno.serve(async (req: Request) => {
                 const exclude: string[] = [];
                 let letzter: Error | null = null;
                 let okBriefs: typeof memoAnswers.benchmarks | null = null;
+                let letzterBriefs: typeof memoAnswers.benchmarks | null = null;
                 for (let attempt = 1; attempt <= 2; attempt += 1) {
                   try {
                     const gefunden = await researchMemoBenchmarksWithGemini(
@@ -9556,6 +9558,7 @@ Deno.serve(async (req: Request) => {
                       continue;
                     }
                     const briefs = assertMemoBenchmarkBriefs(gefunden.briefs, firma, { allowExample: true });
+                    letzterBriefs = briefs;
                     try {
                       const pruefung = await reviewMemoBenchmarksWithGemini(
                         geminiKey,
@@ -9564,6 +9567,7 @@ Deno.serve(async (req: Request) => {
                           signalForAsset,
                           assetArticle,
                           { ...memoAnswers, benchmarks: briefs },
+                          { herkunft: "recherche" },
                         ),
                         onPulse,
                       );
@@ -9573,7 +9577,8 @@ Deno.serve(async (req: Request) => {
                         search_queries: pruefung.searchQueries,
                       });
                       if (!pruefung.ok) {
-                        exclude.push(...briefs.map((item) => item.name));
+                        const abgelehnt = rejectedBenchmarkNames(briefs, pruefung.grund);
+                        exclude.push(...abgelehnt);
                         letzter = new Error(pruefung.grund || "Die recherchierten Benchmarks passen nicht.");
                         continue;
                       }
@@ -9592,6 +9597,15 @@ Deno.serve(async (req: Request) => {
                   } catch (inner) {
                     letzter = inner instanceof Error ? inner : new Error(String(inner));
                   }
+                }
+                // Recherche hat drei gültige Fälle. Die Zweitprüfung darf das Memo
+                // nicht mit einer Nuance (Sortiment vs. Marke) abbrechen.
+                if (!okBriefs && letzterBriefs) {
+                  loggen("benchmarks_review_override", {
+                    reason: (letzter?.message || "").slice(0, 300),
+                    names: letzterBriefs.map((item) => item.name),
+                  });
+                  okBriefs = letzterBriefs;
                 }
                 if (!okBriefs) {
                   throw letzter || new Error("Die Benchmark-Recherche hat keine positiven Fälle geliefert.");
