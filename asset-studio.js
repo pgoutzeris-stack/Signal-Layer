@@ -588,10 +588,11 @@ const CHROME_CSS = `
 /* Platzhalter, wenn das Modell das Layout waehlt. Kein Rahmen um Leere, sondern
    eine ruhige Aussage. */
 #as-overlay .as-prev-empty{display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:8px; width:100%; height:100%; text-align:center; color:var(--muted,#475569);}
+  gap:8px; width:100%; height:100%; padding:24px 28px; text-align:center; text-wrap:balance;
+  color:var(--muted,#475569);}
 #as-overlay .as-prev-empty i{font-size:1.5rem; color:var(--brand,#206efb); opacity:.75;}
-#as-overlay .as-prev-empty b{font-size:.92rem; color:var(--ink,#0f172a);}
-#as-overlay .as-prev-empty span{font-size:.78rem;}
+#as-overlay .as-prev-empty b{font-size:.92rem; color:var(--ink,#0f172a); max-width:26ch;}
+#as-overlay .as-prev-empty span{font-size:.78rem; max-width:30ch; line-height:1.45;}
 #as-overlay .as-prev-nav{position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
   z-index:5; display:flex; align-items:center; gap:4px; padding:3px 5px; background:#fff;
   border:1px solid var(--line,#e2e8f0); border-radius:99px; box-shadow:0 6px 18px rgba(15,23,42,.12);}
@@ -1058,7 +1059,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260814-2100";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260817-0850";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -2340,7 +2341,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Kein Eingriff in die Anmutung: jedes gebaute Asset bringt seine mit, und
     // die Textfarben stehen inline im Markup. Ein Umschalten der Klasse hat
     // vorher weisse Schrift auf weissem Grund erzeugt - die Kachel sah leer aus.
-    return `<div class="as-stage as-stage--tpl" data-stage data-uid="${attr(slide.uid)}" data-variant="${attr(slide.variant)}">${html}</div>`;
+    // lang="de" ist die Bedingung für hyphens:auto. Ohne sie trennt der Browser
+    // lange Komposita nicht und der Titel läuft aus der Kachel.
+    return `<div class="as-stage as-stage--tpl" lang="de" data-stage data-uid="${attr(slide.uid)}" data-variant="${attr(slide.variant)}">${html}</div>`;
   }
 
   /** Wiederholte Bloecke: ein Eintrag je Aufzaehlung, Kennzahl oder Schritt. */
@@ -2552,8 +2555,43 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // In der Vorschau stören Bildknöpfe, dort zählt nur das Ergebnis.
       area.querySelectorAll("[data-as-chrome]").forEach((node) => node.remove());
     }
+    passeSlideTexteAn(area);
     fitStages();
     requestAnimationFrame(meldeUeberlauf);
+  }
+
+  /**
+   * Ein deutsches Kompositum ist oft breiter als die Zeile: „Markenkommunikation“
+   * lief bei 104 px aus der Kachel (17.8.2026). Erst die Schrift verkleinern,
+   * damit das Wort ganz bleibt; erst wenn das nicht reicht, trennt der Umbruch
+   * aus dem Vorlagen-CSS. Gemessen wird ohne Umbruch, sonst sieht die Zeile
+   * immer passend aus.
+   */
+  function passeSlideTexteAn(wurzel) {
+    if (isMemo || !wurzel) return;
+    wurzel.querySelectorAll(".as-stage--tpl .li").forEach((kachel) => {
+      kachel.querySelectorAll("[data-field='title'], [data-field='quote'], [data-field='stat_value']").forEach((el) => {
+        if (!String(el.textContent || "").trim()) return;
+        if (!el.dataset.asFont) {
+          const gemessen = parseFloat(getComputedStyle(el).fontSize) || 0;
+          if (!gemessen) return;
+          el.dataset.asFont = String(gemessen);
+        }
+        const start = Number(el.dataset.asFont) || 0;
+        if (!start) return;
+        el.style.fontSize = `${start}px`;
+        el.style.overflowWrap = "normal";
+        let px = start;
+        let schritte = 0;
+        const passtNicht = () => el.scrollWidth > el.clientWidth + 1 || kachel.scrollHeight > 1352;
+        while (passtNicht() && px > start * 0.7 && schritte < 30) {
+          px -= start * 0.02;
+          el.style.fontSize = `${px}px`;
+          schritte += 1;
+        }
+        el.style.overflowWrap = "";
+      });
+    });
   }
 
   /**
@@ -2633,6 +2671,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    */
   function kachelUeberlauf() {
     if (isMemo) return passeUndPruefeMemo();
+    passeSlideTexteAn(shell.querySelector("[data-stagearea]"));
     const treffer = [];
     shell.querySelectorAll("[data-stagearea] .as-stage--tpl .li").forEach((kachel, i) => {
       const ausRahmen = kachel.scrollWidth > 1082 || kachel.scrollHeight > 1352;
@@ -2683,6 +2722,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Ohne Buehne steht dort der Platzhalter - nichts einzupassen.
     if (!box || !inner || !stage) return;
     zeigeAktiveMemoSeite(box);
+    passeSlideTexteAn(box);
     legeMemoSeiteMass(stage);
     const flaeche = host || box;
     const breite = flaeche.clientWidth || 1;
@@ -3299,6 +3339,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         node.removeAttribute("spellcheck");
       });
       clone.querySelectorAll("[data-ph]").forEach((node) => node.removeAttribute("data-ph"));
+      // Die gemessene Ausgangsgröße ist Werkzeug, nicht Inhalt. Die daraus
+      // errechnete Schriftgröße bleibt als style am Element.
+      clone.querySelectorAll("[data-as-font]").forEach((node) => node.removeAttribute("data-as-font"));
       clone.querySelectorAll(".em-page.is-off").forEach((node) => node.classList.remove("is-off"));
       if (clone.classList.contains("as-stage--memo")) clone.style.height = "891mm";
       return clone.outerHTML;

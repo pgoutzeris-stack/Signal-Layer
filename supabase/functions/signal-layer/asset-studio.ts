@@ -285,12 +285,28 @@ export function withoutMarkup(value: string): string {
   return String(value || "").replace(/\*\*/g, "").replace(/~~/g, "");
 }
 
+/**
+ * Kappen ohne Wortbruch. Der harte Schnitt hat am 17.8.2026 aus
+ * "Markenkommunikation" ein "Markenkommuni" gemacht — auf der fertigen Folie.
+ * Endet der Rest mitten im Satz und bleibt ein ganzer Satz übrig, endet der
+ * Text an diesem Satz. Sonst an der letzten Wortgrenze.
+ */
 function capMarkup(value: string, max: number): string {
   if (max <= 0) return "";
   if (withoutMarkup(value).length <= max) return value;
   let out = value;
   while (out.length && withoutMarkup(out).length > max) out = out.slice(0, -1);
-  return out.replace(/(?:\*\*|~~)+$/g, "").replace(/[*~]+$/g, "").trimEnd();
+  const aufraeumen = (text: string) => text
+    .replace(/(?:\*\*|~~)+$/g, "")
+    .replace(/[*~]+$/g, "")
+    .trimEnd()
+    .replace(/[\s,;:–-]+$/g, "")
+    .trimEnd();
+  const satzEnde = /[.!?](?=[^.!?]*$)/.exec(out)?.index ?? -1;
+  const satz = satzEnde >= 0 ? out.slice(0, satzEnde + 1) : "";
+  if (withoutMarkup(satz).length >= Math.floor(max * 0.6)) return aufraeumen(satz);
+  const wort = /\s/.test(out) ? out.replace(/\s+\S*$/, "") : "";
+  return aufraeumen(wort || out);
 }
 
 function text(value: unknown, max: number): string {
@@ -1102,9 +1118,13 @@ Säulen, Wasserfall und Balken (T1, T2, T4, T5) nur, wenn der Nutzer sie gewähl
 
 function variantenBlock(keys: AssetSlideKey[], carousel: boolean): string {
   const zeilen = keys.map((key) => VARIANT_ZEILE[key]).filter(Boolean);
+  // Die genannte Grenze ist die schärfste, die eine Variante durchsetzt. Sonst
+  // liefert das Modell ein regelkonformes Feld, das die Vorlage kappt: E hat am
+  // 17.8.2026 "Markenkommunikation" bei 72 Zeichen abgeschnitten, versprochen
+  // waren 80.
   const laengen = carousel
-    ? "Beim Carousel: title höchstens 60 Zeichen, subtitle höchstens 110, takeaway höchstens 120, je Aufzählung höchstens vier Zeilen à 70 Zeichen."
-    : "Einzelbild: title höchstens 80 Zeichen, subtitle höchstens 130, takeaway höchstens 140.";
+    ? "Beim Carousel: title höchstens 60 Zeichen, subtitle höchstens 110, takeaway höchstens 120, Zitat höchstens 180, Kennzahl höchstens 16, je Aufzählung höchstens vier Zeilen à 70 Zeichen."
+    : "Einzelbild: title höchstens 72 Zeichen, subtitle höchstens 110, takeaway höchstens 140, Zitat höchstens 220, Kennzahl höchstens 16, je Aufzählungszeile höchstens 70 Zeichen.";
   return `<varianten>
 ${zeilen.join("\n\n")}
 Nur diese Varianten. Ein Feld, das die Variante nicht zeigt, ist unsichtbar — die Pointe steht im sichtbaren Feld.
@@ -1523,6 +1543,12 @@ function parseAssetAnswer(raw: unknown): Record<string, unknown> {
   }
 }
 
+/**
+ * Zehn Prozent Spielraum für Fließtext. Ohne ihn kappt die Vorlage einen
+ * regelkonformen Satz: E hat "Markenkommunikation" bei 72 Zeichen verloren.
+ */
+export const ASSET_TEXT_GRACE = 1.1;
+
 function fieldCap(variant: string, field: string, carousel: boolean): number {
   const defaults: Record<string, number> = {
     kicker: 26, title: 80, subtitle: 130, takeaway: 140, quote: 240,
@@ -1687,12 +1713,16 @@ function normalizeSlide(
   const variantRaw = text(item.variant, 4).toUpperCase();
   const variant: AssetSlideKey = isSlideKey(variantRaw) ? variantRaw : fallbackVariant;
   const cap = (field: string) => fieldCap(variant, field, carousel);
+  // Fließtext bricht um, ein paar Zeichen mehr kosten höchstens eine Zeile.
+  // Ein angeschnittener Satz kostet die Aussage, deshalb dieser Spielraum.
+  // Kicker, Kennzahl und die Beschriftungen in SVG-Formen bleiben hart.
+  const weich = (field: string) => Math.ceil(cap(field) * ASSET_TEXT_GRACE);
   const slide: AssetSlide = {
     variant,
     kicker: text(item.kicker, cap("kicker")).toUpperCase(),
-    title: capWords(text(item.title, cap("title")), 15),
-    subtitle: text(item.subtitle, cap("subtitle")),
-    quote: text(item.quote, cap("quote")),
+    title: capWords(text(item.title, weich("title")), 15),
+    subtitle: text(item.subtitle, weich("subtitle")),
+    quote: text(item.quote, weich("quote")),
     attribution: text(item.attribution, cap("attribution")),
     stat: {
       value: text(record(item.stat).value, cap("stat_value")),
@@ -1702,7 +1732,7 @@ function normalizeSlide(
       value: text(eintrag.value, cap("stat_value")),
       label: text(eintrag.label, cap("stat_label")),
     })),
-    bullets: list(item.bullets, 5, cap("bullet")),
+    bullets: list(item.bullets, 5, weich("bullet")),
     steps: (Array.isArray(item.steps) ? item.steps : []).slice(0, 5).map((entry, index) => {
       const step = record(entry);
       return {
@@ -1711,9 +1741,9 @@ function normalizeSlide(
         text: text(step.text, cap("step_text")),
       };
     }).filter((step) => step.title || step.text),
-    myth: text(item.myth, cap("myth")),
-    fact: text(item.fact, cap("fact")),
-    takeaway: text(item.takeaway, cap("takeaway")),
+    myth: text(item.myth, weich("myth")),
+    fact: text(item.fact, weich("fact")),
+    takeaway: text(item.takeaway, weich("takeaway")),
     footer_left: text(item.footer_left, cap("footer_left")),
     image_hint: text(item.image_hint, cap("image_hint")),
     slot_a: text(item.slot_a, cap("slot")),

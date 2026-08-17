@@ -338,6 +338,40 @@ test("jede Vorlage ist in sich geschlossen", async () => {
   }
 });
 
+test("der Bearbeitungsanker sitzt am Text, nicht an der Zeile mit Beiwerk", async () => {
+  const tpl = await import("../asset-templates.js");
+  // harvest() speichert innerHTML je data-field. Saß der Anker auf der ganzen
+  // Fußzeile, wanderte "roots-consultants.com" in die Quelle und klebte dort
+  // ("Ipsos AI Monitor 2026roots-consultants.com", 17.8.2026).
+  for (const [name, satz] of [["Vorlage", tpl.ASSET_TEMPLATES], ["Layout", tpl.ASSET_LAYOUTS]]) {
+    for (const [key, markup] of Object.entries(satz)) {
+      const re = /<(\w+)[^>]*\bdata-field="([a-z0-9_.]+)"[^>]*>([\s\S]*?)<\/\1>/g;
+      let treffer;
+      while ((treffer = re.exec(markup))) {
+        const [, , feld, inhalt] = treffer;
+        const nurPlatzhalter = inhalt.trim().replace(/\{\{[a-z0-9_]+\}\}/g, "").trim() === "";
+        assert.ok(nurPlatzhalter, `${name} ${key}: data-field="${feld}" umschließt fremdes Markup`);
+      }
+      // Die Domain steht rechts und gehört keinem Feld.
+      if (markup.includes("roots-consultants.com")) {
+        assert.match(markup, /<span[^>]*data-field="footer_left"[^>]*>\{\{footer_left\}\}<\/span>/);
+        assert.doesNotMatch(markup, /<div class="foot[^"]*" data-field="footer_left"/);
+      }
+    }
+  }
+  // Jede Schrittnummer zeigte eine feste 1, {{n}} landete im z-index.
+  assert.match(tpl.ASSET_TEMPLATES.I, /data-field="n">\{\{n\}\}</);
+  assert.doesNotMatch(tpl.ASSET_TEMPLATES.I, /z-index:\{\{n\}\}/);
+  // Lange Komposita brechen in der Kachel, statt über den Rand zu laufen.
+  assert.match(tpl.ASSET_TEMPLATE_CSS, /overflow-wrap:break-word;hyphens:auto/);
+  assert.match(studio, /lang="de" data-stage/);
+  assert.match(studio, /function passeSlideTexteAn/);
+  assert.match(studio, /passeSlideTexteAn\(area\)/);
+  assert.match(studio, /el\.style\.overflowWrap = "normal"/);
+  // Der Platzhalter der Vorschau braucht Luft zum Rand.
+  assert.match(studio, /\.as-prev-empty\{[^}]*padding:24px 28px/);
+});
+
 test("der Umbruch richtet sich nach dem Popup, nicht nach dem Fenster", () => {
   // Das Studio lebt im Artikel-Popup. Eine Medienabfrage auf die Fensterbreite
   // hat dort nichts zu suchen: sie stapelte die Spalten im breiten Popup.
@@ -480,6 +514,39 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
   assert.equal(backend.assetOutputTokenBudget("linkedin", carousel6), 8_000);
   assert.equal(backend.assetOutputTokenBudget("memo", memo), 6_000);
   assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 20_000);
+
+  // Gekappt wird nie mitten im Wort: "Markenkommunikation" wurde auf der
+  // fertigen Folie zu "Markenkommuni" (17.8.2026). Fließtext bekommt zehn
+  // Prozent Spielraum, sonst endet der Text am letzten ganzen Satz oder Wort.
+  assert.equal(backend.ASSET_TEXT_GRACE, 1.1);
+  const langerTitel = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    theme: "light", post_text: "Begleittext.",
+    slides: [{
+      variant: "E",
+      kicker: "CUSTOMER INSIGHTS",
+      title: "Transparenz entscheidet über das Vertrauen in KI-gestützte Markenkommunikation",
+      subtitle: "52 Prozent der Deutschen misstrauen KI-Antworten, wenn Werbetreibende Einfluss nehmen. Offenlegung wird zur Pflicht für Marken.",
+      stat: { value: "52 %", label: "misstrauen" },
+      footer_left: "Ipsos AI Monitor 2026",
+    }],
+  }), backend.normalizeAssetAnswers("linkedin", { asset_type: "single", variant: "E" }), {
+    articleText: "Ipsos AI Monitor 2026: 52 Prozent der Deutschen misstrauen KI-Antworten, wenn Werbetreibende Einfluss nehmen.",
+  }).slides[0];
+  assert.match(langerTitel.title, /Markenkommunikation$/);
+  assert.match(langerTitel.subtitle, /Einfluss nehmen\.$/);
+  for (const feld of [langerTitel.title, langerTitel.subtitle]) {
+    assert.doesNotMatch(feld, /[a-zäöüß][A-ZÄÖÜ]?$|[,;:–-]$/u.source ? /[,;:–-]\s*$/ : /$^/);
+  }
+  // Das Modell bekommt die Grenze genannt, die auch durchgesetzt wird.
+  const promptE = backend.buildAssetPrompt(
+    "linkedin",
+    { company: "Puma", topics: ["ki"] },
+    { title: "KI im Marketing", content: "52 Prozent misstrauen KI-Antworten." },
+    backend.normalizeAssetAnswers("linkedin", { asset_type: "single", variant: "E" }),
+  );
+  assert.match(promptE, /title höchstens 72 Zeichen/);
+  assert.match(promptE, /subtitle höchstens 110/);
+  assert.doesNotMatch(promptE, /title höchstens 80 Zeichen/);
 
   // Ein gezielter zweiter Versuch, solange Isolat und Kill-Grenze Platz lassen.
   // Beide Aufrufe landen im Kostenledger. Timeout wird nicht wiederholt.
@@ -1926,8 +1993,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260816-2245");
-  assert.match(indexHtml, /app\.js\?v=20260816-2245/);
+  assert.equal(studioVersion, "20260817-0850");
+  assert.match(indexHtml, /app\.js\?v=20260817-0850/);
+  assert.match(studio, /asset-templates\.js\?v=20260817-0850/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
