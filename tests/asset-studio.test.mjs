@@ -1718,6 +1718,44 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.equal(backend.worldvectorlogoSlugCandidates("Volkswagen")[0], "volkswagen-1");
   assert.match(backend.worldvectorlogoCdnUrl("volkswagen-1"), /volkswagen-1\.svg$/);
   assert.ok(backend.worldvectorlogoSlugCandidates("Audi").includes("audi-2"));
+  // "cosnova (essence & Catrice)" hat jede Quelle verfehlt: Wikidata führt das
+  // Logo unter "cosnova" (17.8.2026). Gesucht wird deshalb in Varianten.
+  assert.deepEqual(
+    backend.memoLogoNameVariants("cosnova (essence & Catrice)"),
+    ["cosnova (essence & Catrice)", "cosnova", "essence", "Catrice"],
+  );
+  assert.deepEqual(
+    backend.memoLogoNameVariants("Ritter Sport GmbH & Co. KG"),
+    ["Ritter Sport GmbH & Co. KG", "Ritter Sport", "Ritter"],
+  );
+  assert.deepEqual(backend.memoLogoNameVariants("Puma"), ["Puma"]);
+  // Das erste Wort allein holt sonst das fremde "ritter-1", obwohl
+  // "ritter-sport-1" existiert. Es kommt erst als letzte Variante dran.
+  assert.ok(!backend.worldvectorlogoSlugCandidates("Ritter Sport GmbH & Co. KG").includes("ritter-1"));
+  assert.ok(backend.worldvectorlogoSlugCandidates("Ritter Sport").includes("ritter-sport-1"));
+  // Frosta liegt auf Platz vier der Wikidata-Suche, der erste Treffer hat kein Logo.
+  assert.match(backend.wikidataSearchApiUrl("Frosta"), /limit=5/);
+  assert.match(backend.wikidataEntitiesApiUrl(["Q1", "Q2"]), /ids=Q1%7CQ2/);
+  assert.deepEqual(backend.parseWikidataSearchIds({ search: [{ id: "Q1" }, { id: "Q2" }] }), ["Q1", "Q2"]);
+  assert.equal(backend.parseWikidataLogoFromEntities({
+    entities: {
+      Q1: { claims: { P18: [{ mainsnak: { datavalue: { value: "Person.jpg" } } }] } },
+      Q2: { claims: { P154: [{ mainsnak: { datavalue: { value: "Frosta logo.svg" } } }] } },
+    },
+  }, ["Q1", "Q2"]), "Frosta logo.svg");
+  // Jeder Artikel verlinkt Commons-logo.svg, das ist das Schwesterprojekt.
+  assert.equal(backend.pickWikipediaLogoFile(
+    ["Datei:Commons-logo.svg", "Datei:Kaufland 201x logo.svg"],
+    "Kaufland",
+  ), "Kaufland 201x logo.svg");
+  assert.equal(backend.pickWikipediaLogoFile(["Datei:Commons-logo.svg"], "Sonnentor"), "");
+  assert.equal(backend.wikipediaTitleMatchesCompany("Catrin Striebeck", "Catrice"), false);
+  assert.equal(backend.wikipediaTitleMatchesCompany("Cosnova", "cosnova"), true);
+  assert.deepEqual(
+    backend.parseWikipediaPageImages({ query: { pages: { 7: { images: [{ title: "Datei:Cosnova Logo.svg" }] } } } }),
+    ["Datei:Cosnova Logo.svg"],
+  );
+  assert.match(backend.wikipediaPageImagesApiUrl("de", "Cosnova"), /prop=images/);
   assert.equal(slots[0].geminiAspect, "16:9");
   assert.equal(slots[3].geminiAspect, "3:2");
   assert.equal(backend.isAllowedMemoPhotoUrl("https://cdn.worldvectorlogo.com/logos/puma-logo.svg"), true);
@@ -1898,7 +1936,12 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(edge, /findMemoSlotScene/);
   assert.match(edge, /probeWorldvectorlogo/);
   assert.match(edge, /findMemoWikidataLogo/);
-  assert.match(edge, /parseWikidataLogoImage/);
+  assert.match(edge, /findMemoWikipediaLogo/);
+  assert.match(edge, /memoLogoNameVariants\(subject\)/);
+  assert.match(edge, /parseWikidataLogoFromEntities/);
+  // Ohne Protokoll ist beim nächsten Fehlschlag nicht zu sehen, was probiert wurde.
+  assert.match(edge, /log\?\.\("logo_source"/);
+  assert.match(edge, /log\?\.\("logo_miss"/);
   assert.match(edge, /researchWikimediaLogo/);
   assert.match(edge, /researchCompanyLogo/);
   assert.match(edge, /assetSignal\.tier1_companies/);
