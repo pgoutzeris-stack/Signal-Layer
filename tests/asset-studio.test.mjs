@@ -447,7 +447,9 @@ test("die Vorschau ist ein Kasten, Memo blaettert seitenweise", () => {
   assert.match(studio, /as-prev-host/);
   assert.match(studio, /#as-overlay \.as-prev-host\{[^}]*padding:8px 8px 18px/);
   assert.match(studio, /#as-overlay \.as-split2-prev\{[^}]*padding:0 8px 16px 0/);
-  assert.match(studio, /as-content:has\(\.as-split2\)\{overflow:hidden; padding:20px 24px 32px/);
+  assert.match(studio, /as-content:has\(\.as-split2\)\{overflow:hidden; padding:20px 24px 32px; display:flex; flex-direction:column/);
+  assert.match(studio, /#as-overlay \.as-split2\{[^}]*flex:1; min-height:0;[^}]*height:auto/);
+  assert.match(studio, /#as-overlay \.as-work\{[^}]*flex:1; min-height:0; height:auto/);
   assert.match(studio, /#as-overlay \.as-stagearea\{[^}]*padding:12px 12px 20px/);
   assert.match(studio, /function hostInnenMass/);
   assert.match(studio, /hostInnenMass\(flaeche, 240\)/);

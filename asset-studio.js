@@ -437,7 +437,7 @@ const CHROME_CSS = `
    Fenster, sondern wie eine Webseite im Fenster anfuehlte. */
 /* Unten extra Luft: die gerundete Vorschaukarte und ihr Schatten
    duerfen nicht am Signal-Layer-Rahmen anliegen und abgeschnitten werden. */
-#as-overlay .as-content:has(.as-split2){overflow:hidden; padding:20px 24px 32px;}
+#as-overlay .as-content:has(.as-split2){overflow:hidden; padding:20px 24px 32px; display:flex; flex-direction:column;}
 #as-overlay .as-content{container-type:inline-size;}
 
 #as-overlay .as-btn{
@@ -556,11 +556,11 @@ const CHROME_CSS = `
 }
 #as-overlay .as-opt input{position:absolute; opacity:0; pointer-events:none;}
 /* Fragebogen links, Vorschau rechts. Bei schmalem Popup untereinander. */
-#as-overlay .as-split2{display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:20px; align-items:stretch; height:100%; min-height:0;}
+#as-overlay .as-split2{display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:20px; align-items:stretch; flex:1; min-height:0; width:100%; height:auto;}
 #as-overlay .as-split2-form{overflow-y:auto; max-height:100%; padding-right:10px; scrollbar-width:thin;}
 #as-overlay .as-split2-form::-webkit-scrollbar{width:8px;}
 #as-overlay .as-split2-form::-webkit-scrollbar-thumb{background:var(--line,#e2e8f0); border-radius:99px;}
-#as-overlay .as-split2-prev{position:sticky; top:0; display:flex; flex-direction:column; gap:8px; height:100%; min-height:0; overflow:visible; padding:0 8px 16px 0; box-sizing:border-box;}
+#as-overlay .as-split2-prev{position:sticky; top:0; display:flex; flex-direction:column; gap:8px; min-height:0; align-self:stretch; overflow:visible; padding:0 8px 16px 0; box-sizing:border-box;}
 #as-overlay .as-prev-label{font-size:.68rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--muted,#475569);}
 /* Die Flaeche nimmt den Rest. Innenabstand haelt Radius und Schatten
    innerhalb des Hosts, damit overflow:hidden am Overlay sie nicht kappt. */
@@ -768,7 +768,7 @@ const CHROME_CSS = `
 
 #as-overlay .as-content:has(.as-work){overflow:hidden; display:flex; flex-direction:column; padding:24px 24px 32px;}
 #as-overlay .as-work{display:grid; grid-template-columns:1fr 296px; gap:20px; align-items:stretch;
-  flex:1; min-height:0; height:100%; position:relative;}
+  flex:1; min-height:0; height:auto; position:relative;}
 #as-overlay .as-work:not(:has(.as-inspector)){grid-template-columns:1fr;}
 #as-overlay .as-stagearea{display:flex; flex-direction:column; align-items:center; justify-content:center;
   min-width:0; min-height:0; height:100%; overflow:hidden; position:relative;
