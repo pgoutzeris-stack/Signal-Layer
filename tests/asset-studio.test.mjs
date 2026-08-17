@@ -445,6 +445,17 @@ test("die Vorschau ist ein Kasten, Memo blaettert seitenweise", () => {
   assert.match(studio, /#as-overlay \.as-prev-big\{[^}]*padding:0/);
   assert.match(studio, /#as-overlay \.as-prev-big\{[^}]*border:0/);
   assert.match(studio, /as-prev-host/);
+  assert.match(studio, /#as-overlay \.as-prev-host\{[^}]*padding:8px 8px 18px/);
+  assert.match(studio, /#as-overlay \.as-split2-prev\{[^}]*padding:0 8px 16px 0/);
+  assert.match(studio, /as-content:has\(\.as-split2\)\{overflow:hidden; padding:20px 24px 32px; display:flex; flex-direction:column/);
+  assert.match(studio, /#as-overlay \.as-split2\{[^}]*flex:1; min-height:0;[^}]*height:auto/);
+  assert.match(studio, /#as-overlay \.as-work\{[^}]*flex:1; min-height:0; height:auto/);
+  assert.match(studio, /#as-overlay \.as-stagearea\{[^}]*padding:12px 12px 20px/);
+  assert.match(studio, /function hostInnenMass/);
+  assert.match(studio, /hostInnenMass\(flaeche, 240\)/);
+  assert.match(studio, /hostInnenMass\(area, 0\)/);
+  assert.match(studio, /#as-overlay \.as-prev-big\{[^}]*border-radius:14px/);
+  assert.match(studio, /#as-overlay \.as-scaler\{[^}]*border-radius:14px/);
   assert.match(studio, /\.em-page\.is-off\{display:none/);
   assert.match(studio, /\.as-frame\.is-off\{display:none/);
   assert.match(studio, /wort = isMemo \? "Seite"/);
@@ -1993,9 +2004,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260817-0850");
-  assert.match(indexHtml, /app\.js\?v=20260817-0850/);
-  assert.match(studio, /asset-templates\.js\?v=20260817-0850/);
+  assert.equal(studioVersion, "20260817-1210");
+  assert.match(indexHtml, /app\.js\?v=20260817-1210/);
+  assert.match(studio, /asset-templates\.js\?v=20260817-1210/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);

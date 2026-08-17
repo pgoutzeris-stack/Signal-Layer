@@ -435,7 +435,9 @@ const CHROME_CSS = `
 /* Im Fragebogen scrollt ausschliesslich die Antwortspalte. Ein zweiter
    Scrollbereich in der Mitte war der Grund, dass sich das Studio nicht wie ein
    Fenster, sondern wie eine Webseite im Fenster anfuehlte. */
-#as-overlay .as-content:has(.as-split2){overflow:hidden; padding:20px 24px 24px;}
+/* Unten extra Luft: die gerundete Vorschaukarte und ihr Schatten
+   duerfen nicht am Signal-Layer-Rahmen anliegen und abgeschnitten werden. */
+#as-overlay .as-content:has(.as-split2){overflow:hidden; padding:20px 24px 32px; display:flex; flex-direction:column;}
 #as-overlay .as-content{container-type:inline-size;}
 
 #as-overlay .as-btn{
@@ -535,6 +537,7 @@ const CHROME_CSS = `
 }
 
 #as-overlay .as-prev-host{overflow:visible;}
+#as-overlay .as-split2-prev{overflow:visible;}
 #as-overlay .as-stagearea.is-zoom{overflow:auto; justify-content:flex-start; align-items:flex-start;}
 
 #as-overlay .as-form{max-width:none; display:flex; flex-direction:column; gap:0;}
@@ -553,14 +556,15 @@ const CHROME_CSS = `
 }
 #as-overlay .as-opt input{position:absolute; opacity:0; pointer-events:none;}
 /* Fragebogen links, Vorschau rechts. Bei schmalem Popup untereinander. */
-#as-overlay .as-split2{display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:20px; align-items:stretch; height:100%; min-height:0;}
+#as-overlay .as-split2{display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:20px; align-items:stretch; flex:1; min-height:0; width:100%; height:auto;}
 #as-overlay .as-split2-form{overflow-y:auto; max-height:100%; padding-right:10px; scrollbar-width:thin;}
 #as-overlay .as-split2-form::-webkit-scrollbar{width:8px;}
 #as-overlay .as-split2-form::-webkit-scrollbar-thumb{background:var(--line,#e2e8f0); border-radius:99px;}
-#as-overlay .as-split2-prev{position:sticky; top:0; display:flex; flex-direction:column; gap:8px; height:100%; min-height:0;}
+#as-overlay .as-split2-prev{position:sticky; top:0; display:flex; flex-direction:column; gap:8px; min-height:0; align-self:stretch; overflow:visible; padding:0 8px 16px 0; box-sizing:border-box;}
 #as-overlay .as-prev-label{font-size:.68rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--muted,#475569);}
-/* Die Flaeche nimmt den Rest, die Kachel selbst ist genau das Asset. */
-#as-overlay .as-prev-host{flex:1 1 auto; min-height:0; width:100%; display:flex; align-items:center; justify-content:center; position:relative;}
+/* Die Flaeche nimmt den Rest. Innenabstand haelt Radius und Schatten
+   innerhalb des Hosts, damit overflow:hidden am Overlay sie nicht kappt. */
+#as-overlay .as-prev-host{flex:1 1 auto; min-height:0; width:100%; display:flex; align-items:center; justify-content:center; position:relative; padding:8px 8px 18px; box-sizing:border-box;}
 #as-overlay .as-prev-big{max-width:100%; max-height:100%; min-height:0;
   box-sizing:border-box; display:flex; align-items:flex-start; justify-content:flex-start;
   overflow:hidden; padding:0; border:0; border-radius:14px; background:#fff; position:relative;
@@ -762,12 +766,13 @@ const CHROME_CSS = `
 #as-overlay .as-error strong{font-size:14px; color:var(--danger,#dc2626);}
 #as-overlay .as-error p{margin:0; font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word;}
 
-#as-overlay .as-content:has(.as-work){overflow:hidden; display:flex; flex-direction:column;}
+#as-overlay .as-content:has(.as-work){overflow:hidden; display:flex; flex-direction:column; padding:24px 24px 32px;}
 #as-overlay .as-work{display:grid; grid-template-columns:1fr 296px; gap:20px; align-items:stretch;
-  flex:1; min-height:0; height:100%; position:relative;}
+  flex:1; min-height:0; height:auto; position:relative;}
 #as-overlay .as-work:not(:has(.as-inspector)){grid-template-columns:1fr;}
 #as-overlay .as-stagearea{display:flex; flex-direction:column; align-items:center; justify-content:center;
-  min-width:0; min-height:0; height:100%; overflow:hidden; position:relative;}
+  min-width:0; min-height:0; height:100%; overflow:hidden; position:relative;
+  padding:12px 12px 20px; box-sizing:border-box;}
 #as-overlay .as-frame{width:auto; max-width:100%; display:flex; flex-direction:column; gap:8px; align-items:center; position:relative;}
 #as-overlay .as-frame.is-off{display:none !important;}
 #as-overlay .as-scaler{position:relative; margin:0 auto; overflow:hidden; border-radius:14px;
@@ -1059,7 +1064,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260817-0850";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260817-1210";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -2713,6 +2718,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   // Die Bühne hat feste Maße; erst der Maßstab bringt sie in die Fläche.
+  /** Innenmaß eines Hosts: clientWidth enthält Padding, das darf die Karte nicht füllen. */
+  function hostInnenMass(el, minH = 40) {
+    if (!el) return { breite: 1, hoehe: minH };
+    const s = getComputedStyle(el);
+    const padX = (parseFloat(s.paddingLeft) || 0) + (parseFloat(s.paddingRight) || 0);
+    const padY = (parseFloat(s.paddingTop) || 0) + (parseFloat(s.paddingBottom) || 0);
+    return {
+      breite: Math.max(40, (el.clientWidth || 0) - padX),
+      hoehe: Math.max(minH, (el.clientHeight || 0) - padY),
+    };
+  }
+
   /** Passt die grosse Vorschau in ihre Spalte ein. Gleiche Rechnung wie fitStages. */
   function fitPreview() {
     const box = shell.querySelector("[data-livepreview]");
@@ -2725,8 +2742,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     passeSlideTexteAn(box);
     legeMemoSeiteMass(stage);
     const flaeche = host || box;
-    const breite = flaeche.clientWidth || 1;
-    const hoehe = Math.max(flaeche.clientHeight || 0, 240);
+    const { breite, hoehe } = hostInnenMass(flaeche, 240);
     const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
     const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
     const faktor = Math.min(breite / w, hoehe / h);
@@ -2746,8 +2762,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const area = shell.querySelector("[data-stagearea]");
     if (!area) return;
     zeigeAktiveFolie();
-    const availW = Math.max(240, area.clientWidth);
-    const availH = Math.max(0, area.clientHeight);
+    const { breite: availW, hoehe: availH } = hostInnenMass(area, 0);
+    const safeW = Math.max(240, availW);
     area.querySelectorAll(".as-scaler").forEach((scaler) => {
       const stage = scaler.querySelector(".as-stage");
       if (!stage) return;
@@ -2756,8 +2772,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
       const zoom = Math.max(1, Number(state.viewZoom) || 1);
       const base = availH > 80
-        ? Math.min(1, availW / w, availH / h)
-        : Math.min(1, availW / w);
+        ? Math.min(1, safeW / w, availH / h)
+        : Math.min(1, safeW / w);
       const scale = base * zoom;
       scaler.style.width = `${Math.round(w * scale)}px`;
       scaler.style.height = `${Math.round(h * scale)}px`;
