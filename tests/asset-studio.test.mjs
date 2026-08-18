@@ -7,6 +7,7 @@ const memoTpl = readFileSync(new URL("../memo-template.js", import.meta.url), "u
 const appJs = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const edge = readFileSync(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
+const backendSource = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
 const templates = readFileSync(new URL("../asset-templates.js", import.meta.url), "utf8");
 const backend = await import("../supabase/functions/signal-layer/asset-studio.ts");
 
@@ -243,12 +244,16 @@ test("die Vorlagen sind das Markup der echten Assets", async () => {
   assert.match(tpl.ASSET_TEMPLATE_CSS, /\.li\{width:1080px;height:1350px/);
   assert.doesNotMatch(tpl.ASSET_TEMPLATE_CSS, /@page/);
   assert.ok(tpl.ASSET_TEMPLATE_CSS.length < 4000, "CSS zu gross, vermutlich Fremdstile mitgenommen");
+  assert.match(tpl.ASSET_LAYOUT_CSS, /\.ttl\{font-size:54px/);
+  assert.match(tpl.ASSET_LAYOUT_CSS, /\.info svg\{[^}]*max-height:690px/);
+  assert.match(tpl.ASSET_LAYOUT_CSS, /\.chart\{height:520px/);
+  assert.match(tpl.ASSET_LAYOUT_CSS, /\.take p\{font-size:24px/);
 });
 
 test("Vorschau und fertiges Asset benutzen denselben Weg", () => {
   // Zwei getrennte Renderpfade waren der Fehler davor: die Vorschau konnte
   // etwas anderes zeigen als das Ergebnis.
-  assert.match(studio, /import \{ ASSET_TEMPLATE_CSS, ASSET_TEMPLATES[^}]*\} from "\.\/asset-templates\.js/);
+  assert.match(studio, /import \{ ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES[^}]*\} from "\.\/asset-templates\.js/);
   assert.match(studio, /function slideHtml\(slide, editable = true\)/);
   assert.match(studio, /function livePreviewHtml\(\)/);
   assert.match(studio, /slideHtml\(demoSlide\(variante\), false\)/);
@@ -263,6 +268,22 @@ test("Vorschau und fertiges Asset benutzen denselben Weg", () => {
   const end = studio.indexOf("\n  function ", start + 20);
   const vorschauBlock = studio.slice(start, end);
   assert.doesNotMatch(vorschauBlock, /api\(/);
+  assert.match(studio, /<main id="as-overlay">\n\$\{stages\}\$\{post\}\n<\/main>/);
+  assert.match(studio, /ASSET_TEMPLATE_CSS}\\n\$\{ASSET_LAYOUT_CSS}/);
+  assert.match(studio, /font-awesome\/6\.5\.1\/css\/all\.min\.css/);
+});
+
+test("Zitatfolien zeigen die Person und alle Vorlagen haben feste Textkapazitäten", async () => {
+  assert.match(studio, /function ergaenzeZitatQuelle\(html, slide\)/);
+  assert.match(studio, /data-field="attribution"/);
+  assert.deepEqual(backend.ASSET_VISIBLE_FIELDS.A, ["kicker", "quote", "attribution", "footer_left"]);
+  assert.ok(backend.ASSET_VISIBLE_FIELDS.J.includes("attribution"));
+  const promptB = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
+    backend.normalizeAssetAnswers("linkedin", { variant: "B" }));
+  assert.match(promptB, /Zweizeilen-Statement, höchstens 48 Zeichen/);
+  const promptK = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
+    backend.normalizeAssetAnswers("linkedin", { variant: "K" }));
+  assert.match(promptK, /höchstens 2 Zeilen\/50 Zeichen/);
 });
 
 test("Entwurf erzeugen ist verdrahtet und der Vorschautitel nimmt die Firma auf", async () => {
@@ -433,7 +454,7 @@ test("das durchgestrichene Wort steht im Text, nicht im Layout", () => {
   // der Text es mit Tilden, und der Renderer macht daraus die Auszeichnung.
   assert.match(studio, /function markiere\(text\)/);
   assert.match(studio, /text-decoration:line-through/);
-  assert.match(studio, /~~Tools~~/);
+  assert.match(studio, /~~Content~~/);
   const prompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
     backend.normalizeAssetAnswers("linkedin", { variant: "K" }));
   assert.match(prompt, /~~Tilden~~/);
@@ -1248,7 +1269,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.18");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.19");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -1275,12 +1296,12 @@ test("Tilden und Sterne zählen nicht gegen die Zeichenschwelle", () => {
   const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
     slides: [{
       variant: "K", kicker: "HANDELN",
-      title: "Nicht ~~Umsatz~~, sondern Verantwortung entscheidet über BNPL",
+      title: "Nicht ~~Umsatz~~, sondern Verantwortung führt",
       takeaway: "Jetzt die Risiken prüfen", footer_left: "ROOTS",
     }],
   }), backend.normalizeAssetAnswers("linkedin", { asset_type: "single" }));
-  assert.match(payload.slides[0].title, /BNPL/);
-  assert.ok(backend.withoutMarkup(payload.slides[0].title).length <= 60);
+  assert.match(payload.slides[0].title, /führt/);
+  assert.ok(backend.withoutMarkup(payload.slides[0].title).length <= 55);
 });
 
 test("unsichtbare Felder einer Variante bleiben leer", () => {
@@ -1335,7 +1356,7 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   assert.match(memo.about_fit, /360/);
 });
 
-test("Prompt v1.18 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
+test("Prompt v1.19 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -1429,6 +1450,33 @@ test("Infografik ohne gefüllte Slots ist ein Fehler, nicht still B", () => {
   }), t3, { articleText: "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen." });
   assert.equal(t3ok.slides[0].variant, "T3");
   assert.equal(t3ok.slides[0].stats.length, 3);
+});
+
+test("feste Diagrammplätze werden vollständig gefüllt und nicht überzeichnet", () => {
+  const s2 = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{
+      variant: "S2", kicker: "MARKETING", title: "Vier Stufen führen die Marke",
+      subtitle: "Vom Einzelkontakt zum System", takeaway: "Eine Logik führt",
+      steps: [
+        { title: "Leitidee", text: "unsichtbar" }, { title: "System", text: "unsichtbar" },
+        { title: "Kanäle", text: "unsichtbar" }, { title: "Maßnahmen", text: "unsichtbar" },
+        { title: "Zu viel", text: "darf nicht bleiben" },
+      ], footer_left: "ROOTS",
+    }],
+  }), backend.normalizeAssetAnswers("linkedin", { variant: "S2" }));
+  assert.equal(s2.slides[0].steps.length, 4);
+  assert.ok(s2.slides[0].steps.every((step) => step.text === ""));
+
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{
+      variant: "S3", kicker: "MARKETING", title: "Das Strategiehaus",
+      subtitle: "Drei Säulen", takeaway: "Ein Fundament", slot_a: "Versprechen",
+      slot_center: "Wachstum", steps: [{ title: "A" }, { title: "B" }, { title: "C" }],
+      footer_left: "ROOTS",
+    }],
+  }), backend.normalizeAssetAnswers("linkedin", { variant: "S3" })), /slot_b/);
+  assert.match(backendSource, /T3: \{ stats: 3, slots: \["slot_center"\] \}/);
+  assert.match(backendSource, /L: \{ bullets: 3 \}/);
 });
 
 test("Infografik-Zeichnungen tragen Platzhalter statt Beispielzahlen", async () => {
@@ -2014,9 +2062,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260818-2110");
-  assert.match(indexHtml, /app\.js\?v=20260818-2110/);
-  assert.match(studio, /asset-templates\.js\?v=20260818-2110/);
+  assert.equal(studioVersion, "20260818-2131");
+  assert.match(indexHtml, /app\.js\?v=20260818-2131/);
+  assert.match(studio, /asset-templates\.js\?v=20260818-2131/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2567,9 +2615,12 @@ test("Formatwahl und jede Folienauswahl haben echte Vorschauen", () => {
   assert.match(studio, /frame-pick[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
   assert.match(studio, /content-add[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
   assert.match(studio, /transform:scale\(\.037\)/);
-  assert.match(studio, /slot_center: "Fokus"/);
-  assert.match(studio, /\{ value: "54 %", label: "Zielwert" \}/);
-  assert.match(studio, /\{ n: "4", title: "Skalierung"/);
+  assert.match(studio, /slot_center: "Wachstum"/);
+  assert.match(studio, /\{ value: "203", label: "2030" \}/);
+  assert.match(studio, /\{ n: "Woche 4", title: "Aktivierung"/);
+  assert.match(studio, /function svgFeldBreite\(variant, pfad\)/);
+  assert.match(studio, /getComputedTextLength\(\) > breite/);
+  assert.match(studio, /function textZeilenAnzahl\(el\)/);
 });
 
 test("Hell und Dunkel steuern Vorschau, Modell und fertige Carousel-Rahmen", async () => {

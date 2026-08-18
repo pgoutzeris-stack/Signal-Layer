@@ -1,12 +1,33 @@
-// Vorlagen der LinkedIn-Assets. Markup und CSS stammen unveraendert aus den
-// bereits gebauten ROOTS-Einzelposts (KI-im-Marketing/LinkedIn/Single-Posts);
-// nur die Inhalte sind durch Platzhalter ersetzt. Erzeugt von
-// scratchpad/gen-templates.py - Aenderungen dort vornehmen, nicht hier.
+// Vorlagen der LinkedIn-Assets. Das Grundmarkup stammt aus den gebauten
+// ROOTS-Einzelposts; gemeinsame Regeln darunter sichern auch die später
+// ergänzten Diagramm- und Modellfolien im selben 1080×1350-Raster.
 //
 // Platzhalter: {{feld}} wird ersetzt, [data-field] macht das Element in der
 // Werkbank bearbeitbar, <!--repeat:x--> wiederholt den Block je Eintrag.
 
 export const ASSET_TEMPLATE_CSS = "#as-overlay .as-stage--tpl{--brand:#206efb;\n    --brand-dark:#165fd9;\n    --brand-light:#eff6ff;\n    --ink:#0f172a;\n    --muted:#475569;\n    --extra-muted:#8899a6;\n    --bg:#ffffff;\n    --line:#e2e8f0;\n    --status-bg:#f8fafc;\n    --status-text:#334155;\n    --shadow-card:0 6px 20px rgba(15,23,42,.08);\n    --shadow-marker:0 6px 16px rgba(32,110,251,.4);\n    --tl-gradient:linear-gradient(90deg,#e2e8f0 0%,#dbe7ff 25%,#c8dcff 50%,#b4d0ff 75%,#9ec0ff 100%);}\n#as-overlay .as-stage--tpl *{box-sizing:border-box;margin:0;padding:0;}\n#as-overlay .as-stage--tpl{background:#fff;}\n#as-overlay .as-stage--tpl .li{width:1080px;height:1350px;position:relative;overflow:hidden;background:#fff;\n      font-family:'Circular Std',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;}\n#as-overlay .as-stage--tpl .pad{position:absolute;inset:0;padding:84px;display:flex;flex-direction:column;z-index:2;}\n#as-overlay .as-stage--tpl .logo{height:38px;}\n#as-overlay .as-stage--tpl .logo.neg{filter:brightness(0) invert(1);}\n#as-overlay .as-stage--tpl .top{display:flex;justify-content:space-between;align-items:center;}\n#as-overlay .as-stage--tpl .kick{font-size:21px;font-weight:700;text-transform:uppercase;letter-spacing:3px;color:var(--brand);}\n#as-overlay .as-stage--tpl .kick.neg{color:#6ea3ff;}\n#as-overlay .as-stage--tpl .kick.white{color:#fff;}\n#as-overlay .as-stage--tpl .rule{width:96px;height:7px;border-radius:999px;background:var(--brand);margin:0 0 30px;}\n#as-overlay .as-stage--tpl .foot{display:flex;justify-content:space-between;align-items:center;font-size:20px;color:var(--muted);font-weight:700;}\n#as-overlay .as-stage--tpl .foot.neg{color:rgba(255,255,255,.72);}\n#as-overlay .as-stage--tpl .foot .dom{color:var(--brand);}\n#as-overlay .as-stage--tpl .foot.neg .dom{color:#6ea3ff;}\n#as-overlay .as-stage--tpl .li-dark{background:#0b1f45;}\n#as-overlay .as-stage--tpl .li-brandlight{background:var(--brand-light);}\n#as-overlay .as-stage--tpl .ov{position:absolute;inset:0;z-index:1;}\n#as-overlay .as-stage--tpl .mid{flex:1;display:flex;flex-direction:column;justify-content:center;}\n#as-overlay .as-stage--tpl .msg{background:var(--brand-light);border:1px solid #cfe0fd;border-radius:18px;padding:26px 30px;display:flex;align-items:center;gap:18px;}\n#as-overlay .as-stage--tpl .msg i{color:var(--brand);font-size:30px;flex:0 0 auto;}\n#as-overlay .as-stage--tpl .msg p{margin:0;font-size:25px;line-height:1.35;color:var(--ink);font-weight:500;}\n#as-overlay .as-stage--tpl .msg b{color:var(--brand-dark);}\n/* Deutsche Komposita sind laenger als die Zeile. Ohne Umbruch laeuft\n   \"Markenkommunikation\" bei 104 px aus der Kachel (17.8.2026). */\n#as-overlay .as-stage--tpl .li h1,\n#as-overlay .as-stage--tpl .li p,\n#as-overlay .as-stage--tpl .li .ttl,\n#as-overlay .as-stage--tpl .li .sub,\n#as-overlay .as-stage--tpl .li [data-field]{overflow-wrap:break-word;hyphens:auto;}";
+
+// S1-S4 und T1-T6 verwenden diese gemeinsamen Layoutklassen. Ohne sie fallen
+// Titel und Einordnung auf die Browser-Standardschrift zurück und Diagramme
+// verlieren ihren vertikalen Rhythmus.
+export const ASSET_LAYOUT_CSS = `
+#as-overlay .as-stage--tpl .ttl{font-size:54px;line-height:1.04;font-weight:700;letter-spacing:-1.5px;color:var(--ink);margin-top:42px;max-width:900px;}
+#as-overlay .as-stage--tpl .ttl.neg{color:#fff;}
+#as-overlay .as-stage--tpl .sub{font-size:27px;line-height:1.36;color:var(--muted);margin-top:16px;max-width:840px;}
+#as-overlay .as-stage--tpl .sub.neg{color:#c3d3f0;}
+#as-overlay .as-stage--tpl .info{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;margin:18px 0 16px;}
+#as-overlay .as-stage--tpl .info svg{display:block;width:100%;height:100%;max-height:690px;overflow:visible;}
+#as-overlay .as-stage--tpl .ey{font-size:19px;line-height:1.2;font-weight:700;text-transform:uppercase;letter-spacing:2.4px;color:var(--brand);margin-top:32px;}
+#as-overlay .as-stage--tpl .chart{height:520px;min-height:420px;display:flex;align-items:center;margin:18px 0 12px;}
+#as-overlay .as-stage--tpl .chart svg{display:block;width:100%;height:100%;overflow:visible;}
+#as-overlay .as-stage--tpl .take{background:var(--brand-light);border:1px solid #cfe0fd;border-radius:18px;padding:22px 28px;display:flex;align-items:flex-start;gap:16px;margin:8px 0 26px;}
+#as-overlay .as-stage--tpl .take i{color:var(--brand);font-size:28px;line-height:1.2;flex:0 0 auto;}
+#as-overlay .as-stage--tpl .take p{font-size:24px;line-height:1.34;color:var(--ink);font-weight:500;}
+#as-overlay .as-stage--tpl .take p b{color:var(--brand-dark);}
+#as-overlay .as-stage--tpl .msg.neg{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);}
+#as-overlay .as-stage--tpl .msg.neg i{color:#6ea3ff;}
+#as-overlay .as-stage--tpl .msg.neg p{color:#fff;}
+#as-overlay .as-stage--tpl .msg.neg p b{color:#fff;}`;
 
 export const ASSET_TEMPLATES = {
   A: "<div class=\"li li-dark\"><div class=\"pad\"> <div class=\"top\"><img class=\"logo neg\" src=\"{{logo}}\"><span class=\"kick neg\" data-field=\"kicker\">{{kicker}}</span></div> <div class=\"mid\"><div style=\"font-size:150px;line-height:.6;color:#5a9bff;font-weight:700;height:70px;\">&ldquo;</div> <p style=\"font-size:60px;line-height:1.22;font-weight:700;color:#fff;letter-spacing:-1px;\" data-field=\"quote\">{{quote}}</p></div> <div><div class=\"rule\" style=\"background:#5a9bff;\"></div><div class=\"foot neg\"><span data-field=\"footer_left\">{{footer_left}}</span><span class=\"dom\">{{domain}}</span></div></div> </div></div>",

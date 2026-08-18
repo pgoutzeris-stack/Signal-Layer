@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.18";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.19";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -1089,7 +1089,7 @@ export const ASSET_VISIBLE_FIELDS: Record<string, readonly string[]> = {
   U2: ["kicker", "title", "subtitle", "footer_left"],
   U3: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
   U4: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
-  A: ["kicker", "quote", "footer_left"],
+  A: ["kicker", "quote", "attribution", "footer_left"],
   B: ["kicker", "title", "subtitle", "footer_left"],
   C: ["kicker", "title", "subtitle", "footer_left", "image_hint"],
   D: ["kicker", "title", "subtitle", "footer_left", "image_hint"],
@@ -1098,7 +1098,7 @@ export const ASSET_VISIBLE_FIELDS: Record<string, readonly string[]> = {
   G: ["kicker", "myth", "fact", "footer_left"],
   H: ["kicker", "stats", "footer_left"],
   I: ["kicker", "title", "steps", "footer_left"],
-  J: ["kicker", "quote", "footer_left", "image_hint"],
+  J: ["kicker", "quote", "attribution", "footer_left", "image_hint"],
   K: ["kicker", "title", "takeaway", "footer_left"],
   L: ["kicker", "stat", "title", "stat_label", "bullets", "takeaway", "footer_left"],
   S1: ["kicker", "title", "subtitle", "takeaway", "footer_left", "slot_a", "slot_b", "slot_c", "slot_center"],
@@ -1244,6 +1244,37 @@ Greift wenn: der Artikel vier aufeinanderfolgende Phasen hergibt.
 Nicht wählen wenn: die Phasen nicht belegt sind; dann I.`,
 };
 
+/** Sichtbare Kapazität statt theoretischer JSON-Länge. Diese Regeln stehen im
+ *  Prompt und werden durch fieldCap plus die feste Slotzahl abgesichert. */
+const VARIANT_FORMAT: Record<string, string> = {
+  U1: "title höchstens 2 Zeilen/56 Zeichen; subtitle höchstens 2 Zeilen/96 Zeichen.",
+  U2: "title höchstens 2 Zeilen/56 Zeichen; subtitle höchstens 2 Zeilen/96 Zeichen.",
+  U3: "title höchstens 2 Zeilen/52 Zeichen; subtitle höchstens 2 Zeilen/88 Zeichen; CTA höchstens 42 Zeichen.",
+  U4: "title höchstens 2 Zeilen/52 Zeichen; subtitle höchstens 2 Zeilen/88 Zeichen; CTA höchstens 42 Zeichen.",
+  A: "quote höchstens 4 kurze Zeilen/110 Zeichen; attribution eine Zeile/60 Zeichen.",
+  B: "title ist ein Zweizeilen-Statement, höchstens 48 Zeichen; subtitle höchstens 3 kurze Zeilen/115 Zeichen.",
+  C: "title höchstens 3 Zeilen/46 Zeichen; subtitle höchstens 3 Zeilen/100 Zeichen; linke Textfläche frei halten.",
+  D: "title höchstens 3 Zeilen/62 Zeichen; subtitle höchstens 2 Zeilen/96 Zeichen.",
+  E: "stat.value eine Zeile/16 Zeichen; title höchstens 2 Zeilen/72 Zeichen; subtitle höchstens 2 Zeilen/110 Zeichen.",
+  F: "title höchstens 2 Zeilen/58 Zeichen; 3–5 bullets, je höchstens 2 kurze Zeilen/70 Zeichen.",
+  G: "myth und fact je höchstens 3 Zeilen/130 Zeichen.",
+  H: "2–4 Kennzahlen; value je eine kurze Zeile/16 Zeichen, label höchstens 2 Zeilen/80 Zeichen.",
+  I: "title höchstens 2 Zeilen/58 Zeichen; 3–5 Schritte; Stufentitel eine kurze Zeile, Text höchstens 2 Zeilen.",
+  J: "quote höchstens 4 kurze Zeilen/110 Zeichen; attribution eine Zeile/60 Zeichen.",
+  K: "title ist ein kompaktes Statement mit genau einer Streichung, höchstens 2 Zeilen/50 Zeichen; takeaway höchstens 2 Zeilen/110 Zeichen.",
+  L: "eine Kennzahl, title höchstens 2 Zeilen, genau 3 kurze bullets und ein takeaway mit höchstens 2 Zeilen.",
+  S1: "title/subtitle je höchstens 2 Zeilen; vier Diagramm-Slots je höchstens 18 Zeichen.",
+  S2: "genau 4 Stufentitel, jeder höchstens 18 Zeichen; kein step.text, weil es nicht gezeichnet wird.",
+  S3: "genau 3 Säulen; Säulentitel höchstens 16, Säulentext höchstens 18 Zeichen; Dach und Fundament kurz halten.",
+  S4: "genau 5 Stufen; title je höchstens 14, text je höchstens 12 Zeichen.",
+  T1: "3–7 Zeitpunkte; value höchstens 8 und label höchstens 8 Zeichen.",
+  T2: "genau 3 Balken: Ausgang, Veränderung, Ergebnis; value höchstens 12, label höchstens 14 Zeichen.",
+  T3: "genau 3 Anteile plus Mitte; value höchstens 10, label höchstens 18, Mitte höchstens 10 Zeichen.",
+  T4: "4–5 vergleichbare Balken; value höchstens 10, label höchstens 20 Zeichen.",
+  T5: "genau 5 Funnelstufen; value höchstens 12, label höchstens 20 Zeichen.",
+  T6: "genau 4 Phasen; Zeit höchstens 12, Titel höchstens 14, Text höchstens 18 Zeichen.",
+};
+
 /** Auto ohne Foto (Datei fehlt) und ohne Balken, deren Höhe nicht mitgeht. */
 export const ASSET_AUTO_TEXT_KEYS = ["A", "B", "E", "F", "G", "H", "I", "K", "L"] as const;
 /** Donut-Anteile: Labels füllbar, Geometrie fest — nur bei drei belegten Zahlen. */
@@ -1284,7 +1315,7 @@ export function allowedSlideKeys(answers: LinkedinAnswers, articleText = ""): As
 
 const ASSETTYP_BRIEFING = `<assettypen>
 LinkedIn Einzelbild: eine These, ein Gedanke. Genau ein sichtbares Feld trägt die Pointe. Foto-Layouts C, D und J nur, wenn der Nutzer sie gewählt hat; die Datei kommt vom Nutzer.
-LinkedIn Karussell: Folge von Gedanken, keine Wiederholung. Erste Folie setzt die These. Jede mittlere Folie einen Beleg oder Gegensatz. Dieselbe Ziffer darf nicht auf zwei Folien die Pointe tragen. Letzte Folie den Aufruf im sichtbaren Feld (F, I oder K passen oft).
+LinkedIn Karussell: eine zusammenhängende, mobile Geschichte statt einer Sammlung einzelner Poster. Erste Folie setzt eine konkrete These und einen Grund zum Weiterwischen. Jede mittlere Folie beantwortet genau eine nächste Frage: Kontext, Beleg, Mechanik oder Konsequenz. Keine Wiederholung und keine überleitungslose Themenänderung. Jede Folie muss allein verständlich sein und zugleich logisch zur nächsten führen. Dieselbe Ziffer darf nicht auf zwei Folien die Pointe tragen. Letzte Folie bündelt den Nutzen und nennt genau einen klaren Handlungsaufruf.
 Ansprache: immer dasselbe Executive Memo, drei Seiten. Kein internes Vermerk, keine Optionsmatrix. Der rote Faden ist roots_anschluss plus roots_leistung: welche Herausforderung ROOTS hier wirklich bearbeitet. Das Signal ist der Anlass, nicht die Geschichte. Cover = Action Title dieser Herausforderung, nicht der Leistungsname, nicht die Nachricht. Seite 2 belegt denselben Hebel mit Markt und drei Benchmarks, die ihn schon gezogen haben. Seite 3 macht ihn für den Adressaten konkret. Die ROOTS-Leistung selbst steht erst in about_fit.
 </assettypen>`;
 
@@ -1297,7 +1328,9 @@ Säulen, Wasserfall und Balken (T1, T2, T4, T5) nur, wenn der Nutzer sie gewähl
 </leitkennzahl>`;
 
 function variantenBlock(keys: AssetSlideKey[], carousel: boolean): string {
-  const zeilen = keys.map((key) => VARIANT_ZEILE[key]).filter(Boolean);
+  const zeilen = keys
+    .map((key) => VARIANT_ZEILE[key] ? `${VARIANT_ZEILE[key]}\nFormat: ${VARIANT_FORMAT[key]}` : "")
+    .filter(Boolean);
   // Die genannte Grenze ist die schärfste, die eine Variante durchsetzt. Sonst
   // liefert das Modell ein regelkonformes Feld, das die Vorlage kappt: E hat am
   // 17.8.2026 "Markenkommunikation" bei 72 Zeichen abgeschnitten, versprochen
@@ -1478,8 +1511,8 @@ ${variantenBlock(erlaubt, carousel)}
 ${LEITKENNZAHL}
 <aufbau>
 kicker: Versalien, höchstens 26 Zeichen. Das THEMA der Artikelfamilie, oben rechts wie in den ROOTS-Mustern. Vorgabe für alle Folien dieses Posts: ${thema}. Höchstens eine kurze Unterzeile derselben Familie (zum Beispiel THEMA / UNTERTHEMA), niemals ein neuer Begriff je Folie. NIE den Firmennamen des Zielkunden, NIE die Marke aus unternehmen.
-title: die These des Slides, ein Verb, höchstens 15 Wörter.
-subtitle: trägt ein Argument, nicht die Wiederholung des Titels.
+title: die These des Slides, ein Verb, höchstens 15 Wörter und zusätzlich innerhalb der schärferen Zeichen- und Zeilengrenze der gewählten Variante. Nicht erst im letzten Wort verständlich werden.
+subtitle: trägt ein Argument, nicht die Wiederholung des Titels, und bleibt innerhalb der Zeilengrenze der Variante.
 takeaway: nur bei Varianten, die es zeichnen (K, L, S, T). Sonst die Pointe ins sichtbare Feld.
 footer_left: unten links. ${privat ? `${absender ? `Immer „${absender}“` : "Immer"} oder die belegte Artikelquelle` : "Immer „ROOTS Consultants“ oder die belegte Artikelquelle"}. NIE den Zielkunden. Die Domain rechts ist fest.
 image_hint: das Bildmotiv in Worten, nur bei C, D und J.
@@ -1627,10 +1660,10 @@ export const ASSET_SCHEMA_LINKEDIN = {
         properties: {
           variant: { type: "STRING", enum: [...ASSET_SLIDE_KEYS] },
           kicker: { type: "STRING", description: "Versalien, höchstens 26 Zeichen." },
-          title: { type: "STRING", description: "These mit Verb, höchstens 15 Wörter." },
-          subtitle: { type: "STRING", description: "Eigenes Argument, nicht die Wiederholung des Titels." },
-          quote: { type: "STRING", description: "Nur bei A und J: wörtliches Zitat aus dem Artikel." },
-          attribution: { type: "STRING", description: "Nur bei A: Person und Rolle des Zitats." },
+          title: { type: "STRING", description: "These mit Verb. Die schärfere Zeichen- und Zeilengrenze der gewählten Variante ist verbindlich." },
+          subtitle: { type: "STRING", description: "Eigenes Argument, nicht die Wiederholung des Titels. Zeilengrenze der Variante beachten." },
+          quote: { type: "STRING", description: "Nur bei A und J: wörtliches Zitat aus dem Artikel, kurz genug für höchstens vier Zeilen." },
+          attribution: { type: "STRING", description: "Nur bei A und J: sichtbare Person und Rolle des Zitats, eine Zeile." },
           stat: STAT_SCHEMA,
           stats: { type: "ARRAY", items: STAT_SCHEMA, description: "Bei H und bei T1–T5: belegte Kennzahlen aus kennzahlen_im_artikel." },
           bullets: { type: "ARRAY", items: { type: "STRING" }, description: "Nur bei F und L: bis zu fünf kurze Zeilen." },
@@ -1760,17 +1793,36 @@ function fieldCap(variant: string, field: string, carousel: boolean): number {
   const defaults: Record<string, number> = {
     kicker: 26, title: 80, subtitle: 130, takeaway: 140, quote: 240,
     attribution: 100, footer_left: 80, image_hint: 200, myth: 180, fact: 180,
-    bullet: 90, step_title: 60, step_text: 140, stat_value: 24, stat_label: 80,
+    bullet: 90, step_n: 24, step_title: 60, step_text: 140, stat_value: 24, stat_label: 80,
     slot: 48,
   };
   const perVariant: Record<string, Record<string, number>> = {
-    A: { quote: 220 },
-    B: { title: 72 },
+    U1: { title: 56, subtitle: 96 },
+    U2: { title: 56, subtitle: 96 },
+    U3: { title: 52, subtitle: 88, takeaway: 42 },
+    U4: { title: 52, subtitle: 88, takeaway: 42 },
+    A: { quote: 110, attribution: 60 },
+    B: { title: 48, subtitle: 115 },
+    C: { title: 46, subtitle: 100 },
+    D: { title: 62, subtitle: 96 },
     E: { title: 72, subtitle: 110, stat_value: 16 },
-    F: { title: 80, bullet: 90 },
+    F: { title: 58, bullet: 70 },
+    G: { myth: 130, fact: 130 },
     H: { stat_value: 16, stat_label: 80 },
-    K: { title: 90, takeaway: 140 },
-    L: { title: 72, stat_value: 16, stat_label: 90, bullet: 70 },
+    I: { title: 58, step_title: 34, step_text: 100 },
+    J: { quote: 110, attribution: 60 },
+    K: { title: 50, takeaway: 110 },
+    L: { title: 60, stat_value: 14, stat_label: 84, bullet: 52, takeaway: 110 },
+    S1: { title: 64, subtitle: 100, takeaway: 110, slot: 18 },
+    S2: { title: 64, subtitle: 100, takeaway: 110, step_title: 18 },
+    S3: { title: 64, subtitle: 100, takeaway: 110, step_title: 16, step_text: 18, slot: 26 },
+    S4: { title: 64, subtitle: 100, takeaway: 110, step_title: 14, step_text: 12 },
+    T1: { title: 64, subtitle: 100, takeaway: 110, stat_value: 8, stat_label: 8 },
+    T2: { title: 64, subtitle: 100, takeaway: 110, stat_value: 12, stat_label: 14 },
+    T3: { title: 64, subtitle: 100, takeaway: 110, stat_value: 10, stat_label: 18, slot: 10 },
+    T4: { title: 64, subtitle: 100, takeaway: 110, stat_value: 10, stat_label: 20 },
+    T5: { title: 64, subtitle: 100, takeaway: 110, stat_value: 12, stat_label: 20 },
+    T6: { title: 64, subtitle: 100, takeaway: 110, step_n: 12, step_title: 14, step_text: 18 },
   };
   const carouselCaps: Record<string, number> = {
     title: 60, subtitle: 110, takeaway: 120, quote: 180, bullet: 70,
@@ -1823,7 +1875,7 @@ export function dropHiddenFields(slide: AssetSlide): AssetSlide {
     title: keep("title") ? slide.title : "",
     subtitle: keep("subtitle") ? slide.subtitle : "",
     quote: keep("quote") ? slide.quote : "",
-    attribution: keep("quote") ? slide.attribution : "",
+    attribution: keep("attribution") ? slide.attribution : "",
     takeaway: keep("takeaway") ? slide.takeaway : "",
     image_hint: keep("image_hint") ? slide.image_hint : "",
     myth: keep("myth") ? slide.myth : "",
@@ -1862,18 +1914,39 @@ function rejectUnattested(text: string, corpus: string, wo: string): void {
 const INFOGRAPHIC_NEEDS: Record<string, { stats?: number; steps?: number; slots?: readonly string[] }> = {
   S1: { slots: ["slot_a", "slot_b", "slot_c", "slot_center"] },
   S2: { steps: 4 },
-  S3: { steps: 3, slots: ["slot_a", "slot_center"] },
+  S3: { steps: 3, slots: ["slot_a", "slot_b", "slot_center"] },
   S4: { steps: 5 },
   T1: { stats: 3 },
   T2: { stats: 3 },
-  T3: { stats: 3 },
+  T3: { stats: 3, slots: ["slot_center"] },
   T4: { stats: 4 },
   T5: { stats: 5 },
   T6: { steps: 4 },
 };
 
+/** Die Zeichnungen besitzen eine feste Zahl sichtbarer Plätze. Zusätzliche
+ *  Einträge wären zwar im JSON vorhanden, aber im Asset unsichtbar. */
+const VARIANT_COLLECTION_LIMITS: Record<string, { stats?: number; steps?: number; bullets?: number }> = {
+  F: { bullets: 5 }, H: { stats: 4 }, I: { steps: 5 }, L: { bullets: 3 },
+  S2: { steps: 4 }, S3: { steps: 3 }, S4: { steps: 5 },
+  T1: { stats: 7 }, T2: { stats: 3 }, T3: { stats: 3 },
+  T4: { stats: 5 }, T5: { stats: 5 }, T6: { steps: 4 },
+};
+
+function trimVariantCollections(slide: AssetSlide): AssetSlide {
+  const limits = VARIANT_COLLECTION_LIMITS[slide.variant] || {};
+  if (limits.stats) slide.stats = slide.stats.slice(0, limits.stats);
+  if (limits.steps) slide.steps = slide.steps.slice(0, limits.steps);
+  if (limits.bullets) slide.bullets = slide.bullets.slice(0, limits.bullets);
+  // Die Reifepyramide zeichnet ausschließlich die vier Stufentitel.
+  if (slide.variant === "S2") slide.steps = slide.steps.map((step) => ({ ...step, text: "" }));
+  return slide;
+}
+
 function applyNumberGate(slide: AssetSlide, corpus: string): AssetSlide {
-  if (!corpus) return slide;
+  // Die Form der Vorlage gilt auch ohne Artikeltext. Nur die Belegprüfung der
+  // Zahlen braucht ein Korpus; leere Diagramm-Slots dürfen nie durchrutschen.
+  if (!corpus) return applyInfographicGate(slide);
   const zahlVariante = (ASSET_NUMBER_VARIANTS as readonly string[]).includes(slide.variant);
   if (zahlVariante) {
     if (slide.variant === "H") {
@@ -1943,7 +2016,7 @@ function normalizeSlide(
     steps: (Array.isArray(item.steps) ? item.steps : []).slice(0, 5).map((entry, index) => {
       const step = record(entry);
       return {
-        n: text(step.n, 24) || String(index + 1).padStart(2, "0"),
+        n: text(step.n, cap("step_n")) || String(index + 1).padStart(2, "0"),
         title: text(step.title, cap("step_title")),
         text: text(step.text, cap("step_text")),
       };
@@ -1959,7 +2032,7 @@ function normalizeSlide(
     slot_d: text(item.slot_d, cap("slot")),
     slot_center: text(item.slot_center, cap("slot")),
   };
-  return applyNumberGate(slide, corpus);
+  return applyNumberGate(trimVariantCollections(slide), corpus);
 }
 
 /** Ein Slide ohne jede Aussage waere im Studio eine leere Buehne. */

@@ -1261,7 +1261,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-2110";
+import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-2131";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1348,7 +1348,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   overlay.setAttribute("aria-label", isMemo ? "Ansprache" : "LinkedIn-Asset");
 
   const styleIsland = document.createElement("style");
-  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}\n${printCss(isMemo)}`;
+  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}\n${printCss(isMemo)}`;
   overlay.appendChild(styleIsland);
 
   const shell = document.createElement("div");
@@ -1956,45 +1956,49 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
   }
 
-  /** Platzhalterinhalt, mit dem jedes Layout etwas zu zeigen hat. */
+  /** Aussagekräftige Marketingbeispiele statt Blindtext. Jede Vorschau zeigt
+   *  genau den Anwendungsfall, für den die jeweilige Vorlage gedacht ist. */
   function demoSlide(variant) {
-    return normalizeSlide({
+    const beispiele = {
+      U1: { title: "Warum starke Marken weniger Kampagnen brauchen", subtitle: "Vier Entscheidungen für mehr Klarheit, Tempo und Wirkung." },
+      U2: { title: "Warum starke Marken weniger Kampagnen brauchen", subtitle: "Vier Entscheidungen für mehr Klarheit, Tempo und Wirkung." },
+      U3: { title: "Wo verliert Ihre Marke heute am meisten Wirkung?", subtitle: "Ein kurzer Check zeigt, welcher Hebel zuerst zählt.", takeaway: "Marken-Check starten →" },
+      U4: { title: "Wo verliert Ihre Marke heute am meisten Wirkung?", subtitle: "Ein kurzer Check zeigt, welcher Hebel zuerst zählt.", takeaway: "Marken-Check starten →" },
+      A: { quote: "Eine Marke wird nicht relevant, weil sie lauter spricht – sondern weil sie klarer entscheidet.", attribution: "Leitung Marketing · Beispiel" },
+      B: { title: "Klarheit schlägt Kampagnendruck.", subtitle: "Wenn Positionierung und Aktivierung dieselbe Entscheidung tragen, wird Marketing schneller und wiedererkennbarer." },
+      C: { title: "Aus Kontakt wird Erinnerung.", subtitle: "Ein starkes Motiv wirkt, wenn es dieselbe Botschaft wie die Marke trägt." },
+      D: { title: "Wiedererkennung beginnt vor dem Logo.", subtitle: "Farbe, Haltung und Bildwelt machen Marken im ersten Moment eindeutig." },
+      E: { stat: { value: "68 %", label: "Beispielwert: gestützte Erinnerung" }, title: "Konsistenz macht Marken leichter erinnerbar", subtitle: "Illustrative Kennzahl für die Wirkung einer durchgängigen Botschaft." },
+      F: { title: "Drei Hebel für mehr Markenwirkung", bullets: ["**Positionierung schärfen** – eine relevante Entscheidung", "**Botschaft fokussieren** – ein Gedanke pro Kontakt", "**Aktivierung verbinden** – dieselbe Handschrift in jedem Kanal"] },
+      G: { myth: "Mehr Reichweite gleicht eine unklare Positionierung aus.", fact: "Reichweite verstärkt nur, was vorher bereits klar oder unklar war." },
+      H: { stats: [{ value: "24 %", label: "Aufmerksamkeit · Beispiel" }, { value: "38 %", label: "Markenerinnerung · Beispiel" }, { value: "54 %", label: "Präferenz · Beispiel" }] },
+      I: { title: "Von der Erkenntnis zur Aktivierung", steps: [{ n: "01", title: "Insight", text: "Relevantes Kundenmuster erkennen." }, { n: "02", title: "Positionierung", text: "Eine klare Entscheidung treffen." }, { n: "03", title: "Leitidee", text: "Botschaft und Erlebnis verbinden." }, { n: "04", title: "Lernen", text: "Wirkung messen und nachschärfen." }] },
+      J: { quote: "Gutes Marketing beginnt nicht mit Content, sondern mit einer klaren Entscheidung.", attribution: "Marketing Strategy · Beispiel" },
+      K: { title: "Nicht mehr ~~Content~~, sondern mehr Relevanz", takeaway: "**Folge:** Weniger Formate, klarere Markenentscheidung." },
+      L: { stat: { value: "42 %", label: "Beispielwert: klare Zuordnung zur Marke" }, title: "Wiedererkennung entsteht durch Konsequenz", bullets: ["**Ein Versprechen** über alle Kanäle", "**Eine Bildwelt** mit eigener Handschrift", "**Ein Lernsystem** für die Aktivierung"], takeaway: "**Lesart:** Konsistenz macht Wirkung kumulativ." },
+      S1: { title: "Wo Markenwirkung entsteht", subtitle: "Drei Fähigkeiten müssen gleichzeitig zusammenkommen.", slot_a: "Kundenrelevanz", slot_b: "Markenklarheit", slot_c: "Aktivierung", slot_center: "Wachstum", takeaway: "**Schnittpunkt:** Relevanz wird zur wiedererkennbaren Handlung." },
+      S2: { title: "Vier Stufen wirksamer Markenführung", subtitle: "Von Einzelmaßnahmen zu einer geführten Marke.", steps: [{ n: "04", title: "Leitidee", text: "" }, { n: "03", title: "System", text: "" }, { n: "02", title: "Kanäle", text: "" }, { n: "01", title: "Maßnahmen", text: "" }], takeaway: "**Ziel:** Entscheidungen kommen aus einer gemeinsamen Logik." },
+      S3: { title: "Das Haus der Markenaktivierung", subtitle: "Ein Versprechen, drei tragende Fähigkeiten, ein Ziel.", slot_a: "Markenversprechen", slot_b: "führt Entscheidungen", slot_center: "Messbares Wachstumsziel", steps: [{ n: "1", title: "Insight", text: "Kunden verstehen" }, { n: "2", title: "Position", text: "Nutzen zuspitzen" }, { n: "3", title: "Aktivierung", text: "Erlebnis verbinden" }], takeaway: "**Stabilität:** Jede Säule zahlt auf dasselbe Versprechen ein." },
+      S4: { title: "Vom Kontakt zur Präferenz", subtitle: "Ein Marketing-Funnel mit einer Aufgabe je Stufe.", steps: [{ n: "1", title: "Reichweite", text: "gesehen" }, { n: "2", title: "Relevanz", text: "verstanden" }, { n: "3", title: "Interesse", text: "erwogen" }, { n: "4", title: "Präferenz", text: "gewählt" }, { n: "5", title: "Handlung", text: "getan" }], takeaway: "**Prinzip:** Die nächste Stufe braucht einen neuen Grund." },
+      T1: { title: "Wie Markenstärke Nachfrage aufbaut", subtitle: "Illustrativer Index – keine realen Marktdaten.", stats: [{ value: "100", label: "2024" }, { value: "108", label: "2025" }, { value: "121", label: "2026" }, { value: "137", label: "2027" }, { value: "156", label: "2028" }, { value: "178", label: "2029" }, { value: "203", label: "2030" }], takeaway: "**Lesart:** Konsistente Markenarbeit entfaltet Wirkung über Zeit." },
+      T2: { title: "Was Klarheit zur Markenwirkung beiträgt", subtitle: "Illustrativer Wasserfall – keine realen Marktdaten.", stats: [{ value: "100", label: "Basis" }, { value: "+18", label: "Klarheit" }, { value: "118", label: "Wirkung" }], takeaway: "**Lesart:** Die Veränderung erklärt den Weg zum Ergebnis." },
+      T3: { title: "Was Markenpräferenz treibt", subtitle: "Illustrative Aufteilung – keine realen Marktdaten.", stats: [{ value: "45 %", label: "Relevanz" }, { value: "35 %", label: "Konsistenz" }, { value: "20 %", label: "Distinktion" }], slot_center: "100 %", takeaway: "**Lesart:** Präferenz entsteht aus drei verbundenen Faktoren." },
+      T4: { title: "Wo Aktivierung bereits anschlussfähig ist", subtitle: "Illustrativer Kanalvergleich – keine realen Marktdaten.", stats: [{ value: "82 %", label: "CRM" }, { value: "74 %", label: "Content" }, { value: "63 %", label: "Media" }, { value: "51 %", label: "Sales" }, { value: "46 %", label: "Service" }], takeaway: "**Priorität:** Erst die stärksten Kontaktpunkte verbinden." },
+      T5: { title: "Wie Relevanz im Funnel verdichtet", subtitle: "Illustratives Rechenbeispiel – keine realen Marktdaten.", stats: [{ value: "100 Tsd.", label: "Kontakte" }, { value: "62 Tsd.", label: "Relevante" }, { value: "31 Tsd.", label: "Interessierte" }, { value: "14 Tsd.", label: "Präferenz" }, { value: "6 Tsd.", label: "Handlung" }], takeaway: "**Aufgabe:** Jede Stufe braucht eine konkrete Entscheidungshilfe." },
+      T6: { title: "Vier Phasen zur klaren Aktivierung", subtitle: "Eine kompakte Roadmap vom Insight bis zum Markt.", steps: [{ n: "Woche 1", title: "Insight", text: "Muster erkennen" }, { n: "Woche 2", title: "Position", text: "Nutzen zuspitzen" }, { n: "Woche 3", title: "Leitidee", text: "System bauen" }, { n: "Woche 4", title: "Aktivierung", text: "Pilot starten" }], takeaway: "**Takt:** Jede Phase endet mit einer belastbaren Entscheidung." },
+    };
+    const slide = normalizeSlide({
       variant,
       kicker: themeKicker(source),
-      title: "Ein Satz, der etwas behauptet",
-      subtitle: "Zwei Zeilen Einordnung, die die Behauptung stuetzen.",
-      quote: "Ein Zitat mit Haltung, zwei Zeilen lang.",
-      attribution: "Name, Rolle",
-      stat: { value: "14 %", label: "Bezug, Jahr" },
-      stats: [
-        { value: "14 %", label: "Anteil am Umsatz" },
-        { value: "18 %", label: "Markenbekanntheit" },
-        { value: "24 %", label: "Wiederkaufsrate" },
-        { value: "31 %", label: "Digitale Kontakte" },
-        { value: "38 %", label: "Aktive Kunden" },
-        { value: "46 %", label: "Qualifizierte Leads" },
-        { value: "54 %", label: "Zielwert" },
-      ],
-      bullets: ["**Erster Hebel** mit Substanz und Begründung", "**Zweiter Hebel** mit Substanz und Begründung", "**Dritter Hebel** mit Substanz und Begründung"],
-      steps: [
-        { n: "1", title: "Standort", text: "Lage belegen." },
-        { n: "2", title: "Priorität", text: "Hebel wählen." },
-        { n: "3", title: "Umsetzung", text: "Pilot starten." },
-        { n: "4", title: "Skalierung", text: "Wirkung ausrollen." },
-      ],
-      myth: "Die verbreitete Behauptung.",
-      fact: "Der Befund, der ihr widerspricht.",
-      takeaway: "**Folge:** Struktur ist Standard, entscheidend ist die Handschrift.",
-      slot_a: "Marke",
-      slot_b: "Markt",
-      slot_c: "Kunde",
-      slot_d: "Wirkung",
-      slot_center: "Fokus",
       footer_left: state.chrome.footer_left || (state.chrome.custom ? "" : "ROOTS Consultants"),
-      // Nur dieses Layout lebt von der Streichung, deshalb traegt sein
-      // Beispieltext die Markierung.
-      ...(variant === "K" ? { title: "Nicht mehr ~~Tools~~, sondern mehr Handschrift" } : {}),
+      ...(beispiele[variant] || beispiele.B),
     });
+    // Ein abstraktes, lokales Motiv macht die Bildvorlagen verständlich, ohne
+    // ein fremdes Foto oder einen externen Abruf in die Vorschau zu ziehen.
+    if (MIT_BILD.has(variant)) {
+      slide.image.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDgwIDEzNTAiPjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0iZyIgeDI9IjEiIHkyPSIxIj48c3RvcCBzdG9wLWNvbG9yPSIjMGIxZjQ1Ii8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjA2ZWZiIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwODAiIGhlaWdodD0iMTM1MCIgZmlsbD0idXJsKCNnKSIvPjxjaXJjbGUgY3g9IjgyMCIgY3k9IjM2MCIgcj0iMzEwIiBmaWxsPSIjZmZmIiBvcGFjaXR5PSIuMTIiLz48Y2lyY2xlIGN4PSI2OTAiIGN5PSI4MjAiIHI9IjQyMCIgZmlsbD0iIzllYzBmZiIgb3BhY2l0eT0iLjIiLz48cGF0aCBkPSJNNTIwIDk4MGMxMzAtMjMwIDI5MC0zNTAgNTAwLTM3MHYzOTBINTIweiIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjE1Ii8+PC9zdmc+";
+    }
+    return slide;
   }
 
   /** Layouts der gewaehlten Anmutung. "Modell waehlt" bleibt immer dabei. */
@@ -3034,6 +3038,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     let html = ASSET_TEMPLATES[slide.variant] || ASSET_LAYOUTS[slide.variant] || ASSET_TEMPLATES.B;
     html = expandRepeats(html, slide);
     html = fillTemplate(html, slide);
+    html = ergaenzeZitatQuelle(html, slide);
     html = wrapImageSlots(html, slide);
     if (editable) {
       html = html.replace(/data-field="([a-z0-9_.]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
@@ -3044,6 +3049,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // lang="de" ist die Bedingung für hyphens:auto. Ohne sie trennt der Browser
     // lange Komposita nicht und der Titel läuft aus der Kachel.
     return `<div class="as-stage as-stage--tpl" lang="de" data-stage data-uid="${attr(slide.uid)}" data-variant="${attr(slide.variant)}">${html}</div>`;
+  }
+
+  /** Ein Zitat ohne sichtbare Person wirkt wie eine unbelegte Werbeaussage.
+   *  Die historischen A/J-Vorlagen hatten das Feld im Modell, aber nicht im
+   *  Markup. Wir ergänzen es direkt unter dem Zitat, in beiden Varianten. */
+  function ergaenzeZitatQuelle(html, slide) {
+    if (!["A", "J"].includes(slide.variant) || !String(slide.attribution || "").trim()) return html;
+    const quelle = `<p style="font-size:26px;line-height:1.3;font-weight:600;color:#b9c9e8;margin-top:24px;" data-field="attribution">${markiere(esc(slide.attribution))}</p>`;
+    return html.replace(/(<p[^>]*data-field="quote"[^>]*>[\s\S]*?<\/p>)/, `$1${quelle}`);
   }
 
   /** Wiederholte Bloecke: ein Eintrag je Aufzaehlung, Kennzahl oder Schritt. */
@@ -3263,18 +3277,73 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     requestAnimationFrame(meldeUeberlauf);
   }
 
-  /**
-   * Ein deutsches Kompositum ist oft breiter als die Zeile: „Markenkommunikation“
-   * lief bei 104 px aus der Kachel (17.8.2026). Erst die Schrift verkleinern,
-   * damit das Wort ganz bleibt; erst wenn das nicht reicht, trennt der Umbruch
-   * aus dem Vorlagen-CSS. Gemessen wird ohne Umbruch, sonst sieht die Zeile
-   * immer passend aus.
-   */
+  function feldZeilenLimit(variant, pfad) {
+    if (pfad === "title") return variant === "C" || variant === "D" ? 3 : 2;
+    if (pfad === "subtitle") return variant === "B" || variant === "C" ? 3 : 2;
+    if (pfad === "quote") return 4;
+    if (pfad === "attribution" || pfad.endsWith(".value") || pfad === "stat_value") return 1;
+    if (pfad === "myth" || pfad === "fact") return 3;
+    if (pfad === "takeaway" || pfad === "stat_label") return 2;
+    if (/^bullets\.\d+\./.test(pfad)) return 2;
+    if (/^steps\.\d+\.title$/.test(pfad)) return 1;
+    if (/^steps\.\d+\.text$/.test(pfad)) return 2;
+    if (/^stats\.\d+\.label$/.test(pfad)) return 2;
+    return 0;
+  }
+
+  /** Maximale Breite in SVG-Koordinaten. SVG-Text bricht nicht von selbst um;
+   *  deshalb wird er innerhalb seines echten Kreises, Balkens oder Slots
+   *  verkleinert statt benachbarte Beschriftungen zu überlagern. */
+  function svgFeldBreite(variant, pfad) {
+    if (variant === "S1") return pfad === "slot_center" ? 180 : 250;
+    if (variant === "S2") return [150, 245, 355, 485][Number(/steps\.(\d+)/.exec(pfad)?.[1]) || 0];
+    if (variant === "S3") {
+      if (pfad === "slot_center") return 520;
+      if (pfad === "slot_a" || pfad === "slot_b") return 480;
+      return 150;
+    }
+    if (variant === "S4") return 128;
+    if (variant === "T1") return pfad.endsWith(".value") ? 70 : 82;
+    if (variant === "T2") return pfad.endsWith(".value") ? 130 : 145;
+    if (variant === "T3") return pfad === "slot_center" ? 155 : 220;
+    if (variant === "T4") return pfad.endsWith(".value") ? 100 : 260;
+    if (variant === "T5") return 470;
+    if (variant === "T6") {
+      if (pfad.endsWith(".n")) return 120;
+      if (pfad.endsWith(".title")) return 155;
+      return 165;
+    }
+    return 0;
+  }
+
+  /** Ermittelt echte Textzeilen auch innerhalb der skalierten Vorschau.
+   *  scrollHeight enthaelt bei grossen Schriften oft einige Pixel
+   *  Glyphen-Ueberhang und machte zwei Zeilen dadurch faelschlich zu drei. */
+  function textZeilenAnzahl(el) {
+    if (!el || !String(el.textContent || "").trim()) return 0;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const tops = [];
+    Array.from(range.getClientRects()).forEach((rect) => {
+      if (!rect.width || !rect.height) return;
+      if (!tops.some((top) => Math.abs(top - rect.top) < 1)) tops.push(rect.top);
+    });
+    return tops.length || 1;
+  }
+
+  /** Hält normale Textfelder in ihrer vorgesehenen Zeilenzahl und passt
+   *  Beschriftungen innerhalb der festen SVG-Slots an. */
   function passeSlideTexteAn(wurzel) {
     if (isMemo || !wurzel) return;
-    wurzel.querySelectorAll(".as-stage--tpl .li").forEach((kachel) => {
-      kachel.querySelectorAll("[data-field='title'], [data-field='quote'], [data-field='stat_value']").forEach((el) => {
+    wurzel.querySelectorAll(".as-stage--tpl").forEach((stage) => {
+      const kachel = stage.querySelector(".li");
+      const variant = stage.getAttribute("data-variant") || "B";
+      if (!kachel) return;
+      kachel.querySelectorAll("[data-field]").forEach((el) => {
+        if (el.closest("svg")) return;
         if (!String(el.textContent || "").trim()) return;
+        const limit = feldZeilenLimit(variant, String(el.getAttribute("data-field") || ""));
+        if (!limit) return;
         if (!el.dataset.asFont) {
           const gemessen = parseFloat(getComputedStyle(el).fontSize) || 0;
           if (!gemessen) return;
@@ -3286,13 +3355,32 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         el.style.overflowWrap = "normal";
         let px = start;
         let schritte = 0;
-        const passtNicht = () => el.scrollWidth > el.clientWidth + 1 || kachel.scrollHeight > 1352;
+        const passtNicht = () => {
+          const zeilen = textZeilenAnzahl(el);
+          return el.scrollWidth > el.clientWidth + 1 || (limit && zeilen > limit) || kachel.scrollHeight > 1352;
+        };
         while (passtNicht() && px > start * 0.7 && schritte < 30) {
           px -= start * 0.02;
           el.style.fontSize = `${px}px`;
           schritte += 1;
         }
         el.style.overflowWrap = "";
+      });
+      kachel.querySelectorAll("svg text[data-field]").forEach((el) => {
+        const pfad = String(el.getAttribute("data-field") || "");
+        const breite = svgFeldBreite(variant, pfad);
+        if (!breite || !String(el.textContent || "").trim() || typeof el.getComputedTextLength !== "function") return;
+        if (!el.dataset.asFont) el.dataset.asFont = String(parseFloat(getComputedStyle(el).fontSize) || 0);
+        const start = Number(el.dataset.asFont) || 0;
+        if (!start) return;
+        el.style.fontSize = `${start}px`;
+        let px = start;
+        let schritte = 0;
+        while (el.getComputedTextLength() > breite && px > start * .55 && schritte < 36) {
+          px -= start * .025;
+          el.style.fontSize = `${px}px`;
+          schritte += 1;
+        }
       });
     });
   }
@@ -3376,13 +3464,34 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (isMemo) return passeUndPruefeMemo();
     passeSlideTexteAn(shell.querySelector("[data-stagearea]"));
     const treffer = [];
-    shell.querySelectorAll("[data-stagearea] .as-stage--tpl .li").forEach((kachel, i) => {
+    shell.querySelectorAll("[data-stagearea] .as-stage--tpl").forEach((stage, i) => {
+      const kachel = stage.querySelector(".li");
+      if (!kachel) return;
+      const variant = stage.getAttribute("data-variant") || "B";
       const ausRahmen = kachel.scrollWidth > 1082 || kachel.scrollHeight > 1352;
       let ausFeld = false;
-      kachel.querySelectorAll("h1, [data-field='title'], [data-field='quote'], [data-field='stat_value']").forEach((el) => {
-        if (el.scrollWidth > el.clientWidth + 4) ausFeld = true;
+      const kachelBox = kachel.getBoundingClientRect();
+      const fussBox = kachel.querySelector(".foot")?.getBoundingClientRect();
+      kachel.querySelectorAll("[data-field]").forEach((el) => {
+        if (!String(el.textContent || "").trim()) return;
+        const pfad = String(el.getAttribute("data-field") || "");
+        if (el.closest("svg")) {
+          const breite = svgFeldBreite(variant, pfad);
+          if (breite && typeof el.getComputedTextLength === "function" && el.getComputedTextLength() > breite + 1) ausFeld = true;
+          return;
+        }
+        const box = el.getBoundingClientRect();
+        const ausserhalb = box.left < kachelBox.left - 2 || box.right > kachelBox.right + 2
+          || box.top < kachelBox.top - 2 || box.bottom > kachelBox.bottom + 2;
+        const limit = feldZeilenLimit(variant, pfad);
+        const zeilen = textZeilenAnzahl(el);
+        const trifftFuss = Boolean(fussBox && !el.closest(".foot") && box.bottom > fussBox.top + 1 && box.top < fussBox.bottom - 1);
+        if (ausserhalb || trifftFuss || el.scrollWidth > el.clientWidth + 4 || (limit && zeilen > limit)) ausFeld = true;
       });
-      if (ausRahmen || ausFeld) treffer.push(i + 1);
+      const logo = kachel.querySelector(".top .logo")?.getBoundingClientRect();
+      const kicker = kachel.querySelector(".top .kick")?.getBoundingClientRect();
+      const kopfKollidiert = Boolean(logo && kicker && logo.right > kicker.left && logo.bottom > kicker.top && logo.top < kicker.bottom);
+      if (ausRahmen || ausFeld || kopfKollidiert) treffer.push(i + 1);
     });
     return treffer;
   }
@@ -4080,7 +4189,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       : "";
     const css = isMemo
       ? `${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}`
-      : `${ASSET_TEMPLATE_CSS}\n${STAGE_CSS}`;
+      : `${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${STAGE_CSS}`;
     const printBreak = isMemo
       ? `.as-stage--memo{break-after:auto; page-break-after:auto;} .as-stage--memo .em-page{break-after:page; page-break-after:always;} .as-stage--memo .em-page:last-child{break-after:auto; page-break-after:auto;}`
       : `.as-stage{break-after:page; page-break-after:always;} .as-stage:last-of-type{break-after:auto; page-break-after:auto;}`;
@@ -4090,17 +4199,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
 html,body{margin:0;padding:0;}
-body{background:#eef2f7; display:flex; flex-direction:column; align-items:center; gap:24px; padding:24px;}
-@media print{body{background:#fff; gap:0; padding:0;}}
+body{background:#eef2f7; padding:24px;}
+#as-overlay{display:flex; flex-direction:column; align-items:center; gap:24px;}
+@media print{body{background:#fff; padding:0;} #as-overlay{gap:0;}}
 @page{${isMemo ? "size:A4; margin:0;" : "size:1080px 1350px; margin:0;"}}
 @media print{${printBreak}}
 ${css}
 </style>
 </head>
 <body>
+<main id="as-overlay">
 ${stages}${post}
+</main>
 </body>
 </html>`;
   }
