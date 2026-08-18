@@ -39,7 +39,7 @@ function el(id) {
 function cacheEls() {
   els = {
     view: el("view-simple-results"),
-    articleTypeFilter: el("simple-article-type-filter"),
+    topicFilter: el("simple-topic-filter"),
     sourceFilter: el("simple-source-filter"),
     companyFilter: el("simple-company-filter"),
     companyFilterTrigger: el("simple-company-filter-trigger"),
@@ -218,10 +218,10 @@ function refreshCompanyFilter(all) {
 function visibleSignals(lane) {
   const state = ctx.viewState;
   const filtered = signalsByLane[lane].filter((signal) => {
-    const typeOk = state.articleTypes.length === 0 || state.articleTypes.includes(signal.article?.article_type);
+    const topicOk = state.topics.length === 0 || state.topics.includes(signal.signal_id);
     const sourceOk = state.sources.length === 0 || state.sources.includes(signalSourceName(signal));
     const companyOk = companyMatches(signal);
-    return typeOk && sourceOk && companyOk;
+    return topicOk && sourceOk && companyOk;
   });
   return [...filtered].sort((a, b) => {
     if (state.sort === "newest") return signalDate(b) - signalDate(a) || Number(b.score || 0) - Number(a.score || 0);
@@ -238,29 +238,37 @@ function visibleSignals(lane) {
 }
 
 function resultFiltersActive() {
-  return ctx.viewState.articleTypes.length > 0
+  return ctx.viewState.topics.length > 0
     || ctx.viewState.sources.length > 0
     || companyFilterState.selected.length > 0;
 }
 
 function resetResultFilters() {
-  ctx.viewState.articleTypes.length = 0;
+  ctx.viewState.topics.length = 0;
   ctx.viewState.sources.length = 0;
   companyFilterState.selected = [];
-  if (els.articleTypeFilter) els.articleTypeFilter.value = "all";
+  if (els.topicFilter) els.topicFilter.value = "all";
   if (els.sourceFilter) els.sourceFilter.value = "all";
   renderCompanyFilter();
 }
 
 function refreshFilterOptions() {
   const all = [...signalsByLane.marketing, ...signalsByLane.sales];
-  const types = [...new Set(all.map((signal) => signal.article?.article_type).filter(Boolean))]
-    .sort((a, b) => (ctx.articleTypeLabels[a] || a).localeCompare(ctx.articleTypeLabels[b] || b, "de"));
+  // Die Karten zeigen oben links die Signalfamilie; der Filter arbeitet auf
+  // genau diesem Feld, damit Beschriftung und Filterwerte identisch sind.
+  const topicLabels = new Map();
+  all.forEach((signal) => {
+    const id = signal.signal_id;
+    if (!id || topicLabels.has(id)) return;
+    topicLabels.set(id, signal.signal_label || id);
+  });
+  const topics = [...topicLabels.keys()]
+    .sort((a, b) => topicLabels.get(a).localeCompare(topicLabels.get(b), "de"));
   const sources = [...new Set(all.map(signalSourceName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "de"));
-  if (els.articleTypeFilter) {
-    els.articleTypeFilter.innerHTML = `<option value="all">Alle Artikeltypen</option>${types
-      .map((type) => `<option value="${esc(type)}">${esc(ctx.articleTypeLabels[type] || type)}</option>`).join("")}`;
-    ctx.pruneSelection(ctx.viewState.articleTypes, types);
+  if (els.topicFilter) {
+    els.topicFilter.innerHTML = `<option value="all">Alle Themen</option>${topics
+      .map((id) => `<option value="${esc(id)}">${esc(topicLabels.get(id))}</option>`).join("")}`;
+    ctx.pruneSelection(ctx.viewState.topics, topics);
   }
   if (els.sourceFilter) {
     els.sourceFilter.innerHTML = `<option value="all">Alle Quellen</option>${sources
@@ -428,7 +436,7 @@ function bindUi() {
     renderLane("marketing");
     renderLane("sales");
   };
-  [els.articleTypeFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  [els.topicFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
   els.companyFilterTrigger?.addEventListener("click", (event) => {
     event.stopPropagation();
     document.querySelectorAll(".roots-select.open").forEach((item) => item !== els.companyFilter && item.classList.remove("open"));

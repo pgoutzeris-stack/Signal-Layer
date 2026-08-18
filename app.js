@@ -39,7 +39,7 @@ const state = {
 // Filter selections are multi-select: empty array = "all". Sort stays single.
 const signalViewState = { articleTypes: [], sources: [], sort: "recommended" };
 const archiveViewState = { articleTypes: [], sources: [], sort: "recommended" };
-const simpleViewState = { articleTypes: [], sources: [], sort: "recommended" };
+const simpleViewState = { topics: [], sources: [], sort: "recommended" };
 const signalCompanyFilterState = { kind: "tier1", selected: [] };
 const signalCompanyFilterIndex = { tier1: [], company: [] };
 let signalSelectedVersion = "";
@@ -53,7 +53,7 @@ function filterSelectionFor(selectId) {
     case "archive-source-filter": return archiveViewState.sources;
     case "archive-article-type-filter": return archiveViewState.articleTypes;
     case "simple-source-filter": return simpleViewState.sources;
-    case "simple-article-type-filter": return simpleViewState.articleTypes;
+    case "simple-topic-filter": return simpleViewState.topics;
     default: return null;
   }
 }
@@ -2002,7 +2002,7 @@ function enhanceHeaderSelects() {
     // single-select column.
     // Mehrfachauswahl nur für Filter, die dafür einen Zustand registriert haben.
     // Ohne diesen Zustand bleibt es ein normaler Einzel-Select.
-    const selection = /source|article-type|company/.test(select.id) ? filterSelectionFor(select.id) : null;
+    const selection = /source|article-type|topic|company/.test(select.id) ? filterSelectionFor(select.id) : null;
     const isGrid = Boolean(selection);
     menu.classList.toggle("roots-select-menu--grid", isGrid);
     wrapper.classList.toggle("roots-select--grid", isGrid);
@@ -2014,7 +2014,7 @@ function enhanceHeaderSelects() {
       if (values.length === 1) {
         return [...select.options].find((o) => o.value === values[0])?.textContent || values[0];
       }
-      const noun = /source/.test(select.id) ? "Quellen" : /company/.test(select.id) ? "Unternehmen" : "Typen";
+      const noun = /source/.test(select.id) ? "Quellen" : /company/.test(select.id) ? "Unternehmen" : /topic/.test(select.id) ? "Themen" : "Typen";
       return `${values.length} ${noun}`;
     };
 
