@@ -2010,9 +2010,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260818-1620");
-  assert.match(indexHtml, /app\.js\?v=20260818-1620/);
-  assert.match(studio, /asset-templates\.js\?v=20260818-1620/);
+  assert.equal(studioVersion, "20260818-1642");
+  assert.match(indexHtml, /app\.js\?v=20260818-1642/);
+  assert.match(studio, /asset-templates\.js\?v=20260818-1642/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2486,7 +2486,7 @@ test("Design-Vorlagen liegen je Nutzer in Supabase", () => {
   assert.match(appJs, /function openSettingsPanel/);
 });
 
-test("Der Fragebogen zeigt eine Frage nach der anderen", () => {
+test("Der Fragebogen zeigt eine Frage nach der anderen", async () => {
   // Ein Formular mit zehn offenen Fragen liest sich wie ein Antrag. Sichtbar
   // ist deshalb genau die offene Frage, davor stehen die Antworten als Zeile.
   assert.match(studio, /function aktiveFragen\(\)/);
@@ -2498,6 +2498,8 @@ test("Der Fragebogen zeigt eine Frage nach der anderen", () => {
   // aendern die Laenge der Liste mitten im Ausfuellen.
   assert.match(studio, /function schrittIndex\(/);
   assert.doesNotMatch(studio, /state\.formStep/);
+  const topActions = studio.slice(studio.indexOf("function topActions()"), studio.indexOf("function stepContent()"));
+  assert.doesNotMatch(topActions, /data-act="generate"/, "Erzeugen erscheint erst auf der Bereit-Karte");
   // Bewegung nur, wenn der Nutzer sie zulaesst.
   const reduziert = studio.slice(studio.indexOf("@media (prefers-reduced-motion: reduce)"));
   assert.match(reduziert, /as-step--open\{animation:none;\}/);
@@ -2506,6 +2508,12 @@ test("Der Fragebogen zeigt eine Frage nach der anderen", () => {
   assert.match(studio, /data-act="\$\{attr\(aktion\)\}"/);
   assert.match(studio, /oeffneEinstellungen\("tone"\)/);
   assert.match(studio, /oeffneEinstellungen\("design"\)/);
+  const { assetQuestionCanAdvance } = await import("../asset-studio.js");
+  assert.equal(assetQuestionCanAdvance("profile", { profile: "private" }, { designsLoaded: true, designCount: 0 }), false);
+  assert.equal(assetQuestionCanAdvance("design", { profile: "private" }, { designsLoaded: true, designCount: 0 }), false);
+  assert.equal(assetQuestionCanAdvance("profile", { profile: "private" }, { designsLoaded: true, designCount: 1 }), true);
+  assert.equal(assetQuestionCanAdvance("caption", { caption: "ai_tone" }, { toneLoaded: true, toneOfVoice: "" }), false);
+  assert.equal(assetQuestionCanAdvance("caption", { caption: "ai_tone" }, { toneLoaded: true, toneOfVoice: "Klar und direkt" }), true);
   // Die Domain steht nicht mehr im Markup, sondern kommt aus der Vorlage.
   assert.ok(!templates.includes("roots-consultants.com"), "Domain gehoert der Vorlage");
   assert.match(templates, /\{\{domain\}\}/);

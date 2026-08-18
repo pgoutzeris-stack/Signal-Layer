@@ -97,6 +97,20 @@ const STANDARD_DESIGN = {
 const TONE_FEHLT = "Für „KI + Tone of Voice“ ist noch kein Tonfall hinterlegt. Bitte in den Einstellungen unter Tone of Voice konfigurieren.";
 const DESIGN_FEHLT = "Für das Privatprofil ist noch keine Design-Vorlage hinterlegt.";
 
+/** Voraussetzungen, die nicht in der sichtbaren Antwort selbst stecken. Die
+ *  Auswahl darf erst als abgeschlossen gelten, wenn die persoenliche
+ *  Einstellung wirklich geladen und vorhanden ist. */
+export function assetQuestionCanAdvance(questionKey, answers = {}, prerequisites = {}) {
+  const key = String(questionKey || "");
+  if ((key === "profile" || key === "design") && answers.profile === "private") {
+    return Boolean(prerequisites.designsLoaded && Number(prerequisites.designCount) > 0);
+  }
+  if (key === "caption" && answers.caption === "ai_tone") {
+    return Boolean(prerequisites.toneLoaded && String(prerequisites.toneOfVoice || "").trim());
+  }
+  return true;
+}
+
 const FORM_LINKEDIN = [
   {
     key: "profile", label: "Für wen",
@@ -1170,7 +1184,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-1620";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-1642";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1442,7 +1456,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return `<button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Fragebogen</button>`;
     }
     if (state.step === "form") {
-      return `<button type="button" class="as-btn as-btn--primary" data-act="generate"><i class="fa-solid fa-wand-magic-sparkles"></i>Entwurf erzeugen</button>`;
+      // Der schrittweise Fragebogen endet bewusst mit seiner Bereit-Karte.
+      // Ein zweiter Erzeugen-Knopf im Kopf wuerde alle offenen Fragen umgehen.
+      return "";
     }
     if (state.step === "draft") {
       if (state.busy || !state.payload) {
@@ -2304,6 +2320,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Eine Frage gilt als erledigt, sobald sie eine belastbare Antwort traegt. */
   function frageErledigt(q) {
+    if (!assetQuestionCanAdvance(q.key, state.answers, {
+      designsLoaded: state.designsGeladen,
+      designCount: state.designs.length,
+      toneLoaded: state.toneGeladen,
+      toneOfVoice: state.toneOfVoice,
+    })) return false;
     if (q.art === "multi") return gewaehlteArten().length > 0;
     if (q.free && state.answers[q.key] === q.free.on) {
       return Boolean(String(state.answers[q.free.key] || "").trim());
@@ -2317,7 +2339,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Weiterspringen ohne Klick nur dort, wo die Wahl die Frage abschliesst:
    *  reine Auswahl ohne Freitext und ohne Mehrfachauswahl. */
   function springtWeiter(q) {
-    if (!q || q.art === "multi") return false;
+    if (!q) return false;
+    if (!frageErledigt(q)) return false;
+    if (q.art === "multi") return false;
     if (q.free && state.answers[q.key] === q.free.on) return false;
     if (q.key === "benchmarks" && state.answers.benchmarks === "custom") return false;
     if (q.key === "images" && state.answers.images === "upload") return false;
@@ -2331,6 +2355,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Die Vorlagen als Karten: Grundton und Akzent sind sofort zu sehen. */
   function designHtml(q) {
+    if (state.answers.profile === "private" && !state.designsGeladen) {
+      return `<p class="as-hint" aria-live="polite">Design-Vorlagen werden geladen …</p>`;
+    }
+    if (state.answers.profile === "private" && !state.designs.length) {
+      return noticeHtml("fa-swatchbook", DESIGN_FEHLT, "open-designs");
+    }
     const liste = designListe();
     const aktiv = aktivesDesign().id;
     const karten = liste.map((design) => `

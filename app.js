@@ -3,10 +3,10 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260818-1620";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260818-1642";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260818-1620";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260818-1642";
 
 let sb = null;
 let sources = [];
