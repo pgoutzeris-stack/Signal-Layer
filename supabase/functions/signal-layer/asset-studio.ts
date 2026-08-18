@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.20";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.21";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -18,7 +18,7 @@ export function isAssetKind(value: unknown): value is AssetKind {
 }
 
 /** Buchstaben-Vorlagen der ROOTS-Buehne. */
-export const ASSET_VARIANTS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "U1", "U2", "U3", "U4"] as const;
+export const ASSET_VARIANTS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "U1", "U2", "U3", "U4"] as const;
 export type AssetVariant = typeof ASSET_VARIANTS[number];
 
 /** Infografiken: Zeichnung fest, Texte vom Modell. */
@@ -34,7 +34,7 @@ export const ASSET_NUMBER_VARIANTS = ["E", "H", "L"] as const;
 export const ASSET_SLIDE_THEMES: Record<AssetSlideKey, "light" | "dark"> = {
   U1: "light", U2: "dark", U3: "light", U4: "dark",
   A: "dark", B: "light", C: "light", D: "dark", E: "light", F: "light",
-  G: "light", H: "dark", I: "light", J: "dark", K: "light", L: "light",
+  G: "light", H: "dark", I: "light", J: "dark", K: "light", L: "light", M: "dark",
   S1: "light", S2: "dark", S3: "light", S4: "dark",
   T1: "light", T2: "light", T3: "light", T4: "light", T5: "light", T6: "light",
 };
@@ -1108,6 +1108,7 @@ export const ASSET_VISIBLE_FIELDS: Record<string, readonly string[]> = {
   J: ["kicker", "quote", "attribution", "footer_left", "image_hint"],
   K: ["kicker", "title", "takeaway", "footer_left"],
   L: ["kicker", "stat", "title", "stat_label", "bullets", "takeaway", "footer_left"],
+  M: ["kicker", "title", "subtitle", "footer_left"],
   S1: ["kicker", "title", "subtitle", "takeaway", "footer_left", "slot_a", "slot_b", "slot_c", "slot_center"],
   S2: ["kicker", "title", "subtitle", "takeaway", "footer_left", "steps"],
   S3: ["kicker", "title", "subtitle", "takeaway", "footer_left", "slot_a", "slot_b", "slot_center", "steps"],
@@ -1125,7 +1126,7 @@ export const ASSET_POINTE_FIELD: Record<string, string> = {
   U1: "subtitle", U2: "subtitle", U3: "takeaway", U4: "takeaway",
   A: "quote", B: "subtitle", C: "subtitle", D: "subtitle", E: "subtitle",
   F: "bullets", G: "fact", H: "stats", I: "steps", J: "quote",
-  K: "takeaway", L: "takeaway",
+  K: "takeaway", L: "takeaway", M: "subtitle",
   S1: "takeaway", S2: "takeaway", S3: "takeaway", S4: "takeaway",
   T1: "takeaway", T2: "takeaway", T3: "takeaway", T4: "takeaway", T5: "takeaway", T6: "takeaway",
 };
@@ -1199,6 +1200,11 @@ Wozu: eine Leitkennzahl plus kurze Deutung in bullets.
 Zeichnet: kicker, stat.value, title, stat.label, bis zu drei bullets, takeaway, footer_left.
 Greift wenn: eine Ziffer in kennzahlen_im_artikel die These trägt und drei kurze Belege danebenstehen.
 Nicht wählen wenn: keine Ziffer oder die Deutung die Zahl nicht braucht (dann B oder F).`,
+  M: `M Titel dunkel.
+Wozu: dunkler, qualitativer Statement-Slide ohne Zitat und ohne erzwungene Kennzahl.
+Zeichnet: kicker, title, subtitle, footer_left. Pointe in subtitle. takeaway unsichtbar.
+Greift wenn: das dunkle Design einen Gedanken in These plus Argument tragen soll.
+Nicht wählen wenn: ein echtes Zitat oder mehrere gleichrangige Kennzahlen den Slide klar besser tragen.`,
   S1: `S1 Schnittmengen-Modell (Venn).
 Wozu: drei Kreise und ihr Schnitt. Die Zeichnung braucht drei Kreisnamen und die Schnitt-Pointe.
 Zeichnet: title, subtitle, takeaway plus slot_a (oben), slot_b (links), slot_c (rechts), slot_center (Schnitt).
@@ -1271,6 +1277,7 @@ export const VARIANT_INHALTSVERTRAG: Record<string, string> = {
   J: "wie A, zusätzlich trägt image_hint die zitierte Situation; Zitat und Person bleiben wortgleich belegt.",
   K: "das gestrichene Wort ist die belegte, verworfene Logik; der restliche title nennt den Ersatz. takeaway erklärt die Konsequenz, ohne einen neuen Gedanken zu eröffnen.",
   L: "stat.value und stat.label benennen exakt denselben Messwert; title deutet diesen Wert, drei bullets belegen die Deutung, takeaway zieht nur die daraus folgende Konsequenz.",
+  M: "title behauptet im dunklen Design genau einen Befund; subtitle liefert den unmittelbar dazugehörigen Beleg oder die Konsequenz. Kein Zitatzeichen und keine versteckte Kennzahl nötig.",
   S1: "slot_a, slot_b und slot_c sind drei parallele Faktoren; slot_center ist nur ihr gemeinsamer Schnitt. Keine Ursache-Wirkung-Folge in ein Venn pressen.",
   S2: "die vier Stufen sind echte, aufsteigende Reifegrade derselben Fähigkeit; steps[0] ist die höchste Stufe. Keine beliebigen Prioritäten stapeln.",
   S3: "die drei Säulen sind parallele Fähigkeiten, slot_center ihr gemeinsames Fundament und Dachzeilen das gemeinsame Ziel. Jede Rolle muss aus dem Artikel ableitbar sein.",
@@ -1302,6 +1309,7 @@ const VARIANT_FORMAT: Record<string, string> = {
   J: "quote höchstens 4 kurze Zeilen/110 Zeichen; attribution eine Zeile/60 Zeichen.",
   K: "title ist ein kompaktes Statement mit genau einer Streichung, höchstens 2 Zeilen/50 Zeichen; takeaway höchstens 2 Zeilen/110 Zeichen.",
   L: "eine Kennzahl, title höchstens 2 Zeilen, genau 3 kurze bullets und ein takeaway mit höchstens 2 Zeilen.",
+  M: "title ist ein Zweizeilen-Statement, höchstens 48 Zeichen; subtitle höchstens 3 kurze Zeilen/115 Zeichen.",
   S1: "title/subtitle je höchstens 2 Zeilen; vier Diagramm-Slots je höchstens 18 Zeichen.",
   S2: "genau 4 Stufentitel, jeder höchstens 18 Zeichen; kein step.text, weil es nicht gezeichnet wird.",
   S3: "genau 3 Säulen; Säulentitel höchstens 16, Säulentext höchstens 18 Zeichen; Dach und Fundament kurz halten.",
@@ -1315,9 +1323,7 @@ const VARIANT_FORMAT: Record<string, string> = {
 };
 
 /** Auto ohne Foto (Datei fehlt) und ohne Balken, deren Höhe nicht mitgeht. */
-export const ASSET_AUTO_TEXT_KEYS = ["A", "B", "E", "F", "G", "H", "I", "K", "L"] as const;
-/** Donut-Anteile: Labels füllbar, Geometrie fest — nur bei drei belegten Zahlen. */
-const ASSET_AUTO_DONUT: AssetSlideKey = "T3";
+export const ASSET_AUTO_TEXT_KEYS = ["A", "B", "E", "F", "G", "H", "I", "K", "L", "M"] as const;
 
 function carouselFrameKeys(theme: "light" | "dark"): [AssetSlideKey, AssetSlideKey] {
   return theme === "dark" ? ["U2", "U4"] : ["U1", "U3"];
@@ -1335,7 +1341,123 @@ export function manualCarouselSelectionError(answers: LinkedinAnswers): string |
   return null;
 }
 
-export function allowedSlideKeys(answers: LinkedinAnswers, articleText = ""): AssetSlideKey[] {
+export type AssetEvidenceProfile = {
+  numberCount: number;
+  percentCount: number;
+  hasDirectQuote: boolean;
+  hasExplicitContrast: boolean;
+  hasParallelList: boolean;
+  hasSequence: boolean;
+  hasIntersection: boolean;
+  hasMaturityScale: boolean;
+  hasStrategyHouse: boolean;
+  hasFunnel: boolean;
+  hasTimeSeries: boolean;
+  hasWaterfall: boolean;
+  hasComposition: boolean;
+  hasComparison: boolean;
+  hasRoadmap: boolean;
+};
+
+function matchCount(value: string, pattern: RegExp): number {
+  return [...String(value || "").matchAll(pattern)].length;
+}
+
+function percentValues(value: string): number[] {
+  return [...String(value || "").matchAll(/(-?\d{1,3}(?:[.,]\d+)?)\s*(?:%|Prozent)\b/gi)]
+    .map((treffer) => Number(String(treffer[1]).replace(",", ".")))
+    .filter(Number.isFinite);
+}
+
+function hasHundredPercentTriple(values: number[]): boolean {
+  for (let a = 0; a < values.length; a += 1) {
+    for (let b = a + 1; b < values.length; b += 1) {
+      for (let c = b + 1; c < values.length; c += 1) {
+        const summe = values[a] + values[b] + values[c];
+        if (summe >= 99 && summe <= 101) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Verdichtet nur beobachtbare Struktur. Die Funktion entscheidet nicht über
+ * die Aussage, sondern verhindert, dass ein Layout eine im Material fehlende
+ * Form vortäuscht (etwa ein Donut aus drei beliebigen Prozentwerten). */
+export function assetEvidenceProfile(articleText = "", signalText = ""): AssetEvidenceProfile {
+  const corpus = `${articleText}\n${signalText}`;
+  const lower = proofText(corpus).replace(/ß/g, "ss");
+  const articlePercentages = percentValues(articleText);
+  const signalPercentages = percentValues(signalText);
+  const percentages = articlePercentages.length >= signalPercentages.length ? articlePercentages : signalPercentages;
+  const numberKeys = new Set(claimedNumbers(corpus).map((value) => numericTokenKey(value)).filter(Boolean));
+  const years = new Set([...corpus.matchAll(/\b(?:19|20)\d{2}\b/g)].map((treffer) => treffer[0]));
+  const sequenceHits = matchCount(lower, /\b(?:zuerst|erstens|zweitens|drittens|danach|anschliessend|schliesslich|phase|schritt|stufe)\b/g);
+  const roadmapHits = matchCount(lower, /\b(?:woche|monat|quartal|phase|etappe|zuerst|danach|anschliessend|schliesslich)\b/g);
+  const bulletHits = matchCount(corpus, /(?:^|\n)\s*(?:[-–•]|\d+[.)])\s+\S/gm);
+  return {
+    numberCount: numberKeys.size,
+    percentCount: percentages.length,
+    hasDirectQuote: /(?:„[^“\n]{24,240}“|“[^”\n]{24,240}”|"[^"\n]{24,240}")/.test(corpus),
+    hasExplicitContrast: /\b(?:mythos|irrtum|fehlannahme|entgegen|stattdessen|nicht\s+.{1,45}\s+sondern)\b/i.test(corpus),
+    hasParallelList: bulletHits >= 3 || /\b(?:drei|vier|funf|3|4|5)\s+(?:hebel|grunde|faktoren|prinzipien|felder|massnahmen|saulen)\b/i.test(lower),
+    hasSequence: sequenceHits >= 2 || /\b(?:ablauf|prozess|vorgehen|schritt fuer schritt)\b/i.test(lower),
+    hasIntersection: /\b(?:schnittmenge|zusammenspiel|kombination|sweet spot|verbindet)\b/i.test(lower)
+      && /\b(?:drei|3)\b/.test(lower),
+    hasMaturityScale: /\b(?:reifegrad|reifestufe|maturity|basisstufe|fortgeschritten|exzellenzstufe)\b/i.test(lower),
+    hasStrategyHouse: /\b(?:strategiehaus|strategisches haus|fundament)\b/i.test(lower)
+      && /\b(?:saule|saulen|dach)\b/i.test(lower),
+    hasFunnel: /\b(?:funnel|trichter|conversion|reichweite|impression|klick|lead|abschluss|bindung)\b/i.test(lower),
+    hasTimeSeries: years.size >= 3 && numberKeys.size >= 3,
+    hasWaterfall: /\bvon\b.{0,60}\bauf\b/i.test(lower)
+      && /\b(?:veranderung|delta|plus|minus|anstieg|ruckgang|zuwachs)\b/i.test(lower)
+      && numberKeys.size >= 3,
+    hasComposition: (articlePercentages.length >= 3 && hasHundredPercentTriple(articlePercentages))
+      || (signalPercentages.length >= 3 && hasHundredPercentTriple(signalPercentages)),
+    hasComparison: numberKeys.size >= 4
+      && /\b(?:vergleich|gegenuber|jeweils|kategorie|segmente|gruppen|regionen)\b/i.test(lower),
+    hasRoadmap: roadmapHits >= 4,
+  };
+}
+
+/** Kandidaten für die automatische Wahl. Manuell gewählte Vorlagen bleiben
+ * davon unberührt. Spezialisierte Visualisierungen werden nur freigeschaltet,
+ * wenn das Signal ihre Daten- oder Argumentationsstruktur wirklich enthält. */
+export function autoContentSlideKeys(
+  answers: LinkedinAnswers,
+  articleText = "",
+  signalText = "",
+): AssetSlideKey[] {
+  const profil = assetEvidenceProfile(articleText, signalText);
+  const keys: AssetSlideKey[] = answers.theme === "dark" ? ["M"] : ["B"];
+  const add = (key: AssetSlideKey, wenn = true) => {
+    if (wenn && ASSET_SLIDE_THEMES[key] === answers.theme && !keys.includes(key)) keys.push(key);
+  };
+  if (answers.theme === "dark") {
+    add("A", profil.hasDirectQuote);
+    add("H", profil.numberCount >= 2);
+    add("S2", profil.hasMaturityScale);
+    add("S4", profil.hasFunnel && profil.hasSequence);
+  } else {
+    add("E", profil.numberCount >= 1);
+    add("F", profil.hasParallelList || answers.asset_type === "carousel");
+    add("G", profil.hasExplicitContrast);
+    add("I", profil.hasSequence);
+    add("K", profil.hasExplicitContrast);
+    add("L", profil.numberCount >= 1 && profil.hasParallelList);
+    add("S1", profil.hasIntersection);
+    add("S3", profil.hasStrategyHouse);
+    add("T1", profil.hasTimeSeries);
+    add("T2", profil.hasWaterfall);
+    add("T3", profil.hasComposition);
+    add("T4", profil.hasComparison);
+    add("T5", profil.hasFunnel && profil.numberCount >= 5);
+    add("T6", profil.hasRoadmap);
+  }
+  return keys;
+}
+
+export function allowedSlideKeys(answers: LinkedinAnswers, articleText = "", signalText = ""): AssetSlideKey[] {
   const picked = (answers.slide_types || []).filter(isSlideKey);
   if (picked.length) return [...new Set(picked)];
   if (answers.variant !== "auto" && isSlideKey(answers.variant)) {
@@ -1343,8 +1465,7 @@ export function allowedSlideKeys(answers: LinkedinAnswers, articleText = ""): As
     const [cover, ende] = carouselFrameKeys(answers.theme);
     return [cover, answers.variant, ende];
   }
-  const keys: AssetSlideKey[] = [...ASSET_AUTO_TEXT_KEYS].filter((key) => ASSET_SLIDE_THEMES[key] === answers.theme);
-  if (claimedNumbers(articleText).length >= 3 && ASSET_SLIDE_THEMES[ASSET_AUTO_DONUT] === answers.theme) keys.push(ASSET_AUTO_DONUT);
+  const keys = autoContentSlideKeys(answers, articleText, signalText);
   if (answers.asset_type === "carousel") {
     const [cover, ende] = carouselFrameKeys(answers.theme);
     return [cover, ...keys, ende];
@@ -1500,6 +1621,28 @@ function captionAuftrag(answers: LinkedinAnswers): string {
   return "Caption: sachlich, ohne Werbeton.";
 }
 
+function signalSelectionText(signal: AssetSignalInput): string {
+  return [
+    signal.headline_de, signal.summary_de, signal.evidence, signal.why_de,
+    signal.roots_link_de, signal.roots_offering,
+  ].filter(Boolean).join("\n");
+}
+
+function vorlagenwahlBlock(profil: AssetEvidenceProfile, erlaubt: AssetSlideKey[], carousel: boolean): string {
+  const jaNein = (wert: boolean) => wert ? "ja" : "nein";
+  return `<vorlagenwahl>
+Die Kandidaten sind serverseitig aus der im Material beobachtbaren Struktur gefiltert: ${erlaubt.join(", ")}.
+Beobachtet: ${profil.numberCount} belastbare Zahlen, ${profil.percentCount} Prozentwerte, wörtliches Zitat ${jaNein(profil.hasDirectQuote)}, echter Gegensatz ${jaNein(profil.hasExplicitContrast)}, Liste ${jaNein(profil.hasParallelList)}, Ablauf ${jaNein(profil.hasSequence)}, Zeitreihe ${jaNein(profil.hasTimeSeries)}, echte 100-Prozent-Zusammensetzung ${jaNein(profil.hasComposition)}.
+Wähle nach der Argumentationsform, nicht nach optischer Auffälligkeit:
+1. Ein wörtliches, zugeschriebenes Zitat trägt A. Eine Paraphrase ist niemals ein Zitat.
+2. Eine zentrale Zahl aus Überschrift oder Zusammenfassung trägt E. L nur, wenn genau diese Zahl durch drei verschiedene Belege gedeutet wird. H nur für mehrere eigenständige Zahlenbefunde.
+3. G und K brauchen einen im Material wirklich vorhandenen Gegensatz. I braucht eine kausale Reihenfolge; F dagegen parallele Punkte.
+4. S- und T-Layouts sind Daten- oder Denkmodelle, keine Dekoration. Nutze sie ausschließlich bei der beschriebenen Struktur. T3 braucht drei disjunkte Anteile derselben Basis, die zusammen ungefähr 100 Prozent ergeben.
+5. B beziehungsweise M ist der starke Standard: eine konkrete These plus genau ein Beleg. Wähle den Standard, wenn eine Spezialvorlage den Inhalt verbiegen würde.
+${carousel ? "Im Carousel: Cover = These. Ordne die Mitte als Kontext → Beleg → Mechanik → Konsequenz. Jeder Slide beantwortet eine neue Frage; kein Slide paraphrasiert nur den vorherigen. Eine Spezialvorlage höchstens einmal, B/M darf bei verschiedenen Gedanken wiederkehren. Endfolie = Schlussfolgerung plus ein CTA." : "Beim Einzelbild muss genau ein Gedanke in höchstens drei Sekunden erfassbar sein. Keine Nebenargumente anhängen."}
+</vorlagenwahl>`;
+}
+
 function linkedinPrompt(
   answers: LinkedinAnswers,
   daten: string,
@@ -1507,7 +1650,9 @@ function linkedinPrompt(
   signal: AssetSignalInput,
 ): string {
   const carousel = answers.asset_type === "carousel";
-  const erlaubt = allowedSlideKeys(answers, articleText);
+  const selectionText = signalSelectionText(signal);
+  const erlaubt = allowedSlideKeys(answers, articleText, selectionText);
+  const evidenceProfile = assetEvidenceProfile(articleText, selectionText);
   const thema = assetThemeKicker(signal);
   // Beim Privatprofil traegt das Asset kein ROOTS-Zeichen und keinen
   // ROOTS-Leistungsverweis; die Fusszeile kommt aus der Vorlage.
@@ -1551,6 +1696,7 @@ ${ASSETTYP_BRIEFING}
 <auftrag>
 ${auftrag}
 </auftrag>
+${vorlagenwahlBlock(evidenceProfile, erlaubt, carousel)}
 ${variantenBlock(erlaubt, carousel)}
 ${LEITKENNZAHL}
 <aufbau>
@@ -1561,13 +1707,13 @@ takeaway: nur bei Varianten, die es zeichnen (K, L, S, T). Sonst die Pointe ins 
 footer_left: unten links. ${privat ? `${absender ? `Immer „${absender}“` : "Immer"} oder die belegte Artikelquelle` : "Immer „ROOTS Consultants“ oder die belegte Artikelquelle"}. NIE den Zielkunden. Die Domain rechts ist fest.
 image_hint: das Bildmotiv in Worten, nur bei C, D und J.
 slot_a bis slot_center: nur bei Infografiken, die diese Slots zeichnen.
-post_text: die Caption des Beitrags, höchstens 1300 Zeichen, erste Zeile ist der Aufhänger, letzter Absatz der Handlungsaufruf. Absätze bleiben Absätze. Keine Ziffer und kein Zahlwort, die nicht im Artikel stehen.${carousel ? `
+post_text: die Caption des Beitrags, 90 bis 180 Wörter und höchstens 1300 Zeichen. Drei bis sechs kurze Absätze. Erste Zeile: konkrete, keyword-klare Aussage statt Teaserfloskel. Danach Einordnung und belegter Nutzen für Marketingentscheider. Letzter Absatz: genau eine natürliche Gesprächsfrage oder Handlungsaufforderung. Keine Ziffer und kein Zahlwort, die nicht im Artikel stehen.${carousel ? `
 Der erste Slide setzt die These, die mittleren tragen je einen Gedanken, der letzte den Aufruf im sichtbaren Pointe-Feld der gewählten Variante.` : ""}
 </aufbau>
 ${SPRACHREGELN}
 ${BELEGREGELN}
 <selbstpruefung>
-Prüfe vor dem JSON jeden Slide gegen seine Inhaltslogik und seine sichtbaren Felder. Lies Zahlenwert plus sichtbaren Bezug als einen Satz; tausche keine Zahl gegen eine auffälligere Nebenkennzahl. Prüfe, dass title, subtitle, bullets, labels und Schritte dieselbe Aussage tragen, nicht nur dass jedes Einzelwort irgendwo im Artikel vorkommt. Kürze anschließend auf die Zeichen- und Zeilengrenzen der konkreten Variante.
+Prüfe vor dem JSON zuerst die Vorlagenwahl gegen <vorlagenwahl>, dann jeden Slide gegen seine Inhaltslogik und seine sichtbaren Felder. Lies Zahlenwert plus sichtbaren Bezug als einen Satz; tausche keine Zahl gegen eine auffälligere Nebenkennzahl. Prüfe, dass title, subtitle, bullets, labels und Schritte dieselbe Aussage tragen, nicht nur dass jedes Einzelwort irgendwo im Artikel vorkommt. Lies das Carousel anschließend am Stück: Jede Folie muss einen neuen argumentativen Schritt leisten. Kürze zuletzt auf die Zeichen- und Zeilengrenzen der konkreten Variante.
 </selbstpruefung>
 ${DATENHINWEIS}
 ${daten}
@@ -1801,10 +1947,15 @@ export function assetResponseSchema(
   kind: AssetKind,
   answers: AssetAnswers,
   articleText = "",
+  signalText = "",
 ): Record<string, unknown> {
   if (kind === "memo") return ASSET_SCHEMA_MEMO;
   const clone = JSON.parse(JSON.stringify(ASSET_SCHEMA_LINKEDIN)) as typeof ASSET_SCHEMA_LINKEDIN;
-  clone.properties.slides.items.properties.variant.enum = allowedSlideKeys(answers as LinkedinAnswers, articleText);
+  clone.properties.slides.items.properties.variant.enum = allowedSlideKeys(
+    answers as LinkedinAnswers,
+    articleText,
+    signalText,
+  );
   return clone;
 }
 
@@ -1870,6 +2021,7 @@ function fieldCap(variant: string, field: string, carousel: boolean): number {
     J: { quote: 110, attribution: 60 },
     K: { title: 50, takeaway: 110 },
     L: { title: 60, stat_value: 14, stat_label: 84, bullet: 52, takeaway: 110 },
+    M: { title: 48, subtitle: 115 },
     S1: { title: 64, subtitle: 100, takeaway: 110, slot: 18 },
     S2: { title: 64, subtitle: 100, takeaway: 110, step_title: 18 },
     S3: { title: 64, subtitle: 100, takeaway: 110, step_title: 16, step_text: 18, slot: 26 },
@@ -2043,21 +2195,33 @@ function evidenceIsCopied(excerpt: string, corpus: string): boolean {
 }
 
 function semanticTokens(value: string): Set<string> {
-  const tokens = proofText(value).split(" ").filter((wort) => {
-    if (wort.length < 5 || /^\d+$/.test(wort) || NUMBER_CONTEXT_STOP.has(wort)) return false;
-    return true;
-  });
-  return new Set(tokens);
+  const tokens = new Set<string>();
+  for (const wort of proofText(value).split(" ")) {
+    if (wort.length < 5 || /^\d+$/.test(wort) || NUMBER_CONTEXT_STOP.has(wort)) continue;
+    tokens.add(wort);
+    // Kleine Flexionsnormalisierung fuer direkte deutsche Labels:
+    // „junge Erwachsene“ und „jungen Erwachsenen“ meinen denselben Bezug.
+    if (wort.length >= 7) {
+      const stamm = wort.replace(/(?:ern|en|er|es|em|e|s)$/i, "");
+      if (stamm.length >= 5) tokens.add(stamm);
+    }
+  }
+  return tokens;
 }
 
 /** Sichtbare Aussage und Quellenausschnitt muessen wenigstens dieselben
  * inhaltlichen Anker tragen. Das ist bewusst konservativ: bei einer sauberen
  * Zahlenfolie stehen Bezugsgruppe oder Messgegenstand in beiden Texten. */
 export function numberClaimMatchesSource(claim: string, sourceContext: string): boolean {
+  const claimProof = proofText(claim);
+  const sourceProof = proofText(sourceContext);
+  // Kurze, aber genaue Labels wie „unter 30“ oder „2025“ verlieren bei der
+  // Token-Heuristik ihren Inhalt. Wortgleiche Phrasen sind der staerkere Beleg.
+  if (claimProof.length >= 4 && sourceProof.includes(claimProof)) return true;
   const claimTokens = semanticTokens(claim);
   const sourceTokens = semanticTokens(sourceContext);
   const gemeinsam = [...claimTokens].filter((token) => sourceTokens.has(token));
-  return gemeinsam.length >= 2 || gemeinsam.some((token) => token.length >= 10);
+  return gemeinsam.length >= 2 || gemeinsam.some((token) => token.length >= 8);
 }
 
 function requireNumberContexts(slide: AssetSlide, corpus: string): AssetSlide {
@@ -2073,6 +2237,16 @@ function requireNumberContexts(slide: AssetSlide, corpus: string): AssetSlide {
     }
     if (!quantityIsAttested(eintrag.value, excerpt)) {
       throw new Error(`Folie ${slide.variant}: Der Quellenausschnitt gehört nicht zur sichtbaren Kennzahl ${eintrag.value}.`);
+    }
+    if (["H", "T3", "T4", "T5"].includes(slide.variant)
+      && !numberClaimMatchesSource(eintrag.label, excerpt)) {
+      throw new Error(`Folie ${slide.variant}: Das Label „${eintrag.label}“ beschreibt nicht den direkten Quellenausschnitt der Kennzahl ${eintrag.value}.`);
+    }
+    if (slide.variant === "T1") {
+      const label = proofText(eintrag.label);
+      if (!label || !proofText(excerpt).includes(label)) {
+        throw new Error(`Folie T1: Der Zeitraum „${eintrag.label}“ steht nicht beim Wert ${eintrag.value} im Quellenausschnitt.`);
+      }
     }
   }
   if (slide.variant === "E" || slide.variant === "L") {
@@ -2101,6 +2275,231 @@ function applyInfographicGate(slide: AssetSlide): AssetSlide {
   if (fehlt.length) {
     throw new Error(`Infografik ${slide.variant} hat ungefüllte Zeichnungs-Slots (${fehlt.join(", ")}). Alle Slots aus dem Artikel füllen oder eine Textfolie wählen.`);
   }
+  return slide;
+}
+
+function nonEmpty(value: unknown): boolean {
+  return Boolean(String(value || "").trim());
+}
+
+/** Assetweise Mindestform. Ein gefülltes JSON ist noch kein gutes Asset: Die
+ * Vorlage muss alle Teile besitzen, die ihre sichtbare Aussage tragen. */
+export function variantShapeIssues(slide: AssetSlide): string[] {
+  const fehlt: string[] = [];
+  const need = (ok: boolean, label: string) => { if (!ok) fehlt.push(label); };
+  switch (slide.variant) {
+    case "U1": case "U2":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.subtitle), "subtitle"); break;
+    case "U3": case "U4":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.subtitle), "subtitle"); need(nonEmpty(slide.takeaway), "CTA"); break;
+    case "A":
+      need(nonEmpty(slide.quote), "quote"); need(nonEmpty(slide.attribution), "attribution"); break;
+    case "B": case "M":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.subtitle), "subtitle"); break;
+    case "C": case "D":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.subtitle), "subtitle"); need(nonEmpty(slide.image_hint), "image_hint"); break;
+    case "E":
+      need(nonEmpty(slide.stat.value), "stat.value"); need(nonEmpty(slide.stat.label), "stat.label");
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.subtitle), "subtitle"); break;
+    case "F":
+      need(nonEmpty(slide.title), "title"); need(slide.bullets.length >= 3, "mindestens 3 bullets"); break;
+    case "G":
+      need(nonEmpty(slide.myth), "myth"); need(nonEmpty(slide.fact), "fact"); break;
+    case "H":
+      need(slide.stats.length >= 2, "mindestens 2 stats"); break;
+    case "I":
+      need(nonEmpty(slide.title), "title"); need(slide.steps.length >= 3, "mindestens 3 steps");
+      need(slide.steps.every((step) => nonEmpty(step.title) && nonEmpty(step.text)), "title und text je step"); break;
+    case "J":
+      need(nonEmpty(slide.quote), "quote"); need(nonEmpty(slide.attribution), "attribution"); need(nonEmpty(slide.image_hint), "image_hint"); break;
+    case "K": {
+      const streichungen = [...slide.title.matchAll(/~~([^~]+)~~/g)];
+      need(streichungen.length === 1 && streichungen[0][1].trim().split(/\s+/).length === 1, "genau ein gestrichenes Wort");
+      need(nonEmpty(slide.takeaway), "takeaway"); break;
+    }
+    case "L":
+      need(nonEmpty(slide.stat.value), "stat.value"); need(nonEmpty(slide.stat.label), "stat.label");
+      need(nonEmpty(slide.title), "title"); need(slide.bullets.length === 3, "genau 3 bullets"); need(nonEmpty(slide.takeaway), "takeaway"); break;
+    case "S1":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway");
+      for (const feld of ["slot_a", "slot_b", "slot_c", "slot_center"] as const) need(nonEmpty(slide[feld]), feld);
+      break;
+    case "S2":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway");
+      need(slide.steps.length === 4, "genau 4 Stufen");
+      need(slide.steps.every((step) => nonEmpty(step.title)), "title je Stufe"); break;
+    case "S3":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway");
+      need(slide.steps.length === 3, "genau 3 Säulen");
+      need(slide.steps.every((step) => nonEmpty(step.title) && nonEmpty(step.text)), "title und text je Säule");
+      for (const feld of ["slot_a", "slot_b", "slot_center"] as const) need(nonEmpty(slide[feld]), feld);
+      break;
+    case "S4":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway");
+      need(slide.steps.length === 5, "genau 5 Stufen");
+      need(slide.steps.every((step) => nonEmpty(step.title) && nonEmpty(step.text)), "title und text je Stufe"); break;
+    case "T1":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway");
+      need(slide.stats.length >= 3 && slide.stats.length <= 7, "3 bis 7 Zeitpunkte");
+      need(slide.stats.every((stat) => nonEmpty(stat.value) && nonEmpty(stat.label)), "value und label je Zeitpunkt"); break;
+    case "T2":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway");
+      need(slide.stats.length === 3, "genau 3 Balken");
+      need(slide.stats.every((stat) => nonEmpty(stat.value) && nonEmpty(stat.label)), "value und label je Balken"); break;
+    case "T3":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway"); need(nonEmpty(slide.slot_center), "slot_center");
+      need(slide.stats.length === 3, "genau 3 Anteile");
+      need(slide.stats.every((stat) => nonEmpty(stat.value) && nonEmpty(stat.label)), "value und label je Anteil"); break;
+    case "T4":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway");
+      need(slide.stats.length >= 4 && slide.stats.length <= 5, "4 bis 5 Balken");
+      need(slide.stats.every((stat) => nonEmpty(stat.value) && nonEmpty(stat.label)), "value und label je Balken"); break;
+    case "T5":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway");
+      need(slide.stats.length === 5, "genau 5 Funnelstufen");
+      need(slide.stats.every((stat) => nonEmpty(stat.value) && nonEmpty(stat.label)), "value und label je Funnelstufe"); break;
+    case "T6":
+      need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.takeaway), "takeaway");
+      need(slide.steps.length === 4, "genau 4 Phasen");
+      need(slide.steps.every((step) => nonEmpty(step.n) && nonEmpty(step.title) && nonEmpty(step.text)), "Zeit, title und text je Phase"); break;
+  }
+  return [...new Set(fehlt)];
+}
+
+function requireVariantShape(slide: AssetSlide): AssetSlide {
+  const issues = variantShapeIssues(slide);
+  if (issues.length) {
+    throw new Error(`Vorlage ${slide.variant} ist inhaltlich unvollständig (${issues.join(", ")}). Felder passend füllen oder eine einfachere Vorlage wählen.`);
+  }
+  return slide;
+}
+
+function requireQuoteEvidence(slide: AssetSlide, corpus: string): AssetSlide {
+  if (!corpus || (slide.variant !== "A" && slide.variant !== "J")) return slide;
+  if (!evidenceIsCopied(slide.quote, corpus)) {
+    throw new Error(`Vorlage ${slide.variant} braucht ein wortgleiches Zitat aus dem Artikel; eine Paraphrase darf nicht als Zitat erscheinen.`);
+  }
+  if (!numberClaimMatchesSource(slide.attribution, corpus)) {
+    const attribution = proofText(slide.attribution);
+    if (attribution.length < 5 || !proofText(corpus).includes(attribution)) {
+      throw new Error(`Vorlage ${slide.variant} braucht die im Artikel belegte Person und Rolle zum Zitat.`);
+    }
+  }
+  return slide;
+}
+
+function percentageMagnitude(value: string): number | null {
+  const match = String(value || "").match(/(-?\d{1,3}(?:[.,]\d+)?)\s*(?:%|Prozent)/i);
+  if (!match) return null;
+  const parsed = Number(match[1].replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function numericMagnitude(value: string): number | null {
+  const match = String(value || "").match(/(?<!\d)([-+]?\s*(?:\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?))(?!\d)/);
+  if (!match) return null;
+  const cleaned = match[1].replace(/\s/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed)) return null;
+  const lower = proofText(value);
+  const faktor = /\bmrd\b|milliard/.test(lower) ? 1_000_000_000
+    : /\bmio\b|million/.test(lower) ? 1_000_000
+      : /\btsd\b|tausend/.test(lower) ? 1_000 : 1;
+  return parsed * faktor;
+}
+
+function statUnit(value: string): string {
+  const lower = proofText(value);
+  if (/%|prozent/i.test(value)) return "%";
+  if (/€|eur|euro/.test(lower)) return "eur";
+  if (/\$|usd|dollar/.test(lower)) return "usd";
+  return lower.replace(/[-+]?\d[\d.,]*/g, "").trim();
+}
+
+/** Mathematische Mindestlogik der Datenlayouts. Die Geometrie darf keine
+ * Beziehung behaupten, die die gelieferten Werte nicht besitzen. */
+export function diagramSemanticIssues(slide: AssetSlide): string[] {
+  const issues: string[] = [];
+  if (slide.variant === "S1") {
+    const faktoren = [slide.slot_a, slide.slot_b, slide.slot_c].map(proofText).filter(Boolean);
+    if (new Set(faktoren).size !== 3) issues.push("Venn-Faktoren müssen verschieden sein");
+  }
+  if (["S2", "S3", "S4"].includes(slide.variant)) {
+    const stufen = slide.steps.map((item) => proofText(item.title)).filter(Boolean);
+    if (new Set(stufen).size !== slide.steps.length) issues.push("Stufen oder Säulen müssen verschieden sein");
+  }
+  if (slide.variant === "T1") {
+    const labels = slide.stats.map((item) => proofText(item.label)).filter(Boolean);
+    if (new Set(labels).size !== slide.stats.length) issues.push("Zeitpunkte müssen verschieden sein");
+    const values = slide.stats.map((item) => numericMagnitude(item.value));
+    if (values.some((value) => value === null || value < 0)) issues.push("Zeitreihenwerte müssen nichtnegative Zahlen sein");
+    const units = new Set(slide.stats.map((item) => statUnit(item.value)).filter(Boolean));
+    if (units.size > 1) issues.push("Zeitreihenwerte brauchen dieselbe Maßeinheit");
+    const periods = slide.stats.map((item) => numericMagnitude(item.label));
+    if (periods.every((value) => value !== null)) {
+      for (let index = 1; index < periods.length; index += 1) {
+        if ((periods[index] as number) <= (periods[index - 1] as number)) {
+          issues.push("Zeitpunkte müssen chronologisch aufsteigen");
+          break;
+        }
+      }
+    }
+  }
+  if (slide.variant === "T2") {
+    const values = slide.stats.map((item) => numericMagnitude(item.value));
+    if (values.length === 3 && values.every((value) => value !== null)) {
+      const [start, delta, ende] = values as number[];
+      const toleranz = Math.max(0.01, Math.abs(start) * 0.01);
+      const deltaRaw = String(slide.stats[1]?.value || "").trim();
+      const abweichung = /^[+-]/.test(deltaRaw)
+        ? Math.abs(start + delta - ende)
+        : Math.min(Math.abs(start + delta - ende), Math.abs(start - Math.abs(delta) - ende));
+      if (abweichung > toleranz) {
+        issues.push("Ausgangswert, Veränderung und Ergebnis müssen rechnerisch zusammenpassen");
+      }
+    }
+    const units = new Set(slide.stats.map((item) => statUnit(item.value)).filter(Boolean));
+    if (units.size > 1) issues.push("Wasserfallwerte brauchen dieselbe Maßeinheit");
+  }
+  if (slide.variant === "T3") {
+    const values = slide.stats.map((item) => percentageMagnitude(item.value));
+    if (values.some((value) => value === null)) issues.push("alle Donutwerte müssen Prozentanteile sein");
+    else {
+      const summe = (values as number[]).reduce((sum, value) => sum + value, 0);
+      if (summe < 99 || summe > 101) issues.push("Donutanteile müssen zusammen 100 Prozent ergeben");
+    }
+    const labels = slide.stats.map((item) => proofText(item.label)).filter(Boolean);
+    if (new Set(labels).size !== slide.stats.length) issues.push("Donutanteile brauchen verschiedene Kategorien");
+  }
+  if (slide.variant === "T4") {
+    const units = new Set(slide.stats.map((item) => statUnit(item.value)).filter(Boolean));
+    if (units.size > 1) issues.push("Balken brauchen dieselbe Maßeinheit");
+    const labels = slide.stats.map((item) => proofText(item.label)).filter(Boolean);
+    if (new Set(labels).size !== slide.stats.length) issues.push("Balken brauchen verschiedene Kategorien");
+  }
+  if (slide.variant === "T5") {
+    const values = slide.stats.map((item) => numericMagnitude(item.value));
+    const units = new Set(slide.stats.map((item) => statUnit(item.value)).filter(Boolean));
+    if (units.size > 1) issues.push("Funnelwerte brauchen dieselbe Maßeinheit");
+    if (values.every((value) => value !== null)) {
+      for (let index = 1; index < values.length; index += 1) {
+        if ((values[index] as number) > (values[index - 1] as number)) {
+          issues.push("Funnelwerte dürfen zur nächsten Stufe nicht steigen");
+          break;
+        }
+      }
+    }
+  }
+  if (slide.variant === "T6") {
+    const zeiten = slide.steps.map((item) => proofText(item.n)).filter(Boolean);
+    if (new Set(zeiten).size !== slide.steps.length) issues.push("Roadmap-Zeitpunkte müssen verschieden sein");
+  }
+  return issues;
+}
+
+function requireDiagramSemantics(slide: AssetSlide): AssetSlide {
+  const issues = diagramSemanticIssues(slide);
+  if (issues.length) throw new Error(`Infografik ${slide.variant} bildet die Daten falsch ab (${issues.join(", ")}).`);
   return slide;
 }
 
@@ -2160,7 +2559,11 @@ function normalizeSlide(
     slot_d: text(item.slot_d, cap("slot")),
     slot_center: text(item.slot_center, cap("slot")),
   };
-  return requireNumberContexts(applyNumberGate(trimVariantCollections(slide), corpus), corpus);
+  const gated = requireNumberContexts(applyNumberGate(trimVariantCollections(slide), corpus), corpus);
+  // Die sichtbare Pointe wird erst nach Kenntnis der Folienposition aus einem
+  // alten takeaway in subtitle/bullets verschoben. Die Form pruefen wir daher
+  // nach dieser Migration, nicht gegen das rohe Modell-JSON.
+  return requireQuoteEvidence(requireDiagramSemantics(gated), corpus);
 }
 
 /** Ein Slide ohne jede Aussage waere im Studio eine leere Buehne. */
@@ -2177,12 +2580,18 @@ function normalizeLinkedin(
   answers: LinkedinAnswers,
   context: AssetNormalizeContext,
 ): LinkedinPayload {
-  const fallbackVariant: AssetSlideKey = answers.variant === "auto" ? "B" : answers.variant;
+  const fallbackVariant: AssetSlideKey = answers.variant === "auto"
+    ? (answers.theme === "dark" ? "M" : "B")
+    : answers.variant;
   const carousel = answers.asset_type === "carousel";
   const limit = carousel ? Math.max(2, Math.min(answers.slides || 10, LINKEDIN_DOCUMENT_PAGE_MAX)) : 1;
   const auswahlFehler = carousel ? manualCarouselSelectionError(answers) : null;
   if (auswahlFehler) throw new Error(auswahlFehler);
   const corpus = String(context.articleText || "");
+  const selectionText = [
+    context.signalHeadline, context.signalSummary, context.rootsLink, context.rootsOffering,
+  ].filter(Boolean).join("\n");
+  const autoAllowed = new Set(allowedSlideKeys(answers, corpus, selectionText));
   const [coverVariant, endVariant] = carouselFrameKeys(answers.theme);
   const selected = (answers.slide_types || []).filter(isSlideKey);
   const slides = (Array.isArray(raw.slides) ? raw.slides : [])
@@ -2191,7 +2600,11 @@ function normalizeLinkedin(
         || (carousel && index === 0 ? coverVariant : carousel && index === limit - 1 ? endVariant : undefined)
         || (!carousel && answers.variant !== "auto" ? answers.variant : undefined);
       const source = record(entry);
-      return normalizeSlide(expected ? { ...source, variant: expected } : source, fallbackVariant, carousel, corpus);
+      const normalized = normalizeSlide(expected ? { ...source, variant: expected } : source, fallbackVariant, carousel, corpus);
+      if (!selected.length && answers.variant === "auto" && !autoAllowed.has(normalized.variant)) {
+        throw new Error(`Die automatische Vorlagenwahl ${normalized.variant} passt nicht zur belegten Struktur dieses Signals. Erlaubt sind ${[...autoAllowed].join(", ")}.`);
+      }
+      return normalized;
     })
     .filter(slideHasSubstance);
   if (!slides.length) {
@@ -2210,7 +2623,9 @@ function normalizeLinkedin(
     );
   }
   const kept = slides.slice(0, limit)
-    .map((slide, index, alle) => dropHiddenFields(placePointe(slide, index === alle.length - 1)))
+    .map((slide, index, alle) => requireVariantShape(
+      dropHiddenFields(placePointe(slide, index === alle.length - 1)),
+    ))
     .filter(slideHasSubstance);
   if (!kept.length) {
     throw new Error("Nach dem Entfernen unsichtbarer Felder blieb kein Slide mit Inhalt.");
@@ -2321,7 +2736,7 @@ function requirePrimaryLeadNumber(slides: AssetSlide[], context: AssetNormalizeC
  * bleiben ein harter Fehler: die kommen nicht von einer Tippvariante.
  */
 export function assetMangelIsRepairable(mangel: string): boolean {
-  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|source_context|Quellenausschnitt|sichtbare Aussage passt nicht|ungefüllte Zeichnungs-Slots|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel|100-Tage-CMO-Sprache|ROOTS-Leistung zum Titel|Nachrichtenmeldung im Titel/i.test(String(mangel || ""));
+  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|source_context|Quellenausschnitt|sichtbare Aussage passt nicht|ungefüllte Zeichnungs-Slots|Vorlage|Vorlagenwahl|Infografik|wortgleiches Zitat|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel|100-Tage-CMO-Sprache|ROOTS-Leistung zum Titel|Nachrichtenmeldung im Titel/i.test(String(mangel || ""));
 }
 
 function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {

@@ -48,6 +48,7 @@ const VARIANTS = [
   ["I", "Prozess in Schritten"],
   ["L", "Kennzahl mit Anmerkung"],
   ["K", "Durchgestrichenes Wort"],
+  ["M", "Titel dunkel"],
   ["C", "Titel mit Bild"],
   ["D", "Vollbild mit Overlay"],
   ["J", "Zitat über Bild"],
@@ -82,7 +83,7 @@ const VARIANT_KEYS = VARIANTS_ALL.map(([key]) => key);
 const LOOK = {
   U1: "hell", U2: "dunkel", U3: "hell", U4: "dunkel",
   A: "dunkel", B: "hell", C: "hell", D: "dunkel", E: "hell", F: "hell",
-  G: "hell", H: "dunkel", I: "hell", J: "dunkel", K: "hell", L: "hell",
+  G: "hell", H: "dunkel", I: "hell", J: "dunkel", K: "hell", L: "hell", M: "dunkel",
   S1: "hell", S2: "dunkel", S3: "hell", S4: "dunkel",
   T1: "hell", T2: "hell", T3: "hell", T4: "hell", T5: "hell", T6: "hell",
 };
@@ -1293,7 +1294,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-2131";
+import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-0003";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -2054,6 +2055,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       J: { quote: "Gutes Marketing beginnt nicht mit Content, sondern mit einer klaren Entscheidung.", attribution: "Marketing Strategy · Beispiel" },
       K: { title: "Nicht mehr ~~Content~~, sondern mehr Relevanz", takeaway: "**Folge:** Weniger Formate, klarere Markenentscheidung." },
       L: { stat: { value: "42 %", label: "Beispielwert: klare Zuordnung zur Marke" }, title: "Wiedererkennung entsteht durch Konsequenz", bullets: ["**Ein Versprechen** über alle Kanäle", "**Eine Bildwelt** mit eigener Handschrift", "**Ein Lernsystem** für die Aktivierung"], takeaway: "**Lesart:** Konsistenz macht Wirkung kumulativ." },
+      M: { title: "Klarheit schlägt Kampagnendruck.", subtitle: "Wenn Positionierung und Aktivierung dieselbe Entscheidung tragen, wird Marketing schneller und wiedererkennbarer." },
       S1: { title: "Wo Markenwirkung entsteht", subtitle: "Drei Fähigkeiten müssen gleichzeitig zusammenkommen.", slot_a: "Kundenrelevanz", slot_b: "Markenklarheit", slot_c: "Aktivierung", slot_center: "Wachstum", takeaway: "**Schnittpunkt:** Relevanz wird zur wiedererkennbaren Handlung." },
       S2: { title: "Vier Stufen wirksamer Markenführung", subtitle: "Von Einzelmaßnahmen zu einer geführten Marke.", steps: [{ n: "04", title: "Leitidee", text: "" }, { n: "03", title: "System", text: "" }, { n: "02", title: "Kanäle", text: "" }, { n: "01", title: "Maßnahmen", text: "" }], takeaway: "**Ziel:** Entscheidungen kommen aus einer gemeinsamen Logik." },
       S3: { title: "Das Haus der Markenaktivierung", subtitle: "Ein Versprechen, drei tragende Fähigkeiten, ein Ziel.", slot_a: "Markenversprechen", slot_b: "führt Entscheidungen", slot_center: "Messbares Wachstumsziel", steps: [{ n: "1", title: "Insight", text: "Kunden verstehen" }, { n: "2", title: "Position", text: "Nutzen zuspitzen" }, { n: "3", title: "Aktivierung", text: "Erlebnis verbinden" }], takeaway: "**Stabilität:** Jede Säule zahlt auf dasselbe Versprechen ein." },
@@ -3422,10 +3424,124 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return tops.length || 1;
   }
 
+  /** Zahlen aus den sichtbaren SVG-Labels. Deutsche Dezimal- und
+   * Tausenderschreibweise sowie Tsd./Mio./Mrd. werden vergleichbar. */
+  function diagrammZahl(value) {
+    const raw = String(value || "").replace(/\u00a0/g, " ");
+    const hit = raw.match(/(?<!\d)[-+]?\s*(?:\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)(?!\d)/);
+    if (!hit) return null;
+    const number = Number(hit[0].replace(/\s/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", "."));
+    if (!Number.isFinite(number)) return null;
+    const lower = raw.toLowerCase();
+    const factor = /mrd\.?|milliard/.test(lower) ? 1e9 : /mio\.?|million/.test(lower) ? 1e6 : /tsd\.?|tausend/.test(lower) ? 1e3 : 1;
+    return number * factor;
+  }
+
+  /** Die Diagramm-Geometrie folgt den gelieferten Werten. Die ursprünglichen
+   * SVGs waren auf die Beispielzahlen gezeichnet; andere Werte hätten sonst
+   * korrekte Labels auf falschen Balken, Säulen oder Donutsegmenten gezeigt. */
+  function passeDatenDiagrammeAn(wurzel) {
+    const set = (node, attrs) => {
+      if (!node) return;
+      Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(Math.round(Number(value) * 100) / 100)));
+    };
+    const valueNodes = (stage) => [...stage.querySelectorAll('svg text[data-field$=".value"]')];
+    wurzel?.querySelectorAll?.('.as-stage--tpl[data-variant]').forEach((stage) => {
+      const variant = stage.getAttribute('data-variant');
+      const svg = stage.querySelector('svg');
+      if (!svg || !['T1', 'T2', 'T3', 'T4'].includes(variant)) return;
+      const valueTexts = valueNodes(stage);
+      const values = valueTexts.map((node) => diagrammZahl(node.textContent));
+      if (variant === 'T1') {
+        const bars = [...svg.querySelectorAll('rect[fill="#206efb"]')];
+        const bubbles = [...svg.querySelectorAll('rect[fill="#ffffff"]')];
+        const labels = [...svg.querySelectorAll('text[data-field$=".label"]')];
+        const active = values.map((value, index) => ({ value, index })).filter((item) => item.value !== null && item.value >= 0);
+        if (active.length < 3) return;
+        const max = Math.max(...active.map((item) => item.value), 1);
+        const step = 784 / active.length;
+        const width = Math.min(72, step * .5);
+        active.forEach((item, order) => {
+          const center = 92 + step * (order + .5);
+          const height = Math.max(18, 394 * item.value / max);
+          const y = 446 - height;
+          const bar = bars[item.index], bubble = bubbles[item.index], valueText = valueTexts[item.index], label = labels[item.index];
+          if (bar) { bar.style.display = ''; set(bar, { x: center - width / 2, y, width, height }); }
+          if (bubble) { bubble.style.display = ''; set(bubble, { x: center - 40.3, y: y - 37.2 }); }
+          if (valueText) { valueText.style.display = ''; set(valueText, { x: center, y: y - 12 }); }
+          if (label) { label.style.display = ''; set(label, { x: center }); }
+        });
+        values.forEach((value, index) => {
+          if (value !== null) return;
+          [bars[index], bubbles[index], valueTexts[index], labels[index]].forEach((node) => { if (node) node.style.display = 'none'; });
+        });
+        const trend = svg.querySelector('line[stroke-dasharray]');
+        if (trend) {
+          const first = active[0], last = active[active.length - 1];
+          set(trend, {
+            x1: 92 + step * .5,
+            y1: 446 - Math.max(18, 394 * first.value / max),
+            x2: 92 + step * (active.length - .5),
+            y2: 446 - Math.max(18, 394 * last.value / max),
+          });
+        }
+      }
+      if (variant === 'T2' && values.length >= 3 && values.slice(0, 3).every((value) => value !== null)) {
+        const [start, _delta, end] = values;
+        const bars = [...svg.querySelectorAll('rect')];
+        const connectors = [...svg.querySelectorAll('line[stroke-dasharray]')];
+        const max = Math.max(Math.abs(start), Math.abs(end), 1);
+        const yFor = (value) => 440 - Math.max(0, value) / max * 374;
+        const startY = yFor(start), endY = yFor(end);
+        set(bars[0], { y: startY, height: 440 - startY });
+        set(bars[1], { y: Math.min(startY, endY), height: Math.max(4, Math.abs(endY - startY)) });
+        set(bars[2], { y: endY, height: 440 - endY });
+        set(connectors[0], { y1: startY, y2: startY }); set(connectors[1], { y1: endY, y2: endY });
+        set(valueTexts[0], { y: Math.max(20, startY - 12) });
+        set(valueTexts[1], { y: Math.max(20, Math.min(startY, endY) - 12) });
+        set(valueTexts[2], { y: Math.max(20, endY - 12) });
+      }
+      if (variant === 'T3' && values.length >= 3 && values.slice(0, 3).every((value) => value !== null && value >= 0)) {
+        const total = values.slice(0, 3).reduce((sum, value) => sum + value, 0);
+        if (total <= 0) return;
+        const polar = (radius, angle) => ({ x: 300 + radius * Math.cos(angle), y: 260 + radius * Math.sin(angle) });
+        let start = -Math.PI / 2;
+        [...svg.querySelectorAll('path')].slice(0, 3).forEach((path, index) => {
+          const end = start + (values[index] / total) * Math.PI * 2;
+          const a = polar(190, start), b = polar(190, end), c = polar(112, end), d = polar(112, start);
+          const large = end - start > Math.PI ? 1 : 0;
+          path.setAttribute('d', `M${a.x},${a.y} A190,190 0 ${large} 1 ${b.x},${b.y} L${c.x},${c.y} A112,112 0 ${large} 0 ${d.x},${d.y} Z`);
+          start = end;
+        });
+      }
+      if (variant === 'T4') {
+        const bars = [...svg.querySelectorAll('rect')];
+        const labels = [...svg.querySelectorAll('text[data-field$=".label"]')];
+        const active = values.map((value, index) => ({ value, index })).filter((item) => item.value !== null && item.value >= 0);
+        if (active.length < 4) return;
+        const max = Math.max(...active.map((item) => item.value), 1);
+        const row = 462 / active.length;
+        active.forEach((item, order) => {
+          const y = 14 + row * order + (row - 42) / 2;
+          const width = Math.max(8, 500 * item.value / max);
+          const bar = bars[item.index], valueText = valueTexts[item.index], label = labels[item.index];
+          if (bar) { bar.style.display = ''; set(bar, { y, width }); }
+          if (valueText) { valueText.style.display = ''; set(valueText, { x: 330 + width + 14, y: y + 30 }); }
+          if (label) { label.style.display = ''; set(label, { y: y + 30 }); }
+        });
+        values.forEach((value, index) => {
+          if (value !== null) return;
+          [bars[index], valueTexts[index], labels[index]].forEach((node) => { if (node) node.style.display = 'none'; });
+        });
+      }
+    });
+  }
+
   /** Hält normale Textfelder in ihrer vorgesehenen Zeilenzahl und passt
    *  Beschriftungen innerhalb der festen SVG-Slots an. */
   function passeSlideTexteAn(wurzel) {
     if (isMemo || !wurzel) return;
+    passeDatenDiagrammeAn(wurzel);
     wurzel.querySelectorAll(".as-stage--tpl").forEach((stage) => {
       const kachel = stage.querySelector(".li");
       const variant = stage.getAttribute("data-variant") || "B";

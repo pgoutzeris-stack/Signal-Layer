@@ -5422,6 +5422,9 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
         schema: assetResponseSchema(assetKind, assetAnswers, [
           assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
+        ].filter(Boolean).join("\n"), [
+          signalForAsset.headline_de, signalForAsset.summary_de, signalForAsset.evidence,
+          signalForAsset.why_de, signalForAsset.roots_link_de, signalForAsset.roots_offering,
         ].filter(Boolean).join("\n")),
         maxOutputTokens: assetOutputTokenBudget(assetKind, assetAnswers),
         maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
@@ -5646,6 +5649,9 @@ async function retryGeneratedAssetModel(assetId: string): Promise<void> {
       model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
       schema: assetResponseSchema(assetKind, assetAnswers, [
         assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
+      ].filter(Boolean).join("\n"), [
+        signalForAsset.headline_de, signalForAsset.summary_de, signalForAsset.evidence,
+        signalForAsset.why_de, signalForAsset.roots_link_de, signalForAsset.roots_offering,
       ].filter(Boolean).join("\n")),
       maxOutputTokens: assetOutputTokenBudget(assetKind, assetAnswers),
       maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
@@ -9722,6 +9728,9 @@ Deno.serve(async (req: Request) => {
             model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
             schema: assetResponseSchema(assetKind, assetAnswers, [
               assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
+            ].filter(Boolean).join("\n"), [
+              signalForAsset.headline_de, signalForAsset.summary_de, signalForAsset.evidence,
+              signalForAsset.why_de, signalForAsset.roots_link_de, signalForAsset.roots_offering,
             ].filter(Boolean).join("\n")),
             maxOutputTokens: scope,
             // Denken und Antwort teilen sich dieses Limit. Gemessen am 13.8.2026

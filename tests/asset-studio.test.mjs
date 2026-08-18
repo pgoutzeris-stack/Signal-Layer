@@ -62,7 +62,7 @@ test("die Nutzlast des Backends passt zu den Feldern, die das Frontend liest", (
   const linkedin = backend.normalizeAssetPayload("linkedin", JSON.stringify({
     theme: "dark",
     post_text: "Beitragstext",
-    slides: [{ variant: "E", kicker: "KENNZAHL", title: "Titel mit Verb", stat: { value: "14 %", label: "Anteil, 2025" }, takeaway: "Kontrast", footer_left: "ROOTS" }],
+    slides: [{ variant: "M", kicker: "THESE", title: "Titel mit Verb", subtitle: "Kontrast", footer_left: "ROOTS" }],
   }), backend.normalizeAssetAnswers("linkedin", { asset_type: "single", theme: "dark" }));
   const slide = linkedin.slides[0];
   for (const feld of ["variant", "kicker", "title", "subtitle", "quote", "attribution", "stat", "stats", "bullets", "steps", "myth", "fact", "takeaway", "footer_left", "image_hint", "slot_a", "slot_center"]) {
@@ -337,9 +337,11 @@ test("das Vorlagen-CSS wirkt nur auf der Buehne", async () => {
 
 test("alle Assets vom Desktop stehen als Layout zur Wahl", async () => {
   const tpl = await import("../asset-templates.js");
-  // Zwoelf Einzelposts, vier Carousel-Rahmen, vier Strategiemodelle und sechs Datenbilder.
-  assert.equal(Object.keys(tpl.ASSET_TEMPLATES).length, 16);
+  // Dreizehn Einzelposts (inklusive neutraler dunkler These), vier
+  // Carousel-Rahmen, vier Strategiemodelle und sechs Datenbilder.
+  assert.equal(Object.keys(tpl.ASSET_TEMPLATES).length, 17);
   assert.equal(Object.keys(tpl.ASSET_LAYOUTS).length, 10);
+  assert.match(studio, /M: \{ title: "Klarheit schlägt Kampagnendruck\./);
   for (const [key, markup] of Object.entries(tpl.ASSET_LAYOUTS)) {
     assert.match(markup, /data-field="title"/, `Layout ${key} ohne Titel`);
     assert.match(markup, /data-field="takeaway"/, `Layout ${key} ohne Kernaussage`);
@@ -513,8 +515,8 @@ test("fetter Vorspann und Streichung ueberleben den Platzhalter", () => {
   assert.match(prompt, /\*\*Vorspann\*\* wird fett/);
   // Die Sternchen duerfen die Normalisierung ueberleben, sonst kommt nichts an.
   const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
-    slides: [{ variant: "F", title: "T", kicker: "K", footer_left: "R", takeaway: "**Pointe:** Kontrast", bullets: ["**Fett** und Text"] }],
-  }), backend.normalizeAssetAnswers("linkedin", {}));
+    slides: [{ variant: "F", title: "T", kicker: "K", footer_left: "R", takeaway: "**Pointe:** Kontrast", bullets: ["**Fett** und Text", "**Zweitens:** ein weiterer Beleg"] }],
+  }), backend.normalizeAssetAnswers("linkedin", { variant: "F" }));
   assert.equal(payload.slides[0].takeaway, "");
   assert.match(payload.slides[0].bullets.join("\n"), /\*\*Pointe:\*\*/);
   assert.match(payload.slides[0].bullets[0], /\*\*Fett\*\*/);
@@ -1126,8 +1128,7 @@ test("K und Infografiken bleiben die gewaehlte Variante, nicht still B", () => {
   assert.deepEqual(schemaS1.properties.slides.items.properties.variant.enum, ["S1"]);
   const schemaAuto = backend.assetResponseSchema("linkedin", backend.normalizeAssetAnswers("linkedin", {}));
   const autoKeys = schemaAuto.properties.slides.items.properties.variant.enum;
-  assert.ok(autoKeys.includes("K"));
-  assert.ok(autoKeys.includes("E"));
+  assert.deepEqual(autoKeys, ["B"]);
   for (const verboten of ["C", "D", "J", "S1", "T1", "T2", "T4", "T5", "T3"]) {
     assert.ok(!autoKeys.includes(verboten), `Auto ohne Zahlen darf ${verboten} nicht anbieten`);
   }
@@ -1136,7 +1137,8 @@ test("K und Infografiken bleiben die gewaehlte Variante, nicht still B", () => {
     backend.normalizeAssetAnswers("linkedin", {}),
     "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen.",
   );
-  assert.ok(schemaMitZahlen.properties.slides.items.properties.variant.enum.includes("T3"));
+  assert.ok(schemaMitZahlen.properties.slides.items.properties.variant.enum.includes("E"));
+  assert.ok(!schemaMitZahlen.properties.slides.items.properties.variant.enum.includes("T3"));
   assert.ok(!schemaMitZahlen.properties.slides.items.properties.variant.enum.includes("T1"));
 });
 
@@ -1196,8 +1198,8 @@ test("die Pointe wandert in ein sichtbares Feld, nicht ins tote takeaway", () =>
   assert.equal(payload.slides[0].takeaway, "");
   assert.deepEqual(payload.slides[0].bullets, []);
   const listicle = backend.normalizeAssetPayload("linkedin", JSON.stringify({
-    slides: [{ variant: "F", kicker: "K", title: "Drei Hebel tragen", bullets: ["Erster Hebel"], takeaway: "Der Aufruf steht am Ende", footer_left: "R" }],
-  }), backend.normalizeAssetAnswers("linkedin", {}));
+    slides: [{ variant: "F", kicker: "K", title: "Drei Hebel tragen", bullets: ["Erster Hebel", "Zweiter Hebel"], takeaway: "Der Aufruf steht am Ende", footer_left: "R" }],
+  }), backend.normalizeAssetAnswers("linkedin", { variant: "F" }));
   assert.ok(listicle.slides[0].bullets.includes("Der Aufruf steht am Ende"));
   assert.equal(listicle.slides[0].takeaway, "");
 });
@@ -1281,7 +1283,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.20");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.21");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -1311,7 +1313,7 @@ test("Tilden und Sterne zählen nicht gegen die Zeichenschwelle", () => {
       title: "Nicht ~~Umsatz~~, sondern Verantwortung führt",
       takeaway: "Jetzt die Risiken prüfen", footer_left: "ROOTS",
     }],
-  }), backend.normalizeAssetAnswers("linkedin", { asset_type: "single" }));
+  }), backend.normalizeAssetAnswers("linkedin", { asset_type: "single", variant: "K" }));
   assert.match(payload.slides[0].title, /führt/);
   assert.ok(backend.withoutMarkup(payload.slides[0].title).length <= 55);
 });
@@ -1368,7 +1370,7 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   assert.match(memo.about_fit, /360/);
 });
 
-test("Prompt v1.20 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
+test("Prompt v1.21 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -1395,9 +1397,10 @@ test("Prompt v1.20 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   for (const [variante, vertrag] of Object.entries(backend.VARIANT_INHALTSVERTRAG)) {
     assert.ok(vertrag.length >= 60, `Inhaltsvertrag ${variante} ist zu ungenau`);
   }
-  assert.match(prompt, /wähle aus B, E, F, G, I, K, L/);
+  assert.match(prompt, /wähle aus B, E/);
   assert.doesNotMatch(prompt, /wähle aus[^\n]*\bC\b/);
   assert.doesNotMatch(prompt, /wähle aus[^\n]*\bT1\b/);
+  assert.doesNotMatch(prompt, /wähle aus[^\n]*\bT3\b/);
   const s1 = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
     { title: "Klarna", content_de: artikel },
@@ -1421,6 +1424,96 @@ test("Prompt v1.20 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   assert.doesNotMatch(memo, /<signalfelder>/);
   assert.doesNotMatch(memo, /recommendation/);
   assert.doesNotMatch(memo, /situation/);
+});
+
+test("die automatische Vorlagenwahl folgt der belegten Form des Signals", () => {
+  const light = backend.normalizeAssetAnswers("linkedin", { theme: "light" });
+  const dark = backend.normalizeAssetAnswers("linkedin", { theme: "dark" });
+  const keys = (text, answers = light, signal = "") => backend.autoContentSlideKeys(answers, text, signal);
+
+  assert.deepEqual(keys("Die Positionierung schafft Orientierung."), ["B"]);
+  assert.deepEqual(keys("Die Positionierung schafft Orientierung.", dark), ["M"]);
+  assert.deepEqual(keys("Anna Beispiel sagt: „Klarheit ist die Voraussetzung für wirksames Marketing.“", dark), ["M", "A"]);
+  assert.deepEqual(keys("23 Prozent nennen Vielfalt als Kaufkriterium."), ["B", "E"]);
+  assert.ok(!keys("23 Prozent kaufen bewusster. 83 Prozent honorieren Haltung. 41 Prozent achten auf Preise.").includes("T3"));
+  assert.ok(!keys("50 Prozent nennen Klarheit.", light, "50 Prozent nennen Klarheit.").includes("T3"));
+  assert.ok(keys("Die Kundschaft teilt sich in 20 Prozent Fans, 30 Prozent Wechselnde und 50 Prozent Unentschiedene.").includes("T3"));
+  assert.deepEqual(keys("Drei Hebel tragen die Marke:\n- Positionierung\n- Leitidee\n- Aktivierung"), ["B", "F"]);
+  assert.deepEqual(keys("Nicht mehr Reichweite, sondern mehr Relevanz entscheidet."), ["B", "G", "K"]);
+  assert.ok(keys("Zuerst folgt der Insight, danach die Positionierung, schließlich die Aktivierung.").includes("I"));
+  assert.ok(keys("Drei Faktoren bilden den Sweet Spot: Relevanz, Klarheit und Aktivierung.").includes("S1"));
+  assert.ok(keys("Das Strategiehaus trägt drei Säulen auf einem gemeinsamen Fundament.").includes("S3"));
+  assert.ok(keys("Der Markenindex lag 2024 bei 100, 2025 bei 108 und 2026 bei 121.").includes("T1"));
+  assert.ok(keys("Der Wert fällt von 100 auf 82. Die Veränderung beträgt minus 18.").includes("T2"));
+  assert.ok(keys("Im Vergleich erreichen CRM 82, Content 74, Media 63 und Sales 51 Punkte.").includes("T4"));
+  assert.ok(keys("Im Funnel folgen Schritt Reichweite 100 Prozent, danach Relevanz 70 Prozent, dann Interesse 40 Prozent, Lead 20 Prozent und Abschluss 10 Prozent.").includes("T5"));
+  assert.ok(keys("Woche 1 schafft den Insight. Woche 2 schärft die Position. Woche 3 baut die Leitidee. Woche 4 startet den Pilot.").includes("T6"));
+  assert.ok(keys("Vier Reifestufen reichen von der Basisstufe bis zur Exzellenzstufe.", dark).includes("S2"));
+  assert.ok(keys("Der Funnel führt zuerst von Reichweite, danach über Interesse und Lead, schließlich zu Bindung.", dark).includes("S4"));
+
+  const schema = backend.assetResponseSchema("linkedin", light, "Qualitativer Artikel.", "23 Prozent nennen Vielfalt als Kaufkriterium.");
+  assert.ok(schema.properties.slides.items.properties.variant.enum.includes("E"));
+});
+
+test("jede Slide-Vorlage hat eine geprüfte, vollständig sichtbare Mindestform", () => {
+  const base = (variant, extra = {}) => ({
+    variant, kicker: "MARKETING", title: "Eine klare These trägt", subtitle: "Ein direkter Beleg erklärt die These.",
+    quote: "Klarheit ist die Voraussetzung für wirksames Marketing.", attribution: "Anna Beispiel · CMO",
+    stat: { value: "20 %", label: "Anteil der Kundschaft" },
+    stats: [{ value: "20 %", label: "Fans" }, { value: "30 %", label: "Wechselnde" }, { value: "50 %", label: "Unentschiedene" }, { value: "10 %", label: "Weitere" }, { value: "5 %", label: "Rest" }],
+    bullets: ["Erster Beleg", "Zweiter Beleg", "Dritter Beleg"],
+    steps: [
+      { n: "1", title: "Insight", text: "Muster erkennen" }, { n: "2", title: "Position", text: "Nutzen schärfen" },
+      { n: "3", title: "Leitidee", text: "System bauen" }, { n: "4", title: "Aktivierung", text: "Pilot starten" },
+      { n: "5", title: "Lernen", text: "Wirkung prüfen" },
+    ],
+    myth: "Reichweite löst jede Unklarheit.", fact: "Reichweite verstärkt die vorhandene Klarheit.",
+    takeaway: "Die Konsequenz folgt direkt.", footer_left: "ROOTS Consultants", image_hint: "Ruhige Marketingszene mit freier Textfläche",
+    slot_a: "Relevanz", slot_b: "Klarheit", slot_c: "Aktivierung", slot_d: "Lernen", slot_center: "Wirkung",
+    ...extra,
+  });
+  const overrides = {
+    U1: {}, U2: {}, U3: {}, U4: {}, A: {}, B: {}, C: {}, D: {}, E: {}, F: {}, G: {}, H: {}, J: {}, M: {},
+    I: { steps: base("I").steps.slice(0, 3) }, K: { title: "Nicht mehr ~~Content~~, sondern Relevanz" }, L: {}, S1: {},
+    S2: { steps: base("S2").steps.slice(0, 4) }, S3: { steps: base("S3").steps.slice(0, 3) },
+    S4: { steps: base("S4").steps.slice(0, 5) }, T1: { stats: base("T1").stats.slice(0, 3) },
+    T2: { stats: base("T2").stats.slice(0, 3) }, T3: { stats: base("T3").stats.slice(0, 3) },
+    T4: { stats: base("T4").stats.slice(0, 4) }, T5: { stats: base("T5").stats.slice(0, 5) },
+    T6: { steps: base("T6").steps.slice(0, 4) },
+  };
+  for (const variant of backend.ASSET_SLIDE_KEYS) {
+    assert.deepEqual(backend.variantShapeIssues(base(variant, overrides[variant])), [], `Mindestform ${variant}`);
+    const leer = base(variant, { title: "", subtitle: "", quote: "", attribution: "", stat: { value: "", label: "" }, stats: [], bullets: [], steps: [], myth: "", fact: "", takeaway: "", image_hint: "", slot_a: "", slot_b: "", slot_c: "", slot_center: "" });
+    assert.ok(backend.variantShapeIssues(leer).length > 0, `Leere Vorlage ${variant} muss scheitern`);
+  }
+});
+
+test("Daten- und Denkmodelle behaupten keine falsche Geometrie", () => {
+  const slide = (variant, extra = {}) => ({ variant, title: "Die Daten zeigen eine klare Bewegung", takeaway: "Die Konsequenz ist eindeutig.", stats: [], steps: [], slot_a: "", slot_b: "", slot_c: "", slot_center: "", ...extra });
+  assert.deepEqual(backend.diagramSemanticIssues(slide("T2", { stats: [{ value: "100", label: "Basis" }, { value: "+18", label: "Klarheit" }, { value: "118", label: "Wirkung" }] })), []);
+  assert.match(backend.diagramSemanticIssues(slide("T2", { stats: [{ value: "100", label: "Basis" }, { value: "+18", label: "Klarheit" }, { value: "130", label: "Wirkung" }] })).join(" "), /rechnerisch/);
+  assert.match(backend.diagramSemanticIssues(slide("T2", { stats: [{ value: "100", label: "Basis" }, { value: "+18", label: "Klarheit" }, { value: "82", label: "Wirkung" }] })).join(" "), /rechnerisch/);
+  assert.deepEqual(backend.diagramSemanticIssues(slide("T3", { stats: [{ value: "20 %", label: "Fans" }, { value: "30 %", label: "Wechselnde" }, { value: "50 %", label: "Offene" }] })), []);
+  assert.match(backend.diagramSemanticIssues(slide("T3", { stats: [{ value: "20 %", label: "Fans" }, { value: "30 %", label: "Fans" }, { value: "40 %", label: "Offene" }] })).join(" "), /100 Prozent|verschiedene Kategorien/);
+  assert.match(backend.diagramSemanticIssues(slide("T4", { stats: [{ value: "20 %", label: "CRM" }, { value: "3 Mio. €", label: "CRM" }, { value: "10 %", label: "Media" }, { value: "5 %", label: "Sales" }] })).join(" "), /Maßeinheit|verschiedene Kategorien/);
+  assert.deepEqual(backend.diagramSemanticIssues(slide("T5", { stats: [{ value: "100 Tsd.", label: "Kontakte" }, { value: "80 Tsd.", label: "Relevante" }, { value: "50 Tsd.", label: "Interesse" }, { value: "20 Tsd.", label: "Leads" }, { value: "10 Tsd.", label: "Abschluss" }] })), []);
+  assert.match(backend.diagramSemanticIssues(slide("T5", { stats: [{ value: "100", label: "Kontakte" }, { value: "80", label: "Relevante" }, { value: "90", label: "Interesse" }, { value: "20", label: "Leads" }, { value: "10", label: "Abschluss" }] })).join(" "), /nicht steigen/);
+  assert.match(backend.diagramSemanticIssues(slide("S1", { slot_a: "Klarheit", slot_b: "Klarheit", slot_c: "Aktivierung" })).join(" "), /verschieden/);
+  assert.match(backend.diagramSemanticIssues(slide("T6", { steps: [{ n: "Woche 1", title: "A", text: "a" }, { n: "Woche 1", title: "B", text: "b" }] })).join(" "), /Zeitpunkte/);
+  assert.match(backend.diagramSemanticIssues(slide("T1", { stats: [{ value: "100", label: "2026" }, { value: "108", label: "2025" }, { value: "121", label: "2024" }] })).join(" "), /chronologisch/);
+  assert.match(studio, /function passeDatenDiagrammeAn\(wurzel\)/);
+  assert.match(studio, /variant === 'T3'/);
+  assert.match(studio, /path\.setAttribute\('d'/);
+  assert.match(studio, /passeDatenDiagrammeAn\(wurzel\)/);
+});
+
+test("Zitatlayouts akzeptieren nur Wortlaut plus sichtbare Urheberschaft", () => {
+  const artikel = "Anna Beispiel, CMO, sagt: „Klarheit ist die Voraussetzung für wirksames Marketing.“";
+  const answers = backend.normalizeAssetAnswers("linkedin", { variant: "A", theme: "dark" });
+  const slide = (quote) => ({ slides: [{ variant: "A", kicker: "MARKETING", quote, attribution: "Anna Beispiel · CMO", footer_left: "ROOTS Consultants" }] });
+  const ok = backend.normalizeAssetPayload("linkedin", JSON.stringify(slide("Klarheit ist die Voraussetzung für wirksames Marketing.")), answers, { articleText: artikel });
+  assert.equal(ok.slides[0].attribution, "Anna Beispiel · CMO");
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify(slide("Wirksames Marketing braucht vor allem Klarheit.")), answers, { articleText: artikel }), /wortgleiches Zitat/);
 });
 
 test("die Signal-Leitkennzahl schlägt eine größere nachgelagerte Detailzahl", () => {
@@ -1510,10 +1603,10 @@ test("Infografik ohne gefüllte Slots ist ein Fehler, nicht still B", () => {
       stats: [
         { value: "14 %", label: "Überblick verloren", source_context: "14 Prozent verlieren den Überblick." },
         { value: "24 %", label: "unter 30", source_context: "24 Prozent der unter 30." },
-        { value: "38 %", label: "junge Erwachsene", source_context: "38 Prozent der jungen Erwachsenen." },
+        { value: "62 %", label: "junge Erwachsene", source_context: "62 Prozent der jungen Erwachsenen." },
       ],
     }],
-  }), t3, { articleText: "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen." });
+  }), t3, { articleText: "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 62 Prozent der jungen Erwachsenen." });
   assert.equal(t3ok.slides[0].variant, "T3");
   assert.equal(t3ok.slides[0].stats.length, 3);
 });
@@ -1529,7 +1622,7 @@ test("feste Diagrammplätze werden vollständig gefüllt und nicht überzeichnet
         { title: "Zu viel", text: "darf nicht bleiben" },
       ], footer_left: "ROOTS",
     }],
-  }), backend.normalizeAssetAnswers("linkedin", { variant: "S2" }));
+  }), backend.normalizeAssetAnswers("linkedin", { variant: "S2", theme: "dark" }));
   assert.equal(s2.slides[0].steps.length, 4);
   assert.ok(s2.slides[0].steps.every((step) => step.text === ""));
 
@@ -1568,36 +1661,33 @@ test("Ansprache injiziert die Leistung nur wenn sie in about_fit fehlt", () => {
 
 test("dieselbe Leitkennzahl auf zwei Folien ist ein Fehler, keine stillen drei Folien", () => {
   const answers = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 });
-  const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen.";
+  const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der Menschen unter 30 verlieren den Überblick. 38 Prozent der jungen Erwachsenen.";
   assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
     post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
     slides: [
-      { variant: "B", kicker: "BNPL", title: "Klarna verschiebt den Kauf", subtitle: "Der Überblick bricht weg", footer_left: "ROOTS" },
-      { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
-      { variant: "H", kicker: "ZAHLEN", title: "Zwei Anteile tragen die Lage", stats: [
-        { value: "24 %", label: "unter 30", source_context: "24 Prozent der unter 30." },
-        { value: "38 %", label: "junge Erwachsene", source_context: "38 Prozent der jungen Erwachsenen." },
-      ], footer_left: "ROOTS" },
-      { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
+      { variant: "U1", kicker: "BNPL", title: "Klarna verschiebt den Kauf", subtitle: "Der Überblick bricht weg", footer_left: "ROOTS" },
+      { variant: "E", kicker: "ALTER", title: "Junge Menschen verlieren den Überblick", subtitle: "24 Prozent der jungen Menschen verlieren den Überblick", stat: { value: "24 %", label: "junge Menschen", source_context: "24 Prozent der Menschen unter 30 verlieren den Überblick." }, footer_left: "ROOTS" },
+      { variant: "E", kicker: "ZAHLEN", title: "Junge Menschen verlieren den Überblick", subtitle: "24 Prozent der jungen Menschen verlieren den Überblick", stat: { value: "24 %", label: "junge Menschen", source_context: "24 Prozent der Menschen unter 30 verlieren den Überblick." }, footer_left: "ROOTS" },
+      { variant: "U3", kicker: "LAGE", title: "Der Überblick braucht Klarheit", subtitle: "Die Konsequenz ist konkret", takeaway: "Jetzt die Nutzung prüfen", footer_left: "ROOTS" },
     ],
   }), answers, { articleText: artikel }), /Kennzahl 24.*Folie 2.*Folie 3/);
 
   assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
     post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
     slides: [
-      { variant: "E", kicker: "BNPL", title: "Der Überblick bricht weg", subtitle: "14 Prozent verlieren den Überblick.", stat: { value: "14 %", label: "verlieren den Überblick", source_context: "14 Prozent verlieren den Überblick." }, footer_left: "ROOTS" },
-      { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
-      { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
+      { variant: "U1", kicker: "BNPL", title: "Der Überblick bricht weg", subtitle: "14 Prozent verlieren den Überblick.", footer_left: "ROOTS" },
+      { variant: "E", kicker: "ALTER", title: "Junge Menschen verlieren den Überblick", subtitle: "24 Prozent der jungen Menschen verlieren den Überblick", stat: { value: "24 %", label: "junge Menschen", source_context: "24 Prozent der Menschen unter 30 verlieren den Überblick." }, footer_left: "ROOTS" },
+      { variant: "B", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", subtitle: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
     ],
   }), answers, { articleText: artikel }), /genau 4 Folien.*3 geliefert/);
 
   const ok = backend.normalizeAssetPayload("linkedin", JSON.stringify({
     post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
     slides: [
-      { variant: "B", kicker: "BNPL", title: "Klarna verschiebt den Kauf", subtitle: "Der Überblick bricht weg", footer_left: "ROOTS" },
+      { variant: "U1", kicker: "BNPL", title: "Klarna verschiebt den Kauf", subtitle: "Der Überblick bricht weg", footer_left: "ROOTS" },
       { variant: "E", kicker: "BNPL", title: "Der Überblick bricht weg", subtitle: "14 Prozent verlieren den Überblick.", stat: { value: "14 %", label: "verlieren den Überblick", source_context: "14 Prozent verlieren den Überblick." }, footer_left: "ROOTS" },
-      { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
-      { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
+      { variant: "B", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", subtitle: "24 Prozent der unter 30", footer_left: "ROOTS" },
+      { variant: "U3", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", subtitle: "38 Prozent der jungen Erwachsenen", takeaway: "Jetzt die Lage prüfen", footer_left: "ROOTS" },
     ],
   }), answers, { articleText: artikel });
   assert.equal(ok.slides.length, 4);
@@ -2129,9 +2219,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260818-2131");
-  assert.match(indexHtml, /app\.js\?v=20260818-2131/);
-  assert.match(studio, /asset-templates\.js\?v=20260818-2131/);
+  assert.equal(studioVersion, "20260819-0003");
+  assert.match(indexHtml, /app\.js\?v=20260819-0003/);
+  assert.match(studio, /asset-templates\.js\?v=20260819-0003/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
