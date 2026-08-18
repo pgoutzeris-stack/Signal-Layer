@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.17";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.18";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -18,7 +18,7 @@ export function isAssetKind(value: unknown): value is AssetKind {
 }
 
 /** Buchstaben-Vorlagen der ROOTS-Buehne. */
-export const ASSET_VARIANTS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"] as const;
+export const ASSET_VARIANTS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "U1", "U2", "U3", "U4"] as const;
 export type AssetVariant = typeof ASSET_VARIANTS[number];
 
 /** Infografiken: Zeichnung fest, Texte vom Modell. */
@@ -30,6 +30,22 @@ export type AssetSlideKey = typeof ASSET_SLIDE_KEYS[number];
 
 /** Nur mit ausgeschriebener Ziffer im Artikel. */
 export const ASSET_NUMBER_VARIANTS = ["E", "H", "L"] as const;
+
+export const ASSET_SLIDE_THEMES: Record<AssetSlideKey, "light" | "dark"> = {
+  U1: "light", U2: "dark", U3: "light", U4: "dark",
+  A: "dark", B: "light", C: "light", D: "dark", E: "light", F: "light",
+  G: "light", H: "dark", I: "light", J: "dark", K: "light", L: "light",
+  S1: "light", S2: "dark", S3: "light", S4: "dark",
+  T1: "light", T2: "light", T3: "light", T4: "light", T5: "light", T6: "light",
+};
+
+const ASSET_SLIDE_ROLES: Partial<Record<AssetSlideKey, "cover" | "end">> = {
+  U1: "cover", U2: "cover", U3: "end", U4: "end",
+};
+
+export const LINKEDIN_DOCUMENT_PAGE_MAX = 300;
+export const LINKEDIN_CAROUSEL_RECOMMENDED_MIN = 8;
+export const LINKEDIN_CAROUSEL_RECOMMENDED_MAX = 12;
 
 export function isSlideKey(value: unknown): value is AssetSlideKey {
   return (ASSET_SLIDE_KEYS as readonly string[]).includes(String(value ?? ""));
@@ -686,30 +702,44 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
     const assetType = /karussell|carousel/i.test(pick(source, "asset_type", "assetType", "format", "typ"))
       ? "carousel" as const
       : "single" as const;
+    const profile = /privat|private|personal/i.test(pick(source, "profile", "absender")) ? "private" as const : "roots" as const;
+    const theme = /dunkel|dark/i.test(pick(source, "theme", "anmutung", "mode", "look")) ? "dark" as const : "light" as const;
     const variantRaw = pick(source, "variant", "variante").toUpperCase();
-    const slideCount = Number(pick(source, "slides", "slide_count", "anzahl"));
+    const slideTypes = pick(source, "slide_pick", "slide_types")
+      .split(",").map((v) => v.trim().toUpperCase())
+      .filter((v) => isSlideKey(v))
+      .slice(0, LINKEDIN_DOCUMENT_PAGE_MAX) as AssetSlideKey[];
+    const countRaw = pick(source, "slides", "slide_count_text", "slide_count", "anzahl");
+    const requested = Number(countRaw);
+    const slideCount = slideTypes.length >= 2
+      ? slideTypes.length
+      : Number.isInteger(requested) && requested >= 2 && requested <= LINKEDIN_DOCUMENT_PAGE_MAX
+        ? requested
+        : 10;
     return {
       asset_type: assetType,
-      variant: isSlideKey(variantRaw) ? variantRaw : "auto",
-      theme: /dunkel|dark/i.test(pick(source, "theme", "anmutung", "mode", "look")) ? "dark" : "light",
-      // Acht Slides passten nicht in eine Antwort und brachen mitten im JSON ab.
-      slides: assetType === "carousel" ? ([4, 6].includes(slideCount) ? slideCount : 4) : 1,
+      variant: isSlideKey(variantRaw) && !ASSET_SLIDE_ROLES[variantRaw] && ASSET_SLIDE_THEMES[variantRaw] === theme
+        ? variantRaw
+        : "auto",
+      theme,
+      slides: assetType === "carousel" ? slideCount : 1,
       storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
       cta: choiceText(source, ["cta"], ["cta_text"], 240),
       sources: choiceText(source, ["sources", "quellen"], ["sources_text"], 600),
       // Selbst gewaehlte Slide-Arten in der Reihenfolge der Auswahl. Leer heisst:
       // das Modell stellt die Folge selbst zusammen.
-      slide_types: pick(source, "slide_pick", "slide_types")
-        .split(",").map((v) => v.trim().toUpperCase())
-        .filter((v) => isSlideKey(v))
-        .slice(0, 8),
-      profile: /privat|private|personal/i.test(pick(source, "profile", "absender")) ? "private" as const : "roots" as const,
-      design: pick(source, "design", "design_id").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40) || "roots-hell",
+      slide_types: slideTypes,
+      profile,
+      design: pick(source, "design", "design_id").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40)
+        || (profile === "private" ? "standard" : theme === "dark" ? "roots-dunkel" : "roots-hell"),
       // Die aufgeloeste Vorlage wird durchgereicht, nicht neu ermittelt: eine
       // gespeicherte Zeile muss beim zweiten Lauf dasselbe Asset ergeben.
-      design_name: freeText(pick(source, "design_name"), DESIGN_NAME_LIMIT) || "ROOTS Hell",
-      design_footer_left: freeText(pick(source, "design_footer_left"), DESIGN_FOOTER_LIMIT) || "ROOTS Consultants",
-      design_domain: freeText(pick(source, "design_domain"), DESIGN_DOMAIN_LIMIT) || "roots-consultants.com",
+      design_name: freeText(pick(source, "design_name"), DESIGN_NAME_LIMIT)
+        || (profile === "private" ? "Privatprofil" : theme === "dark" ? "ROOTS Dunkel" : "ROOTS Hell"),
+      design_footer_left: freeText(pick(source, "design_footer_left"), DESIGN_FOOTER_LIMIT)
+        || (profile === "private" ? "" : "ROOTS Consultants"),
+      design_domain: freeText(pick(source, "design_domain"), DESIGN_DOMAIN_LIMIT)
+        || (profile === "private" ? "" : "roots-consultants.com"),
       design_logo: String(record(source).design_logo || "").slice(0, DESIGN_LOGO_LIMIT),
       caption_mode: captionMode(source),
       // LinkedIn kappt den Beitragstext bei 3000 Zeichen; ein selbst
@@ -1055,6 +1085,10 @@ ${asData(body, ASSET_ARTICLE_CHARS)}
 
 /** Welche Felder die Vorlage wirklich zeichnet. takeaway fehlt bei A–J und I. */
 export const ASSET_VISIBLE_FIELDS: Record<string, readonly string[]> = {
+  U1: ["kicker", "title", "subtitle", "footer_left"],
+  U2: ["kicker", "title", "subtitle", "footer_left"],
+  U3: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
+  U4: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
   A: ["kicker", "quote", "footer_left"],
   B: ["kicker", "title", "subtitle", "footer_left"],
   C: ["kicker", "title", "subtitle", "footer_left", "image_hint"],
@@ -1081,6 +1115,7 @@ export const ASSET_VISIBLE_FIELDS: Record<string, readonly string[]> = {
 
 /** Wohin die Pointe wandert, wenn takeaway unsichtbar ist. */
 export const ASSET_POINTE_FIELD: Record<string, string> = {
+  U1: "subtitle", U2: "subtitle", U3: "takeaway", U4: "takeaway",
   A: "quote", B: "subtitle", C: "subtitle", D: "subtitle", E: "subtitle",
   F: "bullets", G: "fact", H: "stats", I: "steps", J: "quote",
   K: "takeaway", L: "takeaway",
@@ -1089,6 +1124,14 @@ export const ASSET_POINTE_FIELD: Record<string, string> = {
 };
 
 const VARIANT_ZEILE: Record<string, string> = {
+  U1: `U1 Titelfolie hell.
+Wozu: erster Slide des hellen Carousels. Zeichnet title und subtitle. Setzt die These und motiviert zum Weiterwischen.`,
+  U2: `U2 Titelfolie dunkel.
+Wozu: erster Slide des dunklen Carousels. Zeichnet title und subtitle. Setzt die These und motiviert zum Weiterwischen.`,
+  U3: `U3 Endfolie hell.
+Wozu: letzter Slide des hellen Carousels. Zeichnet title, subtitle und takeaway als klaren Handlungsaufruf.`,
+  U4: `U4 Endfolie dunkel.
+Wozu: letzter Slide des dunklen Carousels. Zeichnet title, subtitle und takeaway als klaren Handlungsaufruf.`,
   A: `A Zitat.
 Wozu: ein wörtlicher Satz einer benannten Person trägt die Pointe.
 Zeichnet: kicker, quote, footer_left. Pointe in quote. takeaway unsichtbar.
@@ -1206,12 +1249,36 @@ export const ASSET_AUTO_TEXT_KEYS = ["A", "B", "E", "F", "G", "H", "I", "K", "L"
 /** Donut-Anteile: Labels füllbar, Geometrie fest — nur bei drei belegten Zahlen. */
 const ASSET_AUTO_DONUT: AssetSlideKey = "T3";
 
+function carouselFrameKeys(theme: "light" | "dark"): [AssetSlideKey, AssetSlideKey] {
+  return theme === "dark" ? ["U2", "U4"] : ["U1", "U3"];
+}
+
+export function manualCarouselSelectionError(answers: LinkedinAnswers): string | null {
+  const picked = (answers.slide_types || []).filter(isSlideKey);
+  if (!picked.length) return null;
+  if (ASSET_SLIDE_ROLES[picked[0]] !== "cover") return "Die manuelle Abfolge muss mit einer Titelfolie beginnen.";
+  if (ASSET_SLIDE_ROLES[picked[picked.length - 1]] !== "end") return "Die manuelle Abfolge muss mit einer Endfolie abschließen.";
+  if (picked.slice(1).some((key) => ASSET_SLIDE_ROLES[key] === "cover")) return "Die Titelfolie darf nur an erster Stelle stehen.";
+  if (picked.slice(0, -1).some((key) => ASSET_SLIDE_ROLES[key] === "end")) return "Die Endfolie darf nur an letzter Stelle stehen.";
+  if (picked.some((key) => ASSET_SLIDE_THEMES[key] !== answers.theme)) return "Alle manuell gewählten Folien müssen zum Hell- oder Dunkel-Design passen.";
+  if (picked.length > LINKEDIN_DOCUMENT_PAGE_MAX) return `LinkedIn erlaubt höchstens ${LINKEDIN_DOCUMENT_PAGE_MAX} Dokumentseiten.`;
+  return null;
+}
+
 export function allowedSlideKeys(answers: LinkedinAnswers, articleText = ""): AssetSlideKey[] {
-  if (answers.variant !== "auto" && isSlideKey(answers.variant)) return [answers.variant];
   const picked = (answers.slide_types || []).filter(isSlideKey);
   if (picked.length) return [...new Set(picked)];
-  const keys: AssetSlideKey[] = [...ASSET_AUTO_TEXT_KEYS];
-  if (claimedNumbers(articleText).length >= 3) keys.push(ASSET_AUTO_DONUT);
+  if (answers.variant !== "auto" && isSlideKey(answers.variant)) {
+    if (answers.asset_type !== "carousel") return [answers.variant];
+    const [cover, ende] = carouselFrameKeys(answers.theme);
+    return [cover, answers.variant, ende];
+  }
+  const keys: AssetSlideKey[] = [...ASSET_AUTO_TEXT_KEYS].filter((key) => ASSET_SLIDE_THEMES[key] === answers.theme);
+  if (claimedNumbers(articleText).length >= 3 && ASSET_SLIDE_THEMES[ASSET_AUTO_DONUT] === answers.theme) keys.push(ASSET_AUTO_DONUT);
+  if (answers.asset_type === "carousel") {
+    const [cover, ende] = carouselFrameKeys(answers.theme);
+    return [cover, ...keys, ende];
+  }
   return keys;
 }
 
@@ -1328,13 +1395,14 @@ function applyLinkedinChrome(
     company: context.company,
   });
   const firma = String(context.company || "").trim();
-  const quelle = answers.sources || answers.design_footer_left || "ROOTS Consultants";
+  const privat = answers.profile === "private";
+  const quelle = answers.sources || answers.design_footer_left || (privat ? "" : "ROOTS Consultants");
   const out = slides.map((slide) => ({
     ...slide,
     kicker: !slide.kicker || looksLikeCompany(slide.kicker, firma) ? theme : slide.kicker,
-    footer_left: !slide.footer_left || looksLikeCompany(slide.footer_left, firma)
-      ? quelle
-      : slide.footer_left,
+    footer_left: privat
+      ? (quelle || (/\broots\b|roots-consultants\.com/i.test(slide.footer_left) || looksLikeCompany(slide.footer_left, firma) ? "" : slide.footer_left))
+      : (!slide.footer_left || looksLikeCompany(slide.footer_left, firma) ? quelle : slide.footer_left),
   }));
   const unique = new Set(out.map((slide) => slide.kicker));
   if (out.length > 1 && unique.size > 2) {
@@ -1368,13 +1436,18 @@ function linkedinPrompt(
   // ROOTS-Leistungsverweis; die Fusszeile kommt aus der Vorlage.
   const privat = answers.profile === "private";
   const absender = privat ? asData(answers.design_footer_left, DESIGN_FOOTER_LIMIT) : "";
+  const [coverVariant, endVariant] = carouselFrameKeys(answers.theme);
   const auftrag = [
     carousel
       ? `Format: Carousel mit ${answers.slides} Slides, nicht mehr.`
       : "Format: Single-Image, ein Slide.",
     answers.variant === "auto"
-      ? `Variante: wähle je Slide aus ${erlaubt.join(", ")} die Variante, die den Inhalt am besten trägt. Ohne Eintrag in kennzahlen_im_artikel keine Kennzahl-Variante und keine Zahlen-Infografik.`
-      : `Variante: ${answers.variant} für jeden Slide.`,
+      ? carousel
+        ? `Varianten: Slide 1 ist verbindlich ${coverVariant}, der letzte Slide verbindlich ${endVariant}. Für die mittleren Slides wähle aus ${erlaubt.filter((key) => !ASSET_SLIDE_ROLES[key]).join(", ")} die Variante, die den Inhalt am besten trägt. Ohne Eintrag in kennzahlen_im_artikel keine Kennzahl-Variante und keine Zahlen-Infografik.`
+        : `Variante: wähle aus ${erlaubt.join(", ")} die Variante, die den Inhalt am besten trägt. Ohne Eintrag in kennzahlen_im_artikel keine Kennzahl-Variante und keine Zahlen-Infografik.`
+      : carousel
+        ? `Varianten: Slide 1 ist verbindlich ${coverVariant}, der letzte Slide verbindlich ${endVariant}; dazwischen verwende ${answers.variant}.`
+        : `Variante: ${answers.variant}.`,
     `Anmutung: ${answers.theme === "dark" ? "dunkel" : "hell"}.`,
     Array.isArray(answers.slide_types) && answers.slide_types.length
       ? `Slide-Arten in dieser Reihenfolge, verbindlich: ${answers.slide_types.join(", ")}. Setze variant je Slide genau darauf.`
@@ -1905,9 +1978,20 @@ function normalizeLinkedin(
 ): LinkedinPayload {
   const fallbackVariant: AssetSlideKey = answers.variant === "auto" ? "B" : answers.variant;
   const carousel = answers.asset_type === "carousel";
+  const limit = carousel ? Math.max(2, Math.min(answers.slides || 10, LINKEDIN_DOCUMENT_PAGE_MAX)) : 1;
+  const auswahlFehler = carousel ? manualCarouselSelectionError(answers) : null;
+  if (auswahlFehler) throw new Error(auswahlFehler);
   const corpus = String(context.articleText || "");
+  const [coverVariant, endVariant] = carouselFrameKeys(answers.theme);
+  const selected = (answers.slide_types || []).filter(isSlideKey);
   const slides = (Array.isArray(raw.slides) ? raw.slides : [])
-    .map((entry) => normalizeSlide(entry, fallbackVariant, carousel, corpus))
+    .map((entry, index) => {
+      const expected = selected[index]
+        || (carousel && index === 0 ? coverVariant : carousel && index === limit - 1 ? endVariant : undefined)
+        || (!carousel && answers.variant !== "auto" ? answers.variant : undefined);
+      const source = record(entry);
+      return normalizeSlide(expected ? { ...source, variant: expected } : source, fallbackVariant, carousel, corpus);
+    })
     .filter(slideHasSubstance);
   if (!slides.length) {
     const roh = Array.isArray(raw.slides) ? raw.slides.length : 0;
@@ -1918,7 +2002,6 @@ function normalizeLinkedin(
 
   // Zu viele Folien werden gekappt. Zu wenige sind ein Fehler: der Nutzer hat
   // eine Zahl eingestellt, ein stilles 3-Folien-Karussell waere die falsche Ausgabe.
-  const limit = carousel ? Math.min(answers.slides || 8, 8) : 1;
   if (carousel && slides.length < limit) {
     const varianten = slides.map((slide) => slide.variant).join(", ") || "keine";
     throw new Error(
@@ -1935,6 +2018,17 @@ function normalizeLinkedin(
     throw new Error(
       `Das Karussell braucht genau ${limit} Folien, nach der Prüfung bleiben ${kept.length}.`,
     );
+  }
+  if (carousel && (!kept[0]?.title || ASSET_SLIDE_ROLES[kept[0].variant] !== "cover")) {
+    throw new Error("Die erste Folie muss eine ausgefüllte Titelfolie sein.");
+  }
+  if (carousel) {
+    const ende = kept[kept.length - 1];
+    if (!ende || ASSET_SLIDE_ROLES[ende.variant] !== "end") {
+      throw new Error("Die letzte Folie muss eine Endfolie sein.");
+    }
+    if (!ende.takeaway && answers.cta) ende.takeaway = richText(answers.cta, fieldCap(ende.variant, "takeaway", true));
+    if (!ende.takeaway) throw new Error("Die Endfolie braucht einen sichtbaren Handlungsaufruf.");
   }
 
   // Ein selbst geschriebener Begleittext geht unveraendert durch. Er ist die
@@ -3642,13 +3736,17 @@ export function geminiFinishAllowsParse(finish: string): boolean {
 
 export function assetOutputTokenBudget(kind: AssetKind, answers: AssetAnswers): number {
   if (kind === "memo") return 6_000;
-  return (answers as LinkedinAnswers).asset_type === "carousel" ? 8_000 : 3_000;
+  const linkedin = answers as LinkedinAnswers;
+  return linkedin.asset_type === "carousel"
+    ? Math.min(16_000, Math.max(8_000, linkedin.slides * 600))
+    : 3_000;
 }
 
 export function assetModelTimeoutMs(kind: AssetKind, answers: AssetAnswers): number {
   if (kind === "memo") return 200_000;
-  if ((answers as LinkedinAnswers).asset_type === "carousel") {
-    return (answers as LinkedinAnswers).slides === 6 ? 280_000 : 220_000;
+  const linkedin = answers as LinkedinAnswers;
+  if (linkedin.asset_type === "carousel") {
+    return Math.min(360_000, 200_000 + linkedin.slides * 8_000);
   }
   return 160_000;
 }

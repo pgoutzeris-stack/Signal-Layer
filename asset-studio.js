@@ -52,6 +52,15 @@ const VARIANTS = [
   ["D", "Vollbild mit Overlay"],
   ["J", "Zitat über Bild"],
 ];
+// Ein Carousel braucht einen klaren Einstieg und einen klaren Abschluss. Die
+// beiden Rollen haben je eine helle und dunkle Vorlage; sie werden in der
+// manuellen Auswahl zwingend an erster beziehungsweise letzter Stelle geführt.
+const CAROUSEL_FRAMES = [
+  ["U1", "Titelfolie"],
+  ["U2", "Titelfolie"],
+  ["U3", "Endfolie mit CTA"],
+  ["U4", "Endfolie mit CTA"],
+];
 // Infografiken kommen aus denselben gebauten Assets. Sie sind Layouts, keine
 // eigenen Signalarten: das Modell liefert weiter Titel und Einordnung, die
 // Zeichnung traegt die Aussage und wird in der Werkbank mit eigenen Zahlen
@@ -63,19 +72,25 @@ const LAYOUT_NAMEN = {
   T1: "Marktwachstum als Säulen", T2: "Wasserfall", T3: "Anteile als Donut",
   T4: "Anwendungsfälle als Balken", T5: "Funnel mit Zahlen", T6: "Roadmap",
 };
-const VARIANTS_ALL = [...VARIANTS, ...LAYOUT_KEYS.map((k) => [k, LAYOUT_NAMEN[k] || ASSET_LAYOUT_LABELS[k] || k])];
+const CONTENT_VARIANTS = [...VARIANTS, ...LAYOUT_KEYS.map((k) => [k, LAYOUT_NAMEN[k] || ASSET_LAYOUT_LABELS[k] || k])];
+const VARIANTS_ALL = [...CAROUSEL_FRAMES, ...CONTENT_VARIANTS];
 const VARIANT_KEYS = VARIANTS_ALL.map(([key]) => key);
 
 // Anmutung je Layout, abgelesen am Markup der gebauten Assets: dunkel heisst
 // li-dark oder ein dunkles Overlay ueber dem Bild. Die Wahl filtert die Liste,
 // sie faerbt nichts um - Umfaerben hatte weisse Schrift auf Weiss erzeugt.
 const LOOK = {
+  U1: "hell", U2: "dunkel", U3: "hell", U4: "dunkel",
   A: "dunkel", B: "hell", C: "hell", D: "dunkel", E: "hell", F: "hell",
   G: "hell", H: "dunkel", I: "hell", J: "dunkel", K: "hell", L: "hell",
   S1: "hell", S2: "dunkel", S3: "hell", S4: "dunkel",
   T1: "hell", T2: "hell", T3: "hell", T4: "hell", T5: "hell", T6: "hell",
 };
+const SLIDE_ROLE = { U1: "cover", U2: "cover", U3: "end", U4: "end" };
 const MIT_BILD = new Set(["C", "D", "J"]);
+const CAROUSEL_RECOMMENDED_MIN = 8;
+const CAROUSEL_RECOMMENDED_MAX = 12;
+const LINKEDIN_DOCUMENT_PAGE_MAX = 300;
 
 /** Sonderschluessel fuer die Abschlusskarte hinter der letzten Frage. */
 const ENDE = "__ende";
@@ -111,6 +126,33 @@ export function assetQuestionCanAdvance(questionKey, answers = {}, prerequisites
   return true;
 }
 
+/** Gewuenschte Laenge: bei eigener Abfolge entscheidet deren wirkliche
+ *  Laenge, bei KI die Zahl aus Auswahl oder Freitext. Null bedeutet ungueltig. */
+export function carouselRequestedSlides(answers = {}) {
+  if (answers.slide_mix === "custom") {
+    return String(answers.slide_pick || "").split(",").map((v) => v.trim()).filter(Boolean).length;
+  }
+  const raw = answers.slide_count === "custom" ? answers.slide_count_text : answers.slide_count;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 2 && n <= LINKEDIN_DOCUMENT_PAGE_MAX ? n : 0;
+}
+
+/** Die eigene Abfolge darf Inhaltsfolien wiederholen, braucht aber genau einen
+ *  Einstieg vorne und einen Abschluss hinten. */
+export function manualCarouselSelectionIssues(value, look = "hell") {
+  const liste = Array.isArray(value)
+    ? value.map(String).filter(Boolean)
+    : String(value || "").split(",").map((v) => v.trim()).filter(Boolean);
+  const probleme = [];
+  if (!liste.length || SLIDE_ROLE[liste[0]] !== "cover") probleme.push("Wähle zuerst eine Titelfolie.");
+  if (!liste.length || SLIDE_ROLE[liste[liste.length - 1]] !== "end") probleme.push("Wähle zum Abschluss eine Endfolie mit Handlungsaufruf.");
+  if (liste.slice(1).some((key) => SLIDE_ROLE[key] === "cover")) probleme.push("Die Titelfolie muss genau einmal und an erster Stelle stehen.");
+  if (liste.slice(0, -1).some((key) => SLIDE_ROLE[key] === "end")) probleme.push("Die Endfolie muss genau einmal und an letzter Stelle stehen.");
+  if (liste.some((key) => LOOK[key] && LOOK[key] !== look)) probleme.push("Alle Folien müssen zum gewählten Hell- oder Dunkel-Design passen.");
+  if (liste.length > LINKEDIN_DOCUMENT_PAGE_MAX) probleme.push(`LinkedIn erlaubt höchstens ${LINKEDIN_DOCUMENT_PAGE_MAX} Dokumentseiten.`);
+  return [...new Set(probleme)];
+}
+
 const FORM_LINKEDIN = [
   {
     key: "profile", label: "Für wen",
@@ -139,9 +181,10 @@ const FORM_LINKEDIN = [
   },
   {
     key: "slide_count",
-    label: "Slides",
-    options: [["4", "4"], ["6", "6"]],
-    when: (answers) => answers.asset_type === "carousel",
+    label: "Anzahl der Slides",
+    options: [["8", "8"], ["10", "10"], ["12", "12"], ["custom", "Andere Anzahl"]],
+    free: { key: "slide_count_text", on: "custom", rows: 1, platzhalter: "2 bis 300" },
+    when: (answers) => answers.asset_type === "carousel" && answers.slide_mix !== "custom",
   },
   {
     key: "storyline",
@@ -636,7 +679,9 @@ const CHROME_CSS = `
   animation:as-step-in .22s cubic-bezier(.22,1,.36,1);}
 #as-overlay .as-step-kopf{display:flex; align-items:center; gap:10px; margin-bottom:12px;}
 #as-overlay .as-step-kopf label{font-size:15px; font-weight:700; color:var(--ink,#0f172a);}
-#as-overlay .as-step-fuss{display:flex; align-items:center; gap:8px; margin-top:14px;}
+#as-overlay .as-step-fuss{position:sticky; bottom:-1px; z-index:4; display:flex; align-items:center; gap:8px;
+  margin:16px -2px -2px; padding:12px 2px 2px; border-top:1px solid var(--line,#e2e8f0);
+  background:linear-gradient(180deg,rgba(255,255,255,.94),#fff 34%); backdrop-filter:blur(8px);}
 #as-overlay .as-step-zurueck{margin-right:auto;}
 @keyframes as-step-in{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
 
@@ -663,12 +708,18 @@ const CHROME_CSS = `
 /* Fehlt eine Voraussetzung, zeigt der Kasten den Weg dorthin statt nur den
    Mangel zu melden. */
 #as-overlay .as-notice{display:flex; align-items:center; gap:12px; margin-top:10px; padding:12px 14px;
-  border:1px solid #cfe0fd; border-left:3px solid var(--brand,#206efb); border-radius:12px;
+  border:1px solid #cfe0fd; border-radius:12px;
   background:var(--brand-light,#eff6ff);}
 #as-overlay .as-notice-icon{display:grid; place-items:center; flex:0 0 auto; width:30px; height:30px;
   border-radius:999px; background:#fff; color:var(--brand,#206efb);}
 #as-overlay .as-notice-text{flex:1; min-width:0;}
 #as-overlay .as-notice-text b{display:block; font-size:13px; color:var(--ink,#0f172a);}
+#as-overlay .as-guidance{display:flex; gap:9px; align-items:flex-start; margin-top:10px; padding:10px 12px;
+  border:1px solid #cfe0fd; border-radius:11px; background:var(--brand-light,#eff6ff);
+  color:var(--muted,#475569); font-size:12px; line-height:1.45;}
+#as-overlay .as-guidance i{margin-top:2px; color:var(--brand,#206efb);}
+#as-overlay .as-guidance.is-warning{border-color:#f2c94c; background:#fffbeb; color:#7c5b00;}
+#as-overlay .as-guidance.is-warning i{color:#b7791f;}
 /* Fragebogen links, Vorschau rechts. Bei schmalem Popup untereinander. */
 #as-overlay .as-split2{display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:20px; align-items:stretch; flex:1; min-height:0; width:100%; height:auto;}
 #as-overlay .as-split2-form{overflow-y:auto; max-height:100%; padding-right:10px; scrollbar-width:thin;}
@@ -743,6 +794,21 @@ const CHROME_CSS = `
   border-radius:10px; background:transparent; text-align:left; font-size:.82rem; font-weight:600; color:var(--ink,#0f172a);}
 #as-overlay .as-ddrow:hover{background:var(--surface,#f8fafc);}
 #as-overlay .as-ddrow.is-active{background:var(--brand-light,#eff6ff); color:var(--brand-dark,#165fd9);}
+#as-overlay .as-sequence{display:flex; flex-direction:column; gap:7px; margin-bottom:10px;}
+#as-overlay .as-sequence-row{display:grid; grid-template-columns:24px 40px minmax(0,1fr) auto; align-items:center; gap:9px;
+  padding:7px 8px; border:1px solid var(--line,#e2e8f0); border-radius:11px; background:#fff;}
+#as-overlay .as-sequence-nr{display:grid; place-items:center; width:24px; height:24px; border-radius:999px;
+  background:var(--brand-light,#eff6ff); color:var(--brand,#206efb); font-size:11px; font-weight:800;}
+#as-overlay .as-sequence-copy{min-width:0; display:flex; flex-direction:column; gap:2px;}
+#as-overlay .as-sequence-copy b{font-size:12px; color:var(--ink,#0f172a);}
+#as-overlay .as-sequence-copy small{font-size:10px; color:var(--muted,#64748b);}
+#as-overlay .as-sequence-actions{display:flex; gap:2px;}
+#as-overlay .as-sequence-actions button{display:grid; place-items:center; width:26px; height:26px; border:0; border-radius:8px;
+  background:transparent; color:var(--muted,#64748b);}
+#as-overlay .as-sequence-actions button:hover:not(:disabled){background:var(--brand-light,#eff6ff); color:var(--brand,#206efb);}
+#as-overlay .as-sequence-actions button:disabled{opacity:.25; cursor:default;}
+#as-overlay .as-ddrow-add{margin-left:auto; display:grid; place-items:center; width:26px; height:26px; border-radius:999px;
+  background:var(--brand-light,#eff6ff); color:var(--brand,#206efb);}
 #as-overlay .as-ddtext{flex:1; min-width:0;}
 #as-overlay .as-ddthumb{flex:0 0 auto; width:40px; height:50px; border-radius:6px; overflow:hidden;
   border:1px solid var(--line,#e2e8f0); background:#fff; display:flex; align-items:center; justify-content:center; color:var(--brand,#206efb);}
@@ -1184,7 +1250,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-1642";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-1839";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1370,7 +1436,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     };
     const passt = layoutOptionen().some(([key]) => key === state.answers.variant);
     if (!passt) state.answers.variant = "auto";
-    const arten = gewaehlteArten().filter((key) => LOOK[key] === state.answers.look);
+    const rahmen = state.answers.look === "dunkel"
+      ? { U1: "U2", U2: "U2", U3: "U4", U4: "U4" }
+      : { U1: "U1", U2: "U1", U3: "U3", U4: "U3" };
+    const arten = gewaehlteArten()
+      .map((key) => rahmen[key] || key)
+      .filter((key) => LOOK[key] === state.answers.look);
     state.answers.slide_pick = arten.join(",");
   }
 
@@ -1554,9 +1625,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const carousel = state.answers.asset_type === "carousel";
     // Beim Blaettern nicht ueber das Ende hinaus: die Auswahl kann schrumpfen.
     if (state.prevIndex >= arten.length) state.prevIndex = 0;
-    const variante = carousel
+    const designVorschau = state.stepKey === "design"
+      ? (state.answers.look === "dunkel" ? "U2" : "U1")
+      : "";
+    const variante = designVorschau || (carousel
       ? (state.answers.slide_mix === "custom" ? arten[state.prevIndex] : "")
-      : state.answers.variant;
+      : state.answers.variant);
     if (!variante || variante === "auto" || !VARIANT_KEYS.includes(variante)) return platzhalterHtml();
     return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${blaetterNavHtml()}`;
   }
@@ -1875,7 +1949,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       myth: "Die verbreitete Behauptung.",
       fact: "Der Befund, der ihr widerspricht.",
       takeaway: "**Folge:** Struktur ist Standard, entscheidend ist die Handschrift.",
-      footer_left: state.chrome.footer_left || "ROOTS Consultants",
+      footer_left: state.chrome.footer_left || (state.chrome.custom ? "" : "ROOTS Consultants"),
       // Nur dieses Layout lebt von der Streichung, deshalb traegt sein
       // Beispieltext die Markierung.
       ...(variant === "K" ? { title: "Nicht mehr ~~Tools~~, sondern mehr Handschrift" } : {}),
@@ -1885,7 +1959,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Layouts der gewaehlten Anmutung. "Modell waehlt" bleibt immer dabei. */
   function layoutOptionen() {
     const look = state.answers.look === "dunkel" ? "dunkel" : "hell";
-    return [["auto", "Modell wählt"], ...VARIANTS_ALL.filter(([key]) => LOOK[key] === look)];
+    return [["auto", "Modell wählt"], ...CONTENT_VARIANTS.filter(([key]) => LOOK[key] === look)];
   }
 
   /**
@@ -1922,6 +1996,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return String(state.answers.slide_pick || "").split(",").map((v) => v.trim()).filter(Boolean);
   }
 
+  function variantenName(key) {
+    return (VARIANTS_ALL.find(([value]) => value === key) || [key, key])[1];
+  }
+
+  function carouselEmpfehlungHtml(anzahl) {
+    const n = Number(anzahl) || 0;
+    const zuLang = n > CAROUSEL_RECOMMENDED_MAX;
+    const text = zuLang
+      ? `${n} Slides liegen über dem empfohlenen Bereich von ${CAROUSEL_RECOMMENDED_MIN}–${CAROUSEL_RECOMMENDED_MAX}. Das ist erlaubt, kann aber die Leser bis zur Endfolie kosten.`
+      : `Empfohlen: ${CAROUSEL_RECOMMENDED_MIN}–${CAROUSEL_RECOMMENDED_MAX} Slides inklusive Titel- und Endfolie. LinkedIn erlaubt technisch bis zu ${LINKEDIN_DOCUMENT_PAGE_MAX} Dokumentseiten.`;
+    return `<div class="as-guidance${zuLang ? " is-warning" : ""}" data-carousel-guidance role="note">
+      <i class="fa-solid ${zuLang ? "fa-triangle-exclamation" : "fa-circle-info"}"></i><span>${esc(text)}</span>
+    </div>`;
+  }
+
   /**
    * Mehrfachauswahl im selben weissen Dropdown, mit Nummer je gewaehlter Zeile.
    * Die Reihenfolge der Auswahl ist die Reihenfolge der Slides.
@@ -1930,26 +2019,49 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const gewaehlt = gewaehlteArten();
     const look = state.answers.look === "dunkel" ? "dunkel" : "hell";
     const optionen = q.options.filter(([key]) => LOOK[key] === look);
-    const label = gewaehlt.length
-      ? `${gewaehlt.length} von ${state.answers.slide_count || 4} gewählt`
-      : "Arten auswählen";
+    const label = gewaehlt.length ? `${gewaehlt.length} Slides ausgewählt` : "Folien auswählen";
+    const folge = gewaehlt.map((value, i) => {
+      const rolle = SLIDE_ROLE[value] === "cover" ? "Pflicht: Einstieg"
+        : SLIDE_ROLE[value] === "end" ? "Pflicht: Abschluss"
+        : "Inhaltsfolie";
+      const istInhalt = !SLIDE_ROLE[value];
+      const hoch = istInhalt && i > 1;
+      const runter = istInhalt && i < gewaehlt.length - 2;
+      return `<div class="as-sequence-row">
+        <span class="as-sequence-nr">${i + 1}</span>
+        <span class="as-ddthumb">${miniatur(value)}</span>
+        <span class="as-sequence-copy"><b>${esc(variantenName(value))}</b><small>${esc(rolle)}</small></span>
+        <span class="as-sequence-actions">
+          <button type="button" data-act="art-up" data-index="${i}"${hoch ? "" : " disabled"} aria-label="Folie nach oben"><i class="fa-solid fa-arrow-up"></i></button>
+          <button type="button" data-act="art-down" data-index="${i}"${runter ? "" : " disabled"} aria-label="Folie nach unten"><i class="fa-solid fa-arrow-down"></i></button>
+          <button type="button" data-act="art-remove" data-index="${i}" aria-label="Folie entfernen"><i class="fa-solid fa-xmark"></i></button>
+        </span>
+      </div>`;
+    }).join("");
     const zeilen = optionen.map(([value, text]) => {
-      const an = gewaehlt.includes(value);
+      const rolleSchonDa = SLIDE_ROLE[value] && gewaehlt.some((key) => SLIDE_ROLE[key] === SLIDE_ROLE[value]);
       return `
-      <button type="button" class="as-ddrow${an ? " is-active" : ""}" data-act="pick-art" data-value="${attr(value)}">
+      <button type="button" class="as-ddrow" data-act="art-add" data-value="${attr(value)}"${rolleSchonDa ? " disabled" : ""}>
         <span class="as-ddthumb">${miniatur(value)}</span>
         <span class="as-ddtext">${esc(text)}</span>
-        ${an ? `<i class="as-tag">Slide ${gewaehlt.indexOf(value) + 1}</i>` : ""}
+        ${SLIDE_ROLE[value] ? `<i class="as-tag">${SLIDE_ROLE[value] === "cover" ? "Pflicht: zuerst" : "Pflicht: zuletzt"}</i>` : ""}
+        <span class="as-ddrow-add"><i class="fa-solid ${rolleSchonDa ? "fa-check" : "fa-plus"}"></i></span>
       </button>`;
     }).join("");
+    const probleme = manualCarouselSelectionIssues(gewaehlt, look);
+    const warnung = probleme.length
+      ? `<div class="as-guidance is-warning" role="alert"><i class="fa-solid fa-triangle-exclamation"></i><span>${probleme.map(esc).join(" ")}</span></div>`
+      : "";
     return `<div class="as-q">
       <label>${esc(q.label)}</label>
+      <div class="as-sequence">${folge || '<p class="as-hint">Noch keine Folie ausgewählt.</p>'}</div>
       <div class="as-dd${state.multiOffen ? " is-open" : ""}">
         <button type="button" class="as-ddhead" data-act="toggle-arten" aria-expanded="${state.multiOffen ? "true" : "false"}">
           <span>${esc(label)}</span><i class="fa-solid fa-chevron-down"></i>
         </button>
         <div class="as-ddlist">${zeilen}</div>
       </div>
+      ${warnung}${carouselEmpfehlungHtml(gewaehlt.length)}
     </div>`;
   }
 
@@ -2194,8 +2306,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (src.asset_type) a.asset_type = src.asset_type;
     if (src.variant) a.variant = src.variant;
     if (src.theme === "dark") a.look = "dunkel";
-    if (src.slides) a.slide_count = String(src.slides);
-    if (Array.isArray(src.slide_types) && src.slide_types.length) a.slide_pick = src.slide_types.join(",");
+    if (src.slides) {
+      const n = String(src.slides);
+      if (["8", "10", "12"].includes(n)) a.slide_count = n;
+      else { a.slide_count = "custom"; a.slide_count_text = n; }
+    }
+    if (Array.isArray(src.slide_types) && src.slide_types.length) {
+      a.slide_mix = "custom";
+      a.slide_pick = src.slide_types.join(",");
+    }
     return a;
   }
 
@@ -2326,7 +2445,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       toneLoaded: state.toneGeladen,
       toneOfVoice: state.toneOfVoice,
     })) return false;
-    if (q.art === "multi") return gewaehlteArten().length > 0;
+    if (q.art === "multi") {
+      return manualCarouselSelectionIssues(gewaehlteArten(), state.answers.look).length === 0;
+    }
+    if (q.key === "slide_count") return carouselRequestedSlides(state.answers) > 0;
     if (q.free && state.answers[q.key] === q.free.on) {
       return Boolean(String(state.answers[q.free.key] || "").trim());
     }
@@ -2407,7 +2529,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         : "";
     const benches = q.key === "benchmarks" && state.answers.benchmarks === "custom" ? benchesHtml() : "";
     const slots = q.key === "images" && state.answers.images === "upload" ? slotsHtml() : "";
-    return `<div class="as-opts">${opts}</div>${warnung}${free}${benches}${slots}`;
+    const empfehlung = q.key === "slide_count" ? carouselEmpfehlungHtml(carouselRequestedSlides(state.answers)) : "";
+    return `<div class="as-opts">${opts}</div>${warnung}${free}${empfehlung}${benches}${slots}`;
   }
 
   /** Der Weg in die Einstellungen. Das Studio liegt ueber dem Artikel-Popup,
@@ -2452,13 +2575,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         </button>`;
       }
       const letzte = i === gesamt - 1;
-      const weiter = frageErledigt(q)
-        ? `<button type="button" class="as-btn as-btn--primary as-step-weiter" data-act="step-next">
-            ${letzte ? '<i class="fa-solid fa-check"></i>Fertig' : '<i class="fa-solid fa-arrow-down"></i>Weiter'}
-          </button>`
-        : "";
+      const weiter = `<button type="button" class="as-btn as-btn--primary as-step-weiter" data-act="step-next"${frageErledigt(q) ? "" : " disabled"}>
+          ${letzte ? '<i class="fa-solid fa-check"></i>Fertig' : 'Weiter<i class="fa-solid fa-arrow-right"></i>'}
+        </button>`;
       const zurueck = i > 0
-        ? `<button type="button" class="as-btn as-step-zurueck" data-act="step-back"><i class="fa-solid fa-arrow-up"></i>Zurück</button>`
+        ? `<button type="button" class="as-btn as-step-zurueck" data-act="step-back"><i class="fa-solid fa-arrow-left"></i>Zurück</button>`
         : "";
       const hinweis = q.hint ? `<p class="as-hint">${esc(q.hint)}</p>` : "";
       const fehler = state.formError && state.formErrorKey === q.key
@@ -2483,7 +2604,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           <div class="as-step-kopf"><span class="as-step-nr"><i class="fa-solid fa-flag-checkered"></i></span><label>Bereit</label></div>
           ${abschlussFehler}
           <div class="as-step-fuss">
-            <button type="button" class="as-btn as-step-zurueck" data-act="step-back"><i class="fa-solid fa-arrow-up"></i>Zurück</button>
+            <button type="button" class="as-btn as-step-zurueck" data-act="step-back"><i class="fa-solid fa-arrow-left"></i>Zurück</button>
             <button type="button" class="as-btn as-btn--primary as-step-weiter" data-act="generate"><i class="fa-solid fa-wand-magic-sparkles"></i>Entwurf erzeugen</button>
           </div>
         </div>`
@@ -2589,6 +2710,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       formFehler("caption", "Für einen selbst geschriebenen Begleittext fehlt der Text.");
       return;
     }
+    if (!isMemo && state.answers.asset_type === "carousel") {
+      const anzahl = carouselRequestedSlides(state.answers);
+      if (!anzahl) {
+        formFehler(state.answers.slide_mix === "custom" ? "slide_pick" : "slide_count", `Bitte eine gültige Anzahl zwischen 2 und ${LINKEDIN_DOCUMENT_PAGE_MAX} angeben.`);
+        return;
+      }
+      if (state.answers.slide_mix === "custom") {
+        const probleme = manualCarouselSelectionIssues(gewaehlteArten(), state.answers.look);
+        if (probleme.length) {
+          formFehler("slide_pick", probleme.join(" "));
+          return;
+        }
+      }
+    }
     state.formError = "";
     state.formErrorKey = "";
     state.step = "draft";
@@ -2601,7 +2736,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ladeTaktStart(true);
     try {
       const gewaehlt = state.answers.variant;
-      const antworten = { ...state.answers, layout: gewaehlt };
+      const anzahl = !isMemo && state.answers.asset_type === "carousel" ? carouselRequestedSlides(state.answers) : 1;
+      const antworten = { ...state.answers, layout: gewaehlt, slide_count: String(anzahl), slides: anzahl };
       const res = await api("generate_asset", {
         kind: assetKind,
         article_id: articleId || null,
@@ -2710,7 +2846,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       myth: String(src.myth || ""),
       fact: String(src.fact || ""),
       takeaway: String(src.takeaway || ""),
-      footerLeft: String(src.footer_left || state.chrome.footer_left || "ROOTS Consultants"),
+      footerLeft: String(src.footer_left || state.chrome.footer_left || (state.chrome.custom ? "" : "ROOTS Consultants")),
       imageHint: String(src.image_hint || ""),
       slot_a: String(src.slot_a || ""),
       slot_b: String(src.slot_b || ""),
@@ -3958,7 +4094,10 @@ ${stages}${post}
 
   function addSlide(after = state.slides.length - 1) {
     harvest();
-    const fresh = normalizeSlide({ variant: "B", footer_left: state.slides[0]?.footerLeft || "ROOTS Consultants" });
+    const fresh = normalizeSlide({
+      variant: state.stage.theme === "dark" ? "A" : "B",
+      footer_left: state.slides[0]?.footerLeft || state.chrome.footer_left || (state.chrome.custom ? "" : "ROOTS Consultants"),
+    });
     state.slides.splice(after + 1, 0, fresh);
     state.prevIndex = after + 1;
     mountStages(true);
@@ -4093,6 +4232,9 @@ ${stages}${post}
     }
     if (act === "step-next") {
       readForm();
+      const fragen = aktiveFragen();
+      const offen = fragen[schrittIndex(fragen)];
+      if (offen && !frageErledigt(offen)) return;
       setzeSchritt(naechsterSchritt());
       zeichneForm();
       return;
@@ -4106,7 +4248,6 @@ ${stages}${post}
     if (act === "pick-design") {
       state.answers.design = hit.getAttribute("data-value") || "";
       synchronisiereDesign();
-      if (state.stepKey === "design") setzeSchritt(naechsterSchritt());
       zeichneForm();
       return;
     }
@@ -4129,15 +4270,38 @@ ${stages}${post}
       fitStages();
       return;
     }
-    if (act === "pick-art") {
+    if (act === "art-add") {
       const wert = hit.getAttribute("data-value");
       const liste = gewaehlteArten();
-      const i = liste.indexOf(wert);
-      // Abwaehlen entfernt, Anwaehlen haengt an: die Reihenfolge der Auswahl ist
-      // die Slidefolge, deshalb wird nicht sortiert.
-      if (i >= 0) liste.splice(i, 1);
-      else if (liste.length < Number(state.answers.slide_count || 4)) liste.push(wert);
+      if (!wert || liste.length >= LINKEDIN_DOCUMENT_PAGE_MAX) return;
+      const rolle = SLIDE_ROLE[wert];
+      if (rolle && liste.some((key) => SLIDE_ROLE[key] === rolle)) return;
+      if (rolle === "cover") liste.unshift(wert);
+      else if (rolle === "end") liste.push(wert);
+      else {
+        const ende = liste.findIndex((key) => SLIDE_ROLE[key] === "end");
+        if (ende >= 0) liste.splice(ende, 0, wert);
+        else liste.push(wert);
+      }
       state.answers.slide_pick = liste.join(",");
+      state.prevIndex = Math.max(0, rolle === "cover" ? 0 : rolle === "end" ? liste.length - 1 : liste.length - (liste.some((key) => SLIDE_ROLE[key] === "end") ? 2 : 1));
+      zeichneForm();
+      return;
+    }
+    if (act === "art-remove" || act === "art-up" || act === "art-down") {
+      const liste = gewaehlteArten();
+      const index = Number(hit.getAttribute("data-index"));
+      if (!Number.isInteger(index) || index < 0 || index >= liste.length) return;
+      if (act === "art-remove") liste.splice(index, 1);
+      else {
+        const delta = act === "art-up" ? -1 : 1;
+        const ziel = index + delta;
+        if (ziel <= 0 || ziel >= liste.length - 1 || SLIDE_ROLE[liste[index]]) return;
+        [liste[index], liste[ziel]] = [liste[ziel], liste[index]];
+        state.prevIndex = ziel;
+      }
+      state.answers.slide_pick = liste.join(",");
+      if (state.prevIndex >= liste.length) state.prevIndex = Math.max(0, liste.length - 1);
       zeichneForm();
       return;
     }
@@ -4215,6 +4379,14 @@ ${stages}${post}
     if (!free) return;
     // Nur die Vorschau, nicht das Formular: sonst verliert das Feld den Fokus.
     readForm();
+    const fragen = aktiveFragen();
+    const offen = fragen[schrittIndex(fragen)];
+    const weiter = shell.querySelector('[data-act="step-next"]');
+    if (weiter && offen) weiter.disabled = !frageErledigt(offen);
+    if (free.getAttribute("data-free") === "slide_count_text") {
+      const hinweis = shell.querySelector("[data-carousel-guidance]");
+      if (hinweis) hinweis.outerHTML = carouselEmpfehlungHtml(carouselRequestedSlides(state.answers));
+    }
     if (free.getAttribute("data-free") === "company_text") {
       const node = shell.querySelector('[data-livepreview] [data-field="title"]');
       if (node) node.textContent = previewMemoTitle(state.answers, company);

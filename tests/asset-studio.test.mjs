@@ -51,7 +51,7 @@ test("beide Seiten kennen dieselben Assetarten und Varianten", () => {
   assert.deepEqual([...backend.ASSET_KINDS], ["linkedin", "memo"]);
   // Das Frontend fuehrt die Varianten in VARIANT_KEYS; ein Buchstabe, den nur
   // eine Seite kennt, waere im Betrieb eine leere Buehne.
-  const frontendVariants = studio.match(/const VARIANTS = \[([\s\S]*?)\n\];/)?.[1] || "";
+  const frontendVariants = studio.slice(studio.indexOf("const VARIANTS = ["), studio.indexOf("const LAYOUT_KEYS"));
   for (const variant of backend.ASSET_VARIANTS) {
     assert.ok(frontendVariants.includes(`"${variant}"`), `Variante ${variant} fehlt im Frontend`);
   }
@@ -190,7 +190,7 @@ test("die Anmutung filtert die Layouts, sie faerbt nichts um", () => {
   // Umfaerben hatte weisse Schrift auf weissem Grund erzeugt. Die Wahl schraenkt
   // jetzt die Liste ein: jedes gebaute Asset behaelt seinen Look.
   assert.match(studio, /function layoutOptionen\(\)/);
-  assert.match(studio, /VARIANTS_ALL\.filter\(\(\[key\]\) => LOOK\[key\] === look\)/);
+  assert.match(studio, /CONTENT_VARIANTS\.filter\(\(\[key\]\) => LOOK\[key\] === look\)/);
   assert.doesNotMatch(studio, /class="li li-dark/);
   assert.doesNotMatch(studio, /data-act="theme"/);
   // Alle 22 Layouts sind einer Anmutung zugeordnet, sonst fehlen sie in beiden Listen.
@@ -316,8 +316,8 @@ test("das Vorlagen-CSS wirkt nur auf der Buehne", async () => {
 
 test("alle Assets vom Desktop stehen als Layout zur Wahl", async () => {
   const tpl = await import("../asset-templates.js");
-  // Zwoelf Einzelposts, vier Strategiemodelle, sechs Datenbilder.
-  assert.equal(Object.keys(tpl.ASSET_TEMPLATES).length, 12);
+  // Zwoelf Einzelposts, vier Carousel-Rahmen, vier Strategiemodelle und sechs Datenbilder.
+  assert.equal(Object.keys(tpl.ASSET_TEMPLATES).length, 16);
   assert.equal(Object.keys(tpl.ASSET_LAYOUTS).length, 10);
   for (const [key, markup] of Object.entries(tpl.ASSET_LAYOUTS)) {
     assert.match(markup, /data-field="title"/, `Layout ${key} ohne Titel`);
@@ -639,15 +639,15 @@ test("die Ladeanzeige zeigt Abschnitt, Balken und Minutenprognose", () => {
 
 test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", () => {
   // Sechs von acht Live-Laeufen starben am 13.8.2026 bei 120 s. Die Fenster
-  // sind jetzt 160 / 200 / 220 / 280 s, und der Text darf nicht bei 120 bleiben.
+  // wachsen jetzt mit der Slide-Anzahl, und der Text darf nicht bei 120 bleiben.
   const single = backend.normalizeAssetAnswers("linkedin", { asset_type: "single" });
   const carousel4 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 4 });
   const carousel6 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 6 });
   const memo = backend.normalizeAssetAnswers("memo", {});
   assert.equal(backend.assetModelTimeoutMs("linkedin", single), 160_000);
   assert.equal(backend.assetModelTimeoutMs("memo", memo), 200_000);
-  assert.equal(backend.assetModelTimeoutMs("linkedin", carousel4), 220_000);
-  assert.equal(backend.assetModelTimeoutMs("linkedin", carousel6), 280_000);
+  assert.equal(backend.assetModelTimeoutMs("linkedin", carousel4), 232_000);
+  assert.equal(backend.assetModelTimeoutMs("linkedin", carousel6), 248_000);
   assert.match(edge, /assetModelTimeoutMs\(assetKind, assetAnswers\)/);
   assert.match(edge, /callJsonModelStreaming/);
   assert.match(edge, /stream: true/);
@@ -1037,8 +1037,8 @@ test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () =>
   const faelle = [
     ["linkedin", { asset_type: "single" }, 160_000],
     ["memo", {}, 200_000],
-    ["linkedin", { asset_type: "carousel", slides: 4 }, 220_000],
-    ["linkedin", { asset_type: "carousel", slides: 6 }, 280_000],
+    ["linkedin", { asset_type: "carousel", slides: 4 }, 232_000],
+    ["linkedin", { asset_type: "carousel", slides: 6 }, 248_000],
   ];
   for (const [kind, answers, erwartet] of faelle) {
     const a = backend.normalizeAssetAnswers(kind, answers);
@@ -1244,7 +1244,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.17");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.18");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -1331,7 +1331,7 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   assert.match(memo.about_fit, /360/);
 });
 
-test("Prompt v1.10 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
+test("Prompt v1.18 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -1348,9 +1348,9 @@ test("Prompt v1.10 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   assert.match(prompt, /Wozu: eine These plus ein stützendes Argument/);
   assert.match(prompt, /Greift wenn: genau diese Ziffer/);
   assert.match(prompt, /Keine Ziffer auf zwei Folien/);
-  assert.match(prompt, /wähle je Slide aus A, B, E, F, G, H, I, K, L/);
-  assert.doesNotMatch(prompt, /wähle je Slide aus[^\n]*\bC\b/);
-  assert.doesNotMatch(prompt, /wähle je Slide aus[^\n]*\bT1\b/);
+  assert.match(prompt, /wähle aus B, E, F, G, I, K, L/);
+  assert.doesNotMatch(prompt, /wähle aus[^\n]*\bC\b/);
+  assert.doesNotMatch(prompt, /wähle aus[^\n]*\bT1\b/);
   const s1 = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
     { title: "Klarna", content_de: artikel },
@@ -2010,9 +2010,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260818-1642");
-  assert.match(indexHtml, /app\.js\?v=20260818-1642/);
-  assert.match(studio, /asset-templates\.js\?v=20260818-1642/);
+  assert.equal(studioVersion, "20260818-1839");
+  assert.match(indexHtml, /app\.js\?v=20260818-1839/);
+  assert.match(studio, /asset-templates\.js\?v=20260818-1839/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2517,4 +2517,105 @@ test("Der Fragebogen zeigt eine Frage nach der anderen", async () => {
   // Die Domain steht nicht mehr im Markup, sondern kommt aus der Vorlage.
   assert.ok(!templates.includes("roots-consultants.com"), "Domain gehoert der Vorlage");
   assert.match(templates, /\{\{domain\}\}/);
+});
+
+test("Carousel-Laenge und eigene Abfolge folgen der wirklichen Auswahl", async () => {
+  const { carouselRequestedSlides, manualCarouselSelectionIssues } = await import("../asset-studio.js");
+  assert.equal(carouselRequestedSlides({ slide_mix: "auto", slide_count: "10" }), 10);
+  assert.equal(carouselRequestedSlides({ slide_mix: "auto", slide_count: "custom", slide_count_text: "14" }), 14);
+  assert.equal(carouselRequestedSlides({ slide_mix: "custom", slide_pick: "U1,B,B,U3" }), 4);
+  assert.equal(carouselRequestedSlides({ slide_mix: "auto", slide_count: "custom", slide_count_text: "301" }), 0);
+
+  assert.deepEqual(manualCarouselSelectionIssues("U1,B,B,U3", "hell"), []);
+  assert.ok(manualCarouselSelectionIssues("B,U3", "hell").some((text) => text.includes("Titelfolie")));
+  assert.ok(manualCarouselSelectionIssues("U1,B", "hell").some((text) => text.includes("Endfolie")));
+  assert.ok(manualCarouselSelectionIssues("U1,A,U3", "hell").some((text) => text.includes("Hell- oder Dunkel")));
+
+  const ki14 = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 14 });
+  assert.equal(ki14.slides, 14);
+  const eigen = backend.normalizeAssetAnswers("linkedin", {
+    asset_type: "carousel", theme: "light", slide_pick: "U1,B,B,U3", slides: 99,
+  });
+  assert.equal(eigen.slides, 4, "die Abfolge bestimmt die Anzahl");
+  assert.deepEqual(eigen.slide_types, ["U1", "B", "B", "U3"]);
+  assert.equal(backend.manualCarouselSelectionError(eigen), null);
+
+  const block = studio.slice(studio.indexOf('key: "slide_count"'), studio.indexOf('key: "storyline"'));
+  assert.match(block, /answers\.slide_mix !== "custom"/);
+  assert.match(block, /slide_count_text/);
+  assert.match(studio, /Empfohlen: \$\{CAROUSEL_RECOMMENDED_MIN\}.*\$\{CAROUSEL_RECOMMENDED_MAX\} Slides/);
+  assert.match(studio, /LINKEDIN_DOCUMENT_PAGE_MAX = 300/);
+  assert.doesNotMatch(studio, /liste\.length < Number\(state\.answers\.slide_count/);
+});
+
+test("Hell und Dunkel steuern Vorschau, Modell und fertige Carousel-Rahmen", async () => {
+  const hell = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", theme: "light", slides: 4 });
+  const dunkel = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", theme: "dark", slides: 4 });
+  const hellKeys = backend.allowedSlideKeys(hell, "14 Prozent, 24 Prozent und 38 Prozent.");
+  const dunkelKeys = backend.allowedSlideKeys(dunkel, "14 Prozent, 24 Prozent und 38 Prozent.");
+  assert.equal(hellKeys[0], "U1");
+  assert.equal(hellKeys.at(-1), "U3");
+  assert.equal(dunkelKeys[0], "U2");
+  assert.equal(dunkelKeys.at(-1), "U4");
+  assert.ok(hellKeys.every((key) => backend.ASSET_SLIDE_THEMES[key] === "light"));
+  assert.ok(dunkelKeys.every((key) => backend.ASSET_SLIDE_THEMES[key] === "dark"));
+
+  const alteLayoutWahl = backend.normalizeAssetAnswers("linkedin", {
+    asset_type: "carousel", theme: "light", variant: "B", slides: 4,
+  });
+  assert.deepEqual(
+    backend.allowedSlideKeys(alteLayoutWahl, ""),
+    ["U1", "B", "U3"],
+    "auch eine aus einem Einzelbild übernommene Layoutwahl behält Titel und Ende",
+  );
+  assert.equal(
+    backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", theme: "dark", variant: "B" }).variant,
+    "auto",
+    "eine helle Alt-Auswahl darf kein dunkles Carousel aufhellen",
+  );
+
+  const artikel = "Die Titelfolie setzt die These. Der Mittelteil erklärt den Befund. Die Endfolie lädt zum Gespräch ein.";
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "Die These führt zum Gespräch.",
+    slides: [
+      { variant: "A", kicker: "THEMA", title: "Die Titelfolie setzt die These", subtitle: "Der Einstieg trägt", footer_left: "ROOTS" },
+      { variant: "A", kicker: "THEMA", title: "Der Mittelteil erklärt den Befund", subtitle: "Die These bleibt klar", footer_left: "ROOTS" },
+      { variant: "A", kicker: "THEMA", title: "Die Endfolie lädt zum Gespräch ein", subtitle: "Der Abschluss ist klar", takeaway: "Gespräch anfragen", footer_left: "ROOTS" },
+    ],
+  }), backend.normalizeAssetAnswers("linkedin", {
+    asset_type: "carousel", theme: "light", slide_pick: "U1,B,U3", slides: 3,
+  }), { articleText: `${artikel} Der Einstieg trägt. Die These bleibt klar. Der Abschluss ist klar. Gespräch anfragen.` });
+  assert.deepEqual(payload.slides.map((slide) => slide.variant), ["U1", "B", "U3"]);
+
+  const tpl = await import("../asset-templates.js");
+  assert.match(tpl.ASSET_TEMPLATES.U1, /data-field="title"/);
+  assert.match(tpl.ASSET_TEMPLATES.U2, /li-dark/);
+  assert.match(tpl.ASSET_TEMPLATES.U3, /data-field="takeaway"/);
+  assert.match(tpl.ASSET_TEMPLATES.U4, /li-dark/);
+  assert.match(studio, /state\.stepKey === "design"[\s\S]*"U2"[\s\S]*"U1"/);
+});
+
+test("leere private Vorlagen erhalten niemals ROOTS-Standardwerte", () => {
+  const privat = backend.normalizeAssetAnswers("linkedin", {
+    asset_type: "single", profile: "private", design: "standard",
+    design_name: "Standard", design_footer_left: "", design_domain: "",
+  });
+  assert.equal(privat.design_footer_left, "");
+  assert.equal(privat.design_domain, "");
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    post_text: "Eine These.",
+    slides: [{ variant: "B", kicker: "THEMA", title: "Eine These trägt", subtitle: "Ein Argument trägt", footer_left: "ROOTS Consultants" }],
+  }), privat, { articleText: "Eine These trägt. Ein Argument trägt." });
+  assert.equal(payload.chrome.footer_left, "");
+  assert.equal(payload.chrome.domain, "");
+  assert.equal(payload.slides[0].footer_left, "");
+  assert.match(studio, /state\.chrome\.custom \? "" : "ROOTS Consultants"/);
+});
+
+test("Hinweise ohne Seitenstreifen und Navigation bleibt sichtbar", () => {
+  assert.match(studio, /\.as-step-fuss\{position:sticky; bottom:-1px/);
+  const noticeCss = studio.slice(studio.indexOf("#as-overlay .as-notice{"), studio.indexOf("#as-overlay .as-notice-icon"));
+  assert.doesNotMatch(noticeCss, /border-left/);
+  assert.match(studio, /fa-arrow-left[^\n]*Zurück/);
+  assert.match(studio, /Weiter<i class="fa-solid fa-arrow-right/);
 });

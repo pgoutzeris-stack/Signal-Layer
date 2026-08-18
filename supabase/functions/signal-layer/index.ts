@@ -147,6 +147,7 @@ import {
   memoPayloadHasSlotImages,
   memoSceneKeywords,
   memoSlotImageSrc,
+  manualCarouselSelectionError,
   negativeBenchmarkNames,
   rejectedBenchmarkNames,
   normalizeAssetAnswers,
@@ -9466,6 +9467,10 @@ Deno.serve(async (req: Request) => {
           linkedinAnswers.design_domain = vorlage.domain;
           linkedinAnswers.design_logo = vorlage.logo;
           linkedinAnswers.theme = vorlage.theme;
+          const auswahlFehler = linkedinAnswers.asset_type === "carousel"
+            ? manualCarouselSelectionError(linkedinAnswers)
+            : null;
+          if (auswahlFehler) return errorResponse(origin, auswahlFehler);
         }
 
         const admin = getAdminClient();
