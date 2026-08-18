@@ -5303,6 +5303,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       buyingCenterRoles: assetSignal.buying_center_roles,
       personName: assetSignal.person_name,
       signalHeadline: assetSignal.headline_de,
+      signalSummary: assetSignal.summary_de,
       articleTitle: assetArticle.title_de || assetArticle.title || null,
       company: signalForAsset.company,
       topics: signalForAsset.topics,
@@ -9452,7 +9453,7 @@ Deno.serve(async (req: Request) => {
             return errorResponse(origin, TONE_OF_VOICE_MISSING);
           }
           if (linkedinAnswers.caption_mode === "custom" && !linkedinAnswers.caption) {
-            return errorResponse(origin, "Für einen selbst geschriebenen Begleittext fehlt der Text.");
+            return errorResponse(origin, "Für eine selbst geschriebene Caption fehlt der Text.");
           }
           // Die Vorlage wird jetzt festgeschrieben. Ein Wiederholungslauf liest
           // sie aus der gespeicherten Zeile und braucht die Einstellungen nicht

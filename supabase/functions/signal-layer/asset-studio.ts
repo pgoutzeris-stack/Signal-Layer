@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.19";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.20";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -268,6 +268,8 @@ export type AssetNormalizeContext = {
   signalLabel?: string | null;
   /** Signalüberschrift: Anlass, nicht Cover-These. */
   signalHeadline?: string | null;
+  /** Signalzusammenfassung: ihre Kennzahlen haben Vorrang vor Detailzahlen. */
+  signalSummary?: string | null;
   /** Artikeltitel: Anlass, nicht Cover-These. */
   articleTitle?: string | null;
   /** ROOTS-Anschluss: die Übersetzung der Lage in die Herausforderung. */
@@ -281,7 +283,7 @@ export type AssetAnswers = LinkedinAnswers | MemoAnswers;
 // ---------------------------------------------------------------------------
 // Nutzlast
 // ---------------------------------------------------------------------------
-export type AssetStat = { value: string; label: string };
+export type AssetStat = { value: string; label: string; source_context?: string };
 export type AssetStep = { n: string; title: string; text: string };
 
 export type AssetSlide = {
@@ -582,7 +584,7 @@ export function formatKennzahlenBlock(article: string): string {
     if (gesehen.has(key)) continue;
     gesehen.add(key);
     const idx = nackt.indexOf(zahl);
-    zeilen.push(`- ${zahl} — ${idx >= 0 ? snippetAround(nackt, idx, zahl.length) : ""}`);
+    zeilen.push(`- wert: ${zahl}\n  direkter_bezug: ${idx >= 0 ? snippetAround(nackt, idx, zahl.length) : ""}`);
   }
   const wortRe = new RegExp(`\\b(${DE_WORD_ALT})\\s*(?:${DE_UNIT_ALT})\\b`, "gi");
   let treffer: RegExpExecArray | null;
@@ -591,7 +593,7 @@ export function formatKennzahlenBlock(article: string): string {
     const key = roh.toLowerCase();
     if (gesehen.has(key)) continue;
     gesehen.add(key);
-    zeilen.push(`- ${roh} — ${snippetAround(nackt, treffer.index, treffer[0].length)}`);
+    zeilen.push(`- wert: ${roh}\n  direkter_bezug: ${snippetAround(nackt, treffer.index, treffer[0].length)}`);
   }
   const bruchRe = new RegExp(DE_FRACTION_RE.source, "gi");
   while ((treffer = bruchRe.exec(nackt))) {
@@ -599,7 +601,7 @@ export function formatKennzahlenBlock(article: string): string {
     const key = roh.toLowerCase();
     if (gesehen.has(key)) continue;
     gesehen.add(key);
-    zeilen.push(`- ${roh} — qualitativ, keine Kachelzahl`);
+    zeilen.push(`- wert: ${roh}\n  direkter_bezug: qualitativ, keine Kachelzahl`);
   }
   if (!zeilen.length) {
     return "<kennzahlen_im_artikel>keine Ziffern und keine Mengenwörter — keine Kennzahl-Variante (E, H, L) und keine Infografik (S, T) wählen</kennzahlen_im_artikel>";
@@ -634,7 +636,12 @@ function record(value: unknown): Record<string, unknown> {
 
 function stat(value: unknown): AssetStat {
   const item = record(value);
-  return { value: text(item.value, 24), label: text(item.label, 80) };
+  const sourceContext = text(item.source_context, 280);
+  return {
+    value: text(item.value, 24),
+    label: text(item.label, 80),
+    ...(sourceContext ? { source_context: sourceContext } : {}),
+  };
 }
 
 function stats(value: unknown, max: number): AssetStat[] {
@@ -1244,6 +1251,38 @@ Greift wenn: der Artikel vier aufeinanderfolgende Phasen hergibt.
 Nicht wählen wenn: die Phasen nicht belegt sind; dann I.`,
 };
 
+/** Inhaltlicher Vertrag je gebauter Vorlage. Er sagt dem Modell nicht nur,
+ * welche Felder existieren, sondern welche Beziehung zwischen ihnen sichtbar
+ * sein muss. So wird aus einer passenden Zahl kein inhaltlich falscher Slide. */
+export const VARIANT_INHALTSVERTRAG: Record<string, string> = {
+  U1: "title ist die Kernaussage des ganzen Carousels; subtitle verspricht konkret, was die folgenden Folien erklären.",
+  U2: "title ist die Kernaussage des ganzen Carousels; subtitle verspricht konkret, was die folgenden Folien erklären.",
+  U3: "title bündelt die Konsequenz der vorherigen Folien; subtitle leitet zum genau einen CTA in takeaway über.",
+  U4: "title bündelt die Konsequenz der vorherigen Folien; subtitle leitet zum genau einen CTA in takeaway über.",
+  A: "quote ist wortgleich belegt; attribution nennt genau die im Artikel genannte Person und Rolle. Keine zugespitzte Paraphrase als Zitat.",
+  B: "title behauptet genau einen Befund; subtitle liefert den unmittelbar dazugehörigen Beleg oder die Konsequenz. Beide ergeben zusammen einen Gedanken.",
+  C: "wie B, zusätzlich beschreibt image_hint ein konkretes Motiv, das die These sichtbar unterstützt und nicht nur dekoriert.",
+  D: "title und subtitle bleiben auch auf dem Vollbild eindeutig; image_hint beschreibt ein Motiv mit freier, ruhiger Textfläche.",
+  E: "stat.value, title und subtitle bilden zusammen genau einen belegten Satz. Nach der Zahl muss sofort klar sein: Anteil wovon, bei wem und mit welchem Ergebnis. Eine größere Nebenkennzahl ist nie automatisch die Leitkennzahl.",
+  F: "title benennt die gemeinsame Kategorie; jeder bullet enthält genau einen eigenständigen Punkt plus seinen kurzen Beleg. Keine drei Varianten derselben Aussage.",
+  G: "myth ist eine tatsächlich durch den Artikel korrigierte Annahme; fact ist der direkt belegte Gegenbefund. Keinen künstlichen Gegensatz erfinden.",
+  H: "jede Kennzahl hat ihr eigenes eindeutiges label: Bezugsgruppe, Messgröße und gegebenenfalls Zeitraum. Zahlen und Labels dürfen nicht zwischen Befunden getauscht werden.",
+  I: "steps sind eine echte Reihenfolge. Jeder Schritt verändert den Zustand und macht den nächsten logisch möglich; eine parallele Liste gehört in F.",
+  J: "wie A, zusätzlich trägt image_hint die zitierte Situation; Zitat und Person bleiben wortgleich belegt.",
+  K: "das gestrichene Wort ist die belegte, verworfene Logik; der restliche title nennt den Ersatz. takeaway erklärt die Konsequenz, ohne einen neuen Gedanken zu eröffnen.",
+  L: "stat.value und stat.label benennen exakt denselben Messwert; title deutet diesen Wert, drei bullets belegen die Deutung, takeaway zieht nur die daraus folgende Konsequenz.",
+  S1: "slot_a, slot_b und slot_c sind drei parallele Faktoren; slot_center ist nur ihr gemeinsamer Schnitt. Keine Ursache-Wirkung-Folge in ein Venn pressen.",
+  S2: "die vier Stufen sind echte, aufsteigende Reifegrade derselben Fähigkeit; steps[0] ist die höchste Stufe. Keine beliebigen Prioritäten stapeln.",
+  S3: "die drei Säulen sind parallele Fähigkeiten, slot_center ihr gemeinsames Fundament und Dachzeilen das gemeinsame Ziel. Jede Rolle muss aus dem Artikel ableitbar sein.",
+  S4: "die fünf Stufen bilden eine belegbare Verengung oder Entwicklung in derselben Logik; keine bloße Liste in Trichterform.",
+  T1: "alle stats gehören zu derselben Messgröße über verschiedene Zeitpunkte; label ist ausschließlich der jeweilige Zeitraum.",
+  T2: "die drei stats sind mathematisch und inhaltlich Ausgangswert, Veränderung und Ergebnis derselben Größe. Kein Wasserfall aus drei unabhängigen Zahlen.",
+  T3: "die drei stats sind disjunkte Anteile derselben Grundgesamtheit; slot_center ist ihre belegte Summe oder Grundgesamtheit.",
+  T4: "alle Balken messen dieselbe Größe für direkt vergleichbare Kategorien. Jedes label benennt die Kategorie der danebenstehenden Zahl.",
+  T5: "alle fünf Zahlen gehören zu aufeinanderfolgenden Stufen desselben Funnels und derselben Grundgesamtheit; Werte dürfen entlang des Funnels nicht steigen.",
+  T6: "die vier Phasen sind eine echte Zeitfolge; n nennt den Zeitpunkt, title die Phase und text ihr konkretes Ergebnis.",
+};
+
 /** Sichtbare Kapazität statt theoretischer JSON-Länge. Diese Regeln stehen im
  *  Prompt und werden durch fieldCap plus die feste Slotzahl abgesichert. */
 const VARIANT_FORMAT: Record<string, string> = {
@@ -1320,16 +1359,21 @@ Ansprache: immer dasselbe Executive Memo, drei Seiten. Kein internes Vermerk, ke
 </assettypen>`;
 
 const LEITKENNZAHL = `<leitkennzahl>
-Du wählst die Leitkennzahl. Wir listen nur, was im Artikel existiert, in kennzahlen_im_artikel.
-Eine Folie E oder L: die Zahl, die die Signalthese trägt, nicht die erste im Text.
-Folie H und T3: nur Zahlen aus dieser Liste, jede an ihrem Beleg. Dieselbe Ziffer nicht auf G und H zugleich.
+Du wählst die Leitkennzahl nach Aussagekraft, nicht nach Größe. Wir listen nur, was im Artikel existiert, samt direktem Satzkontext in kennzahlen_im_artikel.
+Rangfolge: 1. Zahl belegt direkt überschrift oder zusammenfassung des Signals. 2. Zahl belegt anlass oder beleg_zitat. 3. Erst danach kommen nachgelagerte Detailzahlen.
+Eine Folie E oder L: stat.value ist die Zahl, stat.source_context ist ein wortgleich aus dem Artikel kopierter Satz mit genau diesem Wert. title plus subtitle beziehungsweise stat.label formulieren ausschließlich diesen direkten Bezug: Wer oder was wurde gemessen, welche Größe, welches Ergebnis? Der sichtbare Text darf nicht zu einer anderen Zahl im Artikel gehören.
+Folie H und T1 bis T5: jeder Eintrag in stats hat seinen eigenen wortgleichen source_context. value und label bilden den Befund dieses Ausschnitts, nie den des vorherigen oder nächsten Eintrags. Dieselbe Ziffer nicht auf zwei Folien.
+Prüfe jede Zahlenfolie als gesprochenen Satz: „[value] der/von [Bezugsgruppe] [gemessener Befund]“. Ist dieser Satz mit dem direkten_bezug nicht eindeutig wahr, nimm eine andere Zahl oder eine qualitative Textfolie.
+Beispiel für die Auswahlregel: Stehen 23 Prozent direkt bei „Diversität ist ein Kaufkriterium“, gehören 23 Prozent und genau dieser Kaufbezug zusammen. Eine größere 83-Prozent-Nebenkennzahl ist nicht besser, wenn ihr direkter Satz einen anderen Befund misst.
 Fehlt die Liste oder stehen dort nur qualitative Brüche: keine Kennzahl-Variante, These qualitativ.
 Säulen, Wasserfall und Balken (T1, T2, T4, T5) nur, wenn der Nutzer sie gewählt hat: ihre Höhe folgt nicht der Zahl.
 </leitkennzahl>`;
 
 function variantenBlock(keys: AssetSlideKey[], carousel: boolean): string {
   const zeilen = keys
-    .map((key) => VARIANT_ZEILE[key] ? `${VARIANT_ZEILE[key]}\nFormat: ${VARIANT_FORMAT[key]}` : "")
+    .map((key) => VARIANT_ZEILE[key]
+      ? `${VARIANT_ZEILE[key]}\nInhaltslogik: ${VARIANT_INHALTSVERTRAG[key]}\nFormat: ${VARIANT_FORMAT[key]}`
+      : "")
     .filter(Boolean);
   // Die genannte Grenze ist die schärfste, die eine Variante durchsetzt. Sonst
   // liefert das Modell ein regelkonformes Feld, das die Vorlage kappt: E hat am
@@ -1444,16 +1488,16 @@ function applyLinkedinChrome(
   return out;
 }
 
-/** Der Begleittext ist Teil derselben Antwort. Je nach Wahl schreibt ihn das
+/** Die Caption ist Teil derselben Antwort. Je nach Wahl schreibt sie das
  *  Modell frei, im hinterlegten Tonfall, oder es uebernimmt den fertigen Text. */
 function captionAuftrag(answers: LinkedinAnswers): string {
   if (answers.caption_mode === "custom" && answers.caption) {
     return `post_text ist vorgegeben und wird wortgleich uebernommen, ohne Kuerzung und ohne Umformulierung:\n${answers.caption}`;
   }
   if (answers.caption_mode === "ai_tone" && answers.tone_of_voice) {
-    return `Begleittext im hinterlegten Tonfall schreiben. Der Tonfall gilt fuer post_text, nicht fuer die Slides:\n${answers.tone_of_voice}`;
+    return `Caption im hinterlegten Tonfall schreiben. Der Tonfall gilt fuer post_text, nicht fuer die Slides:\n${answers.tone_of_voice}`;
   }
-  return "Begleittext: sachlich, ohne Werbeton.";
+  return "Caption: sachlich, ohne Werbeton.";
 }
 
 function linkedinPrompt(
@@ -1517,11 +1561,14 @@ takeaway: nur bei Varianten, die es zeichnen (K, L, S, T). Sonst die Pointe ins 
 footer_left: unten links. ${privat ? `${absender ? `Immer „${absender}“` : "Immer"} oder die belegte Artikelquelle` : "Immer „ROOTS Consultants“ oder die belegte Artikelquelle"}. NIE den Zielkunden. Die Domain rechts ist fest.
 image_hint: das Bildmotiv in Worten, nur bei C, D und J.
 slot_a bis slot_center: nur bei Infografiken, die diese Slots zeichnen.
-post_text: der Begleittext des Beitrags, höchstens 1300 Zeichen, erste Zeile ist der Aufhänger, letzter Absatz der Handlungsaufruf. Absätze bleiben Absätze. Keine Ziffer und kein Zahlwort, die nicht im Artikel stehen.${carousel ? `
+post_text: die Caption des Beitrags, höchstens 1300 Zeichen, erste Zeile ist der Aufhänger, letzter Absatz der Handlungsaufruf. Absätze bleiben Absätze. Keine Ziffer und kein Zahlwort, die nicht im Artikel stehen.${carousel ? `
 Der erste Slide setzt die These, die mittleren tragen je einen Gedanken, der letzte den Aufruf im sichtbaren Pointe-Feld der gewählten Variante.` : ""}
 </aufbau>
 ${SPRACHREGELN}
 ${BELEGREGELN}
+<selbstpruefung>
+Prüfe vor dem JSON jeden Slide gegen seine Inhaltslogik und seine sichtbaren Felder. Lies Zahlenwert plus sichtbaren Bezug als einen Satz; tausche keine Zahl gegen eine auffälligere Nebenkennzahl. Prüfe, dass title, subtitle, bullets, labels und Schritte dieselbe Aussage tragen, nicht nur dass jedes Einzelwort irgendwo im Artikel vorkommt. Kürze anschließend auf die Zeichen- und Zeilengrenzen der konkreten Variante.
+</selbstpruefung>
 ${DATENHINWEIS}
 ${daten}
 
@@ -1646,11 +1693,21 @@ const STAT_SCHEMA = {
   },
 };
 
+const LINKEDIN_STAT_SCHEMA = {
+  type: "OBJECT",
+  required: ["value", "label", "source_context"],
+  properties: {
+    value: { type: "STRING", description: "Kurze, gross lesbare Zahl oder Grösse, deutsch formatiert." },
+    label: { type: "STRING", description: "Exakter sichtbarer Bezug dieser Zahl: Bezugsgruppe, Messgröße und gegebenenfalls Zeitraum." },
+    source_context: { type: "STRING", description: "Ein wortgleich aus dem Artikel kopierter Satz oder Satzteil, der genau value und dessen direkten inhaltlichen Bezug enthält. Nicht erfinden oder paraphrasieren." },
+  },
+};
+
 export const ASSET_SCHEMA_LINKEDIN = {
   type: "OBJECT",
   required: ["post_text", "slides"],
   properties: {
-    post_text: { type: "STRING", description: "Begleittext des Beitrags, höchstens 1300 Zeichen, Absätze bleiben Absätze." },
+    post_text: { type: "STRING", description: "Caption des Beitrags, höchstens 1300 Zeichen, Absätze bleiben Absätze." },
     slides: {
       type: "ARRAY",
       description: "Ein Slide bei Single-Image, sonst die im Auftrag verlangte Anzahl, nicht mehr.",
@@ -1664,8 +1721,8 @@ export const ASSET_SCHEMA_LINKEDIN = {
           subtitle: { type: "STRING", description: "Eigenes Argument, nicht die Wiederholung des Titels. Zeilengrenze der Variante beachten." },
           quote: { type: "STRING", description: "Nur bei A und J: wörtliches Zitat aus dem Artikel, kurz genug für höchstens vier Zeilen." },
           attribution: { type: "STRING", description: "Nur bei A und J: sichtbare Person und Rolle des Zitats, eine Zeile." },
-          stat: STAT_SCHEMA,
-          stats: { type: "ARRAY", items: STAT_SCHEMA, description: "Bei H und bei T1–T5: belegte Kennzahlen aus kennzahlen_im_artikel." },
+          stat: LINKEDIN_STAT_SCHEMA,
+          stats: { type: "ARRAY", items: LINKEDIN_STAT_SCHEMA, description: "Bei H und bei T1–T5: belegte Kennzahlen aus kennzahlen_im_artikel, jeweils mit eigenem wortgleichen Quellenausschnitt." },
           bullets: { type: "ARRAY", items: { type: "STRING" }, description: "Nur bei F und L: bis zu fünf kurze Zeilen." },
           steps: {
             type: "ARRAY",
@@ -1963,6 +2020,70 @@ function applyNumberGate(slide: AssetSlide, corpus: string): AssetSlide {
   return applyInfographicGate(slide);
 }
 
+const NUMBER_CONTEXT_VARIANTS = new Set<AssetSlideKey>(["E", "H", "L", "T1", "T2", "T3", "T4", "T5"]);
+const NUMBER_CONTEXT_STOP = new Set([
+  "aber", "alle", "auch", "beim", "dass", "diese", "dieser", "einer", "eines", "fuer", "haben", "hier",
+  "ihren", "ihrem", "ihnen", "immer", "keine", "mehr", "nicht", "oder", "prozent", "rund", "steht", "studie",
+  "ueber", "unter", "wurde", "wurden", "zeigt", "zeigen", "zahl", "zahlen", "zwischen",
+]);
+
+function proofText(value: string): string {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9ß]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function evidenceIsCopied(excerpt: string, corpus: string): boolean {
+  const beleg = proofText(excerpt);
+  return beleg.length >= 10 && proofText(corpus).includes(beleg);
+}
+
+function semanticTokens(value: string): Set<string> {
+  const tokens = proofText(value).split(" ").filter((wort) => {
+    if (wort.length < 5 || /^\d+$/.test(wort) || NUMBER_CONTEXT_STOP.has(wort)) return false;
+    return true;
+  });
+  return new Set(tokens);
+}
+
+/** Sichtbare Aussage und Quellenausschnitt muessen wenigstens dieselben
+ * inhaltlichen Anker tragen. Das ist bewusst konservativ: bei einer sauberen
+ * Zahlenfolie stehen Bezugsgruppe oder Messgegenstand in beiden Texten. */
+export function numberClaimMatchesSource(claim: string, sourceContext: string): boolean {
+  const claimTokens = semanticTokens(claim);
+  const sourceTokens = semanticTokens(sourceContext);
+  const gemeinsam = [...claimTokens].filter((token) => sourceTokens.has(token));
+  return gemeinsam.length >= 2 || gemeinsam.some((token) => token.length >= 10);
+}
+
+function requireNumberContexts(slide: AssetSlide, corpus: string): AssetSlide {
+  if (!corpus || !NUMBER_CONTEXT_VARIANTS.has(slide.variant)) return slide;
+  const werte = slide.variant === "E" || slide.variant === "L" ? [slide.stat] : slide.stats;
+  for (const eintrag of werte) {
+    const excerpt = String(eintrag.source_context || "").trim();
+    if (!excerpt) {
+      throw new Error(`Folie ${slide.variant}: Zu ${eintrag.value || "der Kennzahl"} fehlt source_context als wortgleicher Quellenausschnitt.`);
+    }
+    if (!evidenceIsCopied(excerpt, corpus)) {
+      throw new Error(`Folie ${slide.variant}: Der Quellenausschnitt zu ${eintrag.value || "der Kennzahl"} steht nicht wortgleich im Artikel.`);
+    }
+    if (!quantityIsAttested(eintrag.value, excerpt)) {
+      throw new Error(`Folie ${slide.variant}: Der Quellenausschnitt gehört nicht zur sichtbaren Kennzahl ${eintrag.value}.`);
+    }
+  }
+  if (slide.variant === "E" || slide.variant === "L") {
+    const claim = [slide.stat.label, slide.title, slide.subtitle, ...slide.bullets].join(" ");
+    if (!numberClaimMatchesSource(claim, String(slide.stat.source_context || ""))) {
+      throw new Error(`Folie ${slide.variant}: Die sichtbare Aussage passt nicht zum direkten Quellenausschnitt der Kennzahl ${slide.stat.value}. Bezugsgruppe und Messgegenstand müssen zusammengehören.`);
+    }
+  }
+  return slide;
+}
+
 function applyInfographicGate(slide: AssetSlide): AssetSlide {
   const need = INFOGRAPHIC_NEEDS[slide.variant];
   if (!need) return slide;
@@ -1997,6 +2118,8 @@ function normalizeSlide(
   // Ein angeschnittener Satz kostet die Aussage, deshalb dieser Spielraum.
   // Kicker, Kennzahl und die Beschriftungen in SVG-Formen bleiben hart.
   const weich = (field: string) => Math.ceil(cap(field) * ASSET_TEXT_GRACE);
+  const rawStat = record(item.stat);
+  const sourceContext = text(rawStat.source_context, 280);
   const slide: AssetSlide = {
     variant,
     kicker: text(item.kicker, cap("kicker")).toUpperCase(),
@@ -2005,13 +2128,18 @@ function normalizeSlide(
     quote: text(item.quote, weich("quote")),
     attribution: text(item.attribution, cap("attribution")),
     stat: {
-      value: text(record(item.stat).value, cap("stat_value")),
-      label: text(record(item.stat).label, cap("stat_label")),
+      value: text(rawStat.value, cap("stat_value")),
+      label: text(rawStat.label, cap("stat_label")),
+      ...(sourceContext ? { source_context: sourceContext } : {}),
     },
-    stats: stats(item.stats, isLayoutKey(variant) ? 8 : 4).map((eintrag) => ({
-      value: text(eintrag.value, cap("stat_value")),
-      label: text(eintrag.label, cap("stat_label")),
-    })),
+    stats: stats(item.stats, isLayoutKey(variant) ? 8 : 4).map((eintrag) => {
+      const source = text(eintrag.source_context, 280);
+      return {
+        value: text(eintrag.value, cap("stat_value")),
+        label: text(eintrag.label, cap("stat_label")),
+        ...(source ? { source_context: source } : {}),
+      };
+    }),
     bullets: list(item.bullets, 5, weich("bullet")),
     steps: (Array.isArray(item.steps) ? item.steps : []).slice(0, 5).map((entry, index) => {
       const step = record(entry);
@@ -2032,7 +2160,7 @@ function normalizeSlide(
     slot_d: text(item.slot_d, cap("slot")),
     slot_center: text(item.slot_center, cap("slot")),
   };
-  return applyNumberGate(trimVariantCollections(slide), corpus);
+  return requireNumberContexts(applyNumberGate(trimVariantCollections(slide), corpus), corpus);
 }
 
 /** Ein Slide ohne jede Aussage waere im Studio eine leere Buehne. */
@@ -2116,6 +2244,7 @@ function normalizeLinkedin(
     corpus,
     eigenerText ? "Slides" : "Beitrag oder Slides",
   );
+  requirePrimaryLeadNumber(kept, context);
   rejectRepeatedLeadNumbers(kept);
 
   return {
@@ -2164,13 +2293,35 @@ function rejectRepeatedLeadNumbers(slides: AssetSlide[]): void {
   }
 }
 
+/** Wenn das verdichtete Signal eine klare Kennzahl nennt, muss die erste
+ * Zahlenfolie genau dort ansetzen. So verdrängt keine größere Detailzahl die
+ * Zahl, welche Überschrift oder Zusammenfassung tatsächlich trägt. */
+function requirePrimaryLeadNumber(slides: AssetSlide[], context: AssetNormalizeContext): void {
+  const primaer = new Set(leadNumberKeys([
+    context.signalHeadline,
+    context.signalSummary,
+  ].filter(Boolean).join("\n")));
+  if (!primaer.size) return;
+  const ersteZahlenfolie = slides.find((slide) => NUMBER_CONTEXT_VARIANTS.has(slide.variant));
+  if (!ersteZahlenfolie) return;
+  const werte = ersteZahlenfolie.variant === "E" || ersteZahlenfolie.variant === "L"
+    ? [ersteZahlenfolie.stat.value]
+    : ersteZahlenfolie.stats.map((eintrag) => eintrag.value);
+  const gewaehlt = new Set(werte.flatMap(leadNumberKeys));
+  if ([...primaer].some((zahl) => gewaehlt.has(zahl))) return;
+  throw new Error(
+    `Die gewählte Leitkennzahl der ersten Zahlenfolie (${werte.filter(Boolean).join(", ") || "leer"}) `
+    + `steht nicht in Überschrift oder Signal-Zusammenfassung. Dort hat ${[...primaer].join(", ")} Vorrang vor nachgelagerten Detailzahlen.`,
+  );
+}
+
 /**
  * Unlesbare JSON-Antworten und eine falsch gewählte Kennzahl-Folie dürfen
  * ein zweites Mal versucht werden. Doppelte Zahlen und falsche Folienzahl
  * bleiben ein harter Fehler: die kommen nicht von einer Tippvariante.
  */
 export function assetMangelIsRepairable(mangel: string): boolean {
-  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|ungefüllte Zeichnungs-Slots|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel|100-Tage-CMO-Sprache|ROOTS-Leistung zum Titel|Nachrichtenmeldung im Titel/i.test(String(mangel || ""));
+  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|source_context|Quellenausschnitt|sichtbare Aussage passt nicht|ungefüllte Zeichnungs-Slots|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel|100-Tage-CMO-Sprache|ROOTS-Leistung zum Titel|Nachrichtenmeldung im Titel/i.test(String(mangel || ""));
 }
 
 function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {
@@ -3845,5 +3996,5 @@ export function assetRepairTimeoutMs(elapsedMs: number): number | null {
 
 export function buildAssetRepairPrompt(prompt: string, mangel: string): string {
   const grund = mangel.replace(/\s+/g, " ").trim().slice(0, 400);
-  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. 13,3 % und 13,3 Prozent sind dieselbe Zahl. Erfinde keine Zahlen, die nicht im Artikel stehen. Passt keine Kennzahl-Variante (E, H, L), wähle eine Textfolie aus der erlaubten Liste — nicht dieselbe Variante mit leerer Zahl. Ist der Mangel die Cover-These: Signal bleibt Anlass. title ist Action Title der Herausforderung aus roots_anschluss, nicht der Name der ROOTS-Leistung, nicht die Nachricht und nicht die Personalie. Die Leistung steht erst in about_fit. Keine 100-Tage-CMO-Sprache im Executive Memo.</repair>`;
+  return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. 13,3 % und 13,3 Prozent sind dieselbe Zahl. Erfinde keine Zahlen, die nicht im Artikel stehen. Jede sichtbare Zahl braucht ihren wortgleich kopierten source_context; value, label, title und subtitle muessen genau den Befund dieses Ausschnitts beschreiben. Passt keine Kennzahl-Variante (E, H, L), wähle eine Textfolie aus der erlaubten Liste, nicht dieselbe Variante mit leerer oder fremd beschrifteter Zahl. Ist der Mangel die Cover-These: Signal bleibt Anlass. title ist Action Title der Herausforderung aus roots_anschluss, nicht der Name der ROOTS-Leistung, nicht die Nachricht und nicht die Personalie. Die Leistung steht erst in about_fit. Keine 100-Tage-CMO-Sprache im Executive Memo.</repair>`;
 }

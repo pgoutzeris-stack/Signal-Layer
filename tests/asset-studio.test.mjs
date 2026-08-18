@@ -465,7 +465,8 @@ test("durch die gewaehlten Slides laesst sich blaettern", () => {
   assert.match(studio, /data-act="prev-fwd"/);
   assert.match(studio, /state\.prevIndex = \(state\.prevIndex \+ richtung \+ anzahl\) % anzahl/);
   // Schrumpft die Auswahl, darf der Zeiger nicht ins Leere zeigen.
-  assert.match(studio, /if \(state\.prevIndex >= arten\.length\) state\.prevIndex = 0/);
+  assert.match(studio, /state\.prevIndex < 0 \|\| state\.prevIndex >= arten\.length/);
+  assert.match(studio, /function fragebogenCarouselVarianten\(\)/);
 });
 
 test("die Vorschau ist ein Kasten, Memo blaettert seitenweise", () => {
@@ -568,7 +569,10 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
       kicker: "CUSTOMER INSIGHTS",
       title: "Transparenz entscheidet über das Vertrauen in KI-gestützte Markenkommunikation",
       subtitle: "52 Prozent der Deutschen misstrauen KI-Antworten, wenn Werbetreibende Einfluss nehmen. Offenlegung wird zur Pflicht für Marken.",
-      stat: { value: "52 %", label: "misstrauen" },
+      stat: {
+        value: "52 %", label: "Deutsche misstrauen KI-Antworten",
+        source_context: "52 Prozent der Deutschen misstrauen KI-Antworten, wenn Werbetreibende Einfluss nehmen.",
+      },
       footer_left: "Ipsos AI Monitor 2026",
     }],
   }), backend.normalizeAssetAnswers("linkedin", { asset_type: "single", variant: "E" }), {
@@ -1148,14 +1152,18 @@ test("Vorlage L traegt keine fremde 32-Prozent-Zeile mehr", async () => {
 test("Kennzahl-Varianten ohne belegte Ziffer sind unbrauchbar, nicht still B", () => {
   const answers = backend.normalizeAssetAnswers("linkedin", {});
   const roh = {
-    slides: [{ variant: "E", kicker: "DEEPFAKE", title: "Die Fälschung trifft den Handel", stat: { value: "25 %", label: "Anteil" }, footer_left: "ROOTS" }],
+    slides: [{
+      variant: "E", kicker: "DEEPFAKE", title: "Deepfakes betreffen jeden vierten Fall",
+      subtitle: "Der Anteil liegt bei 25 Prozent der Deepfake-Fälle.",
+      stat: { value: "25 %", label: "der Deepfake-Fälle", source_context: "Der Anteil liegt bei 25 % der Deepfake-Fälle." }, footer_left: "ROOTS",
+    }],
   };
   assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify(roh), answers, {
     articleText: "Etwa ein Viertel der Fälle betrifft Deepfakes, keine zehn Minuten entfernt.",
   }), /belegte Leitkennzahl/);
 
   const belegt = backend.normalizeAssetPayload("linkedin", JSON.stringify(roh), answers, {
-    articleText: "Der Anteil liegt bei 25 % der Fälle.",
+    articleText: "Der Anteil liegt bei 25 % der Deepfake-Fälle.",
   });
   assert.equal(belegt.slides[0].variant, "E");
   assert.match(belegt.slides[0].stat.value, /25/);
@@ -1170,7 +1178,11 @@ test("Kennzahl-Varianten ohne belegte Ziffer sind unbrauchbar, nicht still B", (
   assert.equal(backend.quantityIsAttested("13.3%", artikel), true);
   assert.equal(backend.quantityIsAttested("13,3 %", "133 Prozent Wachstum ohne Komma"), false);
   const komma = backend.normalizeAssetPayload("linkedin", JSON.stringify({
-    slides: [{ variant: "E", kicker: "MARKE", title: "Konsequente Markenstrategie treibt Wachstum.", subtitle: "Getragen von der Marke.", stat: { value: "13,3 %", label: "H1 2026" }, footer_left: "ROOTS" }],
+    slides: [{
+      variant: "E", kicker: "MARKE", title: "Der Konzern wächst währungsbereinigt",
+      subtitle: "Im ersten Halbjahr wächst der Konzern währungsbereinigt um 13,3 Prozent.",
+      stat: { value: "13,3 %", label: "Wachstum im ersten Halbjahr 2026", source_context: "Im ersten Halbjahr 2026 wächst der Konzern währungsbereinigt um 13,3 Prozent auf 749,4 Millionen Euro Umsatz." }, footer_left: "ROOTS",
+    }],
   }), answers, { articleText: artikel });
   assert.equal(komma.slides[0].variant, "E");
   assert.match(komma.slides[0].stat.value, /13/);
@@ -1269,7 +1281,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.19");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.20");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -1356,7 +1368,7 @@ test("Zahlen aus der ROOTS-Leistung gelten als belegt", () => {
   assert.match(memo.about_fit, /360/);
 });
 
-test("Prompt v1.19 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
+test("Prompt v1.20 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   const artikel = "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. Etwa ein Viertel traut sich die Erkennung zu.";
   const prompt = backend.buildAssetPrompt("linkedin",
     { headline_de: "Klarna", company: "Klarna" },
@@ -1373,6 +1385,16 @@ test("Prompt v1.19 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   assert.match(prompt, /Wozu: eine These plus ein stützendes Argument/);
   assert.match(prompt, /Greift wenn: genau diese Ziffer/);
   assert.match(prompt, /Keine Ziffer auf zwei Folien/);
+  assert.match(prompt, /größere 83-Prozent-Nebenkennzahl ist nicht besser/);
+  assert.match(prompt, /Inhaltslogik:/);
+  assert.deepEqual(
+    Object.keys(backend.VARIANT_INHALTSVERTRAG).sort(),
+    [...backend.ASSET_SLIDE_KEYS].sort(),
+    "jede gebaute Slide-Vorlage braucht einen eigenen inhaltlichen Vertrag",
+  );
+  for (const [variante, vertrag] of Object.entries(backend.VARIANT_INHALTSVERTRAG)) {
+    assert.ok(vertrag.length >= 60, `Inhaltsvertrag ${variante} ist zu ungenau`);
+  }
   assert.match(prompt, /wähle aus B, E, F, G, I, K, L/);
   assert.doesNotMatch(prompt, /wähle aus[^\n]*\bC\b/);
   assert.doesNotMatch(prompt, /wähle aus[^\n]*\bT1\b/);
@@ -1399,6 +1421,50 @@ test("Prompt v1.19 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   assert.doesNotMatch(memo, /<signalfelder>/);
   assert.doesNotMatch(memo, /recommendation/);
   assert.doesNotMatch(memo, /situation/);
+});
+
+test("die Signal-Leitkennzahl schlägt eine größere nachgelagerte Detailzahl", () => {
+  const artikel = [
+    "Eine neue YouGov-Studie zeigt: Für 23 Prozent der Verbraucher ist Diversität ein Kaufkriterium.",
+    "Sie sind bereit, mehr zu zahlen, wenn Unternehmen glaubwürdig für Vielfalt eintreten.",
+    "83 Prozent der werteorientierten Verbraucher honorieren langfristiges Diversitätsengagement.",
+  ].join(" ");
+  const answers = backend.normalizeAssetAnswers("linkedin", { asset_type: "single", variant: "E" });
+  const falsch = {
+    theme: "light",
+    post_text: "Glaubwürdige Vielfalt beeinflusst Markenentscheidungen.",
+    slides: [{
+      variant: "E", kicker: "DIVERSITÄT", title: "Langfristiges Engagement wird honoriert",
+      subtitle: "Werteorientierte Verbraucher achten auf Kontinuität.",
+      stat: {
+        value: "83 %", label: "honorieren langfristiges Diversitätsengagement",
+        source_context: "83 Prozent der werteorientierten Verbraucher honorieren langfristiges Diversitätsengagement.",
+      },
+      footer_left: "ROOTS",
+    }],
+  };
+  assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify(falsch), answers, {
+    articleText: artikel,
+    signalHeadline: "Diversität wird zum Kaufkriterium",
+    signalSummary: "Für 23 Prozent der Verbraucher ist Diversität ein Kaufkriterium.",
+  }), /23.*Vorrang vor nachgelagerten Detailzahlen/);
+
+  const richtig = structuredClone(falsch);
+  richtig.slides[0] = {
+    variant: "E", kicker: "DIVERSITÄT", title: "Diversität wird zum Kaufkriterium",
+    subtitle: "Glaubwürdiges Engagement erhöht die Zahlungsbereitschaft.",
+    stat: {
+      value: "23 %", label: "der Verbraucher sehen Vielfalt als Kaufkriterium",
+      source_context: "Für 23 Prozent der Verbraucher ist Diversität ein Kaufkriterium.",
+    },
+    footer_left: "ROOTS",
+  };
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify(richtig), answers, {
+    articleText: artikel,
+    signalHeadline: "Diversität wird zum Kaufkriterium",
+    signalSummary: "Für 23 Prozent der Verbraucher ist Diversität ein Kaufkriterium.",
+  });
+  assert.equal(payload.slides[0].stat.value, "23\u00a0%");
 });
 
 test("Zahlwörter und Brüche brauchen denselben Beleg wie Ziffern", () => {
@@ -1442,9 +1508,9 @@ test("Infografik ohne gefüllte Slots ist ein Fehler, nicht still B", () => {
       variant: "T3", kicker: "ANTEILE", title: "Drei Anteile tragen", takeaway: "Die Mitte zeigt die Lage",
       footer_left: "ROOTS", slot_center: "Lage",
       stats: [
-        { value: "14 %", label: "Überblick verloren" },
-        { value: "24 %", label: "unter 30" },
-        { value: "38 %", label: "junge Erwachsene" },
+        { value: "14 %", label: "Überblick verloren", source_context: "14 Prozent verlieren den Überblick." },
+        { value: "24 %", label: "unter 30", source_context: "24 Prozent der unter 30." },
+        { value: "38 %", label: "junge Erwachsene", source_context: "38 Prozent der jungen Erwachsenen." },
       ],
     }],
   }), t3, { articleText: "14 Prozent verlieren den Überblick. 24 Prozent der unter 30. 38 Prozent der jungen Erwachsenen." });
@@ -1509,8 +1575,8 @@ test("dieselbe Leitkennzahl auf zwei Folien ist ein Fehler, keine stillen drei F
       { variant: "B", kicker: "BNPL", title: "Klarna verschiebt den Kauf", subtitle: "Der Überblick bricht weg", footer_left: "ROOTS" },
       { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
       { variant: "H", kicker: "ZAHLEN", title: "Zwei Anteile tragen die Lage", stats: [
-        { value: "24 %", label: "unter 30" },
-        { value: "38 %", label: "junge Erwachsene" },
+        { value: "24 %", label: "unter 30", source_context: "24 Prozent der unter 30." },
+        { value: "38 %", label: "junge Erwachsene", source_context: "38 Prozent der jungen Erwachsenen." },
       ], footer_left: "ROOTS" },
       { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
     ],
@@ -1519,7 +1585,7 @@ test("dieselbe Leitkennzahl auf zwei Folien ist ein Fehler, keine stillen drei F
   assert.throws(() => backend.normalizeAssetPayload("linkedin", JSON.stringify({
     post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
     slides: [
-      { variant: "E", kicker: "BNPL", title: "Der Überblick bricht weg", stat: { value: "14 %", label: "verlieren den Überblick" }, footer_left: "ROOTS" },
+      { variant: "E", kicker: "BNPL", title: "Der Überblick bricht weg", subtitle: "14 Prozent verlieren den Überblick.", stat: { value: "14 %", label: "verlieren den Überblick", source_context: "14 Prozent verlieren den Überblick." }, footer_left: "ROOTS" },
       { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
       { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
     ],
@@ -1529,7 +1595,7 @@ test("dieselbe Leitkennzahl auf zwei Folien ist ein Fehler, keine stillen drei F
     post_text: "14 Prozent, 24 Prozent und 38 Prozent stehen im Artikel.",
     slides: [
       { variant: "B", kicker: "BNPL", title: "Klarna verschiebt den Kauf", subtitle: "Der Überblick bricht weg", footer_left: "ROOTS" },
-      { variant: "E", kicker: "BNPL", title: "Der Überblick bricht weg", stat: { value: "14 %", label: "verlieren den Überblick" }, footer_left: "ROOTS" },
+      { variant: "E", kicker: "BNPL", title: "Der Überblick bricht weg", subtitle: "14 Prozent verlieren den Überblick.", stat: { value: "14 %", label: "verlieren den Überblick", source_context: "14 Prozent verlieren den Überblick." }, footer_left: "ROOTS" },
       { variant: "G", kicker: "ALTER", title: "Unter dreißig kippt die Nutzung", myth: "Nur Ältere verlieren den Faden", fact: "24 Prozent der unter 30", footer_left: "ROOTS" },
       { variant: "K", kicker: "LAGE", title: "Der Rest bleibt bei den Jüngeren", takeaway: "38 Prozent der jungen Erwachsenen", footer_left: "ROOTS" },
     ],
@@ -1751,7 +1817,8 @@ test("der LinkedIn-Kicker kommt aus der Artikelfamilie, nicht vom Zielkunden", (
   const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
     slides: [{
       variant: "E", kicker: "DEICHMANN", title: "Die Marke führt das Quartal",
-      stat: { value: "14 %", label: "Anteil, 2025" }, footer_left: "Deichmann",
+      subtitle: "14 Prozent Anteil im Jahr 2025.",
+      stat: { value: "14 %", label: "Anteil, 2025", source_context: "14 % Anteil 2025. Die Marke führt das Quartal." }, footer_left: "Deichmann",
     }],
   }), backend.normalizeAssetAnswers("linkedin", {}), {
     articleText: "14 % Anteil 2025. Die Marke führt das Quartal.",
@@ -2607,10 +2674,11 @@ test("Carousel-Laenge und eigene Abfolge folgen der wirklichen Auswahl", async (
 test("Formatwahl und jede Folienauswahl haben echte Vorschauen", () => {
   const live = studio.slice(studio.indexOf("function livePreviewHtml"), studio.indexOf("function blaetterAnzahl"));
   assert.match(live, /state\.stepKey === "asset_type"/);
-  assert.match(live, /carousel \? \(dunkel \? "U2" : "U1"\) : \(dunkel \? "A" : "B"\)/);
-  assert.match(live, /state\.stepKey === "slide_cover"/);
-  assert.match(live, /state\.stepKey === "slide_content"/);
-  assert.match(live, /state\.stepKey === "slide_end"/);
+  assert.match(live, /if \(carousel\) \{[\s\S]*fragebogenCarouselVarianten\(\)/);
+  assert.match(live, /return `<span class="as-prev-scale">\$\{slideHtml\(demoSlide\(variante\), false\)\}<\/span>\$\{blaetterNavHtml\(\)\}`/);
+  assert.match(live, /state\.answers\.slide_cover \|\| cover/);
+  assert.match(live, /inhaltsArten\(\)/);
+  assert.match(live, /state\.answers\.slide_end \|\| ende/);
   assert.match(studio, /if \(q\.key === "asset_type"\) return false/);
   assert.match(studio, /frame-pick[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
   assert.match(studio, /content-add[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
@@ -2621,6 +2689,28 @@ test("Formatwahl und jede Folienauswahl haben echte Vorschauen", () => {
   assert.match(studio, /function svgFeldBreite\(variant, pfad\)/);
   assert.match(studio, /getComputedTextLength\(\) > breite/);
   assert.match(studio, /function textZeilenAnzahl\(el\)/);
+});
+
+test("Inhalt führt über KI oder eigene Auswahl in eine echte, geschützte LinkedIn-Vorschau", () => {
+  const form = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("const FORM_MEMO"));
+  assert.match(form, /key: "slide_mix", label: "Inhalt"/);
+  assert.match(form, /\["auto", "KI soll wählen"\], \["custom", "Selbst auswählen"\]/);
+  assert.ok(form.indexOf('key: "slide_mix"') < form.indexOf('key: "slide_cover"'));
+  assert.ok(form.indexOf('key: "slide_cover"') < form.indexOf('key: "slide_content"'));
+  assert.ok(form.indexOf('key: "slide_content"') < form.indexOf('key: "slide_end"'));
+  assert.match(form, /key: "caption",\s*\n\s*label: "Caption"/);
+  assert.doesNotMatch(form, /label: "Beitragstext"/);
+
+  assert.match(studio, /\.as-step--open:has\(\.as-dd\.is-open\) \.as-step-fuss\{position:relative/);
+  assert.match(studio, /function linkedinDraftHtml\(\)/);
+  assert.match(studio, /class="as-linkedin-post" aria-label="LinkedIn-Vorschau"/);
+  assert.match(studio, /data-captionhost="feed"/);
+  assert.match(studio, /Gefällt mir[\s\S]*Kommentieren[\s\S]*Teilen[\s\S]*Senden/);
+  assert.match(studio, /if \(state\.step === "draft" && state\.payload\) mountStages\(false\)/);
+  assert.match(studio, /slideHtml\(slide, editable\)/);
+  assert.match(studio, /memoHtml\(state\.memo, editable\)/);
+  assert.match(studio, /area\.querySelectorAll\("\[contenteditable\]"\)/);
+  assert.match(studio, /key === "slide_content"\) state\.prevIndex = 1/);
 });
 
 test("Hell und Dunkel steuern Vorschau, Modell und fertige Carousel-Rahmen", async () => {

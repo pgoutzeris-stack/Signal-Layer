@@ -170,8 +170,8 @@ const FORM_LINKEDIN = [
     when: (answers) => answers.asset_type !== "carousel",
   },
   {
-    key: "slide_mix", label: "Slide-Arten",
-    options: [["auto", "Modell stellt sie zusammen"], ["custom", "Ich wähle sie selbst"]],
+    key: "slide_mix", label: "Inhalt",
+    options: [["auto", "KI soll wählen"], ["custom", "Selbst auswählen"]],
     when: (answers) => answers.asset_type === "carousel",
   },
   {
@@ -198,7 +198,7 @@ const FORM_LINKEDIN = [
   },
   {
     key: "storyline",
-    label: "Inhalt",
+    label: "Kernaussage",
     options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich gebe den Text vor"]],
     free: { key: "storyline_text", on: "custom", rows: 5, platzhalter: "Kernaussage, Stichpunkte oder fertiger Text" },
   },
@@ -214,17 +214,17 @@ const FORM_LINKEDIN = [
     options: [["auto", "Nur belegte Aussagen aus dem Artikel"], ["custom", "Eigene Quellen angeben"]],
     free: { key: "sources_text", on: "custom", rows: 3, platzhalter: "Studie, Herausgeber, Jahr" },
   },
-  // Der Begleittext ist der Beitragstext unter dem Bild. Der Tonfall fuer die
+  // Die Caption ist der Beitragstext unter dem Bild. Der Tonfall fuer die
   // zweite Wahl liegt je Nutzer in den Einstellungen.
   {
     key: "caption",
-    label: "Begleittext",
+    label: "Caption",
     options: [
       ["ai", "KI schreibt"],
       ["ai_tone", "KI + Tone of Voice"],
       ["custom", "Selbst schreiben"],
     ],
-    free: { key: "caption_text", on: "custom", rows: 6, platzhalter: "Begleittext des Beitrags" },
+    free: { key: "caption_text", on: "custom", rows: 6, platzhalter: "Caption des Beitrags" },
   },
 ];
 
@@ -692,6 +692,9 @@ const CHROME_CSS = `
 #as-overlay .as-step-fuss{position:sticky; bottom:-1px; z-index:30; display:flex; align-items:center; gap:8px;
   margin:16px -2px -2px; padding:12px 2px 2px; border-top:1px solid var(--line,#e2e8f0);
   background:linear-gradient(180deg,rgba(255,255,255,.94),#fff 34%); backdrop-filter:blur(8px);}
+/* Ein geoeffnetes Auswahlmenue ist Teil des Schritts. Der klebende Fuss darf
+   sich nicht davorlegen, wenn die Inhaltsliste bis an den unteren Rand reicht. */
+#as-overlay .as-step--open:has(.as-dd.is-open) .as-step-fuss{position:relative; z-index:1; backdrop-filter:none;}
 #as-overlay .as-step-zurueck{margin-right:auto;}
 @keyframes as-step-in{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
 
@@ -744,7 +747,7 @@ const CHROME_CSS = `
   box-sizing:border-box; display:flex; align-items:flex-start; justify-content:flex-start;
   overflow:hidden; padding:0; border:0; border-radius:14px; background:#fff; position:relative;
   box-shadow:0 12px 40px rgba(15,23,42,.14);}
-#as-overlay .as-prev-big[data-kind="linkedin"]{aspect-ratio:1080/1350;}
+#as-overlay .as-prev-big[data-kind="linkedin"]{aspect-ratio:1080/1350; flex:0 0 auto;}
 #as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:210/297;}
 #as-overlay .as-caption{margin-top:10px; padding:12px 14px; border:1px solid var(--line,#e2e8f0); border-radius:12px;
   background:var(--bg,#fff); max-height:22vh; overflow-y:auto;}
@@ -800,7 +803,9 @@ const CHROME_CSS = `
   max-height:340px; overflow-y:auto; padding:6px; background:#fff; border:1px solid var(--line,#e2e8f0);
   border-radius:14px; box-shadow:0 18px 40px rgba(15,23,42,.16);}
 #as-overlay .as-dd.is-open .as-ddlist{display:block;}
-#as-overlay .as-dd--flow .as-ddlist{position:static; margin-top:6px; box-shadow:0 8px 24px rgba(15,23,42,.1);}
+#as-overlay .as-dd--flow{isolation:isolate;}
+#as-overlay .as-dd--flow .as-ddlist{position:static; z-index:2; margin-top:6px; max-height:min(340px,42vh);
+  box-shadow:0 8px 24px rgba(15,23,42,.1);}
 #as-overlay .as-ddrow{width:100%; display:flex; align-items:center; gap:10px; padding:6px 8px; border:0;
   border-radius:10px; background:transparent; text-align:left; font-size:.82rem; font-weight:600; color:var(--ink,#0f172a);}
 #as-overlay .as-ddrow:hover{background:var(--surface,#f8fafc);}
@@ -976,6 +981,33 @@ const CHROME_CSS = `
   background:#fff; box-shadow:var(--shadow-lg,0 12px 40px rgba(15,23,42,.14));}
 #as-overlay .as-scaler > .as-stage{position:absolute; top:0; left:0; transform-origin:top left; border-radius:14px;}
 #as-overlay .as-scaler .li{border-radius:14px;}
+#as-overlay .as-stagearea[data-readonly="true"] [data-field]{cursor:default; user-select:text;}
+
+/* Fertiger LinkedIn-Entwurf: vertraute Feed-Hierarchie in der ROOTS-Anmutung.
+   Die echte Asset-Buehne bleibt unveraendert und wird nur in den Post gesetzt. */
+#as-overlay .as-work--feed{display:flex; justify-content:center; overflow:auto; padding:0 8px 8px;}
+#as-overlay .as-linkedin-post{width:min(680px,100%); height:100%; min-height:520px; display:grid;
+  grid-template-rows:auto auto minmax(260px,1fr) auto; overflow:hidden; background:#fff;
+  border:1px solid var(--line,#e2e8f0); border-top:3px solid var(--brand,#206efb); border-radius:16px;
+  box-shadow:0 14px 42px rgba(15,23,42,.12); color:#0f172a;}
+#as-overlay .as-linkedin-head{display:flex; align-items:center; gap:11px; padding:14px 16px 10px;}
+#as-overlay .as-linkedin-avatar{display:grid; place-items:center; flex:0 0 auto; width:46px; height:46px;
+  padding:7px; overflow:hidden; border:1px solid #dbe7ff; border-radius:9px; background:#fff;}
+#as-overlay .as-linkedin-avatar img{display:block; width:100%; height:100%; object-fit:contain;}
+#as-overlay .as-linkedin-byline{display:flex; flex-direction:column; min-width:0; line-height:1.25;}
+#as-overlay .as-linkedin-byline strong{font-size:14px; color:#0f172a;}
+#as-overlay .as-linkedin-byline span,#as-overlay .as-linkedin-byline small{font-size:11px; color:#64748b;}
+#as-overlay .as-linkedin-more{margin-left:auto; align-self:flex-start; border:0; background:transparent;
+  color:#475569; font-size:18px; padding:5px 7px; pointer-events:none;}
+#as-overlay .as-linkedin-caption{padding:2px 16px 12px;}
+#as-overlay .as-linkedin-copy{margin:0; font-size:13px; line-height:1.48; white-space:pre-wrap; color:#1e293b;}
+#as-overlay .as-linkedin-caption:empty{display:none;}
+#as-overlay .as-stagearea--linkedin{min-height:260px; padding:8px 42px 20px; background:#f8fafc;
+  border-top:1px solid #edf2f7; border-bottom:1px solid #edf2f7;}
+#as-overlay .as-linkedin-actions{display:grid; grid-template-columns:repeat(4,1fr); gap:2px; padding:7px 10px; background:#fff;}
+#as-overlay .as-linkedin-action{display:flex; align-items:center; justify-content:center; gap:6px; min-height:34px;
+  border-radius:7px; color:#475569; font-size:11px; font-weight:600;}
+#as-overlay .as-linkedin-action i{font-size:13px; color:#64748b;}
 #as-overlay .as-stage--memo{border-radius:14px; background:#fff !important;}
 #as-overlay .as-stage--memo .em-page{border-radius:14px; overflow:hidden;}
 #as-overlay .as-stage--memo .em-cover{border-radius:14px;}
@@ -1586,10 +1618,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           </div>
         </div>`;
       }
-      return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
-        <div class="as-stagearea" data-stagearea></div>
-        <div data-captionhost>${captionPreviewHtml()}</div>
-      </div>`;
+      if (isMemo) {
+        return `<div class="as-work" data-kind="memo">
+          <div class="as-stagearea" data-stagearea></div>
+        </div>`;
+      }
+      return linkedinDraftHtml();
     }
       return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
       <div class="as-stagearea" data-stagearea></div>
@@ -1597,23 +1631,52 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     </div>`;
   }
 
-  /** Der Begleittext gehoert zum Beitrag und steht deshalb unter der Kachel:
-   *  im Fragebogen der selbst geschriebene, im Entwurf der erzeugte. */
-  function captionPreviewHtml() {
+  /** Der fertige Entwurf orientiert sich an der Hierarchie eines LinkedIn-Posts,
+   *  bleibt aber als ROOTS-Karte klar Teil des Signal Layers. */
+  function linkedinDraftHtml() {
+    const privat = state.answers.profile === "private";
+    const name = privat
+      ? (state.chrome.footer_left || "Persönliches Beraterprofil")
+      : "ROOTS Consultants";
+    const rolle = privat ? "Beraterprofil" : "Brand Strategy Consultants";
+    const logo = state.chrome.logo || state.logo || LOGO_PATH;
+    return `<div class="as-work as-work--feed" data-kind="linkedin">
+      <article class="as-linkedin-post" aria-label="LinkedIn-Vorschau">
+        <header class="as-linkedin-head">
+          <span class="as-linkedin-avatar"><img src="${attr(logo)}" alt=""></span>
+          <span class="as-linkedin-byline"><strong>${esc(name)}</strong><span>${esc(rolle)}</span><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span>
+          <button type="button" class="as-linkedin-more" aria-label="Weitere Optionen" tabindex="-1"><i class="fa-solid fa-ellipsis"></i></button>
+        </header>
+        <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
+        <div class="as-stagearea as-stagearea--linkedin" data-stagearea></div>
+        <footer class="as-linkedin-actions" aria-hidden="true">
+          <span class="as-linkedin-action"><i class="fa-regular fa-thumbs-up"></i>Gefällt mir</span>
+          <span class="as-linkedin-action"><i class="fa-regular fa-comment-dots"></i>Kommentieren</span>
+          <span class="as-linkedin-action"><i class="fa-solid fa-retweet"></i>Teilen</span>
+          <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
+        </footer>
+      </article>
+    </div>`;
+  }
+
+  /** Die Caption gehoert zum Beitrag: im Fragebogen unter die Vorschau, im
+   *  fertigen Entwurf wie bei LinkedIn oberhalb des Assets. */
+  function captionPreviewHtml(feed = false) {
     if (isMemo) return "";
     const text = state.step === "form"
       ? (state.answers.caption === "custom" ? String(state.answers.caption_text || "") : "")
       : String(state.postText || "");
     if (!text.trim()) return "";
+    if (feed) return `<p class="as-linkedin-copy">${esc(text)}</p>`;
     return `<div class="as-caption">
-      <span class="as-caption-head">Begleittext</span>
+      <span class="as-caption-head">Caption</span>
       <p>${esc(text)}</p>
     </div>`;
   }
 
   function zeichneCaption() {
     shell.querySelectorAll("[data-captionhost]").forEach((host) => {
-      host.innerHTML = captionPreviewHtml();
+      host.innerHTML = captionPreviewHtml(host.getAttribute("data-captionhost") === "feed");
     });
   }
 
@@ -1633,34 +1696,49 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const html = markiereMemoSeiten(memoHtml(applyFormImages(demoMemo()), false).replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, ""));
       return `<span class="as-prev-scale">${html}</span>${blaetterNavHtml()}`;
     }
-    // Entscheidet das Modell das Layout, gibt es nichts zu zeigen. Eine
-    // beliebige Kachel waere geraten und damit irrefuehrend.
-    const arten = gewaehlteArten();
     const carousel = state.answers.asset_type === "carousel";
-    // Beim Blaettern nicht ueber das Ende hinaus: die Auswahl kann schrumpfen.
-    if (state.prevIndex >= arten.length) state.prevIndex = 0;
     const dunkel = state.answers.look === "dunkel";
+    if (carousel) {
+      const arten = fragebogenCarouselVarianten();
+      if (state.prevIndex < 0 || state.prevIndex >= arten.length) state.prevIndex = 0;
+      const variante = arten[state.prevIndex];
+      return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${blaetterNavHtml()}`;
+    }
     const schrittVorschau = state.stepKey === "design"
       ? (dunkel ? "U2" : "U1")
       : state.stepKey === "asset_type"
-        ? (carousel ? (dunkel ? "U2" : "U1") : (dunkel ? "A" : "B"))
-        : state.stepKey === "slide_cover"
-          ? (state.answers.slide_cover || (dunkel ? "U2" : "U1"))
-          : state.stepKey === "slide_end"
-            ? (state.answers.slide_end || (dunkel ? "U4" : "U3"))
-            : state.stepKey === "slide_content" && !inhaltsArten().length
-              ? (dunkel ? "A" : "B")
-              : "";
-    const variante = schrittVorschau || (carousel
-      ? (state.answers.slide_mix === "custom" ? arten[state.prevIndex] : "")
-      : state.answers.variant);
+        ? (dunkel ? "A" : "B")
+        : "";
+    const variante = schrittVorschau || state.answers.variant;
     if (!variante || variante === "auto" || !VARIANT_KEYS.includes(variante)) return platzhalterHtml();
     return `<span class="as-prev-scale">${slideHtml(demoSlide(variante), false)}</span>${blaetterNavHtml()}`;
   }
 
+  /** Reale Folienfolge fuer die Fragebogen-Vorschau. Bei eigener Auswahl zeigt
+   *  sie sofort Titel, aktuelle Inhaltsfolge und Ende. Bei KI-Auswahl simuliert
+   *  sie die gewaehlte Anzahl mit passenden hellen oder dunklen Vorlagen. */
+  function fragebogenCarouselVarianten() {
+    const dunkel = state.answers.look === "dunkel";
+    const cover = dunkel ? "U2" : "U1";
+    const ende = dunkel ? "U4" : "U3";
+    const pool = dunkel ? ["A", "H", "S2", "D", "S4", "J"] : ["B", "E", "F", "G", "I", "L", "S1", "S3", "T3", "T6"];
+    if (state.answers.slide_mix === "custom") {
+      const inhalte = inhaltsArten();
+      return [
+        state.answers.slide_cover || cover,
+        ...(inhalte.length ? inhalte : pool.slice(0, 2)),
+        state.answers.slide_end || ende,
+      ];
+    }
+    const ziel = Math.min(12, Math.max(3, carouselRequestedSlides(state.answers) || 8));
+    return [cover, ...Array.from({ length: ziel - 2 }, (_v, i) => pool[i % pool.length]), ende];
+  }
+
   function blaetterAnzahl() {
     if (isMemo) return MEMO_SEITEN;
-    if (state.step === "form") return Math.max(1, gewaehlteArten().length);
+    if (state.step === "form") {
+      return state.answers.asset_type === "carousel" ? fragebogenCarouselVarianten().length : 1;
+    }
     return Math.max(1, state.slides.length);
   }
 
@@ -2463,6 +2541,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function setzeSchritt(key) {
     state.stepKey = key;
+    // Die rechte Vorschau springt beim Rollenwechsel auf die passende Folie.
+    // Innerhalb desselben Schritts darf der Nutzer danach frei weiterblaettern.
+    if (!isMemo && state.answers.asset_type === "carousel") {
+      if (key === "slide_cover") state.prevIndex = 0;
+      else if (key === "slide_content") state.prevIndex = 1;
+      else if (key === "slide_end") state.prevIndex = Math.max(0, fragebogenCarouselVarianten().length - 1);
+    }
     if (key && key !== ENDE && !state.stepSeen.includes(key)) state.stepSeen.push(key);
   }
 
@@ -2790,7 +2875,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return;
     }
     if (!isMemo && state.answers.caption === "custom" && !String(state.answers.caption_text || "").trim()) {
-      formFehler("caption", "Für einen selbst geschriebenen Begleittext fehlt der Text.");
+      formFehler("caption", "Für eine selbst geschriebene Caption fehlt der Text.");
       return;
     }
     if (!isMemo && state.answers.asset_type === "carousel") {
@@ -3247,17 +3332,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function mountStages(editable) {
     const area = shell.querySelector("[data-stagearea]");
     if (!area) return;
+    area.setAttribute("data-readonly", editable ? "false" : "true");
     if (isMemo) {
       if (!state.memo) return;
       if (state.prevIndex >= MEMO_SEITEN) state.prevIndex = 0;
-      area.innerHTML = `<div class="as-frame"><div class="as-pagehost"><div class="as-scaler">${markiereMemoSeiten(memoHtml(state.memo))}</div>${fsBtnHtml()}</div></div>${blaetterNavHtml()}`;
+      area.innerHTML = `<div class="as-frame"><div class="as-pagehost"><div class="as-scaler">${markiereMemoSeiten(memoHtml(state.memo, editable))}</div>${fsBtnHtml()}</div></div>${blaetterNavHtml()}`;
     } else {
       if (!state.slides.length) return;
       if (state.prevIndex >= state.slides.length) state.prevIndex = 0;
       area.innerHTML = state.slides.map((slide, index) => `
         <div class="as-frame${index === state.prevIndex ? "" : " is-off"}" data-uid="${attr(slide.uid)}">
           ${editable ? slideTools(slide, index) : ""}
-          <div class="as-pagehost"><div class="as-scaler">${slideHtml(slide)}</div>${fsBtnHtml()}</div>
+          <div class="as-pagehost"><div class="as-scaler">${slideHtml(slide, editable)}</div>${fsBtnHtml()}</div>
         </div>`).join("")
         + blaetterNavHtml();
     }
@@ -3269,8 +3355,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         node.setAttribute("spellcheck", "false");
       });
     } else {
-      // In der Vorschau stören Bildknöpfe, dort zählt nur das Ergebnis.
+      // In der Vorschau stoeren Bildknoepfe und Eingabefelder. Dort zaehlt nur
+      // das Ergebnis; Bearbeiten ist der einzige schreibende Schritt.
       area.querySelectorAll("[data-as-chrome]").forEach((node) => node.remove());
+      area.querySelectorAll("[contenteditable]").forEach((node) => {
+        node.removeAttribute("contenteditable");
+        node.removeAttribute("spellcheck");
+      });
     }
     passeSlideTexteAn(area);
     fitStages();
@@ -3637,8 +3728,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       `<button type="button" class="as-seg" data-act="${attr(act)}" data-value="${attr(value)}" aria-pressed="${active ? "true" : "false"}">${esc(label)}</button>`;
     const post = isMemo ? "" : `
       <div class="as-group">
-        <span>Beitragstext</span>
-        <textarea class="as-post" data-post aria-label="Beitragstext">${esc(state.postText)}</textarea>
+        <span>Caption</span>
+        <textarea class="as-post" data-post aria-label="Caption">${esc(state.postText)}</textarea>
         <button type="button" class="as-btn" data-act="copy-post"><i class="fa-regular fa-copy"></i>Kopieren</button>
       </div>`;
     return `<aside class="as-inspector">
@@ -4185,7 +4276,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const stages = exportStages().join("\n");
     const title = isMemo ? "Ansprache" : "LinkedIn-Asset";
     const post = !isMemo && state.postText.trim()
-      ? `\n<!-- Beitragstext\n${state.postText.replace(/--+>/g, "-->")}\n-->`
+      ? `\n<!-- Caption\n${state.postText.replace(/--+>/g, "-->")}\n-->`
       : "";
     const css = isMemo
       ? `${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}`
