@@ -1789,6 +1789,10 @@
   }
   .close-fs-btn:hover { background: var(--surface); color: var(--ink); }
 
+  .tone-editor { display: flex; flex-direction: column; gap: .75rem; max-width: 720px; }
+  .tone-editor textarea { resize: vertical; min-height: 220px; line-height: 1.5; margin-bottom: 0; }
+  .tone-editor-bar { display: flex; align-items: center; gap: 1rem; }
+  .tone-editor-bar span { font-size: .8rem; color: var(--muted); }
   .settings-panel { display: none; flex: 1; flex-direction: column; min-height: 0; }
   .settings-panel.show { display: flex; }
 
@@ -2263,6 +2267,9 @@
         <div class="settings-nav-item" data-panel="operations">
           <i class="fa-solid fa-wave-square"></i> Kosten &amp; Betrieb
         </div>
+        <div class="settings-nav-item" data-panel="tone">
+          <i class="fa-solid fa-feather"></i> Tone of Voice
+        </div>
         <div class="settings-nav-item" data-panel="diagnostics" data-settings-mode="advanced">
           <i class="fa-solid fa-file-code"></i> Systemdiagnose
         </div>
@@ -2347,6 +2354,20 @@
           </div>
         </div>
 
+        <div class="settings-panel pipeline-panel" id="settings-panel-tone">
+          <div class="pipeline-scroll">
+            <div class="pipeline-section-head"><span>Nur für Ihr Konto</span><h3>Tone of Voice</h3><p>Gilt für den Begleittext eines LinkedIn-Assets, wenn im Fragebogen „KI + Tone of Voice“ gewählt ist. Die Slides bleiben davon unberührt.</p></div>
+            <div class="tone-editor">
+              <label class="modern-label" for="tone-of-voice-input">Tonfall</label>
+              <textarea class="modern-input" id="tone-of-voice-input" rows="12" maxlength="2000" placeholder="Kurze Sätze. Kein Werbeton. Beispielformulierungen, die typisch für Sie sind."></textarea>
+              <div class="tone-editor-bar">
+                <span id="tone-of-voice-status"></span>
+                <button type="button" class="btn-primary" id="btn-tone-save"><i class="fa-regular fa-floppy-disk"></i> Speichern</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-panel pipeline-panel" id="settings-panel-diagnostics">
           <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Nur zur Nachvollziehbarkeit</span><h3>Systemdiagnose</h3><p>Read-only-Ansicht der Modelle, Prompt-Policy, technischen Schwellenwerte und aktiven Code-Guardrails.</p></div><div id="diagnostics-content"></div></div>
         </div>
@@ -2427,7 +2448,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260818-1140';
+  import { initApp } from './app.js?v=20260818-1420';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

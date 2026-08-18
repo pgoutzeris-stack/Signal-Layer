@@ -2004,9 +2004,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260818-1140");
-  assert.match(indexHtml, /app\.js\?v=20260818-1140/);
-  assert.match(studio, /asset-templates\.js\?v=20260818-1140/);
+  assert.equal(studioVersion, "20260818-1420");
+  assert.match(indexHtml, /app\.js\?v=20260818-1420/);
+  assert.match(studio, /asset-templates\.js\?v=20260818-1420/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2357,3 +2357,66 @@ test("Bearbeiten: Platzhalter, Crop-Popup, Zoom, Rundung und leise Auswahl", () 
   assert.match(studio, /\.as-stage--memo \.em-page\{border-radius:14px/);
 });
 
+
+test("Begleittext: KI, KI plus Tonfall oder eigener Text", () => {
+  // Standard bleibt die bisherige Ausgabe: das Modell schreibt frei.
+  const ohneWahl = backend.normalizeAssetAnswers("linkedin", { asset_type: "single" });
+  assert.equal(ohneWahl.caption_mode, "ai");
+  assert.equal(ohneWahl.caption, "");
+  assert.equal(ohneWahl.tone_of_voice, "");
+
+  const eigen = backend.normalizeAssetAnswers("linkedin", {
+    asset_type: "single", caption: "custom", caption_text: "Mein eigener Begleittext.",
+  });
+  assert.equal(eigen.caption_mode, "custom");
+  assert.equal(eigen.caption, "Mein eigener Begleittext.");
+
+  const mitTon = backend.normalizeAssetAnswers("linkedin", { asset_type: "single", caption: "ai_tone" });
+  assert.equal(mitTon.caption_mode, "ai_tone");
+  // Der Tonfall kommt aus den Nutzereinstellungen, nie aus dem Browser.
+  assert.equal(mitTon.tone_of_voice, "");
+  assert.equal(backend.TONE_OF_VOICE_LIMIT, 2_000);
+
+  const tonPrompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
+    { ...mitTon, tone_of_voice: "Kurze Sätze. Kein Werbeton." });
+  assert.match(tonPrompt, /hinterlegten Tonfall/);
+  assert.match(tonPrompt, /Kurze Sätze\. Kein Werbeton\./);
+
+  const eigenPrompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" }, eigen);
+  assert.match(eigenPrompt, /wortgleich uebernommen/);
+
+  // Eigener Text schlägt die Modellantwort und wird nicht gegen den Artikel
+  // geprüft: er ist die Entscheidung des Nutzers.
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    theme: "light", post_text: "Vom Modell geschrieben.",
+    slides: [{ variant: "B", kicker: "MARKE", title: "Eine These mit Verb.", subtitle: "Ein Argument.", footer_left: "ROOTS" }],
+  }), backend.normalizeAssetAnswers("linkedin", {
+    asset_type: "single", variant: "B", caption: "custom",
+    caption_text: "Eigener Text mit 99 Prozent, die nirgends belegt sind.",
+  }), { articleText: "Der Artikel nennt keine Zahl." });
+  assert.equal(payload.post_text, "Eigener Text mit 99 Prozent, die nirgends belegt sind.");
+});
+
+test("Tone of Voice liegt je Nutzer in Supabase und blockiert sonst den Lauf", () => {
+  // Aktionen, Tabelle und Fehlertext gehören zusammen: ohne hinterlegten
+  // Tonfall darf der bezahlte Modellaufruf gar nicht erst starten.
+  assert.match(edge, /case "get_asset_tone"/);
+  assert.match(edge, /case "save_asset_tone"/);
+  assert.match(edge, /from\("user_asset_settings"\)/);
+  assert.match(edge, /TONE_OF_VOICE_MISSING/);
+  assert.match(edge, /caption_mode === "ai_tone" && !linkedinAnswers\.tone_of_voice/);
+
+  // Der Fragebogen bietet genau die drei Wege an, die Oberfläche kennt den
+  // Einstellungsbereich und die Vorschau zeigt den Begleittext.
+  assert.match(studio, /\["ai_tone", "KI \+ Tone of Voice"\]/);
+  assert.match(studio, /\["custom", "Selbst schreiben"\]/);
+  assert.match(studio, /function captionPreviewHtml/);
+  assert.match(studio, /data-captionhost/);
+  assert.match(indexHtml, /id="tone-of-voice-input"/);
+  assert.match(appJs, /save_asset_tone/);
+
+  // Die leere Vorschau bekommt dasselbe Maß wie eine gefüllte, sonst steht die
+  // LinkedIn-Kachel kleiner in der Spalte als die Memo-Seite (18.8.2026).
+  assert.doesNotMatch(studio, /as-prev-big:has\(\.as-prev-empty\)/);
+  assert.match(studio, /const leerW = isMemo \? MEMO_SEITE_PX\.w : 1080;/);
+});

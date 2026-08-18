@@ -93,6 +93,14 @@ export type LinkedinAnswers = {
   storyline: string;
   cta: string;
   sources: string;
+  /** Wer den Begleittext schreibt: das Modell, das Modell im hinterlegten
+   *  Tonfall des Nutzers, oder der Nutzer selbst. */
+  caption_mode: "ai" | "ai_tone" | "custom";
+  /** Nur bei caption_mode "custom": der wortgleich zu uebernehmende Text. */
+  caption: string;
+  /** Nur bei caption_mode "ai_tone": aus den Nutzereinstellungen geladen.
+   *  Der Server setzt das Feld, nie der Browser. */
+  tone_of_voice: string;
 };
 
 export type MemoBenchmarkBrief = {
@@ -599,6 +607,18 @@ function choiceText(
   return asProse || (mode ? "" : text);
 }
 
+/** Laenge des hinterlegten Tonfalls. Genug fuer eine Handvoll Regeln und
+ *  Beispielsaetze, zu wenig, um einen ganzen Beitrag zu schmuggeln. */
+export const TONE_OF_VOICE_LIMIT = 2_000;
+
+/** Standard ist das Modell ohne Tonfall: die bisherige Ausgabe. */
+function captionMode(source: Record<string, unknown>): "ai" | "ai_tone" | "custom" {
+  const raw = pick(source, "caption_mode", "caption", "begleittext_modus").toLowerCase();
+  if (/^(custom|eigen|eigene|selbst)$/.test(raw)) return "custom";
+  if (/tone|ton|voice/.test(raw)) return "ai_tone";
+  return "ai";
+}
+
 export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswers {
   const source = record(raw);
   if (kind === "linkedin") {
@@ -622,6 +642,13 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
         .split(",").map((v) => v.trim().toUpperCase())
         .filter((v) => isSlideKey(v))
         .slice(0, 8),
+      caption_mode: captionMode(source),
+      // LinkedIn kappt den Beitragstext bei 3000 Zeichen; ein selbst
+      // geschriebener Text darf diesen Rahmen ausschoepfen.
+      caption: captionMode(source) === "custom"
+        ? freeText(pick(source, "caption_text", "caption", "begleittext"), 3_000)
+        : "",
+      tone_of_voice: freeText(pick(source, "tone_of_voice", "tonfall"), TONE_OF_VOICE_LIMIT),
     };
   }
   const images = pick(source, "images", "bilder");
@@ -1247,6 +1274,18 @@ function applyLinkedinChrome(
   return out;
 }
 
+/** Der Begleittext ist Teil derselben Antwort. Je nach Wahl schreibt ihn das
+ *  Modell frei, im hinterlegten Tonfall, oder es uebernimmt den fertigen Text. */
+function captionAuftrag(answers: LinkedinAnswers): string {
+  if (answers.caption_mode === "custom" && answers.caption) {
+    return `post_text ist vorgegeben und wird wortgleich uebernommen, ohne Kuerzung und ohne Umformulierung:\n${answers.caption}`;
+  }
+  if (answers.caption_mode === "ai_tone" && answers.tone_of_voice) {
+    return `Begleittext im hinterlegten Tonfall schreiben. Der Tonfall gilt fuer post_text, nicht fuer die Slides:\n${answers.tone_of_voice}`;
+  }
+  return "Begleittext: sachlich, ohne Werbeton.";
+}
+
 function linkedinPrompt(
   answers: LinkedinAnswers,
   daten: string,
@@ -1276,6 +1315,7 @@ function linkedinPrompt(
     answers.sources
       ? `Quellen, die genannt werden sollen: ${answers.sources}`
       : "Quellen: nenne in footer_left die belegte Artikelquelle oder ROOTS Consultants. Niemals den Zielkunden.",
+    captionAuftrag(answers),
   ].join("\n");
 
   return `Du erstellst ein LinkedIn-Asset für ROOTS Brand Strategy Consultants aus einem geprüften Signal.
@@ -1820,9 +1860,18 @@ function normalizeLinkedin(
     );
   }
 
-  const postText = richText(raw.post_text, 1_300)
+  // Ein selbst geschriebener Begleittext geht unveraendert durch. Er ist die
+  // Entscheidung des Nutzers und wird deshalb auch nicht gegen den Artikel
+  // geprueft; die Belegpflicht gilt weiter fuer alles, was das Modell schreibt.
+  const eigenerText = answers.caption_mode === "custom" ? richText(answers.caption, 3_000) : "";
+  const postText = eigenerText
+    || richText(raw.post_text, 1_300)
     || [kept[0].title, kept[0].takeaway || kept[0].subtitle].filter(Boolean).join("\n\n");
-  rejectUnattested([postText, ...kept.map(slidePlain)].join("\n"), corpus, "Beitrag oder Slides");
+  rejectUnattested(
+    [eigenerText ? "" : postText, ...kept.map(slidePlain)].join("\n"),
+    corpus,
+    eigenerText ? "Slides" : "Beitrag oder Slides",
+  );
   rejectRepeatedLeadNumbers(kept);
 
   return {

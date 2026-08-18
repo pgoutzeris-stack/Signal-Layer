@@ -108,6 +108,7 @@ import {
   MEMO_SCENE_QUERY_MAX,
   MEMO_PHOTO_BYTES_MAX,
   MEMO_PHOTO_USER_AGENT,
+  LinkedinAnswers,
   MemoAnswers,
   MemoImageSlot,
   MemoPayload,
@@ -148,6 +149,7 @@ import {
   negativeBenchmarkNames,
   rejectedBenchmarkNames,
   normalizeAssetAnswers,
+  TONE_OF_VOICE_LIMIT,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
   parseCommonsSceneHits,
@@ -387,6 +389,17 @@ async function notifySignalLayerSettingsChanged(userId: string, change: string):
   const { error: notificationError } = await admin.schema("recruiting").from("notifications").insert(notifications);
   if (notificationError) console.error("Could not create Signal Layer notifications:", notificationError.message);
 }
+
+/** Hinterlegter Tonfall des Nutzers. Leer heisst: nicht konfiguriert. */
+async function assetToneOfVoice(userId: string): Promise<string> {
+  const { data, error } = await getAdminClient().schema("signal_layer")
+    .from("user_asset_settings").select("tone_of_voice").eq("user_id", userId).maybeSingle();
+  if (error) throw new Error(`Tone of Voice konnte nicht gelesen werden: ${error.message}`);
+  return String(data?.tone_of_voice || "").trim();
+}
+
+export const TONE_OF_VOICE_MISSING =
+  "Für „KI + Tone of Voice“ ist noch kein Tonfall hinterlegt. Bitte in den Einstellungen unter Tone of Voice konfigurieren.";
 
 const ASSET_CANCELLED_MESSAGE = "Vom Nutzer abgebrochen.";
 
@@ -6141,6 +6154,23 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { ok: true, article: updated });
       }
 
+      // Der Tonfall gehoert dem angemeldeten Nutzer. Ohne Anmeldung gibt es
+      // keine Zeile und damit auch nichts zurueckzugeben.
+      case "get_asset_tone": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        return corsResponse(origin, { tone_of_voice: await assetToneOfVoice(auth.userId) });
+      }
+
+      case "save_asset_tone": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const tone = String(body.tone_of_voice ?? "").trim().slice(0, TONE_OF_VOICE_LIMIT);
+        const { error } = await getAdminClient().schema("signal_layer")
+          .from("user_asset_settings")
+          .upsert({ user_id: auth.userId, tone_of_voice: tone, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { tone_of_voice: tone });
+      }
+
       case "get_pipeline_settings": {
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("pipeline_settings")
@@ -9377,6 +9407,21 @@ Deno.serve(async (req: Request) => {
         const assetAnswers = normalizeAssetAnswers(assetKind, body.answers);
         if (assetKind === "memo" && (assetAnswers as MemoAnswers).memo_track === "cmo100") {
           return errorResponse(origin, CMO_HUNDRED_DAYS_WIP);
+        }
+        // Der Tonfall kommt aus den Nutzereinstellungen, nicht aus dem Browser.
+        // Fehlt er, waere der teure Modellaufruf umsonst: er soll in einem Ton
+        // schreiben, den niemand hinterlegt hat.
+        if (assetKind === "linkedin") {
+          const linkedinAnswers = assetAnswers as LinkedinAnswers;
+          linkedinAnswers.tone_of_voice = linkedinAnswers.caption_mode === "ai_tone" && auth?.userId
+            ? await assetToneOfVoice(auth.userId)
+            : "";
+          if (linkedinAnswers.caption_mode === "ai_tone" && !linkedinAnswers.tone_of_voice) {
+            return errorResponse(origin, TONE_OF_VOICE_MISSING);
+          }
+          if (linkedinAnswers.caption_mode === "custom" && !linkedinAnswers.caption) {
+            return errorResponse(origin, "Für einen selbst geschriebenen Begleittext fehlt der Text.");
+          }
         }
 
         const admin = getAdminClient();

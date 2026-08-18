@@ -3,10 +3,10 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260818-1140";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260818-1420";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260818-1140";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260818-1420";
 
 let sb = null;
 let sources = [];
@@ -309,6 +309,9 @@ function cacheEls() {
   els.btnSettingsClose = document.getElementById("btn-settings-close");
   els.settingsNav = document.getElementById("settings-nav");
   els.apifyPanel = document.getElementById("settings-panel-apify");
+  els.toneInput = document.getElementById("tone-of-voice-input");
+  els.toneStatus = document.getElementById("tone-of-voice-status");
+  els.btnToneSave = document.getElementById("btn-tone-save");
   els.sourceSearch = document.getElementById("source-search");
   els.sourceCategoryFilter = document.getElementById("source-category-filter");
   els.sourceStatusFilter = document.getElementById("source-status-filter");
@@ -1960,6 +1963,39 @@ function bindRootsSelectInfoTip(host) {
   host.addEventListener("pointerleave", () => unpinRootsSelectInfoTip(host));
   host.addEventListener("focus", () => pinRootsSelectInfoTip(host));
   host.addEventListener("blur", () => unpinRootsSelectInfoTip(host));
+}
+
+// Der Tonfall gehoert zum angemeldeten Nutzer, nicht zur Pipeline. Er wird
+// deshalb einzeln geladen und gespeichert, ohne Sammelspeicherung der
+// Einstellungen und ohne Benachrichtigung an das Team.
+let toneLoaded = false;
+
+async function loadToneOfVoice(force = false) {
+  if (!els.toneInput || (toneLoaded && !force)) return;
+  try {
+    const { tone_of_voice: tone } = await callApi("get_asset_tone");
+    els.toneInput.value = String(tone || "");
+    toneLoaded = true;
+    if (els.toneStatus) els.toneStatus.textContent = String(tone || "").trim() ? "" : "Noch nicht hinterlegt";
+  } catch (error) {
+    if (els.toneStatus) els.toneStatus.textContent = error.message || "Konnte nicht geladen werden";
+  }
+}
+
+async function saveToneOfVoice() {
+  if (!els.toneInput) return;
+  const value = els.toneInput.value.trim();
+  try {
+    els.btnToneSave.disabled = true;
+    const { tone_of_voice: tone } = await callApi("save_asset_tone", { tone_of_voice: value });
+    els.toneInput.value = String(tone || "");
+    if (els.toneStatus) els.toneStatus.textContent = String(tone || "").trim() ? "" : "Noch nicht hinterlegt";
+    toast("Tone of Voice gespeichert");
+  } catch (error) {
+    toast(error.message, "err");
+  } finally {
+    els.btnToneSave.disabled = false;
+  }
 }
 
 function enhanceHeaderSelects() {
@@ -3987,6 +4023,7 @@ function bindUi() {
   });
 
   els.btnSettings.addEventListener("click", openSettings);
+  els.btnToneSave?.addEventListener("click", () => void saveToneOfVoice());
   els.btnSettingsClose.addEventListener("click", closeSettings);
   els.settingsModal.addEventListener("click", (e) => {
     if (e.target === els.settingsModal) closeSettings();
@@ -4010,13 +4047,15 @@ function bindUi() {
       // jeweiligen Bereichs, nie in der Kopfzeile.
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
       document.getElementById(`settings-panel-${panel}`)?.classList.add("show");
-      if (panel !== "apify") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
+      // Der Tonfall haengt nicht an der Pipeline-Konfiguration.
+      if (panel !== "apify" && panel !== "tone") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
       if (panel === "simple-pipeline") {
         void loadPipelineSettings()
           .then(() => renderSimpleSettings())
           .catch((error) => toast(error.message, "err"));
       }
       if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
+      if (panel === "tone") void loadToneOfVoice();
     });
   });
 

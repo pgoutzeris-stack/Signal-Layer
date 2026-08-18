@@ -75,6 +75,9 @@ const LOOK = {
 };
 const MIT_BILD = new Set(["C", "D", "J"]);
 
+/** Gleiche Aussage wie serverseitig, damit der teure Aufruf gar nicht startet. */
+const TONE_FEHLT = "Für „KI + Tone of Voice“ ist noch kein Tonfall hinterlegt. Bitte in den Einstellungen unter Tone of Voice konfigurieren.";
+
 const FORM_LINKEDIN = [
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
   { key: "look", label: "Anmutung", options: [["hell", "Hell"], ["dunkel", "Dunkel"]] },
@@ -118,6 +121,18 @@ const FORM_LINKEDIN = [
     label: "Quellen",
     options: [["auto", "Nur belegte Aussagen aus dem Artikel"], ["custom", "Eigene Quellen angeben"]],
     free: { key: "sources_text", on: "custom", rows: 3, platzhalter: "Studie, Herausgeber, Jahr" },
+  },
+  // Der Begleittext ist der Beitragstext unter dem Bild. Der Tonfall fuer die
+  // zweite Wahl liegt je Nutzer in den Einstellungen.
+  {
+    key: "caption",
+    label: "Begleittext",
+    options: [
+      ["ai", "KI schreibt"],
+      ["ai_tone", "KI + Tone of Voice"],
+      ["custom", "Selbst schreiben"],
+    ],
+    free: { key: "caption_text", on: "custom", rows: 6, platzhalter: "Begleittext des Beitrags" },
   },
 ];
 
@@ -571,7 +586,11 @@ const CHROME_CSS = `
   box-shadow:0 12px 40px rgba(15,23,42,.14);}
 #as-overlay .as-prev-big[data-kind="linkedin"]{aspect-ratio:1080/1350;}
 #as-overlay .as-prev-big[data-kind="memo"]{aspect-ratio:210/297;}
-#as-overlay .as-prev-big:has(.as-prev-empty){width:auto; height:100%; max-width:100%;}
+#as-overlay .as-caption{margin-top:10px; padding:12px 14px; border:1px solid var(--line,#e2e8f0); border-radius:12px;
+  background:var(--bg,#fff); max-height:22vh; overflow-y:auto;}
+#as-overlay .as-caption-head{display:block; font-size:.68rem; font-weight:700; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted,#475569); margin-bottom:6px;}
+#as-overlay .as-caption p{font-size:13px; line-height:1.5; white-space:pre-wrap; color:var(--ink,#0f172a);}
 #as-overlay .as-prev-scale{display:block; transform-origin:top left; flex:0 0 auto; pointer-events:none;}
 #as-overlay .as-prev-scale .as-stage,
 #as-overlay .as-prev-scale .li{box-shadow:none; border-radius:0;}
@@ -1064,7 +1083,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-1140";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-1420";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1110,6 +1129,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     slides: [],
     memo: null,
     postText: "",
+    toneOfVoice: "",
+    toneGeladen: false,
     pendingImage: null,
     formImages: {},
     cancelRequested: false,
@@ -1311,6 +1332,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
               <button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="Vollbild"><i class="fa-solid fa-expand"></i></button>
             </div>
           </div>
+          <div data-captionhost>${captionPreviewHtml()}</div>
         </div>
       </div>`;
     }
@@ -1330,12 +1352,33 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       }
       return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
         <div class="as-stagearea" data-stagearea></div>
+        <div data-captionhost>${captionPreviewHtml()}</div>
       </div>`;
     }
       return `<div class="as-work" data-kind="${isMemo ? "memo" : "linkedin"}">
       <div class="as-stagearea" data-stagearea></div>
       ${inspectorHtml()}
     </div>`;
+  }
+
+  /** Der Begleittext gehoert zum Beitrag und steht deshalb unter der Kachel:
+   *  im Fragebogen der selbst geschriebene, im Entwurf der erzeugte. */
+  function captionPreviewHtml() {
+    if (isMemo) return "";
+    const text = state.step === "form"
+      ? (state.answers.caption === "custom" ? String(state.answers.caption_text || "") : "")
+      : String(state.postText || "");
+    if (!text.trim()) return "";
+    return `<div class="as-caption">
+      <span class="as-caption-head">Begleittext</span>
+      <p>${esc(text)}</p>
+    </div>`;
+  }
+
+  function zeichneCaption() {
+    shell.querySelectorAll("[data-captionhost]").forEach((host) => {
+      host.innerHTML = captionPreviewHtml();
+    });
   }
 
   /* ── Schritt 1: Fragebogen ── */
@@ -1890,6 +1933,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return teile.filter(Boolean).join(" · ") || (row.prompt_version || "");
   }
 
+  /** Hinterlegter Tonfall des angemeldeten Nutzers. Steuert nur, ob die zweite
+   *  Wahl beim Begleittext benutzbar ist; angewendet wird er serverseitig. */
+  async function ladeToneOfVoice() {
+    if (isMemo) return;
+    try {
+      const res = await api("get_asset_tone", {});
+      state.toneOfVoice = String((res && res.tone_of_voice) || "").trim();
+    } catch (_err) {
+      state.toneOfVoice = "";
+    }
+    state.toneGeladen = true;
+    if (state.step === "form") zeichneForm();
+  }
+
   async function ladeDrafts() {
     if (!articleId) return;
     try {
@@ -2043,7 +2100,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const hinweis = q.hint ? `<p class="as-hint">${esc(q.hint)}</p>` : "";
       const benches = q.key === "benchmarks" && state.answers.benchmarks === "custom" ? benchesHtml() : "";
       const slots = q.key === "images" && state.answers.images === "upload" ? slotsHtml() : "";
-      return `<div class="as-q${q.muted ? " as-q--muted" : ""}"><label>${esc(q.label)}</label>${hinweis}<div class="as-opts">${opts}</div>${free}${benches}${slots}</div>`;
+      const warnung = q.key === "caption" && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice
+        ? `<p class="as-form-error">${esc(TONE_FEHLT)}</p>`
+        : "";
+      return `<div class="as-q${q.muted ? " as-q--muted" : ""}"><label>${esc(q.label)}</label>${hinweis}<div class="as-opts">${opts}</div>${warnung}${free}${benches}${slots}</div>`;
     }).join("");
     const wip = isMemo && state.answers.memo_track === "cmo100"
       ? `<div class="as-wip"><strong>100 Tage CMO</strong><p>Diese Unterlage ist ein eigener Sonderfall und noch in Ausarbeitung. Sie ist kein Executive Memo. Für diesen Fall bitte das thematische Executive Memo wählen.</p></div>`
@@ -2059,6 +2119,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (form) form.innerHTML = state.formTab === "drafts" ? draftsHtml() : formHtml();
     const prev = shell.querySelector("[data-livepreview]");
     if (prev) prev.innerHTML = livePreviewHtml();
+    zeichneCaption();
     fitPreview();
   }
 
@@ -2120,6 +2181,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         zeichneForm();
         return;
       }
+    }
+    if (!isMemo && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice) {
+      state.formError = TONE_FEHLT;
+      zeichneForm();
+      return;
+    }
+    if (!isMemo && state.answers.caption === "custom" && !String(state.answers.caption_text || "").trim()) {
+      state.formError = "Für einen selbst geschriebenen Begleittext fehlt der Text.";
+      zeichneForm();
+      return;
     }
     state.formError = "";
     state.step = "draft";
@@ -2736,13 +2807,23 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const host = box?.closest(".as-prev-host");
     const inner = box?.querySelector(".as-prev-scale");
     const stage = inner?.querySelector(".as-stage");
-    // Ohne Buehne steht dort der Platzhalter - nichts einzupassen.
-    if (!box || !inner || !stage) return;
+    if (!box) return;
+    const flaeche = host || box;
+    const { breite, hoehe } = hostInnenMass(flaeche, 240);
+    // Ohne Buehne steht dort der Platzhalter. Er bekommt trotzdem das Mass der
+    // Vorlage: sonst schrumpft die LinkedIn-Vorschau auf Inhaltsgroesse,
+    // waehrend die Memo-Vorschau die Spalte fuellt.
+    if (!inner || !stage) {
+      const leerW = isMemo ? MEMO_SEITE_PX.w : 1080;
+      const leerH = isMemo ? MEMO_SEITE_PX.h : 1350;
+      const leerFaktor = Math.min(breite / leerW, hoehe / leerH);
+      box.style.width = `${Math.round(leerW * leerFaktor)}px`;
+      box.style.height = `${Math.round(leerH * leerFaktor)}px`;
+      return;
+    }
     zeigeAktiveMemoSeite(box);
     passeSlideTexteAn(box);
     legeMemoSeiteMass(stage);
-    const flaeche = host || box;
-    const { breite, hoehe } = hostInnenMass(flaeche, 240);
     const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
     const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
     const faktor = Math.min(breite / w, hoehe / h);
@@ -3688,6 +3769,7 @@ ${stages}${post}
       const node = shell.querySelector('[data-livepreview] [data-field="title"]');
       if (node) node.textContent = previewMemoTitle(state.answers, company);
     }
+    if (free.getAttribute("data-free") === "caption_text") zeichneCaption();
   }
 
   function onKeyDown(event) {
@@ -3808,6 +3890,7 @@ ${stages}${post}
 
   render();
   void ladeDrafts();
+  void ladeToneOfVoice();
   openInstance = { close, lebt: () => overlay.isConnected };
   return openInstance;
 }
