@@ -386,17 +386,21 @@ test("der Umbruch richtet sich nach dem Popup, nicht nach dem Fenster", () => {
   assert.doesNotMatch(studio, /@media \(max-width: 1080px\)\{\s*#as-overlay \.as-split2/);
 });
 
-test("Carousel fragt nach den Slide-Arten, Einzelbild nach dem Layout", () => {
+test("Carousel trennt Titel, Inhalte und Ende, Einzelbild fragt nach dem Layout", () => {
   const block = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("const FORM_MEMO"));
   assert.match(block, /key: "slide_mix"/);
-  assert.match(block, /key: "slide_pick", label: "Ausgewählte Arten", art: "multi"/);
+  assert.match(block, /key: "slide_cover", label: "Titelfolie", art: "frame", role: "cover"/);
+  assert.match(block, /key: "slide_content", label: "Inhaltsfolien", art: "multi-content"/);
+  assert.match(block, /key: "slide_end", label: "Endfolie", art: "frame", role: "end"/);
+  assert.ok(block.indexOf('key: "slide_cover"') < block.indexOf('key: "slide_content"'));
+  assert.ok(block.indexOf('key: "slide_content"') < block.indexOf('key: "slide_end"'));
   // Das Layout entfaellt beim Carousel, die Slide-Arten entfallen beim Einzelbild.
   assert.match(block, /when: \(answers\) => answers\.asset_type !== "carousel"/);
   assert.match(block, /when: \(answers\) => answers\.asset_type === "carousel" && answers\.slide_mix === "custom"/);
-  assert.match(studio, /function multiHtml\(q\)/);
-  assert.match(studio, /q\.art === "multi"/);
-  // Reihenfolge der Auswahl ist die Slidefolge, deshalb kein Sortieren.
-  assert.match(studio, /liste\.push\(wert\)/);
+  assert.match(studio, /function frameDropdownHtml\(q\)/);
+  assert.match(studio, /function contentMultiHtml\(q\)/);
+  assert.match(studio, /function setzeManuelleFolien\(cover, inhalte, ende\)/);
+  assert.match(studio, /q\.art === "multi-content"/);
 });
 
 test("waehlt das Modell, steht dort ein Platzhalter statt einer geratenen Kachel", () => {
@@ -2010,9 +2014,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260818-1839");
-  assert.match(indexHtml, /app\.js\?v=20260818-1839/);
-  assert.match(studio, /asset-templates\.js\?v=20260818-1839/);
+  assert.equal(studioVersion, "20260818-2110");
+  assert.match(indexHtml, /app\.js\?v=20260818-2110/);
+  assert.match(studio, /asset-templates\.js\?v=20260818-2110/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2543,9 +2547,29 @@ test("Carousel-Laenge und eigene Abfolge folgen der wirklichen Auswahl", async (
   const block = studio.slice(studio.indexOf('key: "slide_count"'), studio.indexOf('key: "storyline"'));
   assert.match(block, /answers\.slide_mix !== "custom"/);
   assert.match(block, /slide_count_text/);
-  assert.match(studio, /Empfohlen: \$\{CAROUSEL_RECOMMENDED_MIN\}.*\$\{CAROUSEL_RECOMMENDED_MAX\} Slides/);
+  assert.match(studio, /if \(n <= CAROUSEL_RECOMMENDED_MAX\) return ""/);
+  assert.doesNotMatch(studio, /Empfohlen: \$\{CAROUSEL_RECOMMENDED_MIN\}/);
+  const contentRenderer = studio.slice(studio.indexOf("function contentMultiHtml"), studio.indexOf("function miniatur"));
+  assert.doesNotMatch(contentRenderer, /Wähle zum Abschluss eine Endfolie/);
+  assert.doesNotMatch(contentRenderer, /LinkedIn erlaubt technisch/);
   assert.match(studio, /LINKEDIN_DOCUMENT_PAGE_MAX = 300/);
   assert.doesNotMatch(studio, /liste\.length < Number\(state\.answers\.slide_count/);
+});
+
+test("Formatwahl und jede Folienauswahl haben echte Vorschauen", () => {
+  const live = studio.slice(studio.indexOf("function livePreviewHtml"), studio.indexOf("function blaetterAnzahl"));
+  assert.match(live, /state\.stepKey === "asset_type"/);
+  assert.match(live, /carousel \? \(dunkel \? "U2" : "U1"\) : \(dunkel \? "A" : "B"\)/);
+  assert.match(live, /state\.stepKey === "slide_cover"/);
+  assert.match(live, /state\.stepKey === "slide_content"/);
+  assert.match(live, /state\.stepKey === "slide_end"/);
+  assert.match(studio, /if \(q\.key === "asset_type"\) return false/);
+  assert.match(studio, /frame-pick[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
+  assert.match(studio, /content-add[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
+  assert.match(studio, /transform:scale\(\.037\)/);
+  assert.match(studio, /slot_center: "Fokus"/);
+  assert.match(studio, /\{ value: "54 %", label: "Zielwert" \}/);
+  assert.match(studio, /\{ n: "4", title: "Skalierung"/);
 });
 
 test("Hell und Dunkel steuern Vorschau, Modell und fertige Carousel-Rahmen", async () => {

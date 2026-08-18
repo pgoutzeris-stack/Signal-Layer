@@ -144,8 +144,8 @@ export function manualCarouselSelectionIssues(value, look = "hell") {
     ? value.map(String).filter(Boolean)
     : String(value || "").split(",").map((v) => v.trim()).filter(Boolean);
   const probleme = [];
-  if (!liste.length || SLIDE_ROLE[liste[0]] !== "cover") probleme.push("Wähle zuerst eine Titelfolie.");
-  if (!liste.length || SLIDE_ROLE[liste[liste.length - 1]] !== "end") probleme.push("Wähle zum Abschluss eine Endfolie mit Handlungsaufruf.");
+  if (!liste.length || SLIDE_ROLE[liste[0]] !== "cover") probleme.push("Die Titelfolie fehlt oder steht nicht am Anfang.");
+  if (!liste.length || SLIDE_ROLE[liste[liste.length - 1]] !== "end") probleme.push("Die Endfolie fehlt oder steht nicht am Ende.");
   if (liste.slice(1).some((key) => SLIDE_ROLE[key] === "cover")) probleme.push("Die Titelfolie muss genau einmal und an erster Stelle stehen.");
   if (liste.slice(0, -1).some((key) => SLIDE_ROLE[key] === "end")) probleme.push("Die Endfolie muss genau einmal und an letzter Stelle stehen.");
   if (liste.some((key) => LOOK[key] && LOOK[key] !== look)) probleme.push("Alle Folien müssen zum gewählten Hell- oder Dunkel-Design passen.");
@@ -175,8 +175,18 @@ const FORM_LINKEDIN = [
     when: (answers) => answers.asset_type === "carousel",
   },
   {
-    key: "slide_pick", label: "Ausgewählte Arten", art: "multi",
-    options: VARIANTS_ALL,
+    key: "slide_cover", label: "Titelfolie", art: "frame", role: "cover",
+    options: CAROUSEL_FRAMES,
+    when: (answers) => answers.asset_type === "carousel" && answers.slide_mix === "custom",
+  },
+  {
+    key: "slide_content", label: "Inhaltsfolien", art: "multi-content",
+    options: CONTENT_VARIANTS,
+    when: (answers) => answers.asset_type === "carousel" && answers.slide_mix === "custom",
+  },
+  {
+    key: "slide_end", label: "Endfolie", art: "frame", role: "end",
+    options: CAROUSEL_FRAMES,
     when: (answers) => answers.asset_type === "carousel" && answers.slide_mix === "custom",
   },
   {
@@ -679,7 +689,7 @@ const CHROME_CSS = `
   animation:as-step-in .22s cubic-bezier(.22,1,.36,1);}
 #as-overlay .as-step-kopf{display:flex; align-items:center; gap:10px; margin-bottom:12px;}
 #as-overlay .as-step-kopf label{font-size:15px; font-weight:700; color:var(--ink,#0f172a);}
-#as-overlay .as-step-fuss{position:sticky; bottom:-1px; z-index:4; display:flex; align-items:center; gap:8px;
+#as-overlay .as-step-fuss{position:sticky; bottom:-1px; z-index:30; display:flex; align-items:center; gap:8px;
   margin:16px -2px -2px; padding:12px 2px 2px; border-top:1px solid var(--line,#e2e8f0);
   background:linear-gradient(180deg,rgba(255,255,255,.94),#fff 34%); backdrop-filter:blur(8px);}
 #as-overlay .as-step-zurueck{margin-right:auto;}
@@ -790,12 +800,13 @@ const CHROME_CSS = `
   max-height:340px; overflow-y:auto; padding:6px; background:#fff; border:1px solid var(--line,#e2e8f0);
   border-radius:14px; box-shadow:0 18px 40px rgba(15,23,42,.16);}
 #as-overlay .as-dd.is-open .as-ddlist{display:block;}
+#as-overlay .as-dd--flow .as-ddlist{position:static; margin-top:6px; box-shadow:0 8px 24px rgba(15,23,42,.1);}
 #as-overlay .as-ddrow{width:100%; display:flex; align-items:center; gap:10px; padding:6px 8px; border:0;
   border-radius:10px; background:transparent; text-align:left; font-size:.82rem; font-weight:600; color:var(--ink,#0f172a);}
 #as-overlay .as-ddrow:hover{background:var(--surface,#f8fafc);}
 #as-overlay .as-ddrow.is-active{background:var(--brand-light,#eff6ff); color:var(--brand-dark,#165fd9);}
 #as-overlay .as-sequence{display:flex; flex-direction:column; gap:7px; margin-bottom:10px;}
-#as-overlay .as-sequence-row{display:grid; grid-template-columns:24px 40px minmax(0,1fr) auto; align-items:center; gap:9px;
+#as-overlay .as-sequence-row{display:grid; grid-template-columns:24px 42px minmax(0,1fr) auto; align-items:center; gap:9px;
   padding:7px 8px; border:1px solid var(--line,#e2e8f0); border-radius:11px; background:#fff;}
 #as-overlay .as-sequence-nr{display:grid; place-items:center; width:24px; height:24px; border-radius:999px;
   background:var(--brand-light,#eff6ff); color:var(--brand,#206efb); font-size:11px; font-weight:800;}
@@ -810,9 +821,9 @@ const CHROME_CSS = `
 #as-overlay .as-ddrow-add{margin-left:auto; display:grid; place-items:center; width:26px; height:26px; border-radius:999px;
   background:var(--brand-light,#eff6ff); color:var(--brand,#206efb);}
 #as-overlay .as-ddtext{flex:1; min-width:0;}
-#as-overlay .as-ddthumb{flex:0 0 auto; width:40px; height:50px; border-radius:6px; overflow:hidden;
+#as-overlay .as-ddthumb{flex:0 0 auto; width:42px; height:52px; border-radius:6px; overflow:hidden;
   border:1px solid var(--line,#e2e8f0); background:#fff; display:flex; align-items:center; justify-content:center; color:var(--brand,#206efb);}
-#as-overlay .as-mini{display:block; width:40px; height:50px; overflow:hidden;}
+#as-overlay .as-mini{display:block; flex:0 0 40px; width:40px; height:50px; overflow:hidden;}
 #as-overlay .as-mini-in{display:block; width:1080px; height:1350px; transform:scale(.037); transform-origin:top left; pointer-events:none;}
 
 /* Auszeichnung am Layout: hell, dunkel, Bild oder Diagramm. Keine Miniatur
@@ -1250,7 +1261,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-1839";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-2110";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1443,13 +1454,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       .map((key) => rahmen[key] || key)
       .filter((key) => LOOK[key] === state.answers.look);
     state.answers.slide_pick = arten.join(",");
+    state.answers.slide_cover = arten.find((key) => SLIDE_ROLE[key] === "cover") || "";
+    state.answers.slide_content = arten.filter((key) => !SLIDE_ROLE[key]).join(",");
+    state.answers.slide_end = arten.find((key) => SLIDE_ROLE[key] === "end") || "";
   }
 
   function defaultAnswers(list) {
     const out = {};
     // Mehrfachauswahl startet leer: eine vorausgewaehlte Slide-Art waere eine
     // Entscheidung, die niemand getroffen hat.
-    for (const q of list) out[q.key] = q.art === "multi" ? "" : q.options[0][0];
+    for (const q of list) out[q.key] = ["multi", "multi-content", "frame"].includes(q.art) ? "" : q.options[0][0];
     for (const q of list) if (q.free) out[q.free.key] = "";
     if (isMemo) {
       for (let i = 0; i < 3; i += 1) {
@@ -1625,10 +1639,19 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const carousel = state.answers.asset_type === "carousel";
     // Beim Blaettern nicht ueber das Ende hinaus: die Auswahl kann schrumpfen.
     if (state.prevIndex >= arten.length) state.prevIndex = 0;
-    const designVorschau = state.stepKey === "design"
-      ? (state.answers.look === "dunkel" ? "U2" : "U1")
-      : "";
-    const variante = designVorschau || (carousel
+    const dunkel = state.answers.look === "dunkel";
+    const schrittVorschau = state.stepKey === "design"
+      ? (dunkel ? "U2" : "U1")
+      : state.stepKey === "asset_type"
+        ? (carousel ? (dunkel ? "U2" : "U1") : (dunkel ? "A" : "B"))
+        : state.stepKey === "slide_cover"
+          ? (state.answers.slide_cover || (dunkel ? "U2" : "U1"))
+          : state.stepKey === "slide_end"
+            ? (state.answers.slide_end || (dunkel ? "U4" : "U3"))
+            : state.stepKey === "slide_content" && !inhaltsArten().length
+              ? (dunkel ? "A" : "B")
+              : "";
+    const variante = schrittVorschau || (carousel
       ? (state.answers.slide_mix === "custom" ? arten[state.prevIndex] : "")
       : state.answers.variant);
     if (!variante || variante === "auto" || !VARIANT_KEYS.includes(variante)) return platzhalterHtml();
@@ -1943,12 +1966,30 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       quote: "Ein Zitat mit Haltung, zwei Zeilen lang.",
       attribution: "Name, Rolle",
       stat: { value: "14 %", label: "Bezug, Jahr" },
-      stats: [{ value: "14 %", label: "Anteil am Umsatz" }, { value: "6", label: "Wochen je Runde" }, { value: "3", label: "Rollen im Buying Center" }],
+      stats: [
+        { value: "14 %", label: "Anteil am Umsatz" },
+        { value: "18 %", label: "Markenbekanntheit" },
+        { value: "24 %", label: "Wiederkaufsrate" },
+        { value: "31 %", label: "Digitale Kontakte" },
+        { value: "38 %", label: "Aktive Kunden" },
+        { value: "46 %", label: "Qualifizierte Leads" },
+        { value: "54 %", label: "Zielwert" },
+      ],
       bullets: ["**Erster Hebel** mit Substanz und Begründung", "**Zweiter Hebel** mit Substanz und Begründung", "**Dritter Hebel** mit Substanz und Begründung"],
-      steps: [{ n: "1", title: "Standort", text: "Lage in zwei Wochen belegen." }, { n: "2", title: "Priorität", text: "Drei Hebel auswählen." }, { n: "3", title: "Umsetzung", text: "Pilot in einem Segment." }],
+      steps: [
+        { n: "1", title: "Standort", text: "Lage belegen." },
+        { n: "2", title: "Priorität", text: "Hebel wählen." },
+        { n: "3", title: "Umsetzung", text: "Pilot starten." },
+        { n: "4", title: "Skalierung", text: "Wirkung ausrollen." },
+      ],
       myth: "Die verbreitete Behauptung.",
       fact: "Der Befund, der ihr widerspricht.",
       takeaway: "**Folge:** Struktur ist Standard, entscheidend ist die Handschrift.",
+      slot_a: "Marke",
+      slot_b: "Markt",
+      slot_c: "Kunde",
+      slot_d: "Wirkung",
+      slot_center: "Fokus",
       footer_left: state.chrome.footer_left || (state.chrome.custom ? "" : "ROOTS Consultants"),
       // Nur dieses Layout lebt von der Streichung, deshalb traegt sein
       // Beispieltext die Markierung.
@@ -1996,72 +2037,93 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return String(state.answers.slide_pick || "").split(",").map((v) => v.trim()).filter(Boolean);
   }
 
+  function inhaltsArten() {
+    return gewaehlteArten().filter((key) => !SLIDE_ROLE[key]);
+  }
+
+  function setzeManuelleFolien(cover, inhalte, ende) {
+    const folge = [cover, ...(Array.isArray(inhalte) ? inhalte : []), ende].filter(Boolean);
+    state.answers.slide_cover = cover || "";
+    state.answers.slide_content = (Array.isArray(inhalte) ? inhalte : []).join(",");
+    state.answers.slide_end = ende || "";
+    state.answers.slide_pick = folge.join(",");
+  }
+
   function variantenName(key) {
     return (VARIANTS_ALL.find(([value]) => value === key) || [key, key])[1];
   }
 
   function carouselEmpfehlungHtml(anzahl) {
     const n = Number(anzahl) || 0;
-    const zuLang = n > CAROUSEL_RECOMMENDED_MAX;
-    const text = zuLang
-      ? `${n} Slides liegen über dem empfohlenen Bereich von ${CAROUSEL_RECOMMENDED_MIN}–${CAROUSEL_RECOMMENDED_MAX}. Das ist erlaubt, kann aber die Leser bis zur Endfolie kosten.`
-      : `Empfohlen: ${CAROUSEL_RECOMMENDED_MIN}–${CAROUSEL_RECOMMENDED_MAX} Slides inklusive Titel- und Endfolie. LinkedIn erlaubt technisch bis zu ${LINKEDIN_DOCUMENT_PAGE_MAX} Dokumentseiten.`;
-    return `<div class="as-guidance${zuLang ? " is-warning" : ""}" data-carousel-guidance role="note">
-      <i class="fa-solid ${zuLang ? "fa-triangle-exclamation" : "fa-circle-info"}"></i><span>${esc(text)}</span>
+    if (n <= CAROUSEL_RECOMMENDED_MAX) return "";
+    const text = `${n} Slides liegen über dem empfohlenen Bereich von ${CAROUSEL_RECOMMENDED_MIN}–${CAROUSEL_RECOMMENDED_MAX}. Das ist erlaubt, kann aber die Leser bis zur Endfolie kosten.`;
+    return `<div class="as-guidance is-warning" data-carousel-guidance role="note">
+      <i class="fa-solid fa-triangle-exclamation"></i><span>${esc(text)}</span>
     </div>`;
   }
 
-  /**
-   * Mehrfachauswahl im selben weissen Dropdown, mit Nummer je gewaehlter Zeile.
-   * Die Reihenfolge der Auswahl ist die Reihenfolge der Slides.
-   */
-  function multiHtml(q) {
-    const gewaehlt = gewaehlteArten();
+  /** Titel und Ende sind eigene Pflichtschritte. Jede Option zeigt links genau
+   *  dieselbe Vorlage, die nach der Wahl rechts gross erscheint. */
+  function frameDropdownHtml(q) {
     const look = state.answers.look === "dunkel" ? "dunkel" : "hell";
-    const optionen = q.options.filter(([key]) => LOOK[key] === look);
-    const label = gewaehlt.length ? `${gewaehlt.length} Slides ausgewählt` : "Folien auswählen";
-    const folge = gewaehlt.map((value, i) => {
-      const rolle = SLIDE_ROLE[value] === "cover" ? "Pflicht: Einstieg"
-        : SLIDE_ROLE[value] === "end" ? "Pflicht: Abschluss"
-        : "Inhaltsfolie";
-      const istInhalt = !SLIDE_ROLE[value];
-      const hoch = istInhalt && i > 1;
-      const runter = istInhalt && i < gewaehlt.length - 2;
-      return `<div class="as-sequence-row">
-        <span class="as-sequence-nr">${i + 1}</span>
+    const optionen = q.options.filter(([key]) => SLIDE_ROLE[key] === q.role && LOOK[key] === look);
+    const ausgewaehlt = q.role === "cover" ? state.answers.slide_cover : state.answers.slide_end;
+    const label = ausgewaehlt ? variantenName(ausgewaehlt) : `${q.label} auswählen`;
+    const zeilen = optionen.map(([value, text]) => `
+      <button type="button" class="as-ddrow${value === ausgewaehlt ? " is-active" : ""}" data-act="frame-pick" data-role="${attr(q.role)}" data-value="${attr(value)}">
         <span class="as-ddthumb">${miniatur(value)}</span>
-        <span class="as-sequence-copy"><b>${esc(variantenName(value))}</b><small>${esc(rolle)}</small></span>
+        <span class="as-ddtext">${esc(text)}</span>
+        ${value === ausgewaehlt ? '<span class="as-ddrow-add"><i class="fa-solid fa-check"></i></span>' : ""}
+      </button>`).join("");
+    return `<div class="as-q">
+      <label>${esc(q.label)}</label>
+      <div class="as-dd as-dd--flow${state.ddOffen ? " is-open" : ""}">
+        <button type="button" class="as-ddhead" data-act="toggle-frame" aria-expanded="${state.ddOffen ? "true" : "false"}">
+          <span>${esc(label)}</span><i class="fa-solid fa-chevron-down"></i>
+        </button>
+        <div class="as-ddlist">${zeilen}</div>
+      </div>
+    </div>`;
+  }
+
+  /** Inhaltsfolien koennen wiederholt und frei sortiert werden. Titel und Ende
+   *  stehen nicht mehr in dieser Liste und brauchen deshalb keinen Warnhinweis. */
+  function contentMultiHtml(q) {
+    const gewaehlt = inhaltsArten();
+    const look = state.answers.look === "dunkel" ? "dunkel" : "hell";
+    const optionen = q.options.filter(([key]) => !SLIDE_ROLE[key] && LOOK[key] === look);
+    const label = gewaehlt.length ? `${gewaehlt.length} Inhaltsfolien ausgewählt` : "Inhaltsfolien auswählen";
+    const folge = gewaehlt.map((value, i) => {
+      const hoch = i > 0;
+      const runter = i < gewaehlt.length - 1;
+      return `<div class="as-sequence-row">
+        <span class="as-sequence-nr">${i + 2}</span>
+        <span class="as-ddthumb">${miniatur(value)}</span>
+        <span class="as-sequence-copy"><b>${esc(variantenName(value))}</b><small>Inhaltsfolie</small></span>
         <span class="as-sequence-actions">
-          <button type="button" data-act="art-up" data-index="${i}"${hoch ? "" : " disabled"} aria-label="Folie nach oben"><i class="fa-solid fa-arrow-up"></i></button>
-          <button type="button" data-act="art-down" data-index="${i}"${runter ? "" : " disabled"} aria-label="Folie nach unten"><i class="fa-solid fa-arrow-down"></i></button>
-          <button type="button" data-act="art-remove" data-index="${i}" aria-label="Folie entfernen"><i class="fa-solid fa-xmark"></i></button>
+          <button type="button" data-act="content-up" data-index="${i}"${hoch ? "" : " disabled"} aria-label="Folie nach oben"><i class="fa-solid fa-arrow-up"></i></button>
+          <button type="button" data-act="content-down" data-index="${i}"${runter ? "" : " disabled"} aria-label="Folie nach unten"><i class="fa-solid fa-arrow-down"></i></button>
+          <button type="button" data-act="content-remove" data-index="${i}" aria-label="Folie entfernen"><i class="fa-solid fa-xmark"></i></button>
         </span>
       </div>`;
     }).join("");
-    const zeilen = optionen.map(([value, text]) => {
-      const rolleSchonDa = SLIDE_ROLE[value] && gewaehlt.some((key) => SLIDE_ROLE[key] === SLIDE_ROLE[value]);
-      return `
-      <button type="button" class="as-ddrow" data-act="art-add" data-value="${attr(value)}"${rolleSchonDa ? " disabled" : ""}>
+    const amMaximum = gewaehlt.length >= LINKEDIN_DOCUMENT_PAGE_MAX - 2;
+    const zeilen = optionen.map(([value, text]) => `
+      <button type="button" class="as-ddrow" data-act="content-add" data-value="${attr(value)}"${amMaximum ? " disabled" : ""}>
         <span class="as-ddthumb">${miniatur(value)}</span>
         <span class="as-ddtext">${esc(text)}</span>
-        ${SLIDE_ROLE[value] ? `<i class="as-tag">${SLIDE_ROLE[value] === "cover" ? "Pflicht: zuerst" : "Pflicht: zuletzt"}</i>` : ""}
-        <span class="as-ddrow-add"><i class="fa-solid ${rolleSchonDa ? "fa-check" : "fa-plus"}"></i></span>
-      </button>`;
-    }).join("");
-    const probleme = manualCarouselSelectionIssues(gewaehlt, look);
-    const warnung = probleme.length
-      ? `<div class="as-guidance is-warning" role="alert"><i class="fa-solid fa-triangle-exclamation"></i><span>${probleme.map(esc).join(" ")}</span></div>`
-      : "";
+        <span class="as-ddrow-add"><i class="fa-solid fa-plus"></i></span>
+      </button>`).join("");
     return `<div class="as-q">
       <label>${esc(q.label)}</label>
-      <div class="as-sequence">${folge || '<p class="as-hint">Noch keine Folie ausgewählt.</p>'}</div>
-      <div class="as-dd${state.multiOffen ? " is-open" : ""}">
+      <div class="as-sequence">${folge || '<p class="as-hint">Noch keine Inhaltsfolie ausgewählt.</p>'}</div>
+      <div class="as-dd as-dd--flow${state.multiOffen ? " is-open" : ""}">
         <button type="button" class="as-ddhead" data-act="toggle-arten" aria-expanded="${state.multiOffen ? "true" : "false"}">
           <span>${esc(label)}</span><i class="fa-solid fa-chevron-down"></i>
         </button>
         <div class="as-ddlist">${zeilen}</div>
       </div>
-      ${warnung}${carouselEmpfehlungHtml(gewaehlt.length)}
+      <div data-carousel-guidance-host>${carouselEmpfehlungHtml(gewaehlt.length + 2)}</div>
     </div>`;
   }
 
@@ -2314,6 +2376,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (Array.isArray(src.slide_types) && src.slide_types.length) {
       a.slide_mix = "custom";
       a.slide_pick = src.slide_types.join(",");
+      a.slide_cover = src.slide_types.find((key) => SLIDE_ROLE[key] === "cover") || "";
+      a.slide_content = src.slide_types.filter((key) => !SLIDE_ROLE[key]).join(",");
+      a.slide_end = src.slide_types.find((key) => SLIDE_ROLE[key] === "end") || "";
     }
     return a;
   }
@@ -2418,9 +2483,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Was in der zusammengeklappten Zeile als Antwort steht. */
   function antwortLabel(q) {
-    if (q.art === "multi") {
-      const gewaehlt = gewaehlteArten();
-      return gewaehlt.length ? gewaehlt.join(" · ") : "noch nichts gewählt";
+    if (q.art === "multi-content") {
+      const gewaehlt = inhaltsArten();
+      return gewaehlt.length === 1 ? "1 Inhaltsfolie" : `${gewaehlt.length} Inhaltsfolien`;
+    }
+    if (q.art === "frame") {
+      const wert = q.role === "cover" ? state.answers.slide_cover : state.answers.slide_end;
+      return wert ? variantenName(wert) : "noch nicht gewählt";
     }
     if (q.art === "design") return aktivesDesign().name;
     if (q.art === "dropdown") {
@@ -2445,8 +2514,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       toneLoaded: state.toneGeladen,
       toneOfVoice: state.toneOfVoice,
     })) return false;
-    if (q.art === "multi") {
-      return manualCarouselSelectionIssues(gewaehlteArten(), state.answers.look).length === 0;
+    if (q.art === "multi-content") {
+      return inhaltsArten().length > 0 && inhaltsArten().every((key) => LOOK[key] === state.answers.look);
+    }
+    if (q.art === "frame") {
+      const wert = q.role === "cover" ? state.answers.slide_cover : state.answers.slide_end;
+      return Boolean(wert && SLIDE_ROLE[wert] === q.role && LOOK[wert] === state.answers.look);
     }
     if (q.key === "slide_count") return carouselRequestedSlides(state.answers) > 0;
     if (q.free && state.answers[q.key] === q.free.on) {
@@ -2463,7 +2536,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function springtWeiter(q) {
     if (!q) return false;
     if (!frageErledigt(q)) return false;
-    if (q.art === "multi") return false;
+    if (q.art === "multi-content") return false;
+    // Bei der Formatwahl bleibt die Frage offen, damit Einzelbild und Carousel
+    // vor dem Weitergehen sichtbar verglichen werden koennen.
+    if (q.key === "asset_type") return false;
     if (q.free && state.answers[q.key] === q.free.on) return false;
     if (q.key === "benchmarks" && state.answers.benchmarks === "custom") return false;
     if (q.key === "images" && state.answers.images === "upload") return false;
@@ -2503,7 +2579,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Der Kern einer Frage: Optionen, Freitext und Sonderrenderer. */
   function frageKoerper(q) {
     if (q.art === "dropdown") return dropdownHtml(q);
-    if (q.art === "multi") return multiHtml(q);
+    if (q.art === "frame") return frameDropdownHtml(q);
+    if (q.art === "multi-content") return contentMultiHtml(q);
     if (q.art === "design") return designHtml(q);
     const opts = q.options.map(([value, label]) => {
       // Der Look steht am Layout statt in einer eigenen Frage, und die
@@ -2529,7 +2606,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         : "";
     const benches = q.key === "benchmarks" && state.answers.benchmarks === "custom" ? benchesHtml() : "";
     const slots = q.key === "images" && state.answers.images === "upload" ? slotsHtml() : "";
-    const empfehlung = q.key === "slide_count" ? carouselEmpfehlungHtml(carouselRequestedSlides(state.answers)) : "";
+    const empfehlung = q.key === "slide_count"
+      ? `<div data-carousel-guidance-host>${carouselEmpfehlungHtml(carouselRequestedSlides(state.answers))}</div>`
+      : "";
     return `<div class="as-opts">${opts}</div>${warnung}${free}${empfehlung}${benches}${slots}`;
   }
 
@@ -2713,13 +2792,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!isMemo && state.answers.asset_type === "carousel") {
       const anzahl = carouselRequestedSlides(state.answers);
       if (!anzahl) {
-        formFehler(state.answers.slide_mix === "custom" ? "slide_pick" : "slide_count", `Bitte eine gültige Anzahl zwischen 2 und ${LINKEDIN_DOCUMENT_PAGE_MAX} angeben.`);
+        formFehler(state.answers.slide_mix === "custom" ? "slide_content" : "slide_count", `Bitte eine gültige Anzahl zwischen 2 und ${LINKEDIN_DOCUMENT_PAGE_MAX} angeben.`);
         return;
       }
       if (state.answers.slide_mix === "custom") {
         const probleme = manualCarouselSelectionIssues(gewaehlteArten(), state.answers.look);
         if (probleme.length) {
-          formFehler("slide_pick", probleme.join(" "));
+          const key = !state.answers.slide_cover ? "slide_cover" : !state.answers.slide_end ? "slide_end" : "slide_content";
+          formFehler(key, probleme.join(" "));
           return;
         }
       }
@@ -4254,6 +4334,7 @@ ${stages}${post}
     if (act === "open-tone") { oeffneEinstellungen("tone"); return; }
     if (act === "open-designs") { oeffneEinstellungen("design"); return; }
     if (act === "toggle-layout") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
+    if (act === "toggle-frame") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
     if (act === "toggle-arten") { state.multiOffen = !state.multiOffen; zeichneForm(); return; }
     if (act === "prev-back" || act === "prev-fwd") {
       const anzahl = blaetterAnzahl();
@@ -4270,38 +4351,45 @@ ${stages}${post}
       fitStages();
       return;
     }
-    if (act === "art-add") {
+    if (act === "frame-pick") {
       const wert = hit.getAttribute("data-value");
-      const liste = gewaehlteArten();
-      if (!wert || liste.length >= LINKEDIN_DOCUMENT_PAGE_MAX) return;
       const rolle = SLIDE_ROLE[wert];
-      if (rolle && liste.some((key) => SLIDE_ROLE[key] === rolle)) return;
-      if (rolle === "cover") liste.unshift(wert);
-      else if (rolle === "end") liste.push(wert);
-      else {
-        const ende = liste.findIndex((key) => SLIDE_ROLE[key] === "end");
-        if (ende >= 0) liste.splice(ende, 0, wert);
-        else liste.push(wert);
-      }
-      state.answers.slide_pick = liste.join(",");
-      state.prevIndex = Math.max(0, rolle === "cover" ? 0 : rolle === "end" ? liste.length - 1 : liste.length - (liste.some((key) => SLIDE_ROLE[key] === "end") ? 2 : 1));
+      if (!wert || !rolle || LOOK[wert] !== state.answers.look) return;
+      const cover = rolle === "cover" ? wert : state.answers.slide_cover;
+      const ende = rolle === "end" ? wert : state.answers.slide_end;
+      setzeManuelleFolien(cover, inhaltsArten(), ende);
+      state.prevIndex = rolle === "cover" ? 0 : Math.max(0, gewaehlteArten().length - 1);
+      state.ddOffen = false;
+      const fragen = aktiveFragen();
+      const offen = fragen[schrittIndex(fragen)];
+      if (offen?.art === "frame" && frageErledigt(offen)) setzeSchritt(naechsterSchritt());
       zeichneForm();
       return;
     }
-    if (act === "art-remove" || act === "art-up" || act === "art-down") {
-      const liste = gewaehlteArten();
+    if (act === "content-add") {
+      const wert = hit.getAttribute("data-value");
+      const inhalte = inhaltsArten();
+      if (!wert || SLIDE_ROLE[wert] || LOOK[wert] !== state.answers.look || inhalte.length >= LINKEDIN_DOCUMENT_PAGE_MAX - 2) return;
+      inhalte.push(wert);
+      setzeManuelleFolien(state.answers.slide_cover, inhalte, state.answers.slide_end);
+      state.prevIndex = inhalte.length;
+      zeichneForm();
+      return;
+    }
+    if (act === "content-remove" || act === "content-up" || act === "content-down") {
+      const liste = inhaltsArten();
       const index = Number(hit.getAttribute("data-index"));
       if (!Number.isInteger(index) || index < 0 || index >= liste.length) return;
-      if (act === "art-remove") liste.splice(index, 1);
+      if (act === "content-remove") liste.splice(index, 1);
       else {
-        const delta = act === "art-up" ? -1 : 1;
+        const delta = act === "content-up" ? -1 : 1;
         const ziel = index + delta;
-        if (ziel <= 0 || ziel >= liste.length - 1 || SLIDE_ROLE[liste[index]]) return;
+        if (ziel < 0 || ziel >= liste.length) return;
         [liste[index], liste[ziel]] = [liste[ziel], liste[index]];
-        state.prevIndex = ziel;
+        state.prevIndex = ziel + 1;
       }
-      state.answers.slide_pick = liste.join(",");
-      if (state.prevIndex >= liste.length) state.prevIndex = Math.max(0, liste.length - 1);
+      setzeManuelleFolien(state.answers.slide_cover, liste, state.answers.slide_end);
+      if (state.prevIndex >= gewaehlteArten().length) state.prevIndex = Math.max(0, gewaehlteArten().length - 1);
       zeichneForm();
       return;
     }
@@ -4384,8 +4472,8 @@ ${stages}${post}
     const weiter = shell.querySelector('[data-act="step-next"]');
     if (weiter && offen) weiter.disabled = !frageErledigt(offen);
     if (free.getAttribute("data-free") === "slide_count_text") {
-      const hinweis = shell.querySelector("[data-carousel-guidance]");
-      if (hinweis) hinweis.outerHTML = carouselEmpfehlungHtml(carouselRequestedSlides(state.answers));
+      const host = shell.querySelector("[data-carousel-guidance-host]");
+      if (host) host.innerHTML = carouselEmpfehlungHtml(carouselRequestedSlides(state.answers));
     }
     if (free.getAttribute("data-free") === "company_text") {
       const node = shell.querySelector('[data-livepreview] [data-field="title"]');
