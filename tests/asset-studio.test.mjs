@@ -7,6 +7,7 @@ const memoTpl = readFileSync(new URL("../memo-template.js", import.meta.url), "u
 const appJs = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const edge = readFileSync(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
+const templates = readFileSync(new URL("../asset-templates.js", import.meta.url), "utf8");
 const backend = await import("../supabase/functions/signal-layer/asset-studio.ts");
 
 function dreiBenchmarks() {
@@ -143,7 +144,7 @@ test("die Kosten werden als asset_generation gebucht", () => {
 test("das Studio arbeitet im Rahmen des Artikel-Popups", () => {
   // Als eigene Vollflaeche wuerde es das Popup verdecken statt darin zu leben:
   // der Artikel bliebe offen im Hintergrund, der Weg zurueck waere unklar.
-  assert.match(studio, /openAssetStudio\(\{ kind, articleId, signal, callApi, escapeHtml, host, notify \} = \{\}\)/);
+  assert.match(studio, /openAssetStudio\(\{ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel \} = \{\}\)/);
   assert.match(studio, /const mount = host instanceof HTMLElement \? host : document\.body/);
   assert.match(studio, /#as-overlay\.as-in-host\{position:absolute/);
   const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
@@ -174,10 +175,15 @@ test("die Antwortspalte zeigt Auswahl, die Vorschau zeigt das Asset", () => {
   assert.match(studio, /function livePreviewHtml\(\)/);
 });
 
-test("Format, Anmutung, Layout - in dieser Reihenfolge", () => {
+test("Profil, Design, Format - in dieser Reihenfolge", () => {
+  // Zuerst der Absender, dann sein Design, danach erst das Format: die Vorlage
+  // haengt am Profil und darf nicht davor gewaehlt werden.
   const block = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("const FORM_MEMO"));
   const reihenfolge = [...block.matchAll(/key: "([a-z_]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(reihenfolge.slice(0, 3), ["asset_type", "look", "variant"]);
+  assert.deepEqual(reihenfolge.slice(0, 3), ["profile", "design", "asset_type"]);
+  // Die alte Frage nach der Anmutung ist ersetzt; hell/dunkel kommt aus der Vorlage.
+  assert.ok(!reihenfolge.includes("look"), "look wird abgeleitet, nicht gefragt");
+  assert.match(studio, /function synchronisiereDesign\(\)/);
 });
 
 test("die Anmutung filtert die Layouts, sie faerbt nichts um", () => {
@@ -1238,7 +1244,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.16");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.17");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -2004,9 +2010,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260818-1420");
-  assert.match(indexHtml, /app\.js\?v=20260818-1420/);
-  assert.match(studio, /asset-templates\.js\?v=20260818-1420/);
+  assert.equal(studioVersion, "20260818-1620");
+  assert.match(indexHtml, /app\.js\?v=20260818-1620/);
+  assert.match(studio, /asset-templates\.js\?v=20260818-1620/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2419,4 +2425,88 @@ test("Tone of Voice liegt je Nutzer in Supabase und blockiert sonst den Lauf", (
   // LinkedIn-Kachel kleiner in der Spalte als die Memo-Seite (18.8.2026).
   assert.doesNotMatch(studio, /as-prev-big:has\(\.as-prev-empty\)/);
   assert.match(studio, /const leerW = isMemo \? MEMO_SEITE_PX\.w : 1080;/);
+});
+
+test("Profil entscheidet ueber Vorlage, Fusszeile und ROOTS-Rahmen", () => {
+  // Ein Asset fuer das Privatprofil traegt weder ROOTS-Zeichen noch
+  // ROOTS-Domain noch die ROOTS-Ansprache im Prompt.
+  const privat = backend.normalizeAssetAnswers("linkedin", {
+    asset_type: "single", profile: "private", design: "persoenlich-1",
+    design_name: "Persönlich 1", design_footer_left: "Pano Goutzeris", design_domain: "linkedin.com/in/pano",
+  });
+  assert.equal(privat.profile, "private");
+  assert.equal(privat.design_footer_left, "Pano Goutzeris");
+  const privatPrompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" }, privat);
+  assert.match(privatPrompt, /persönliches Beraterprofil/);
+  assert.match(privatPrompt, /Pano Goutzeris/);
+  assert.doesNotMatch(privatPrompt, /für ROOTS Brand Strategy Consultants/);
+
+  // Alte Entwuerfe ohne die Felder bleiben ROOTS-Assets.
+  const alt = backend.normalizeAssetAnswers("linkedin", { asset_type: "single" });
+  assert.equal(alt.profile, "roots");
+  assert.equal(alt.design, "roots-hell");
+  assert.equal(alt.design_footer_left, "ROOTS Consultants");
+  assert.equal(alt.design_domain, "roots-consultants.com");
+  assert.match(backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" }, alt), /für ROOTS Brand Strategy Consultants/);
+
+  // Die Wahl dunkel erreichte den Server nie: der Fragebogen schickte look,
+  // gelesen wurde theme (18.8.2026).
+  assert.equal(backend.normalizeAssetAnswers("linkedin", { look: "dunkel" }).theme, "dark");
+
+  // Die Vorlage haengt am Asset und reist mit der Nutzlast.
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    theme: "light", post_text: "Text.",
+    slides: [{ variant: "B", kicker: "MARKE", title: "Eine These mit Verb.", subtitle: "Ein Argument.", footer_left: "" }],
+  }), privat, { articleText: "Der Artikel." });
+  assert.deepEqual(payload.chrome, {
+    footer_left: "Pano Goutzeris", domain: "linkedin.com/in/pano", logo: "", custom: true,
+  });
+  // Ohne eigene Quelle traegt die Fusszeile den Absender der Vorlage.
+  assert.equal(payload.slides[0].footer_left, "Pano Goutzeris");
+});
+
+test("Design-Vorlagen liegen je Nutzer in Supabase", () => {
+  const vorlagen = backend.normalizeDesignTemplates([
+    { id: "Persönlich 1", name: "Persönlich 1", theme: "dunkel", footer_left: "Pano", domain: "LinkedIn.com/in/pano", logo: "https://fremd.example/logo.png" },
+    { id: "", name: "Ohne Kennung" },
+    ...Array.from({ length: 20 }, (_, i) => ({ id: `v${i}`, name: `Vorlage ${i}` })),
+  ]);
+  assert.equal(vorlagen.length, backend.DESIGN_TEMPLATE_LIMIT);
+  assert.equal(vorlagen[0].theme, "dark");
+  assert.equal(vorlagen[0].domain, "linkedin.com/in/pano");
+  // Ein fremder Bildserver wuerde beim Oeffnen des Assets angefragt.
+  assert.equal(vorlagen[0].logo, "");
+  assert.ok(!vorlagen.some((eintrag) => eintrag.name === "Ohne Kennung"));
+
+  assert.match(edge, /case "get_asset_design_templates"/);
+  assert.match(edge, /case "save_asset_design_templates"/);
+  assert.match(edge, /DESIGN_TEMPLATE_MISSING/);
+  assert.match(indexHtml, /id="design-template-list"/);
+  assert.match(appJs, /save_asset_design_templates/);
+  assert.match(appJs, /function openSettingsPanel/);
+});
+
+test("Der Fragebogen zeigt eine Frage nach der anderen", () => {
+  // Ein Formular mit zehn offenen Fragen liest sich wie ein Antrag. Sichtbar
+  // ist deshalb genau die offene Frage, davor stehen die Antworten als Zeile.
+  assert.match(studio, /function aktiveFragen\(\)/);
+  assert.match(studio, /function naechsterSchritt\(\)/);
+  assert.match(studio, /as-step--done/);
+  assert.match(studio, /as-progress-text/);
+  assert.match(studio, /@keyframes as-step-in/);
+  // Position ueber den Schluessel, nicht ueber einen Index: bedingte Fragen
+  // aendern die Laenge der Liste mitten im Ausfuellen.
+  assert.match(studio, /function schrittIndex\(/);
+  assert.doesNotMatch(studio, /state\.formStep/);
+  // Bewegung nur, wenn der Nutzer sie zulaesst.
+  const reduziert = studio.slice(studio.indexOf("@media (prefers-reduced-motion: reduce)"));
+  assert.match(reduziert, /as-step--open\{animation:none;\}/);
+  // Fehlende Voraussetzungen zeigen den Weg statt nur den Mangel.
+  assert.match(studio, /function noticeHtml\(/);
+  assert.match(studio, /data-act="\$\{attr\(aktion\)\}"/);
+  assert.match(studio, /oeffneEinstellungen\("tone"\)/);
+  assert.match(studio, /oeffneEinstellungen\("design"\)/);
+  // Die Domain steht nicht mehr im Markup, sondern kommt aus der Vorlage.
+  assert.ok(!templates.includes("roots-consultants.com"), "Domain gehoert der Vorlage");
+  assert.match(templates, /\{\{domain\}\}/);
 });

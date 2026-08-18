@@ -108,6 +108,7 @@ import {
   MEMO_SCENE_QUERY_MAX,
   MEMO_PHOTO_BYTES_MAX,
   MEMO_PHOTO_USER_AGENT,
+  DesignTemplate,
   LinkedinAnswers,
   MemoAnswers,
   MemoImageSlot,
@@ -149,6 +150,8 @@ import {
   negativeBenchmarkNames,
   rejectedBenchmarkNames,
   normalizeAssetAnswers,
+  normalizeDesignTemplates,
+  ROOTS_DESIGNS,
   TONE_OF_VOICE_LIMIT,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
@@ -397,6 +400,17 @@ async function assetToneOfVoice(userId: string): Promise<string> {
   if (error) throw new Error(`Tone of Voice konnte nicht gelesen werden: ${error.message}`);
   return String(data?.tone_of_voice || "").trim();
 }
+
+/** Design-Vorlagen des Nutzers. Leer heisst: noch keine angelegt. */
+async function assetDesignTemplates(userId: string): Promise<DesignTemplate[]> {
+  const { data, error } = await getAdminClient().schema("signal_layer")
+    .from("user_asset_settings").select("design_templates").eq("user_id", userId).maybeSingle();
+  if (error) throw new Error(`Design-Vorlagen konnten nicht gelesen werden: ${error.message}`);
+  return normalizeDesignTemplates(data?.design_templates);
+}
+
+export const DESIGN_TEMPLATE_MISSING =
+  "Für das Privatprofil ist noch keine Design-Vorlage hinterlegt. Bitte in den Einstellungen unter Design-Vorlagen anlegen.";
 
 export const TONE_OF_VOICE_MISSING =
   "Für „KI + Tone of Voice“ ist noch kein Tonfall hinterlegt. Bitte in den Einstellungen unter Tone of Voice konfigurieren.";
@@ -6171,6 +6185,23 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { tone_of_voice: tone });
       }
 
+      case "get_asset_design_templates": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        return corsResponse(origin, { design_templates: await assetDesignTemplates(auth.userId) });
+      }
+
+      // Ganze Liste in einem Zug: die Reihenfolge im Fragebogen ist die
+      // Reihenfolge hier, und eine geloeschte Vorlage verschwindet mit.
+      case "save_asset_design_templates": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const vorlagen = normalizeDesignTemplates(body.design_templates);
+        const { error } = await getAdminClient().schema("signal_layer")
+          .from("user_asset_settings")
+          .upsert({ user_id: auth.userId, design_templates: vorlagen, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { design_templates: vorlagen });
+      }
+
       case "get_pipeline_settings": {
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("pipeline_settings")
@@ -9422,6 +9453,19 @@ Deno.serve(async (req: Request) => {
           if (linkedinAnswers.caption_mode === "custom" && !linkedinAnswers.caption) {
             return errorResponse(origin, "Für einen selbst geschriebenen Begleittext fehlt der Text.");
           }
+          // Die Vorlage wird jetzt festgeschrieben. Ein Wiederholungslauf liest
+          // sie aus der gespeicherten Zeile und braucht die Einstellungen nicht
+          // noch einmal - auch dann nicht, wenn sie inzwischen anders sind.
+          const vorlage = linkedinAnswers.profile === "private"
+            ? (auth?.userId ? (await assetDesignTemplates(auth.userId)).find((eintrag) => eintrag.id === linkedinAnswers.design) : undefined)
+            : (ROOTS_DESIGNS[linkedinAnswers.design] || ROOTS_DESIGNS["roots-hell"]);
+          if (!vorlage) return errorResponse(origin, DESIGN_TEMPLATE_MISSING);
+          linkedinAnswers.design = vorlage.id;
+          linkedinAnswers.design_name = vorlage.name;
+          linkedinAnswers.design_footer_left = vorlage.footer_left;
+          linkedinAnswers.design_domain = vorlage.domain;
+          linkedinAnswers.design_logo = vorlage.logo;
+          linkedinAnswers.theme = vorlage.theme;
         }
 
         const admin = getAdminClient();

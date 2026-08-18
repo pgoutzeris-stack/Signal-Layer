@@ -8,7 +8,7 @@
 // kann. Aufruf, Kostenbuchung und Speicherung liegen in index.ts.
 // ---------------------------------------------------------------------------
 
-export const ASSET_PROMPT_VERSION = "roots-asset-v1.16";
+export const ASSET_PROMPT_VERSION = "roots-asset-v1.17";
 
 export const ASSET_KINDS = ["linkedin", "memo"] as const;
 export type AssetKind = typeof ASSET_KINDS[number];
@@ -101,7 +101,67 @@ export type LinkedinAnswers = {
   /** Nur bei caption_mode "ai_tone": aus den Nutzereinstellungen geladen.
    *  Der Server setzt das Feld, nie der Browser. */
   tone_of_voice: string;
+  /** Fuer wen das Asset entsteht. Steuert ROOTS-Rahmen und Fusszeile. */
+  profile: "roots" | "private";
+  /** Kennung der gewaehlten Design-Vorlage. */
+  design: string;
+  /** Aufgeloeste Vorlage. Der Server schreibt diese Felder beim Erzeugen fest,
+   *  damit ein spaeterer Wiederholungslauf dieselbe Vorlage benutzt, auch wenn
+   *  der Nutzer sie inzwischen geaendert oder geloescht hat. */
+  design_name: string;
+  design_footer_left: string;
+  design_domain: string;
+  design_logo: string;
 };
+
+/** Eine Design-Vorlage des Privatprofils. Die ROOTS-Vorlagen stehen im Code. */
+export type DesignTemplate = {
+  id: string;
+  name: string;
+  theme: "light" | "dark";
+  footer_left: string;
+  domain: string;
+  logo: string;
+};
+
+export const DESIGN_TEMPLATE_LIMIT = 12;
+export const DESIGN_NAME_LIMIT = 40;
+export const DESIGN_FOOTER_LIMIT = 80;
+export const DESIGN_DOMAIN_LIMIT = 60;
+/** Ein Logo als Data-URI. Grosszuegig fuer SVG, zu klein fuer ein Foto. */
+export const DESIGN_LOGO_LIMIT = 48_000;
+
+export const ROOTS_DESIGNS: Record<string, DesignTemplate> = {
+  "roots-hell": { id: "roots-hell", name: "ROOTS Hell", theme: "light", footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "" },
+  "roots-dunkel": { id: "roots-dunkel", name: "ROOTS Dunkel", theme: "dark", footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "" },
+};
+
+/** Der Browser darf Vorlagen schicken, aber nicht ihre Form bestimmen. */
+export function normalizeDesignTemplates(raw: unknown): DesignTemplate[] {
+  const liste = Array.isArray(raw) ? raw : [];
+  const out: DesignTemplate[] = [];
+  const gesehen = new Set<string>();
+  for (const eintrag of liste) {
+    if (out.length >= DESIGN_TEMPLATE_LIMIT) break;
+    const quelle = record(eintrag);
+    const id = String(quelle.id || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40);
+    const name = freeText(String(quelle.name || ""), DESIGN_NAME_LIMIT);
+    if (!id || !name || gesehen.has(id)) continue;
+    gesehen.add(id);
+    const logo = String(quelle.logo || "").trim();
+    out.push({
+      id,
+      name,
+      theme: /dark|dunkel/i.test(String(quelle.theme || "")) ? "dark" : "light",
+      footer_left: freeText(String(quelle.footer_left || ""), DESIGN_FOOTER_LIMIT),
+      domain: String(quelle.domain || "").trim().toLowerCase().replace(/[^a-z0-9./-]/g, "").slice(0, DESIGN_DOMAIN_LIMIT),
+      // Nur eingebettete Bilder: eine fremde URL wuerde beim Oeffnen des Assets
+      // eine Anfrage an einen fremden Server ausloesen.
+      logo: /^data:image\/(png|jpeg|svg\+xml|webp);base64,/.test(logo) && logo.length <= DESIGN_LOGO_LIMIT ? logo : "",
+    });
+  }
+  return out;
+}
 
 export type MemoBenchmarkBrief = {
   name: string;
@@ -235,6 +295,7 @@ export type AssetSlide = {
 export type LinkedinPayload = {
   theme: "light" | "dark";
   post_text: string;
+  chrome: { footer_left: string; domain: string; logo: string; custom: boolean };
   slides: AssetSlide[];
 };
 
@@ -630,7 +691,7 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
     return {
       asset_type: assetType,
       variant: isSlideKey(variantRaw) ? variantRaw : "auto",
-      theme: /dunkel|dark/i.test(pick(source, "theme", "anmutung", "mode")) ? "dark" : "light",
+      theme: /dunkel|dark/i.test(pick(source, "theme", "anmutung", "mode", "look")) ? "dark" : "light",
       // Acht Slides passten nicht in eine Antwort und brachen mitten im JSON ab.
       slides: assetType === "carousel" ? ([4, 6].includes(slideCount) ? slideCount : 4) : 1,
       storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
@@ -642,6 +703,14 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
         .split(",").map((v) => v.trim().toUpperCase())
         .filter((v) => isSlideKey(v))
         .slice(0, 8),
+      profile: /privat|private|personal/i.test(pick(source, "profile", "absender")) ? "private" as const : "roots" as const,
+      design: pick(source, "design", "design_id").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40) || "roots-hell",
+      // Die aufgeloeste Vorlage wird durchgereicht, nicht neu ermittelt: eine
+      // gespeicherte Zeile muss beim zweiten Lauf dasselbe Asset ergeben.
+      design_name: freeText(pick(source, "design_name"), DESIGN_NAME_LIMIT) || "ROOTS Hell",
+      design_footer_left: freeText(pick(source, "design_footer_left"), DESIGN_FOOTER_LIMIT) || "ROOTS Consultants",
+      design_domain: freeText(pick(source, "design_domain"), DESIGN_DOMAIN_LIMIT) || "roots-consultants.com",
+      design_logo: String(record(source).design_logo || "").slice(0, DESIGN_LOGO_LIMIT),
       caption_mode: captionMode(source),
       // LinkedIn kappt den Beitragstext bei 3000 Zeichen; ein selbst
       // geschriebener Text darf diesen Rahmen ausschoepfen.
@@ -1259,7 +1328,7 @@ function applyLinkedinChrome(
     company: context.company,
   });
   const firma = String(context.company || "").trim();
-  const quelle = answers.sources || "ROOTS Consultants";
+  const quelle = answers.sources || answers.design_footer_left || "ROOTS Consultants";
   const out = slides.map((slide) => ({
     ...slide,
     kicker: !slide.kicker || looksLikeCompany(slide.kicker, firma) ? theme : slide.kicker,
@@ -1295,6 +1364,10 @@ function linkedinPrompt(
   const carousel = answers.asset_type === "carousel";
   const erlaubt = allowedSlideKeys(answers, articleText);
   const thema = assetThemeKicker(signal);
+  // Beim Privatprofil traegt das Asset kein ROOTS-Zeichen und keinen
+  // ROOTS-Leistungsverweis; die Fusszeile kommt aus der Vorlage.
+  const privat = answers.profile === "private";
+  const absender = privat ? asData(answers.design_footer_left, DESIGN_FOOTER_LIMIT) : "";
   const auftrag = [
     carousel
       ? `Format: Carousel mit ${answers.slides} Slides, nicht mehr.`
@@ -1314,11 +1387,15 @@ function linkedinPrompt(
       : "Handlungsaufruf: formuliere ihn selbst, sachlich und ohne Werbeton.",
     answers.sources
       ? `Quellen, die genannt werden sollen: ${answers.sources}`
-      : "Quellen: nenne in footer_left die belegte Artikelquelle oder ROOTS Consultants. Niemals den Zielkunden.",
+      : privat
+        ? `Quellen: nenne in footer_left die belegte Artikelquelle${absender ? ` oder ${absender}` : ""}. Niemals den Zielkunden.`
+        : "Quellen: nenne in footer_left die belegte Artikelquelle oder ROOTS Consultants. Niemals den Zielkunden.",
     captionAuftrag(answers),
   ].join("\n");
 
-  return `Du erstellst ein LinkedIn-Asset für ROOTS Brand Strategy Consultants aus einem geprüften Signal.
+  return `${privat
+    ? "Du erstellst ein LinkedIn-Asset für ein persönliches Beraterprofil aus einem geprüften Signal. Der Beitrag spricht in der ersten Person und wirbt nicht für eine Agentur."
+    : "Du erstellst ein LinkedIn-Asset für ROOTS Brand Strategy Consultants aus einem geprüften Signal."}
 
 ${ASSETTYP_BRIEFING}
 <auftrag>
@@ -1331,7 +1408,7 @@ kicker: Versalien, höchstens 26 Zeichen. Das THEMA der Artikelfamilie, oben rec
 title: die These des Slides, ein Verb, höchstens 15 Wörter.
 subtitle: trägt ein Argument, nicht die Wiederholung des Titels.
 takeaway: nur bei Varianten, die es zeichnen (K, L, S, T). Sonst die Pointe ins sichtbare Feld.
-footer_left: unten links. Immer „ROOTS Consultants“ oder die belegte Artikelquelle. NIE den Zielkunden. Die Domain rechts ist fest.
+footer_left: unten links. ${privat ? `${absender ? `Immer „${absender}“` : "Immer"} oder die belegte Artikelquelle` : "Immer „ROOTS Consultants“ oder die belegte Artikelquelle"}. NIE den Zielkunden. Die Domain rechts ist fest.
 image_hint: das Bildmotiv in Worten, nur bei C, D und J.
 slot_a bis slot_center: nur bei Infografiken, die diese Slots zeichnen.
 post_text: der Begleittext des Beitrags, höchstens 1300 Zeichen, erste Zeile ist der Aufhänger, letzter Absatz der Handlungsaufruf. Absätze bleiben Absätze. Keine Ziffer und kein Zahlwort, die nicht im Artikel stehen.${carousel ? `
@@ -1877,6 +1954,14 @@ function normalizeLinkedin(
   return {
     theme: answers.theme,
     post_text: postText,
+    // Die Vorlage haengt am Asset, nicht am einzelnen Slide. Der Browser liest
+    // sie beim Zeichnen und beim spaeteren Oeffnen des Entwurfs.
+    chrome: {
+      footer_left: answers.design_footer_left,
+      domain: answers.design_domain,
+      logo: answers.design_logo,
+      custom: answers.profile === "private",
+    },
     slides: applyLinkedinChrome(kept, context, answers),
   };
 }

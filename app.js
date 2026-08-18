@@ -3,10 +3,10 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260818-1420";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260818-1620";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260818-1420";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260818-1620";
 
 let sb = null;
 let sources = [];
@@ -309,6 +309,10 @@ function cacheEls() {
   els.btnSettingsClose = document.getElementById("btn-settings-close");
   els.settingsNav = document.getElementById("settings-nav");
   els.apifyPanel = document.getElementById("settings-panel-apify");
+  els.designList = document.getElementById("design-template-list");
+  els.designStatus = document.getElementById("design-template-status");
+  els.btnDesignSave = document.getElementById("btn-design-save");
+  els.btnDesignAdd = document.getElementById("btn-design-add");
   els.toneInput = document.getElementById("tone-of-voice-input");
   els.toneStatus = document.getElementById("tone-of-voice-status");
   els.btnToneSave = document.getElementById("btn-tone-save");
@@ -1998,6 +2002,91 @@ async function saveToneOfVoice() {
   }
 }
 
+// Design-Vorlagen des Privatprofils. Gleiches Muster wie der Tonfall: eine
+// persoenliche Einstellung, in einem Zug geladen und in einem Zug gespeichert.
+let designTemplates = [];
+let designLoaded = false;
+
+const DESIGN_LOGO_LIMIT = 48_000;
+
+function designRowHtml(entry, index) {
+  const logo = String(entry.logo || "");
+  return `<div class="design-row" data-design-row="${index}">
+    <div class="design-row-head">
+      <input class="modern-input" data-design-field="name" data-design-index="${index}" maxlength="40" placeholder="Name der Vorlage" value="${escapeHtml(entry.name || "")}">
+      <label class="design-row-drop"><input type="radio" name="design-theme-${index}" data-design-field="theme" data-design-index="${index}" value="light"${entry.theme === "dark" ? "" : " checked"}> Hell</label>
+      <label class="design-row-drop"><input type="radio" name="design-theme-${index}" data-design-field="theme" data-design-index="${index}" value="dark"${entry.theme === "dark" ? " checked" : ""}> Dunkel</label>
+      <button type="button" class="design-row-del" data-design-remove="${index}" aria-label="Vorlage entfernen"><i class="fa-solid fa-trash"></i></button>
+    </div>
+    <div>
+      <label class="modern-label" for="design-footer-${index}">Fußzeile links</label>
+      <input class="modern-input" id="design-footer-${index}" data-design-field="footer_left" data-design-index="${index}" maxlength="80" placeholder="z. B. Ihr Name" value="${escapeHtml(entry.footer_left || "")}">
+    </div>
+    <div>
+      <label class="modern-label" for="design-domain-${index}">Zeile rechts</label>
+      <input class="modern-input" id="design-domain-${index}" data-design-field="domain" data-design-index="${index}" maxlength="60" placeholder="z. B. linkedin.com/in/name" value="${escapeHtml(entry.domain || "")}">
+    </div>
+    <div class="design-logo">
+      ${logo ? `<img src="${escapeHtml(logo)}" alt="">` : "<span>Kein Zeichen</span>"}
+      <input type="file" accept="image/png,image/svg+xml,image/webp,image/jpeg" data-design-logo="${index}">
+      ${logo ? `<button type="button" class="design-row-del" data-design-logo-clear="${index}"><i class="fa-solid fa-xmark"></i></button>` : ""}
+    </div>
+  </div>`;
+}
+
+function renderDesignTemplates() {
+  if (!els.designList) return;
+  els.designList.innerHTML = designTemplates.length
+    ? designTemplates.map(designRowHtml).join("")
+    : `<p class="design-empty">Noch keine Vorlage angelegt.</p>`;
+}
+
+async function loadDesignTemplates(force = false) {
+  if (!els.designList || (designLoaded && !force)) return;
+  try {
+    const { design_templates: liste } = await callApi("get_asset_design_templates");
+    designTemplates = Array.isArray(liste) ? liste : [];
+    designLoaded = true;
+    if (els.designStatus) els.designStatus.textContent = "";
+    renderDesignTemplates();
+  } catch (error) {
+    if (els.designStatus) els.designStatus.textContent = error.message || "Konnte nicht geladen werden";
+  }
+}
+
+async function saveDesignTemplates() {
+  try {
+    els.btnDesignSave.disabled = true;
+    const { design_templates: liste } = await callApi("save_asset_design_templates", { design_templates: designTemplates });
+    designTemplates = Array.isArray(liste) ? liste : [];
+    renderDesignTemplates();
+    toast("Design-Vorlagen gespeichert");
+  } catch (error) {
+    toast(error.message, "err");
+  } finally {
+    els.btnDesignSave.disabled = false;
+  }
+}
+
+function addDesignTemplate() {
+  if (designTemplates.length >= 12) {
+    toast("Mehr als zwölf Vorlagen sind nicht vorgesehen", "err");
+    return;
+  }
+  const nummer = designTemplates.length + 1;
+  designTemplates.push({
+    // Die Kennung bleibt stabil, auch wenn der Name spaeter wechselt: erzeugte
+    // Assets zeigen sonst auf eine Vorlage, die es nicht mehr gibt.
+    id: `vorlage-${nummer}-${Math.random().toString(36).slice(2, 8)}`,
+    name: nummer === 1 ? "Standard" : `Persönlich ${nummer - 1}`,
+    theme: "light",
+    footer_left: "",
+    domain: "",
+    logo: "",
+  });
+  renderDesignTemplates();
+}
+
 function enhanceHeaderSelects() {
   // Only native selects can expose options/selectedOptions. The company filter
   // is an independent button and used to share this styling class, which made
@@ -2687,6 +2776,15 @@ function openSettings() {
   if (sources.length === 0) void loadSources();
   else { populateCategoryFilter(); renderSources(); }
 }
+/** Weg aus dem Asset Studio in ein bestimmtes Einstellungs-Panel. Der
+ *  synthetische Klick auf den Navigationseintrag bleibt die einzige Wahrheit
+ *  fuer Panelwechsel: er setzt aktiv, blendet um und laedt nach. */
+function openSettingsPanel(panel) {
+  closeArticleDetail();
+  openSettings();
+  els.settingsNav.querySelector(`.settings-nav-item[data-panel="${panel}"]`)?.click();
+}
+
 function closeSettings() {
   if (pipelineDrilldownState.stageId && pipelineSettings) {
     collectPipelineDraft();
@@ -3966,6 +4064,7 @@ function bindUi() {
         callApi,
         escapeHtml,
         notify: toast,
+        openSettingsPanel,
         // Das Studio arbeitet im Rahmen des Popups. Der Artikel bleibt darunter
         // stehen, deshalb ist der Weg zurueck ein Schliessen der Ebene und kein
         // Nachladen.
@@ -4024,6 +4123,55 @@ function bindUi() {
 
   els.btnSettings.addEventListener("click", openSettings);
   els.btnToneSave?.addEventListener("click", () => void saveToneOfVoice());
+  els.btnDesignAdd?.addEventListener("click", addDesignTemplate);
+  els.btnDesignSave?.addEventListener("click", () => void saveDesignTemplates());
+  els.designList?.addEventListener("input", (event) => {
+    const feld = event.target.closest("[data-design-field]");
+    if (!feld) return;
+    const eintrag = designTemplates[Number(feld.dataset.designIndex)];
+    if (!eintrag) return;
+    if (feld.type === "radio" && !feld.checked) return;
+    eintrag[feld.dataset.designField] = feld.value;
+  });
+  els.designList?.addEventListener("change", (event) => {
+    const feld = event.target.closest("[data-design-field]");
+    if (feld && feld.type === "radio" && feld.checked) {
+      const eintrag = designTemplates[Number(feld.dataset.designIndex)];
+      if (eintrag) eintrag.theme = feld.value;
+      return;
+    }
+    const datei = event.target.closest("[data-design-logo]");
+    if (!datei || !datei.files?.[0]) return;
+    const eintrag = designTemplates[Number(datei.dataset.designLogo)];
+    if (!eintrag) return;
+    const leser = new FileReader();
+    leser.onload = () => {
+      const wert = String(leser.result || "");
+      // Ein Foto als Logo blaeht jede Zeile auf und wird serverseitig ohnehin
+      // verworfen. Die Grenze steht deshalb schon hier.
+      if (wert.length > DESIGN_LOGO_LIMIT) {
+        toast("Das Zeichen ist zu groß. Bitte unter 48 KB, am besten SVG oder PNG.", "err");
+        return;
+      }
+      eintrag.logo = wert;
+      renderDesignTemplates();
+    };
+    leser.readAsDataURL(datei.files[0]);
+  });
+  els.designList?.addEventListener("click", (event) => {
+    const weg = event.target.closest("[data-design-remove]");
+    if (weg) {
+      designTemplates.splice(Number(weg.dataset.designRemove), 1);
+      renderDesignTemplates();
+      return;
+    }
+    const logoWeg = event.target.closest("[data-design-logo-clear]");
+    if (logoWeg) {
+      const eintrag = designTemplates[Number(logoWeg.dataset.designLogoClear)];
+      if (eintrag) eintrag.logo = "";
+      renderDesignTemplates();
+    }
+  });
   els.btnSettingsClose.addEventListener("click", closeSettings);
   els.settingsModal.addEventListener("click", (e) => {
     if (e.target === els.settingsModal) closeSettings();
@@ -4048,7 +4196,7 @@ function bindUi() {
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
       document.getElementById(`settings-panel-${panel}`)?.classList.add("show");
       // Der Tonfall haengt nicht an der Pipeline-Konfiguration.
-      if (panel !== "apify" && panel !== "tone") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
+      if (panel !== "apify" && panel !== "tone" && panel !== "design") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
       if (panel === "simple-pipeline") {
         void loadPipelineSettings()
           .then(() => renderSimpleSettings())
@@ -4056,6 +4204,7 @@ function bindUi() {
       }
       if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
       if (panel === "tone") void loadToneOfVoice();
+      if (panel === "design") void loadDesignTemplates();
     });
   });
 

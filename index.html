@@ -1789,6 +1789,16 @@
   }
   .close-fs-btn:hover { background: var(--surface); color: var(--ink); }
 
+  .design-editor { display: flex; flex-direction: column; gap: 1rem; max-width: 760px; }
+  .design-row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .design-row .modern-input { margin-bottom: 0; }
+  .design-row-head { grid-column: 1 / -1; display: flex; align-items: center; gap: .75rem; }
+  .design-row-head .modern-input { flex: 1; }
+  .design-row-drop { display: inline-flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--muted); }
+  .design-row-del { border: 0; background: none; color: var(--danger); cursor: pointer; font-size: .95rem; padding: 4px; }
+  .design-logo { grid-column: 1 / -1; display: flex; align-items: center; gap: .75rem; font-size: .8rem; color: var(--muted); }
+  .design-logo img { height: 28px; width: auto; }
+  .design-empty { font-size: .85rem; color: var(--muted); }
   .tone-editor { display: flex; flex-direction: column; gap: .75rem; max-width: 720px; }
   .tone-editor textarea { resize: vertical; min-height: 220px; line-height: 1.5; margin-bottom: 0; }
   .tone-editor-bar { display: flex; align-items: center; gap: 1rem; }
@@ -2270,6 +2280,9 @@
         <div class="settings-nav-item" data-panel="tone">
           <i class="fa-solid fa-feather"></i> Tone of Voice
         </div>
+        <div class="settings-nav-item" data-panel="design">
+          <i class="fa-solid fa-swatchbook"></i> Design-Vorlagen
+        </div>
         <div class="settings-nav-item" data-panel="diagnostics" data-settings-mode="advanced">
           <i class="fa-solid fa-file-code"></i> Systemdiagnose
         </div>
@@ -2368,6 +2381,20 @@
           </div>
         </div>
 
+        <div class="settings-panel pipeline-panel" id="settings-panel-design">
+          <div class="pipeline-scroll">
+            <div class="pipeline-section-head"><span>Nur für Ihr Konto</span><h3>Design-Vorlagen</h3><p>Gilt für LinkedIn-Assets, die Sie unter „Privatprofil“ erzeugen. ROOTS-Assets nutzen weiterhin die beiden festen ROOTS-Vorlagen.</p></div>
+            <div class="design-editor">
+              <div id="design-template-list"></div>
+              <button type="button" class="btn-secondary" id="btn-design-add"><i class="fa-solid fa-plus"></i> Vorlage hinzufügen</button>
+              <div class="tone-editor-bar">
+                <span id="design-template-status"></span>
+                <button type="button" class="btn-primary" id="btn-design-save"><i class="fa-regular fa-floppy-disk"></i> Speichern</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-panel pipeline-panel" id="settings-panel-diagnostics">
           <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Nur zur Nachvollziehbarkeit</span><h3>Systemdiagnose</h3><p>Read-only-Ansicht der Modelle, Prompt-Policy, technischen Schwellenwerte und aktiven Code-Guardrails.</p></div><div id="diagnostics-content"></div></div>
         </div>
@@ -2448,7 +2475,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260818-1420';
+  import { initApp } from './app.js?v=20260818-1620';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

@@ -136,6 +136,14 @@ def mit_feld(html, muster, feldname):
         raise SystemExit("Muster nicht gefunden fuer %s" % feldname)
     return neu
 
+def domain_zu_platzhalter(html):
+    """Die Domain gehoert der Vorlage, nicht dem Markup.
+
+    ROOTS-Assets tragen roots-consultants.com, ein Privatprofil traegt seinen
+    eigenen Eintrag oder gar keinen. Deshalb steht hier ein Platzhalter.
+    """
+    return html.replace("roots-consultants.com", "{{domain}}")
+
 def bilder_zu_slots(html):
     """Logo bleibt Logo, Fotos werden Bildplaetze."""
     html = re.sub(r'(<img class="logo[^"]*"[^>]*src=")data:image/[^"]*(")', r"\1{{logo}}\2", html)
@@ -265,6 +273,7 @@ for key, name in FILES.items():
         css = layout_css(html)
     b = body_of(html)
     b = bilder_zu_slots(b)
+    b = domain_zu_platzhalter(b)
     b = kicker_und_fuss(b)
     b = msg_band(b)
     b = regeln(key, b)
@@ -277,6 +286,7 @@ for key, (ordner, name, label) in LAYOUTS.items():
     html = read(name, ordner)
     b = body_of(html)
     b = bilder_zu_slots(b)
+    b = domain_zu_platzhalter(b)
     b = kicker_und_fuss(b)
     b = msg_band(b)
     for muster, feld_name in [(r'<div class="ttl[^"]*"[^>]*>(.*?)</div>', "title"),

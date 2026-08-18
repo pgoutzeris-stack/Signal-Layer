@@ -6,6 +6,8 @@
 /* ─────────────────────────  Konstanten und Vorgaben  ───────────────────────── */
 
 const LOGO_PATH = "assets/roots-logo.png";
+/** Ein Pixel ohne Farbe. Haelt den Platz des Logos, zeigt aber nichts. */
+const LEER_BILD = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 const SAVE_LIMIT = 900000;
 // Platzhalter-Geometrie des Executive Memo. Uploads werden auf dieses
 // Seitenverhältnis gezwungen, bevor sie in den Slot kommen.
@@ -75,12 +77,35 @@ const LOOK = {
 };
 const MIT_BILD = new Set(["C", "D", "J"]);
 
+/** Sonderschluessel fuer die Abschlusskarte hinter der letzten Frage. */
+const ENDE = "__ende";
+
+/** Die beiden ROOTS-Vorlagen sind fest: Logo, Fusszeile und Domain gehoeren der
+ *  Marke und werden nicht je Nutzer eingestellt. */
+const ROOTS_DESIGNS = [
+  { id: "roots-hell", name: "ROOTS Hell", theme: "hell", footer: "ROOTS Consultants", domain: "roots-consultants.com", logo: "" },
+  { id: "roots-dunkel", name: "ROOTS Dunkel", theme: "dunkel", footer: "ROOTS Consultants", domain: "roots-consultants.com", logo: "" },
+];
+
+/** Ohne eigene Vorlage bleibt genau eine neutrale uebrig. Sie traegt kein
+ *  ROOTS-Zeichen und keine ROOTS-Domain. */
+const STANDARD_DESIGN = {
+  id: "standard", name: "Standard", theme: "hell", footer: "", domain: "", logo: "",
+};
+
 /** Gleiche Aussage wie serverseitig, damit der teure Aufruf gar nicht startet. */
 const TONE_FEHLT = "Für „KI + Tone of Voice“ ist noch kein Tonfall hinterlegt. Bitte in den Einstellungen unter Tone of Voice konfigurieren.";
+const DESIGN_FEHLT = "Für das Privatprofil ist noch keine Design-Vorlage hinterlegt.";
 
 const FORM_LINKEDIN = [
+  {
+    key: "profile", label: "Für wen",
+    options: [["roots", "ROOTS"], ["private", "Privatprofil"]],
+  },
+  // Die Auswahl haengt am Profil: ROOTS hat zwei feste Vorlagen, privat die in
+  // den Einstellungen hinterlegten. Traegt zugleich hell/dunkel.
+  { key: "design", label: "Design", art: "design", options: [["roots-hell", "ROOTS Hell"]] },
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
-  { key: "look", label: "Anmutung", options: [["hell", "Hell"], ["dunkel", "Dunkel"]] },
   // Einzelbild: genau ein Layout. Carousel: entweder das Modell mischt die
   // Slide-Arten, oder der Nutzer waehlt sie selbst.
   {
@@ -570,6 +595,66 @@ const CHROME_CSS = `
   background:var(--bg,#fff); font-size:13px; cursor:pointer; user-select:none;
 }
 #as-overlay .as-opt input{position:absolute; opacity:0; pointer-events:none;}
+
+/* ── Schrittweiser Fragebogen ─────────────────────────────────────────────
+   Eine Frage offen, die beantworteten darueber als Zeile. Der Fortschritt
+   steht oben, damit die Laenge des Wegs sichtbar bleibt. */
+#as-overlay .as-progress{display:flex; flex-direction:column; gap:6px; padding-bottom:14px;}
+#as-overlay .as-progress-bar{height:4px; border-radius:999px; background:var(--line,#e2e8f0); overflow:hidden;}
+#as-overlay .as-progress-bar span{display:block; height:100%; border-radius:999px; background:var(--brand,#206efb);
+  transition:width .28s cubic-bezier(.22,1,.36,1);}
+#as-overlay .as-progress-text{font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--muted,#475569);}
+
+#as-overlay .as-step{display:block; width:100%; text-align:left; border:1px solid var(--line,#e2e8f0);
+  border-radius:14px; background:var(--bg,#fff); margin-bottom:10px;}
+#as-overlay .as-step--done{display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer;
+  font:inherit; color:var(--muted,#475569);}
+#as-overlay .as-step--done:hover{border-color:var(--brand,#206efb); color:var(--ink,#0f172a);}
+#as-overlay .as-step--done .as-step-label{font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;}
+#as-overlay .as-step--done .as-step-wert{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:13px; font-weight:600; color:var(--ink,#0f172a);}
+#as-overlay .as-step--done .as-step-stift{font-size:11px; opacity:.5;}
+#as-overlay .as-step-nr{display:grid; place-items:center; flex:0 0 auto; width:22px; height:22px; border-radius:999px;
+  background:var(--brand-light,#eff6ff); color:var(--brand,#206efb); font-size:11px; font-weight:700;}
+#as-overlay .as-step--done .as-step-nr{background:var(--brand,#206efb); color:#fff;}
+#as-overlay .as-step--open{padding:16px; box-shadow:0 8px 26px rgba(15,23,42,.07); border-color:#cfe0fd;
+  animation:as-step-in .22s cubic-bezier(.22,1,.36,1);}
+#as-overlay .as-step-kopf{display:flex; align-items:center; gap:10px; margin-bottom:12px;}
+#as-overlay .as-step-kopf label{font-size:15px; font-weight:700; color:var(--ink,#0f172a);}
+#as-overlay .as-step-fuss{display:flex; align-items:center; gap:8px; margin-top:14px;}
+#as-overlay .as-step-zurueck{margin-right:auto;}
+@keyframes as-step-in{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+
+/* Vorlagen als Kacheln: der Grundton ist die Aussage, deshalb wird er gezeigt
+   und nicht beschrieben. */
+#as-overlay .as-designs{display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px;}
+#as-overlay .as-design{display:flex; flex-direction:column; gap:8px; padding:10px; border:1px solid var(--line,#e2e8f0);
+  border-radius:12px; background:var(--bg,#fff); cursor:pointer; font:inherit; text-align:left;}
+#as-overlay .as-design:hover{border-color:var(--brand,#206efb);}
+#as-overlay .as-design.is-active{border-color:var(--brand,#206efb); box-shadow:0 0 0 2px rgba(32,110,251,.16);}
+#as-overlay .as-design-probe{display:flex; flex-direction:column; justify-content:flex-end; gap:5px; height:64px;
+  padding:10px; border-radius:8px; background:#fff; border:1px solid var(--line,#e2e8f0);}
+#as-overlay .as-design-probe[data-theme="dunkel"]{background:#0b1f45; border-color:#0b1f45;}
+#as-overlay .as-design-bar{display:block; width:26px; height:4px; border-radius:999px; background:var(--brand,#206efb);}
+#as-overlay .as-design-zeile{display:block; height:6px; border-radius:3px; background:rgba(15,23,42,.16);}
+#as-overlay .as-design-zeile--kurz{width:60%;}
+#as-overlay .as-design-probe[data-theme="dunkel"] .as-design-zeile{background:rgba(255,255,255,.32);}
+#as-overlay .as-design-name{font-size:12px; font-weight:700; color:var(--ink,#0f172a);}
+#as-overlay .as-linkbtn{align-self:flex-start; margin-top:10px; display:inline-flex; align-items:center; gap:6px;
+  padding:0; border:0; background:none; color:var(--brand,#206efb); font:inherit; font-size:12px; font-weight:700;
+  cursor:pointer;}
+#as-overlay .as-linkbtn:hover{text-decoration:underline;}
+
+/* Fehlt eine Voraussetzung, zeigt der Kasten den Weg dorthin statt nur den
+   Mangel zu melden. */
+#as-overlay .as-notice{display:flex; align-items:center; gap:12px; margin-top:10px; padding:12px 14px;
+  border:1px solid #cfe0fd; border-left:3px solid var(--brand,#206efb); border-radius:12px;
+  background:var(--brand-light,#eff6ff);}
+#as-overlay .as-notice-icon{display:grid; place-items:center; flex:0 0 auto; width:30px; height:30px;
+  border-radius:999px; background:#fff; color:var(--brand,#206efb);}
+#as-overlay .as-notice-text{flex:1; min-width:0;}
+#as-overlay .as-notice-text b{display:block; font-size:13px; color:var(--ink,#0f172a);}
 /* Fragebogen links, Vorschau rechts. Bei schmalem Popup untereinander. */
 #as-overlay .as-split2{display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:20px; align-items:stretch; flex:1; min-height:0; width:100%; height:auto;}
 #as-overlay .as-split2-form{overflow-y:auto; max-height:100%; padding-right:10px; scrollbar-width:thin;}
@@ -769,6 +854,8 @@ const CHROME_CSS = `
 @media (prefers-reduced-motion: reduce){
   #as-overlay .as-load-icon, #as-overlay .as-load-bar-fill, #as-overlay .as-load-bar::after{animation:none; opacity:1;}
   #as-overlay .as-load-bar-fill{background:#206efb;}
+  #as-overlay .as-step--open{animation:none;}
+  #as-overlay .as-progress-bar span{transition:none;}
 }
 
 #as-overlay .as-loader{display:flex; align-items:center; justify-content:center; min-height:280px;}
@@ -1083,7 +1170,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-1420";
+import { ASSET_TEMPLATE_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260818-1620";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1097,7 +1184,7 @@ export function closeAssetStudio() {
   if (openInstance) openInstance.close();
 }
 
-export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify } = {}) {
+export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel } = {}) {
   // Zwei Studios gleichzeitig würden sich Tastatur und Auswahl streitig machen.
   // Eine Instanz, deren Overlay nicht mehr im Dokument haengt, ist aber keine
   // Instanz mehr: sie entsteht, wenn das Popup unter dem Studio geschlossen
@@ -1131,6 +1218,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     postText: "",
     toneOfVoice: "",
     toneGeladen: false,
+    designs: [],
+    designsGeladen: false,
+    // Fusszeile, Domain und Logo der gewaehlten Vorlage. Was hier steht, steht
+    // auch auf der Kachel.
+    chrome: { footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "", custom: false },
+    // Der Fragebogen zeigt eine Frage offen, die beantworteten darueber als
+    // Zeile. formSeen merkt sich die weiteste Stelle, damit der Sprung zurueck
+    // den Abschluss nicht wieder verriegelt.
+    stepKey: "",
+    stepSeen: [],
+    formErrorKey: "",
     pendingImage: null,
     formImages: {},
     cancelRequested: false,
@@ -1224,6 +1322,43 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   if (!inHost) document.body.style.overflow = "hidden";
 
   /* ── Zustand aus dem Fragebogen ── */
+
+  /** Alle Vorlagen, die zum gewaehlten Profil gehoeren. */
+  function designListe(answers = state.answers) {
+    if (answers.profile === "private") {
+      return state.designs.length ? state.designs : [STANDARD_DESIGN];
+    }
+    return ROOTS_DESIGNS;
+  }
+
+  function aktivesDesign(answers = state.answers) {
+    const liste = designListe(answers);
+    return liste.find((d) => d.id === answers.design) || liste[0];
+  }
+
+  /** Die Vorlage traegt hell/dunkel. Die Layoutliste und der Prompt lesen
+   *  weiterhin look, deshalb wird es hier nachgezogen. */
+  function synchronisiereDesign() {
+    const liste = designListe();
+    if (!liste.some((d) => d.id === state.answers.design)) {
+      state.answers.design = liste[0].id;
+    }
+    const design = aktivesDesign();
+    state.answers.look = design.theme === "dunkel" ? "dunkel" : "hell";
+    // Der Server liest theme, nicht look. Ohne diese Zeile blieb jede Wahl
+    // "dunkel" im Browser stehen und der Prompt sprach weiter von hell.
+    state.answers.theme = state.answers.look === "dunkel" ? "dark" : "light";
+    state.chrome = {
+      footer_left: design.footer || "",
+      domain: design.domain || "",
+      logo: design.logo || "",
+      custom: state.answers.profile === "private",
+    };
+    const passt = layoutOptionen().some(([key]) => key === state.answers.variant);
+    if (!passt) state.answers.variant = "auto";
+    const arten = gewaehlteArten().filter((key) => LOOK[key] === state.answers.look);
+    state.answers.slide_pick = arten.join(",");
+  }
 
   function defaultAnswers(list) {
     const out = {};
@@ -1724,7 +1859,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       myth: "Die verbreitete Behauptung.",
       fact: "Der Befund, der ihr widerspricht.",
       takeaway: "**Folge:** Struktur ist Standard, entscheidend ist die Handschrift.",
-      footer_left: "ROOTS Consultants",
+      footer_left: state.chrome.footer_left || "ROOTS Consultants",
       // Nur dieses Layout lebt von der Streichung, deshalb traegt sein
       // Beispieltext die Markierung.
       ...(variant === "K" ? { title: "Nicht mehr ~~Tools~~, sondern mehr Handschrift" } : {}),
@@ -1947,6 +2082,32 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (state.step === "form") zeichneForm();
   }
 
+  /** Design-Vorlagen des Nutzers. Nur fuer das Privatprofil relevant. */
+  async function ladeDesignVorlagen() {
+    if (isMemo) return;
+    try {
+      const res = await api("get_asset_design_templates", {});
+      const liste = Array.isArray(res?.design_templates) ? res.design_templates : [];
+      // Der Server spricht light/dark und footer_left, der Fragebogen hell/dunkel
+      // und footer. Ohne diese Uebersetzung stand eine dunkle Vorlage hell da
+      // und die Layoutliste zeigte die falschen Kacheln.
+      state.designs = liste
+        .filter((eintrag) => eintrag && eintrag.id && eintrag.name)
+        .map((eintrag) => ({
+          id: String(eintrag.id),
+          name: String(eintrag.name),
+          theme: eintrag.theme === "dark" ? "dunkel" : "hell",
+          footer: String(eintrag.footer_left || ""),
+          domain: String(eintrag.domain || ""),
+          logo: String(eintrag.logo || ""),
+        }));
+    } catch (_err) {
+      state.designs = [];
+    }
+    state.designsGeladen = true;
+    if (state.step === "form") zeichneForm();
+  }
+
   async function ladeDrafts() {
     if (!articleId) return;
     try {
@@ -2008,6 +2169,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     a.cta = src.cta ? "custom" : "auto";
     a.cta_text = src.cta || "";
     a.memo_track = src.memo_track === "cmo100" ? "cmo100" : "theme";
+    a.sources = src.sources ? "custom" : "auto";
+    a.sources_text = src.sources || "";
+    a.caption = src.caption_mode === "custom" ? "custom" : src.caption_mode === "ai_tone" ? "ai_tone" : "ai";
+    a.caption_text = src.caption || "";
+    a.profile = src.profile === "private" ? "private" : "roots";
+    a.design = src.design || (src.theme === "dark" ? "roots-dunkel" : "roots-hell");
     if (src.asset_type) a.asset_type = src.asset_type;
     if (src.variant) a.variant = src.variant;
     if (src.theme === "dark") a.look = "dunkel";
@@ -2076,47 +2243,239 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
   }
 
+  /** Sichtbare Fragen in ihrer Reihenfolge. Bedingte Fragen fallen raus, sobald
+   *  ihre Bedingung nicht mehr gilt. */
+  function aktiveFragen() {
+    return questions.filter((q) => !q.when || q.when(state.answers));
+  }
+
+  /** Position im Fragebogen. Immer ueber den Schluessel, nie ueber einen Index:
+   *  bedingte Fragen aendern die Laenge der Liste mitten im Ausfuellen. */
+  function schrittIndex(fragen = aktiveFragen()) {
+    if (state.stepKey === ENDE) return fragen.length;
+    const i = fragen.findIndex((q) => q.key === state.stepKey);
+    return i >= 0 ? i : 0;
+  }
+
+  function setzeSchritt(key) {
+    state.stepKey = key;
+    if (key && key !== ENDE && !state.stepSeen.includes(key)) state.stepSeen.push(key);
+  }
+
+  /** Der Schluessel der Frage nach der aktuellen, oder das Ende. */
+  function naechsterSchritt() {
+    const fragen = aktiveFragen();
+    const i = schrittIndex(fragen);
+    return fragen[i + 1]?.key || ENDE;
+  }
+
+  function vorherigerSchritt() {
+    const fragen = aktiveFragen();
+    const i = schrittIndex(fragen);
+    return fragen[Math.max(0, i - 1)]?.key || fragen[0]?.key || "";
+  }
+
+  /** Fertig heisst: der Fragebogen ist durchlaufen und jede Frage traegt eine
+   *  Antwort. Solange noch eine Karte offen steht, ist er es nicht. */
+  function fragebogenFertig() {
+    return state.stepKey === ENDE && aktiveFragen().every(frageErledigt);
+  }
+
+  /** Was in der zusammengeklappten Zeile als Antwort steht. */
+  function antwortLabel(q) {
+    if (q.art === "multi") {
+      const gewaehlt = gewaehlteArten();
+      return gewaehlt.length ? gewaehlt.join(" · ") : "noch nichts gewählt";
+    }
+    if (q.art === "design") return aktivesDesign().name;
+    if (q.art === "dropdown") {
+      const treffer = layoutOptionen().find(([key]) => key === state.answers[q.key]);
+      return treffer ? treffer[1] : "Modell wählt";
+    }
+    const wert = state.answers[q.key];
+    const treffer = (q.options || []).find(([key]) => key === wert);
+    const label = treffer ? treffer[1] : String(wert || "");
+    if (q.free && wert === q.free.on) {
+      const text = String(state.answers[q.free.key] || "").trim();
+      if (text) return text.length > 60 ? `${text.slice(0, 60)}…` : text;
+    }
+    return label;
+  }
+
+  /** Eine Frage gilt als erledigt, sobald sie eine belastbare Antwort traegt. */
+  function frageErledigt(q) {
+    if (q.art === "multi") return gewaehlteArten().length > 0;
+    if (q.free && state.answers[q.key] === q.free.on) {
+      return Boolean(String(state.answers[q.free.key] || "").trim());
+    }
+    if (q.key === "benchmarks" && state.answers.benchmarks === "custom") {
+      return !eigeneBenchmarksPruefen();
+    }
+    return Boolean(state.answers[q.key]);
+  }
+
+  /** Weiterspringen ohne Klick nur dort, wo die Wahl die Frage abschliesst:
+   *  reine Auswahl ohne Freitext und ohne Mehrfachauswahl. */
+  function springtWeiter(q) {
+    if (!q || q.art === "multi") return false;
+    if (q.free && state.answers[q.key] === q.free.on) return false;
+    if (q.key === "benchmarks" && state.answers.benchmarks === "custom") return false;
+    if (q.key === "images" && state.answers.images === "upload") return false;
+    // Fehlt der Tonfall, bleibt die Frage offen: der Hinweis mit dem Weg in die
+    // Einstellungen darf nicht unter einer zugeklappten Zeile verschwinden.
+    if (q.key === "caption" && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice) return false;
+    // Dasselbe fuer ein Privatprofil ohne Vorlage.
+    if (q.key === "profile" && state.answers.profile === "private" && state.designsGeladen && !state.designs.length) return false;
+    return true;
+  }
+
+  /** Die Vorlagen als Karten: Grundton und Akzent sind sofort zu sehen. */
+  function designHtml(q) {
+    const liste = designListe();
+    const aktiv = aktivesDesign().id;
+    const karten = liste.map((design) => `
+      <button type="button" class="as-design${design.id === aktiv ? " is-active" : ""}" data-act="pick-design" data-value="${attr(design.id)}" aria-pressed="${design.id === aktiv ? "true" : "false"}">
+        <span class="as-design-probe" data-theme="${attr(design.theme)}">
+          <span class="as-design-bar"></span>
+          <span class="as-design-zeile"></span>
+          <span class="as-design-zeile as-design-zeile--kurz"></span>
+        </span>
+        <span class="as-design-name">${esc(design.name)}</span>
+      </button>`).join("");
+    const eigene = state.answers.profile === "private"
+      ? `<button type="button" class="as-linkbtn" data-act="open-designs"><i class="fa-solid fa-sliders"></i>Vorlagen verwalten</button>`
+      : "";
+    return `<div class="as-designs">${karten}</div>${eigene}`;
+  }
+
+  /** Der Kern einer Frage: Optionen, Freitext und Sonderrenderer. */
+  function frageKoerper(q) {
+    if (q.art === "dropdown") return dropdownHtml(q);
+    if (q.art === "multi") return multiHtml(q);
+    if (q.art === "design") return designHtml(q);
+    const opts = q.options.map(([value, label]) => {
+      // Der Look steht am Layout statt in einer eigenen Frage, und die
+      // Infografiken tragen den Hinweis, dass ihre Zahlen zu setzen sind.
+      const hinweis = q.key !== "variant" ? ""
+        : LAYOUT_KEYS.includes(value) ? "Diagramm"
+        : LOOK[value] ? LOOK[value] : "";
+      return `
+      <label class="as-opt">
+        <input type="radio" name="as-${attr(q.key)}" value="${attr(value)}"${state.answers[q.key] === value ? " checked" : ""}>
+        <span>${esc(label)}</span>${hinweis ? `<i class="as-tag">${esc(hinweis)}</i>` : ""}
+      </label>`;
+    }).join("");
+    const free = q.free && state.answers[q.key] === q.free.on
+      ? (Number(q.free.rows) === 1
+        ? `<input class="as-free" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}" value="${esc(state.answers[q.free.key] || "")}">`
+        : `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}">${esc(state.answers[q.free.key] || "")}</textarea>`)
+      : "";
+    const warnung = q.key === "caption" && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice
+      ? noticeHtml("fa-feather", "Tone of Voice ist noch nicht hinterlegt", "open-tone")
+      : q.key === "profile" && state.answers.profile === "private" && state.designsGeladen && !state.designs.length
+        ? noticeHtml("fa-swatchbook", "Für das Privatprofil ist noch keine Design-Vorlage hinterlegt", "open-designs")
+        : "";
+    const benches = q.key === "benchmarks" && state.answers.benchmarks === "custom" ? benchesHtml() : "";
+    const slots = q.key === "images" && state.answers.images === "upload" ? slotsHtml() : "";
+    return `<div class="as-opts">${opts}</div>${warnung}${free}${benches}${slots}`;
+  }
+
+  /** Der Weg in die Einstellungen. Das Studio liegt ueber dem Artikel-Popup,
+   *  deshalb raeumt die App beide Ebenen weg, bevor sie das Panel oeffnet. */
+  function oeffneEinstellungen(panel) {
+    if (typeof openSettingsPanel !== "function") {
+      notify?.("Die Einstellungen sind von hier nicht erreichbar.", "err");
+      return;
+    }
+    close();
+    openSettingsPanel(panel);
+  }
+
+  /** Eine fehlende Voraussetzung ist kein roter Zettel, sondern ein Weg:
+   *  Aussage plus Knopf, der genau dort landet, wo sie hinterlegt wird. */
+  function noticeHtml(icon, text, aktion) {
+    return `<div class="as-notice">
+      <span class="as-notice-icon"><i class="fa-solid ${attr(icon)}"></i></span>
+      <div class="as-notice-text"><b>${esc(text)}</b></div>
+      <button type="button" class="as-btn as-btn--primary" data-act="${attr(aktion)}">
+        <i class="fa-solid fa-arrow-right"></i>Jetzt konfigurieren
+      </button>
+    </div>`;
+  }
+
   function formHtml() {
-    const rows = questions.filter((q) => !q.when || q.when(state.answers)).map((q) => {
-      if (q.art === "dropdown") return dropdownHtml(q);
-      if (q.art === "multi") return multiHtml(q);
-      const opts = q.options.map(([value, label]) => {
-        // Der Look steht am Layout statt in einer eigenen Frage, und die
-        // Infografiken tragen den Hinweis, dass ihre Zahlen zu setzen sind.
-        const hinweis = q.key !== "variant" ? ""
-          : LAYOUT_KEYS.includes(value) ? "Diagramm"
-          : LOOK[value] ? LOOK[value] : "";
-        return `
-        <label class="as-opt">
-          <input type="radio" name="as-${attr(q.key)}" value="${attr(value)}"${state.answers[q.key] === value ? " checked" : ""}>
-          <span>${esc(label)}</span>${hinweis ? `<i class="as-tag">${esc(hinweis)}</i>` : ""}
-        </label>`;
-      }).join("");
-      const free = q.free && state.answers[q.key] === q.free.on
-        ? (Number(q.free.rows) === 1
-          ? `<input class="as-free" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}" value="${esc(state.answers[q.free.key] || "")}">`
-          : `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}">${esc(state.answers[q.free.key] || "")}</textarea>`)
+    const fragen = aktiveFragen();
+    if (!state.stepKey || (state.stepKey !== ENDE && !fragen.some((q) => q.key === state.stepKey))) {
+      setzeSchritt(fragen[0]?.key || ENDE);
+    }
+    const gesamt = fragen.length;
+    const offen = schrittIndex(fragen);
+    const fertig = fragebogenFertig();
+    const karten = fragen.map((q, i) => {
+      if (i > offen) return "";
+      if (i < offen) {
+        return `<button type="button" class="as-step as-step--done" data-act="step-open" data-key="${attr(q.key)}">
+          <span class="as-step-nr"><i class="fa-solid fa-check"></i></span>
+          <span class="as-step-label">${esc(q.label)}</span>
+          <span class="as-step-wert">${esc(antwortLabel(q))}</span>
+          <i class="fa-solid fa-pen as-step-stift"></i>
+        </button>`;
+      }
+      const letzte = i === gesamt - 1;
+      const weiter = frageErledigt(q)
+        ? `<button type="button" class="as-btn as-btn--primary as-step-weiter" data-act="step-next">
+            ${letzte ? '<i class="fa-solid fa-check"></i>Fertig' : '<i class="fa-solid fa-arrow-down"></i>Weiter'}
+          </button>`
+        : "";
+      const zurueck = i > 0
+        ? `<button type="button" class="as-btn as-step-zurueck" data-act="step-back"><i class="fa-solid fa-arrow-up"></i>Zurück</button>`
         : "";
       const hinweis = q.hint ? `<p class="as-hint">${esc(q.hint)}</p>` : "";
-      const benches = q.key === "benchmarks" && state.answers.benchmarks === "custom" ? benchesHtml() : "";
-      const slots = q.key === "images" && state.answers.images === "upload" ? slotsHtml() : "";
-      const warnung = q.key === "caption" && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice
-        ? `<p class="as-form-error">${esc(TONE_FEHLT)}</p>`
+      const fehler = state.formError && state.formErrorKey === q.key
+        ? `<p class="as-form-error">${esc(state.formError)}</p>`
         : "";
-      return `<div class="as-q${q.muted ? " as-q--muted" : ""}"><label>${esc(q.label)}</label>${hinweis}<div class="as-opts">${opts}</div>${warnung}${free}${benches}${slots}</div>`;
+      return `<div class="as-step as-step--open" data-stepcard>
+        <div class="as-step-kopf">
+          <span class="as-step-nr">${i + 1}</span>
+          <label>${esc(q.label)}</label>
+        </div>
+        ${hinweis}
+        ${frageKoerper(q)}
+        ${fehler}
+        <div class="as-step-fuss">${zurueck}${weiter}</div>
+      </div>`;
     }).join("");
+    const abschlussFehler = state.formError && !state.formErrorKey
+      ? `<p class="as-form-error">${esc(state.formError)}</p>`
+      : "";
+    const abschluss = state.stepKey === ENDE
+      ? `<div class="as-step as-step--open as-step--final" data-stepcard>
+          <div class="as-step-kopf"><span class="as-step-nr"><i class="fa-solid fa-flag-checkered"></i></span><label>Bereit</label></div>
+          ${abschlussFehler}
+          <div class="as-step-fuss">
+            <button type="button" class="as-btn as-step-zurueck" data-act="step-back"><i class="fa-solid fa-arrow-up"></i>Zurück</button>
+            <button type="button" class="as-btn as-btn--primary as-step-weiter" data-act="generate"><i class="fa-solid fa-wand-magic-sparkles"></i>Entwurf erzeugen</button>
+          </div>
+        </div>`
+      : "";
     const wip = isMemo && state.answers.memo_track === "cmo100"
       ? `<div class="as-wip"><strong>100 Tage CMO</strong><p>Diese Unterlage ist ein eigener Sonderfall und noch in Ausarbeitung. Sie ist kein Executive Memo. Für diesen Fall bitte das thematische Executive Memo wählen.</p></div>`
       : "";
-    const fehler = state.formError ? `<p class="as-form-error">${esc(state.formError)}</p>` : "";
-    return `<form class="as-form" data-form>${fehler}${rows}${wip}</form>`;
+    const anteil = Math.round((Math.min(offen, gesamt) / Math.max(1, gesamt)) * 100);
+    const kopf = `<div class="as-progress">
+      <div class="as-progress-bar"><span style="width:${fertig ? 100 : anteil}%"></span></div>
+      <span class="as-progress-text">${fertig ? "Alle Fragen beantwortet" : `Frage ${Math.min(offen + 1, gesamt)} von ${gesamt}`}</span>
+    </div>`;
+    return `<form class="as-form" data-form>${kopf}${karten}${abschluss}${wip}</form>`;
   }
 
   /** Formular und Vorschau in einem Zug neu zeichnen. */
   function zeichneForm() {
     readForm();
+    if (!isMemo) synchronisiereDesign();
     const form = shell.querySelector(".as-split2-form");
     if (form) form.innerHTML = state.formTab === "drafts" ? draftsHtml() : formHtml();
+    shell.querySelector("[data-stepcard]")?.scrollIntoView({ block: "nearest" });
     const prev = shell.querySelector("[data-livepreview]");
     if (prev) prev.innerHTML = livePreviewHtml();
     zeichneCaption();
@@ -2167,32 +2526,41 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /* ── Schritt 2: Entwurf erzeugen ── */
 
+  /** Fehler stehen an der Frage, die sie ausgeloest hat, und oeffnen sie. */
+  function formFehler(key, text) {
+    state.formError = text;
+    state.formErrorKey = key;
+    if (key) setzeSchritt(key);
+    zeichneForm();
+  }
+
   async function generate() {
     readForm();
     if (isMemo && state.answers.memo_track === "cmo100") {
-      state.formError = "Das 100-Tage-CMO-Dokument ist noch in Ausarbeitung. Es ist kein Executive Memo. Bitte das thematische Executive Memo wählen.";
-      zeichneForm();
+      formFehler("memo_track", "Das 100-Tage-CMO-Dokument ist noch in Ausarbeitung. Es ist kein Executive Memo. Bitte das thematische Executive Memo wählen.");
       return;
     }
     if (isMemo && state.answers.benchmarks === "custom") {
       const mangel = eigeneBenchmarksPruefen();
       if (mangel) {
-        state.formError = mangel;
-        zeichneForm();
+        formFehler("benchmarks", mangel);
         return;
       }
     }
+    if (!isMemo && state.answers.profile === "private" && state.designsGeladen && !state.designs.length) {
+      formFehler("design", DESIGN_FEHLT);
+      return;
+    }
     if (!isMemo && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice) {
-      state.formError = TONE_FEHLT;
-      zeichneForm();
+      formFehler("caption", TONE_FEHLT);
       return;
     }
     if (!isMemo && state.answers.caption === "custom" && !String(state.answers.caption_text || "").trim()) {
-      state.formError = "Für einen selbst geschriebenen Begleittext fehlt der Text.";
-      zeichneForm();
+      formFehler("caption", "Für einen selbst geschriebenen Begleittext fehlt der Text.");
       return;
     }
     state.formError = "";
+    state.formErrorKey = "";
     state.step = "draft";
     state.busy = true;
     state.error = "";
@@ -2258,6 +2626,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function adoptPayload(raw) {
     const data = raw && typeof raw === "object" ? raw : {};
     state.payload = data;
+    // Der Server hat die Vorlage beim Erzeugen festgeschrieben. Ein spaeter
+    // geoeffneter Entwurf zeigt deshalb dieselbe Fusszeile wie damals.
+    if (data.chrome && typeof data.chrome === "object") {
+      state.chrome = {
+        footer_left: String(data.chrome.footer_left || ""),
+        domain: String(data.chrome.domain || ""),
+        logo: String(data.chrome.logo || ""),
+        custom: Boolean(data.chrome.custom),
+      };
+    }
     state.stage.theme = data.theme === "dark" ? "dark" : (state.answers.theme === "dark" ? "dark" : "light");
     if (isMemo) {
       state.memo = normalizeMemo(data);
@@ -2302,7 +2680,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       myth: String(src.myth || ""),
       fact: String(src.fact || ""),
       takeaway: String(src.takeaway || ""),
-      footerLeft: String(src.footer_left || "ROOTS Consultants"),
+      footerLeft: String(src.footer_left || state.chrome.footer_left || "ROOTS Consultants"),
       imageHint: String(src.image_hint || ""),
       slot_a: String(src.slot_a || ""),
       slot_b: String(src.slot_b || ""),
@@ -2446,7 +2824,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function fillTemplate(html, slide) {
     const werte = {
-      logo: state.logo || LOGO_PATH,
+      // Eigene Vorlagen bringen ihr eigenes Zeichen mit; ohne eines bleibt der
+      // Platz leer statt das ROOTS-Logo unter fremdem Namen zu zeigen.
+      logo: state.chrome.custom ? (state.chrome.logo || LEER_BILD) : (state.logo || LOGO_PATH),
+      domain: state.chrome.domain || "",
       kicker: slide.kicker,
       title: slide.title,
       subtitle: slide.subtitle,
@@ -3674,6 +4055,33 @@ ${stages}${post}
     if (act === "slide-del") { removeSlide(id); return; }
     if (act === "slide-up") { moveSlide(id, -1); return; }
     if (act === "slide-down") { moveSlide(id, 1); return; }
+    if (act === "step-open") {
+      readForm();
+      setzeSchritt(hit.getAttribute("data-key") || "");
+      zeichneForm();
+      return;
+    }
+    if (act === "step-next") {
+      readForm();
+      setzeSchritt(naechsterSchritt());
+      zeichneForm();
+      return;
+    }
+    if (act === "step-back") {
+      readForm();
+      setzeSchritt(vorherigerSchritt());
+      zeichneForm();
+      return;
+    }
+    if (act === "pick-design") {
+      state.answers.design = hit.getAttribute("data-value") || "";
+      synchronisiereDesign();
+      if (state.stepKey === "design") setzeSchritt(naechsterSchritt());
+      zeichneForm();
+      return;
+    }
+    if (act === "open-tone") { oeffneEinstellungen("tone"); return; }
+    if (act === "open-designs") { oeffneEinstellungen("design"); return; }
     if (act === "toggle-layout") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
     if (act === "toggle-arten") { state.multiOffen = !state.multiOffen; zeichneForm(); return; }
     if (act === "prev-back" || act === "prev-fwd") {
@@ -3706,6 +4114,8 @@ ${stages}${post}
     if (act === "pick-layout") {
       state.answers.variant = hit.getAttribute("data-value");
       state.ddOffen = false;
+      // Ein Layout beantwortet die Frage genauso wie eine Auswahl per Klick.
+      if (state.stepKey === "variant") setzeSchritt(naechsterSchritt());
       zeichneForm();
       return;
     }
@@ -3755,6 +4165,16 @@ ${stages}${post}
     // zeichnet die Vorschau neu, damit die Wahl sofort zu sehen ist.
     if (state.step === "form" && event.target.matches('input[type="radio"]')) {
       readForm();
+      const fragen = aktiveFragen();
+      const offen = fragen[schrittIndex(fragen)];
+      // Profilwechsel zieht die Vorlagenliste nach, sonst bliebe ein
+      // ROOTS-Design im Privatprofil stehen.
+      if (event.target.name === "as-profile") synchronisiereDesign();
+      // Eine reine Auswahl beantwortet die Frage. Steht kein Freitext und keine
+      // Mehrfachauswahl aus, ruecken wir von selbst eine Frage weiter.
+      if (offen && event.target.name === `as-${offen.key}` && springtWeiter(offen)) {
+        setzeSchritt(naechsterSchritt());
+      }
       zeichneForm();
     }
   }
@@ -3891,6 +4311,7 @@ ${stages}${post}
   render();
   void ladeDrafts();
   void ladeToneOfVoice();
+  void ladeDesignVorlagen();
   openInstance = { close, lebt: () => overlay.isConnected };
   return openInstance;
 }
