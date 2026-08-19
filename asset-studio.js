@@ -57,10 +57,14 @@ const VARIANTS = [
 // beiden Rollen haben je eine helle und dunkle Vorlage; sie werden in der
 // manuellen Auswahl zwingend an erster beziehungsweise letzter Stelle geführt.
 const CAROUSEL_FRAMES = [
-  ["U1", "Titelfolie"],
-  ["U2", "Titelfolie"],
-  ["U3", "Endfolie mit CTA"],
-  ["U4", "Endfolie mit CTA"],
+  ["U1", "Titelfolie mit Linie"],
+  ["U2", "Titelfolie mit Linie"],
+  ["U5", "Titelfolie zentriert"],
+  ["U6", "Titelfolie zentriert"],
+  ["U3", "Endfolie mit CTA-Pille"],
+  ["U4", "Endfolie mit CTA-Pille"],
+  ["U7", "Endfolie mit CTA-Karte"],
+  ["U8", "Endfolie mit CTA-Karte"],
 ];
 // Infografiken kommen aus denselben gebauten Assets. Sie sind Layouts, keine
 // eigenen Signalarten: das Modell liefert weiter Titel und Einordnung, die
@@ -82,12 +86,16 @@ const VARIANT_KEYS = VARIANTS_ALL.map(([key]) => key);
 // sie faerbt nichts um - Umfaerben hatte weisse Schrift auf Weiss erzeugt.
 const LOOK = {
   U1: "hell", U2: "dunkel", U3: "hell", U4: "dunkel",
+  U5: "hell", U6: "dunkel", U7: "hell", U8: "dunkel",
   A: "dunkel", B: "hell", C: "hell", D: "dunkel", E: "hell", F: "hell",
   G: "hell", H: "dunkel", I: "hell", J: "dunkel", K: "hell", L: "hell", M: "dunkel",
   S1: "hell", S2: "dunkel", S3: "hell", S4: "dunkel",
   T1: "hell", T2: "hell", T3: "hell", T4: "hell", T5: "hell", T6: "hell",
 };
-const SLIDE_ROLE = { U1: "cover", U2: "cover", U3: "end", U4: "end" };
+const SLIDE_ROLE = {
+  U1: "cover", U2: "cover", U5: "cover", U6: "cover",
+  U3: "end", U4: "end", U7: "end", U8: "end",
+};
 const MIT_BILD = new Set(["C", "D", "J"]);
 const CAROUSEL_RECOMMENDED_MIN = 8;
 const CAROUSEL_RECOMMENDED_MAX = 12;
@@ -1294,7 +1302,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-0003";
+import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-0300";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1481,8 +1489,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const passt = layoutOptionen().some(([key]) => key === state.answers.variant);
     if (!passt) state.answers.variant = "auto";
     const rahmen = state.answers.look === "dunkel"
-      ? { U1: "U2", U2: "U2", U3: "U4", U4: "U4" }
-      : { U1: "U1", U2: "U1", U3: "U3", U4: "U3" };
+      ? { U1: "U2", U2: "U2", U3: "U4", U4: "U4", U5: "U6", U6: "U6", U7: "U8", U8: "U8" }
+      : { U1: "U1", U2: "U1", U3: "U3", U4: "U3", U5: "U5", U6: "U5", U7: "U7", U8: "U7" };
     const arten = gewaehlteArten()
       .map((key) => rahmen[key] || key)
       .filter((key) => LOOK[key] === state.answers.look);
@@ -2043,6 +2051,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       U2: { title: "Warum starke Marken weniger Kampagnen brauchen", subtitle: "Vier Entscheidungen für mehr Klarheit, Tempo und Wirkung." },
       U3: { title: "Wo verliert Ihre Marke heute am meisten Wirkung?", subtitle: "Ein kurzer Check zeigt, welcher Hebel zuerst zählt.", takeaway: "Marken-Check starten →" },
       U4: { title: "Wo verliert Ihre Marke heute am meisten Wirkung?", subtitle: "Ein kurzer Check zeigt, welcher Hebel zuerst zählt.", takeaway: "Marken-Check starten →" },
+      U5: { title: "Marken wachsen an Entscheidungen, nicht an Budget", subtitle: "Vier Weichenstellungen, die Wirkung planbar machen." },
+      U6: { title: "Marken wachsen an Entscheidungen, nicht an Budget", subtitle: "Vier Weichenstellungen, die Wirkung planbar machen." },
+      U7: { title: "Welcher Hebel bringt Ihrer Marke zuerst Wirkung?", subtitle: "Wir gehen Positionierung, Kanäle und Auftritt in einer Sitzung durch.", takeaway: "Termin vereinbaren" },
+      U8: { title: "Welcher Hebel bringt Ihrer Marke zuerst Wirkung?", subtitle: "Wir gehen Positionierung, Kanäle und Auftritt in einer Sitzung durch.", takeaway: "Termin vereinbaren" },
       A: { quote: "Eine Marke wird nicht relevant, weil sie lauter spricht – sondern weil sie klarer entscheidet.", attribution: "Leitung Marketing · Beispiel" },
       B: { title: "Klarheit schlägt Kampagnendruck.", subtitle: "Wenn Positionierung und Aktivierung dieselbe Entscheidung tragen, wird Marketing schneller und wiedererkennbarer." },
       C: { title: "Aus Kontakt wird Erinnerung.", subtitle: "Ein starkes Motiv wirkt, wenn es dieselbe Botschaft wie die Marke trägt." },
@@ -2909,6 +2921,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const gewaehlt = state.answers.variant;
       const anzahl = !isMemo && state.answers.asset_type === "carousel" ? carouselRequestedSlides(state.answers) : 1;
       const antworten = { ...state.answers, layout: gewaehlt, slide_count: String(anzahl), slides: anzahl };
+      // Wer erst selbst gewaehlt hat und dann auf "KI soll waehlen" zurueck
+      // geht, hat seine Folge widerrufen. Sie mitzuschicken haette den Server
+      // weiter manuell pruefen lassen — und an der fehlenden Endfolie scheitern.
+      if (isMemo || antworten.asset_type !== "carousel" || antworten.slide_mix !== "custom") {
+        antworten.slide_pick = "";
+        antworten.slide_cover = "";
+        antworten.slide_content = "";
+        antworten.slide_end = "";
+      }
       const res = await api("generate_asset", {
         kind: assetKind,
         article_id: articleId || null,

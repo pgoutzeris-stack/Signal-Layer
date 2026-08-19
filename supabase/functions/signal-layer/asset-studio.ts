@@ -18,7 +18,7 @@ export function isAssetKind(value: unknown): value is AssetKind {
 }
 
 /** Buchstaben-Vorlagen der ROOTS-Buehne. */
-export const ASSET_VARIANTS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "U1", "U2", "U3", "U4"] as const;
+export const ASSET_VARIANTS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8"] as const;
 export type AssetVariant = typeof ASSET_VARIANTS[number];
 
 /** Infografiken: Zeichnung fest, Texte vom Modell. */
@@ -33,14 +33,16 @@ export const ASSET_NUMBER_VARIANTS = ["E", "H", "L"] as const;
 
 export const ASSET_SLIDE_THEMES: Record<AssetSlideKey, "light" | "dark"> = {
   U1: "light", U2: "dark", U3: "light", U4: "dark",
+  U5: "light", U6: "dark", U7: "light", U8: "dark",
   A: "dark", B: "light", C: "light", D: "dark", E: "light", F: "light",
   G: "light", H: "dark", I: "light", J: "dark", K: "light", L: "light", M: "dark",
   S1: "light", S2: "dark", S3: "light", S4: "dark",
   T1: "light", T2: "light", T3: "light", T4: "light", T5: "light", T6: "light",
 };
 
-const ASSET_SLIDE_ROLES: Partial<Record<AssetSlideKey, "cover" | "end">> = {
+export const ASSET_SLIDE_ROLES: Partial<Record<AssetSlideKey, "cover" | "end">> = {
   U1: "cover", U2: "cover", U3: "end", U4: "end",
+  U5: "cover", U6: "cover", U7: "end", U8: "end",
 };
 
 export const LINKEDIN_DOCUMENT_PAGE_MAX = 300;
@@ -712,7 +714,11 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
     const profile = /privat|private|personal/i.test(pick(source, "profile", "absender")) ? "private" as const : "roots" as const;
     const theme = /dunkel|dark/i.test(pick(source, "theme", "anmutung", "mode", "look")) ? "dark" as const : "light" as const;
     const variantRaw = pick(source, "variant", "variante").toUpperCase();
-    const slideTypes = pick(source, "slide_pick", "slide_types")
+    // "KI soll waehlen" schlaegt eine mitgeschickte Folge. Sonst prueft der
+    // Server eine Auswahl, die der Nutzer im Fragebogen laengst widerrufen hat.
+    const mixRaw = pick(source, "slide_mix", "slide_choice").toLowerCase();
+    const mixIsAuto = /^(auto|ki|ai|modell|model)$/.test(mixRaw);
+    const slideTypes = (mixIsAuto ? "" : pick(source, "slide_pick", "slide_types"))
       .split(",").map((v) => v.trim().toUpperCase())
       .filter((v) => isSlideKey(v))
       .slice(0, LINKEDIN_DOCUMENT_PAGE_MAX) as AssetSlideKey[];
@@ -1096,6 +1102,10 @@ export const ASSET_VISIBLE_FIELDS: Record<string, readonly string[]> = {
   U2: ["kicker", "title", "subtitle", "footer_left"],
   U3: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
   U4: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
+  U5: ["kicker", "title", "subtitle", "footer_left"],
+  U6: ["kicker", "title", "subtitle", "footer_left"],
+  U7: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
+  U8: ["kicker", "title", "subtitle", "takeaway", "footer_left"],
   A: ["kicker", "quote", "attribution", "footer_left"],
   B: ["kicker", "title", "subtitle", "footer_left"],
   C: ["kicker", "title", "subtitle", "footer_left", "image_hint"],
@@ -1124,6 +1134,7 @@ export const ASSET_VISIBLE_FIELDS: Record<string, readonly string[]> = {
 /** Wohin die Pointe wandert, wenn takeaway unsichtbar ist. */
 export const ASSET_POINTE_FIELD: Record<string, string> = {
   U1: "subtitle", U2: "subtitle", U3: "takeaway", U4: "takeaway",
+  U5: "subtitle", U6: "subtitle", U7: "takeaway", U8: "takeaway",
   A: "quote", B: "subtitle", C: "subtitle", D: "subtitle", E: "subtitle",
   F: "bullets", G: "fact", H: "stats", I: "steps", J: "quote",
   K: "takeaway", L: "takeaway", M: "subtitle",
@@ -1140,6 +1151,14 @@ Wozu: erster Slide des dunklen Carousels. Zeichnet title und subtitle. Setzt die
 Wozu: letzter Slide des hellen Carousels. Zeichnet title, subtitle und takeaway als klaren Handlungsaufruf.`,
   U4: `U4 Endfolie dunkel.
 Wozu: letzter Slide des dunklen Carousels. Zeichnet title, subtitle und takeaway als klaren Handlungsaufruf.`,
+  U5: `U5 Titelfolie hell, zentriert.
+Wozu: erster Slide des hellen Carousels, wenn die These allein steht und keine Aufzaehlung ankuendigt. Zeichnet title und subtitle mittig auf hellblauem Grund.`,
+  U6: `U6 Titelfolie dunkel, zentriert.
+Wozu: wie U5, auf dunklem Grund.`,
+  U7: `U7 Endfolie hell mit CTA-Karte.
+Wozu: letzter Slide des hellen Carousels, wenn der Handlungsaufruf sichtbar herausstehen soll. Zeichnet title, subtitle und takeaway in einer gerahmten Karte.`,
+  U8: `U8 Endfolie dunkel mit CTA-Karte.
+Wozu: wie U7, auf dunklem Grund.`,
   A: `A Zitat.
 Wozu: ein wörtlicher Satz einer benannten Person trägt die Pointe.
 Zeichnet: kicker, quote, footer_left. Pointe in quote. takeaway unsichtbar.
@@ -1265,6 +1284,10 @@ export const VARIANT_INHALTSVERTRAG: Record<string, string> = {
   U2: "title ist die Kernaussage des ganzen Carousels; subtitle verspricht konkret, was die folgenden Folien erklären.",
   U3: "title bündelt die Konsequenz der vorherigen Folien; subtitle leitet zum genau einen CTA in takeaway über.",
   U4: "title bündelt die Konsequenz der vorherigen Folien; subtitle leitet zum genau einen CTA in takeaway über.",
+  U5: "title ist die Kernaussage des ganzen Carousels; subtitle verspricht konkret, was die folgenden Folien erklären.",
+  U6: "title ist die Kernaussage des ganzen Carousels; subtitle verspricht konkret, was die folgenden Folien erklären.",
+  U7: "title bündelt die Konsequenz der vorherigen Folien; subtitle leitet zum genau einen CTA in takeaway über.",
+  U8: "title bündelt die Konsequenz der vorherigen Folien; subtitle leitet zum genau einen CTA in takeaway über.",
   A: "quote ist wortgleich belegt; attribution nennt genau die im Artikel genannte Person und Rolle. Keine zugespitzte Paraphrase als Zitat.",
   B: "title behauptet genau einen Befund; subtitle liefert den unmittelbar dazugehörigen Beleg oder die Konsequenz. Beide ergeben zusammen einen Gedanken.",
   C: "wie B, zusätzlich beschreibt image_hint ein konkretes Motiv, das die These sichtbar unterstützt und nicht nur dekoriert.",
@@ -1297,6 +1320,10 @@ const VARIANT_FORMAT: Record<string, string> = {
   U2: "title höchstens 2 Zeilen/56 Zeichen; subtitle höchstens 2 Zeilen/96 Zeichen.",
   U3: "title höchstens 2 Zeilen/52 Zeichen; subtitle höchstens 2 Zeilen/88 Zeichen; CTA höchstens 42 Zeichen.",
   U4: "title höchstens 2 Zeilen/52 Zeichen; subtitle höchstens 2 Zeilen/88 Zeichen; CTA höchstens 42 Zeichen.",
+  U5: "title höchstens 3 Zeilen/56 Zeichen; subtitle höchstens 2 Zeilen/90 Zeichen; beides mittig.",
+  U6: "title höchstens 3 Zeilen/56 Zeichen; subtitle höchstens 2 Zeilen/90 Zeichen; beides mittig.",
+  U7: "title höchstens 2 Zeilen/50 Zeichen; subtitle höchstens 2 Zeilen/86 Zeichen; CTA höchstens 38 Zeichen.",
+  U8: "title höchstens 2 Zeilen/50 Zeichen; subtitle höchstens 2 Zeilen/86 Zeichen; CTA höchstens 38 Zeichen.",
   A: "quote höchstens 4 kurze Zeilen/110 Zeichen; attribution eine Zeile/60 Zeichen.",
   B: "title ist ein Zweizeilen-Statement, höchstens 48 Zeichen; subtitle höchstens 3 kurze Zeilen/115 Zeichen.",
   C: "title höchstens 3 Zeilen/46 Zeichen; subtitle höchstens 3 Zeilen/100 Zeichen; linke Textfläche frei halten.",
@@ -2010,6 +2037,10 @@ function fieldCap(variant: string, field: string, carousel: boolean): number {
     U2: { title: 56, subtitle: 96 },
     U3: { title: 52, subtitle: 88, takeaway: 42 },
     U4: { title: 52, subtitle: 88, takeaway: 42 },
+    U5: { title: 56, subtitle: 90 },
+    U6: { title: 56, subtitle: 90 },
+    U7: { title: 50, subtitle: 86, takeaway: 38 },
+    U8: { title: 50, subtitle: 86, takeaway: 38 },
     A: { quote: 110, attribution: 60 },
     B: { title: 48, subtitle: 115 },
     C: { title: 46, subtitle: 100 },
@@ -2289,9 +2320,9 @@ export function variantShapeIssues(slide: AssetSlide): string[] {
   const fehlt: string[] = [];
   const need = (ok: boolean, label: string) => { if (!ok) fehlt.push(label); };
   switch (slide.variant) {
-    case "U1": case "U2":
+    case "U1": case "U2": case "U5": case "U6":
       need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.subtitle), "subtitle"); break;
-    case "U3": case "U4":
+    case "U3": case "U4": case "U7": case "U8":
       need(nonEmpty(slide.title), "title"); need(nonEmpty(slide.subtitle), "subtitle"); need(nonEmpty(slide.takeaway), "CTA"); break;
     case "A":
       need(nonEmpty(slide.quote), "quote"); need(nonEmpty(slide.attribution), "attribution"); break;

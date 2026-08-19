@@ -337,9 +337,10 @@ test("das Vorlagen-CSS wirkt nur auf der Buehne", async () => {
 
 test("alle Assets vom Desktop stehen als Layout zur Wahl", async () => {
   const tpl = await import("../asset-templates.js");
-  // Dreizehn Einzelposts (inklusive neutraler dunkler These), vier
-  // Carousel-Rahmen, vier Strategiemodelle und sechs Datenbilder.
-  assert.equal(Object.keys(tpl.ASSET_TEMPLATES).length, 17);
+  // Dreizehn Einzelposts (inklusive neutraler dunkler These), acht
+  // Carousel-Rahmen (Titel und Ende je zwei Bauarten hell und dunkel),
+  // vier Strategiemodelle und sechs Datenbilder.
+  assert.equal(Object.keys(tpl.ASSET_TEMPLATES).length, 21);
   assert.equal(Object.keys(tpl.ASSET_LAYOUTS).length, 10);
   assert.match(studio, /M: \{ title: "Klarheit schlägt Kampagnendruck\./);
   for (const [key, markup] of Object.entries(tpl.ASSET_LAYOUTS)) {
@@ -2266,9 +2267,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260819-0003");
-  assert.match(indexHtml, /app\.js\?v=20260819-0003/);
-  assert.match(studio, /asset-templates\.js\?v=20260819-0003/);
+  assert.equal(studioVersion, "20260819-0300");
+  assert.match(indexHtml, /app\.js\?v=20260819-0300/);
+  assert.match(studio, /asset-templates\.js\?v=20260819-0300/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2806,6 +2807,46 @@ test("Carousel-Laenge und eigene Abfolge folgen der wirklichen Auswahl", async (
   assert.doesNotMatch(contentRenderer, /LinkedIn erlaubt technisch/);
   assert.match(studio, /LINKEDIN_DOCUMENT_PAGE_MAX = 300/);
   assert.doesNotMatch(studio, /liste\.length < Number\(state\.answers\.slide_count/);
+});
+
+test("KI soll wählen verwirft eine widerrufene eigene Abfolge", async () => {
+  // Wer erst selbst waehlt und dann zurueck auf KI geht, hat frueher weiter
+  // manuell geprueft bekommen — und scheiterte an der fehlenden Endfolie.
+  const zurueck = backend.normalizeAssetAnswers("linkedin", {
+    asset_type: "carousel", theme: "light", slide_mix: "auto", slide_pick: "U1,B,E", slides: 8,
+  });
+  assert.deepEqual(zurueck.slide_types, []);
+  assert.equal(backend.manualCarouselSelectionError(zurueck), null);
+  assert.equal(zurueck.slides, 8, "im KI-Modus zaehlt die eingestellte Anzahl");
+
+  const eigen = backend.normalizeAssetAnswers("linkedin", {
+    asset_type: "carousel", theme: "light", slide_mix: "custom", slide_pick: "U1,B,U3",
+  });
+  assert.deepEqual(eigen.slide_types, ["U1", "B", "U3"]);
+
+  // Auch der Fragebogen schickt die widerrufene Folge gar nicht erst mit.
+  const senden = studio.slice(studio.indexOf("const antworten = {"), studio.indexOf("const res = await api(\"generate_asset\""));
+  assert.match(senden, /antworten\.slide_mix !== "custom"/);
+  assert.match(senden, /antworten\.slide_pick = ""/);
+});
+
+test("Titelfolie und Endfolie haben je Anmutung mehr als eine Bauart", async () => {
+  const tpl = await import("../asset-templates.js");
+  for (const rolle of ["cover", "end"]) {
+    for (const look of ["light", "dark"]) {
+      const treffer = backend.ASSET_SLIDE_KEYS.filter((key) =>
+        backend.ASSET_SLIDE_ROLES[key] === rolle && backend.ASSET_SLIDE_THEMES[key] === look);
+      assert.ok(treffer.length >= 2, `${rolle}/${look} braucht mehr als eine Vorlage, hat ${treffer.length}`);
+      for (const key of treffer) {
+        assert.ok(tpl.ASSET_TEMPLATES[key], `${key} ohne Markup`);
+        assert.match(tpl.ASSET_TEMPLATES[key], /data-field="title"/);
+        assert.match(tpl.ASSET_TEMPLATES[key], /data-field="subtitle"/);
+        assert.ok(backend.VARIANT_INHALTSVERTRAG[key], `${key} ohne Inhaltsvertrag`);
+        assert.match(studio, new RegExp(`\\b${key}: \\{ title:`), `${key} ohne Vorschaubeispiel`);
+        if (rolle === "end") assert.match(tpl.ASSET_TEMPLATES[key], /data-field="takeaway"/);
+      }
+    }
+  }
 });
 
 test("Formatwahl und jede Folienauswahl haben echte Vorschauen", () => {
