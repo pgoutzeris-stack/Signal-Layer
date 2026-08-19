@@ -1486,6 +1486,7 @@ Eine Folie E oder L: stat.value ist die Zahl, stat.source_context ist ein wortgl
 Folie H und T1 bis T5: jeder Eintrag in stats hat seinen eigenen wortgleichen source_context. value und label bilden den Befund dieses Ausschnitts, nie den des vorherigen oder nächsten Eintrags. Dieselbe Ziffer nicht auf zwei Folien.
 Prüfe jede Zahlenfolie als gesprochenen Satz: „[value] der/von [Bezugsgruppe] [gemessener Befund]“. Ist dieser Satz mit dem direkten_bezug nicht eindeutig wahr, nimm eine andere Zahl oder eine qualitative Textfolie.
 Beispiel für die Auswahlregel: Stehen 23 Prozent direkt bei „Diversität ist ein Kaufkriterium“, gehören 23 Prozent und genau dieser Kaufbezug zusammen. Eine größere 83-Prozent-Nebenkennzahl ist nicht besser, wenn ihr direkter Satz einen anderen Befund misst.
+Alters- und Gruppenmarken sind keine Kennzahlen: „Generation 60+“, „Ü50“, „die 40-Jährigen“, „Top 10“ benennen die Bezugsgruppe. Sie gehören in title, subtitle oder label — nie in stat.value.
 Fehlt die Liste oder stehen dort nur qualitative Brüche: keine Kennzahl-Variante, These qualitativ.
 Säulen, Wasserfall und Balken (T1, T2, T4, T5) nur, wenn der Nutzer sie gewählt hat: ihre Höhe folgt nicht der Zahl.
 </leitkennzahl>`;
@@ -2708,11 +2709,54 @@ function rejectRepeatedLeadNumbers(slides: AssetSlide[]): void {
   }
 }
 
+/**
+ * Nicht jede Ziffer in der Überschrift ist eine Kennzahl. "Generation 60+",
+ * "Ü60", "die 40-Jährigen", "Top 10" benennen eine Gruppe, keinen Messwert —
+ * sie dürfen einer belegten Prozentzahl nicht den Vortritt nehmen. Als
+ * Leitkennzahl zählt nur, was eine Einheit trägt.
+ */
+const MESSGROESSE_EINHEIT_RE = new RegExp(
+  `^\\s*(?:${DE_UNIT_ALT}|Euro|€|Punkte?|Mal|Milliarde|Million)`,
+  "i",
+);
+/** Alters- und Kohortenmarken: davor oder dahinter ist die Zahl ein Etikett. */
+const KOHORTE_DAVOR_RE = /(?:generation|gen\.?|kohorte|jahrgang|altersgruppe|zielgruppe|ü|ab|über|ueber|unter|top|platz|kapitel|teil|stufe|frage)\s*$/i;
+const KOHORTE_DANACH_RE = /^\s*(?:\+|-\s*(?:jährige|jaehrige|jaehrig|jährig)|er-jahre|er\s+jahre|plus\b)/i;
+
+export function primaryLeadNumberKeys(value: string): string[] {
+  const nackt = String(value || "").replace(/ /g, " ");
+  const keys = new Set<string>();
+  for (const roh of claimedNumbers(nackt)) {
+    const key = digitKey(roh);
+    if (!key || key.length < 2) continue;
+    let ab = 0;
+    for (;;) {
+      const pos = nackt.indexOf(roh, ab);
+      if (pos < 0) break;
+      ab = pos + roh.length;
+      const davor = nackt.slice(Math.max(0, pos - 24), pos);
+      const danach = nackt.slice(ab, ab + 24);
+      if (KOHORTE_DAVOR_RE.test(davor)) continue;
+      if (KOHORTE_DANACH_RE.test(danach)) continue;
+      if (!MESSGROESSE_EINHEIT_RE.test(danach)) continue;
+      keys.add(key);
+      break;
+    }
+  }
+  for (const verbal of claimedVerbalNumbers(nackt)) {
+    if (isFractionClaim(verbal)) continue;
+    const wort = verbal.toLowerCase().match(new RegExp(`(?:${DE_WORD_ALT})`))?.[0];
+    const digit = wort ? DE_NUMBER_WORDS[wort] : "";
+    if (digit && digit.length >= 2) keys.add(digit);
+  }
+  return [...keys];
+}
+
 /** Wenn das verdichtete Signal eine klare Kennzahl nennt, muss die erste
  * Zahlenfolie genau dort ansetzen. So verdrängt keine größere Detailzahl die
  * Zahl, welche Überschrift oder Zusammenfassung tatsächlich trägt. */
 function requirePrimaryLeadNumber(slides: AssetSlide[], context: AssetNormalizeContext): void {
-  const primaer = new Set(leadNumberKeys([
+  const primaer = new Set(primaryLeadNumberKeys([
     context.signalHeadline,
     context.signalSummary,
   ].filter(Boolean).join("\n")));
@@ -2736,7 +2780,7 @@ function requirePrimaryLeadNumber(slides: AssetSlide[], context: AssetNormalizeC
  * bleiben ein harter Fehler: die kommen nicht von einer Tippvariante.
  */
 export function assetMangelIsRepairable(mangel: string): boolean {
-  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|belegte Kennzahlen|unbelegte Zahlen|source_context|Quellenausschnitt|sichtbare Aussage passt nicht|ungefüllte Zeichnungs-Slots|Vorlage|Vorlagenwahl|Infografik|wortgleiches Zitat|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel|100-Tage-CMO-Sprache|ROOTS-Leistung zum Titel|Nachrichtenmeldung im Titel/i.test(String(mangel || ""));
+  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|Vorrang vor nachgelagerten Detailzahlen|Jede Zahl nur auf einer Folie|belegte Kennzahlen|unbelegte Zahlen|source_context|Quellenausschnitt|sichtbare Aussage passt nicht|ungefüllte Zeichnungs-Slots|Vorlage|Vorlagenwahl|Infografik|wortgleiches Zitat|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel|100-Tage-CMO-Sprache|ROOTS-Leistung zum Titel|Nachrichtenmeldung im Titel/i.test(String(mangel || ""));
 }
 
 function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {

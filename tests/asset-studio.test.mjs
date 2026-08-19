@@ -1388,6 +1388,7 @@ test("Prompt v1.21 kennt Bühne, Steckbrief und das dreiseitige Memo", () => {
   assert.match(prompt, /Greift wenn: genau diese Ziffer/);
   assert.match(prompt, /Keine Ziffer auf zwei Folien/);
   assert.match(prompt, /größere 83-Prozent-Nebenkennzahl ist nicht besser/);
+  assert.match(prompt, /Alters- und Gruppenmarken sind keine Kennzahlen/);
   assert.match(prompt, /Inhaltslogik:/);
   assert.deepEqual(
     Object.keys(backend.VARIANT_INHALTSVERTRAG).sort(),
@@ -1558,6 +1559,52 @@ test("die Signal-Leitkennzahl schlägt eine größere nachgelagerte Detailzahl",
     signalSummary: "Für 23 Prozent der Verbraucher ist Diversität ein Kaufkriterium.",
   });
   assert.equal(payload.slides[0].stat.value, "23\u00a0%");
+});
+
+test("eine Kohortenzahl in der \u00dcberschrift ist keine Leitkennzahl", () => {
+  assert.deepEqual(backend.primaryLeadNumberKeys("Generation 60+ nutzt Konsum gezielt f\u00fcr Lebensqualit\u00e4t"), []);
+  assert.deepEqual(backend.primaryLeadNumberKeys("\u00dc50 kauft anders"), []);
+  assert.deepEqual(backend.primaryLeadNumberKeys("Top 10 der Marken"), []);
+  assert.deepEqual(backend.primaryLeadNumberKeys("Die 40-J\u00e4hrigen sparen mehr"), []);
+  assert.deepEqual(backend.primaryLeadNumberKeys("F\u00fcr 23 Prozent ist Diversit\u00e4t ein Kaufkriterium."), ["23"]);
+  assert.deepEqual(backend.primaryLeadNumberKeys("93 Prozent der \u00fcber 60-J\u00e4hrigen wollen Lebensqualit\u00e4t"), ["93"]);
+
+  // Konsumbarometer-Fall: "60" stammt aus "Generation 60+", 93 % ist belegt.
+  const artikel = [
+    "Das Konsumbarometer 2026 von Consors Finanz zeigt:",
+    "93 Prozent der Befragten \u00fcber 60 Jahre wollen durch Konsum ihre Lebensqualit\u00e4t verbessern.",
+    "64 Prozent sehen Konsum als Weg, aktiv an der Gesellschaft teilzuhaben.",
+  ].join(" ");
+  const answers = backend.normalizeAssetAnswers("linkedin", { asset_type: "single", variant: "E" });
+  const payload = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    theme: "light",
+    post_text: "Die Generation 60+ setzt Konsum gezielt f\u00fcr Lebensqualit\u00e4t ein.",
+    slides: [{
+      variant: "E", kicker: "CUSTOMER INSIGHTS",
+      title: "Generation 60+ nutzt Konsum f\u00fcr Lebensqualit\u00e4t",
+      subtitle: "Eine kaufkr\u00e4ftige Zielgruppe, die das Marketing untersch\u00e4tzt.",
+      stat: {
+        value: "93 %",
+        label: "der Befragten \u00fcber 60 wollen durch Konsum ihre Lebensqualit\u00e4t verbessern",
+        source_context: "93 Prozent der Befragten \u00fcber 60 Jahre wollen durch Konsum ihre Lebensqualit\u00e4t verbessern.",
+      },
+      footer_left: "ROOTS",
+    }],
+  }), answers, {
+    articleText: artikel,
+    signalHeadline: "Generation 60+ nutzt Konsum gezielt f\u00fcr Lebensqualit\u00e4t",
+    signalSummary: "Die Generation 60+ in Deutschland ist verm\u00f6gend, digital aktiv und konsumfreudig.",
+  });
+  assert.equal(payload.slides[0].stat.value, "93\u00a0%");
+});
+
+test("eine verdr\u00e4ngte Leitkennzahl darf reparieren statt den Entwurf zu verwerfen", () => {
+  assert.equal(backend.assetMangelIsRepairable(
+    "Die gew\u00e4hlte Leitkennzahl der ersten Zahlenfolie (83 %) steht nicht in \u00dcberschrift oder Signal-Zusammenfassung. Dort hat 23 Vorrang vor nachgelagerten Detailzahlen.",
+  ), true);
+  assert.equal(backend.assetMangelIsRepairable(
+    "Die Kennzahl 23 steht auf Folie 2 (E) und Folie 4 (H). Jede Zahl nur auf einer Folie.",
+  ), true);
 });
 
 test("Zahlwörter und Brüche brauchen denselben Beleg wie Ziffern", () => {
