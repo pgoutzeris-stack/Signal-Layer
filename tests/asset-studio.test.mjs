@@ -201,16 +201,18 @@ test("die Anmutung filtert die Layouts, sie faerbt nichts um", () => {
   }
 });
 
-test("das Layout waehlt man in derselben Pillenreihe wie in der Ansprache", () => {
+test("erst die Pille KI oder selbst, dann das Dropdown mit Miniatur", () => {
+  // Zwei Schritte wie beim Carousel: die Pille entscheidet, wer waehlt, das
+  // Dropdown zeigt die Vorlage vor der Wahl.
+  assert.match(studio, /key: "variant_mode", label: "Layout"/);
+  assert.match(studio, /\["auto", "KI soll wählen"\], \["custom", "Selbst auswählen"\]/);
+  assert.match(studio, /key: "variant", label: "Vorlage", art: "dropdown"/);
+  assert.match(studio, /answers\.asset_type !== "carousel" && answers\.variant_mode === "custom"/);
+  assert.match(studio, /if \(state\.answers\.variant_mode !== "custom"\) state\.answers\.variant = "auto";/);
   assert.match(studio, /function dropdownHtml\(q\)/);
-  assert.match(studio, /function optionPillenHtml\(eintraege, extra = ""\)/);
-  assert.match(studio, /act: "pick-layout"/);
-  // Kein Aufklapper mehr: er trug eine zweite Beschriftung und verdeckte den
-  // Fuss der Karte. Beide Fragebogen benutzen jetzt dieselbe Pille.
-  assert.doesNotMatch(studio, /data-act="toggle-layout"/);
-  assert.doesNotMatch(studio, /data-act="toggle-frame"/);
-  assert.doesNotMatch(studio, /data-act="toggle-arten"/);
-  assert.doesNotMatch(studio, /class="as-ddhead"/);
+  assert.match(studio, /data-act="toggle-layout"/);
+  assert.match(studio, /data-act="pick-layout"/);
+  assert.match(studio, /class="as-ddhead"/);
   // Die Miniatur darf keinen Knopf enthalten: ein Knopf im Knopf schliesst die
   // Zeile vorzeitig, Variante C stand dadurch leer in der Liste.
   assert.match(studio, /function miniatur\(variant\)/);
@@ -2273,9 +2275,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260819-2010");
-  assert.match(indexHtml, /app\.js\?v=20260819-2010/);
-  assert.match(studio, /asset-templates\.js\?v=20260819-2010/);
+  assert.equal(studioVersion, "20260820-2240");
+  assert.match(indexHtml, /app\.js\?v=20260820-2240/);
+  assert.match(studio, /asset-templates\.js\?v=20260820-2240/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2864,10 +2866,9 @@ test("Formatwahl und jede Folienauswahl haben echte Vorschauen", () => {
   assert.match(live, /inhaltsArten\(\)/);
   assert.match(live, /state\.answers\.slide_end \|\| ende/);
   assert.match(studio, /if \(q\.key === "asset_type"\) return false/);
-  // Titel-, Inhalts- und Endfolie stehen als Pillen wie jede andere Antwort.
-  assert.match(studio, /act: "frame-pick", role: q\.role/);
-  assert.match(studio, /act: "content-add", plus: true/);
-  // Die Miniatur bleibt in der gewaehlten Abfolge, wo sie die Reihenfolge zeigt.
+  // Titelfolie, Inhaltsfolien und Endfolie zeigen ihre Vorlage als Miniatur.
+  assert.match(studio, /frame-pick[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
+  assert.match(studio, /content-add[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
   assert.match(studio, /as-sequence-row[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
   assert.match(studio, /transform:scale\(\.037\)/);
   assert.match(studio, /slot_center: "Wachstum"/);
