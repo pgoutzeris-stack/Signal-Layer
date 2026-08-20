@@ -1302,7 +1302,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-1920";
+import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-2010";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1365,7 +1365,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Der Fragebogen zeigt eine Frage offen, die beantworteten darueber als
     // Zeile. formSeen merkt sich die weiteste Stelle, damit der Sprung zurueck
     // den Abschluss nicht wieder verriegelt.
-    stepKey: "",
+    // Kommt das Signal aus dem manuellen Fragebogen, sind die dort schon
+    // beantworteten Fragen erledigt. Der Fragebogen oeffnet bei der ersten
+    // offenen Frage; die erledigten stehen darueber und bleiben anklickbar.
+    stepKey: erstesOffenesSchritt(questions, prefill),
     stepSeen: [],
     formErrorKey: "",
     pendingImage: null,
@@ -1503,6 +1506,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.answers.slide_cover = arten.find((key) => SLIDE_ROLE[key] === "cover") || "";
     state.answers.slide_content = arten.filter((key) => !SLIDE_ROLE[key]).join(",");
     state.answers.slide_end = arten.find((key) => SLIDE_ROLE[key] === "end") || "";
+  }
+
+  /** Der erste Schritt, den das manuelle Signal nicht schon beantwortet hat.
+   *  Bedingte Fragen werden gegen die vorbelegten Antworten geprueft, sonst
+   *  landet der Einstieg auf einer Frage, die gar nicht gestellt wird. */
+  function erstesOffenesSchritt(list, prefill) {
+    const vorbelegt = vorbelegung(list, prefill);
+    const schluessel = new Set(Object.keys(vorbelegt));
+    if (!schluessel.size) return "";
+    const antworten = { ...defaultAnswers(list), ...vorbelegt };
+    const offen = list
+      .filter((q) => !q.when || q.when(antworten))
+      .find((q) => !schluessel.has(q.key));
+    return offen ? offen.key : ENDE;
   }
 
   /** Nur Schluessel, die der Fragebogen kennt: fremde Felder wuerden still in

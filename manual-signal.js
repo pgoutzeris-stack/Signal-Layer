@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1920";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-2010";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -92,9 +92,10 @@ const FRAGEN = [
   {
     key: "competitor", label: "Benchmark", art: "text",
     frage: (a) => (a.lane === "sales"
-      ? "Welcher Wettbewerber des Kunden macht es schon vor?"
-      : "Welcher Wettbewerber des betroffenen Unternehmens macht es schon vor?"),
-    platzhalter: "Marke oder Wettbewerber mit Beispielwirkung",
+      ? "Welche Wettbewerber des Kunden machen es schon vor?"
+      : "Welche Wettbewerber des betroffenen Unternehmens machen es schon vor?"),
+    platzhalter: "Firmennamen, z. B. Aldi Süd, dm, Rossmann",
+    hinweis: "Namen nennen, keine Kategorien: das Asset zitiert sie.",
   },
   {
     key: "storyline_text", label: "Kernaussage", frage: "Welche Aussage soll das Asset tragen?",
@@ -134,7 +135,7 @@ const BEISPIEL = {
     offering: "Markenstrategie",
     territory: "DACH, Lebensmittelhandel",
     occasion: "Quartalszahlen",
-    competitor: "Discounter mit eigener Premiumlinie",
+    competitor: "Aldi Süd, dm",
     storyline_text: "Eigenmarken wachsen, weil Marken die Lücke offen lassen.",
     cta_text: "Sortimentscheck vereinbaren",
     caption_text: "Der Eigenmarkenanteil liegt bei 41 Prozent. Wer jetzt nicht nachschärft, wird über den Preis verglichen.",
@@ -148,7 +149,7 @@ const BEISPIEL = {
     offering: "Markenstrategie",
     territory: "DACH, Lebensmittelhandel",
     occasion: "Quartalszahlen",
-    competitor: "Discounter mit eigener Premiumlinie",
+    competitor: "Rossmann, dm",
     storyline_text: "Regalanteil zurückholen heißt zuerst entscheiden, wofür die Marke steht.",
     cta_text: "Sollen wir den Sortimentscheck gemeinsam durchgehen?",
     caption_text: "",

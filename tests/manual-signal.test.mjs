@@ -142,7 +142,9 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.doesNotMatch(frontend, /key: "audience"/);
   assert.doesNotMatch(frontend, /key: "tone"/);
   assert.match(frontend, /key: "competitor", label: "Benchmark"/);
-  assert.match(frontend, /"Welcher Wettbewerber des Kunden macht es schon vor\?"/);
+  assert.match(frontend, /"Welche Wettbewerber des Kunden machen es schon vor\?"/);
+  // Konkrete Namen, keine Kategorien: das Asset zitiert sie.
+  assert.match(frontend, /platzhalter: "Firmennamen, z\. B\. [^"]+"/);
   // Der Beleg-Hinweis erklaerte eine Regel, die die Fehlermeldung ohnehin nennt.
   assert.doesNotMatch(frontend, /darf im Asset als Zahl oder Zitat erscheinen/);
   // Beim Sprung zieht die Ansicht mit, sonst steht die naechste Frage unter der Kante.
@@ -210,6 +212,19 @@ test("jedes Feld ist für die Testphase vorbelegt", () => {
       assert.match(teil, new RegExp(`${feld}: "[^"]{10,}"`), `${spur} ohne ${feld}`);
     }
   }
+});
+
+test("der Asset-Fragebogen öffnet bei der ersten offenen Frage", () => {
+  const studio = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf8");
+  assert.match(studio, /stepKey: erstesOffenesSchritt\(questions, prefill\)/);
+  assert.match(studio, /function erstesOffenesSchritt\(list, prefill\)/);
+  // Bedingte Fragen gegen die vorbelegten Antworten prüfen, sonst landet der
+  // Einstieg auf einer Frage, die gar nicht gestellt wird - und der Fragebogen
+  // springt zurück auf Frage 1.
+  assert.match(studio, /const antworten = \{ \.\.\.defaultAnswers\(list\), \.\.\.vorbelegt \}/);
+  assert.match(studio, /\.filter\(\(q\) => !q\.when \|\| q\.when\(antworten\)\)/);
+  // Ohne manuelles Signal bleibt der Einstieg wie bisher bei Frage 1.
+  assert.match(studio, /if \(!schluessel\.size\) return "";/);
 });
 
 test("die Übergabe belegt den Asset-Fragebogen mit den eigenen Texten vor", () => {
