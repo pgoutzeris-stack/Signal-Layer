@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1400";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1520";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -29,65 +29,92 @@ const ENDE = "__ende";
  */
 const FRAGEN = [
   {
-    key: "lane", label: "Wofür", art: "pills",
-    options: [["marketing", "Marketing-Asset"], ["sales", "Sales-Ansprache"]],
+    key: "lane", label: "Asset", frage: "Was soll aus dem Signal entstehen?", art: "pills",
+    options: [["marketing", "LinkedIn-Beitrag"], ["sales", "Ansprache an einen Kunden"]],
     pflicht: true,
   },
   {
-    key: "profile", label: "Für wen", art: "pills",
-    options: [["roots", "ROOTS"], ["private", "Privatprofil"]],
+    key: "profile", label: "Absender", frage: "Wer veröffentlicht den Beitrag?", art: "pills",
+    options: [["roots", "ROOTS"], ["private", "Mein Privatprofil"]],
     when: (a) => a.lane === "marketing",
     pflicht: true,
   },
   {
-    key: "mode", label: "Wer schreibt", art: "pills",
+    key: "mode", label: "Texte", frage: "Wer schreibt die Texte?", art: "pills",
     options: [
-      ["ai", "KI aus meinen Angaben"],
-      ["hybrid", "KI und meine Texte"],
-      ["manual", "Nur meine Texte"],
+      ["ai", "Die KI, aus meinen Angaben"],
+      ["hybrid", "KI, aber Kernaussage und Aufruf gebe ich vor"],
+      ["manual", "Ich schreibe alle Texte selbst"],
     ],
     pflicht: true,
   },
   {
-    key: "headline", label: "Überschrift des Signals", art: "text",
-    platzhalter: "Was hast du beobachtet?", pflicht: true, min: 10,
+    key: "headline", label: "Beobachtung", frage: "Was hast du beobachtet?", art: "text",
+    platzhalter: "Handel baut Eigenmarken schneller aus als geplant",
+    pflicht: true, min: 10,
   },
   {
-    key: "core", label: "Kernaussage", art: "textarea", rows: 4,
-    platzhalter: "Zwei bis drei Sätze: was passiert und warum es zählt",
+    key: "core", label: "Relevanz", frage: "Warum ist das für unsere Zielgruppe relevant?",
+    art: "textarea", rows: 4,
+    platzhalter: "Zwei bis drei Sätze: was passiert und welche Folge das hat",
     pflicht: true, min: 30,
   },
   {
-    key: "evidence", label: "Belege und Zahlen", art: "textarea", rows: 5,
-    platzhalter: "Zitate, Zahlen, Quellenangaben im Wortlaut",
+    key: "evidence", label: "Beleg", frage: "Was belegt diese Beobachtung?",
+    art: "textarea", rows: 5,
+    platzhalter: "Zahlen, Zitate und Namen im Wortlaut",
     hinweis: "Nur was hier steht, darf im Asset als Zahl oder Zitat erscheinen.",
     pflicht: true, min: 20,
   },
-  { key: "source", label: "Quelle", art: "text", platzhalter: "Studie, Herausgeber, Jahr oder Link" },
-  { key: "company", label: "Unternehmen", art: "text", platzhalter: "Firmenname" },
-  { key: "offering", label: "ROOTS-Anschluss", art: "text", platzhalter: "z. B. Markenstrategie" },
-  { key: "audience", label: "Zielgruppe", art: "text", platzhalter: "Rolle oder Buying Center" },
-  { key: "territory", label: "Markt", art: "text", platzhalter: "z. B. DACH, Handel" },
-  { key: "occasion", label: "Anlass", art: "text", platzhalter: "Messe, Quartalszahlen, Personalie" },
-  { key: "competitor", label: "Wettbewerbsbezug", art: "text", platzhalter: "Wer macht es schon" },
   {
-    key: "storyline_text", label: "Kernaussage im Asset", art: "textarea", rows: 4,
-    platzhalter: "Der Text, der im Asset stehen soll",
+    key: "source", label: "Quelle", frage: "Woher stammt die Information?", art: "text",
+    platzhalter: "Studie, Herausgeber, Jahr oder Link",
+  },
+  {
+    key: "company", label: "Unternehmen", frage: "Um welches Unternehmen geht es?", art: "text",
+    platzhalter: "Firmenname",
+  },
+  {
+    key: "offering", label: "Leistung", frage: "Welche ROOTS-Leistung schließt daran an?", art: "text",
+    platzhalter: "z. B. Markenstrategie",
+  },
+  {
+    key: "audience", label: "Zielgruppe", frage: "Wen willst du damit erreichen?", art: "text",
+    platzhalter: "Rolle oder Buying Center, z. B. Category Management",
+  },
+  {
+    key: "territory", label: "Markt", frage: "Für welchen Markt gilt das?", art: "text",
+    platzhalter: "z. B. DACH, Lebensmittelhandel",
+  },
+  {
+    key: "occasion", label: "Anlass", frage: "Gibt es einen konkreten Anlass?", art: "text",
+    platzhalter: "Messe, Quartalszahlen, Personalie",
+  },
+  {
+    key: "competitor", label: "Wettbewerb", frage: "Macht das im Markt schon jemand vor?", art: "text",
+    platzhalter: "Marke oder Wettbewerber",
+  },
+  {
+    key: "storyline_text", label: "Kernaussage", frage: "Welche Aussage soll das Asset tragen?",
+    art: "textarea", rows: 4,
+    platzhalter: "Der Satz, um den herum gebaut wird",
     when: (a) => a.mode !== "ai", pflicht: true, min: 20,
   },
   {
-    key: "cta_text", label: "Handlungsaufruf", art: "text",
-    platzhalter: "z. B. Termin vereinbaren",
+    key: "cta_text", label: "Aufruf", frage: "Wozu sollen Leser am Ende aufgefordert werden?",
+    art: "text",
+    platzhalter: "z. B. Sortimentscheck vereinbaren",
     when: (a) => a.mode !== "ai", pflicht: true, min: 4,
   },
   {
-    key: "caption_text", label: "Caption", art: "textarea", rows: 4,
-    platzhalter: "Der Beitragstext unter dem Bild",
+    key: "caption_text", label: "Caption", frage: "Was soll als Beitragstext unter dem Bild stehen?",
+    art: "textarea", rows: 4,
+    platzhalter: "Der Text, den Leser im Feed lesen",
     when: (a) => a.mode === "manual" && a.lane === "marketing", pflicht: true, min: 20,
   },
   {
-    key: "tone", label: "Tonalität", art: "text",
-    platzhalter: "z. B. sachlich, kurze Sätze",
+    key: "tone", label: "Tonalität", frage: "Wie soll es klingen?", art: "text",
+    platzhalter: "z. B. sachlich, kurze Sätze, keine Superlative",
     when: (a) => a.mode !== "manual",
   },
 ];
@@ -100,9 +127,30 @@ const STANDARD = {
 };
 
 const EIGENES_CSS = `
+#${OVERLAY_ID} .ms-split{
+  display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr);
+  grid-template-rows:auto 1fr; gap:0 20px; align-items:stretch; width:100%;
+}
+#${OVERLAY_ID} .ms-kopf{display:flex; align-items:flex-end; padding-bottom:14px;}
+#${OVERLAY_ID} .ms-kopf .as-progress{padding-bottom:0; width:100%;}
+/* Die letzte Karte traegt keinen Abstand nach unten: sonst waere die Spalte
+   um genau diesen Abstand hoeher als die Karte rechts. */
+#${OVERLAY_ID} .ms-links{min-width:0;}
+#${OVERLAY_ID} .ms-links > *:last-child{margin-bottom:0;}
+#${OVERLAY_ID} .ms-rechts{min-width:0; display:flex;}
+/* Die Signalkarte ist so hoch wie die Spalte links: gleicher Anfang, gleiches
+   Ende. Ihr Inhalt bleibt oben. */
 #${OVERLAY_ID} .ms-karte{
+  flex:1; align-self:stretch;
   display:flex; flex-direction:column; gap:14px; padding:22px; border:1px solid var(--line,#e2e8f0);
   border-radius:16px; background:var(--bg,#fff); box-shadow:0 8px 26px rgba(15,23,42,.06);
+}
+#${OVERLAY_ID} .ms-karte .ms-fueller{flex:1;}
+/* Dieselbe Schwelle wie im Studio, und dieselbe Messgroesse: die Breite des
+   Inhalts, nicht die des Fensters. */
+@container (max-width: 860px){
+  #${OVERLAY_ID} .ms-split{grid-template-columns:1fr; grid-template-rows:auto auto auto auto;}
+  #${OVERLAY_ID} .ms-kopf:nth-of-type(2){display:none;}
 }
 #${OVERLAY_ID} .ms-karte h4{margin:0; font-size:22px; line-height:1.2; font-weight:700; color:var(--ink,#0f172a);}
 #${OVERLAY_ID} .ms-karte p{margin:0; font-size:14px; line-height:1.5; color:var(--muted,#475569);}
@@ -253,7 +301,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       ? `<div class="as-step as-step--open" data-stepcard>
           <div class="as-step-kopf">
             <span class="as-step-nr">${index + 1}</span>
-            <label>${esc(offen.label)}</label>
+            <label>${esc(offen.frage || offen.label)}</label>
+            ${offen.pflicht ? "" : '<i class="as-tag">Optional</i>'}
           </div>
           ${offen.hinweis ? `<p class="as-hint">${esc(offen.hinweis)}</p>` : ""}
           ${koerper(offen)}
@@ -277,16 +326,16 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
             </button>
           </div>
         </div>`;
-    return `${fortschrittHtml(fragen, index)}${beantwortet}${karte}`;
+    return `${beantwortet}${karte}`;
   }
 
   /** Rechts steht das Signal, wie es das Modell lesen wird. */
   function karteHtml() {
     const a = state.answers;
     const chips = [
-      a.lane === "sales" ? "Sales" : "Marketing",
-      a.lane === "marketing" ? (a.profile === "private" ? "Privatprofil" : "ROOTS") : "ROOTS",
-      a.mode === "ai" ? "KI schreibt" : a.mode === "hybrid" ? "KI und eigene Texte" : "Nur eigene Texte",
+      a.lane === "sales" ? "Ansprache" : "LinkedIn",
+      a.lane === "marketing" && a.profile === "private" ? "Privatprofil" : "ROOTS",
+      a.mode === "ai" ? "KI schreibt" : a.mode === "hybrid" ? "KI + eigene Texte" : "Eigene Texte",
       a.company, a.territory, a.offering,
     ].filter(Boolean).map((text) => `<span class="ms-chip">${esc(text)}</span>`).join("");
     return `<div class="ms-karte">
@@ -295,6 +344,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       <p${a.core ? "" : ' class="ms-leer"'}>${esc(a.core || "Kernaussage")}</p>
       ${a.evidence ? `<div class="ms-beleg">${esc(a.evidence)}</div>` : ""}
       ${a.source ? `<p>Quelle: ${esc(a.source)}</p>` : ""}
+      <span class="ms-fueller"></span>
     </div>`;
   }
 
@@ -315,12 +365,11 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
           <h2>Manuelles Signal</h2>
         </header>
         <div class="as-content">
-          <div class="as-split2">
-            <div class="as-split2-form">${formHtml()}</div>
-            <div class="as-split2-prev">
-              <span class="as-prev-label">Signal</span>
-              ${karteHtml()}
-            </div>
+          <div class="ms-split">
+            <div class="ms-kopf">${fortschrittHtml(fragen, index)}</div>
+            <div class="ms-kopf"><span class="as-prev-label">Signal</span></div>
+            <div class="ms-links">${formHtml()}</div>
+            <div class="ms-rechts">${karteHtml()}</div>
           </div>
         </div>
       </div>`;
@@ -429,8 +478,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     const feld = event.target.closest("[data-feld]");
     if (!feld) return;
     state.answers[feld.getAttribute("data-feld")] = feld.value;
-    const host = shell.querySelector(".as-split2-prev");
-    if (host) host.innerHTML = `<span class="as-prev-label">Signal</span>${karteHtml()}`;
+    const host = shell.querySelector(".ms-rechts");
+    if (host) host.innerHTML = karteHtml();
   });
 
   document.addEventListener("keydown", onKey);

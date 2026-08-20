@@ -128,7 +128,20 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /key: "evidence"[\s\S]*pflicht: true/);
   assert.match(frontend, /data-act="skip"/);
   assert.match(frontend, /key: "audience", label: "Zielgruppe"/);
-  assert.match(frontend, /key: "competitor", label: "Wettbewerbsbezug"/);
+  assert.match(frontend, /key: "competitor", label: "Wettbewerb"/);
+  // Die Karte stellt eine Frage, die Antwortzeile traegt den kurzen Namen:
+  // "Wofür" als Frage war keine Frage.
+  assert.match(frontend, /frage: "Was soll aus dem Signal entstehen\?"/);
+  assert.match(frontend, /frage: "Wer schreibt die Texte\?"/);
+  assert.match(frontend, /frage: "Was belegt diese Beobachtung\?"/);
+  assert.match(frontend, /<label>\$\{esc\(offen\.frage \|\| offen\.label\)\}<\/label>/);
+  for (const eintrag of frontend.slice(frontend.indexOf("const FRAGEN = ["), frontend.indexOf("const STANDARD")).split(/\n  \{/).slice(1)) {
+    assert.match(eintrag, /frage: "[^"]*\?"/, `jede Frage endet mit einem Fragezeichen: ${eintrag.slice(0, 60)}`);
+  }
+  // Links und rechts beginnen und enden auf derselben Linie.
+  assert.match(frontend, /grid-template-rows:auto 1fr/);
+  assert.match(frontend, /class="ms-kopf"/);
+  assert.match(frontend, /\.ms-karte\{\n  flex:1; align-self:stretch;/);
   // Eigene Texte nur, wenn der Modus sie verlangt.
   assert.match(frontend, /key: "storyline_text"[\s\S]*when: \(a\) => a\.mode !== "ai"/);
   assert.match(frontend, /key: "caption_text"[\s\S]*a\.mode === "manual" && a\.lane === "marketing"/);
