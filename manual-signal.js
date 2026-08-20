@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1730";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1800";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -140,13 +140,14 @@ const FRAGEN = [
   },
 ];
 
-const STANDARD = {
-  lane: "marketing", profile: "roots", mode: "ai",
-  headline: "", core: "", relevance: "", evidence: "", source: "", company: "", offering: "",
-  audience: "", territory: "", occasion: "", competitor: "", tone: "",
-  storyline_text: "", cta_text: "", caption_text: "",
-};
+const STANDARD = { lane: "marketing", profile: "roots", mode: "ai" };
 
+/**
+ * Vorbelegung für die Test- und Abnahmephase: jedes Feld traegt schon einen
+ * brauchbaren Wert, damit ein Durchlauf keine fuenfzehn Eingaben braucht.
+ * Wer tippt, ueberschreibt; wer die Spur wechselt, bekommt das Beispiel der
+ * neuen Spur, solange er das Feld noch nicht selbst angefasst hat.
+ */
 const BEISPIEL = {
   marketing: {
     headline: "Handel baut Eigenmarken schneller aus als geplant",
@@ -243,7 +244,12 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     : async () => { throw new Error("Keine Verbindung zum Server verfügbar."); };
   const melde = typeof notify === "function" ? notify : () => {};
 
-  const state = { answers: { ...STANDARD }, stepKey: "lane", busy: false, error: "", formError: "" };
+  const state = {
+    answers: { ...STANDARD, ...BEISPIEL.marketing },
+    // Selbst getippte Felder ueberlebt ein Spurwechsel.
+    beruehrt: new Set(),
+    stepKey: "lane", busy: false, error: "", formError: "",
+  };
 
   const overlay = document.createElement("div");
   overlay.id = OVERLAY_ID;
@@ -268,6 +274,14 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     },
   };
   offeneInstanz = instanz;
+
+  /** Beispielwerte der Spur in alle Felder, die noch niemand angefasst hat. */
+  function uebernimmBeispiel(lane) {
+    const vorlage = BEISPIEL[lane] || BEISPIEL.marketing;
+    for (const [key, wert] of Object.entries(vorlage)) {
+      if (!state.beruehrt.has(key)) state.answers[key] = wert;
+    }
+  }
 
   function aktiveFragen() {
     return FRAGEN.filter((q) => (typeof q.when === "function" ? q.when(state.answers) : true));
@@ -373,7 +387,6 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
           <div class="as-step-fuss">
             ${index > 0 ? '<button type="button" class="as-btn as-step-zurueck" data-act="back"><i class="fa-solid fa-arrow-left"></i>Zurück</button>' : ""}
             ${offen.pflicht ? "" : '<button type="button" class="as-btn" data-act="skip">Überspringen</button>'}
-            <button type="button" class="as-pill" data-act="beispiel">Beispiel einsetzen</button>
             <button type="button" class="as-btn as-btn--primary as-step-weiter" data-act="next">Weiter<i class="fa-solid fa-arrow-right"></i></button>
           </div>
         </div>`
@@ -529,17 +542,11 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     if (act === "pick") {
       const key = hit.getAttribute("data-key");
       state.answers[key] = hit.getAttribute("data-value");
+      if (key === "lane") uebernimmBeispiel(state.answers.lane);
       state.formError = "";
       // Eine Pille beantwortet die Frage vollstaendig, also weiter - wie im
       // Asset-Fragebogen.
       setzeSchritt(naechsterSchritt());
-      return;
-    }
-    if (act === "beispiel") {
-      // Alle Felder auf einmal: zum Ausprobieren, ohne elf Felder zu tippen.
-      Object.assign(state.answers, BEISPIEL[state.answers.lane] || BEISPIEL.marketing);
-      state.formError = "";
-      setzeSchritt(ENDE);
       return;
     }
     if (act === "next") { if (pruefeOffen()) setzeSchritt(naechsterSchritt()); return; }
@@ -552,7 +559,9 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   overlay.addEventListener("input", (event) => {
     const feld = event.target.closest("[data-feld]");
     if (!feld) return;
-    state.answers[feld.getAttribute("data-feld")] = feld.value;
+    const key = feld.getAttribute("data-feld");
+    state.beruehrt.add(key);
+    state.answers[key] = feld.value;
     const host = shell.querySelector(".ms-rechts");
     if (host) host.innerHTML = karteHtml();
   });

@@ -2273,9 +2273,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260819-1730");
-  assert.match(indexHtml, /app\.js\?v=20260819-1730/);
-  assert.match(studio, /asset-templates\.js\?v=20260819-1730/);
+  assert.equal(studioVersion, "20260819-1800");
+  assert.match(indexHtml, /app\.js\?v=20260819-1800/);
+  assert.match(studio, /asset-templates\.js\?v=20260819-1800/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);

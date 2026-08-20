@@ -187,10 +187,16 @@ test("die Pflichtmeldung trägt die Warnfarbe der Marke, kein nackter Absatz", (
   assert.match(frontend, /Noch \$\{\(offen\.min \|\| 1\) - laenge\} Zeichen zu kurz\./);
 });
 
-test("ein Beispiel füllt alle Felder auf einmal", () => {
+test("jedes Feld ist für die Testphase vorbelegt", () => {
   assert.match(frontend, /const BEISPIEL = \{/);
-  assert.match(frontend, /data-act="beispiel"/);
-  assert.match(frontend, /Object\.assign\(state\.answers, BEISPIEL\[state\.answers\.lane\] \|\| BEISPIEL\.marketing\)/);
+  // Vorbelegt beim Oeffnen, nicht hinter einem Knopf.
+  assert.match(frontend, /answers: \{ \.\.\.STANDARD, \.\.\.BEISPIEL\.marketing \}/);
+  assert.doesNotMatch(frontend, /data-act="beispiel"/);
+  // Spurwechsel tauscht das Beispiel, selbst getippte Felder bleiben stehen.
+  assert.match(frontend, /function uebernimmBeispiel\(lane\)/);
+  assert.match(frontend, /if \(!state\.beruehrt\.has\(key\)\) state\.answers\[key\] = wert;/);
+  assert.match(frontend, /if \(key === "lane"\) uebernimmBeispiel\(state\.answers\.lane\)/);
+  assert.match(frontend, /state\.beruehrt\.add\(key\)/);
   // Beide Spuren tragen ein vollständiges Beispiel, sonst bleibt ein Pflichtfeld leer.
   const block = frontend.slice(frontend.indexOf("const BEISPIEL = {"), frontend.indexOf("const EIGENES_CSS"));
   for (const spur of ["marketing", "sales"]) {
