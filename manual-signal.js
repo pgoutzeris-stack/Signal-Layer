@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1520";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1610";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -49,15 +49,20 @@ const FRAGEN = [
     pflicht: true,
   },
   {
-    key: "headline", label: "Beobachtung", frage: "Was hast du beobachtet?", art: "text",
+    key: "headline", label: "Signal", frage: "Wie lautet das Signal in einem Satz?", art: "text",
     platzhalter: "Handel baut Eigenmarken schneller aus als geplant",
     pflicht: true, min: 10,
   },
   {
-    key: "core", label: "Relevanz", frage: "Warum ist das für unsere Zielgruppe relevant?",
+    key: "core", label: "Kern", frage: "Was besagt das Signal im Kern?",
     art: "textarea", rows: 4,
-    platzhalter: "Zwei bis drei Sätze: was passiert und welche Folge das hat",
+    platzhalter: "Zwei bis drei Sätze: was passiert, bei wem, seit wann",
     pflicht: true, min: 30,
+  },
+  {
+    key: "relevance", label: "Relevanz", frage: "Warum ist das für die Zielgruppe relevant?",
+    art: "textarea", rows: 3,
+    platzhalter: "Welche Folge das für Marketing- oder Markenentscheider hat",
   },
   {
     key: "evidence", label: "Beleg", frage: "Was belegt diese Beobachtung?",
@@ -121,7 +126,7 @@ const FRAGEN = [
 
 const STANDARD = {
   lane: "marketing", profile: "roots", mode: "ai",
-  headline: "", core: "", evidence: "", source: "", company: "", offering: "",
+  headline: "", core: "", relevance: "", evidence: "", source: "", company: "", offering: "",
   audience: "", territory: "", occasion: "", competitor: "", tone: "",
   storyline_text: "", cta_text: "", caption_text: "",
 };
@@ -341,7 +346,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     return `<div class="ms-karte">
       <div class="ms-chips">${chips}</div>
       <h4${a.headline ? "" : ' class="ms-leer"'}>${esc(a.headline || "Überschrift des Signals")}</h4>
-      <p${a.core ? "" : ' class="ms-leer"'}>${esc(a.core || "Kernaussage")}</p>
+      <p${a.core ? "" : ' class="ms-leer"'}>${esc(a.core || "Kern des Signals")}</p>
+      ${a.relevance ? `<p>${esc(a.relevance)}</p>` : ""}
       ${a.evidence ? `<div class="ms-beleg">${esc(a.evidence)}</div>` : ""}
       ${a.source ? `<p>Quelle: ${esc(a.source)}</p>` : ""}
       <span class="ms-fueller"></span>
@@ -424,7 +430,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       const res = await api("create_manual_signal", {
         signal: {
           lane: a.lane, mode: a.mode, headline: a.headline, core: a.core, evidence: a.evidence,
-          source: a.source, company: a.company, offering: a.offering, audience: a.audience,
+          relevance: a.relevance, source: a.source, company: a.company, offering: a.offering, audience: a.audience,
           territory: a.territory, occasion: a.occasion, competitor: a.competitor, tone: a.tone,
         },
       });

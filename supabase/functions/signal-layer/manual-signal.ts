@@ -18,6 +18,7 @@ export type ManualSignal = {
   mode: ManualSignalMode;
   headline: string;
   core: string;
+  relevance: string;
   evidence: string;
   source: string;
   company: string;
@@ -33,6 +34,7 @@ export type ManualSignal = {
 const GRENZEN: Record<keyof Omit<ManualSignal, "lane" | "mode">, number> = {
   headline: 200,
   core: 1_200,
+  relevance: 800,
   evidence: 2_000,
   source: 300,
   company: 120,
@@ -67,7 +69,7 @@ export function normalizeManualSignal(raw: unknown): ManualSignal {
 /** Ohne Überschrift, Kernaussage und Beleg ist es kein Signal, sondern eine Notiz. */
 export function manualSignalIssue(signal: ManualSignal): string {
   if (signal.headline.length < 10) return "Die Überschrift des Signals fehlt oder ist zu kurz.";
-  if (signal.core.length < 30) return "Die Kernaussage fehlt oder ist zu kurz. Zwei bis drei Sätze, was du beobachtet hast.";
+  if (signal.core.length < 30) return "Der Kern des Signals fehlt oder ist zu kurz. Zwei bis drei Sätze, was das Signal besagt.";
   if (signal.evidence.length < 20) {
     return "Der Beleg fehlt. Ohne Beleg darf im Asset keine Zahl und keine Behauptung stehen: Zitat, Zahl oder Beobachtung eintragen.";
   }
@@ -80,7 +82,9 @@ export function manualSignalIssue(signal: ManualSignal): string {
  * Zahlenprüfung findet ihre Ausschnitte wortgleich wieder.
  */
 export function manualSignalCorpus(signal: ManualSignal): string {
-  const teile: string[] = [signal.headline, "", signal.core, "", "Belege und Zahlen:", signal.evidence];
+  const teile: string[] = [signal.headline, "", signal.core];
+  if (signal.relevance) teile.push("", "Warum es zählt:", signal.relevance);
+  teile.push("", "Belege und Zahlen:", signal.evidence);
   const zusatz: [string, string][] = [
     ["Quelle", signal.source],
     ["Unternehmen", signal.company],
@@ -137,7 +141,10 @@ export function manualSignalRows(signal: ManualSignal, articleId: string, jetzt:
       score: 0,
       evidence: signal.evidence,
       headline_de: signal.headline,
-      why_de: signal.core,
+      // why_de ist die Begruendung, summary_de der Inhalt. Der Asset-Prompt
+      // liest summary_de als Signalzusammenfassung: dort gehoert der Kern hin,
+      // nicht die Relevanz.
+      why_de: signal.relevance || signal.core,
       summary_de: signal.core,
       company: signal.company || null,
       article_type: MANUAL_ARTICLE_TYPE,

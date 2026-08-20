@@ -31,7 +31,7 @@ test("ein Signal ohne Beleg wird abgewiesen, kein Asset ohne Quelle", () => {
   )), /Überschrift/);
   assert.match(backend.manualSignalIssue(backend.normalizeManualSignal(
     vollesSignal({ core: "zu kurz" }),
-  )), /Kernaussage/);
+  )), /Kern des Signals/);
 });
 
 test("Spur und Modus fallen auf sichere Werte zurück", () => {
@@ -79,8 +79,17 @@ test("die beiden Zeilen bleiben aus der Pipeline-Auswertung heraus", () => {
   assert.equal(zeile.lane, "sales");
   assert.equal(zeile.article_type, "manual");
   assert.equal(zeile.headline_de, signal.headline);
-  // summary_de ist die Signalzusammenfassung im Asset-Prompt; sie darf nicht leer sein.
+  // summary_de ist die Signalzusammenfassung im Asset-Prompt: dort steht der
+  // Kern. why_de ist die Begruendung und nimmt die Relevanz, wenn es eine gibt.
   assert.equal(zeile.summary_de, signal.core);
+  assert.equal(zeile.why_de, signal.core, "ohne Relevanz traegt why_de den Kern");
+  const mitRelevanz = backend.manualSignalRows(
+    backend.normalizeManualSignal(vollesSignal({ relevance: "Handelsmarken drücken die Verhandlungsmacht der Marken." })),
+    "22222222-2222-2222-2222-222222222222", "2026-08-19T10:00:00.000Z",
+  );
+  assert.match(String(mitRelevanz.signal.why_de), /Verhandlungsmacht/);
+  assert.equal(mitRelevanz.signal.summary_de, signal.core);
+  assert.match(String(mitRelevanz.article.content), /Warum es zählt:/);
   assert.equal(zeile.company, "Beispiel AG");
   // article_type ist bei gecrawlten Zeilen oft NULL. Ein blankes <> 'manual'
   // wäre dort NULL und würde echte Signale stumm wegwerfen.
@@ -117,7 +126,7 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /class="as-opt as-opt--btn/);
   assert.match(frontend, /as-progress-text/);
 
-  const reihenfolge = ["lane", "profile", "mode", "headline", "core", "evidence", "source"];
+  const reihenfolge = ["lane", "profile", "mode", "headline", "core", "relevance", "evidence", "source"];
   let letzte = -1;
   for (const key of reihenfolge) {
     const pos = frontend.indexOf(`key: "${key}"`);
@@ -134,6 +143,9 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /frage: "Was soll aus dem Signal entstehen\?"/);
   assert.match(frontend, /frage: "Wer schreibt die Texte\?"/);
   assert.match(frontend, /frage: "Was belegt diese Beobachtung\?"/);
+  // Der Kern ist der Inhalt des Signals, die Relevanz eine eigene Frage.
+  assert.match(frontend, /key: "core", label: "Kern", frage: "Was besagt das Signal im Kern\?"/);
+  assert.match(frontend, /key: "relevance", label: "Relevanz", frage: "Warum ist das für die Zielgruppe relevant\?"/);
   assert.match(frontend, /<label>\$\{esc\(offen\.frage \|\| offen\.label\)\}<\/label>/);
   for (const eintrag of frontend.slice(frontend.indexOf("const FRAGEN = ["), frontend.indexOf("const STANDARD")).split(/\n  \{/).slice(1)) {
     assert.match(eintrag, /frage: "[^"]*\?"/, `jede Frage endet mit einem Fragezeichen: ${eintrag.slice(0, 60)}`);
