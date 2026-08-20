@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1650";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1730";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -145,6 +145,43 @@ const STANDARD = {
   headline: "", core: "", relevance: "", evidence: "", source: "", company: "", offering: "",
   audience: "", territory: "", occasion: "", competitor: "", tone: "",
   storyline_text: "", cta_text: "", caption_text: "",
+};
+
+const BEISPIEL = {
+  marketing: {
+    headline: "Handel baut Eigenmarken schneller aus als geplant",
+    core: "Der Eigenmarkenanteil im Lebensmittelhandel steigt seit zwei Jahren deutlich schneller als von den Herstellern erwartet. Händler füllen mit eigenen Linien die Lücke, die Marken beim Preis offen lassen.",
+    relevance: "Markenhersteller verlieren Regalfläche und damit Verhandlungsmacht. Wer seine Positionierung nicht schärft, wird über den Preis verglichen.",
+    evidence: "Der Eigenmarkenanteil liegt bei 41 Prozent, 2024 waren es 34 Prozent. 68 Prozent der Käufer nennen den Preis als Hauptgrund.",
+    source: "Handelsblatt, 2026",
+    company: "Beispiel Handel AG",
+    offering: "Markenstrategie",
+    audience: "Marketingleitung im Handel",
+    territory: "DACH, Lebensmittelhandel",
+    occasion: "Quartalszahlen",
+    competitor: "Discounter mit eigener Premiumlinie",
+    tone: "sachlich, kurze Sätze, keine Superlative",
+    storyline_text: "Eigenmarken wachsen, weil Marken die Lücke offen lassen.",
+    cta_text: "Sortimentscheck vereinbaren",
+    caption_text: "Der Eigenmarkenanteil liegt bei 41 Prozent. Wer jetzt nicht nachschärft, wird über den Preis verglichen.",
+  },
+  sales: {
+    headline: "Beispiel Handel AG verliert Regalanteil an Eigenmarken",
+    core: "Die eigene Marke des Kunden verliert im Lebensmittelhandel Fläche an Eigenmarken der Händler. Der Abstand hat sich in zwei Jahren mehr als verdoppelt.",
+    relevance: "Ohne geschärfte Positionierung verhandelt der Kunde nur noch über den Preis und verliert weiter Fläche.",
+    evidence: "Der Eigenmarkenanteil liegt bei 41 Prozent, 2024 waren es 34 Prozent. Der Kunde nennt im Geschäftsbericht 12 Prozent Rückgang bei der Kernmarke.",
+    source: "Geschäftsbericht 2026",
+    company: "Beispiel Handel AG",
+    offering: "Markenstrategie",
+    audience: "CMO",
+    territory: "DACH, Lebensmittelhandel",
+    occasion: "Quartalszahlen",
+    competitor: "Discounter mit eigener Premiumlinie",
+    tone: "sachlich, kurze Sätze, keine Superlative",
+    storyline_text: "Regalanteil zurückholen heißt zuerst entscheiden, wofür die Marke steht.",
+    cta_text: "Sollen wir den Sortimentscheck gemeinsam durchgehen?",
+    caption_text: "",
+  },
 };
 
 const EIGENES_CSS = `
@@ -336,6 +373,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
           <div class="as-step-fuss">
             ${index > 0 ? '<button type="button" class="as-btn as-step-zurueck" data-act="back"><i class="fa-solid fa-arrow-left"></i>Zurück</button>' : ""}
             ${offen.pflicht ? "" : '<button type="button" class="as-btn" data-act="skip">Überspringen</button>'}
+            <button type="button" class="as-pill" data-act="beispiel">Beispiel einsetzen</button>
             <button type="button" class="as-btn as-btn--primary as-step-weiter" data-act="next">Weiter<i class="fa-solid fa-arrow-right"></i></button>
           </div>
         </div>`
@@ -409,9 +447,12 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     const offen = fragen[schrittIndex(fragen)];
     if (!offen) return true;
     if (erledigt(offen)) return true;
+    const laenge = wert(offen).trim().length;
     state.formError = offen.art === "pills"
       ? "Bitte eine Antwort wählen."
-      : `Bitte ausfüllen, mindestens ${offen.min || 1} Zeichen.`;
+      : laenge
+        ? `Noch ${(offen.min || 1) - laenge} Zeichen zu kurz.`
+        : `Diese Angabe braucht das Asset. Mindestens ${offen.min || 1} Zeichen.`;
     zeichne();
     return false;
   }
@@ -492,6 +533,13 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       // Eine Pille beantwortet die Frage vollstaendig, also weiter - wie im
       // Asset-Fragebogen.
       setzeSchritt(naechsterSchritt());
+      return;
+    }
+    if (act === "beispiel") {
+      // Alle Felder auf einmal: zum Ausprobieren, ohne elf Felder zu tippen.
+      Object.assign(state.answers, BEISPIEL[state.answers.lane] || BEISPIEL.marketing);
+      state.formError = "";
+      setzeSchritt(ENDE);
       return;
     }
     if (act === "next") { if (pruefeOffen()) setzeSchritt(naechsterSchritt()); return; }

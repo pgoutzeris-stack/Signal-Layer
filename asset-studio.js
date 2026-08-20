@@ -868,6 +868,14 @@ const CHROME_CSS = `
 #as-overlay .as-pill:hover{
   border-color:var(--brand,#206efb); background:var(--brand-light,#eff6ff); color:var(--brand,#206efb);
 }
+/* Die Pflichtmeldung stand ungestaltet als nackter Absatz in der Karte. Sie
+   traegt jetzt die Warnfarbe der Marke und liegt als eigener Kasten unter dem
+   Feld, das sie betrifft. */
+#as-overlay .as-form-error{
+  display:block; margin:2px 0 0; padding:10px 12px; border-radius:12px;
+  border:1px solid #fecaca; background:#fef2f2; color:var(--danger,#dc2626);
+  font-size:13px; line-height:1.45; font-weight:600;
+}
 #as-overlay .as-q--muted > label, #as-overlay .as-q--muted .as-hint{color:#94a3b8;}
 #as-overlay .as-q--muted .as-hint{font-size:12px; line-height:1.45;}
 #as-overlay .as-slots{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;}
@@ -1294,7 +1302,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-1650";
+import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-1730";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 

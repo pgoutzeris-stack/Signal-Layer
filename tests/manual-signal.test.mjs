@@ -178,6 +178,29 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /key: "caption_text"[\s\S]*a\.mode === "manual" && a\.lane === "marketing"/);
 });
 
+test("die Pflichtmeldung trägt die Warnfarbe der Marke, kein nackter Absatz", () => {
+  const studio = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf8");
+  assert.match(studio, /#as-overlay \.as-form-error\{/);
+  assert.match(studio, /color:var\(--danger,#dc2626\)/);
+  assert.match(frontend, /class="as-form-error"/);
+  // Die Meldung sagt, was fehlt, nicht nur dass etwas fehlt.
+  assert.match(frontend, /Noch \$\{\(offen\.min \|\| 1\) - laenge\} Zeichen zu kurz\./);
+});
+
+test("ein Beispiel füllt alle Felder auf einmal", () => {
+  assert.match(frontend, /const BEISPIEL = \{/);
+  assert.match(frontend, /data-act="beispiel"/);
+  assert.match(frontend, /Object\.assign\(state\.answers, BEISPIEL\[state\.answers\.lane\] \|\| BEISPIEL\.marketing\)/);
+  // Beide Spuren tragen ein vollständiges Beispiel, sonst bleibt ein Pflichtfeld leer.
+  const block = frontend.slice(frontend.indexOf("const BEISPIEL = {"), frontend.indexOf("const EIGENES_CSS"));
+  for (const spur of ["marketing", "sales"]) {
+    const teil = block.slice(block.indexOf(`${spur}: {`));
+    for (const feld of ["headline", "core", "relevance", "evidence", "storyline_text", "cta_text"]) {
+      assert.match(teil, new RegExp(`${feld}: "[^"]{10,}"`), `${spur} ohne ${feld}`);
+    }
+  }
+});
+
 test("die Übergabe belegt den Asset-Fragebogen mit den eigenen Texten vor", () => {
   const block = frontend.slice(frontend.indexOf("function assetVorbelegung"), frontend.indexOf("async function uebernehmen"));
   assert.match(block, /storyline: eigen \? "custom" : "auto"/);
