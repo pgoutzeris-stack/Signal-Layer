@@ -11,6 +11,9 @@ on:
       - "supabase/functions/signal-layer/asset-studio.ts"
       - "supabase/functions/signal-layer/index.ts"
       - "tests/asset-studio.test.mjs"
+      - "manual-signal.js"
+      - "supabase/functions/signal-layer/manual-signal.ts"
+      - "tests/manual-signal.test.mjs"
       - ".github/workflows/asset-studio-check.yml"
   pull_request:
     paths:
@@ -21,6 +24,9 @@ on:
       - "supabase/functions/signal-layer/asset-studio.ts"
       - "supabase/functions/signal-layer/index.ts"
       - "tests/asset-studio.test.mjs"
+      - "manual-signal.js"
+      - "supabase/functions/signal-layer/manual-signal.ts"
+      - "tests/manual-signal.test.mjs"
       - ".github/workflows/asset-studio-check.yml"
 
 permissions:
@@ -38,5 +44,6 @@ jobs:
         run: |
           node --check asset-studio.js
           node --check asset-templates.js
+          node --check manual-signal.js
       - name: Test asset studio
-        run: node --experimental-strip-types --test tests/asset-studio.test.mjs
+        run: node --experimental-strip-types --test tests/asset-studio.test.mjs tests/manual-signal.test.mjs

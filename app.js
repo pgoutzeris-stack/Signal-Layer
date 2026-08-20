@@ -6,7 +6,8 @@ import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-stat
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260818-1642";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1130";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1400";
+import { openManualSignal } from "./manual-signal.js?v=20260819-1400";
 
 let sb = null;
 let sources = [];
@@ -3968,6 +3969,12 @@ function bindUi() {
       const button = event.target.closest("[data-pipeline-mode]");
       if (button) applyPipelineMode(button.dataset.pipelineMode);
     });
+  });
+  // Kein Pipeline-Modus, sondern ein eigener Weg: der Nutzer bringt das Signal
+  // selbst mit, statt eines aus dem Lauf zu nehmen.
+  document.getElementById("manual-signal-btn")?.addEventListener("click", () => {
+    closeAssetStudio();
+    openManualSignal({ callApi, escapeHtml, notify: toast, openSettingsPanel });
   });
   // Article-type filter is server-side (full archive), so re-fetch on change.
   // The multi-select toggles already updated archiveViewState.articleTypes.

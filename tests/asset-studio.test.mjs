@@ -145,7 +145,7 @@ test("die Kosten werden als asset_generation gebucht", () => {
 test("das Studio arbeitet im Rahmen des Artikel-Popups", () => {
   // Als eigene Vollflaeche wuerde es das Popup verdecken statt darin zu leben:
   // der Artikel bliebe offen im Hintergrund, der Weg zurueck waere unklar.
-  assert.match(studio, /openAssetStudio\(\{ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel \} = \{\}\)/);
+  assert.match(studio, /openAssetStudio\(\{ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill \} = \{\}\)/);
   assert.match(studio, /const mount = host instanceof HTMLElement \? host : document\.body/);
   assert.match(studio, /#as-overlay\.as-in-host\{position:absolute/);
   const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
@@ -2273,9 +2273,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260819-1130");
-  assert.match(indexHtml, /app\.js\?v=20260819-1130/);
-  assert.match(studio, /asset-templates\.js\?v=20260819-1130/);
+  assert.equal(studioVersion, "20260819-1400");
+  assert.match(indexHtml, /app\.js\?v=20260819-1400/);
+  assert.match(studio, /asset-templates\.js\?v=20260819-1400/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);

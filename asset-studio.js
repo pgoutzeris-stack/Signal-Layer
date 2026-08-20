@@ -1294,7 +1294,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-1130";
+import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-1400";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1304,11 +1304,16 @@ let openInstance = null;
 
 /** Schliesst ein offenes Studio. Von aussen aufrufbar, damit das Artikel-Popup
  *  seine Ebene abraeumen kann, bevor es selbst verschwindet. */
+/** Der Fragebogen des manuellen Signals benutzt dieselbe Oberflaeche. Er
+ *  ersetzt `#as-overlay` durch seine eigene Kennung, damit beide Ebenen
+ *  gleich aussehen und trotzdem unabhaengig voneinander leben. */
+export const ASSET_CHROME_CSS = CHROME_CSS;
+
 export function closeAssetStudio() {
   if (openInstance) openInstance.close();
 }
 
-export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel } = {}) {
+export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill } = {}) {
   // Zwei Studios gleichzeitig würden sich Tastatur und Auswahl streitig machen.
   // Eine Instanz, deren Overlay nicht mehr im Dokument haengt, ist aber keine
   // Instanz mehr: sie entsteht, wenn das Popup unter dem Studio geschlossen
@@ -1329,7 +1334,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   const state = {
     step: "form",
-    answers: defaultAnswers(questions),
+    // Ein manuelles Signal bringt Antworten mit: Profil, Modus und die Texte,
+    // die der Nutzer schon geschrieben hat. Sie bleiben veraenderbar.
+    answers: { ...defaultAnswers(questions), ...vorbelegung(questions, prefill) },
     payload: null,
     assetId: null,
     error: "",
@@ -1488,6 +1495,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     state.answers.slide_cover = arten.find((key) => SLIDE_ROLE[key] === "cover") || "";
     state.answers.slide_content = arten.filter((key) => !SLIDE_ROLE[key]).join(",");
     state.answers.slide_end = arten.find((key) => SLIDE_ROLE[key] === "end") || "";
+  }
+
+  /** Nur Schluessel, die der Fragebogen kennt: fremde Felder wuerden still in
+   *  den Antworten liegen und beim Erzeugen mitgeschickt werden. */
+  function vorbelegung(list, prefill) {
+    const quelle = prefill && typeof prefill === "object" ? prefill : {};
+    const erlaubt = new Set();
+    for (const q of list) {
+      erlaubt.add(q.key);
+      if (q.free) erlaubt.add(q.free.key);
+    }
+    const out = {};
+    for (const [key, wert] of Object.entries(quelle)) {
+      if (erlaubt.has(key) && wert !== undefined && wert !== null) out[key] = wert;
+    }
+    return out;
   }
 
   function defaultAnswers(list) {

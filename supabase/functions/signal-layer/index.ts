@@ -181,6 +181,13 @@ import {
   worldvectorlogoCdnUrl,
   worldvectorlogoSlugCandidates,
 } from "./asset-studio.ts";
+import {
+  MANUAL_ARTICLE_TYPE,
+  MANUAL_SIGNAL_EXCLUDE,
+  manualSignalIssue,
+  manualSignalRows,
+  normalizeManualSignal,
+} from "./manual-signal.ts";
 
 // ---------------------------------------------------------------------------
 // CORS
@@ -526,6 +533,9 @@ const EDITOR_ACTIONS = new Set([
   // eines bereits erzeugten Assets bleibt fuer Leser offen.
   "generate_asset",
   "cancel_asset",
+  // Ein selbst geschriebenes Signal legt eine Artikel- und eine Signalzeile an.
+  // Lesen bleibt offen, Schreiben braucht dieselbe Freigabe wie ein Lauf.
+  "create_manual_signal",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -7762,11 +7772,14 @@ Deno.serve(async (req: Request) => {
         const admin = getAdminClient();
         const [{ count: marketing }, { count: sales }, { count: rejected }, { data: run }, { data: triggerBackfill }] = await Promise.all([
           admin.schema("signal_layer").from("simple_signals")
-            .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "marketing"),
+            .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "marketing")
+            .or(MANUAL_SIGNAL_EXCLUDE),
           admin.schema("signal_layer").from("simple_signals")
-            .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "sales"),
+            .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "sales")
+            .or(MANUAL_SIGNAL_EXCLUDE),
           admin.schema("signal_layer").from("simple_signals")
-            .select("id", { count: "exact", head: true }).eq("status", "rejected"),
+            .select("id", { count: "exact", head: true }).eq("status", "rejected")
+            .or(MANUAL_SIGNAL_EXCLUDE),
           admin.schema("signal_layer").from("simple_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
@@ -8426,9 +8439,11 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_signals")
-            .select("id", { count: "exact", head: true }).eq("status", "signal"),
+            .select("id", { count: "exact", head: true }).eq("status", "signal")
+            .or(MANUAL_SIGNAL_EXCLUDE),
           admin.schema("signal_layer").from("simple_signals")
-            .select("id", { count: "exact", head: true }).eq("status", "rejected"),
+            .select("id", { count: "exact", head: true }).eq("status", "rejected")
+            .or(MANUAL_SIGNAL_EXCLUDE),
           getUsdEurRateSnapshot().then((snapshot) => ({ data: snapshot })).catch(() => ({ data: null })),
           admin.schema("signal_layer").rpc("get_simple_cost_ledger"),
           admin.schema("signal_layer").from("ai_cost_ledger_daily").select("estimated_cost_eur"),
@@ -8481,6 +8496,7 @@ Deno.serve(async (req: Request) => {
           : admin.schema("signal_layer").from("simple_signals")
             .select(`id, ${signalColumns}, created_at, updated_at`)
             .eq("status", "signal")
+            .or(MANUAL_SIGNAL_EXCLUDE)
             .order("score", { ascending: false })
             .order("updated_at", { ascending: false })
             .limit(Math.min(Math.max(Number(limit) || 60, 1), 200));
@@ -9433,6 +9449,39 @@ Deno.serve(async (req: Request) => {
         if (!retryId) return errorResponse(origin, "asset_id fehlt");
         EdgeRuntime.waitUntil(retryGeneratedAssetModel(retryId));
         return corsResponse(origin, { ok: true, asset_id: retryId });
+      }
+
+      case "create_manual_signal": {
+        // Selbst entdecktes Signal: der Nutzer schreibt es, der Server legt die
+        // beiden Zeilen an, auf denen die bestehende Asset-Erzeugung laeuft.
+        // Kein Modellaufruf, keine Kosten - nur Text, den er selbst verantwortet.
+        const manual = normalizeManualSignal(body.signal);
+        const manualIssue = manualSignalIssue(manual);
+        if (manualIssue) return errorResponse(origin, manualIssue);
+        const manualAdmin = getAdminClient();
+        const manualId = crypto.randomUUID();
+        const { article: manualArticle, signal: manualSignalRow } =
+          manualSignalRows(manual, manualId, new Date().toISOString());
+        const { error: manualArticleError } = await manualAdmin.schema("signal_layer")
+          .from("articles").insert(manualArticle);
+        if (manualArticleError) return errorResponse(origin, manualArticleError.message, 500);
+        const { data: manualSignalData, error: manualSignalError } = await manualAdmin
+          .schema("signal_layer").from("simple_signals")
+          .insert({ ...manualSignalRow, model: null, prompt_version: null })
+          .select("*").single();
+        if (manualSignalError) {
+          // Ohne Signalzeile ist die Artikelzeile eine Waise: sie waere in keiner
+          // Liste sichtbar und in keinem Asset benutzbar.
+          await manualAdmin.schema("signal_layer").from("articles").delete().eq("id", manualId);
+          return errorResponse(origin, manualSignalError.message, 500);
+        }
+        return corsResponse(origin, {
+          article_id: manualId,
+          signal: {
+            ...manualSignalData,
+            article: { id: manualId, title_de: manual.headline, url: manualArticle.url },
+          },
+        });
       }
 
       case "generate_asset": {

@@ -1,21 +1,25 @@
 <!doctype html>
 <html lang="de"><head><meta charset="utf-8"><title>Fragebogen Harness</title></head>
-<body><button id="li">LinkedIn</button>
+<body><button id="li">LinkedIn</button> <button id="me">Ansprache</button> <button id="ms">Manuelles Signal</button>
 <script type="module">
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1400";
+import { openManualSignal } from "./manual-signal.js?v=20260819-1400";
 const signal = { headline_de:"Handel baut Eigenmarken aus", why_de:"Anteil steigt.", company:"Testfirma AG",
   signal_label:"Markenstrategie", signal_id:"marken_strategie", roots_offering:"Markenstrategie", topics:["marken_strategie"],
   article:{ title_de:"Handel baut Eigenmarken aus", id:"00000000-0000-0000-0000-000000000001" } };
 window.tone = "Kurze Sätze.";
 window.vorlagen = [];
-const callApi = async (a) => {
+const callApi = async (a, payload) => {
   if (a === "list_assets") return { assets: [] };
   if (a === "get_asset_tone") return { tone_of_voice: window.tone };
   if (a === "get_asset_design_templates") return { design_templates: window.vorlagen };
+  if (a === "create_manual_signal") { window.letztesSignal = payload; return { article_id: "00000000-0000-0000-0000-000000000001", signal }; }
   throw new Error("stub " + a);
 };
-window.oeffne = () => { closeAssetStudio(); openAssetStudio({ kind:"linkedin", articleId:"00000000-0000-0000-0000-000000000001", signal, callApi, openSettingsPanel:(p)=>{window.panel=p;} }); };
-document.getElementById("li").onclick = window.oeffne;
+window.oeffne = (kind="linkedin") => { closeAssetStudio(); openAssetStudio({ kind, articleId:"00000000-0000-0000-0000-000000000001", signal, callApi, openSettingsPanel:(p)=>{window.panel=p;} }); };
+document.getElementById("li").onclick = () => window.oeffne("linkedin");
+document.getElementById("me").onclick = () => window.oeffne("memo");
+document.getElementById("ms").onclick = () => openManualSignal({ callApi, openSettingsPanel:(p)=>{window.panel=p;} });
 window.zustand = () => {
   const ov = document.querySelector("#as-overlay");
   return JSON.stringify({

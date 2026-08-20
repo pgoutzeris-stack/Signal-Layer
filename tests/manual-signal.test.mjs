@@ -1,0 +1,154 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFileSync } from "node:fs";
+
+const frontend = readFileSync(new URL("../manual-signal.js", import.meta.url), "utf8");
+const appJs = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const edge = readFileSync(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
+const backend = await import("../supabase/functions/signal-layer/manual-signal.ts");
+
+function vollesSignal(extra = {}) {
+  return {
+    lane: "marketing",
+    mode: "ai",
+    headline: "Handel baut Eigenmarken schneller aus als geplant",
+    core: "Der Anteil der Eigenmarken steigt deutlich, weil Kunden bei Marken sparen.",
+    evidence: "Der Eigenmarkenanteil liegt bei 41 Prozent, 2024 waren es 34 Prozent.",
+    ...extra,
+  };
+}
+
+test("ein Signal ohne Beleg wird abgewiesen, kein Asset ohne Quelle", () => {
+  const ok = backend.normalizeManualSignal(vollesSignal());
+  assert.equal(backend.manualSignalIssue(ok), "");
+
+  assert.match(backend.manualSignalIssue(backend.normalizeManualSignal(
+    vollesSignal({ evidence: "" }),
+  )), /Beleg fehlt/);
+  assert.match(backend.manualSignalIssue(backend.normalizeManualSignal(
+    vollesSignal({ headline: "kurz" }),
+  )), /Überschrift/);
+  assert.match(backend.manualSignalIssue(backend.normalizeManualSignal(
+    vollesSignal({ core: "zu kurz" }),
+  )), /Kernaussage/);
+});
+
+test("Spur und Modus fallen auf sichere Werte zurück", () => {
+  const leer = backend.normalizeManualSignal(null);
+  assert.equal(leer.lane, "marketing");
+  assert.equal(leer.mode, "ai");
+  assert.equal(backend.normalizeManualSignal({ lane: "sales" }).lane, "sales");
+  assert.equal(backend.normalizeManualSignal({ lane: "Ansprache" }).lane, "sales");
+  assert.equal(backend.normalizeManualSignal({ mode: "manual" }).mode, "manual");
+  assert.equal(backend.normalizeManualSignal({ mode: "hybrid" }).mode, "hybrid");
+  assert.equal(backend.normalizeManualSignal({ mode: "erfunden" }).mode, "ai");
+  // Grenzen greifen, sonst landet ein ganzer Artikel in der Überschrift.
+  const lang = backend.normalizeManualSignal({ headline: "x".repeat(500) });
+  assert.equal(lang.headline.length, 200);
+});
+
+test("der Belegkorpus trägt Zahlen und Kontext, den das Modell zitieren darf", () => {
+  const signal = backend.normalizeManualSignal(vollesSignal({
+    source: "Handelsblatt, 2026", company: "Beispiel AG", audience: "Category Management",
+    territory: "DACH", occasion: "Quartalszahlen", competitor: "Wettbewerber X", offering: "Markenstrategie",
+  }));
+  const korpus = backend.manualSignalCorpus(signal);
+  assert.match(korpus, /^Handel baut Eigenmarken/);
+  assert.match(korpus, /41 Prozent/);
+  assert.match(korpus, /Belege und Zahlen:/);
+  assert.match(korpus, /Quelle: Handelsblatt, 2026/);
+  assert.match(korpus, /Zielgruppe: Category Management/);
+  assert.match(korpus, /ROOTS-Anschluss: Markenstrategie/);
+  // Leere Zusatzfelder dürfen keine leeren Zeilen erzeugen.
+  const schmal = backend.manualSignalCorpus(backend.normalizeManualSignal(vollesSignal()));
+  assert.doesNotMatch(schmal, /Kontext:/);
+  assert.doesNotMatch(schmal, /(Quelle|Unternehmen|Zielgruppe|Markt|Anlass|Wettbewerb|ROOTS-Anschluss): *$/m);
+});
+
+test("die beiden Zeilen bleiben aus der Pipeline-Auswertung heraus", () => {
+  const signal = backend.normalizeManualSignal(vollesSignal({ lane: "sales", company: "Beispiel AG" }));
+  const { article, signal: zeile } = backend.manualSignalRows(signal, "11111111-1111-1111-1111-111111111111", "2026-08-19T10:00:00.000Z");
+  assert.equal(article.article_type, "manual");
+  assert.equal(article.classification_status, "manual");
+  assert.equal(article.url, "manual://signal/11111111-1111-1111-1111-111111111111");
+  assert.equal(article.title_de, signal.headline);
+  assert.match(String(article.content), /41 Prozent/);
+  assert.equal(article.content, article.cleaned_content);
+  assert.equal(zeile.status, "signal");
+  assert.equal(zeile.lane, "sales");
+  assert.equal(zeile.article_type, "manual");
+  assert.equal(zeile.headline_de, signal.headline);
+  // summary_de ist die Signalzusammenfassung im Asset-Prompt; sie darf nicht leer sein.
+  assert.equal(zeile.summary_de, signal.core);
+  assert.equal(zeile.company, "Beispiel AG");
+  // article_type ist bei gecrawlten Zeilen oft NULL. Ein blankes <> 'manual'
+  // wäre dort NULL und würde echte Signale stumm wegwerfen.
+  assert.equal(backend.MANUAL_SIGNAL_EXCLUDE, "article_type.is.null,article_type.neq.manual");
+});
+
+test("der Server legt beide Zeilen an und räumt die Waise weg", () => {
+  assert.match(edge, /case "create_manual_signal": \{/);
+  assert.match(edge, /"create_manual_signal",\n\]\)/);
+  assert.match(edge, /manualSignalIssue\(manual\)/);
+  assert.match(edge, /from\("articles"\)\.insert\(manualArticle\)/);
+  // Ohne Signalzeile ist die Artikelzeile unbenutzbar: sie muss weg.
+  assert.match(edge, /if \(manualSignalError\) \{[\s\S]*from\("articles"\)\.delete\(\)\.eq\("id", manualId\)/);
+  // Zähler und Listen filtern manuelle Signale.
+  assert.ok(edge.split("MANUAL_SIGNAL_EXCLUDE").length - 1 >= 6, "jede Liste und jeder Zähler braucht den Filter");
+});
+
+test("die Pille steht neben Simple und Advanced und öffnet den eigenen Fragebogen", () => {
+  assert.match(indexHtml, /id="manual-signal-btn"/);
+  assert.match(indexHtml, /Manuelles Signal/);
+  // Kein Pipeline-Modus: sonst würde die Ansicht umschalten statt zu öffnen.
+  const bar = indexHtml.slice(indexHtml.indexOf('class="mode-switch-bar"'), indexHtml.indexOf('class="dashboard-wrap"'));
+  assert.doesNotMatch(bar.slice(bar.indexOf("manual-signal-btn")), /data-pipeline-mode/);
+  assert.match(appJs, /import \{ openManualSignal \} from "\.\/manual-signal\.js\?v=/);
+  assert.match(appJs, /getElementById\("manual-signal-btn"\)\?\.addEventListener/);
+  assert.match(appJs, /openManualSignal\(\{ callApi, escapeHtml, notify: toast, openSettingsPanel \}\)/);
+});
+
+test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab", () => {
+  // Dieselbe Oberfläche: das CSS kommt aus dem Studio, nur die Kennung wechselt.
+  assert.match(frontend, /import \{ ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio \}/);
+  assert.match(frontend, /ASSET_CHROME_CSS\.replace\(\/#as-overlay\/g, `#\$\{OVERLAY_ID\}`\)/);
+  assert.match(frontend, /class="as-step as-step--open"/);
+  assert.match(frontend, /class="as-opt as-opt--btn/);
+  assert.match(frontend, /as-progress-text/);
+
+  const reihenfolge = ["lane", "profile", "mode", "headline", "core", "evidence", "source"];
+  let letzte = -1;
+  for (const key of reihenfolge) {
+    const pos = frontend.indexOf(`key: "${key}"`);
+    assert.ok(pos > letzte, `${key} steht an der falschen Stelle`);
+    letzte = pos;
+  }
+  // Pflichtfelder und Kür klar getrennt: optionale Fragen tragen Überspringen.
+  assert.match(frontend, /key: "evidence"[\s\S]*pflicht: true/);
+  assert.match(frontend, /data-act="skip"/);
+  assert.match(frontend, /key: "audience", label: "Zielgruppe"/);
+  assert.match(frontend, /key: "competitor", label: "Wettbewerbsbezug"/);
+  // Eigene Texte nur, wenn der Modus sie verlangt.
+  assert.match(frontend, /key: "storyline_text"[\s\S]*when: \(a\) => a\.mode !== "ai"/);
+  assert.match(frontend, /key: "caption_text"[\s\S]*a\.mode === "manual" && a\.lane === "marketing"/);
+});
+
+test("die Übergabe belegt den Asset-Fragebogen mit den eigenen Texten vor", () => {
+  const block = frontend.slice(frontend.indexOf("function assetVorbelegung"), frontend.indexOf("async function uebernehmen"));
+  assert.match(block, /storyline: eigen \? "custom" : "auto"/);
+  assert.match(block, /cta: eigen \? "custom" : "auto"/);
+  assert.match(block, /sources: a\.source \? "custom" : "auto"/);
+  assert.match(block, /out\.caption = a\.mode === "manual" \? "custom" : "ai"/);
+  // Sales kennt kein Profil, dafür den Firmennamen im Cover-Titel.
+  assert.match(block, /out\.company_named = "yes"/);
+  assert.match(frontend, /kind: a\.lane === "sales" \? "memo" : "linkedin"/);
+  assert.match(frontend, /prefill: assetVorbelegung\(\)/);
+
+  // Das Studio nimmt nur Schlüssel an, die sein Fragebogen kennt.
+  const studio = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf8");
+  assert.match(studio, /export const ASSET_CHROME_CSS = CHROME_CSS;/);
+  assert.match(studio, /openSettingsPanel, prefill \} = \{\}\)/);
+  assert.match(studio, /function vorbelegung\(list, prefill\)/);
+  assert.match(studio, /if \(erlaubt\.has\(key\) && wert !== undefined && wert !== null\) out\[key\] = wert;/);
+});

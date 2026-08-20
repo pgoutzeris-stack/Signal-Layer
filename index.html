@@ -1998,6 +1998,9 @@
           <button type="button" class="mode-switch-btn is-active" data-pipeline-mode="advanced" title="Vollständige Pipeline mit Crawl, Marketing, Sales und Archiv">
             <i class="fa-solid fa-sliders"></i> Advanced
           </button>
+          <button type="button" class="mode-switch-btn" id="manual-signal-btn" title="Signal selbst schreiben und daraus ein Asset erzeugen">
+            <i class="fa-solid fa-pen-nib"></i> Manuelles Signal
+          </button>
         </div>
       </div>
       <div class="dashboard-wrap">
@@ -2475,7 +2478,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260819-1130';
+  import { initApp } from './app.js?v=20260819-1400';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
