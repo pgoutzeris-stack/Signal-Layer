@@ -1302,7 +1302,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-1800";
+import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-1920";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -2811,11 +2811,23 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!isMemo) synchronisiereDesign();
     const form = shell.querySelector(".as-split2-form");
     if (form) form.innerHTML = state.formTab === "drafts" ? draftsHtml() : formHtml();
-    shell.querySelector("[data-stepcard]")?.scrollIntoView({ block: "nearest" });
+    zeigeOffeneKarte();
     const prev = shell.querySelector("[data-livepreview]");
     if (prev) prev.innerHTML = livePreviewHtml();
     zeichneCaption();
     fitPreview();
+  }
+
+  /** Die offene Frage in die Mitte des Sichtfelds. "nearest" liess sie an der
+   *  unteren Kante kleben, und wer unten stand, sah die naechste Frage nicht. */
+  function zeigeOffeneKarte() {
+    const karte = shell.querySelector("[data-stepcard]");
+    const box = karte && karte.closest(".as-content");
+    if (!karte || !box || box.scrollHeight <= box.clientHeight) return;
+    const kr = karte.getBoundingClientRect();
+    const br = box.getBoundingClientRect();
+    const ziel = box.scrollTop + (kr.top - br.top) - Math.max(0, (br.height - kr.height) / 2);
+    box.scrollTop = Math.max(0, ziel);
   }
 
   function readForm() {

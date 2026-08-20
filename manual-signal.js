@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1800";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1920";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -60,22 +60,9 @@ const FRAGEN = [
     pflicht: true, min: 30,
   },
   {
-    // Die Relevanz ist in beiden Spuren eine andere Frage: im Feed geht es um
-    // die Leser, in der Ansprache um das Unternehmen, dem daraus ein Problem
-    // entsteht. Eine gemeinsame Formulierung passt auf keine von beiden.
-    key: "relevance", label: "Relevanz", art: "textarea", rows: 3,
-    frage: (a) => (a.lane === "sales"
-      ? "Welches Problem entsteht dem Kunden daraus?"
-      : "Warum sollte das Marketingentscheider interessieren?"),
-    platzhalter: (a) => (a.lane === "sales"
-      ? "Woran es beim Kunden jetzt hakt — daraus wird der Anlass für die Ansprache"
-      : "Welche Folge das für Marke, Kanäle oder Budget hat"),
-  },
-  {
     key: "evidence", label: "Beleg", frage: "Was belegt diese Beobachtung?",
     art: "textarea", rows: 5,
     platzhalter: "Zahlen, Zitate und Namen im Wortlaut",
-    hinweis: "Nur was hier steht, darf im Asset als Zahl oder Zitat erscheinen.",
     pflicht: true, min: 20,
   },
   {
@@ -95,15 +82,6 @@ const FRAGEN = [
       : "Welche ROOTS-Leistung schließt daran an?"),
   },
   {
-    key: "audience", label: "Adressat", art: "text",
-    frage: (a) => (a.lane === "sales"
-      ? "Wen im Unternehmen willst du ansprechen?"
-      : "Wen willst du im Feed erreichen?"),
-    platzhalter: (a) => (a.lane === "sales"
-      ? "Rolle im Buying Center, z. B. CMO oder Head of Brand"
-      : "z. B. Marketingleitung im Handel"),
-  },
-  {
     key: "territory", label: "Markt", frage: "Für welchen Markt gilt das?", art: "text",
     platzhalter: "z. B. DACH, Lebensmittelhandel",
   },
@@ -112,8 +90,11 @@ const FRAGEN = [
     platzhalter: "Messe, Quartalszahlen, Personalie",
   },
   {
-    key: "competitor", label: "Wettbewerb", frage: "Macht das im Markt schon jemand vor?", art: "text",
-    platzhalter: "Marke oder Wettbewerber",
+    key: "competitor", label: "Benchmark", art: "text",
+    frage: (a) => (a.lane === "sales"
+      ? "Welcher Wettbewerber des Kunden macht es schon vor?"
+      : "Welcher Wettbewerber des betroffenen Unternehmens macht es schon vor?"),
+    platzhalter: "Marke oder Wettbewerber mit Beispielwirkung",
   },
   {
     key: "storyline_text", label: "Kernaussage", frage: "Welche Aussage soll das Asset tragen?",
@@ -133,11 +114,6 @@ const FRAGEN = [
     platzhalter: "Der Text, den Leser im Feed lesen",
     when: (a) => a.mode === "manual" && a.lane === "marketing", pflicht: true, min: 20,
   },
-  {
-    key: "tone", label: "Tonalität", frage: "Wie soll es klingen?", art: "text",
-    platzhalter: "z. B. sachlich, kurze Sätze, keine Superlative",
-    when: (a) => a.mode !== "manual",
-  },
 ];
 
 const STANDARD = { lane: "marketing", profile: "roots", mode: "ai" };
@@ -152,16 +128,13 @@ const BEISPIEL = {
   marketing: {
     headline: "Handel baut Eigenmarken schneller aus als geplant",
     core: "Der Eigenmarkenanteil im Lebensmittelhandel steigt seit zwei Jahren deutlich schneller als von den Herstellern erwartet. Händler füllen mit eigenen Linien die Lücke, die Marken beim Preis offen lassen.",
-    relevance: "Markenhersteller verlieren Regalfläche und damit Verhandlungsmacht. Wer seine Positionierung nicht schärft, wird über den Preis verglichen.",
     evidence: "Der Eigenmarkenanteil liegt bei 41 Prozent, 2024 waren es 34 Prozent. 68 Prozent der Käufer nennen den Preis als Hauptgrund.",
     source: "Handelsblatt, 2026",
     company: "Beispiel Handel AG",
     offering: "Markenstrategie",
-    audience: "Marketingleitung im Handel",
     territory: "DACH, Lebensmittelhandel",
     occasion: "Quartalszahlen",
     competitor: "Discounter mit eigener Premiumlinie",
-    tone: "sachlich, kurze Sätze, keine Superlative",
     storyline_text: "Eigenmarken wachsen, weil Marken die Lücke offen lassen.",
     cta_text: "Sortimentscheck vereinbaren",
     caption_text: "Der Eigenmarkenanteil liegt bei 41 Prozent. Wer jetzt nicht nachschärft, wird über den Preis verglichen.",
@@ -169,16 +142,13 @@ const BEISPIEL = {
   sales: {
     headline: "Beispiel Handel AG verliert Regalanteil an Eigenmarken",
     core: "Die eigene Marke des Kunden verliert im Lebensmittelhandel Fläche an Eigenmarken der Händler. Der Abstand hat sich in zwei Jahren mehr als verdoppelt.",
-    relevance: "Ohne geschärfte Positionierung verhandelt der Kunde nur noch über den Preis und verliert weiter Fläche.",
     evidence: "Der Eigenmarkenanteil liegt bei 41 Prozent, 2024 waren es 34 Prozent. Der Kunde nennt im Geschäftsbericht 12 Prozent Rückgang bei der Kernmarke.",
     source: "Geschäftsbericht 2026",
     company: "Beispiel Handel AG",
     offering: "Markenstrategie",
-    audience: "CMO",
     territory: "DACH, Lebensmittelhandel",
     occasion: "Quartalszahlen",
     competitor: "Discounter mit eigener Premiumlinie",
-    tone: "sachlich, kurze Sätze, keine Superlative",
     storyline_text: "Regalanteil zurückholen heißt zuerst entscheiden, wofür die Marke steht.",
     cta_text: "Sollen wir den Sortimentscheck gemeinsam durchgehen?",
     caption_text: "",
@@ -419,7 +389,6 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       <div class="ms-chips">${chips}</div>
       <h4${a.headline ? "" : ' class="ms-leer"'}>${esc(a.headline || "Überschrift des Signals")}</h4>
       <p${a.core ? "" : ' class="ms-leer"'}>${esc(a.core || "Kern des Signals")}</p>
-      ${a.relevance ? `<p>${esc(a.relevance)}</p>` : ""}
       ${a.evidence ? `<div class="ms-beleg">${esc(a.evidence)}</div>` : ""}
       ${a.source ? `<p>Quelle: ${esc(a.source)}</p>` : ""}
       <span class="ms-fueller"></span>
@@ -451,7 +420,22 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
           </div>
         </div>
       </div>`;
-    const feld = shell.querySelector("[data-stepcard] [data-feld]");
+    // Nach dem Sprung steht die offene Karte weit unten. Ohne Nachziehen
+    // klickt man auf "Weiter" und sieht die naechste Frage nicht. Gerechnet
+    // wird der Abstand selbst: scrollIntoView haengt am Kompositor und bleibt
+    // in einem Hintergrund-Tab stehen.
+    const karte = shell.querySelector("[data-stepcard]");
+    const box = karte && karte.closest(".as-content");
+    if (karte && box && box.scrollHeight > box.clientHeight) {
+      const kr = karte.getBoundingClientRect();
+      const br = box.getBoundingClientRect();
+      const ziel = box.scrollTop + (kr.top - br.top) - Math.max(0, (br.height - kr.height) / 2);
+      // Direkt gesetzt statt scrollTo({behavior:"smooth"}): das weiche Scrollen
+      // liegt beim Kompositor und passierte in manchen Fenstern gar nicht.
+      // Die Karte faehrt ohnehin mit ihrer eigenen Bewegung ein.
+      box.scrollTop = Math.max(0, ziel);
+    }
+    const feld = karte && karte.querySelector("[data-feld]");
     if (feld && index < fragen.length) feld.focus({ preventScroll: true });
   }
 
@@ -505,8 +489,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       const res = await api("create_manual_signal", {
         signal: {
           lane: a.lane, mode: a.mode, headline: a.headline, core: a.core, evidence: a.evidence,
-          relevance: a.relevance, source: a.source, company: a.company, offering: a.offering, audience: a.audience,
-          territory: a.territory, occasion: a.occasion, competitor: a.competitor, tone: a.tone,
+          source: a.source, company: a.company, offering: a.offering,
+          territory: a.territory, occasion: a.occasion, competitor: a.competitor,
         },
       });
       const articleId = res && (res.article_id || res.articleId);

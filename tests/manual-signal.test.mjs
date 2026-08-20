@@ -126,7 +126,7 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /class="as-opt as-opt--btn/);
   assert.match(frontend, /as-progress-text/);
 
-  const reihenfolge = ["lane", "profile", "mode", "headline", "core", "relevance", "evidence", "source"];
+  const reihenfolge = ["lane", "profile", "mode", "headline", "core", "evidence", "source"];
   let letzte = -1;
   for (const key of reihenfolge) {
     const pos = frontend.indexOf(`key: "${key}"`);
@@ -136,8 +136,17 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   // Pflichtfelder und Kür klar getrennt: optionale Fragen tragen Überspringen.
   assert.match(frontend, /key: "evidence"[\s\S]*pflicht: true/);
   assert.match(frontend, /data-act="skip"/);
-  assert.match(frontend, /key: "audience", label: "Adressat"/);
-  assert.match(frontend, /key: "competitor", label: "Wettbewerb"/);
+  // Relevanz, Adressat und Tonalität sind aus dem Fragebogen heraus: der Weg
+  // zum Asset war zu lang, und keine der drei war Pflicht.
+  assert.doesNotMatch(frontend, /key: "relevance"/);
+  assert.doesNotMatch(frontend, /key: "audience"/);
+  assert.doesNotMatch(frontend, /key: "tone"/);
+  assert.match(frontend, /key: "competitor", label: "Benchmark"/);
+  assert.match(frontend, /"Welcher Wettbewerber des Kunden macht es schon vor\?"/);
+  // Der Beleg-Hinweis erklaerte eine Regel, die die Fehlermeldung ohnehin nennt.
+  assert.doesNotMatch(frontend, /darf im Asset als Zahl oder Zitat erscheinen/);
+  // Beim Sprung zieht die Ansicht mit, sonst steht die naechste Frage unter der Kante.
+  assert.match(frontend, /box\.scrollTop = Math\.max\(0, ziel\);/);
   // Die Karte stellt eine Frage, die Antwortzeile traegt den kurzen Namen:
   // "Wofür" als Frage war keine Frage.
   assert.match(frontend, /frage: "Was soll aus dem Signal entstehen\?"/);
@@ -147,11 +156,7 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /key: "core", label: "Kern", frage: "Was besagt das Signal im Kern\?"/);
   // Relevanz, Adressat, Unternehmen und Leistung lauten je Spur anders:
   // im Feed geht es um Leser, in der Ansprache um das Unternehmen.
-  assert.match(frontend, /key: "relevance", label: "Relevanz"/);
-  assert.match(frontend, /"Welches Problem entsteht dem Kunden daraus\?"/);
-  assert.match(frontend, /"Warum sollte das Marketingentscheider interessieren\?"/);
-  assert.match(frontend, /"Wen im Unternehmen willst du ansprechen\?"/);
-  assert.match(frontend, /"Wen willst du im Feed erreichen\?"/);
+  assert.match(frontend, /"Welches Unternehmen willst du ansprechen\?"/);
   assert.match(frontend, /"Welche ROOTS-Leistung willst du anbieten\?"/);
   assert.doesNotMatch(frontend, /für die Zielgruppe relevant/);
   assert.match(frontend, /function textVon\(feld\)/);
@@ -201,7 +206,7 @@ test("jedes Feld ist für die Testphase vorbelegt", () => {
   const block = frontend.slice(frontend.indexOf("const BEISPIEL = {"), frontend.indexOf("const EIGENES_CSS"));
   for (const spur of ["marketing", "sales"]) {
     const teil = block.slice(block.indexOf(`${spur}: {`));
-    for (const feld of ["headline", "core", "relevance", "evidence", "storyline_text", "cta_text"]) {
+    for (const feld of ["headline", "core", "evidence", "storyline_text", "cta_text"]) {
       assert.match(teil, new RegExp(`${feld}: "[^"]{10,}"`), `${spur} ohne ${feld}`);
     }
   }
