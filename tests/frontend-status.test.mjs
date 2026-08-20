@@ -64,3 +64,26 @@ test("old generic database hints are never shown as the user explanation", () =>
   assert.doesNotMatch(error.summary, /ai_usage_events/);
   assert.match(error.summary, /Analysemodell/);
 });
+
+test("ein behobenes Anbieterproblem steht nicht mehr als aktueller Zustand im Kopf", () => {
+  // Der Server liefert keine Diagnose mehr, sobald das Modell wieder antwortet.
+  const erholt = simpleRunErrorPresentation(null, "DeepSeek V4 Pro hat die Artikelanalyse abgelehnt, weil das Guthaben des Anbieter-Kontos aufgebraucht ist.");
+  assert.equal(erholt.resolved, true);
+  assert.equal(erholt.pillLabel, "Lauf abgebrochen");
+  assert.doesNotMatch(erholt.summary, /Guthaben/);
+  assert.equal(erholt.occurredAt, null);
+
+  // Ein Fehler mit Diagnose bleibt ein Fehler.
+  const echt = simpleRunErrorPresentation({ code: "insufficient_balance", model_label: "DeepSeek V4 Pro", occurred_at: "2026-08-16T17:40:49Z" }, "");
+  assert.equal(echt.resolved, false);
+  assert.match(echt.pillLabel, /Guthaben aufgebraucht/);
+});
+
+test("ein aelterer Fehlerlauf verschwindet, sobald ein neuerer Lauf existiert", () => {
+  const alterFehler = { id: "alt", status: "error", finished_at: "2026-08-16T17:40:49Z" };
+  const neuerLauf = { id: "neu", status: "done", finished_at: "2026-08-20T21:00:00Z" };
+  assert.equal(deriveSimpleHeaderState(neuerLauf, alterFehler).failed, false);
+  assert.equal(deriveSimpleHeaderState(alterFehler, null).failed, true);
+  // Waehrend ein Lauf laeuft, zeigt der Kopf den Lauf, nicht den alten Fehler.
+  assert.equal(deriveSimpleHeaderState({ id: "neu", status: "running" }, alterFehler).failed, false);
+});

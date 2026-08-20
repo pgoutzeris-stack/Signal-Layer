@@ -876,6 +876,16 @@ async function buildSimpleRunAiErrorDetail(run: Record<string, unknown> | null |
   const errorAt = new Date(String(latest.created_at || 0)).getTime();
   if (stoppedAt && errorAt && Math.abs(stoppedAt - errorAt) > 120_000) return null;
   const model = String(latest.model || run.model || SIMPLE_MODEL);
+  // Ein Anbieterproblem ist vorbei, sobald dasselbe Modell danach wieder
+  // geantwortet hat. Ein leeres Guthaben von vorgestern darf nicht als
+  // aktueller Zustand im Kopf stehen, waehrend gerade ein Lauf laeuft.
+  if (errorAt) {
+    const { count: spaetereErfolge } = await admin.schema("signal_layer").from("ai_usage_events")
+      .select("id", { count: "exact", head: true })
+      .eq("model", model).eq("status", "success")
+      .gt("created_at", new Date(errorAt).toISOString());
+    if (Number(spaetereErfolge || 0) > 0) return null;
+  }
   const modelOption = simpleModelOption(model);
   const code = String(latest.error_code || "unknown");
   const latestAt = errorAt || Date.now();

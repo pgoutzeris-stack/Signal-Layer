@@ -12,7 +12,10 @@ export function deriveSimpleHeaderState(run = null, triggerBackfill = null) {
   const activeTriggerRun = ACTIVE_STATES.has(triggerBackfill?.status) ? triggerBackfill : null;
   const activeRun = activeTriggerRun || (ACTIVE_STATES.has(run?.status) ? run : null);
   const visibleRun = activeRun || [triggerBackfill, run].filter(Boolean).sort((left, right) => runTime(right) - runTime(left))[0] || null;
-  const failedRun = !activeRun && visibleRun?.status === "error" ? visibleRun : null;
+  // Nur der juengste Lauf beschreibt den Zustand. Ein aelterer Fehlerlauf, auf
+  // den ein neuerer Lauf gefolgt ist, gehoert in die Historie, nicht in den Kopf.
+  const juengster = [triggerBackfill, run].filter(Boolean).sort((left, right) => runTime(right) - runTime(left))[0] || null;
+  const failedRun = !activeRun && visibleRun?.status === "error" && visibleRun === juengster ? visibleRun : null;
   const progressRun = activeRun || failedRun;
   const progressIsTrigger = Boolean(progressRun && triggerBackfill && progressRun === triggerBackfill);
   const running = Boolean(activeRun);
@@ -55,6 +58,31 @@ const SIMPLE_AI_ERROR_LABELS = {
 // sends the precise provider diagnosis; older deployments still get a useful
 // label instead of exposing an internal database-table hint to users.
 export function simpleRunErrorPresentation(detail = null, fallbackMessage = "") {
+  // Der Server liefert keine Diagnose mehr, sobald dasselbe Modell nach dem
+  // Fehler wieder geantwortet hat. Dann darf im Kopf nicht weiter stehen, das
+  // Guthaben sei leer - offen ist nur der abgebrochene Lauf.
+  const anbieterGrenze = /guthaben|balance|spending cap|ausgabenlimit|anfragelimit|rate limit/i
+    .test(String(fallbackMessage || ""));
+  if (!detail && anbieterGrenze) {
+    return {
+      code: "provider_recovered",
+      model: "KI-Modell",
+      shortLabel: "Lauf abgebrochen",
+      pillLabel: "Lauf abgebrochen",
+      title: "Der Lauf wurde an einer Anbietergrenze gestoppt",
+      summary: "Das Modell antwortet inzwischen wieder. Offen sind nur die Artikel, die dieser Lauf nicht mehr geschafft hat.",
+      action: "Lauf neu starten, um die offenen Artikel zu bewerten.",
+      provider: "Nicht mehr betroffen",
+      providerMessage: String(fallbackMessage || ""),
+      affectedCalls: 0,
+      tokens: 0,
+      costEur: 0,
+      billable: false,
+      internalCostWarning: false,
+      occurredAt: null,
+      resolved: true,
+    };
+  }
   const code = String(detail?.code || detail?.error_code || "unknown");
   const model = String(detail?.model_label || detail?.model || "KI-Modell");
   const shortLabel = String(detail?.short_label || SIMPLE_AI_ERROR_LABELS[code] || "Technischer KI-Fehler");
@@ -78,5 +106,6 @@ export function simpleRunErrorPresentation(detail = null, fallbackMessage = "") 
     billable: Boolean(detail?.billable),
     internalCostWarning: Boolean(detail?.internal_cost_warning),
     occurredAt: detail?.occurred_at || null,
+    resolved: false,
   };
 }
