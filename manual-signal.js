@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1610";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260819-1650";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -60,9 +60,16 @@ const FRAGEN = [
     pflicht: true, min: 30,
   },
   {
-    key: "relevance", label: "Relevanz", frage: "Warum ist das für die Zielgruppe relevant?",
-    art: "textarea", rows: 3,
-    platzhalter: "Welche Folge das für Marketing- oder Markenentscheider hat",
+    // Die Relevanz ist in beiden Spuren eine andere Frage: im Feed geht es um
+    // die Leser, in der Ansprache um das Unternehmen, dem daraus ein Problem
+    // entsteht. Eine gemeinsame Formulierung passt auf keine von beiden.
+    key: "relevance", label: "Relevanz", art: "textarea", rows: 3,
+    frage: (a) => (a.lane === "sales"
+      ? "Welches Problem entsteht dem Kunden daraus?"
+      : "Warum sollte das Marketingentscheider interessieren?"),
+    platzhalter: (a) => (a.lane === "sales"
+      ? "Woran es beim Kunden jetzt hakt — daraus wird der Anlass für die Ansprache"
+      : "Welche Folge das für Marke, Kanäle oder Budget hat"),
   },
   {
     key: "evidence", label: "Beleg", frage: "Was belegt diese Beobachtung?",
@@ -76,16 +83,25 @@ const FRAGEN = [
     platzhalter: "Studie, Herausgeber, Jahr oder Link",
   },
   {
-    key: "company", label: "Unternehmen", frage: "Um welches Unternehmen geht es?", art: "text",
-    platzhalter: "Firmenname",
+    key: "company", label: "Unternehmen", art: "text", platzhalter: "Firmenname",
+    frage: (a) => (a.lane === "sales"
+      ? "Welches Unternehmen willst du ansprechen?"
+      : "Um welches Unternehmen geht es?"),
   },
   {
-    key: "offering", label: "Leistung", frage: "Welche ROOTS-Leistung schließt daran an?", art: "text",
-    platzhalter: "z. B. Markenstrategie",
+    key: "offering", label: "Leistung", art: "text", platzhalter: "z. B. Markenstrategie",
+    frage: (a) => (a.lane === "sales"
+      ? "Welche ROOTS-Leistung willst du anbieten?"
+      : "Welche ROOTS-Leistung schließt daran an?"),
   },
   {
-    key: "audience", label: "Zielgruppe", frage: "Wen willst du damit erreichen?", art: "text",
-    platzhalter: "Rolle oder Buying Center, z. B. Category Management",
+    key: "audience", label: "Adressat", art: "text",
+    frage: (a) => (a.lane === "sales"
+      ? "Wen im Unternehmen willst du ansprechen?"
+      : "Wen willst du im Feed erreichen?"),
+    platzhalter: (a) => (a.lane === "sales"
+      ? "Rolle im Buying Center, z. B. CMO oder Head of Brand"
+      : "z. B. Marketingleitung im Handel"),
   },
   {
     key: "territory", label: "Markt", frage: "Für welchen Markt gilt das?", art: "text",
@@ -224,6 +240,11 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     return String(state.answers[q.key] ?? "");
   }
 
+  /** Frage und Platzhalter dürfen je Spur anders lauten. */
+  function textVon(feld) {
+    return typeof feld === "function" ? feld(state.answers) : (feld || "");
+  }
+
   function erledigt(q) {
     const v = wert(q).trim();
     if (q.art === "pills") return Boolean(v);
@@ -275,7 +296,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
           aria-pressed="${wert(q) === value ? "true" : "false"}"><span>${esc(label)}</span></button>`).join("");
       return `<div class="as-opts">${pillen}</div>`;
     }
-    const gemeinsam = `class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(q.platzhalter || "")}"`;
+    const gemeinsam = `class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}"`;
     return q.art === "textarea"
       ? `<textarea ${gemeinsam} rows="${q.rows || 4}">${esc(wert(q))}</textarea>`
       : `<input ${gemeinsam} value="${esc(wert(q))}">`;
@@ -306,7 +327,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       ? `<div class="as-step as-step--open" data-stepcard>
           <div class="as-step-kopf">
             <span class="as-step-nr">${index + 1}</span>
-            <label>${esc(offen.frage || offen.label)}</label>
+            <label>${esc(textVon(offen.frage) || offen.label)}</label>
             ${offen.pflicht ? "" : '<i class="as-tag">Optional</i>'}
           </div>
           ${offen.hinweis ? `<p class="as-hint">${esc(offen.hinweis)}</p>` : ""}

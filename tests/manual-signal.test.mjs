@@ -136,7 +136,7 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   // Pflichtfelder und Kür klar getrennt: optionale Fragen tragen Überspringen.
   assert.match(frontend, /key: "evidence"[\s\S]*pflicht: true/);
   assert.match(frontend, /data-act="skip"/);
-  assert.match(frontend, /key: "audience", label: "Zielgruppe"/);
+  assert.match(frontend, /key: "audience", label: "Adressat"/);
   assert.match(frontend, /key: "competitor", label: "Wettbewerb"/);
   // Die Karte stellt eine Frage, die Antwortzeile traegt den kurzen Namen:
   // "Wofür" als Frage war keine Frage.
@@ -145,10 +145,29 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /frage: "Was belegt diese Beobachtung\?"/);
   // Der Kern ist der Inhalt des Signals, die Relevanz eine eigene Frage.
   assert.match(frontend, /key: "core", label: "Kern", frage: "Was besagt das Signal im Kern\?"/);
-  assert.match(frontend, /key: "relevance", label: "Relevanz", frage: "Warum ist das für die Zielgruppe relevant\?"/);
-  assert.match(frontend, /<label>\$\{esc\(offen\.frage \|\| offen\.label\)\}<\/label>/);
+  // Relevanz, Adressat, Unternehmen und Leistung lauten je Spur anders:
+  // im Feed geht es um Leser, in der Ansprache um das Unternehmen.
+  assert.match(frontend, /key: "relevance", label: "Relevanz"/);
+  assert.match(frontend, /"Welches Problem entsteht dem Kunden daraus\?"/);
+  assert.match(frontend, /"Warum sollte das Marketingentscheider interessieren\?"/);
+  assert.match(frontend, /"Wen im Unternehmen willst du ansprechen\?"/);
+  assert.match(frontend, /"Wen willst du im Feed erreichen\?"/);
+  assert.match(frontend, /"Welche ROOTS-Leistung willst du anbieten\?"/);
+  assert.doesNotMatch(frontend, /für die Zielgruppe relevant/);
+  assert.match(frontend, /function textVon\(feld\)/);
+  assert.match(frontend, /<label>\$\{esc\(textVon\(offen\.frage\) \|\| offen\.label\)\}<\/label>/);
   for (const eintrag of frontend.slice(frontend.indexOf("const FRAGEN = ["), frontend.indexOf("const STANDARD")).split(/\n  \{/).slice(1)) {
-    assert.match(eintrag, /frage: "[^"]*\?"/, `jede Frage endet mit einem Fragezeichen: ${eintrag.slice(0, 60)}`);
+    // Feste Frage oder eine je Spur - in beiden Faellen eine echte Frage.
+    const feste = eintrag.match(/frage: "([^"]*)"/);
+    // Der Vergleich a.lane === "sales" ist keine Frage, nur die beiden Zweige.
+    const jeSpur = (eintrag.match(/frage:\s*\(a\) => \(([\s\S]*?)\),\n/) || [])[1]?.replace(/a\.lane === "\w+"/, "");
+    const fragen = feste
+      ? [feste[1]]
+      : [...(jeSpur ? jeSpur.matchAll(/"([^"]*)"/g) : [])].map((treffer) => treffer[1]);
+    assert.ok(fragen.length, `ohne Frage: ${eintrag.slice(0, 60)}`);
+    for (const frage of fragen) {
+      assert.match(frage, /\?$/, `jede Frage endet mit einem Fragezeichen: ${frage}`);
+    }
   }
   // Links und rechts beginnen und enden auf derselben Linie.
   assert.match(frontend, /grid-template-rows:auto 1fr/);
