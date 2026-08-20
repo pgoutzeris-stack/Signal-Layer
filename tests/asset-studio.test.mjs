@@ -201,10 +201,16 @@ test("die Anmutung filtert die Layouts, sie faerbt nichts um", () => {
   }
 });
 
-test("das Layout waehlt man im weissen Dropdown mit Miniatur", () => {
+test("das Layout waehlt man in derselben Pillenreihe wie in der Ansprache", () => {
   assert.match(studio, /function dropdownHtml\(q\)/);
-  assert.match(studio, /data-act="toggle-layout"/);
-  assert.match(studio, /data-act="pick-layout"/);
+  assert.match(studio, /function optionPillenHtml\(eintraege, extra = ""\)/);
+  assert.match(studio, /act: "pick-layout"/);
+  // Kein Aufklapper mehr: er trug eine zweite Beschriftung und verdeckte den
+  // Fuss der Karte. Beide Fragebogen benutzen jetzt dieselbe Pille.
+  assert.doesNotMatch(studio, /data-act="toggle-layout"/);
+  assert.doesNotMatch(studio, /data-act="toggle-frame"/);
+  assert.doesNotMatch(studio, /data-act="toggle-arten"/);
+  assert.doesNotMatch(studio, /class="as-ddhead"/);
   // Die Miniatur darf keinen Knopf enthalten: ein Knopf im Knopf schliesst die
   // Zeile vorzeitig, Variante C stand dadurch leer in der Liste.
   assert.match(studio, /function miniatur\(variant\)/);
@@ -2267,9 +2273,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260819-0300");
-  assert.match(indexHtml, /app\.js\?v=20260819-0300/);
-  assert.match(studio, /asset-templates\.js\?v=20260819-0300/);
+  assert.equal(studioVersion, "20260819-1130");
+  assert.match(indexHtml, /app\.js\?v=20260819-1130/);
+  assert.match(studio, /asset-templates\.js\?v=20260819-1130/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2858,8 +2864,11 @@ test("Formatwahl und jede Folienauswahl haben echte Vorschauen", () => {
   assert.match(live, /inhaltsArten\(\)/);
   assert.match(live, /state\.answers\.slide_end \|\| ende/);
   assert.match(studio, /if \(q\.key === "asset_type"\) return false/);
-  assert.match(studio, /frame-pick[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
-  assert.match(studio, /content-add[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
+  // Titel-, Inhalts- und Endfolie stehen als Pillen wie jede andere Antwort.
+  assert.match(studio, /act: "frame-pick", role: q\.role/);
+  assert.match(studio, /act: "content-add", plus: true/);
+  // Die Miniatur bleibt in der gewaehlten Abfolge, wo sie die Reihenfolge zeigt.
+  assert.match(studio, /as-sequence-row[\s\S]*as-ddthumb[\s\S]*miniatur\(value\)/);
   assert.match(studio, /transform:scale\(\.037\)/);
   assert.match(studio, /slot_center: "Wachstum"/);
   assert.match(studio, /\{ value: "203", label: "2030" \}/);
@@ -2879,7 +2888,7 @@ test("Inhalt führt über KI oder eigene Auswahl in eine echte, geschützte Link
   assert.match(form, /key: "caption",\s*\n\s*label: "Caption"/);
   assert.doesNotMatch(form, /label: "Beitragstext"/);
 
-  assert.match(studio, /\.as-step--open:has\(\.as-dd\.is-open\) \.as-step-fuss\{position:relative/);
+  assert.match(studio, /#as-overlay \.as-opt\.is-active\{/);
   assert.match(studio, /function linkedinDraftHtml\(\)/);
   assert.match(studio, /class="as-linkedin-post" aria-label="LinkedIn-Vorschau"/);
   assert.match(studio, /data-captionhost="feed"/);

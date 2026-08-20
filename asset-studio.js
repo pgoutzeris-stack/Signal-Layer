@@ -671,6 +671,17 @@ const CHROME_CSS = `
   background:var(--bg,#fff); font-size:13px; cursor:pointer; user-select:none;
 }
 #as-overlay .as-opt input{position:absolute; opacity:0; pointer-events:none;}
+/* Knopfvariante derselben Pille: gleiche Form, gleiche Farben. Sie traegt
+   Zusatzdaten am Element, was ein Radio nicht kann. */
+#as-overlay button.as-opt{font:inherit; font-size:13px; color:inherit; text-align:left;}
+#as-overlay button.as-opt:hover:not(:disabled){border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
+#as-overlay button.as-opt:disabled{opacity:.45; cursor:not-allowed;}
+#as-overlay .as-opt.is-active{
+  border-color:var(--brand,#206efb); background:var(--brand-light,#eff6ff);
+  color:var(--brand-dark,#165fd9); font-weight:700;
+}
+#as-overlay .as-opt.is-active .as-tag{color:var(--brand,#206efb); border-color:currentColor; background:transparent;}
+#as-overlay .as-opt-plus{font-size:.62rem; opacity:.55; margin-left:2px;}
 
 /* ── Schrittweiser Fragebogen ─────────────────────────────────────────────
    Eine Frage offen, die beantworteten darueber als Zeile. Der Fortschritt
@@ -703,7 +714,6 @@ const CHROME_CSS = `
   background:linear-gradient(180deg,rgba(255,255,255,.94),#fff 34%); backdrop-filter:blur(8px);}
 /* Ein geoeffnetes Auswahlmenue ist Teil des Schritts. Der klebende Fuss darf
    sich nicht davorlegen, wenn die Inhaltsliste bis an den unteren Rand reicht. */
-#as-overlay .as-step--open:has(.as-dd.is-open) .as-step-fuss{position:relative; z-index:1; backdrop-filter:none;}
 #as-overlay .as-step-zurueck{margin-right:auto;}
 @keyframes as-step-in{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
 
@@ -798,27 +808,9 @@ const CHROME_CSS = `
 #as-overlay .as-prev-note{position:absolute; bottom:10px; right:14px; font-size:.7rem; font-weight:600;
   color:var(--muted,#475569); background:#fff; border:1px solid var(--line,#e2e8f0); border-radius:99px; padding:2px 8px;}
 
-/* Weisses Dropdown fuer das Layout. Eine Karte, die sich oeffnet, mit Miniatur
-   je Zeile - kein natives select, weil dort kein Bild moeglich ist. */
-#as-overlay .as-dd{position:relative;}
-#as-overlay .as-ddhead{width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
-  padding:11px 14px; border:1px solid var(--line,#e2e8f0); border-radius:12px; background:#fff;
-  font-size:.86rem; font-weight:600; color:var(--ink,#0f172a); box-shadow:0 1px 2px rgba(15,23,42,.04);}
-#as-overlay .as-ddhead:hover{border-color:var(--brand,#206efb);}
-#as-overlay .as-ddhead i{font-size:.7rem; color:var(--muted,#475569); transition:transform .15s;}
-#as-overlay .as-dd.is-open .as-ddhead{border-color:var(--brand,#206efb); box-shadow:0 0 0 3px rgba(32,110,251,.12);}
-#as-overlay .as-dd.is-open .as-ddhead i{transform:rotate(180deg);}
-#as-overlay .as-ddlist{display:none; position:absolute; z-index:20; left:0; right:0; top:calc(100% + 6px);
-  max-height:340px; overflow-y:auto; padding:6px; background:#fff; border:1px solid var(--line,#e2e8f0);
-  border-radius:14px; box-shadow:0 18px 40px rgba(15,23,42,.16);}
-#as-overlay .as-dd.is-open .as-ddlist{display:block;}
-#as-overlay .as-dd--flow{isolation:isolate;}
-#as-overlay .as-dd--flow .as-ddlist{position:static; z-index:2; margin-top:6px; max-height:min(340px,42vh);
-  box-shadow:0 8px 24px rgba(15,23,42,.1);}
-#as-overlay .as-ddrow{width:100%; display:flex; align-items:center; gap:10px; padding:6px 8px; border:0;
-  border-radius:10px; background:transparent; text-align:left; font-size:.82rem; font-weight:600; color:var(--ink,#0f172a);}
-#as-overlay .as-ddrow:hover{background:var(--surface,#f8fafc);}
-#as-overlay .as-ddrow.is-active{background:var(--brand-light,#eff6ff); color:var(--brand-dark,#165fd9);}
+/* Die Miniatur in der gewaehlten Abfolge. Das weisse Dropdown daneben ist
+   entfallen: Auswahl laeuft jetzt ueber dieselben Pillen wie in der
+   Ansprache, damit beide Fragebogen gleich aussehen. */
 #as-overlay .as-sequence{display:flex; flex-direction:column; gap:7px; margin-bottom:10px;}
 #as-overlay .as-sequence-row{display:grid; grid-template-columns:24px 42px minmax(0,1fr) auto; align-items:center; gap:9px;
   padding:7px 8px; border:1px solid var(--line,#e2e8f0); border-radius:11px; background:#fff;}
@@ -1302,7 +1294,7 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-0300";
+import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260819-1130";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
@@ -1369,8 +1361,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     formTab: "form",
     draftsUhr: 0,
     draftsError: "",
-    ddOffen: false,
-    multiOffen: false,
     prevIndex: 0,
     ladeAbschnitt: "lesen",
     ladeStart: 0,
@@ -2104,28 +2094,34 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * Vorlage wie die grosse Vorschau, nur klein - deshalb kann sie nicht etwas
    * anderes zeigen als das Ergebnis.
    */
+  /** Layoutwahl in derselben Sprache wie die Ansprache: eine Reihe Pillen im
+   *  offenen Kartenkopf. Das weisse Dropdown hatte eine zweite Beschriftung
+   *  ueber sich und verdeckte im Aufklappen den Fuss der Karte. */
   function dropdownHtml(q) {
     const optionen = layoutOptionen();
     const gewaehlt = optionen.some(([key]) => key === state.answers[q.key])
       ? state.answers[q.key]
       : "auto";
     if (gewaehlt !== state.answers[q.key]) state.answers[q.key] = gewaehlt;
-    const label = (optionen.find(([key]) => key === gewaehlt) || optionen[0])[1];
-    const zeilen = optionen.map(([value, text]) => `
-      <button type="button" class="as-ddrow${value === gewaehlt ? " is-active" : ""}" data-act="pick-layout" data-value="${attr(value)}">
-        <span class="as-ddthumb">${value === "auto" ? '<i class="fa-solid fa-wand-magic-sparkles"></i>' : miniatur(value)}</span>
-        <span class="as-ddtext">${esc(text)}</span>
-        ${MIT_BILD.has(value) ? '<i class="as-tag">Bild</i>' : LAYOUT_KEYS.includes(value) ? '<i class="as-tag">Diagramm</i>' : ""}
+    return optionPillenHtml(optionen.map(([value, text]) => ({
+      value, text, aktiv: value === gewaehlt, act: "pick-layout",
+      // Hell oder dunkel steht schon im Design und filtert die Liste; als
+      // Marke an jeder Pille waere es nur Rauschen.
+      tag: MIT_BILD.has(value) ? "Bild" : LAYOUT_KEYS.includes(value) ? "Diagramm" : "",
+    })));
+  }
+
+  /** Eine Reihe Auswahlpillen, gleiche Anmutung wie die Radiopillen der
+   *  uebrigen Fragen. Knoepfe statt Radios, weil Zusatzdaten am Element
+   *  haengen und Mehrfachauswahl dieselbe Zeile benutzt. */
+  function optionPillenHtml(eintraege, extra = "") {
+    const pillen = eintraege.map((e) => `
+      <button type="button" class="as-opt as-opt--btn${e.aktiv ? " is-active" : ""}"
+        data-act="${attr(e.act)}" data-value="${attr(e.value)}"${e.role ? ` data-role="${attr(e.role)}"` : ""}${e.disabled ? " disabled" : ""}
+        aria-pressed="${e.aktiv ? "true" : "false"}">
+        <span>${esc(e.text)}</span>${e.tag ? `<i class="as-tag">${esc(e.tag)}</i>` : ""}${e.plus ? '<i class="fa-solid fa-plus as-opt-plus"></i>' : ""}
       </button>`).join("");
-    return `<div class="as-q">
-      <label>${esc(q.label)}</label>
-      <div class="as-dd${state.ddOffen ? " is-open" : ""}">
-        <button type="button" class="as-ddhead" data-act="toggle-layout" aria-expanded="${state.ddOffen ? "true" : "false"}">
-          <span>${esc(label)}</span><i class="fa-solid fa-chevron-down"></i>
-        </button>
-        <div class="as-ddlist">${zeilen}</div>
-      </div>
-    </div>`;
+    return `<div class="as-opts">${pillen}</div>${extra}`;
   }
 
   /** Gewaehlte Slide-Arten als Liste. Leer heisst: noch nichts ausgewaehlt. */
@@ -2164,22 +2160,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const look = state.answers.look === "dunkel" ? "dunkel" : "hell";
     const optionen = q.options.filter(([key]) => SLIDE_ROLE[key] === q.role && LOOK[key] === look);
     const ausgewaehlt = q.role === "cover" ? state.answers.slide_cover : state.answers.slide_end;
-    const label = ausgewaehlt ? variantenName(ausgewaehlt) : `${q.label} auswählen`;
-    const zeilen = optionen.map(([value, text]) => `
-      <button type="button" class="as-ddrow${value === ausgewaehlt ? " is-active" : ""}" data-act="frame-pick" data-role="${attr(q.role)}" data-value="${attr(value)}">
-        <span class="as-ddthumb">${miniatur(value)}</span>
-        <span class="as-ddtext">${esc(text)}</span>
-        ${value === ausgewaehlt ? '<span class="as-ddrow-add"><i class="fa-solid fa-check"></i></span>' : ""}
-      </button>`).join("");
-    return `<div class="as-q">
-      <label>${esc(q.label)}</label>
-      <div class="as-dd as-dd--flow${state.ddOffen ? " is-open" : ""}">
-        <button type="button" class="as-ddhead" data-act="toggle-frame" aria-expanded="${state.ddOffen ? "true" : "false"}">
-          <span>${esc(label)}</span><i class="fa-solid fa-chevron-down"></i>
-        </button>
-        <div class="as-ddlist">${zeilen}</div>
-      </div>
-    </div>`;
+    return optionPillenHtml(optionen.map(([value, text]) => ({
+      value, text, aktiv: value === ausgewaehlt, act: "frame-pick", role: q.role,
+    })));
   }
 
   /** Inhaltsfolien koennen wiederholt und frei sortiert werden. Titel und Ende
@@ -2188,7 +2171,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const gewaehlt = inhaltsArten();
     const look = state.answers.look === "dunkel" ? "dunkel" : "hell";
     const optionen = q.options.filter(([key]) => !SLIDE_ROLE[key] && LOOK[key] === look);
-    const label = gewaehlt.length ? `${gewaehlt.length} Inhaltsfolien ausgewählt` : "Inhaltsfolien auswählen";
     const folge = gewaehlt.map((value, i) => {
       const hoch = i > 0;
       const runter = i < gewaehlt.length - 1;
@@ -2204,23 +2186,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </div>`;
     }).join("");
     const amMaximum = gewaehlt.length >= LINKEDIN_DOCUMENT_PAGE_MAX - 2;
-    const zeilen = optionen.map(([value, text]) => `
-      <button type="button" class="as-ddrow" data-act="content-add" data-value="${attr(value)}"${amMaximum ? " disabled" : ""}>
-        <span class="as-ddthumb">${miniatur(value)}</span>
-        <span class="as-ddtext">${esc(text)}</span>
-        <span class="as-ddrow-add"><i class="fa-solid fa-plus"></i></span>
-      </button>`).join("");
-    return `<div class="as-q">
-      <label>${esc(q.label)}</label>
-      <div class="as-sequence">${folge || '<p class="as-hint">Noch keine Inhaltsfolie ausgewählt.</p>'}</div>
-      <div class="as-dd as-dd--flow${state.multiOffen ? " is-open" : ""}">
-        <button type="button" class="as-ddhead" data-act="toggle-arten" aria-expanded="${state.multiOffen ? "true" : "false"}">
-          <span>${esc(label)}</span><i class="fa-solid fa-chevron-down"></i>
-        </button>
-        <div class="as-ddlist">${zeilen}</div>
-      </div>
-      <div data-carousel-guidance-host>${carouselEmpfehlungHtml(gewaehlt.length + 2)}</div>
-    </div>`;
+    const pillen = optionPillenHtml(optionen.map(([value, text]) => ({
+      value, text, act: "content-add", plus: true, disabled: amMaximum,
+    })));
+    const abfolge = folge
+      ? `<div class="as-sequence">${folge}</div>`
+      : "";
+    return `${pillen}${abfolge}<div data-carousel-guidance-host>${carouselEmpfehlungHtml(gewaehlt.length + 2)}</div>`;
   }
 
   /**
@@ -4674,9 +4646,6 @@ ${stages}${post}
     }
     if (act === "open-tone") { oeffneEinstellungen("tone"); return; }
     if (act === "open-designs") { oeffneEinstellungen("design"); return; }
-    if (act === "toggle-layout") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
-    if (act === "toggle-frame") { state.ddOffen = !state.ddOffen; zeichneForm(); return; }
-    if (act === "toggle-arten") { state.multiOffen = !state.multiOffen; zeichneForm(); return; }
     if (act === "prev-back" || act === "prev-fwd") {
       const anzahl = blaetterAnzahl();
       const richtung = act === "prev-fwd" ? 1 : -1;
@@ -4700,7 +4669,6 @@ ${stages}${post}
       const ende = rolle === "end" ? wert : state.answers.slide_end;
       setzeManuelleFolien(cover, inhaltsArten(), ende);
       state.prevIndex = rolle === "cover" ? 0 : Math.max(0, gewaehlteArten().length - 1);
-      state.ddOffen = false;
       const fragen = aktiveFragen();
       const offen = fragen[schrittIndex(fragen)];
       if (offen?.art === "frame" && frageErledigt(offen)) setzeSchritt(naechsterSchritt());
@@ -4736,7 +4704,6 @@ ${stages}${post}
     }
     if (act === "pick-layout") {
       state.answers.variant = hit.getAttribute("data-value");
-      state.ddOffen = false;
       // Ein Layout beantwortet die Frage genauso wie eine Auswahl per Klick.
       if (state.stepKey === "variant") setzeSchritt(naechsterSchritt());
       zeichneForm();
