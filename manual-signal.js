@@ -10,7 +10,8 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260820-2320";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260821-0010";
+import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260821-0010";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -262,6 +263,11 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     return String(state.answers[q.key] ?? "");
   }
 
+  /** Was LinkedIn vom Text erwartet: Hooklaenge, Limits, was der Beleg hergibt. */
+  function schreibhilfe(key) {
+    return guideMarkup(feldHinweise(key, state.answers[key], { lane: state.answers.lane }), esc);
+  }
+
   /** Frage und Platzhalter dürfen je Spur anders lauten. */
   function textVon(feld) {
     return typeof feld === "function" ? feld(state.answers) : (feld || "");
@@ -319,9 +325,10 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       return `<div class="as-opts">${pillen}</div>`;
     }
     const gemeinsam = `class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}"`;
-    return q.art === "textarea"
+    const feld = q.art === "textarea"
       ? `<textarea ${gemeinsam} rows="${q.rows || 4}">${esc(wert(q))}</textarea>`
       : `<input ${gemeinsam} value="${esc(wert(q))}">`;
+    return `${feld}<div data-guide="${esc(q.key)}">${schreibhilfe(q.key)}</div>`;
   }
 
   function fortschrittHtml(fragen, index) {
@@ -547,6 +554,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     const key = feld.getAttribute("data-feld");
     state.beruehrt.add(key);
     state.answers[key] = feld.value;
+    const hilfe = shell.querySelector(`[data-guide="${key}"]`);
+    if (hilfe) hilfe.innerHTML = schreibhilfe(key);
     const host = shell.querySelector(".ms-rechts");
     if (host) host.innerHTML = karteHtml();
   });

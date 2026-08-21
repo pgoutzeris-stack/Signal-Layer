@@ -2275,9 +2275,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260820-2320");
-  assert.match(indexHtml, /app\.js\?v=20260820-2320/);
-  assert.match(studio, /asset-templates\.js\?v=20260820-2320/);
+  assert.equal(studioVersion, "20260821-0010");
+  assert.match(indexHtml, /app\.js\?v=20260821-0010/);
+  assert.match(studio, /asset-templates\.js\?v=20260821-0010/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
   assert.match(edge, /createMemoPhotoFinder/);
@@ -2808,7 +2808,10 @@ test("Carousel-Laenge und eigene Abfolge folgen der wirklichen Auswahl", async (
   const block = studio.slice(studio.indexOf('key: "slide_count"'), studio.indexOf('key: "storyline"'));
   assert.match(block, /answers\.slide_mix !== "custom"/);
   assert.match(block, /slide_count_text/);
-  assert.match(studio, /if \(n <= CAROUSEL_RECOMMENDED_MAX\) return ""/);
+  // Die Empfehlung kommt jetzt aus den Schreibhilfen: gleiche Zahlen, gleiche
+  // Begruendung wie unter den Freitextfeldern.
+  assert.match(studio, /const hinweis = slideEmpfehlung\(anzahl\)/);
+  assert.match(studio, /if \(!hinweis \|\| hinweis\.ton === "ok"\) return ""/);
   assert.doesNotMatch(studio, /Empfohlen: \$\{CAROUSEL_RECOMMENDED_MIN\}/);
   const contentRenderer = studio.slice(studio.indexOf("function contentMultiHtml"), studio.indexOf("function miniatur"));
   assert.doesNotMatch(contentRenderer, /Wähle zum Abschluss eine Endfolie/);
