@@ -1,13 +1,14 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
-import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260821-0010";
+import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260821-0020";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
+import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260821-0020";
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260818-1642";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260821-0010";
-import { openManualSignal } from "./manual-signal.js?v=20260821-0010";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260821-0020";
+import { openManualSignal } from "./manual-signal.js?v=20260821-0020";
 
 let sb = null;
 let sources = [];
@@ -626,6 +627,19 @@ function operationsModelSelect(path, label, description, icon) {
   return `<label class="operations-model-field"><span class="operations-model-icon"><i class="${icon}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)}</small><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="${path}" ${geminiModelCatalogState.status === "loading" ? "disabled" : ""} aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
 }
 
+// DeepSeek rechnet nach Tageszeit ab: derselbe Lauf kostet in der Spitzenzeit
+// das Doppelte. Ohne diese Zeile stimmt die angezeigte Zahl nur eine Stunde
+// später nicht mehr.
+function modelTariffCopy(model) {
+  if (!model?.time_of_day_pricing) return "";
+  const anderer = model.peak_now ? model.off_peak_output_eur : model.peak_output_eur;
+  const tarif = model.peak_now ? "Spitzenzeit" : "Nebenzeit";
+  const gegen = anderer === null || anderer === undefined
+    ? ""
+    : ` · ${model.peak_now ? "Nebenzeit" : "Spitzenzeit"} Ausgabe ${formatCostEur(anderer)}`;
+  return ` · ${tarif} (${model.peak_window || "01:00–04:00 und 06:00–10:00 UTC"})${gegen}`;
+}
+
 // Modelle des einfachen Modus kommen aus dem Servercode (pipeline-simple.ts),
 // nicht aus der Gemini-Modellliste, weil dort auch DeepSeek dabei ist.
 function simpleModelSelect(path, label, description, researchOnly = false) {
@@ -637,7 +651,7 @@ function simpleModelSelect(path, label, description, researchOnly = false) {
     .join("");
   const active = catalog.find((model) => model.id === value);
   const price = active && active.input_eur !== null && active.input_eur !== undefined
-    ? `Eingabe ${formatCostEur(active.input_eur)} · Cache ${formatCostEur(active.cached_input_eur)} · Ausgabe ${formatCostEur(active.output_eur)} je 1 Mio. Tokens`
+    ? `Eingabe ${formatCostEur(active.input_eur)} · Cache ${formatCostEur(active.cached_input_eur)} · Ausgabe ${formatCostEur(active.output_eur)} je 1 Mio. Tokens${modelTariffCopy(active)}`
     : "Preisliste im Servercode hinterlegt";
   return `<label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid ${researchOnly ? "fa-magnifying-glass" : "fa-wand-magic-sparkles"}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)} ${escapeHtml(price)}</small><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="${path}" aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
 }
@@ -1646,52 +1660,175 @@ function renderFindings(track) {
 
 const LOADER_HTML = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
 
-const ROOTS_PARENT_ORIGINS = new Set([
-  "https://pgoutzeris-stack.github.io",
-  "https://tauri.localhost",
-  "tauri://localhost",
-]);
+// Antwort des Intranets auf roots-open-url. Ohne sie wüsste der Tool-Frame
+// nicht, ob der Link wirklich im Browser gelandet ist - und der Nutzer stünde
+// wie bisher vor einem Knopf, der nichts tut.
+const PARENT_OPEN_ACK = "roots-open-url-result";
+const PARENT_OPEN_TIMEOUT_MS = 900;
 
-function rootsParentOrigin() {
+function rootsParentOrigins() {
+  let ancestors = [];
+  try { ancestors = Array.from(window.location.ancestorOrigins || []); } catch (_) { /* fehlt in Firefox */ }
+  return parentOriginCandidates({
+    ancestorOrigins: ancestors,
+    referrer: document.referrer,
+    ownOrigin: window.location.origin,
+  });
+}
+
+/**
+ * Der Aufruf der Tauri-Brücke, egal welche Variante die App bereitstellt.
+ * v2 legt sie unter __TAURI_INTERNALS__, mit withGlobalTauri zusätzlich unter
+ * __TAURI__.core; ältere Hüllen kennen nur das Shell-Plugin.
+ */
+function tauriInvoker() {
+  const internals = window.__TAURI_INTERNALS__;
+  if (internals && typeof internals.invoke === "function") return internals.invoke.bind(internals);
+  const global = window.__TAURI__;
+  if (global?.core && typeof global.core.invoke === "function") return global.core.invoke.bind(global.core);
+  if (global && typeof global.invoke === "function") return global.invoke.bind(global);
+  return null;
+}
+
+/** Öffnet über die Tauri-Brücke. Erfolg heißt: das Betriebssystem hat den Link. */
+async function openViaTauri(url) {
+  const direkt = window.__TAURI__?.opener?.openUrl;
+  if (typeof direkt === "function") {
+    try { await direkt(url); return true; } catch (_) { /* weiter mit invoke */ }
+  }
+  const invoke = tauriInvoker();
+  if (!invoke) return false;
+  // Reihenfolge nach Häufigkeit: opener-Plugin (v2), Shell-Plugin (ältere
+  // Hüllen), dann dieselben Aufrufe mit dem alternativen Feldnamen.
+  const versuche = [
+    ["plugin:opener|open_url", { url }],
+    ["plugin:shell|open", { path: url }],
+    ["plugin:opener|open_url", { path: url }],
+    ["plugin:opener|open_path", { path: url }],
+  ];
+  for (const [befehl, argumente] of versuche) {
+    try {
+      await invoke(befehl, argumente);
+      return true;
+    } catch (_) { /* nächste Variante */ }
+  }
+  return false;
+}
+
+/**
+ * Bittet das Intranet, den Link zu öffnen, und wartet auf die Bestätigung.
+ * Ohne Bestätigung gilt der Versuch als gescheitert, damit die nächste Stufe
+ * greift statt still zu enden.
+ */
+function openViaParent(url) {
+  const ziele = rootsParentOrigins();
+  if (!ziele.length) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let fertig = false;
+    const schliesse = (ergebnis) => {
+      if (fertig) return;
+      fertig = true;
+      window.removeEventListener("message", auf);
+      clearTimeout(uhr);
+      resolve(ergebnis);
+    };
+    const auf = (event) => {
+      if (!ROOTS_PARENT_ORIGINS.has(event.origin)) return;
+      const daten = event.data;
+      if (!daten || typeof daten !== "object" || daten.type !== PARENT_OPEN_ACK) return;
+      if (daten.url && daten.url !== url) return;
+      schliesse(Boolean(daten.ok));
+    };
+    window.addEventListener("message", auf);
+    const uhr = setTimeout(() => schliesse(false), PARENT_OPEN_TIMEOUT_MS);
+    let gesendet = false;
+    for (const ziel of ziele) {
+      try {
+        window.parent.postMessage({ type: "roots-open-url", url }, ziel);
+        gesendet = true;
+      } catch (_) { /* nächstes Ziel */ }
+    }
+    if (!gesendet) schliesse(false);
+  });
+}
+
+/** Neues Browserfenster. Gibt false zurück, wenn der Blocker zugeschlagen hat. */
+function openViaWindow(url) {
   try {
-    const origin = new URL(document.referrer).origin;
-    return ROOTS_PARENT_ORIGINS.has(origin) ? origin : null;
+    const fenster = window.open(url, "_blank", "noopener,noreferrer");
+    if (fenster) {
+      try { fenster.opener = null; } catch (_) { /* schon entkoppelt */ }
+      return true;
+    }
+  } catch (_) { /* nächste Stufe */ }
+  return false;
+}
+
+/**
+ * Ein echter Klick auf einen Anker. Manche Webviews ignorieren window.open,
+ * führen den Klick auf ein <a target="_blank"> aber aus.
+ */
+function openViaAnchor(url) {
+  try {
+    const anker = document.createElement("a");
+    anker.href = url;
+    anker.target = "_blank";
+    anker.rel = "noopener noreferrer";
+    anker.style.display = "none";
+    document.body.appendChild(anker);
+    anker.click();
+    setTimeout(() => anker.remove(), 0);
+    return true;
   } catch (_) {
-    return null;
+    return false;
   }
 }
 
-// Open an external URL. Three environments, three strategies:
-// 1. Embedded in the ROOTS Intranet iframe (browser or native Tauri app) - a
-//    plain <a>/window.open is blocked or would replace the tool, so we
-//    delegate to the parent's roots-open-url postMessage handler.
-// 2. Running as the native Tauri app's TOP-LEVEL window (not iframed - e.g.
-//    the macOS app opening Signal Layer directly instead of via the
-//    Intranet wrapper) - window.open() does nothing in a bare WKWebView, so
-//    invoke the Tauri opener plugin directly, with the same fallback chain
-//    the Intranet uses (plugin variants can differ by Tauri version/config).
-// 3. Plain browser tab/standalone - regular window.open.
-function openExternalUrl(url) {
-  if (!url || !/^(https?:\/\/|mailto:|tel:)/i.test(url)) return;
-  if (document.documentElement.classList.contains("in-iframe")) {
-    try {
-      const parentOrigin = rootsParentOrigin();
-      if (parentOrigin) {
-        window.parent.postMessage({ type: "roots-open-url", url }, parentOrigin);
-        return;
-      }
-    } catch (_) { /* fall through to direct open */ }
-  }
-  const T = window.__TAURI_INTERNALS__;
-  if (T && typeof T.invoke === "function") {
-    Promise.resolve()
-      .then(() => T.invoke("plugin:opener|open_url", { url }))
-      .catch(() => T.invoke("plugin:shell|open", { path: url }))
-      .catch(() => T.invoke("plugin:opener|open_url", { path: url }))
-      .catch(() => { try { window.open(url, "_blank", "noopener,noreferrer"); } catch (_) {} });
-    return;
-  }
-  window.open(url, "_blank", "noopener,noreferrer");
+/** Letzte Stufe: der Link landet in der Zwischenablage statt im Nichts. */
+async function copyUrlFallback(url) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      toast("Der Link ließ sich hier nicht öffnen und liegt jetzt in der Zwischenablage.", "ok");
+      return true;
+    }
+  } catch (_) { /* alter Weg */ }
+  try {
+    const feld = document.createElement("textarea");
+    feld.value = url;
+    feld.setAttribute("readonly", "readonly");
+    feld.style.position = "fixed";
+    feld.style.opacity = "0";
+    document.body.appendChild(feld);
+    feld.select();
+    const ok = document.execCommand("copy");
+    feld.remove();
+    if (ok) {
+      toast("Der Link ließ sich hier nicht öffnen und liegt jetzt in der Zwischenablage.", "ok");
+      return true;
+    }
+  } catch (_) { /* aufgeben */ }
+  toast(`Der Link ließ sich nicht öffnen: ${url}`, "err");
+  return false;
+}
+
+// Einen externen Link zu öffnen ist je nach Hülle etwas anderes. Die Kette
+// deckt alle vier Fälle ab und hört erst auf, wenn eine Stufe bestätigt:
+// 1. Tool im Intranet-iframe (Browser oder Tauri-App): das Intranet öffnet und
+//    bestätigt. Nur dort liegt in der App die Tauri-Brücke.
+// 2. Signal Layer als oberstes Fenster der Tauri-App: Brücke direkt aufrufen.
+// 3. Normaler Browser-Tab: window.open, sonst ein echter Ankerklick.
+// 4. Nichts davon greift: Link in die Zwischenablage, mit Meldung.
+async function openExternalUrl(value) {
+  const url = externalUrlFromValue(value);
+  if (!url) return false;
+  const imRahmen = window.self !== window.top
+    || document.documentElement.classList.contains("in-iframe");
+  if (imRahmen && await openViaParent(url)) return true;
+  if (await openViaTauri(url)) return true;
+  if (openViaWindow(url)) return true;
+  if (!imRahmen && openViaAnchor(url)) return true;
+  return await copyUrlFallback(url);
 }
 
 async function loadFindings(track) {
@@ -2404,7 +2541,7 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
           ${article.published_at ? `<span class="tag"><i class="fa-solid fa-calendar"></i> ${escapeHtml(new Date(article.published_at).toLocaleDateString("de-DE"))}</span>` : ""}
           ${article.article_type ? `<span class="tag"><i class="fa-solid fa-file-lines"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
           ${article.language ? `<span class="tag tag--language">${escapeHtml(article.language.toUpperCase())}</span>` : ""}
-          ${article.url ? `<a class="tag tag--source" href="${escapeHtml(article.url)}" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> Originalquelle</a>` : ""}
+          ${hasExternalSource(article) ? `<a class="tag tag--source" href="${escapeHtml(article.url)}" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> Originalquelle</a>` : ""}
         </div>
         ${article.ai_summary ? `<p class="article-detail-summary">${escapeText(article.ai_summary)}</p>` : ""}
         ${isTranslated ? `<p class="article-translated-note"><i class="fa-solid fa-language"></i> Automatisch aus dem ${escapeHtml((article.language || "").toUpperCase())} übersetzt</p>` : ""}
@@ -4115,17 +4252,18 @@ function bindUi() {
     void openTechnicalAudit(button.dataset.auditArticleId);
   });
 
-  // External links (e.g. "Originalquelle") must not navigate the iframe. When
-  // embedded in the ROOTS Intranet — including the native Tauri desktop app —
-  // we hand the URL to the parent, which opens it in the system browser via
-  // its roots-open-url handler. Standalone (not iframed) we open a new tab.
+  // Externe Links duerfen den iframe nicht wegnavigieren. openExternalUrl
+  // entscheidet, welcher Weg in dieser Huelle traegt, und meldet sich, wenn
+  // keiner traegt. Der Klick wird auch dann abgefangen, wenn die Adresse ohne
+  // Schema im Bestand steht - sonst landete der Nutzer auf einer 404 der
+  // eigenen Seite.
   document.addEventListener("click", (event) => {
     const link = event.target.closest("a[data-external]");
     if (!link) return;
     const url = link.getAttribute("href");
-    if (!url || url === "#" || !/^https?:\/\//i.test(url)) return;
+    if (!url || url === "#") return;
     event.preventDefault();
-    openExternalUrl(url);
+    void openExternalUrl(url);
   });
 
   els.btnSettings.addEventListener("click", openSettings);

@@ -10,8 +10,8 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260821-0010";
-import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260821-0010";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260821-0020";
+import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260821-0020";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -22,6 +22,19 @@ const DEFAULT_ESCAPE = (value) => String(value ?? "")
 
 /** Sonderschluessel der Abschlusskarte, wie im Asset-Studio. */
 const ENDE = "__ende";
+
+/** Sonderwert der Leistungsauswahl: eigener Text statt Katalogeintrag. */
+const FREITEXT = "__frei";
+
+/** Die 6P, in derselben Reihenfolge wie im Leistungskatalog der Einstellungen. */
+const ROOTS_PILLARS = [
+  ["planning", "Planning – Wachstumsstrategie"],
+  ["purpose", "Purpose – Markenpositionierung"],
+  ["presence", "Presence – Customer Experience"],
+  ["people", "People – Marketing Capability"],
+  ["productivity", "Productivity – Marketing Operations"],
+  ["performance", "Performance – Marketing Analytics"],
+];
 
 /**
  * Die Fragen. `pflicht` entscheidet, ob „Weiter“ erst mit Inhalt greift;
@@ -38,15 +51,6 @@ const FRAGEN = [
     key: "profile", label: "Absender", frage: "Wer veröffentlicht den Beitrag?", art: "pills",
     options: [["roots", "ROOTS"], ["private", "Mein Privatprofil"]],
     when: (a) => a.lane === "marketing",
-    pflicht: true,
-  },
-  {
-    key: "mode", label: "Texte", frage: "Wer schreibt die Texte?", art: "pills",
-    options: [
-      ["ai", "Die KI, aus meinen Angaben"],
-      ["hybrid", "KI, aber Kernaussage und Aufruf gebe ich vor"],
-      ["manual", "Ich schreibe alle Texte selbst"],
-    ],
     pflicht: true,
   },
   {
@@ -68,7 +72,8 @@ const FRAGEN = [
   },
   {
     key: "source", label: "Quelle", frage: "Woher stammt die Information?", art: "text",
-    platzhalter: "Studie, Herausgeber, Jahr oder Link",
+    platzhalter: "https://… — Link zur Studie, Meldung oder Seite",
+    hinweis: "Am besten die URL einsetzen. Ohne Link nur Herausgeber und Jahr — oder überspringen.",
   },
   {
     key: "company", label: "Unternehmen", art: "text", platzhalter: "Firmenname",
@@ -77,7 +82,7 @@ const FRAGEN = [
       : "Um welches Unternehmen geht es?"),
   },
   {
-    key: "offering", label: "Leistung", art: "text", platzhalter: "z. B. Markenstrategie",
+    key: "offering", label: "Leistung", art: "auswahl", platzhalter: "Eigene Leistung eintragen",
     frage: (a) => (a.lane === "sales"
       ? "Welche ROOTS-Leistung willst du anbieten?"
       : "Welche ROOTS-Leistung schließt daran an?"),
@@ -97,24 +102,6 @@ const FRAGEN = [
       : "Welche Wettbewerber des betroffenen Unternehmens machen es schon vor?"),
     platzhalter: "Firmennamen, z. B. Aldi Süd, dm, Rossmann",
     hinweis: "Namen nennen, keine Kategorien: das Asset zitiert sie.",
-  },
-  {
-    key: "storyline_text", label: "Kernaussage", frage: "Welche Aussage soll das Asset tragen?",
-    art: "textarea", rows: 4,
-    platzhalter: "Der Satz, um den herum gebaut wird",
-    when: (a) => a.mode !== "ai", pflicht: true, min: 20,
-  },
-  {
-    key: "cta_text", label: "Aufruf", frage: "Wozu sollen Leser am Ende aufgefordert werden?",
-    art: "text",
-    platzhalter: "z. B. Sortimentscheck vereinbaren",
-    when: (a) => a.mode !== "ai", pflicht: true, min: 4,
-  },
-  {
-    key: "caption_text", label: "Caption", frage: "Was soll als Beitragstext unter dem Bild stehen?",
-    art: "textarea", rows: 4,
-    platzhalter: "Der Text, den Leser im Feed lesen",
-    when: (a) => a.mode === "manual" && a.lane === "marketing", pflicht: true, min: 20,
   },
 ];
 
@@ -137,9 +124,6 @@ const BEISPIEL = {
     territory: "DACH, Lebensmittelhandel",
     occasion: "Quartalszahlen",
     competitor: "Aldi Süd, dm",
-    storyline_text: "Eigenmarken wachsen, weil Marken die Lücke offen lassen.",
-    cta_text: "Sortimentscheck vereinbaren",
-    caption_text: "Der Eigenmarkenanteil liegt bei 41 Prozent. Wer jetzt nicht nachschärft, wird über den Preis verglichen.",
   },
   sales: {
     headline: "Beispiel Handel AG verliert Regalanteil an Eigenmarken",
@@ -151,9 +135,6 @@ const BEISPIEL = {
     territory: "DACH, Lebensmittelhandel",
     occasion: "Quartalszahlen",
     competitor: "Rossmann, dm",
-    storyline_text: "Regalanteil zurückholen heißt zuerst entscheiden, wofür die Marke steht.",
-    cta_text: "Sollen wir den Sortimentscheck gemeinsam durchgehen?",
-    caption_text: "",
   },
 };
 
@@ -221,6 +202,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     // Selbst getippte Felder ueberlebt ein Spurwechsel.
     beruehrt: new Set(),
     stepKey: "lane", busy: false, error: "", formError: "",
+    // Leistungskatalog aus Supabase. Bis er da ist, bleibt nur das Freitextfeld.
+    offerings: [], offeringsGeladen: false, offeringFrei: false,
   };
 
   const overlay = document.createElement("div");
@@ -316,6 +299,34 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     return v.length > 60 ? `${v.slice(0, 60)}…` : v;
   }
 
+  /** Katalogleistung oder eigener Text. Wer nichts Passendes findet, tippt. */
+  function auswahlKoerper(q) {
+    const v = wert(q).trim();
+    const katalog = state.offerings.filter((item) => item.active !== false && item.label);
+    const treffer = katalog.some((item) => item.label === v);
+    const frei = state.offeringFrei || (Boolean(v) && !treffer) || !katalog.length;
+    const gruppen = ROOTS_PILLARS.map(([pillar, titel]) => {
+      const eintraege = katalog.filter((item) => item.pillar === pillar);
+      if (!eintraege.length) return "";
+      const opts = eintraege.map((item) => `<option value="${esc(item.label)}"${!frei && item.label === v ? " selected" : ""}>${esc(item.label)}</option>`).join("");
+      return `<optgroup label="${esc(titel)}">${opts}</optgroup>`;
+    }).join("");
+    const ohneGruppe = katalog.filter((item) => !ROOTS_PILLARS.some(([pillar]) => pillar === item.pillar))
+      .map((item) => `<option value="${esc(item.label)}"${!frei && item.label === v ? " selected" : ""}>${esc(item.label)}</option>`).join("");
+    const kopf = state.offeringsGeladen && !katalog.length
+      ? "Kein Leistungskatalog geladen"
+      : "Leistung aus dem ROOTS-Katalog wählen";
+    const auswahl = `<select class="as-free" data-auswahl="${esc(q.key)}" aria-label="${esc(q.label)}">
+      <option value=""${!frei && !v ? " selected" : ""}>${esc(kopf)}</option>
+      ${gruppen}${ohneGruppe}
+      <option value="${FREITEXT}"${frei ? " selected" : ""}>Andere Leistung eintragen</option>
+    </select>`;
+    const feld = frei
+      ? `<input class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}" value="${esc(wert(q))}">`
+      : "";
+    return `${auswahl}${feld}<div data-guide="${esc(q.key)}">${schreibhilfe(q.key)}</div>`;
+  }
+
   function koerper(q) {
     if (q.art === "pills") {
       const pillen = q.options.map(([value, label]) => `
@@ -324,6 +335,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
           aria-pressed="${wert(q) === value ? "true" : "false"}"><span>${esc(label)}</span></button>`).join("");
       return `<div class="as-opts">${pillen}</div>`;
     }
+    if (q.art === "auswahl") return auswahlKoerper(q);
     const gemeinsam = `class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}"`;
     const feld = q.art === "textarea"
       ? `<textarea ${gemeinsam} rows="${q.rows || 4}">${esc(wert(q))}</textarea>`
@@ -390,7 +402,6 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     const chips = [
       a.lane === "sales" ? "Ansprache" : "LinkedIn",
       a.lane === "marketing" && a.profile === "private" ? "Privatprofil" : "ROOTS",
-      a.mode === "ai" ? "KI schreibt" : a.mode === "hybrid" ? "KI + eigene Texte" : "Eigene Texte",
       a.company, a.territory, a.offering,
     ].filter(Boolean).map((text) => `<span class="ms-chip">${esc(text)}</span>`).join("");
     return `<div class="ms-karte">
@@ -466,19 +477,16 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
    *  nichts uebersetzt werden muss. */
   function assetVorbelegung() {
     const a = state.answers;
-    const eigen = a.mode !== "ai";
+    // Wer die Texte schreibt, entscheidet der Asset-Fragebogen: dort entsteht
+    // der Text. Das manuelle Signal liefert nur den Stoff.
     const out = {
-      storyline: eigen ? "custom" : "auto",
-      storyline_text: eigen ? a.storyline_text : "",
-      cta: eigen ? "custom" : "auto",
-      cta_text: eigen ? a.cta_text : "",
+      storyline: "auto",
+      cta: "auto",
       sources: a.source ? "custom" : "auto",
       sources_text: a.source,
     };
     if (a.lane === "marketing") {
       out.profile = a.profile;
-      out.caption = a.mode === "manual" ? "custom" : "ai";
-      out.caption_text = a.mode === "manual" ? a.caption_text : "";
     } else if (a.company) {
       out.company_named = "yes";
       out.company_mode = "custom";
@@ -560,8 +568,37 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     if (host) host.innerHTML = karteHtml();
   });
 
+  overlay.addEventListener("change", (event) => {
+    const feld = event.target.closest("[data-auswahl]");
+    if (!feld) return;
+    const key = feld.getAttribute("data-auswahl");
+    state.beruehrt.add(key);
+    if (feld.value === FREITEXT) {
+      state.offeringFrei = true;
+      state.answers[key] = "";
+    } else {
+      state.offeringFrei = false;
+      state.answers[key] = feld.value;
+    }
+    state.formError = "";
+    zeichne();
+  });
+
+  /** Der Leistungskatalog steht in Supabase; ohne ihn bleibt das Freitextfeld. */
+  async function ladeLeistungen() {
+    try {
+      const res = await api("list_offerings");
+      state.offerings = (res && res.offerings) || [];
+    } catch {
+      state.offerings = [];
+    }
+    state.offeringsGeladen = true;
+    if (instanz.lebt()) zeichne();
+  }
+
   document.addEventListener("keydown", onKey);
   zeichne();
+  void ladeLeistungen();
   closeAssetStudio();
   return instanz;
 }

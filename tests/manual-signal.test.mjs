@@ -126,7 +126,7 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /class="as-opt as-opt--btn/);
   assert.match(frontend, /as-progress-text/);
 
-  const reihenfolge = ["lane", "profile", "mode", "headline", "core", "evidence", "source"];
+  const reihenfolge = ["lane", "profile", "headline", "core", "evidence", "source"];
   let letzte = -1;
   for (const key of reihenfolge) {
     const pos = frontend.indexOf(`key: "${key}"`);
@@ -152,7 +152,12 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   // Die Karte stellt eine Frage, die Antwortzeile traegt den kurzen Namen:
   // "Wofür" als Frage war keine Frage.
   assert.match(frontend, /frage: "Was soll aus dem Signal entstehen\?"/);
-  assert.match(frontend, /frage: "Wer schreibt die Texte\?"/);
+  // Wer die Texte schreibt, entscheidet erst der Asset-Fragebogen: ein manuell
+  // getipptes Signal kann die Frage gar nicht beantworten.
+  assert.doesNotMatch(frontend, /key: "mode"/);
+  assert.doesNotMatch(frontend, /Wer schreibt die Texte/);
+  assert.doesNotMatch(frontend, /key: "storyline_text"/);
+  assert.doesNotMatch(frontend, /key: "caption_text"/);
   assert.match(frontend, /frage: "Was belegt diese Beobachtung\?"/);
   // Der Kern ist der Inhalt des Signals, die Relevanz eine eigene Frage.
   assert.match(frontend, /key: "core", label: "Kern", frage: "Was besagt das Signal im Kern\?"/);
@@ -180,9 +185,14 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /grid-template-rows:auto 1fr/);
   assert.match(frontend, /class="ms-kopf"/);
   assert.match(frontend, /\.ms-karte\{\n  flex:1; align-self:stretch;/);
-  // Eigene Texte nur, wenn der Modus sie verlangt.
-  assert.match(frontend, /key: "storyline_text"[\s\S]*when: \(a\) => a\.mode !== "ai"/);
-  assert.match(frontend, /key: "caption_text"[\s\S]*a\.mode === "manual" && a\.lane === "marketing"/);
+  // Die Quelle bittet um eine URL und sagt, was ohne sie passiert.
+  assert.match(frontend, /key: "source"[\s\S]*platzhalter: "https:\/\/…/);
+  assert.match(frontend, /hinweis: "Am besten die URL einsetzen\./);
+  // Die Leistung kommt aus dem ROOTS-Katalog, Freitext bleibt möglich.
+  assert.match(frontend, /key: "offering", label: "Leistung", art: "auswahl"/);
+  assert.match(frontend, /await api\("list_offerings"\)/);
+  assert.match(frontend, /data-auswahl="\$\{esc\(q\.key\)\}"/);
+  assert.match(frontend, /Andere Leistung eintragen/);
 });
 
 test("die Pflichtmeldung trägt die Warnfarbe der Marke, kein nackter Absatz", () => {
@@ -208,7 +218,7 @@ test("jedes Feld ist für die Testphase vorbelegt", () => {
   const block = frontend.slice(frontend.indexOf("const BEISPIEL = {"), frontend.indexOf("const EIGENES_CSS"));
   for (const spur of ["marketing", "sales"]) {
     const teil = block.slice(block.indexOf(`${spur}: {`));
-    for (const feld of ["headline", "core", "evidence", "storyline_text", "cta_text"]) {
+    for (const feld of ["headline", "core", "evidence", "source", "company"]) {
       assert.match(teil, new RegExp(`${feld}: "[^"]{10,}"`), `${spur} ohne ${feld}`);
     }
   }
@@ -229,10 +239,9 @@ test("der Asset-Fragebogen öffnet bei der ersten offenen Frage", () => {
 
 test("die Übergabe belegt den Asset-Fragebogen mit den eigenen Texten vor", () => {
   const block = frontend.slice(frontend.indexOf("function assetVorbelegung"), frontend.indexOf("async function uebernehmen"));
-  assert.match(block, /storyline: eigen \? "custom" : "auto"/);
-  assert.match(block, /cta: eigen \? "custom" : "auto"/);
+  assert.match(block, /storyline: "auto"/);
+  assert.match(block, /cta: "auto"/);
   assert.match(block, /sources: a\.source \? "custom" : "auto"/);
-  assert.match(block, /out\.caption = a\.mode === "manual" \? "custom" : "ai"/);
   // Sales kennt kein Profil, dafür den Firmennamen im Cover-Titel.
   assert.match(block, /out\.company_named = "yes"/);
   assert.match(frontend, /kind: a\.lane === "sales" \? "memo" : "linkedin"/);

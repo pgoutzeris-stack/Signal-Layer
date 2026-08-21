@@ -38,6 +38,14 @@ const ZITAT = /[„"»][^"“«]{12,}[""«]|[„"][^"“]{12,}/g;
 const wortZahl = (text) => String(text || "").trim().split(/\s+/).filter(Boolean).length;
 const satzZahl = (text) => String(text || "").split(/[.!?]+(?:\s|$)/).map((s) => s.trim()).filter(Boolean).length;
 
+const URL_MUSTER = /\b(?:https?:\/\/|www\.)[^\s<>"']{4,}|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\/[^\s<>"']*/i;
+
+/** Die URL in einer Quellenangabe, falls eine drinsteht. */
+export function erkenneUrl(text) {
+  const treffer = String(text || "").match(URL_MUSTER);
+  return treffer ? treffer[0].replace(/[.,;)]+$/, "") : "";
+}
+
 /** Erste Zeile des Beitragstexts: bis hierhin liest der Feed mit. */
 export function ersteZeile(text) {
   const roh = String(text || "").replace(/\r/g, "");
@@ -148,6 +156,21 @@ export function feldHinweise(key, wert, kontext = {}) {
     }
     if (!profil.zitate) {
       hinweise.push(zeile("info", "Ein wörtliches Zitat in Anführungszeichen macht die Zitatfolie möglich."));
+    }
+    return hinweise;
+  }
+
+  if (key === "source") {
+    const url = erkenneUrl(text);
+    if (!laenge) {
+      hinweise.push(zeile("info", "Am besten eine URL nennen. Ohne Quelle geht es weiter, dann nennt das Asset keinen Beleghinweis."));
+      return hinweise;
+    }
+    hinweise.push(url
+      ? zeile("ok", `Link erkannt: ${url}`)
+      : zeile("warn", "Keine URL erkannt. Bitte die Quelle als Link angeben — oder ohne Link fortfahren, dann bleibt nur die Textangabe."));
+    if (!url && !/\d{4}/.test(text)) {
+      hinweise.push(zeile("info", "Ohne Link mindestens Herausgeber und Jahr nennen, sonst ist der Beleg nicht nachprüfbar."));
     }
     return hinweise;
   }

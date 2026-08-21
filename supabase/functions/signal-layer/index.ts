@@ -68,8 +68,10 @@ import {
   SIMPLE_PIPELINE_VERSION,
   SIMPLE_ALL_REJECT_REASONS,
   SIMPLE_REJECT_LABELS,
+  DEEPSEEK_PEAK_WINDOW_LABEL,
   classifySimpleArticle,
   generateSimpleTrigger,
+  isDeepseekPeak,
   requestedSimpleArticleIds,
   simpleResultUsedAi,
   simpleModelOption,
@@ -3020,15 +3022,20 @@ type ModelPrice = {
   batch?: ModelPriceTier;
   standardLarge?: ModelPriceTier;
   batchLarge?: ModelPriceTier;
+  /** Spitzentarif bei Anbietern, die nach Tageszeit abrechnen (DeepSeek). */
+  peak?: ModelPriceTier;
 };
 
 // Versionierte, ausschliesslich aus den offiziellen Anbieterpreislisten
 // uebernommene Preise je 1 Mio. Tokens. Unbekannte Modelle werden nicht
 // geschaetzt: Ohne verifizierten Eintrag darf kein kostenpflichtiger Lauf starten.
-const AI_PRICING_VERSION = "official-2026-08-05";
+const AI_PRICING_VERSION = "official-2026-08-21";
 const MODEL_PRICES: Record<string, ModelPrice> = {
-  "deepseek-v4-pro": { currency: "USD", standard: { input: 0.435, cachedInput: 0.003625, output: 0.87 } },
-  "deepseek-v4-flash": { currency: "USD", standard: { input: 0.14, cachedInput: 0.0028, output: 0.28 } },
+  // DeepSeek seit 16.08.2026: Preise in USD und nach Tageszeit gestaffelt.
+  // `standard` ist der Nebentarif, `peak` der doppelt so teure Spitzentarif in
+  // 01:00-04:00 und 06:00-10:00 UTC.
+  "deepseek-v4-pro": { currency: "USD", standard: { input: 0.66, cachedInput: 0.022, output: 1.98 }, peak: { input: 1.32, cachedInput: 0.044, output: 3.96 } },
+  "deepseek-v4-flash": { currency: "USD", standard: { input: 0.22, cachedInput: 0.007, output: 0.66 }, peak: { input: 0.44, cachedInput: 0.014, output: 1.32 } },
   "gemini-2.5-flash-lite": { currency: "USD", standard: { input: 0.1, cachedInput: 0.025, output: 0.4 }, batch: { input: 0.05, cachedInput: 0.025, output: 0.2 } },
   "gemini-2.5-flash": { currency: "USD", standard: { input: 0.3, cachedInput: 0.075, output: 2.5 }, batch: { input: 0.15, cachedInput: 0.075, output: 1.25 } },
   "gemini-2.5-pro": { currency: "USD", standard: { input: 1.25, cachedInput: 0.125, output: 10 }, standardLarge: { input: 2.5, cachedInput: 0.25, output: 15 }, batch: { input: 0.625, cachedInput: 0.125, output: 5 }, batchLarge: { input: 1.25, cachedInput: 0.25, output: 7.5 } },
@@ -3053,14 +3060,22 @@ function zeroCostFields(model: string): Record<string, unknown> {
   };
 }
 
-function verifiedModelPrice(model: string, inferenceMode: "standard" | "batch" = "standard", inputTokens = 0) {
+function verifiedModelPrice(
+  model: string,
+  inferenceMode: "standard" | "batch" = "standard",
+  inputTokens = 0,
+  at: Date | number = new Date(),
+) {
   const price = MODEL_PRICES[model];
   if (!price) return null;
   const large = inputTokens > 200_000;
+  // Der Spitzentarif gilt für den ganzen Aufruf, unabhängig von der Größe:
+  // DeepSeek kennt weder Batch- noch Großkontext-Stufen.
+  if (price.peak && isDeepseekPeak(at)) return { price, tier: price.peak, peak: true };
   const tier = inferenceMode === "batch"
     ? (large ? price.batchLarge || price.batch : price.batch)
     : (large ? price.standardLarge || price.standard : price.standard);
-  return tier ? { price, tier } : null;
+  return tier ? { price, tier, peak: false } : null;
 }
 
 async function modelCostFields(
@@ -3101,16 +3116,34 @@ async function modelCostFields(
 
 async function pricedSimpleModelCatalog() {
   const [usdEur, cnyEur] = await Promise.all([getUsdEurRate(), getCnyEurRate()]);
+  const jetzt = new Date();
   return SIMPLE_MODEL_CATALOG.map((model) => {
-    const verified = verifiedModelPrice(model.id);
+    const verified = verifiedModelPrice(model.id, "standard", 0, jetzt);
     if (!verified) return model;
     const rate = verified.price.currency === "CNY" ? cnyEur : usdEur;
+    const inEur = (tier: ModelPriceTier | undefined, feld: "input" | "cachedInput" | "output") => {
+      if (!tier || rate === null) return null;
+      const wert = feld === "cachedInput" ? Number(tier.cachedInput ?? tier.input) : tier[feld];
+      return wert * rate;
+    };
+    const price = MODEL_PRICES[model.id];
     return {
       ...model,
       pricing_version: AI_PRICING_VERSION,
-      input_eur: rate === null ? null : verified.tier.input * rate,
-      cached_input_eur: rate === null ? null : Number(verified.tier.cachedInput ?? verified.tier.input) * rate,
-      output_eur: rate === null ? null : verified.tier.output * rate,
+      input_eur: inEur(verified.tier, "input"),
+      cached_input_eur: inEur(verified.tier, "cachedInput"),
+      output_eur: inEur(verified.tier, "output"),
+      // Tageszeittarif: die Oberfläche zeigt, welcher Satz gerade läuft und
+      // was der andere kostet.
+      time_of_day_pricing: Boolean(price?.peak),
+      peak_now: Boolean(price?.peak) && verified.peak,
+      peak_window: price?.peak ? DEEPSEEK_PEAK_WINDOW_LABEL : null,
+      peak_input_eur: inEur(price?.peak, "input"),
+      peak_cached_input_eur: inEur(price?.peak, "cachedInput"),
+      peak_output_eur: inEur(price?.peak, "output"),
+      off_peak_input_eur: inEur(price?.standard, "input"),
+      off_peak_cached_input_eur: inEur(price?.standard, "cachedInput"),
+      off_peak_output_eur: inEur(price?.standard, "output"),
     };
   });
 }

@@ -43,24 +43,53 @@ export const SIMPLE_MODEL = "deepseek-v4-pro";
 // Anbieter-Preisliste (DeepSeek: api-docs.deepseek.com/quick_start/pricing,
 // Gemini: ai.google.dev/pricing). Ein Modell ohne Eintrag darf nicht laufen -
 // sonst wären Tokens und Kosten nicht belastbar.
-export type SimpleModelOption = {
-  id: string;
-  provider: "deepseek" | "gemini";
-  label: string;
+//
+// DeepSeek rechnet seit dem 16.08.2026 nach Tageszeit ab und stellt die Preise
+// nur noch in USD: in den Spitzenzeiten kostet jeder Token doppelt so viel wie
+// sonst. Spitzenzeit ist 01:00-04:00 und 06:00-10:00 UTC, alles andere ist
+// Nebenzeit. Gemini kennt keine Tageszeit; dort sind beide Stufen gleich.
+export const DEEPSEEK_PEAK_WINDOWS_UTC: [number, number][] = [[1, 4], [6, 10]];
+export const DEEPSEEK_PEAK_WINDOW_LABEL = "01:00–04:00 und 06:00–10:00 UTC";
+
+/** Gilt gerade der Spitzentarif? Entscheidet über den Preis eines Aufrufs. */
+export function isDeepseekPeak(at: Date | number = new Date()): boolean {
+  const zeit = typeof at === "number" ? new Date(at) : at;
+  const stunde = zeit.getUTCHours() + zeit.getUTCMinutes() / 60 + zeit.getUTCSeconds() / 3600;
+  return DEEPSEEK_PEAK_WINDOWS_UTC.some(([von, bis]) => stunde >= von && stunde < bis);
+}
+
+export type SimpleModelRates = {
   /** Eingabe ohne Cache-Treffer */
   input_usd: number;
   /** Eingabe mit Cache-Treffer (nur DeepSeek liefert das getrennt aus) */
   cached_input_usd: number;
   output_usd: number;
+};
+
+export type SimpleModelOption = SimpleModelRates & {
+  id: string;
+  provider: "deepseek" | "gemini";
+  label: string;
   pricing_currency?: "USD" | "CNY";
-  input_native?: number;
-  cached_input_native?: number;
-  output_native?: number;
+  /** Spitzentarif, falls der Anbieter nach Tageszeit abrechnet. */
+  peak?: SimpleModelRates;
+  /** Nebentarif; ohne Tageszeittarif identisch zu den Grundwerten. */
+  off_peak?: SimpleModelRates;
 };
 
 export const SIMPLE_MODEL_CATALOG: SimpleModelOption[] = [
-  { id: "deepseek-v4-pro", provider: "deepseek", label: "DeepSeek V4 Pro", input_usd: 0.435, cached_input_usd: 0.003625, output_usd: 0.87, pricing_currency: "CNY", input_native: 3, cached_input_native: 0.025, output_native: 6 },
-  { id: "deepseek-v4-flash", provider: "deepseek", label: "DeepSeek V4 Flash", input_usd: 0.14, cached_input_usd: 0.0028, output_usd: 0.28, pricing_currency: "CNY", input_native: 1, cached_input_native: 0.02, output_native: 2 },
+  {
+    id: "deepseek-v4-pro", provider: "deepseek", label: "DeepSeek V4 Pro", pricing_currency: "USD",
+    input_usd: 0.66, cached_input_usd: 0.022, output_usd: 1.98,
+    off_peak: { input_usd: 0.66, cached_input_usd: 0.022, output_usd: 1.98 },
+    peak: { input_usd: 1.32, cached_input_usd: 0.044, output_usd: 3.96 },
+  },
+  {
+    id: "deepseek-v4-flash", provider: "deepseek", label: "DeepSeek V4 Flash", pricing_currency: "USD",
+    input_usd: 0.22, cached_input_usd: 0.007, output_usd: 0.66,
+    off_peak: { input_usd: 0.22, cached_input_usd: 0.007, output_usd: 0.66 },
+    peak: { input_usd: 0.44, cached_input_usd: 0.014, output_usd: 1.32 },
+  },
   { id: "gemini-2.5-flash-lite", provider: "gemini", label: "Gemini 2.5 Flash-Lite", input_usd: 0.1, cached_input_usd: 0.1, output_usd: 0.4 },
   { id: "gemini-2.5-flash", provider: "gemini", label: "Gemini 2.5 Flash", input_usd: 0.3, cached_input_usd: 0.3, output_usd: 2.5 },
 ];
@@ -68,6 +97,15 @@ export const SIMPLE_MODEL_CATALOG: SimpleModelOption[] = [
 export function simpleModelOption(modelId: string): SimpleModelOption {
   return SIMPLE_MODEL_CATALOG.find((model) => model.id === modelId)
     || SIMPLE_MODEL_CATALOG.find((model) => model.id === SIMPLE_MODEL)!;
+}
+
+/** Der Tarif, der zu diesem Zeitpunkt gilt. Ohne Tageszeittarif der Grundwert. */
+export function simpleModelRates(modelId: string, at: Date | number = new Date()): SimpleModelRates {
+  const option = simpleModelOption(modelId);
+  if (option.provider !== "deepseek" || !option.peak || !option.off_peak) {
+    return { input_usd: option.input_usd, cached_input_usd: option.cached_input_usd, output_usd: option.output_usd };
+  }
+  return isDeepseekPeak(at) ? option.peak : option.off_peak;
 }
 // The simple mode is explicitly a re-run over stored articles, never a crawl.
 export const SIMPLE_ARTICLE_LIMIT = 1_000;
@@ -729,10 +767,11 @@ export type SimpleUsage = {
 
 const EMPTY_USAGE: SimpleUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
 
-// Getrennte Abrechnung von Cache-Treffern, weil DeepSeek dafür rund 1 % des
-// normalen Eingabepreises verlangt.
-export function simpleUsageCostUsd(modelId: string, usage: SimpleUsage): number {
-  const rates = simpleModelOption(modelId);
+// Getrennte Abrechnung von Cache-Treffern, weil DeepSeek dafür rund 3 % des
+// normalen Eingabepreises verlangt. Der Zeitpunkt entscheidet über Spitzen-
+// oder Nebentarif.
+export function simpleUsageCostUsd(modelId: string, usage: SimpleUsage, at: Date | number = new Date()): number {
+  const rates = simpleModelRates(modelId, at);
   return (usage.input * rates.input_usd
     + usage.cachedInput * rates.cached_input_usd
     + (usage.output + usage.thinking) * rates.output_usd) / 1_000_000;
