@@ -98,7 +98,7 @@ test("die beiden Zeilen bleiben aus der Pipeline-Auswertung heraus", () => {
 
 test("der Server legt beide Zeilen an und räumt die Waise weg", () => {
   assert.match(edge, /case "create_manual_signal": \{/);
-  assert.match(edge, /"create_manual_signal",\n\]\)/);
+  assert.match(edge, /"create_manual_signal",/);
   assert.match(edge, /manualSignalIssue\(manual\)/);
   assert.match(edge, /from\("articles"\)\.insert\(manualArticle\)/);
   // Ohne Signalzeile ist die Artikelzeile unbenutzbar: sie muss weg.

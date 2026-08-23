@@ -71,6 +71,7 @@ import {
   DEEPSEEK_PEAK_WINDOW_LABEL,
   classifySimpleArticle,
   generateSimpleTrigger,
+  deepseekTarifLage,
   isDeepseekPeak,
   requestedSimpleArticleIds,
   simpleResultUsedAi,
@@ -538,6 +539,8 @@ const EDITOR_ACTIONS = new Set([
   // Ein selbst geschriebenes Signal legt eine Artikel- und eine Signalzeile an.
   // Lesen bleibt offen, Schreiben braucht dieselbe Freigabe wie ein Lauf.
   "create_manual_signal",
+  "schedule_simple_run",
+  "cancel_simple_run_schedule",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -7521,6 +7524,53 @@ Deno.serve(async (req: Request) => {
         // current Gemini batch before treating a source as truly stalled.
         const WATCHDOG_STALL_SECONDS = 360;
         const admin = getAdminClient();
+
+        // Geplanter Lauf: wartet auf den Nebentarif und startet, sobald er
+        // gilt. Nur wenn gerade keiner laeuft - zwei Laeufe wuerden dieselben
+        // Artikel doppelt bezahlen.
+        {
+          const { data: laufend } = await admin.schema("signal_layer").from("simple_runs")
+            .select("id").eq("status", "running").limit(1).maybeSingle();
+          if (!laufend) {
+            const { data: faellig } = await admin.schema("signal_layer").from("simple_run_schedule")
+              .select("*").eq("status", "queued").lte("planned_for", new Date().toISOString())
+              .order("planned_for").limit(1).maybeSingle();
+            if (faellig) {
+              let geplant = Array.isArray(faellig.article_ids) ? faellig.article_ids as string[] : [];
+              // Ohne feste Liste wird erst beim Start ausgewaehlt: die neuesten
+              // noch nicht bewerteten Artikel. Zwischen Planung und Start koennen
+              // Stunden liegen, in denen neue dazukommen.
+              if (!geplant.length) {
+                const limit = Math.min(Math.max(Number(faellig.article_limit || SIMPLE_ARTICLE_LIMIT), 1), SIMPLE_MAX_ARTICLE_LIMIT);
+                const { data: bewertet } = await admin.schema("signal_layer").from("simple_signals").select("article_id");
+                const schonBewertet = new Set((bewertet || []).map((zeile: { article_id: string }) => zeile.article_id));
+                const { data: kandidaten } = await admin.schema("signal_layer").from("articles")
+                  .select("id").neq("article_type", "manual")
+                  .order("crawled_at", { ascending: false }).limit(limit + schonBewertet.size);
+                geplant = (kandidaten || []).map((zeile: { id: string }) => zeile.id)
+                  .filter((id: string) => !schonBewertet.has(id)).slice(0, limit);
+              }
+              const config = await getPipelineConfig();
+              const { data: neuerLauf } = await admin.schema("signal_layer").from("simple_runs").insert({
+                status: geplant.length ? "running" : "done",
+                article_limit: Number(faellig.article_limit || geplant.length || 0),
+                article_ids: geplant,
+                total_count: geplant.length,
+                prompt_version: SIMPLE_PIPELINE_VERSION,
+                model: config.ai.simple_model || SIMPLE_MODEL,
+                research_model: config.ai.simple_research_model || COMPANY_PROFILE_MODEL,
+                triggered_by: faellig.created_by || null,
+                finished_at: geplant.length ? null : new Date().toISOString(),
+              }).select("id, status").single();
+              await admin.schema("signal_layer").from("simple_run_schedule").update({
+                status: "started",
+                started_run_id: neuerLauf?.id || null,
+                started_at: new Date().toISOString(),
+              }).eq("id", faellig.id);
+              if (neuerLauf?.status === "running") triggerSimpleRun(neuerLauf.id);
+            }
+          }
+        }
         const cutoff = new Date(Date.now() - WATCHDOG_STALL_SECONDS * 1000).toISOString();
 
         // Simple-mode runs are started from the operating side (a run row) and
@@ -7937,6 +7987,7 @@ Deno.serve(async (req: Request) => {
         // Fire-and-forget: the run works through its batches server-side, the
         // frontend only watches the status.
         if (run?.status === "running") triggerSimpleRun(run.id);
+        }
         return corsResponse(origin, { run, batch_size: SIMPLE_BATCH_SIZE });
       }
 
@@ -8471,8 +8522,45 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      case "schedule_simple_run": {
+        // Ein Lauf, der auf den Nebentarif wartet. Gespeichert wird die Auswahl,
+        // nicht der Startbefehl: der Waechter startet sie, wenn die Zeit da ist.
+        const planIds = requestedSimpleArticleIds(body.article_ids, SIMPLE_MAX_ARTICLE_LIMIT);
+        const planLimit = Number(body.article_limit || 0);
+        const planZeit = new Date(String(body.planned_for || ""));
+        if (Number.isNaN(planZeit.getTime())) return errorResponse(origin, "planned_for fehlt oder ist kein Zeitpunkt");
+        if (planZeit.getTime() < Date.now() - 60_000) return errorResponse(origin, "Der Zeitpunkt liegt in der Vergangenheit");
+        if (!planIds.length && !(Number.isInteger(planLimit) && planLimit > 0)) {
+          return errorResponse(origin, "Ohne Artikelliste oder Anzahl gibt es nichts zu planen");
+        }
+        const planAdmin = getAdminClient();
+        await planAdmin.schema("signal_layer").from("simple_run_schedule")
+          .update({ status: "cancelled" }).eq("status", "queued");
+        const { data: planZeile, error: planFehler } = await planAdmin.schema("signal_layer")
+          .from("simple_run_schedule").insert({
+            planned_for: planZeit.toISOString(),
+            article_ids: planIds,
+            article_limit: planIds.length ? planIds.length : planLimit,
+            reason: String(body.reason || "").slice(0, 200) || null,
+            created_by: auth?.userId || null,
+          }).select("*").single();
+        if (planFehler) return errorResponse(origin, planFehler.message, 500);
+        return corsResponse(origin, { schedule: planZeile });
+      }
+
+      case "cancel_simple_run_schedule": {
+        const { error: absageFehler } = await getAdminClient().schema("signal_layer")
+          .from("simple_run_schedule").update({ status: "cancelled" }).eq("status", "queued");
+        if (absageFehler) return errorResponse(origin, absageFehler.message, 500);
+        return corsResponse(origin, { ok: true });
+      }
+
       case "get_simple_run_status": {
         const admin = getAdminClient();
+        const simpleConfigForStatus = await getPipelineConfig();
+        const { data: geplanterLauf } = await admin.schema("signal_layer").from("simple_run_schedule")
+          .select("id, planned_for, article_limit, reason, created_at")
+          .eq("status", "queued").order("planned_for").limit(1).maybeSingle();
         const [
           { data: run }, { data: triggerBackfill }, { count: signalCount }, { count: rejectedCount },
           { data: exchangeRate }, { data: costLedger }, { data: allCostRows }, { count: profileResearchCount },
@@ -8509,6 +8597,8 @@ Deno.serve(async (req: Request) => {
           batch_size: SIMPLE_BATCH_SIZE,
           totals: { signals: signalCount || 0, rejected: rejectedCount || 0 },
           forecast: await buildSimpleForecast(run),
+          pricing: deepseekTarifLage(simpleConfigForStatus.ai.simple_model || SIMPLE_MODEL),
+          schedule: geplanterLauf || null,
           cost_summary: {
             ...costSummary,
             scope: "simple_since_v1.0",

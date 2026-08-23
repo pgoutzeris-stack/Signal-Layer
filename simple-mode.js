@@ -387,7 +387,9 @@ async function loadResults({ keepStatus = false } = {}) {
       lastRun = status.run || null;
       triggerBackfill = status.trigger_backfill || null;
       running = lastRun?.status === "running" || triggerBackfill?.status === "running";
-      ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill, status.cost_summary || null);
+      ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill, status.cost_summary || null, {
+      pricing: status.pricing || null, schedule: status.schedule || null,
+    });
     }
   } catch (error) {
     ctx.toast(error.message || "Ergebnisse konnten nicht geladen werden", "err");
@@ -415,7 +417,9 @@ async function pollStatus() {
     lastRun = status.run || null;
     triggerBackfill = status.trigger_backfill || null;
     running = lastRun?.status === "running" || triggerBackfill?.status === "running";
-    ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill, status.cost_summary || null);
+    ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill, status.cost_summary || null, {
+      pricing: status.pricing || null, schedule: status.schedule || null,
+    });
     const advanced = Number(lastRun?.processed_count || 0) !== Number(previous?.processed_count || 0)
       || Number(triggerBackfill?.cursor || 0) !== Number(previousTrigger?.cursor || 0);
     const finished = (previous?.status === "running" && lastRun?.status !== "running")

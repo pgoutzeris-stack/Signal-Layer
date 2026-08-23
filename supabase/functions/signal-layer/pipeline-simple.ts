@@ -1884,3 +1884,48 @@ export function simpleRuleManifest(activeModel: string = SIMPLE_MODEL, researchM
     stages: simpleStageManifest(activeModel, researchModel),
   };
 }
+
+/**
+ * Welcher Tarif gerade gilt und wann er wechselt. DeepSeek verdoppelt in den
+ * Spitzenzeiten jeden Token; ein Lauf, der zwei Stunden warten kann, kostet
+ * die Haelfte. Ohne diese Auskunft startet man ihn blind.
+ *
+ * Geprueft am 23.08.2026 gegen die Anbieterpreisliste: Spitzenzeit ist
+ * 01:00-04:00 und 06:00-10:00 UTC, der Spitzentarif ist genau das Doppelte.
+ */
+export function deepseekTarifLage(modelId: string, at: Date | number = new Date()): {
+  variabel: boolean;
+  peak: boolean;
+  label: string;
+  faktor: number;
+  wechsel_iso: string | null;
+} {
+  const option = simpleModelOption(modelId);
+  const jetzt = typeof at === "number" ? new Date(at) : at;
+  if (option.provider !== "deepseek" || !option.peak || !option.off_peak) {
+    return { variabel: false, peak: false, label: "", faktor: 1, wechsel_iso: null };
+  }
+  const peak = isDeepseekPeak(jetzt);
+  const faktor = option.off_peak.output_usd > 0
+    ? Number((option.peak.output_usd / option.off_peak.output_usd).toFixed(2))
+    : 1;
+  // Naechster Wechsel: die erste Minute, in der der andere Tarif gilt.
+  let wechsel: Date | null = null;
+  for (let minuten = 1; minuten <= 24 * 60; minuten += 1) {
+    const probe = new Date(jetzt.getTime() + minuten * 60_000);
+    if (isDeepseekPeak(probe) !== peak) {
+      wechsel = new Date(Date.UTC(
+        probe.getUTCFullYear(), probe.getUTCMonth(), probe.getUTCDate(),
+        probe.getUTCHours(), probe.getUTCMinutes(), 0, 0,
+      ));
+      break;
+    }
+  }
+  return {
+    variabel: true,
+    peak,
+    label: DEEPSEEK_PEAK_WINDOW_LABEL,
+    faktor,
+    wechsel_iso: wechsel ? wechsel.toISOString() : null,
+  };
+}

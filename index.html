@@ -2227,6 +2227,7 @@
                     <span class="backfill-current-article live-shimmer" id="simple-current-article" hidden></span>
                     <small id="simple-progress-detail"></small>
                     <div class="source-health-note simple-run-error" id="simple-run-error" hidden></div>
+                    <div class="source-health-note" id="simple-pricing-note" hidden></div>
                   </div>
                   <section class="status-disclosure-panel status-cost-panel">
                     <button type="button" class="status-disclosure-toggle" id="simple-cost-toggle" aria-expanded="false" aria-controls="simple-cost-body">
@@ -2478,7 +2479,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260821-0020';
+  import { initApp } from './app.js?v=20260823-2100';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

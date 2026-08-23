@@ -1,14 +1,14 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
-import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260821-0020";
+import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260823-2100";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
-import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260821-0020";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260818-1642";
+import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260823-2100";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260823-2100";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260821-0020";
-import { openManualSignal } from "./manual-signal.js?v=20260821-0020";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2100";
+import { openManualSignal } from "./manual-signal.js?v=20260823-2100";
 
 let sb = null;
 let sources = [];
@@ -26,6 +26,8 @@ let statusPollTimer = null;
 let simpleRunStatus = null;
 let simpleForecast = null;
 let simpleCostSummary = null;
+let simplePricing = null;
+let simpleSchedule = null;
 let simpleTriggerBackfill = null;
 let lastSpendForecastNotice = "";
 let archiveArticles = [];
@@ -3553,6 +3555,7 @@ function renderSimpleHeaderStatusContent() {
     bindAnalysisErrorPopovers(runError);
   }
 
+  renderSimplePricingNote();
   const activeSimpleRun = Boolean(run && ["queued", "running"].includes(run.status));
   byId("simple-cost-summary").textContent = formatSimpleTotalEur(simpleCostSummary?.total_eur);
   byId("simple-cost-today").textContent = formatCostEur(simpleCostSummary?.today_eur);
@@ -3844,12 +3847,86 @@ if (typeof document !== "undefined") document.addEventListener("click", (event) 
   });
 }, { capture: true });
 
-export function setSimpleRunStatus(run, forecast = null, triggerBackfill = null, costSummary = undefined) {
+export function setSimpleRunStatus(run, forecast = null, triggerBackfill = null, costSummary = undefined, extras = undefined) {
   simpleRunStatus = run || null;
   simpleForecast = forecast || null;
   if (costSummary !== undefined) simpleCostSummary = costSummary || null;
+  if (extras !== undefined) {
+    simplePricing = extras?.pricing || null;
+    simpleSchedule = extras?.schedule || null;
+  }
   simpleTriggerBackfill = triggerBackfill || null;
   renderSimpleHeaderStatus();
+}
+
+/** Uhrzeit in Berliner Zeit, weil danach geplant wird. */
+function berlinZeit(iso) {
+  return new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+}
+
+/**
+ * DeepSeek rechnet nach Tageszeit ab: in den Spitzenzeiten kostet jeder Token
+ * das Doppelte. Wer den Lauf zwei Stunden schiebt, zahlt die Haelfte - deshalb
+ * steht hier, welcher Tarif gilt, und der Knopf, der den Lauf auf den Wechsel
+ * legt.
+ */
+async function planeNebentarifLauf() {
+  const host = document.getElementById("simple-pricing-note");
+  const wechsel = simplePricing?.wechsel_iso;
+  if (!wechsel) return;
+  try {
+    await callApi("schedule_simple_run", { planned_for: wechsel, article_limit: 1000, reason: "Nebentarif abwarten" });
+    toast("Lauf für den Nebentarif geplant.", "success");
+  } catch (error) {
+    toast(error.message || "Der Lauf konnte nicht geplant werden.", "error");
+    return;
+  }
+  if (host) host.innerHTML = '<span class="crawl-result-pill"><i class="fa-solid fa-clock"></i>Planung gespeichert</span>';
+}
+
+async function brichPlanungAb() {
+  try {
+    await callApi("cancel_simple_run_schedule");
+    simpleSchedule = null;
+    renderSimplePricingNote();
+  } catch (error) {
+    toast(error.message || "Die Planung konnte nicht abgebrochen werden.", "error");
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const knopf = event.target.closest?.('[data-act="simple-plan-nebentarif"], [data-act="simple-plan-abbrechen"]');
+  if (!knopf) return;
+  event.preventDefault();
+  if (knopf.dataset.act === "simple-plan-nebentarif") void planeNebentarifLauf();
+  else void brichPlanungAb();
+});
+
+function renderSimplePricingNote() {
+  const host = document.getElementById("simple-pricing-note");
+  if (!host) return;
+  const preis = simplePricing;
+  if (!preis?.variabel) { host.hidden = true; host.innerHTML = ""; return; }
+  const laeuft = ["queued", "running"].includes(simpleRunStatus?.status);
+  const wechsel = preis.wechsel_iso ? berlinZeit(preis.wechsel_iso) : null;
+  const pille = (inhalt, aktion, ton) => `<button type="button" class="crawl-result-pill${ton ? ` crawl-result-pill--${ton}` : ""}" data-act="${aktion}">${inhalt}</button>`;
+  if (simpleSchedule) {
+    host.hidden = false;
+    host.innerHTML = `<span class="crawl-result-pill"><i class="fa-solid fa-clock"></i>Lauf geplant für ${berlinZeit(simpleSchedule.planned_for)} Uhr`
+      + `${simpleSchedule.article_limit ? ` · ${Number(simpleSchedule.article_limit).toLocaleString("de-DE")} Artikel` : ""}</span>`
+      + pille('<i class="fa-solid fa-xmark"></i>Planung abbrechen', "simple-plan-abbrechen");
+    return;
+  }
+  if (!preis.peak) {
+    host.hidden = false;
+    host.innerHTML = `<span class="crawl-result-pill"><i class="fa-solid fa-tag"></i>Nebentarif aktiv`
+      + `${wechsel ? ` · Spitzentarif ab ${wechsel} Uhr` : ""}</span>`;
+    return;
+  }
+  host.hidden = false;
+  host.innerHTML = `<span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-tag"></i>`
+    + `Spitzentarif aktiv · ${preis.faktor}-facher Preis je Token</span>`
+    + (laeuft || !wechsel ? "" : pille(`<i class="fa-solid fa-clock"></i>Lauf um ${wechsel} Uhr starten`, "simple-plan-nebentarif"));
 }
 
 function scheduleStatusRefresh(isActive) {
