@@ -20,3 +20,8 @@ create index if not exists simple_run_schedule_faellig_idx
 
 comment on table signal_layer.simple_run_schedule is
   'Geplante Simple-Laeufe. Der Pipeline-Waechter startet eine faellige Zeile und setzt status=started.';
+
+-- Ein Lauf im Spitzentarif kostet das Doppelte. Er startet nur, wenn der
+-- Nutzer das ausdruecklich akzeptiert hat.
+alter table signal_layer.simple_run_schedule
+  add column if not exists accept_peak boolean not null default false;

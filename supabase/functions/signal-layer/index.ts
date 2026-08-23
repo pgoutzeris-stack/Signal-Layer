@@ -7535,7 +7535,11 @@ Deno.serve(async (req: Request) => {
             const { data: faellig } = await admin.schema("signal_layer").from("simple_run_schedule")
               .select("*").eq("status", "queued").lte("planned_for", new Date().toISOString())
               .order("planned_for").limit(1).maybeSingle();
-            if (faellig) {
+            const tarifJetzt = deepseekTarifLage((await getPipelineConfig()).ai.simple_model || SIMPLE_MODEL);
+            const darfStarten = faellig
+              ? (!tarifJetzt.variabel || !tarifJetzt.peak || faellig.accept_peak === true)
+              : false;
+            if (faellig && darfStarten) {
               let geplant = Array.isArray(faellig.article_ids) ? faellig.article_ids as string[] : [];
               // Ohne feste Liste wird erst beim Start ausgewaehlt: die neuesten
               // noch nicht bewerteten Artikel. Zwischen Planung und Start koennen
@@ -7966,6 +7970,20 @@ Deno.serve(async (req: Request) => {
             .select("id").order("crawled_at", { ascending: false }).limit(articleLimit);
           if (newestError) return errorResponse(origin, newestError.message, 500);
           articleIds = (newest || []).map((row: { id: string }) => row.id);
+        }
+        // DeepSeek verdoppelt in den Spitzenzeiten jeden Token. Ein Lauf startet
+        // dort nur, wenn der Nutzer den Preis ausdruecklich akzeptiert hat -
+        // sonst waere der teuerste Zeitpunkt der Standardfall.
+        {
+          const startConfig = await getPipelineConfig();
+          const tarif = deepseekTarifLage(startConfig.ai.simple_model || SIMPLE_MODEL);
+          if (tarif.variabel && tarif.peak && body.accept_peak !== true) {
+            return corsResponse(origin, {
+              blocked: "peak_tariff",
+              pricing: tarif,
+              message: `Spitzentarif aktiv (${tarif.faktor}-facher Preis je Token). Lauf auf den Nebentarif legen oder den Spitzentarif ausdrücklich bestätigen.`,
+            }, 409);
+          }
         }
         // A parallel run would spend AI budget twice on the same articles.
         await admin.schema("signal_layer").from("simple_runs")
@@ -8541,6 +8559,7 @@ Deno.serve(async (req: Request) => {
             article_ids: planIds,
             article_limit: planIds.length ? planIds.length : planLimit,
             reason: String(body.reason || "").slice(0, 200) || null,
+            accept_peak: body.accept_peak === true,
             created_by: auth?.userId || null,
           }).select("*").single();
         if (planFehler) return errorResponse(origin, planFehler.message, 500);

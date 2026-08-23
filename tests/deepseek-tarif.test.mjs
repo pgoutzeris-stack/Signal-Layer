@@ -80,3 +80,22 @@ test("die Meldung nennt Tarif, Faktor und den Startknopf", () => {
   // Der Status reicht Tarif und Planung an die Anzeige weiter.
   assert.match(simpleMode, /pricing: status\.pricing \|\| null, schedule: status\.schedule \|\| null/);
 });
+
+test("im Spitzentarif ist ein Lauf gesperrt, bis der Nutzer zustimmt", () => {
+  // Server: der Start wird abgewiesen, solange accept_peak fehlt.
+  assert.match(edge, /if \(tarif\.variabel && tarif\.peak && body\.accept_peak !== true\)/);
+  assert.match(edge, /blocked: "peak_tariff"/);
+  assert.match(edge, /\}, 409\);/);
+  // Die Planung merkt sich die Zustimmung ...
+  assert.match(edge, /accept_peak: body\.accept_peak === true/);
+  // ... und der Wächter startet eine fällige Planung sonst nicht im Spitzentarif.
+  assert.match(edge, /const darfStarten = faellig\n\s*\? \(!tarifJetzt\.variabel \|\| !tarifJetzt\.peak \|\| faellig\.accept_peak === true\)/);
+  assert.match(edge, /if \(faellig && darfStarten\) \{/);
+
+  // Oberfläche: Sperre benannt, beide Wege angeboten, Rückfrage vor dem Geld.
+  assert.match(appJs, /Läufe gesperrt/);
+  assert.match(appJs, /Spitzentarif akzeptieren und starten/);
+  assert.match(appJs, /data-act="simple-spitzentarif-trotzdem"/);
+  assert.match(appJs, /callApi\("start_simple_run", \{ article_limit: 1000, accept_peak: true \}\)/);
+  assert.match(appJs, /window\.confirm\(/);
+});

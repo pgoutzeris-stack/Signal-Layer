@@ -1,14 +1,14 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
-import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260823-2100";
+import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260823-2115";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
-import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260823-2100";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260823-2100";
+import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260823-2115";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260823-2115";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2100";
-import { openManualSignal } from "./manual-signal.js?v=20260823-2100";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2115";
+import { openManualSignal } from "./manual-signal.js?v=20260823-2115";
 
 let sb = null;
 let sources = [];
@@ -3884,6 +3884,16 @@ async function planeNebentarifLauf() {
   if (host) host.innerHTML = '<span class="crawl-result-pill"><i class="fa-solid fa-clock"></i>Planung gespeichert</span>';
 }
 
+async function starteImSpitzentarif() {
+  if (!window.confirm(`Der Lauf kostet im Spitzentarif das ${simplePricing?.faktor || 2}-fache je Token. Jetzt trotzdem starten?`)) return;
+  try {
+    await callApi("start_simple_run", { article_limit: 1000, accept_peak: true });
+    toast("Lauf im Spitzentarif gestartet.", "success");
+  } catch (error) {
+    toast(error.message || "Der Lauf konnte nicht gestartet werden.", "error");
+  }
+}
+
 async function brichPlanungAb() {
   try {
     await callApi("cancel_simple_run_schedule");
@@ -3895,10 +3905,11 @@ async function brichPlanungAb() {
 }
 
 document.addEventListener("click", (event) => {
-  const knopf = event.target.closest?.('[data-act="simple-plan-nebentarif"], [data-act="simple-plan-abbrechen"]');
+  const knopf = event.target.closest?.('[data-act="simple-plan-nebentarif"], [data-act="simple-plan-abbrechen"], [data-act="simple-spitzentarif-trotzdem"]');
   if (!knopf) return;
   event.preventDefault();
   if (knopf.dataset.act === "simple-plan-nebentarif") void planeNebentarifLauf();
+  else if (knopf.dataset.act === "simple-spitzentarif-trotzdem") void starteImSpitzentarif();
   else void brichPlanungAb();
 });
 
@@ -3924,9 +3935,10 @@ function renderSimplePricingNote() {
     return;
   }
   host.hidden = false;
-  host.innerHTML = `<span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-tag"></i>`
-    + `Spitzentarif aktiv · ${preis.faktor}-facher Preis je Token</span>`
-    + (laeuft || !wechsel ? "" : pille(`<i class="fa-solid fa-clock"></i>Lauf um ${wechsel} Uhr starten`, "simple-plan-nebentarif"));
+  host.innerHTML = `<span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-lock"></i>`
+    + `Spitzentarif aktiv · ${preis.faktor}-facher Preis je Token · Läufe gesperrt</span>`
+    + (laeuft || !wechsel ? "" : pille(`<i class="fa-solid fa-clock"></i>Lauf um ${wechsel} Uhr starten`, "simple-plan-nebentarif"))
+    + (laeuft ? "" : pille('<i class="fa-solid fa-triangle-exclamation"></i>Spitzentarif akzeptieren und starten', "simple-spitzentarif-trotzdem", "error"));
 }
 
 function scheduleStatusRefresh(isActive) {
