@@ -159,7 +159,10 @@
   }
 
   /* ---------- Modus-Umschalter (Simple / Advanced) ---------- */
-  .mode-switch-bar { display: flex; justify-content: flex-end; max-width: 1100px; margin: 0 auto .9rem; }
+  /* Drei Pillen brauchen mehr Platz als zwei. Sie brechen um, statt nach links
+     in die Kopfzeile zu wandern. */
+  .mode-switch-bar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; max-width: 1100px; margin: 0 auto .9rem; position: relative; z-index: 1; }
+  .mode-switch { flex-wrap: wrap; }
   .mode-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--bg); box-shadow: var(--shadow-dash); }
   .mode-switch-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 13px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--muted); font: inherit; font-size: .74rem; font-weight: 750; cursor: pointer; transition: background .18s ease, color .18s ease; }
   .mode-switch-btn i { font-size: .7rem; }
@@ -2479,7 +2482,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260823-2115';
+  import { initApp } from './app.js?v=20260823-2200';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

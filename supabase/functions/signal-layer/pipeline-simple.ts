@@ -191,7 +191,7 @@ const SALES_FAMILIES: SimpleFamily[] = [
   {
     id: "cmo_wechsel",
     lane: "sales",
-    label: "CMO-/Marketingleitung-Wechsel",
+    label: "CMO Wechsel",
     definition: "Eine Führungsrolle für Marketing, Marke oder Produkt (CMO, Marketingleitung, Head of Marketing, Brand Director, Chief Creative Officer, Chief Product Officer) wird neu besetzt, verlassen oder umgebaut. Der Wechsel selbst ist ein belastbarer Timing-Anlass für Standortbestimmung, Priorisierung und die ersten 100 Tage; ein zusätzlich behauptetes Problem oder Budget ist nicht erforderlich. Entscheidend ist die Verantwortung für Marke, Markenauftritt oder Produkthandschrift, nicht der genaue Titel.",
     trigger: /\b(cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter\w*|marketingleitung|marketingchef\w*|marketingdirektor\w*|marketingvorstand\w*|marketingressort|vorstandin marketing|vorstand marketing|marketinggeschaftsfuhr\w*|head of marketing|marketing director|vp marketing|markenchef\w*|markenverantwortung|leiter\w* marketing|leitung marketing|bereichsleiter\w* marketing|marketing chef\w*|marketing leiter\w*|marketing leitung|marketing direktor\w*|marketing vorstand\w*|marken chef\w*|brand director|brand lead|senior brand director|chief creative officer|chief product officer|chief brand director|head of brand|brand strategy director|markendirektor\w*|produktdirektor\w*|global product director|marketingverantwortlich\w*)\b/,
     context: /\b(wechsel\w*|wechselt|ubernimmt|ubernahme|verlasst|verlassen|scheidet aus|abgang|nachfolge\w*|nachfolger\w*|folgt auf|ernannt|ernennt|bestellt|berufen|beruft|antritt|tritt an|tritt zuruck|rucktritt|besetzt|neubesetzung|umbesetzung|vakan\w*|interim|neuer|neue|neues|kommissarisch|appointed|appoints|joins|steps down|succeeds|hires|named|departs|exit)\b/,
@@ -223,7 +223,7 @@ const SALES_FAMILIES: SimpleFamily[] = [
   {
     id: "design_to_print",
     lane: "sales",
-    label: "Design-to-Print / Artwork-Restrukturierung",
+    label: "Design to Print",
     definition: "Der Weg von Design zu Druck wird umgebaut: Artwork-Management, Reinzeichnung, Druckvorstufe, Freigabeprozesse, Verpackungsdaten.",
     trigger: /\b(design to print|web to print|webtoprint|artwork\w*|reinzeichnung\w*|druckvorstufe|prepress|pre press|druckdaten|druckfreigabe\w*|farbmanagement|farbformulierung|farbkorrektur|color management|verpackungsartwork|verpackungsdaten|packaging artwork|packaging data|artwork approval|artwork management|packaging management|verpackungsdesign\w*|packaging design|designstandard\w*|designrichtlinie\w*|verpackungslinie\w*|etikettendaten|labeldaten|verpackungsvorlage\w*)\b/,
     context: /\b(prozess\w*|process|workflow\w*|restrukturier\w*|reorganis\w*|umbau\w*|automatisier\w*|automation|effizien\w*|standardisier\w*|digitalisier\w*|system\w*|software|tool\w*|plattform\w*|platform|fehlerquote|fehler\w*|durchlaufzeit\w*|time to market|kosten\w*|freigab\w*|approval|zentralisier\w*|outsourc\w*|insourc\w*|dienstleister\w*|einheitlich\w*|harmonisier\w*|weltweit|international|konsisten\w*|rollout|roll out|umstell\w*|prototype|produktion|production|standorte|druckmaschinen|reshap\w*)\b/,
@@ -253,7 +253,7 @@ const MARKETING_FAMILIES: SimpleFamily[] = [
   {
     id: "virale_news",
     lane: "marketing",
-    label: "Virale News mit ROOTS-Anschluss",
+    label: "Virale News",
     definition: "Breit diskutiertes Thema ausserhalb der Fachpresse (Rede, Auftritt, Debatte, Aufregung), aus dem sich ein LinkedIn-Beitrag machen lässt - aber nur, wenn ein belegbarer Bezug zu einer ROOTS-Leistung besteht.",
     // Resonanz-Signal: das Thema muss erkennbar Aufmerksamkeit erzeugen.
     trigger: /\b(viral|geht viral|shitstorm|aufsehen|aufregung|debatte\w*|diskussion\w*|kontrovers\w*|umstritten|kritik\w*|kritisiert|empor\w*|social media|linkedin|netz reagiert|sorgt fur|loste aus|polarisier\w*|eklat|brandrede|wutrede|klartext|statement|appell|ansprache|rede|interview|meinung\w*|kolumne|kommentar)\b/,
@@ -281,7 +281,7 @@ const MARKETING_FAMILIES: SimpleFamily[] = [
   {
     id: "eigenmarken_strategie",
     lane: "marketing",
-    label: "Eigenmarkenstrategie & -nachfrage",
+    label: "Eigenmarkenstrategie",
     definition: "Marktbewegung bei Eigenmarken/Handelsmarken: Nachfrage, Anteile, Preisabstand, Qualitätswahrnehmung, Strategie der Händler.",
     trigger: /\b(eigenmarke\w*|handelsmarke\w*|private label\w*|own brand\w*|store brand\w*)\b/,
     context: /\b(nachfrage\w*|anteil\w*|marktanteil\w*|wachst|wachstum\w*|steigt|steigend\w*|zulegt|rückgang|ruckgang\w*|sinkt|umsatz\w*|absatz\w*|studie\w*|umfrage\w*|prozent|preisabstand|preisdifferenz|qualitat\w*|wahrnehmung|akzeptanz\w*|strateg\w*|trend\w*|vergleich\w*|markenartikel\w*)\b/,
@@ -300,7 +300,7 @@ const MARKETING_FAMILIES: SimpleFamily[] = [
   {
     id: "prozess_knowhow",
     lane: "marketing",
-    label: "Design-to-Print & Prozess-Know-how",
+    label: "Design to Print",
     definition: "Übertragbares Prozesswissen zu Artwork, Reinzeichnung, Druckvorstufe, Verpackungsdaten oder Marketing-Prozessoptimierung (Learnings, Benchmarks, Vorgehen).",
     trigger: /\b(design to print|web to print|webtoprint|artwork\w*|reinzeichnung\w*|druckvorstufe|prepress|pre press|druckdaten|verpackungsdaten|packaging data|packaging artwork|verpackungsdesign\w*|packaging design|farbmanagement|color management|designstandard\w*|marketingprozess\w*|marketing operations|prozessoptimierung\w*|kampagnenprozess\w*|freigabeprozess\w*|workflow\w*)\b/,
     context: /\b(studie\w*|analyse\w*|benchmark\w*|best practice\w*|learning\w*|erkenntnis\w*|leitfaden|how to|vorgehen|methode\w*|framework|whitepaper|report|checkliste|erfahrung\w*|prozent|effizien\w*|fehlerquote|durchlaufzeit\w*|time to market|automatisier\w*|standardisier\w*|digitalisier\w*)\b/,
