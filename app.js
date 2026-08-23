@@ -1,14 +1,14 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
-import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260823-2300";
+import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260823-2340";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
-import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260823-2300";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260823-2300";
+import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260823-2340";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260823-2340";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2300";
-import { openManualSignal } from "./manual-signal.js?v=20260823-2300";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2340";
+import { openManualSignal } from "./manual-signal.js?v=20260823-2340";
 
 let sb = null;
 let sources = [];
@@ -3884,6 +3884,16 @@ async function planeNebentarifLauf() {
   if (host) host.innerHTML = '<span class="crawl-result-pill"><i class="fa-solid fa-clock"></i>Planung gespeichert</span>';
 }
 
+async function setzeLaufFort(imSpitzentarif) {
+  if (imSpitzentarif && !window.confirm(`Der Lauf kostet im Spitzentarif das ${simplePricing?.faktor || 2}-fache je Token. Jetzt fortsetzen?`)) return;
+  try {
+    await callApi("resume_simple_run", { accept_peak: imSpitzentarif === true });
+    toast(imSpitzentarif ? "Lauf im Spitzentarif fortgesetzt." : "Lauf fortgesetzt.", "success");
+  } catch (error) {
+    toast(error.message || "Der Lauf konnte nicht fortgesetzt werden.", "error");
+  }
+}
+
 async function starteImSpitzentarif() {
   if (!window.confirm(`Der Lauf kostet im Spitzentarif das ${simplePricing?.faktor || 2}-fache je Token. Jetzt trotzdem starten?`)) return;
   try {
@@ -3905,11 +3915,12 @@ async function brichPlanungAb() {
 }
 
 document.addEventListener("click", (event) => {
-  const knopf = event.target.closest?.('[data-act="simple-plan-nebentarif"], [data-act="simple-plan-abbrechen"], [data-act="simple-spitzentarif-trotzdem"]');
+  const knopf = event.target.closest?.('[data-act="simple-plan-nebentarif"], [data-act="simple-plan-abbrechen"], [data-act="simple-spitzentarif-trotzdem"], [data-act="simple-fortsetzen"]');
   if (!knopf) return;
   event.preventDefault();
   if (knopf.dataset.act === "simple-plan-nebentarif") void planeNebentarifLauf();
   else if (knopf.dataset.act === "simple-spitzentarif-trotzdem") void starteImSpitzentarif();
+  else if (knopf.dataset.act === "simple-fortsetzen") void setzeLaufFort(Boolean(simplePricing?.peak));
   else void brichPlanungAb();
 });
 
@@ -3921,6 +3932,16 @@ function renderSimplePricingNote() {
   const laeuft = ["queued", "running"].includes(simpleRunStatus?.status);
   const wechsel = preis.wechsel_iso ? berlinZeit(preis.wechsel_iso) : null;
   const pille = (inhalt, aktion, ton) => `<button type="button" class="crawl-result-pill${ton ? ` crawl-result-pill--${ton}` : ""}" data-act="${aktion}">${inhalt}</button>`;
+  const pausiert = simpleRunStatus?.status === "paused";
+  if (pausiert) {
+    const offen = Math.max(0, Number(simpleRunStatus.total_count || 0) - Number(simpleRunStatus.processed_count || 0));
+    host.hidden = false;
+    host.innerHTML = `<span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-circle-pause"></i>`
+      + `Angehalten im Spitzentarif · ${offen.toLocaleString("de-DE")} Artikel offen`
+      + `${wechsel ? ` · weiter ab ${wechsel} Uhr` : ""}</span>`
+      + pille('<i class="fa-solid fa-play"></i>Jetzt fortsetzen', "simple-fortsetzen", "error");
+    return;
+  }
   if (simpleSchedule) {
     host.hidden = false;
     host.innerHTML = `<span class="crawl-result-pill"><i class="fa-solid fa-clock"></i>Lauf geplant für ${berlinZeit(simpleSchedule.planned_for)} Uhr`

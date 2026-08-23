@@ -25,3 +25,12 @@ comment on table signal_layer.simple_run_schedule is
 -- Nutzer das ausdruecklich akzeptiert hat.
 alter table signal_layer.simple_run_schedule
   add column if not exists accept_peak boolean not null default false;
+
+-- Ein Lauf, der in die Spitzenzeit hineinlaeuft, haelt an, statt zum doppelten
+-- Preis weiterzurechnen. Der Waechter nimmt ihn im Nebentarif wieder auf.
+alter table signal_layer.simple_runs drop constraint if exists simple_runs_status_check;
+alter table signal_layer.simple_runs add constraint simple_runs_status_check
+  check (status = any (array['running'::text, 'paused'::text, 'done'::text, 'error'::text]));
+alter table signal_layer.simple_runs add column if not exists accept_peak boolean not null default false;
+alter table signal_layer.simple_runs add column if not exists paused_at timestamptz;
+alter table signal_layer.simple_runs add column if not exists paused_reason text;

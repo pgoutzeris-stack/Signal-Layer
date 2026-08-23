@@ -56,7 +56,7 @@ test("Status liefert Tarif und Planung, der Wächter startet den fälligen Lauf"
   // Planen braucht dieselbe Freigabe wie ein Lauf.
   assert.match(edge, /"schedule_simple_run",\n  "cancel_simple_run_schedule",/);
   // Planen und Absagen gehen auch vom Betrieb aus, wie das Starten selbst.
-  assert.match(edge, /\["start_simple_run", "process_simple_run", "schedule_simple_run", "cancel_simple_run_schedule"\]/);
+  assert.match(edge, /\["start_simple_run", "process_simple_run", "schedule_simple_run", "cancel_simple_run_schedule", "resume_simple_run"\]/);
   // Der Wächter startet nur, wenn nichts läuft: zwei Läufe zahlen doppelt.
   const waechter = edge.slice(edge.indexOf('case "resume_stalled_crawls"'), edge.indexOf('case "get_simple_article_detail"'));
   assert.match(waechter, /from\("simple_run_schedule"\)[\s\S]*eq\("status", "queued"\)/);
@@ -98,4 +98,25 @@ test("im Spitzentarif ist ein Lauf gesperrt, bis der Nutzer zustimmt", () => {
   assert.match(appJs, /data-act="simple-spitzentarif-trotzdem"/);
   assert.match(appJs, /callApi\("start_simple_run", \{ article_limit: 1000, accept_peak: true \}\)/);
   assert.match(appJs, /window\.confirm\(/);
+});
+
+test("ein Lauf hält im Spitzentarif an und läuft im Nebentarif weiter", () => {
+  // Batcharbeit hält an, statt zum doppelten Preis weiterzurechnen.
+  assert.match(edge, /if \(tarif\.variabel && tarif\.peak && run\.accept_peak !== true\) \{/);
+  assert.match(edge, /status: "paused",\n\s*paused_at: new Date\(\)\.toISOString\(\)/);
+  assert.match(edge, /paused_reason: "peak_tariff"/);
+  // Der Wächter nimmt ihn im Nebentarif von selbst wieder auf.
+  assert.match(edge, /eq\("status", "paused"\)/);
+  assert.match(edge, /if \(!tarif\.variabel \|\| !tarif\.peak \|\| angehalten\.accept_peak === true\) \{/);
+  assert.match(edge, /status: "running", paused_at: null, paused_reason: null/);
+  // Ausdrücklicher Klick setzt auch im Spitzentarif fort.
+  assert.match(edge, /case "resume_simple_run": \{/);
+  assert.match(edge, /accept_peak: body\.accept_peak === true \? true : pausiert\.accept_peak/);
+  // Ein neuer Lauf ersetzt auch einen angehaltenen, sonst kämpfen beide um dieselben Artikel.
+  assert.match(edge, /\.in\("status", \["running", "paused"\]\)/);
+
+  // Oberfläche: eigener Zustand, kein Fehler, mit Fortsetzen-Knopf.
+  assert.match(appJs, /Angehalten im Spitzentarif · \$\{offen\.toLocaleString\("de-DE"\)\} Artikel offen/);
+  assert.match(appJs, /data-act="simple-fortsetzen"/);
+  assert.match(appJs, /callApi\("resume_simple_run", \{ accept_peak: imSpitzentarif === true \}\)/);
 });

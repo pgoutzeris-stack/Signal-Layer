@@ -1,4 +1,7 @@
 const ACTIVE_STATES = new Set(["queued", "running"]);
+// Ein angehaltener Lauf ist weder aktiv noch gescheitert: er wartet auf den
+// Nebentarif oder auf einen Klick.
+const PAUSED_STATE = "paused";
 
 function runTime(run) {
   if (!run) return 0;
@@ -16,10 +19,12 @@ export function deriveSimpleHeaderState(run = null, triggerBackfill = null) {
   // den ein neuerer Lauf gefolgt ist, gehoert in die Historie, nicht in den Kopf.
   const juengster = [triggerBackfill, run].filter(Boolean).sort((left, right) => runTime(right) - runTime(left))[0] || null;
   const failedRun = !activeRun && visibleRun?.status === "error" && visibleRun === juengster ? visibleRun : null;
-  const progressRun = activeRun || failedRun;
+  const progressRun = activeRun || failedRun || (visibleRun?.status === PAUSED_STATE ? visibleRun : null);
   const progressIsTrigger = Boolean(progressRun && triggerBackfill && progressRun === triggerBackfill);
+  const pausedRun = !activeRun && visibleRun?.status === PAUSED_STATE ? visibleRun : null;
   const running = Boolean(activeRun);
   const failed = Boolean(failedRun);
+  const paused = Boolean(pausedRun);
 
   return {
     activeTriggerRun,
@@ -30,8 +35,10 @@ export function deriveSimpleHeaderState(run = null, triggerBackfill = null) {
     progressIsTrigger,
     running,
     failed,
-    tone: running ? "working" : failed ? "error" : "idle",
-    label: running ? "Analyse läuft" : failed ? "Prüfung nötig" : "Kein Lauf aktiv",
+    pausedRun,
+    paused,
+    tone: running ? "working" : failed ? "error" : paused ? "waiting" : "idle",
+    label: running ? "Analyse läuft" : failed ? "Prüfung nötig" : paused ? "Angehalten" : "Kein Lauf aktiv",
   };
 }
 

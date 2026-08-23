@@ -541,6 +541,7 @@ const EDITOR_ACTIONS = new Set([
   "create_manual_signal",
   "schedule_simple_run",
   "cancel_simple_run_schedule",
+  "resume_simple_run",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -5835,7 +5836,7 @@ Deno.serve(async (req: Request) => {
       auth = await requireAuth(req);
       if (!auth) return unauthorizedResponse(req, origin);
     }
-  } else if (["start_simple_run", "process_simple_run", "schedule_simple_run", "cancel_simple_run_schedule"].includes(action)) {
+  } else if (["start_simple_run", "process_simple_run", "schedule_simple_run", "cancel_simple_run_schedule", "resume_simple_run"].includes(action)) {
     // The simple analysis is a backend job: it is started from the operating
     // side (cron secret or a run row picked up by the watchdog) and keeps
     // itself alive through service-role self-calls. An editor may also start it.
@@ -7547,6 +7548,23 @@ Deno.serve(async (req: Request) => {
         const WATCHDOG_STALL_SECONDS = 360;
         const admin = getAdminClient();
 
+        // Angehaltener Lauf: im Nebentarif geht es von selbst weiter.
+        {
+          const { data: angehalten } = await admin.schema("signal_layer").from("simple_runs")
+            .select("id, model, accept_peak").eq("status", "paused")
+            .order("started_at", { ascending: false }).limit(1).maybeSingle();
+          if (angehalten) {
+            const tarif = deepseekTarifLage(String(angehalten.model || SIMPLE_MODEL));
+            if (!tarif.variabel || !tarif.peak || angehalten.accept_peak === true) {
+              await admin.schema("signal_layer").from("simple_runs").update({
+                status: "running", paused_at: null, paused_reason: null,
+                last_progress_at: new Date().toISOString(),
+              }).eq("id", angehalten.id);
+              triggerSimpleRun(angehalten.id);
+            }
+          }
+        }
+
         // Geplanter Lauf: wartet auf den Nebentarif und startet, sobald er
         // gilt. Nur wenn gerade keiner laeuft - zwei Laeufe wuerden dieselben
         // Artikel doppelt bezahlen.
@@ -8010,7 +8028,7 @@ Deno.serve(async (req: Request) => {
         // A parallel run would spend AI budget twice on the same articles.
         await admin.schema("signal_layer").from("simple_runs")
           .update({ status: "error", error_message: "Durch neuen Lauf ersetzt.", finished_at: new Date().toISOString() })
-          .eq("status", "running");
+          .in("status", ["running", "paused"]);
         const simpleConfig = await getPipelineConfig();
         const { data: run, error: runError } = await admin.schema("signal_layer").from("simple_runs").insert({
           status: articleIds.length ? "running" : "done",
@@ -8048,6 +8066,22 @@ Deno.serve(async (req: Request) => {
         if (runError) return errorResponse(origin, runError.message, 500);
         if (!run) return corsResponse(origin, { run: null, done: true });
         if (run.status !== "running") return corsResponse(origin, { run, done: true });
+
+        // Der Lauf startet im Nebentarif, kann aber hineinlaufen. Dann haelt er
+        // an, statt zum doppelten Preis weiterzurechnen. Der Waechter setzt ihn
+        // im Nebentarif von selbst fort; im Spitzentarif nur nach Klick.
+        {
+          const tarif = deepseekTarifLage(String(run.model || SIMPLE_MODEL));
+          if (tarif.variabel && tarif.peak && run.accept_peak !== true) {
+            const { data: angehalten } = await admin.schema("signal_layer").from("simple_runs").update({
+              status: "paused",
+              paused_at: new Date().toISOString(),
+              paused_reason: "peak_tariff",
+              last_progress_at: new Date().toISOString(),
+            }).eq("id", run.id).select("*").single();
+            return corsResponse(origin, { run: angehalten || run, paused: true, pricing: tarif });
+          }
+        }
 
         const allIds: string[] = Array.isArray(run.article_ids) ? run.article_ids : [];
         const slice = allIds.slice(run.cursor, run.cursor + SIMPLE_BATCH_SIZE);
@@ -8559,6 +8593,23 @@ Deno.serve(async (req: Request) => {
           profile_job_status: profileJob?.status || null,
           profile_error: profileJob?.status === "error" ? profileJob.last_error : null,
         });
+      }
+
+      case "resume_simple_run": {
+        // Ausdruecklicher Klick im Status: der Lauf darf im Spitzentarif weiter.
+        const fortAdmin = getAdminClient();
+        const { data: pausiert } = await fortAdmin.schema("signal_layer").from("simple_runs")
+          .select("*").eq("status", "paused").order("started_at", { ascending: false }).limit(1).maybeSingle();
+        if (!pausiert) return corsResponse(origin, { run: null, resumed: false });
+        const { data: fortgesetzt } = await fortAdmin.schema("signal_layer").from("simple_runs").update({
+          status: "running",
+          accept_peak: body.accept_peak === true ? true : pausiert.accept_peak,
+          paused_at: null,
+          paused_reason: null,
+          last_progress_at: new Date().toISOString(),
+        }).eq("id", pausiert.id).select("*").single();
+        if (fortgesetzt?.id) triggerSimpleRun(fortgesetzt.id);
+        return corsResponse(origin, { run: fortgesetzt || pausiert, resumed: true });
       }
 
       case "schedule_simple_run": {
