@@ -184,6 +184,7 @@ import {
   worldvectorlogoCdnUrl,
   worldvectorlogoSlugCandidates,
 } from "./asset-studio.ts";
+import type { Netz } from "./source-extract.ts";
 import {
   MANUAL_CHECK_SCHEMA,
   MANUAL_DRAFT_SCHEMA,
@@ -1833,30 +1834,38 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs =
 }
 
 /**
- * Artikelleser fuer die Quellenextraktion: dieselbe Kette, mit der der Crawler
- * gecrawlte Artikel liest (JSON-LD, dichtegewichtete Containerwahl,
- * Absatzsammlung, Paywall-Login der Quelle). Fuer eine Adresse aus dem
- * Fragebogen gilt dieselbe Qualitaet wie fuer eine aus dem Crawl.
+ * Das Netz fuer die Quellenextraktion: lesen, posten, Artikel lesen, Apify.
+ * Ohne Browserkennung antworten viele Redaktionsseiten mit 403, und ein
+ * Fehlschlag soll kein Wurf sein: der Aufrufer entscheidet, was eine nicht
+ * lesbare Quelle bedeutet.
  */
-async function artikelLeser(url: string): Promise<{ titel: string; text: string } | null> {
-  const gelesen = await fetchArticleContent(url);
-  if (!gelesen) return null;
-  return { titel: gelesen.title || "", text: gelesen.content || "" };
-}
-
-/**
- * Abruf fuer die Quellenextraktion. Ohne Browserkennung antworten viele
- * Redaktionsseiten mit 403, und ein Fehlschlag soll kein Wurf sein: der
- * Aufrufer entscheidet, was eine nicht lesbare Quelle bedeutet.
- */
-function quellenHoler() {
-  return async (ziel: string): Promise<{ ok: boolean; text: string }> => {
+function quellenNetz(): Netz {
+  const holen = async (ziel: string, headers: Record<string, string> = {}) => {
     try {
       const antwort = await fetchWithTimeout(ziel, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; ROOTS-SignalLayer/1.0)",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
           "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+          // Ohne Zustimmungscookie schiebt YouTube eine Einwilligungsseite vor
+          // die Wiedergabeseite, und dann fehlen die Untertitelspuren.
+          Cookie: "CONSENT=YES+cb; SOCS=CAI",
+          ...headers,
         },
+      }, 20_000);
+      if (!antwort.ok) return { ok: false, text: "" };
+      const text = await antwort.text();
+      return { ok: true, text };
+    } catch {
+      return { ok: false, text: "" };
+    }
+  };
+
+  const posten = async (ziel: string, body: unknown, headers: Record<string, string> = {}) => {
+    try {
+      const antwort = await fetchWithTimeout(ziel, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept-Language": "de-DE,de;q=0.9", ...headers },
+        body: JSON.stringify(body),
       }, 20_000);
       if (!antwort.ok) return { ok: false, text: "" };
       return { ok: true, text: await antwort.text() };
@@ -1864,6 +1873,34 @@ function quellenHoler() {
       return { ok: false, text: "" };
     }
   };
+
+  const artikel = async (ziel: string) => {
+    const gelesen = await fetchArticleContent(ziel);
+    if (!gelesen) return null;
+    return { titel: gelesen.title || "", text: gelesen.content || "" };
+  };
+
+  // Apify laeuft auf fremder Infrastruktur und kommt dort durch, wo YouTube
+  // einen Server abweist. Kostet je Video wenige Cent, deshalb ruft die Kette
+  // ihn zuletzt. Ohne Schluessel entfaellt der Weg still.
+  const apify = async (actor: string, eingabe: unknown) => {
+    const key = await getApifyKey();
+    if (!key) return null;
+    try {
+      const antwort = await fetchWithTimeout(
+        `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${key}&timeout=100`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(eingabe) },
+        110_000,
+      );
+      if (!antwort.ok) return null;
+      const zeilen = await antwort.json().catch(() => null);
+      return Array.isArray(zeilen) ? zeilen : null;
+    } catch {
+      return null;
+    }
+  };
+
+  return { holen, posten, artikel, apify };
 }
 
 function resolveUrl(maybeRelative: string, baseUrl: string): string {
@@ -9739,7 +9776,7 @@ Deno.serve(async (req: Request) => {
         const lane = String(body.lane || "") === "sales" ? "sales" as const : "marketing" as const;
 
         const quelle = quelleUrl
-          ? await ziehteQuelle(quelleUrl, quellenHoler(), artikelLeser)
+          ? await ziehteQuelle(quelleUrl, quellenNetz())
           : transkriptQuelle(quelleText, String(body.title || ""));
         if (!quelle.ok) {
           return corsResponse(origin, { source: quelle, draft: null, blocked: "no_text" });
@@ -9830,7 +9867,7 @@ Deno.serve(async (req: Request) => {
           if (!geprueftePruefUrl.ok) {
             quellenFehler = geprueftePruefUrl.grund;
           } else {
-            pruefQuelle = await ziehteQuelle(pruefUrl, quellenHoler(), artikelLeser);
+            pruefQuelle = await ziehteQuelle(pruefUrl, quellenNetz());
             if (!pruefQuelle.ok) {
               quellenFehler = pruefQuelle.grund || "Die Quelle war beim Prüfen nicht lesbar.";
               pruefQuelle = null;

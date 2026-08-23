@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import {
-  MANUAL_DRAFT_FIELDS, erkennePlattform, manualCheckPrompt, manualDraftPrompt, normalizeManualCheck,
-  normalizeManualDraft, pruefeOeffentlicheUrl, seitenText, transkriptQuelle, untertitelSpur,
-  untertitelText, youtubeId, ziehteQuelle,
+  MANUAL_DRAFT_FIELDS, eingebetteteVideos, erkennePlattform, manualCheckPrompt, manualDraftPrompt,
+  normalizeManualCheck, normalizeManualDraft, pruefeOeffentlicheUrl, seitenText, transkriptQuelle,
+  untertitelSpur, untertitelText, videoTranskript, vttText, youtubeId, zeitTextAusXml, ziehteQuelle,
 } from "../supabase/functions/signal-layer/source-extract.ts";
 
 const frontend = readFileSync(new URL("../manual-signal.js", import.meta.url), "utf8");
@@ -61,45 +61,6 @@ test("Untertitel: deutsche und manuelle Spur zuerst, Text ohne Wiederholung", ()
   assert.equal(untertitelSpur("ohne spuren"), null);
 });
 
-test("Transkript vor Beschreibung, und ohne Untertitel eine klare Ansage", async () => {
-  const html = `<title>Video</title>"captionTracks":[{"baseUrl":"https://y/t?x=1","languageCode":"de"}],`;
-  const mitSpur = await ziehteQuelle("https://www.youtube.com/watch?v=abc", async (ziel) => (
-    ziel.includes("/t?x=1")
-      ? { ok: true, text: "", json: { events: [{ segs: [{ utf8: "Eigenmarken wachsen um 41 Prozent. " }] }, { segs: [{ utf8: "x".repeat(300) }] }] } }
-      : { ok: true, text: html }
-  ));
-  assert.equal(mitSpur.ok, true);
-  assert.equal(mitSpur.art, "transcript");
-  assert.match(mitSpur.text, /41 Prozent/);
-
-  const ohneSpur = await ziehteQuelle("https://www.youtube.com/watch?v=abc", async () => ({ ok: true, text: "<title>Video</title>" }));
-  assert.equal(ohneSpur.ok, false);
-  assert.match(ohneSpur.grund, /keine öffentlichen Untertitel/);
-  assert.match(ohneSpur.grund, /Transkript einfügen/);
-
-  const nurBeschreibung = await ziehteQuelle("https://www.youtube.com/watch?v=abc", async () => ({
-    ok: true, text: `<title>V</title>"shortDescription":"${"Eigenmarken wachsen. ".repeat(12)}","`,
-  }));
-  assert.equal(nurBeschreibung.art, "description");
-  assert.match(nurBeschreibung.grund, /Kein Transkript/);
-});
-
-test("dünne Seiten werden abgewiesen statt geraten", async () => {
-  const duenn = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: true, text: "<html><body><p>Kurz.</p></body></html>" }));
-  assert.equal(duenn.ok, false);
-  assert.match(duenn.grund, /zu wenig Text/);
-
-  const nichtErreichbar = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: false, text: "" }));
-  assert.equal(nichtErreichbar.ok, false);
-  assert.match(nichtErreichbar.grund, /nicht abrufbar/);
-
-  const artikel = await ziehteQuelle("https://beispiel.de/x", async () => ({
-    ok: true, text: `<article><p>${"Der Eigenmarkenanteil liegt bei 41 Prozent. ".repeat(20)}</p></article>`,
-  }));
-  assert.equal(artikel.ok, true);
-  assert.equal(artikel.art, "article");
-});
-
 test("der Auftrag verbietet Erfindungen, die Antwort meldet Lücken", () => {
   const prompt = manualDraftPrompt({
     ok: true, art: "transcript", plattform: "youtube", titel: "Test", text: "41 Prozent",
@@ -130,18 +91,26 @@ test("der Auftrag verbietet Erfindungen, die Antwort meldet Lücken", () => {
 test("Server und Fragebogen sind verdrahtet", () => {
   assert.match(edge, /case "draft_manual_signal_from_url": \{/);
   assert.match(edge, /pruefeOeffentlicheUrl\(quelleUrl\)/);
-  assert.match(edge, /await ziehteQuelle\(quelleUrl, quellenHoler\(\), artikelLeser\)/);
+  assert.match(edge, /await ziehteQuelle\(quelleUrl, quellenNetz\(\)\)/);
   assert.match(edge, /schema: MANUAL_DRAFT_SCHEMA/);
   assert.match(edge, /operation: "manual_signal_draft"/);
   // Ein Entwurf ist ein bezahlter Aufruf: im Spitzentarif nur mit Zustimmung.
   assert.match(edge, /blocked: "peak_tariff", pricing: tarif/);
   assert.match(edge, /"draft_manual_signal_from_url",/);
 
-  assert.match(frontend, /key: "weg", label: "Weg"/);
+  // Das Netz der Extraktion: lesen, posten, Artikel lesen, Apify.
+  assert.match(edge, /function quellenNetz\(\): Netz \{/);
+  assert.match(edge, /Cookie: "CONSENT=YES\+cb; SOCS=CAI"/);
+  assert.match(edge, /const gelesen = await fetchArticleContent\(ziel\);/);
+  assert.match(edge, /run-sync-get-dataset-items\?token=\$\{key\}/);
+
+  // Fragebogen: zwei Wege, und im Quellenweg genau ein Feld.
   assert.match(frontend, /\["felder", "Manuell erstellen"\], \["quelle", "Durch Transkript erzeugen"\]/);
-  assert.match(frontend, /key: "quelle", label: "Quelle"[\s\S]{0,140}?art: "quelle"/);
+  assert.match(frontend, /key: "quelle", label: "Quelle", frage: "Welche Adresse soll ausgelesen werden\?", art: "quelle"/);
+  assert.match(frontend, /data-feld="quelle_url"/);
+  assert.doesNotMatch(frontend, /quelle_text/);
   assert.match(frontend, /async function zieheQuelle\(\)/);
-  assert.match(frontend, /api\("draft_manual_signal_from_url"/);
+  assert.match(frontend, /api\("draft_manual_signal_from_url", \{ url: adresse, lane: state\.answers\.lane \}\)/);
   // Selbst getippte Felder überschreibt die Quelle nicht.
   assert.match(frontend, /if \(state\.beruehrt\.has\(key\)\) continue;/);
   // Lücken werden benannt, nicht verschwiegen.
@@ -211,7 +180,7 @@ test("die Prüfung hängt zwischen Fragebogen und Anlegen", () => {
   // Mindestangaben kosten kein Modell.
   assert.match(edge, /const pruefIssue = manualSignalIssue\(pruefSignal\);/);
   // Geprüft wird gegen die Quelle, die der Server selbst holt.
-  assert.match(edge, /pruefQuelle = await ziehteQuelle\(pruefUrl, quellenHoler\(\), artikelLeser\);/);
+  assert.match(edge, /pruefQuelle = await ziehteQuelle\(pruefUrl, quellenNetz\(\)\);/);
   assert.match(edge, /manualCheckPrompt\(pruefFelder, pruefQuelle, pruefLane, ausQuelle\)/);
   assert.match(edge, /schema: MANUAL_CHECK_SCHEMA/);
   assert.match(edge, /operation: "manual_signal_check"/);
@@ -230,85 +199,177 @@ test("die Prüfung hängt zwischen Fragebogen und Anlegen", () => {
   assert.match(frontend, /Auf eigene Verantwortung übernehmen/);
 });
 
-test("YouTube nennt seine Untertitel, gibt ihren Text aber nicht heraus", async () => {
-  // Geprüft am 23.08.2026 an drei Videos: die Wiedergabeseite listet die Spuren,
-  // der Abruf des Textes kommt mit 200 und null Bytes zurück. Das gehört so
-  // gemeldet und nicht als Fehler des Werkzeugs.
-  const html = `<title>Video</title>"captionTracks":[{"baseUrl":"https://y/t?x=1","languageCode":"de"}],`;
-  const gesperrt = await ziehteQuelle("https://www.youtube.com/watch?v=abc", async (ziel) => (
-    ziel.includes("/t?x=1") ? { ok: true, text: "" } : { ok: true, text: html }
-  ));
-  assert.equal(gesperrt.ok, false);
-  assert.match(gesperrt.grund, /Dieses Video hat Untertitel \(de\)/);
-  assert.match(gesperrt.grund, /nicht an Server heraus/);
+/** Ein Netz aus Zetteln: jede Adresse bekommt eine Antwort, alles andere scheitert. */
+function netzAus({ seiten = {}, player = null, apify = null, artikel = null } = {}) {
+  const gerufen = [];
+  return {
+    gerufen,
+    netz: {
+      holen: async (url) => {
+        gerufen.push(`GET ${url}`);
+        const treffer = Object.keys(seiten).find((teil) => url.includes(teil));
+        return treffer ? { ok: true, text: seiten[treffer] } : { ok: false, text: "" };
+      },
+      posten: async (url, body) => {
+        gerufen.push(`POST ${url}`);
+        if (!player) return { ok: false, text: "" };
+        return { ok: true, text: JSON.stringify(typeof player === "function" ? player(body) : player) };
+      },
+      artikel: artikel ? async (url) => { gerufen.push(`ARTIKEL ${url}`); return artikel; } : undefined,
+      apify: apify ? async (actor, eingabe) => { gerufen.push(`APIFY ${actor} ${JSON.stringify(eingabe)}`); return apify; } : undefined,
+    },
+  };
+}
 
-  // Mit Beschreibung wird daraus ein dünner Entwurf, mit demselben Hinweis.
-  const mitBeschreibung = await ziehteQuelle("https://www.youtube.com/watch?v=abc", async (ziel) => (
-    ziel.includes("/t?x=1")
-      ? { ok: true, text: "" }
-      : { ok: true, text: `${html}"shortDescription":"${"Eigenmarken wachsen. ".repeat(12)}","` }
-  ));
-  assert.equal(mitBeschreibung.art, "description");
-  assert.match(mitBeschreibung.grund, /nicht an Server heraus/);
+const langerText = (satz, mal) => Array.from({ length: mal }, () => satz).join(" ");
+
+test("zeitmarkierte Formate werden zu fortlaufendem Text, ohne Doppelungen", () => {
+  const timedtext = `<?xml version="1.0"?><timedtext format="3"><body>
+    <p t="0" d="3000">Der Anteil liegt</p>
+    <p t="3000" d="3000">Der Anteil liegt bei 41 Prozent.</p>
+    <p t="6000" d="2000">2024 waren es 34.</p></body></timedtext>`;
+  // Rollende Untertitel wiederholen den Vorgänger: die längere Zeile gewinnt.
+  assert.equal(zeitTextAusXml(timedtext), "Der Anteil liegt bei 41 Prozent. 2024 waren es 34.");
+  assert.equal(zeitTextAusXml("kein xml"), "");
+
+  const vtt = `WEBVTT\nKind: captions\nLanguage: de\n\n1\n00:00:00.000 --> 00:00:03.000\nDer Anteil liegt bei 41 Prozent.\n\n2\n00:00:03.000 --> 00:00:05.000\n2024 waren es 34.`;
+  assert.equal(vttText(vtt), "Der Anteil liegt bei 41 Prozent. 2024 waren es 34.");
+  assert.equal(vttText("ohne zeitmarken"), "");
 });
 
-test("ein eingefügtes Transkript ist eine Quelle, ein Absatz ist keine", () => {
-  const kurz = transkriptQuelle("Zu wenig.");
-  assert.equal(kurz.ok, false);
-  assert.match(kurz.grund, /9 von 400 Zeichen/);
+test("eingebettete Videos werden in jeder üblichen Schreibweise gefunden", () => {
+  const html = `<iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0"></iframe>
+    <a href="https://youtu.be/aaaaaaaaaaa">Video</a>
+    <div data-video-id="bbbbbbbbbbb"></div>
+    <a href="https://www.youtube.com/watch?feature=share&v=ccccccccccc">noch eins</a>
+    <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>`;
+  assert.deepEqual(eingebetteteVideos(html), ["dQw4w9WgXcQ", "aaaaaaaaaaa", "ccccccccccc", "bbbbbbbbbbb"]);
+  assert.deepEqual(eingebetteteVideos("<p>ohne Video</p>"), []);
+});
 
-  const lang = transkriptQuelle(`  ${"Der Eigenmarkenanteil liegt bei 41 Prozent. ".repeat(12)}  `, "Podcast Folge 212");
+test("die Kette nimmt den Player zuerst und nennt den Weg", async () => {
+  const transkript = { events: [{ segs: [{ utf8: langerText("Eigenmarken wachsen um 41 Prozent.", 12) }] }] };
+  const { netz, gerufen } = netzAus({
+    player: { captions: { playerCaptionsTracklistRenderer: { captionTracks: [
+      { baseUrl: "https://y/t?en", languageCode: "en", kind: "asr" },
+      { baseUrl: "https://y/t?de", languageCode: "de" },
+    ] } } },
+    seiten: { "y/t?de": JSON.stringify(transkript) },
+  });
+  const quelle = await ziehteQuelle("https://www.youtube.com/watch?v=dQw4w9WgXcQ", netz);
+  assert.equal(quelle.ok, true);
+  assert.equal(quelle.art, "transcript");
+  assert.equal(quelle.weg, "Untertitel über den Player");
+  assert.equal(quelle.sprache, "de");
+  assert.match(quelle.text, /41 Prozent/);
+  // Deutsch vor Englisch: die englische Spur wird nicht einmal geholt.
+  assert.ok(!gerufen.some((ruf) => ruf.includes("y/t?en")));
+});
+
+test("wenn der Player nichts hergibt, geht es die Kette hinunter bis Apify", async () => {
+  const seite = `<title>Video</title>"captionTracks":[{"baseUrl":"https://y/t?de","languageCode":"de"}],
+    "shortDescription":"Kurz.",`;
+  // Player leer, Seitenspur antwortet leer (so verhält sich YouTube 2026),
+  // Piped nicht erreichbar, also Apify.
+  const { netz, gerufen } = netzAus({
+    seiten: { "youtube.com/watch": seite, "y/t?de": "" },
+    apify: [{ transcript: [{ text: langerText("Der Eigenmarkenanteil liegt bei 41 Prozent.", 12) }],
+      selected_language: "German (auto-generated)", is_auto_generated: true, title: "Handel im Wandel" }],
+  });
+  const quelle = await ziehteQuelle("https://www.youtube.com/watch?v=dQw4w9WgXcQ", netz);
+  assert.equal(quelle.ok, true);
+  assert.equal(quelle.art, "transcript");
+  assert.equal(quelle.weg, "Transkript über Apify");
+  assert.match(quelle.grund, /Über Apify gelesen, das kostet wenige Cent je Video\./);
+  assert.match(quelle.grund, /Automatisch erzeugte Untertitel/);
+  assert.equal(quelle.titel, "Handel im Wandel");
+  // Apify kostet Geld und kommt deshalb nach den freien Wegen.
+  const reihenfolge = gerufen.map((ruf) => ruf.split(" ")[0]);
+  assert.equal(reihenfolge[0], "POST");
+  assert.equal(reihenfolge[reihenfolge.length - 1], "APIFY");
+  assert.ok(gerufen.some((ruf) => ruf.includes("pipedapi") || ruf.includes("piped")));
+});
+
+test("Piped kommt vor Apify, und ohne Apify bleibt die Beschreibung", async () => {
+  const vtt = `WEBVTT\n\n00:00:00.000 --> 00:00:03.000\n${langerText("41 Prozent Eigenmarken.", 12)}`;
+  const { netz } = netzAus({
+    seiten: {
+      "api.piped.private.coffee/streams": JSON.stringify({ subtitles: [{ code: "de", url: "https://piped/sub.vtt", autoGenerated: false }] }),
+      "piped/sub.vtt": vtt,
+    },
+  });
+  const ueberPiped = await ziehteQuelle("https://youtu.be/dQw4w9WgXcQ", netz);
+  assert.equal(ueberPiped.weg, "Untertitel über einen Piped-Spiegel");
+  assert.match(ueberPiped.text, /41 Prozent/);
+
+  const nurBeschreibung = await ziehteQuelle("https://www.youtube.com/watch?v=dQw4w9WgXcQ", netzAus({
+    seiten: { "youtube.com/watch": `"shortDescription":"${langerText("Eigenmarken wachsen.", 12)}","` },
+  }).netz);
+  assert.equal(nurBeschreibung.art, "description");
+  assert.equal(nurBeschreibung.weg, "nur die Videobeschreibung");
+  assert.match(nurBeschreibung.grund, /Kein Transkript erreichbar/);
+
+  const garnichts = await ziehteQuelle("https://www.youtube.com/watch?v=dQw4w9WgXcQ", netzAus({}).netz);
+  assert.equal(garnichts.ok, false);
+  assert.match(garnichts.grund, /Kein Weg hat ein Transkript hergegeben/);
+});
+
+test("eine Seite mit Text und Video liefert beides", async () => {
+  const artikelText = langerText("Der Eigenmarkenanteil liegt bei 41 Prozent.", 12);
+  const gesagt = langerText("Im Gespräch nennt der Einkauf 68 Prozent.", 12);
+  const { netz } = netzAus({
+    seiten: {
+      "beispiel.de/artikel": `<html><body><article><p>${artikelText}</p></article>
+        <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe></body></html>`,
+      "y/t?de": JSON.stringify({ events: [{ segs: [{ utf8: gesagt }] }] }),
+    },
+    player: { captions: { playerCaptionsTracklistRenderer: { captionTracks: [{ baseUrl: "https://y/t?de", languageCode: "de" }] } } },
+    artikel: { titel: "Eigenmarken wachsen", text: artikelText },
+  });
+  const quelle = await ziehteQuelle("https://beispiel.de/artikel", netz);
+  assert.equal(quelle.ok, true);
+  assert.equal(quelle.art, "mixed");
+  assert.equal(quelle.titel, "Eigenmarken wachsen");
+  assert.match(quelle.text, /41 Prozent/);
+  assert.match(quelle.text, /68 Prozent/);
+  assert.match(quelle.text, /Transkript des eingebetteten Videos/);
+  assert.equal(quelle.teile.length, 2);
+
+  // Ohne Video bleibt es ein Artikel, und der Leser des Crawlers gewinnt gegen
+  // den ersten Teaserblock.
+  const nurText = await ziehteQuelle("https://beispiel.de/artikel", netzAus({
+    seiten: { "beispiel.de/artikel": "<html><body><article><p>Teaser.</p></article></body></html>" },
+    artikel: { titel: "Eigenmarken wachsen", text: artikelText },
+  }).netz);
+  assert.equal(nurText.art, "article");
+  assert.equal(nurText.weg, "Seitentext");
+  assert.deepEqual(nurText.teile, [`Artikeltext (${artikelText.length.toLocaleString("de-DE")} Zeichen)`]);
+
+  const duenn = await ziehteQuelle("https://beispiel.de/artikel", netzAus({
+    seiten: { "beispiel.de/artikel": "<html><body><p>Kurz.</p></body></html>" },
+  }).netz);
+  assert.equal(duenn.ok, false);
+  assert.match(duenn.grund, /zu wenig Text/);
+
+  const totesNetz = await ziehteQuelle("https://beispiel.de/artikel", netzAus({}).netz);
+  assert.equal(totesNetz.ok, false);
+  assert.match(totesNetz.grund, /nicht abrufbar/);
+});
+
+test("ein eingefügtes Transkript bleibt als Weg über die Schnittstelle möglich", () => {
+  // Die Oberfläche fragt nur nach einer Adresse. Der Server nimmt weiter Text
+  // an: bricht die Kette weg, ist das der Notweg, ohne neues Deployment.
+  assert.equal(transkriptQuelle("Zu wenig.").ok, false);
+  const lang = transkriptQuelle(langerText("Der Eigenmarkenanteil liegt bei 41 Prozent.", 12), "Podcast 212");
   assert.equal(lang.ok, true);
-  assert.equal(lang.art, "transcript");
   assert.equal(lang.plattform, "eingefügt");
-  assert.equal(lang.titel, "Podcast Folge 212");
-  assert.ok(lang.zeichen >= 400);
-  assert.doesNotMatch(lang.text, /^\s|\s$/);
+  assert.equal(lang.titel, "Podcast 212");
+  assert.match(edge, /: transkriptQuelle\(quelleText, String\(body\.title \|\| ""\)\)/);
 });
 
-test("beide Wege gehen durch denselben Entwurf und dieselbe Prüfung", () => {
-  // Server: Adresse oder Text, und beim Text ist er selbst die Quelle.
-  assert.match(edge, /const quelle = quelleUrl\n\s*\? await ziehteQuelle\(quelleUrl, quellenHoler\(\), artikelLeser\)\n\s*: transkriptQuelle\(quelleText, String\(body\.title \|\| ""\)\);/);
-  // Die Adresse aus dem Fragebogen wird mit derselben Kette gelesen wie ein gecrawlter Artikel.
-  assert.match(edge, /const gelesen = await fetchArticleContent\(url\);/);
-  assert.match(edge, /if \(!quelleUrl && !quelleText\.trim\(\)\) return errorResponse\(origin, "Weder Adresse noch Text angegeben\."\);/);
-  assert.match(edge, /const eingefuegt = transkriptQuelle\(pruefText\);/);
-
-  // Fragebogen: dritter Weg, eigenes Feld, Mindestlänge, und die Prüfung
-  // bekommt den eingefügten Text mitgeschickt.
-  // Eine Karte, zwei Felder: Transkript oder Adresse, eines genügt.
-  assert.match(frontend, /data-feld="quelle_text"/);
-  assert.match(frontend, /data-feld="quelle_url"/);
-  assert.match(frontend, /fertig: \(a\) => String\(a\.quelle_url \|\| ""\)\.trim\(\)\.length >= 8 \|\| String\(a\.quelle_text \|\| ""\)\.trim\(\)\.length >= 400/);
-  assert.match(frontend, /function quellenTranskript\(\)/);
-  assert.match(frontend, /source_text: quellenTranskript\(\)/);
-  // Liegt ein Transkript vor, wird nicht zusätzlich die Adresse geprüft.
-  assert.match(frontend, /if \(state\.answers\.weg !== "quelle" \|\| quellenTranskript\(\)\) return "";/);
-  assert.match(frontend, /const ausText = text\.length >= 400;/);
-  assert.match(frontend, /\{ text, lane: state\.answers\.lane \}/);
-});
-
-test("auf Artikelseiten liest die Kette des Crawlers, nicht der erste Teaserblock", async () => {
-  // packaging-journal.de: die erste <article> ist eine Teaserkarte mit 109
-  // Zeichen. Ohne den besseren Leser hiess das "zu wenig Text" (geprüft am
-  // 23.08.2026 an einer echten Seite).
-  const teaser = `<html><body><article><h2>Teaser</h2><p>Kurzer Anriss.</p></article>
-    <article class="content"><p>${"Der Eigenmarkenanteil liegt bei 41 Prozent. ".repeat(20)}</p></article></body></html>`;
-  const ohneLeser = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: true, text: teaser }));
-  assert.equal(ohneLeser.ok, false, "der einfache Leser nimmt den ersten Block");
-
-  const mitLeser = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: true, text: teaser }), async () => ({
-    titel: "Eigenmarken wachsen", text: "Der Eigenmarkenanteil liegt bei 41 Prozent. ".repeat(20),
-  }));
-  assert.equal(mitLeser.ok, true);
-  assert.equal(mitLeser.art, "article");
-  assert.equal(mitLeser.titel, "Eigenmarken wachsen");
-  assert.match(mitLeser.text, /41 Prozent/);
-
-  // Ein Leser, der nichts findet oder wirft, ändert nichts am Urteil.
-  const leerLeser = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: true, text: teaser }), async () => null);
-  assert.equal(leerLeser.ok, false);
-  const wirft = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: true, text: teaser }), async () => { throw new Error("kaputt"); });
-  assert.equal(wirft.ok, false);
-  assert.match(wirft.grund, /zu wenig Text/);
+test("videoTranskript gibt null zurück, wenn wirklich nichts kommt", async () => {
+  assert.equal(await videoTranskript("dQw4w9WgXcQ", netzAus({}).netz), null);
+  // Ohne posten entfällt der Player-Weg, ohne apify der bezahlte.
+  const nurLesen = { holen: async () => ({ ok: false, text: "" }) };
+  assert.equal(await videoTranskript("dQw4w9WgXcQ", nurLesen), null);
 });
