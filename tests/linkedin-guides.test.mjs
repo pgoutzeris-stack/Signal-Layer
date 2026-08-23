@@ -72,7 +72,10 @@ test("der Beleg sagt, welche Folienarten dadurch möglich werden", () => {
 test("Titelsatz und Kernaussage werden an der Folie gemessen", () => {
   const einSatz = feldHinweise("headline", "Handel baut Eigenmarken schneller aus als geplant");
   assert.equal(ton(einSatz), "ok");
-  assert.ok(einSatz.some((h) => /Ein Satz/.test(h.text)));
+  assert.match(text(einSatz), /49 von 56 Zeichen/);
+  // Bei einem Satz keine zweite Zeile: eine Bestätigung des Offensichtlichen
+  // ist keine Hilfe.
+  assert.equal(einSatz.length, 1);
   const zwei = feldHinweise("headline", "Der Handel baut aus. Die Marken verlieren.");
   assert.ok(zwei.some((h) => h.ton === "warn"));
 

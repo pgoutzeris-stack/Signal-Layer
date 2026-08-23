@@ -145,6 +145,8 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /"Welche Wettbewerber des Kunden machen es schon vor\?"/);
   // Konkrete Namen, keine Kategorien: das Asset zitiert sie.
   assert.match(frontend, /platzhalter: "Firmennamen, z\. B\. [^"]+"/);
+  // Kein Erklärsatz mehr unter dem Feld.
+  assert.doesNotMatch(frontend, /Namen nennen, keine Kategorien/);
   // Der Beleg-Hinweis erklaerte eine Regel, die die Fehlermeldung ohnehin nennt.
   assert.doesNotMatch(frontend, /darf im Asset als Zahl oder Zitat erscheinen/);
   // Beim Sprung zieht die Ansicht mit, sonst steht die naechste Frage unter der Kante.
@@ -187,11 +189,16 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /\.ms-karte\{\n  flex:1; align-self:stretch;/);
   // Die Quelle bittet um eine URL und sagt, was ohne sie passiert.
   assert.match(frontend, /key: "source"[\s\S]*platzhalter: "https:\/\/…/);
-  assert.match(frontend, /hinweis: "Am besten die URL einsetzen\./);
+  // Der Hinweis ist raus: die Schreibhilfe unter dem Feld sagt es genauer.
+  assert.doesNotMatch(frontend, /Am besten die URL einsetzen/);
   // Die Leistung kommt aus dem ROOTS-Katalog, Freitext bleibt möglich.
   assert.match(frontend, /key: "offering", label: "Leistung", art: "auswahl"/);
   assert.match(frontend, /await api\("list_offerings"\)/);
-  assert.match(frontend, /data-auswahl="\$\{esc\(q\.key\)\}"/);
+  // Leistungswahl im ROOTS-Aufklapper, nicht im Systemmenue des Browsers.
+  assert.match(frontend, /class="as-dd as-dd--flow/);
+  assert.match(frontend, /data-act="leistung-auf"/);
+  assert.match(frontend, /data-act="leistung"/);
+  assert.doesNotMatch(frontend, /<select/);
   assert.match(frontend, /Andere Leistung eintragen/);
 });
 
@@ -253,4 +260,27 @@ test("die Übergabe belegt den Asset-Fragebogen mit den eigenen Texten vor", () 
   assert.match(studio, /openSettingsPanel, prefill \} = \{\}\)/);
   assert.match(studio, /function vorbelegung\(list, prefill\)/);
   assert.match(studio, /if \(erlaubt\.has\(key\) && wert !== undefined && wert !== null\) out\[key\] = wert;/);
+});
+
+test("Tier-1-Unternehmen werden erkannt und als Pille angeboten", () => {
+  // Serverseite: Namen, Aliasnamen und die Frage, ob ein Steckbrief existiert.
+  assert.match(edge, /case "list_known_companies": \{/);
+  assert.match(edge, /from\("tier1_companies"\)\s*\n\s*\.select\("name, aliases, logo_url"\)/);
+  assert.match(edge, /has_profile: mitProfil\.has\(/);
+
+  // Fragebogen: Erkennung über Name oder Alias, Pille schreibt den Namen ins Feld.
+  assert.match(frontend, /async function ladeFirmen\(\)/);
+  assert.match(frontend, /function erkannteFirmen\(text\)/);
+  assert.match(frontend, /\[firma\.name, \.\.\.\(firma\.aliases \|\| \[\]\)\]/);
+  assert.match(frontend, /data-act="firma"/);
+  assert.match(frontend, /q\.key === "competitor" \|\| q\.key === "company"/);
+  // Steckbrief-Marke nur, wenn es einen gibt.
+  assert.match(frontend, /firma\.has_profile \? '<b>Steckbrief<\/b>' : ""/);
+  // Eigene Namen bleiben möglich: das Feld ist weiter ein Freitextfeld.
+  assert.match(frontend, /key: "competitor", label: "Benchmark", art: "text"/);
+  // Kein Grün in den Hilfen, ROOTS-Blau.
+  const studio = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf8");
+  assert.match(studio, /lg-guide-row--ok i\{color:var\(--brand,#206efb\)/);
+  assert.doesNotMatch(studio, /lg-guide-row--ok i\{color:var\(--success/);
+  assert.match(studio, /@keyframes lg-guide-in/);
 });

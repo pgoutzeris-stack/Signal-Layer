@@ -6634,6 +6634,28 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { item: data });
       }
 
+      case "list_known_companies": {
+        // Tier-1-Unternehmen samt Aliasnamen und die Firmen, zu denen schon ein
+        // Steckbrief existiert. Der Fragebogen erkennt daran, ob ein getippter
+        // Name in der Datenbank steht - nur dann greift der Steckbrief spaeter.
+        const firmenAdmin = getAdminClient();
+        const [{ data: tier1 }, { data: profile }] = await Promise.all([
+          firmenAdmin.schema("signal_layer").from("tier1_companies")
+            .select("name, aliases, logo_url").eq("active", true).order("name"),
+          firmenAdmin.schema("signal_layer").from("company_profiles").select("company").limit(500),
+        ]);
+        const mitProfil = new Set((profile || []).map((zeile: { company: string }) => String(zeile.company || "").toLowerCase()));
+        return corsResponse(origin, {
+          companies: (tier1 || []).map((zeile: { name: string; aliases: string[] | null; logo_url: string | null }) => ({
+            name: zeile.name,
+            aliases: Array.isArray(zeile.aliases) ? zeile.aliases : [],
+            logo_url: zeile.logo_url || null,
+            tier1: true,
+            has_profile: mitProfil.has(String(zeile.name || "").toLowerCase()),
+          })),
+        });
+      }
+
       case "list_offerings": {
         const admin = getAdminClient();
         const { data, error } = await admin.schema("signal_layer").from("roots_offerings").select("*")

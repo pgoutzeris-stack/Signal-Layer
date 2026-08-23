@@ -90,7 +90,7 @@ export function feldHinweise(key, wert, kontext = {}) {
     hinweise.push(hook.length === 0
       ? zeile("info", `Erste Zeile ist der Hook: ${grenze} Zeichen sind im Feed sichtbar, danach steht „mehr anzeigen“.`)
       : zeile(hook.length <= grenze ? "ok" : "warn",
-        `Hook: ${hook.length} von ${grenze} Zeichen sichtbar${hook.length > grenze ? " — der Rest wird abgeschnitten" : ""}.`));
+        `Hook: ${hook.length} von ${grenze} Zeichen sichtbar${hook.length > grenze ? ", der Rest wird abgeschnitten" : ""}.`));
     if (hook.length && !/\n/.test(text.trim())) {
       hinweise.push(zeile("warn", "Kein Zeilenumbruch nach dem Hook: LinkedIn zeigt die erste Zeile dann mitten im Satz an."));
     }
@@ -103,20 +103,20 @@ export function feldHinweise(key, wert, kontext = {}) {
         `${laenge} Zeichen · stärkster Bereich ${LINKEDIN_LIMITS.captionStarkVon.toLocaleString("de-DE")}–${LINKEDIN_LIMITS.captionStarkBis.toLocaleString("de-DE")} · Limit ${LINKEDIN_LIMITS.captionHart.toLocaleString("de-DE")}`));
     }
     if (laenge > 200 && !/\?|\bwie\b|\bwas\b|\bwelche/i.test(text.slice(-220))) {
-      hinweise.push(zeile("info", "Am Ende fehlt eine Frage oder ein Aufruf — ohne den kommentiert kaum jemand."));
+      hinweise.push(zeile("info", "Am Ende fehlt eine Frage oder ein Aufruf. Ohne den kommentiert kaum jemand."));
     }
     return hinweise;
   }
 
   if (key === "cta_text") {
     hinweise.push(zeile(laenge === 0 ? "info" : laenge <= LINKEDIN_LIMITS.ctaMax ? "ok" : "warn",
-      `${laenge} von ${LINKEDIN_LIMITS.ctaMax} Zeichen — mehr passt nicht auf die Endfolie.`));
+      `${laenge} von ${LINKEDIN_LIMITS.ctaMax} Zeichen. Mehr passt nicht auf die Endfolie.`));
     if (sales) {
       hinweise.push(zeile(/\?$/.test(text.trim()) ? "ok" : "info",
         "In der Ansprache wirkt eine Frage besser als eine Aufforderung."));
     } else if (laenge) {
       hinweise.push(zeile(/^[A-ZÄÖÜ][a-zäöüß]+(en|ern|eln)\b/.test(text.trim()) ? "ok" : "info",
-        "Ein Verb am Anfang macht daraus eine Handlung: „Termin vereinbaren“, nicht „Mehr Infos“."));
+        "Verb am Anfang: „Termin vereinbaren“ statt „Mehr Infos“."));
     }
     return hinweise;
   }
@@ -124,23 +124,24 @@ export function feldHinweise(key, wert, kontext = {}) {
   if (key === "storyline_text") {
     const saetze = satzZahl(text);
     hinweise.push(zeile(laenge === 0 ? "info" : saetze <= 2 ? "ok" : "warn",
-      `${saetze} ${saetze === 1 ? "Satz" : "Sätze"} · ${laenge} Zeichen. Eine Aussage trägt das Asset, mehrere teilen es auf.`));
+      `${saetze} ${saetze === 1 ? "Satz" : "Sätze"} · ${laenge} Zeichen · Zielbereich ein Satz`));
     if (carousel) {
       hinweise.push(zeile("info",
         `Das Modell verteilt die Aussage auf ${LINKEDIN_LIMITS.slidesVon}–${LINKEDIN_LIMITS.slidesBis} Folien mit je ${LINKEDIN_LIMITS.worteJeFolieVon}–${LINKEDIN_LIMITS.worteJeFolieBis} Wörtern.`));
     }
     if (laenge && !/\d/.test(text)) {
-      hinweise.push(zeile("info", "Ohne Zahl in der Aussage bleibt die Titelfolie eine Behauptung."));
+      hinweise.push(zeile("info", "Keine Zahl in der Aussage."));
     }
     return hinweise;
   }
 
   if (key === "headline") {
     hinweise.push(zeile(laenge === 0 ? "info" : laenge <= LINKEDIN_LIMITS.coverTitelMax ? "ok" : "info",
-      `${laenge} Zeichen · bis ${LINKEDIN_LIMITS.coverTitelMax} passt der Satz ohne Umbruch auf die Titelfolie.`));
+      `${laenge} von ${LINKEDIN_LIMITS.coverTitelMax} Zeichen · darüber bricht die Titelfolie um`));
     if (laenge) {
-      hinweise.push(zeile(satzZahl(text) === 1 ? "ok" : "warn",
-        satzZahl(text) === 1 ? "Ein Satz — so gehört es auf die Titelfolie." : "Mehr als ein Satz: die Titelfolie trägt nur einen."));
+      if (satzZahl(text) > 1) {
+        hinweise.push(zeile("warn", `${satzZahl(text)} Sätze. Die Titelfolie trägt einen.`));
+      }
     }
     return hinweise;
   }
@@ -150,12 +151,12 @@ export function feldHinweise(key, wert, kontext = {}) {
     hinweise.push(zeile(profil.zahlen ? "ok" : "warn",
       profil.zahlen
         ? `${profil.zahlen} ${profil.zahlen === 1 ? "Zahl" : "Zahlen"}${profil.prozente ? `, davon ${profil.prozente} in Prozent` : ""}${profil.zitate ? `, ${profil.zitate} ${profil.zitate === 1 ? "Zitat" : "Zitate"}` : ""} erkannt.`
-        : "Keine Zahl erkannt — dann bleibt nur eine Textfolie ohne Kennzahl."));
+        : "Keine Zahl erkannt. Dann bleibt nur eine Textfolie ohne Kennzahl."));
     if (profil.moeglich.length) {
       hinweise.push(zeile("info", `Damit möglich: ${profil.moeglich.join(", ")}.`));
     }
     if (!profil.zitate) {
-      hinweise.push(zeile("info", "Ein wörtliches Zitat in Anführungszeichen macht die Zitatfolie möglich."));
+      hinweise.push(zeile("info", "Zitat in Anführungszeichen macht die Zitatfolie möglich."));
     }
     return hinweise;
   }
@@ -168,7 +169,7 @@ export function feldHinweise(key, wert, kontext = {}) {
     }
     hinweise.push(url
       ? zeile("ok", `Link erkannt: ${url}`)
-      : zeile("warn", "Keine URL erkannt. Bitte die Quelle als Link angeben — oder ohne Link fortfahren, dann bleibt nur die Textangabe."));
+      : zeile("warn", "Keine URL erkannt. Bitte die Quelle als Link angeben oder ohne Link fortfahren, dann bleibt nur die Textangabe."));
     if (!url && !/\d{4}/.test(text)) {
       hinweise.push(zeile("info", "Ohne Link mindestens Herausgeber und Jahr nennen, sonst ist der Beleg nicht nachprüfbar."));
     }
@@ -178,7 +179,7 @@ export function feldHinweise(key, wert, kontext = {}) {
   if (key === "core") {
     const worte = wortZahl(text);
     hinweise.push(zeile(laenge === 0 ? "info" : satzZahl(text) >= 2 && satzZahl(text) <= 4 ? "ok" : "info",
-      `${satzZahl(text)} Sätze · ${worte} Wörter. Zwei bis drei Sätze reichen dem Modell als Kern.`));
+      `${satzZahl(text)} Sätze · ${wortZahl(text)} Wörter · Zielbereich 2 bis 4 Sätze`));
     return hinweise;
   }
 

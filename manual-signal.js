@@ -10,8 +10,8 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2200";
-import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260823-2200";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2300";
+import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260823-2300";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -72,8 +72,8 @@ const FRAGEN = [
   },
   {
     key: "source", label: "Quelle", frage: "Woher stammt die Information?", art: "text",
-    platzhalter: "https://… — Link zur Studie, Meldung oder Seite",
-    hinweis: "Am besten die URL einsetzen. Ohne Link nur Herausgeber und Jahr — oder überspringen.",
+    platzhalter: "https://… Link zur Studie oder Meldung",
+    
   },
   {
     key: "company", label: "Unternehmen", art: "text", platzhalter: "Firmenname",
@@ -101,7 +101,6 @@ const FRAGEN = [
       ? "Welche Wettbewerber des Kunden machen es schon vor?"
       : "Welche Wettbewerber des betroffenen Unternehmens machen es schon vor?"),
     platzhalter: "Firmennamen, z. B. Aldi Süd, dm, Rossmann",
-    hinweis: "Namen nennen, keine Kategorien: das Asset zitiert sie.",
   },
 ];
 
@@ -158,6 +157,21 @@ const EIGENES_CSS = `
   border-radius:16px; background:var(--bg,#fff); box-shadow:0 8px 26px rgba(15,23,42,.06);
 }
 #${OVERLAY_ID} .ms-karte .ms-fueller{flex:1;}
+#${OVERLAY_ID} .ms-ddgroup{padding:8px 10px 4px; font-size:10px; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted,#94a3b8);}
+#${OVERLAY_ID} .ms-firmen{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+#${OVERLAY_ID} .ms-firma{
+  display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:999px;
+  border:1px solid var(--line,#e2e8f0); background:#fff; font:inherit; font-size:12px; font-weight:600;
+  color:var(--ink,#0f172a); cursor:pointer; animation:lg-guide-in .18s cubic-bezier(.22,1,.36,1);
+}
+#${OVERLAY_ID} .ms-firma i{font-size:.62rem; color:var(--brand,#206efb);}
+#${OVERLAY_ID} .ms-firma:hover{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
+#${OVERLAY_ID} .ms-firma.is-erkannt{
+  border-color:var(--brand,#206efb); background:var(--brand-light,#eff6ff); color:var(--brand-dark,#165fd9); cursor:default;
+}
+#${OVERLAY_ID} .ms-firma b{font-size:9px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+  padding:1px 6px; border-radius:999px; background:var(--brand,#206efb); color:#fff;}
 /* Dieselbe Schwelle wie im Studio, und dieselbe Messgroesse: die Breite des
    Inhalts, nicht die des Fensters. */
 @container (max-width: 860px){
@@ -201,6 +215,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     answers: { ...STANDARD, ...BEISPIEL.marketing },
     // Selbst getippte Felder ueberlebt ein Spurwechsel.
     beruehrt: new Set(),
+    firmen: [],
+    firmenGeladen: false,
     stepKey: "lane", busy: false, error: "", formError: "",
     // Leistungskatalog aus Supabase. Bis er da ist, bleibt nur das Freitextfeld.
     offerings: [], offeringsGeladen: false, offeringFrei: false,
@@ -300,31 +316,39 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   }
 
   /** Katalogleistung oder eigener Text. Wer nichts Passendes findet, tippt. */
+  /** Leistungswahl im ROOTS-Aufklapper: dieselbe Form wie im Asset-Studio,
+   *  kein Systemmenue des Browsers. Wer nichts Passendes findet, tippt. */
   function auswahlKoerper(q) {
     const v = wert(q).trim();
     const katalog = state.offerings.filter((item) => item.active !== false && item.label);
     const treffer = katalog.some((item) => item.label === v);
     const frei = state.offeringFrei || (Boolean(v) && !treffer) || !katalog.length;
-    const gruppen = ROOTS_PILLARS.map(([pillar, titel]) => {
+    const kopf = frei
+      ? "Eigene Leistung"
+      : v || (state.offeringsGeladen && !katalog.length ? "Kein Leistungskatalog geladen" : "Leistung wählen");
+    const zeilen = ROOTS_PILLARS.map(([pillar, titel]) => {
       const eintraege = katalog.filter((item) => item.pillar === pillar);
       if (!eintraege.length) return "";
-      const opts = eintraege.map((item) => `<option value="${esc(item.label)}"${!frei && item.label === v ? " selected" : ""}>${esc(item.label)}</option>`).join("");
-      return `<optgroup label="${esc(titel)}">${opts}</optgroup>`;
+      return `<div class="ms-ddgroup">${esc(titel)}</div>` + eintraege.map((item) => `
+        <button type="button" class="as-ddrow${!frei && item.label === v ? " is-active" : ""}" data-act="leistung" data-value="${esc(item.label)}">
+          <span class="as-ddtext">${esc(item.label)}</span>
+          ${!frei && item.label === v ? '<span class="as-ddrow-add"><i class="fa-solid fa-check"></i></span>' : ""}
+        </button>`).join("");
     }).join("");
-    const ohneGruppe = katalog.filter((item) => !ROOTS_PILLARS.some(([pillar]) => pillar === item.pillar))
-      .map((item) => `<option value="${esc(item.label)}"${!frei && item.label === v ? " selected" : ""}>${esc(item.label)}</option>`).join("");
-    const kopf = state.offeringsGeladen && !katalog.length
-      ? "Kein Leistungskatalog geladen"
-      : "Leistung aus dem ROOTS-Katalog wählen";
-    const auswahl = `<select class="as-free" data-auswahl="${esc(q.key)}" aria-label="${esc(q.label)}">
-      <option value=""${!frei && !v ? " selected" : ""}>${esc(kopf)}</option>
-      ${gruppen}${ohneGruppe}
-      <option value="${FREITEXT}"${frei ? " selected" : ""}>Andere Leistung eintragen</option>
-    </select>`;
     const feld = frei
       ? `<input class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}" value="${esc(wert(q))}">`
       : "";
-    return `${auswahl}${feld}<div data-guide="${esc(q.key)}">${schreibhilfe(q.key)}</div>`;
+    return `<div class="as-dd as-dd--flow${state.ddOffen ? " is-open" : ""}">
+      <button type="button" class="as-ddhead" data-act="leistung-auf" aria-expanded="${state.ddOffen ? "true" : "false"}">
+        <span>${esc(kopf)}</span><i class="fa-solid fa-chevron-down"></i>
+      </button>
+      <div class="as-ddlist">
+        ${zeilen}
+        <button type="button" class="as-ddrow${frei ? " is-active" : ""}" data-act="leistung" data-value="${FREITEXT}">
+          <span class="as-ddtext">Andere Leistung eintragen</span>
+        </button>
+      </div>
+    </div>${feld}<div data-guide="${esc(q.key)}">${schreibhilfe(q.key)}</div>`;
   }
 
   function koerper(q) {
@@ -340,7 +364,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     const feld = q.art === "textarea"
       ? `<textarea ${gemeinsam} rows="${q.rows || 4}">${esc(wert(q))}</textarea>`
       : `<input ${gemeinsam} value="${esc(wert(q))}">`;
-    return `${feld}<div data-guide="${esc(q.key)}">${schreibhilfe(q.key)}</div>`;
+    const firmen = q.key === "competitor" || q.key === "company" ? firmenPillen(q.key) : "";
+    return `${feld}${firmen}<div data-guide="${esc(q.key)}">${schreibhilfe(q.key)}</div>`;
   }
 
   function fortschrittHtml(fragen, index) {
@@ -549,6 +574,30 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       setzeSchritt(naechsterSchritt());
       return;
     }
+    if (act === "leistung-auf") { state.ddOffen = !state.ddOffen; zeichne(); return; }
+    if (act === "leistung") {
+      const wahl = hit.getAttribute("data-value");
+      state.beruehrt.add("offering");
+      state.offeringFrei = wahl === FREITEXT;
+      state.answers.offering = wahl === FREITEXT ? "" : wahl;
+      state.ddOffen = false;
+      state.formError = "";
+      zeichne();
+      return;
+    }
+    if (act === "firma") {
+      // Erkanntes Unternehmen anhaengen, statt es tippen zu lassen. Der
+      // Steckbrief greift nur bei genau diesem Namen.
+      const name = hit.getAttribute("data-value") || "";
+      const key = hit.getAttribute("data-key") || "competitor";
+      const bisher = String(state.answers[key] || "").trim();
+      const teile = bisher ? bisher.split(/\s*,\s*/).filter(Boolean) : [];
+      if (!teile.some((eintrag) => eintrag.toLowerCase() === name.toLowerCase())) teile.push(name);
+      state.answers[key] = teile.join(", ");
+      state.beruehrt.add(key);
+      zeichne();
+      return;
+    }
     if (act === "next") { if (pruefeOffen()) setzeSchritt(naechsterSchritt()); return; }
     if (act === "skip") { setzeSchritt(naechsterSchritt()); return; }
     if (act === "back") { setzeSchritt(vorigerSchritt()); return; }
@@ -564,25 +613,66 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     state.answers[key] = feld.value;
     const hilfe = shell.querySelector(`[data-guide="${key}"]`);
     if (hilfe) hilfe.innerHTML = schreibhilfe(key);
+    if (key === "competitor" || key === "company") {
+      const firmen = shell.querySelector(".ms-firmen");
+      const neu = firmenPillen(key);
+      if (firmen) firmen.outerHTML = neu;
+      else if (neu && hilfe) hilfe.insertAdjacentHTML("beforebegin", neu);
+    }
     const host = shell.querySelector(".ms-rechts");
     if (host) host.innerHTML = karteHtml();
   });
 
-  overlay.addEventListener("change", (event) => {
-    const feld = event.target.closest("[data-auswahl]");
-    if (!feld) return;
-    const key = feld.getAttribute("data-auswahl");
-    state.beruehrt.add(key);
-    if (feld.value === FREITEXT) {
-      state.offeringFrei = true;
-      state.answers[key] = "";
-    } else {
-      state.offeringFrei = false;
-      state.answers[key] = feld.value;
+
+
+  /** Tier-1-Unternehmen aus Supabase. Nur diese Namen haben spaeter einen
+   *  Steckbrief; alles andere darf man trotzdem eintragen. */
+  async function ladeFirmen() {
+    try {
+      const res = await api("list_known_companies");
+      state.firmen = Array.isArray(res?.companies) ? res.companies : [];
+    } catch (_fehler) {
+      state.firmen = [];
     }
-    state.formError = "";
+    state.firmenGeladen = true;
     zeichne();
-  });
+  }
+
+  /** Treffer im getippten Text: Name oder Aliasname eines Tier-1-Unternehmens. */
+  function erkannteFirmen(text) {
+    const roh = String(text || "").toLowerCase();
+    if (!roh.trim() || !state.firmen.length) return [];
+    return state.firmen.filter((firma) => {
+      const namen = [firma.name, ...(firma.aliases || [])].filter(Boolean);
+      return namen.some((name) => {
+        const wort = String(name).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp(`(^|[^a-zäöüß0-9])${wort}([^a-zäöüß0-9]|$)`, "i").test(roh);
+      });
+    }).slice(0, 6);
+  }
+
+  /** Vorschlaege, solange nichts erkannt ist: die haeufigsten Tier-1-Namen. */
+  function firmenPillen(key) {
+    if (!state.firmenGeladen || !state.firmen.length) return "";
+    const wertJetzt = String(state.answers[key] || "");
+    const erkannt = erkannteFirmen(wertJetzt);
+    if (erkannt.length) {
+      return `<div class="ms-firmen">${erkannt.map((firma) => `
+        <span class="ms-firma is-erkannt" title="${esc(firma.name)}${firma.has_profile ? " mit Steckbrief" : ""}">
+          <i class="fa-solid fa-circle-check"></i>${esc(firma.name)}${firma.has_profile ? '<b>Steckbrief</b>' : ""}
+        </span>`).join("")}</div>`;
+    }
+    const suche = wertJetzt.split(/\s*,\s*/).pop().trim().toLowerCase();
+    const vorschlag = (suche.length >= 2
+      ? state.firmen.filter((firma) => [firma.name, ...(firma.aliases || [])]
+        .some((name) => String(name).toLowerCase().startsWith(suche)))
+      : state.firmen.filter((firma) => firma.has_profile)).slice(0, 6);
+    if (!vorschlag.length) return "";
+    return `<div class="ms-firmen">${vorschlag.map((firma) => `
+      <button type="button" class="ms-firma" data-act="firma" data-key="${esc(key)}" data-value="${esc(firma.name)}">
+        <i class="fa-solid fa-plus"></i>${esc(firma.name)}
+      </button>`).join("")}</div>`;
+  }
 
   /** Der Leistungskatalog steht in Supabase; ohne ihn bleibt das Freitextfeld. */
   async function ladeLeistungen() {
@@ -599,6 +689,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   document.addEventListener("keydown", onKey);
   zeichne();
   void ladeLeistungen();
+  void ladeFirmen();
   closeAssetStudio();
   return instanz;
 }

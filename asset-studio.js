@@ -874,10 +874,13 @@ const CHROME_CSS = `
 #as-overlay .lg-guide{list-style:none; margin:6px 0 0; padding:0; display:flex; flex-direction:column; gap:4px;}
 #as-overlay .lg-guide-row{display:flex; align-items:flex-start; gap:7px; font-size:12px; line-height:1.4; color:var(--muted,#475569);}
 #as-overlay .lg-guide-row i{flex:0 0 auto; margin-top:2px; font-size:.68rem;}
-#as-overlay .lg-guide-row--ok i{color:var(--success,#10b981);}
+#as-overlay .lg-guide-row--ok i{color:var(--brand,#206efb);}
 #as-overlay .lg-guide-row--warn{color:var(--danger,#dc2626);}
 #as-overlay .lg-guide-row--warn i{color:var(--danger,#dc2626);}
-#as-overlay .lg-guide-row--info i{color:var(--brand,#206efb);}
+#as-overlay .lg-guide-row--info i{color:#94a3b8;}
+/* Die Zeile faehrt beim Wechsel kurz ein, damit man sieht, dass sie neu gerechnet wurde. */
+#as-overlay .lg-guide-row{animation:lg-guide-in .18s cubic-bezier(.22,1,.36,1);}
+@keyframes lg-guide-in{from{opacity:0; transform:translateY(-2px);} to{opacity:1; transform:none;}}
 #as-overlay .as-free:focus{outline:none; border-color:var(--brand,#206efb); box-shadow:var(--shadow-focus,0 0 0 3px rgba(32,110,251,.15));}
 
 #as-overlay .as-benches{display:flex; flex-direction:column; gap:10px; margin-top:4px;}
@@ -1333,8 +1336,8 @@ function sanitizeFragment(html) {
   return box.innerHTML;
 }
 
-import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260823-2200";
-import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260823-2200";
+import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260823-2300";
+import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260823-2300";
 import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 

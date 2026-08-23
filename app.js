@@ -1,14 +1,14 @@
 import { SIGNAL_LAYER_API_URL } from "./config.js";
-import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260823-2200";
+import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260823-2300";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
-import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260823-2200";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260823-2200";
+import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260823-2300";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260823-2300";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2200";
-import { openManualSignal } from "./manual-signal.js?v=20260823-2200";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2300";
+import { openManualSignal } from "./manual-signal.js?v=20260823-2300";
 
 let sb = null;
 let sources = [];
@@ -3721,7 +3721,7 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
       <h3>${escapeHtml(sec.title || "")}</h3>
       <ul>${(Array.isArray(sec.items) ? sec.items : []).map((item) => `<li>${escapeText(item)}</li>`).join("")}</ul>
     </section>`).join("")}${triggerCopy ? `<section class="cp-sec cp-sec--trigger${triggerMuted ? " cp-sec--trigger-muted" : ""}">
-      <h3><i class="fa-solid fa-bolt"></i> Trigger &amp; Aufhänger — warum jetzt?</h3>
+      <h3><i class="fa-solid fa-bolt"></i> Trigger &amp; Aufhänger: warum jetzt?</h3>
       <ul><li>${escapeText(triggerCopy)}</li></ul>
     </section>` : ""}</div>` : ""}
     ${profile.unverified_note ? `<div class="cp-note"><i class="fa-solid fa-calculator"></i> Nicht belegt: ${escapeText(profile.unverified_note)}</div>` : ""}
