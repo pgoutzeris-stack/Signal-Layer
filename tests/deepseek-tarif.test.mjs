@@ -55,6 +55,8 @@ test("Status liefert Tarif und Planung, der Wächter startet den fälligen Lauf"
   assert.match(edge, /case "cancel_simple_run_schedule": \{/);
   // Planen braucht dieselbe Freigabe wie ein Lauf.
   assert.match(edge, /"schedule_simple_run",\n  "cancel_simple_run_schedule",/);
+  // Planen und Absagen gehen auch vom Betrieb aus, wie das Starten selbst.
+  assert.match(edge, /\["start_simple_run", "process_simple_run", "schedule_simple_run", "cancel_simple_run_schedule"\]/);
   // Der Wächter startet nur, wenn nichts läuft: zwei Läufe zahlen doppelt.
   const waechter = edge.slice(edge.indexOf('case "resume_stalled_crawls"'), edge.indexOf('case "get_simple_article_detail"'));
   assert.match(waechter, /from\("simple_run_schedule"\)[\s\S]*eq\("status", "queued"\)/);

@@ -5835,7 +5835,7 @@ Deno.serve(async (req: Request) => {
       auth = await requireAuth(req);
       if (!auth) return unauthorizedResponse(req, origin);
     }
-  } else if (["start_simple_run", "process_simple_run"].includes(action)) {
+  } else if (["start_simple_run", "process_simple_run", "schedule_simple_run", "cancel_simple_run_schedule"].includes(action)) {
     // The simple analysis is a backend job: it is started from the operating
     // side (cron secret or a run row picked up by the watchdog) and keeps
     // itself alive through service-role self-calls. An editor may also start it.
