@@ -138,8 +138,8 @@ test("Server und Fragebogen sind verdrahtet", () => {
   assert.match(edge, /"draft_manual_signal_from_url",/);
 
   assert.match(frontend, /key: "weg", label: "Weg"/);
-  assert.match(frontend, /\["quelle", "Aus einer Adresse ziehen"\]/);
-  assert.match(frontend, /key: "quelle_url", label: "Adresse"[\s\S]{0,120}?art: "quelle"/);
+  assert.match(frontend, /\["felder", "Manuell erstellen"\], \["quelle", "Durch Transkript erzeugen"\]/);
+  assert.match(frontend, /key: "quelle", label: "Quelle"[\s\S]{0,140}?art: "quelle"/);
   assert.match(frontend, /async function zieheQuelle\(\)/);
   assert.match(frontend, /api\("draft_manual_signal_from_url"/);
   // Selbst getippte Felder überschreibt die Quelle nicht.
@@ -276,10 +276,15 @@ test("beide Wege gehen durch denselben Entwurf und dieselbe Prüfung", () => {
 
   // Fragebogen: dritter Weg, eigenes Feld, Mindestlänge, und die Prüfung
   // bekommt den eingefügten Text mitgeschickt.
-  assert.match(frontend, /\["transkript", "Transkript einfügen"\]/);
-  assert.match(frontend, /key: "quelle_text", label: "Transkript"[\s\S]{0,140}?art: "transkript"/);
-  assert.match(frontend, /source_text: state\.answers\.weg === "transkript"/);
-  assert.match(frontend, /ausText \? text\.length < 400 : !adresse/);
+  // Eine Karte, zwei Felder: Transkript oder Adresse, eines genügt.
+  assert.match(frontend, /data-feld="quelle_text"/);
+  assert.match(frontend, /data-feld="quelle_url"/);
+  assert.match(frontend, /fertig: \(a\) => String\(a\.quelle_url \|\| ""\)\.trim\(\)\.length >= 8 \|\| String\(a\.quelle_text \|\| ""\)\.trim\(\)\.length >= 400/);
+  assert.match(frontend, /function quellenTranskript\(\)/);
+  assert.match(frontend, /source_text: quellenTranskript\(\)/);
+  // Liegt ein Transkript vor, wird nicht zusätzlich die Adresse geprüft.
+  assert.match(frontend, /if \(state\.answers\.weg !== "quelle" \|\| quellenTranskript\(\)\) return "";/);
+  assert.match(frontend, /const ausText = text\.length >= 400;/);
   assert.match(frontend, /\{ text, lane: state\.answers\.lane \}/);
 });
 
