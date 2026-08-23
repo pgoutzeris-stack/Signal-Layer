@@ -7987,7 +7987,6 @@ Deno.serve(async (req: Request) => {
         // Fire-and-forget: the run works through its batches server-side, the
         // frontend only watches the status.
         if (run?.status === "running") triggerSimpleRun(run.id);
-        }
         return corsResponse(origin, { run, batch_size: SIMPLE_BATCH_SIZE });
       }
 
