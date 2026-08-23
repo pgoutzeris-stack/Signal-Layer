@@ -10,8 +10,8 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260823-2340";
-import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260823-2340";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260824-0110";
+import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260824-0110";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -43,6 +43,11 @@ const ROOTS_PILLARS = [
  */
 const FRAGEN = [
   {
+    key: "weg", label: "Weg", frage: "Wie soll das Signal entstehen?", art: "pills",
+    options: [["felder", "Felder selbst füllen"], ["quelle", "Aus einer Quelle ziehen"]],
+    pflicht: true,
+  },
+  {
     key: "lane", label: "Asset", frage: "Was soll aus dem Signal entstehen?", art: "pills",
     options: [["marketing", "LinkedIn-Beitrag"], ["sales", "Ansprache an einen Kunden"]],
     pflicht: true,
@@ -52,6 +57,12 @@ const FRAGEN = [
     options: [["roots", "ROOTS"], ["private", "Mein Privatprofil"]],
     when: (a) => a.lane === "marketing",
     pflicht: true,
+  },
+  {
+    key: "quelle_url", label: "Adresse", frage: "Welche Adresse soll ausgelesen werden?", art: "quelle",
+    platzhalter: "https://www.youtube.com/watch?v=… oder Artikel-Link",
+    when: (a) => a.weg === "quelle",
+    pflicht: true, min: 8,
   },
   {
     key: "headline", label: "Signal", frage: "Wie lautet das Signal in einem Satz?", art: "text",
@@ -73,7 +84,6 @@ const FRAGEN = [
   {
     key: "source", label: "Quelle", frage: "Woher stammt die Information?", art: "text",
     platzhalter: "https://… Link zur Studie oder Meldung",
-    
   },
   {
     key: "company", label: "Unternehmen", art: "text", platzhalter: "Firmenname",
@@ -104,7 +114,7 @@ const FRAGEN = [
   },
 ];
 
-const STANDARD = { lane: "marketing", profile: "roots", mode: "ai" };
+const STANDARD = { weg: "felder", lane: "marketing", profile: "roots", mode: "ai", quelle_url: "" };
 
 /**
  * Vorbelegung für die Test- und Abnahmephase: jedes Feld traegt schon einen
@@ -170,6 +180,8 @@ const EIGENES_CSS = `
 #${OVERLAY_ID} .ms-firma.is-erkannt{
   border-color:var(--brand,#206efb); background:var(--brand-light,#eff6ff); color:var(--brand-dark,#165fd9); cursor:default;
 }
+#${OVERLAY_ID} .as-tag.ms-tag-quelle{color:var(--brand,#206efb); border-color:currentColor; background:var(--brand-light,#eff6ff);}
+#${OVERLAY_ID} .ms-ziehen{margin-top:8px;}
 #${OVERLAY_ID} .ms-firma b{font-size:9px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
   padding:1px 6px; border-radius:999px; background:var(--brand,#206efb); color:#fff;}
 /* Dieselbe Schwelle wie im Studio, und dieselbe Messgroesse: die Breite des
@@ -192,6 +204,16 @@ const EIGENES_CSS = `
   border-radius:999px; padding:4px 10px;
 }
 #${OVERLAY_ID} .ms-fuss{display:flex; gap:8px; align-items:center; margin-top:4px;}
+#${OVERLAY_ID} .ms-funde{margin-top:2px;}
+#${OVERLAY_ID} .ms-funde .lg-guide-row{align-items:flex-start;}
+#${OVERLAY_ID} .ms-fund-sprung{
+  flex:0 0 auto; margin-left:auto; padding:3px 10px; border-radius:999px; cursor:pointer;
+  border:1px solid currentColor; background:transparent; font:inherit; font-size:11px; font-weight:700;
+  color:inherit;
+}
+#${OVERLAY_ID} .ms-fund-sprung:hover{background:var(--brand-light,#eff6ff);}
+#${OVERLAY_ID} .ms-fund--blocker > i{color:var(--danger,#dc2626);}
+#${OVERLAY_ID} .ms-pruefkopf{display:flex; align-items:center; gap:8px;}
 `;
 
 let offeneInstanz = null;
@@ -217,7 +239,18 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     beruehrt: new Set(),
     firmen: [],
     firmenGeladen: false,
-    stepKey: "lane", busy: false, error: "", formError: "",
+    quelleLaeuft: false,
+    quelleBefund: null,
+    ausQuelle: new Set(),
+    // Pruefung des fertigen Signals. Sie gilt nur fuer die Antworten, mit denen
+    // sie gelaufen ist: jede Aenderung macht sie ungueltig.
+    pruefung: null,
+    pruefungLaeuft: false,
+    pruefungFrisch: false,
+    pruefFehler: "",
+    pruefTarif: null,
+    freigabe: false,
+    stepKey: "weg", busy: false, error: "", formError: "",
     // Leistungskatalog aus Supabase. Bis er da ist, bleibt nur das Freitextfeld.
     offerings: [], offeringsGeladen: false, offeringFrei: false,
   };
@@ -248,6 +281,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
 
   /** Beispielwerte der Spur in alle Felder, die noch niemand angefasst hat. */
   function uebernimmBeispiel(lane) {
+    // Wer die Quelle auslesen laesst, will keine Beispieltexte im Weg haben.
+    if (state.answers.weg === "quelle") return;
     const vorlage = BEISPIEL[lane] || BEISPIEL.marketing;
     for (const [key, wert] of Object.entries(vorlage)) {
       if (!state.beruehrt.has(key)) state.answers[key] = wert;
@@ -299,10 +334,20 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     return i > 0 ? fragen[i - 1].key : fragen[0].key;
   }
 
+  /** Jede Aenderung an einer Antwort macht den Befund ungueltig. */
+  function verwerfePruefung() {
+    state.pruefungFrisch = false;
+    state.freigabe = false;
+  }
+
   function setzeSchritt(key) {
     state.stepKey = key;
     state.formError = "";
     zeichne();
+    // Am Ende des Fragebogens laeuft die Pruefung von selbst an: der Nutzer
+    // soll nicht erst auf einen Knopf klicken muessen, um zu erfahren, dass
+    // eine Zahl im Signal nicht belegt ist.
+    if (key === ENDE && !state.pruefungFrisch && !state.pruefungLaeuft) void pruefeSignal();
   }
 
   function antwortLabel(q) {
@@ -351,6 +396,42 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     </div>${feld}<div data-guide="${esc(q.key)}">${schreibhilfe(q.key)}</div>`;
   }
 
+  /** Adresse, Knopf und der Befund der Quelle. */
+  function quelleKoerper(q) {
+    const laeuft = state.quelleLaeuft;
+    const befund = state.quelleBefund;
+    const feld = `<input class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}" value="${esc(wert(q))}">`;
+    const knopf = `<button type="button" class="as-btn as-btn--primary ms-ziehen" data-act="quelle-ziehen"${laeuft || !wert(q).trim() ? " disabled" : ""}>
+      ${laeuft ? '<i class="fa-solid fa-circle-notch fa-spin"></i>Quelle wird gelesen' : '<i class="fa-solid fa-wand-magic-sparkles"></i>Signal aus der Quelle ziehen'}</button>`;
+    return `${feld}<div class="ms-fuss">${knopf}</div>${befundHtml(befund)}`;
+  }
+
+  /** Was die Quelle hergab und was noch fehlt. Zahlen statt Zuversicht. */
+  function befundHtml(befund) {
+    if (!befund) return "";
+    if (befund.fehler) {
+      return guideMarkup([{ ton: "warn", text: befund.fehler }], esc);
+    }
+    const artName = { transcript: "Transkript", article: "Artikeltext", description: "Videobeschreibung" };
+    const urteil = { tragfaehig: "ok", duenn: "warn", untauglich: "warn" }[befund.verdict] || "info";
+    const zeilen = [
+      { ton: "ok", text: `${artName[befund.art] || "Text"} gelesen · ${Number(befund.zeichen || 0).toLocaleString("de-DE")} Zeichen${befund.plattform ? ` · ${befund.plattform}` : ""}` },
+      { ton: urteil, text: `Signalqualität: ${befund.verdict}${befund.verdictReason ? ` · ${befund.verdictReason}` : ""}` },
+    ];
+    if (befund.hinweis) zeilen.push({ ton: "info", text: befund.hinweis });
+    if (befund.gefuellt?.length) {
+      zeilen.push({ ton: "ok", text: `Aus der Quelle gefüllt: ${befund.gefuellt.map(feldName).join(", ")}` });
+    }
+    if (befund.missing?.length) {
+      zeilen.push({ ton: "warn", text: `Bitte selbst ergänzen: ${befund.missing.map(feldName).join(", ")}` });
+    }
+    return guideMarkup(zeilen, esc);
+  }
+
+  function feldName(key) {
+    return (FRAGEN.find((frage) => frage.key === key) || { label: key }).label;
+  }
+
   function koerper(q) {
     if (q.art === "pills") {
       const pillen = q.options.map(([value, label]) => `
@@ -360,12 +441,90 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       return `<div class="as-opts">${pillen}</div>`;
     }
     if (q.art === "auswahl") return auswahlKoerper(q);
+    if (q.art === "quelle") return quelleKoerper(q);
     const gemeinsam = `class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}"`;
     const feld = q.art === "textarea"
       ? `<textarea ${gemeinsam} rows="${q.rows || 4}">${esc(wert(q))}</textarea>`
       : `<input ${gemeinsam} value="${esc(wert(q))}">`;
     const firmen = q.key === "competitor" || q.key === "company" ? firmenPillen(q.key) : "";
     return `${feld}${firmen}<div data-guide="${esc(q.key)}">${schreibhilfe(q.key)}</div>`;
+  }
+
+  /** Ein Fund, der die Uebernahme sperrt, bis er behoben oder freigegeben ist. */
+  function blockiertJetzt() {
+    const befund = state.pruefung;
+    if (!befund || !state.pruefungFrisch) return false;
+    return Boolean(befund.blocker) || befund.verdict === "untauglich";
+  }
+
+  /** Der Befund als Zeilen: Urteil, Quellenlage, Luecken, dann die Funde. */
+  function pruefBefundHtml() {
+    if (state.pruefungLaeuft) {
+      return guideMarkup([{ ton: "info", text: "Die Angaben werden gegen die Quelle geprüft." }], esc);
+    }
+    if (state.pruefFehler) {
+      return guideMarkup([{ ton: "warn", text: state.pruefFehler }], esc);
+    }
+    const befund = state.pruefung;
+    if (!befund) return "";
+    const zeilen = [];
+    if (!state.pruefungFrisch) {
+      zeilen.push({ ton: "info", text: "Der Befund stammt von vorher, seither wurden Antworten geändert." });
+    }
+    const urteil = { tragfaehig: "ok", duenn: "warn", untauglich: "warn" }[befund.verdict] || "info";
+    zeilen.push({ ton: urteil, text: `Signalqualität: ${befund.verdict}${befund.verdictReason ? ` · ${befund.verdictReason}` : ""}` });
+    zeilen.push(befund.quelleGeprueft
+      ? { ton: "ok", text: "Jede Angabe aus der Quelle wurde dort nachgeschlagen." }
+      : { ton: "info", text: befund.quellenFehler
+        ? `Ohne Quelle geprüft: ${befund.quellenFehler}`
+        : "Ohne Quelle geprüft, nur die Angaben selbst." });
+    if (befund.missing?.length) {
+      zeilen.push({ ton: "warn", text: `Fehlt noch: ${befund.missing.map(feldName).join(", ")}` });
+    }
+    const ZEICHEN = { blocker: "fa-circle-exclamation", warn: "fa-triangle-exclamation", info: "fa-circle-info" };
+    const funde = (befund.findings || []).map((fund) => {
+      const ton = fund.severity === "info" ? "info" : "warn";
+      const sprung = fund.field
+        ? `<button type="button" class="ms-fund-sprung" data-act="goto" data-key="${esc(fund.field)}">${esc(feldName(fund.field))}</button>`
+        : "";
+      return `<li class="lg-guide-row lg-guide-row--${ton}${fund.severity === "blocker" ? " ms-fund--blocker" : ""}">
+        <i class="fa-solid ${ZEICHEN[fund.severity] || ZEICHEN.warn}"></i><span>${esc(fund.note)}</span>${sprung}</li>`;
+    }).join("");
+    return `${guideMarkup(zeilen, esc)}${funde ? `<ul class="lg-guide ms-funde">${funde}</ul>` : ""}`;
+  }
+
+  /**
+   * Die Knoepfe am Ende. Solange ein Fund die Uebernahme sperrt, ist der Weg
+   * nach vorn das Nachbessern; uebernehmen kann man trotzdem, aber nur mit
+   * einem ausdruecklichen Klick, der das auch so nennt.
+   */
+  function endeKnoepfe() {
+    if (state.pruefungLaeuft) {
+      return `<button type="button" class="as-btn as-btn--primary" disabled><i class="fa-solid fa-circle-notch fa-spin"></i>Signal wird geprüft</button>`;
+    }
+    if (state.busy) {
+      return `<button type="button" class="as-btn as-btn--primary" disabled><i class="fa-solid fa-spinner fa-spin"></i>Signal wird angelegt</button>`;
+    }
+    const uebernehmenKnopf = `<button type="button" class="as-btn as-btn--primary" data-act="submit"><i class="fa-solid fa-arrow-right"></i>Signal übernehmen</button>`;
+    if (!state.pruefungFrisch || !state.pruefung) {
+      // Im Spitzentarif kostet der Aufruf das Doppelte. Das steht auf dem
+      // Knopf, damit der zweite Klick eine Zustimmung ist und kein Versehen.
+      const tarif = state.pruefTarif
+        ? `<i class="fa-solid fa-wand-magic-sparkles"></i>Im Spitzentarif prüfen (${esc(state.pruefTarif.faktor || 2)}-facher Preis)`
+        : '<i class="fa-solid fa-wand-magic-sparkles"></i>Signal prüfen';
+      return `${state.pruefung ? uebernehmenKnopf : ""}
+        <button type="button" class="as-btn${state.pruefung ? "" : " as-btn--primary"}" data-act="pruefen">${tarif}</button>`;
+    }
+    if (blockiertJetzt() && !state.freigabe) {
+      const ersterFund = (state.pruefung.findings || []).find((fund) => fund.severity === "blocker" && fund.field)
+        || (state.pruefung.findings || []).find((fund) => fund.field);
+      return `${ersterFund
+        ? `<button type="button" class="as-btn as-btn--primary" data-act="goto" data-key="${esc(ersterFund.field)}"><i class="fa-solid fa-pen"></i>${esc(feldName(ersterFund.field))} nachbessern</button>`
+        : `<button type="button" class="as-btn as-btn--primary" data-act="pruefen"><i class="fa-solid fa-rotate"></i>Erneut prüfen</button>`}
+        <button type="button" class="as-btn" data-act="freigeben">Auf eigene Verantwortung übernehmen</button>`;
+    }
+    return `${uebernehmenKnopf}
+      <button type="button" class="as-btn" data-act="pruefen"><i class="fa-solid fa-rotate"></i>Erneut prüfen</button>`;
   }
 
   function fortschrittHtml(fragen, index) {
@@ -394,6 +553,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
           <div class="as-step-kopf">
             <span class="as-step-nr">${index + 1}</span>
             <label>${esc(textVon(offen.frage) || offen.label)}</label>
+            ${state.ausQuelle.has(offen.key) ? '<i class="as-tag ms-tag-quelle">aus der Quelle</i>' : ""}
             ${offen.pflicht ? "" : '<i class="as-tag">Optional</i>'}
           </div>
           ${offen.hinweis ? `<p class="as-hint">${esc(offen.hinweis)}</p>` : ""}
@@ -407,15 +567,15 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
         </div>`
       : `<div class="as-step as-step--open" data-stepcard>
           <div class="as-step-kopf">
-            <span class="as-step-nr"><i class="fa-solid fa-check"></i></span>
-            <label>Bereit</label>
+            <span class="as-step-nr">${state.pruefungLaeuft ? '<i class="fa-solid fa-circle-notch fa-spin"></i>' : '<i class="fa-solid fa-check"></i>'}</span>
+            <label>${state.pruefungLaeuft ? "Prüfung läuft" : blockiertJetzt() ? "Prüfung: nachbessern" : "Bereit"}</label>
+            ${state.freigabe ? '<i class="as-tag ms-tag-quelle">auf eigene Verantwortung</i>' : ""}
           </div>
+          ${pruefBefundHtml()}
           ${state.error ? `<p class="as-form-error">${esc(state.error)}</p>` : ""}
           <div class="as-step-fuss">
             <button type="button" class="as-btn" data-act="back"><i class="fa-solid fa-arrow-left"></i>Zurück</button>
-            <button type="button" class="as-btn as-btn--primary" data-act="submit"${state.busy ? " disabled" : ""}>
-              ${state.busy ? '<i class="fa-solid fa-spinner fa-spin"></i>Signal wird angelegt' : '<i class="fa-solid fa-arrow-right"></i>Signal übernehmen'}
-            </button>
+            ${endeKnoepfe()}
           </div>
         </div>`;
     return `${beantwortet}${karte}`;
@@ -498,6 +658,107 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     return false;
   }
 
+  /**
+   * Quelle lesen und daraus die Felder fuellen. Was das Modell nicht belegen
+   * kann, bleibt leer und steht im Befund: die Luecken traegt der Nutzer nach,
+   * sonst waere die Belegpflicht spaeter nicht zu halten.
+   */
+  async function zieheQuelle() {
+    const adresse = String(state.answers.quelle_url || "").trim();
+    if (!adresse || state.quelleLaeuft) return;
+    state.quelleLaeuft = true;
+    state.quelleBefund = null;
+    zeichne();
+    try {
+      const res = await api("draft_manual_signal_from_url", { url: adresse, lane: state.answers.lane });
+      const quelle = res?.source || {};
+      if (!res?.draft) {
+        state.quelleBefund = { fehler: quelle.grund || res?.message || "Die Quelle gab keinen brauchbaren Text her." };
+        return;
+      }
+      const felder = res.draft.felder || {};
+      const gefuellt = [];
+      for (const [key, wertNeu] of Object.entries(felder)) {
+        if (!wertNeu) continue;
+        // Selbst getippte Felder bleiben stehen: die Quelle ergaenzt, sie ueberschreibt nicht.
+        if (state.beruehrt.has(key)) continue;
+        state.answers[key] = wertNeu;
+        state.ausQuelle.add(key);
+        gefuellt.push(key);
+      }
+      verwerfePruefung();
+      state.quelleBefund = {
+        art: quelle.art, plattform: quelle.plattform, zeichen: quelle.zeichen,
+        hinweis: quelle.grund || "",
+        verdict: res.draft.verdict, verdictReason: res.draft.verdictReason,
+        missing: res.draft.missing || [], gefuellt,
+      };
+      melde(res.draft.verdict === "tragfaehig"
+        ? "Signal aus der Quelle gezogen."
+        : "Quelle gelesen, aber Felder fehlen.", res.draft.verdict === "tragfaehig" ? "success" : "info");
+    } catch (fehler) {
+      state.quelleBefund = { fehler: fehler?.message || "Die Quelle war nicht lesbar." };
+    } finally {
+      state.quelleLaeuft = false;
+      zeichne();
+    }
+  }
+
+  /** Die Felder des Signals, wie Server und Modell sie lesen. */
+  function signalFelder() {
+    const a = state.answers;
+    return {
+      lane: a.lane, mode: a.mode, headline: a.headline, core: a.core, evidence: a.evidence,
+      source: a.source, company: a.company, offering: a.offering,
+      territory: a.territory, occasion: a.occasion, competitor: a.competitor,
+    };
+  }
+
+  /**
+   * Die Pruefung vor dem Anlegen. Was aus der Quelle gezogen wurde, schlaegt
+   * das Modell dort nach; was der Nutzer selbst nachgetragen hat, wird gegen
+   * die Quelle gehalten und auf Konkretheit geprueft. Der Server holt die
+   * Quelle dafuer selbst noch einmal: nur so prueft sich der Entwurf nicht
+   * selbst.
+   */
+  async function pruefeSignal({ spitzentarif = false } = {}) {
+    if (state.pruefungLaeuft) return;
+    state.pruefungLaeuft = true;
+    state.pruefFehler = "";
+    state.pruefTarif = null;
+    zeichne();
+    try {
+      const res = await api("check_manual_signal", {
+        signal: signalFelder(),
+        url: state.answers.weg === "quelle" ? String(state.answers.quelle_url || "").trim() : "",
+        from_source: [...state.ausQuelle],
+        accept_peak: spitzentarif === true,
+      });
+      if (!res?.check) {
+        state.pruefFehler = res?.message || "Die Prüfung ist nicht durchgelaufen.";
+        state.pruefTarif = res?.blocked === "peak_tariff" ? (res.pricing || null) : null;
+        return;
+      }
+      state.pruefung = {
+        ...res.check,
+        quelleGeprueft: res.source_checked === true,
+        quellenFehler: res.source_error || "",
+      };
+      state.pruefungFrisch = true;
+      state.freigabe = false;
+      const blocker = Boolean(res.check.blocker) || res.check.verdict === "untauglich";
+      melde(blocker
+        ? "Die Prüfung hat etwas gefunden, das im Asset nicht belegt wäre."
+        : res.check.verdict === "tragfaehig" ? "Signal geprüft, es trägt." : "Signal geprüft, es bleibt dünn.",
+      blocker ? "error" : res.check.verdict === "tragfaehig" ? "success" : "info");
+    } catch (fehler) {
+      state.pruefFehler = fehler?.message || "Die Prüfung war nicht erreichbar.";
+    } finally {
+      state.pruefungLaeuft = false;
+      zeichne();
+    }
+  }
+
   /** Antworten fuer den Asset-Fragebogen. Dieselben Schluessel, damit dort
    *  nichts uebersetzt werden muss. */
   function assetVorbelegung() {
@@ -521,19 +782,21 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   }
 
   async function uebernehmen() {
-    if (state.busy) return;
+    if (state.busy || state.pruefungLaeuft) return;
+    // Ohne gueltigen Befund wird erst geprueft: ein Asset mit unbelegter Zahl
+    // ist teurer als ein Modellaufruf.
+    if (!state.pruefungFrisch && !state.freigabe) { void pruefeSignal(); return; }
+    if (blockiertJetzt() && !state.freigabe) {
+      state.error = "Die Prüfung hat einen Fund, der so nicht ins Asset darf. Nachbessern oder ausdrücklich freigeben.";
+      zeichne();
+      return;
+    }
     state.busy = true;
     state.error = "";
     zeichne();
     try {
       const a = state.answers;
-      const res = await api("create_manual_signal", {
-        signal: {
-          lane: a.lane, mode: a.mode, headline: a.headline, core: a.core, evidence: a.evidence,
-          source: a.source, company: a.company, offering: a.offering,
-          territory: a.territory, occasion: a.occasion, competitor: a.competitor,
-        },
-      });
+      const res = await api("create_manual_signal", { signal: signalFelder() });
       const articleId = res && (res.article_id || res.articleId);
       if (!articleId) throw new Error("Der Server hat kein Signal zurückgegeben.");
       instanz.close();
@@ -567,7 +830,13 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     if (act === "pick") {
       const key = hit.getAttribute("data-key");
       state.answers[key] = hit.getAttribute("data-value");
+      verwerfePruefung();
       if (key === "lane") uebernimmBeispiel(state.answers.lane);
+      if (key === "weg" && hit.getAttribute("data-value") === "quelle") {
+        for (const feld of Object.keys(BEISPIEL.marketing)) {
+          if (!state.beruehrt.has(feld)) state.answers[feld] = "";
+        }
+      }
       state.formError = "";
       // Eine Pille beantwortet die Frage vollstaendig, also weiter - wie im
       // Asset-Fragebogen.
@@ -580,6 +849,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       state.beruehrt.add("offering");
       state.offeringFrei = wahl === FREITEXT;
       state.answers.offering = wahl === FREITEXT ? "" : wahl;
+      verwerfePruefung();
       state.ddOffen = false;
       state.formError = "";
       zeichne();
@@ -595,7 +865,18 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       if (!teile.some((eintrag) => eintrag.toLowerCase() === name.toLowerCase())) teile.push(name);
       state.answers[key] = teile.join(", ");
       state.beruehrt.add(key);
+      verwerfePruefung();
       zeichne();
+      return;
+    }
+    if (act === "quelle-ziehen") { void zieheQuelle(); return; }
+    if (act === "pruefen") { void pruefeSignal({ spitzentarif: Boolean(state.pruefTarif) }); return; }
+    if (act === "freigeben") {
+      // Ausdrueckliche Uebernahme trotz Fund. Sie steht danach als Merkmal in
+      // der Karte, damit sie nicht in Vergessenheit geraet.
+      state.freigabe = true;
+      state.error = "";
+      void uebernehmen();
       return;
     }
     if (act === "next") { if (pruefeOffen()) setzeSchritt(naechsterSchritt()); return; }
@@ -611,8 +892,15 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     const key = feld.getAttribute("data-feld");
     state.beruehrt.add(key);
     state.answers[key] = feld.value;
+    verwerfePruefung();
     const hilfe = shell.querySelector(`[data-guide="${key}"]`);
     if (hilfe) hilfe.innerHTML = schreibhilfe(key);
+    if (key === "quelle_url") {
+      // Der Knopf haengt am Inhalt des Feldes. Ohne dieses Nachziehen bleibt er
+      // gesperrt, bis irgendetwas anderes die Karte neu zeichnet.
+      const knopf = shell.querySelector('[data-act="quelle-ziehen"]');
+      if (knopf) knopf.disabled = state.quelleLaeuft || !String(feld.value).trim();
+    }
     if (key === "competitor" || key === "company") {
       const firmen = shell.querySelector(".ms-firmen");
       const neu = firmenPillen(key);

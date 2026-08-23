@@ -185,6 +185,16 @@ import {
   worldvectorlogoSlugCandidates,
 } from "./asset-studio.ts";
 import {
+  MANUAL_CHECK_SCHEMA,
+  MANUAL_DRAFT_SCHEMA,
+  manualCheckPrompt,
+  manualDraftPrompt,
+  normalizeManualCheck,
+  normalizeManualDraft,
+  pruefeOeffentlicheUrl,
+  ziehteQuelle,
+} from "./source-extract.ts";
+import {
   MANUAL_ARTICLE_TYPE,
   MANUAL_SIGNAL_EXCLUDE,
   manualSignalIssue,
@@ -539,6 +549,8 @@ const EDITOR_ACTIONS = new Set([
   // Ein selbst geschriebenes Signal legt eine Artikel- und eine Signalzeile an.
   // Lesen bleibt offen, Schreiben braucht dieselbe Freigabe wie ein Lauf.
   "create_manual_signal",
+  "draft_manual_signal_from_url",
+  "check_manual_signal",
   "schedule_simple_run",
   "cancel_simple_run_schedule",
   "resume_simple_run",
@@ -1817,6 +1829,28 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs =
   } finally {
     clearTimeout(t);
   }
+}
+
+/**
+ * Abruf fuer die Quellenextraktion. Ohne Browserkennung antworten viele
+ * Redaktionsseiten mit 403, und ein Fehlschlag soll kein Wurf sein: der
+ * Aufrufer entscheidet, was eine nicht lesbare Quelle bedeutet.
+ */
+function quellenHoler() {
+  return async (ziel: string): Promise<{ ok: boolean; text: string }> => {
+    try {
+      const antwort = await fetchWithTimeout(ziel, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; ROOTS-SignalLayer/1.0)",
+          "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+        },
+      }, 20_000);
+      if (!antwort.ok) return { ok: false, text: "" };
+      return { ok: true, text: await antwort.text() };
+    } catch {
+      return { ok: false, text: "" };
+    }
+  };
 }
 
 function resolveUrl(maybeRelative: string, baseUrl: string): string {
@@ -9673,6 +9707,149 @@ Deno.serve(async (req: Request) => {
         if (!retryId) return errorResponse(origin, "asset_id fehlt");
         EdgeRuntime.waitUntil(retryGeneratedAssetModel(retryId));
         return corsResponse(origin, { ok: true, asset_id: retryId });
+      }
+
+      case "draft_manual_signal_from_url": {
+        // Aus einer Adresse ein Signal entwerfen: erst Text holen, dann das
+        // Modell die Felder fuellen lassen - und ausdruecklich sagen, was die
+        // Quelle nicht hergibt. Erfundene Zahlen waeren schlimmer als Luecken.
+        const quelleUrl = String(body.url || "");
+        const gepruef = pruefeOeffentlicheUrl(quelleUrl);
+        if (!gepruef.ok) return errorResponse(origin, gepruef.grund);
+        const lane = String(body.lane || "") === "sales" ? "sales" as const : "marketing" as const;
+
+        const holen = quellenHoler();
+        const quelle = await ziehteQuelle(quelleUrl, holen);
+        if (!quelle.ok) {
+          return corsResponse(origin, { source: quelle, draft: null, blocked: "no_text" });
+        }
+
+        const entwurfConfig = await getPipelineConfig();
+        const entwurfModel = entwurfConfig.ai.simple_model || SIMPLE_MODEL;
+        const entwurfKey = await modelApiKey(entwurfModel);
+        if (!entwurfKey) return errorResponse(origin, `Für ${entwurfModel} ist kein API-Schlüssel hinterlegt`, 500);
+        const tarif = deepseekTarifLage(entwurfModel);
+        if (tarif.variabel && tarif.peak && body.accept_peak !== true) {
+          return corsResponse(origin, {
+            source: quelle, draft: null, blocked: "peak_tariff", pricing: tarif,
+            message: `Spitzentarif aktiv (${tarif.faktor}-facher Preis je Token).`,
+          });
+        }
+
+        const begonnen = Date.now();
+        const antwort = await callJsonModel({
+          model: entwurfModel, apiKey: entwurfKey,
+          prompt: manualDraftPrompt(quelle, lane),
+          schema: MANUAL_DRAFT_SCHEMA,
+          maxOutputTokens: 2_000, temperature: 0, timeoutMs: 90_000, attempts: 2,
+        });
+        const kosten = await modelCostFields(entwurfModel, antwort.usage);
+        await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+          operation: "manual_signal_draft", model: entwurfModel,
+          status: antwort.ok ? "success" : "error",
+          prompt_version: SIMPLE_PIPELINE_VERSION,
+          input_tokens: antwort.usage.input + antwort.usage.cachedInput,
+          output_tokens: antwort.usage.output, thinking_tokens: antwort.usage.thinking,
+          total_tokens: antwort.usage.total, ...kosten,
+          duration_ms: Date.now() - begonnen, created_by: auth?.userId || null,
+          error_code: antwort.ok ? null : `http_${antwort.status || "network"}`,
+          error_message: antwort.ok ? null : antwort.error.slice(0, 500),
+        });
+        if (!antwort.ok) {
+          return errorResponse(origin, simpleProviderMessage(antwort.error) || "Das Modell hat den Entwurf abgelehnt.", 502);
+        }
+        const entwurf = normalizeManualDraft(parseLooseJsonObject(antwort.text));
+        return corsResponse(origin, { source: quelle, draft: entwurf });
+      }
+
+      case "check_manual_signal": {
+        // Die Pruefung vor dem Anlegen. Der Entwurf oben fuellt nur, was in der
+        // Quelle steht; die Luecken traegt der Nutzer selbst nach. Genau dort
+        // entstehen Zahlen ohne Beleg, und ein Asset macht daraus eine
+        // belegte Aussage. Also liest das Modell die fertigen Felder noch
+        // einmal gegen die Quelle, bevor die Zeilen entstehen.
+        const pruefSignal = normalizeManualSignal(body.signal);
+        const pruefLane = pruefSignal.lane;
+        const pruefFelder: Record<string, string> = {
+          headline: pruefSignal.headline, core: pruefSignal.core, evidence: pruefSignal.evidence,
+          source: pruefSignal.source, company: pruefSignal.company, offering: pruefSignal.offering,
+          territory: pruefSignal.territory, occasion: pruefSignal.occasion, competitor: pruefSignal.competitor,
+        };
+        // Die harten Mindestangaben kosten kein Geld: fehlen sie, braucht es
+        // kein Modell, um das zu sagen.
+        const pruefIssue = manualSignalIssue(pruefSignal);
+        if (pruefIssue) {
+          return corsResponse(origin, {
+            check: {
+              verdict: "untauglich", verdictReason: pruefIssue,
+              findings: [{ field: "", severity: "blocker", note: pruefIssue }],
+              missing: [], unsupported: [], blocker: true, ready: false,
+            },
+            source_checked: false, source_error: "",
+          });
+        }
+
+        const ausQuelle = Array.isArray(body.from_source)
+          ? body.from_source.map((wert: unknown) => String(wert)).filter((key: string) => key in pruefFelder)
+          : [];
+        // Gegen die echte Quelle pruefen, nicht gegen den Text, den der Browser
+        // mitschickt: sonst prueft sich der Entwurf selbst.
+        let pruefQuelle: Awaited<ReturnType<typeof ziehteQuelle>> | null = null;
+        let quellenFehler = "";
+        const pruefUrl = String(body.url || "").trim();
+        if (pruefUrl) {
+          const geprueftePruefUrl = pruefeOeffentlicheUrl(pruefUrl);
+          if (!geprueftePruefUrl.ok) {
+            quellenFehler = geprueftePruefUrl.grund;
+          } else {
+            pruefQuelle = await ziehteQuelle(pruefUrl, quellenHoler());
+            if (!pruefQuelle.ok) {
+              quellenFehler = pruefQuelle.grund || "Die Quelle war beim Prüfen nicht lesbar.";
+              pruefQuelle = null;
+            }
+          }
+        }
+
+        const pruefConfig = await getPipelineConfig();
+        const pruefModel = pruefConfig.ai.simple_model || SIMPLE_MODEL;
+        const pruefKey = await modelApiKey(pruefModel);
+        if (!pruefKey) return errorResponse(origin, `Für ${pruefModel} ist kein API-Schlüssel hinterlegt`, 500);
+        const pruefTarif = deepseekTarifLage(pruefModel);
+        if (pruefTarif.variabel && pruefTarif.peak && body.accept_peak !== true) {
+          return corsResponse(origin, {
+            check: null, blocked: "peak_tariff", pricing: pruefTarif,
+            message: `Spitzentarif aktiv (${pruefTarif.faktor}-facher Preis je Token).`,
+          });
+        }
+
+        const pruefStart = Date.now();
+        const pruefAntwort = await callJsonModel({
+          model: pruefModel, apiKey: pruefKey,
+          prompt: manualCheckPrompt(pruefFelder, pruefQuelle, pruefLane, ausQuelle),
+          schema: MANUAL_CHECK_SCHEMA,
+          maxOutputTokens: 1_500, temperature: 0, timeoutMs: 90_000, attempts: 2,
+        });
+        const pruefKosten = await modelCostFields(pruefModel, pruefAntwort.usage);
+        await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+          operation: "manual_signal_check", model: pruefModel,
+          status: pruefAntwort.ok ? "success" : "error",
+          prompt_version: SIMPLE_PIPELINE_VERSION,
+          input_tokens: pruefAntwort.usage.input + pruefAntwort.usage.cachedInput,
+          output_tokens: pruefAntwort.usage.output, thinking_tokens: pruefAntwort.usage.thinking,
+          total_tokens: pruefAntwort.usage.total, ...pruefKosten,
+          duration_ms: Date.now() - pruefStart, created_by: auth?.userId || null,
+          error_code: pruefAntwort.ok ? null : `http_${pruefAntwort.status || "network"}`,
+          error_message: pruefAntwort.ok ? null : pruefAntwort.error.slice(0, 500),
+        });
+        if (!pruefAntwort.ok) {
+          return errorResponse(origin, simpleProviderMessage(pruefAntwort.error) || "Die Prüfung ist nicht durchgelaufen.", 502);
+        }
+        const befund = normalizeManualCheck(parseLooseJsonObject(pruefAntwort.text));
+        return corsResponse(origin, {
+          check: befund,
+          source_checked: Boolean(pruefQuelle),
+          source_error: quellenFehler,
+        });
       }
 
       case "create_manual_signal": {

@@ -5,7 +5,7 @@
  * eine bestätigte Signalzeile.
  *
  * Der Text ist zugleich der Belegkorpus: jede Zahl und jede Aussage im Asset
- * muss darin stehen. Wer nichts belegt, bekommt kein Asset mit Zahlen — das
+ * muss darin stehen. Wer nichts belegt, bekommt kein Asset mit Zahlen. Das
  * ist dieselbe Regel wie bei einem gecrawlten Artikel, nur ist die Quelle
  * jetzt der Nutzer.
  */
@@ -162,7 +162,7 @@ export const MANUAL_ARTICLE_TYPE = "manual";
 /**
  * Filter für alle Listen und Zähler: manuelle Signale gehören nicht in die
  * Pipeline-Auswertung. article_type ist bei gecrawlten Zeilen oft NULL, und
- * `<> 'manual'` waere dort NULL und wuerde die Zeile stumm wegwerfen — deshalb
+ * `<> 'manual'` waere dort NULL und wuerde die Zeile stumm wegwerfen, deshalb
  * die ausdrueckliche Oder-Bedingung.
  */
 export const MANUAL_SIGNAL_EXCLUDE = `article_type.is.null,article_type.neq.${MANUAL_ARTICLE_TYPE}`;

@@ -13,11 +13,13 @@ on:
       - "tests/asset-studio.test.mjs"
       - "manual-signal.js"
       - "linkedin-guides.mjs"
-      - "tests/linkedin-guides.test.mjs tests/deepseek-tarif.test.mjs"
+      - "tests/linkedin-guides.test.mjs"
       - "tests/deepseek-tarif.test.mjs"
       - "supabase/functions/signal-layer/pipeline-simple.ts"
       - "supabase/functions/signal-layer/manual-signal.ts"
       - "tests/manual-signal.test.mjs"
+      - "supabase/functions/signal-layer/source-extract.ts"
+      - "tests/source-extract.test.mjs"
       - ".github/workflows/asset-studio-check.yml"
   pull_request:
     paths:
@@ -30,11 +32,13 @@ on:
       - "tests/asset-studio.test.mjs"
       - "manual-signal.js"
       - "linkedin-guides.mjs"
-      - "tests/linkedin-guides.test.mjs tests/deepseek-tarif.test.mjs"
+      - "tests/linkedin-guides.test.mjs"
       - "tests/deepseek-tarif.test.mjs"
       - "supabase/functions/signal-layer/pipeline-simple.ts"
       - "supabase/functions/signal-layer/manual-signal.ts"
       - "tests/manual-signal.test.mjs"
+      - "supabase/functions/signal-layer/source-extract.ts"
+      - "tests/source-extract.test.mjs"
       - ".github/workflows/asset-studio-check.yml"
 
 permissions:
@@ -55,4 +59,4 @@ jobs:
           node --check manual-signal.js
           node --check linkedin-guides.mjs
       - name: Test asset studio
-        run: node --experimental-strip-types --test tests/asset-studio.test.mjs tests/manual-signal.test.mjs tests/linkedin-guides.test.mjs tests/deepseek-tarif.test.mjs
+        run: node --experimental-strip-types --test tests/asset-studio.test.mjs tests/manual-signal.test.mjs tests/linkedin-guides.test.mjs tests/deepseek-tarif.test.mjs tests/source-extract.test.mjs
