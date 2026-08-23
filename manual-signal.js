@@ -10,8 +10,8 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260824-0110";
-import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260824-0110";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260824-0135";
+import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260824-0135";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -44,7 +44,7 @@ const ROOTS_PILLARS = [
 const FRAGEN = [
   {
     key: "weg", label: "Weg", frage: "Wie soll das Signal entstehen?", art: "pills",
-    options: [["felder", "Felder selbst füllen"], ["quelle", "Aus einer Quelle ziehen"]],
+    options: [["felder", "Felder selbst füllen"], ["quelle", "Aus einer Adresse ziehen"], ["transkript", "Transkript einfügen"]],
     pflicht: true,
   },
   {
@@ -63,6 +63,14 @@ const FRAGEN = [
     platzhalter: "https://www.youtube.com/watch?v=… oder Artikel-Link",
     when: (a) => a.weg === "quelle",
     pflicht: true, min: 8,
+  },
+  {
+    key: "quelle_text", label: "Transkript", frage: "Welchen Text soll die KI auslesen?", art: "transkript",
+    rows: 8,
+    platzhalter: "Transkript, Mitschrift oder Textauszug einfügen, mindestens 400 Zeichen",
+    hinweis: "YouTube gibt den Untertiteltext keinem Server heraus. Für Videos hier das Transkript aus dem LinkedIn-Auto-Werkzeug einfügen.",
+    when: (a) => a.weg === "transkript",
+    pflicht: true, min: 400,
   },
   {
     key: "headline", label: "Signal", frage: "Wie lautet das Signal in einem Satz?", art: "text",
@@ -114,7 +122,7 @@ const FRAGEN = [
   },
 ];
 
-const STANDARD = { weg: "felder", lane: "marketing", profile: "roots", mode: "ai", quelle_url: "" };
+const STANDARD = { weg: "felder", lane: "marketing", profile: "roots", mode: "ai", quelle_url: "", quelle_text: "" };
 
 /**
  * Vorbelegung für die Test- und Abnahmephase: jedes Feld traegt schon einen
@@ -204,6 +212,7 @@ const EIGENES_CSS = `
   border-radius:999px; padding:4px 10px;
 }
 #${OVERLAY_ID} .ms-fuss{display:flex; gap:8px; align-items:center; margin-top:4px;}
+#${OVERLAY_ID} .ms-zaehler{font-size:12px; font-weight:600; color:var(--muted,#94a3b8);}
 #${OVERLAY_ID} .ms-funde{margin-top:2px;}
 #${OVERLAY_ID} .ms-funde .lg-guide-row{align-items:flex-start;}
 #${OVERLAY_ID} .ms-fund-sprung{
@@ -282,7 +291,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   /** Beispielwerte der Spur in alle Felder, die noch niemand angefasst hat. */
   function uebernimmBeispiel(lane) {
     // Wer die Quelle auslesen laesst, will keine Beispieltexte im Weg haben.
-    if (state.answers.weg === "quelle") return;
+    if (state.answers.weg !== "felder") return;
     const vorlage = BEISPIEL[lane] || BEISPIEL.marketing;
     for (const [key, wert] of Object.entries(vorlage)) {
       if (!state.beruehrt.has(key)) state.answers[key] = wert;
@@ -400,10 +409,20 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   function quelleKoerper(q) {
     const laeuft = state.quelleLaeuft;
     const befund = state.quelleBefund;
-    const feld = `<input class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}" value="${esc(wert(q))}">`;
-    const knopf = `<button type="button" class="as-btn as-btn--primary ms-ziehen" data-act="quelle-ziehen"${laeuft || !wert(q).trim() ? " disabled" : ""}>
-      ${laeuft ? '<i class="fa-solid fa-circle-notch fa-spin"></i>Quelle wird gelesen' : '<i class="fa-solid fa-wand-magic-sparkles"></i>Signal aus der Quelle ziehen'}</button>`;
-    return `${feld}<div class="ms-fuss">${knopf}</div>${befundHtml(befund)}`;
+    const alsText = q.art === "transkript";
+    const gemeinsam = `class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}"`;
+    const feld = alsText
+      ? `<textarea ${gemeinsam} rows="${q.rows || 8}">${esc(wert(q))}</textarea>`
+      : `<input ${gemeinsam} value="${esc(wert(q))}">`;
+    const gefuellt = wert(q).trim().length >= (alsText ? (q.min || 400) : 1);
+    const laenge = alsText
+      ? `<span class="ms-zaehler">${wert(q).trim().length.toLocaleString("de-DE")} Zeichen</span>`
+      : "";
+    const knopf = `<button type="button" class="as-btn as-btn--primary ms-ziehen" data-act="quelle-ziehen"${laeuft || !gefuellt ? " disabled" : ""}>
+      ${laeuft
+        ? '<i class="fa-solid fa-circle-notch fa-spin"></i>Text wird gelesen'
+        : `<i class="fa-solid fa-wand-magic-sparkles"></i>Signal aus ${alsText ? "dem Transkript" : "der Quelle"} ziehen`}</button>`;
+    return `${feld}<div class="ms-fuss">${knopf}${laenge}</div>${befundHtml(befund)}`;
   }
 
   /** Was die Quelle hergab und was noch fehlt. Zahlen statt Zuversicht. */
@@ -441,7 +460,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       return `<div class="as-opts">${pillen}</div>`;
     }
     if (q.art === "auswahl") return auswahlKoerper(q);
-    if (q.art === "quelle") return quelleKoerper(q);
+    if (q.art === "quelle" || q.art === "transkript") return quelleKoerper(q);
     const gemeinsam = `class="as-free" data-feld="${esc(q.key)}" aria-label="${esc(q.label)}" placeholder="${esc(textVon(q.platzhalter))}"`;
     const feld = q.art === "textarea"
       ? `<textarea ${gemeinsam} rows="${q.rows || 4}">${esc(wert(q))}</textarea>`
@@ -664,13 +683,17 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
    * sonst waere die Belegpflicht spaeter nicht zu halten.
    */
   async function zieheQuelle() {
+    const ausText = state.answers.weg === "transkript";
     const adresse = String(state.answers.quelle_url || "").trim();
-    if (!adresse || state.quelleLaeuft) return;
+    const text = String(state.answers.quelle_text || "").trim();
+    if (state.quelleLaeuft || (ausText ? text.length < 400 : !adresse)) return;
     state.quelleLaeuft = true;
     state.quelleBefund = null;
     zeichne();
     try {
-      const res = await api("draft_manual_signal_from_url", { url: adresse, lane: state.answers.lane });
+      const res = await api("draft_manual_signal_from_url", ausText
+        ? { text, lane: state.answers.lane }
+        : { url: adresse, lane: state.answers.lane });
       const quelle = res?.source || {};
       if (!res?.draft) {
         state.quelleBefund = { fehler: quelle.grund || res?.message || "Die Quelle gab keinen brauchbaren Text her." };
@@ -731,6 +754,9 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       const res = await api("check_manual_signal", {
         signal: signalFelder(),
         url: state.answers.weg === "quelle" ? String(state.answers.quelle_url || "").trim() : "",
+        // Beim eingefuegten Transkript gibt es keine Adresse, gegen die der
+        // Server nachlesen koennte: der Text selbst ist die Quelle.
+        source_text: state.answers.weg === "transkript" ? String(state.answers.quelle_text || "").trim() : "",
         from_source: [...state.ausQuelle],
         accept_peak: spitzentarif === true,
       });
@@ -832,7 +858,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       state.answers[key] = hit.getAttribute("data-value");
       verwerfePruefung();
       if (key === "lane") uebernimmBeispiel(state.answers.lane);
-      if (key === "weg" && hit.getAttribute("data-value") === "quelle") {
+      if (key === "weg" && hit.getAttribute("data-value") !== "felder") {
         for (const feld of Object.keys(BEISPIEL.marketing)) {
           if (!state.beruehrt.has(feld)) state.answers[feld] = "";
         }
@@ -895,11 +921,15 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     verwerfePruefung();
     const hilfe = shell.querySelector(`[data-guide="${key}"]`);
     if (hilfe) hilfe.innerHTML = schreibhilfe(key);
-    if (key === "quelle_url") {
+    if (key === "quelle_url" || key === "quelle_text") {
       // Der Knopf haengt am Inhalt des Feldes. Ohne dieses Nachziehen bleibt er
       // gesperrt, bis irgendetwas anderes die Karte neu zeichnet.
+      const laenge = String(feld.value).trim().length;
+      const genug = key === "quelle_text" ? laenge >= 400 : laenge > 0;
       const knopf = shell.querySelector('[data-act="quelle-ziehen"]');
-      if (knopf) knopf.disabled = state.quelleLaeuft || !String(feld.value).trim();
+      if (knopf) knopf.disabled = state.quelleLaeuft || !genug;
+      const zaehler = shell.querySelector(".ms-zaehler");
+      if (zaehler) zaehler.textContent = `${laenge.toLocaleString("de-DE")} Zeichen`;
     }
     if (key === "competitor" || key === "company") {
       const firmen = shell.querySelector(".ms-firmen");

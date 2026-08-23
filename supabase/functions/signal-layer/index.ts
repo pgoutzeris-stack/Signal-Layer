@@ -192,6 +192,7 @@ import {
   normalizeManualCheck,
   normalizeManualDraft,
   pruefeOeffentlicheUrl,
+  transkriptQuelle,
   ziehteQuelle,
 } from "./source-extract.ts";
 import {
@@ -1829,6 +1830,18 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs =
   } finally {
     clearTimeout(t);
   }
+}
+
+/**
+ * Artikelleser fuer die Quellenextraktion: dieselbe Kette, mit der der Crawler
+ * gecrawlte Artikel liest (JSON-LD, dichtegewichtete Containerwahl,
+ * Absatzsammlung, Paywall-Login der Quelle). Fuer eine Adresse aus dem
+ * Fragebogen gilt dieselbe Qualitaet wie fuer eine aus dem Crawl.
+ */
+async function artikelLeser(url: string): Promise<{ titel: string; text: string } | null> {
+  const gelesen = await fetchArticleContent(url);
+  if (!gelesen) return null;
+  return { titel: gelesen.title || "", text: gelesen.content || "" };
 }
 
 /**
@@ -9713,13 +9726,21 @@ Deno.serve(async (req: Request) => {
         // Aus einer Adresse ein Signal entwerfen: erst Text holen, dann das
         // Modell die Felder fuellen lassen - und ausdruecklich sagen, was die
         // Quelle nicht hergibt. Erfundene Zahlen waeren schlimmer als Luecken.
-        const quelleUrl = String(body.url || "");
-        const gepruef = pruefeOeffentlicheUrl(quelleUrl);
-        if (!gepruef.ok) return errorResponse(origin, gepruef.grund);
+        const quelleUrl = String(body.url || "").trim();
+        const quelleText = String(body.text || "");
+        // Zwei Wege in dieselbe Extraktion: eine Adresse, die der Server liest,
+        // oder ein Transkript, das der Nutzer einfuegt. YouTube gibt seinen
+        // Untertiteltext keinem Server heraus, deshalb braucht es den zweiten.
+        if (!quelleUrl && !quelleText.trim()) return errorResponse(origin, "Weder Adresse noch Text angegeben.");
+        if (quelleUrl) {
+          const gepruef = pruefeOeffentlicheUrl(quelleUrl);
+          if (!gepruef.ok) return errorResponse(origin, gepruef.grund);
+        }
         const lane = String(body.lane || "") === "sales" ? "sales" as const : "marketing" as const;
 
-        const holen = quellenHoler();
-        const quelle = await ziehteQuelle(quelleUrl, holen);
+        const quelle = quelleUrl
+          ? await ziehteQuelle(quelleUrl, quellenHoler(), artikelLeser)
+          : transkriptQuelle(quelleText, String(body.title || ""));
         if (!quelle.ok) {
           return corsResponse(origin, { source: quelle, draft: null, blocked: "no_text" });
         }
@@ -9797,12 +9818,19 @@ Deno.serve(async (req: Request) => {
         let pruefQuelle: Awaited<ReturnType<typeof ziehteQuelle>> | null = null;
         let quellenFehler = "";
         const pruefUrl = String(body.url || "").trim();
-        if (pruefUrl) {
+        const pruefText = String(body.source_text || "");
+        if (pruefText.trim()) {
+          // Eingefuegtes Transkript: hier ist der Nutzer selbst die Quelle, es
+          // gibt keine zweite, gegen die sich das pruefen liesse.
+          const eingefuegt = transkriptQuelle(pruefText);
+          if (eingefuegt.ok) pruefQuelle = eingefuegt;
+          else quellenFehler = eingefuegt.grund;
+        } else if (pruefUrl) {
           const geprueftePruefUrl = pruefeOeffentlicheUrl(pruefUrl);
           if (!geprueftePruefUrl.ok) {
             quellenFehler = geprueftePruefUrl.grund;
           } else {
-            pruefQuelle = await ziehteQuelle(pruefUrl, quellenHoler());
+            pruefQuelle = await ziehteQuelle(pruefUrl, quellenHoler(), artikelLeser);
             if (!pruefQuelle.ok) {
               quellenFehler = pruefQuelle.grund || "Die Quelle war beim Prüfen nicht lesbar.";
               pruefQuelle = null;

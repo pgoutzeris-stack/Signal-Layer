@@ -2,8 +2,8 @@
 <html lang="de"><head><meta charset="utf-8"><title>Fragebogen Harness</title></head>
 <body><button id="li">LinkedIn</button> <button id="me">Ansprache</button> <button id="ms">Manuelles Signal</button>
 <script type="module">
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260824-0110";
-import { openManualSignal } from "./manual-signal.js?v=20260824-0110";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260824-0135";
+import { openManualSignal } from "./manual-signal.js?v=20260824-0135";
 const signal = { headline_de:"Handel baut Eigenmarken aus", why_de:"Anteil steigt.", company:"Testfirma AG",
   signal_label:"Markenstrategie", signal_id:"marken_strategie", roots_offering:"Markenstrategie", topics:["marken_strategie"],
   article:{ title_de:"Handel baut Eigenmarken aus", id:"00000000-0000-0000-0000-000000000001" } };
@@ -28,8 +28,9 @@ const callApi = async (a, payload) => {
   if (a === "create_manual_signal") { window.letztesSignal = payload; return { article_id: "00000000-0000-0000-0000-000000000001", signal }; }
   if (a === "draft_manual_signal_from_url") {
     window.letzteQuelle = payload;
-    if (window.quelleLeer) return { source: { ok:false, grund:"Dieses Video hat keine öffentlichen Untertitel. Text bitte manuell einsetzen." }, draft: null };
-    return { source: { ok:true, art:"transcript", plattform:"youtube", zeichen:4820, grund:"" }, draft: {
+    if (window.quelleLeer) return { source: { ok:false, grund:"Dieses Video hat Untertitel (de), YouTube gibt ihren Text aber nicht an Server heraus. Transkript einfügen." }, draft: null };
+    const eingefuegt = Boolean(payload.text);
+    return { source: { ok:true, art:"transcript", plattform: eingefuegt ? "eingefügt" : "youtube", zeichen: eingefuegt ? payload.text.length : 4820, grund:"" }, draft: {
       felder: { headline:"Handel baut Eigenmarken schneller aus als geplant",
         core:"Der Eigenmarkenanteil steigt seit zwei Jahren schneller als von den Herstellern erwartet.",
         evidence:"Der Anteil liegt bei 41 Prozent, 2024 waren es 34 Prozent.",

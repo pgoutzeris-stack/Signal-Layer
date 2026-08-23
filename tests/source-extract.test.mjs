@@ -3,8 +3,8 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import {
   MANUAL_DRAFT_FIELDS, erkennePlattform, manualCheckPrompt, manualDraftPrompt, normalizeManualCheck,
-  normalizeManualDraft, pruefeOeffentlicheUrl, seitenText, untertitelSpur, untertitelText, youtubeId,
-  ziehteQuelle,
+  normalizeManualDraft, pruefeOeffentlicheUrl, seitenText, transkriptQuelle, untertitelSpur,
+  untertitelText, youtubeId, ziehteQuelle,
 } from "../supabase/functions/signal-layer/source-extract.ts";
 
 const frontend = readFileSync(new URL("../manual-signal.js", import.meta.url), "utf8");
@@ -75,6 +75,7 @@ test("Transkript vor Beschreibung, und ohne Untertitel eine klare Ansage", async
   const ohneSpur = await ziehteQuelle("https://www.youtube.com/watch?v=abc", async () => ({ ok: true, text: "<title>Video</title>" }));
   assert.equal(ohneSpur.ok, false);
   assert.match(ohneSpur.grund, /keine öffentlichen Untertitel/);
+  assert.match(ohneSpur.grund, /Transkript einfügen/);
 
   const nurBeschreibung = await ziehteQuelle("https://www.youtube.com/watch?v=abc", async () => ({
     ok: true, text: `<title>V</title>"shortDescription":"${"Eigenmarken wachsen. ".repeat(12)}","`,
@@ -129,7 +130,7 @@ test("der Auftrag verbietet Erfindungen, die Antwort meldet Lücken", () => {
 test("Server und Fragebogen sind verdrahtet", () => {
   assert.match(edge, /case "draft_manual_signal_from_url": \{/);
   assert.match(edge, /pruefeOeffentlicheUrl\(quelleUrl\)/);
-  assert.match(edge, /ziehteQuelle\(quelleUrl, holen\)/);
+  assert.match(edge, /await ziehteQuelle\(quelleUrl, quellenHoler\(\), artikelLeser\)/);
   assert.match(edge, /schema: MANUAL_DRAFT_SCHEMA/);
   assert.match(edge, /operation: "manual_signal_draft"/);
   // Ein Entwurf ist ein bezahlter Aufruf: im Spitzentarif nur mit Zustimmung.
@@ -137,7 +138,7 @@ test("Server und Fragebogen sind verdrahtet", () => {
   assert.match(edge, /"draft_manual_signal_from_url",/);
 
   assert.match(frontend, /key: "weg", label: "Weg"/);
-  assert.match(frontend, /\["quelle", "Aus einer Quelle ziehen"\]/);
+  assert.match(frontend, /\["quelle", "Aus einer Adresse ziehen"\]/);
   assert.match(frontend, /key: "quelle_url", label: "Adresse"[\s\S]{0,120}?art: "quelle"/);
   assert.match(frontend, /async function zieheQuelle\(\)/);
   assert.match(frontend, /api\("draft_manual_signal_from_url"/);
@@ -210,7 +211,7 @@ test("die Prüfung hängt zwischen Fragebogen und Anlegen", () => {
   // Mindestangaben kosten kein Modell.
   assert.match(edge, /const pruefIssue = manualSignalIssue\(pruefSignal\);/);
   // Geprüft wird gegen die Quelle, die der Server selbst holt.
-  assert.match(edge, /pruefQuelle = await ziehteQuelle\(pruefUrl, quellenHoler\(\)\);/);
+  assert.match(edge, /pruefQuelle = await ziehteQuelle\(pruefUrl, quellenHoler\(\), artikelLeser\);/);
   assert.match(edge, /manualCheckPrompt\(pruefFelder, pruefQuelle, pruefLane, ausQuelle\)/);
   assert.match(edge, /schema: MANUAL_CHECK_SCHEMA/);
   assert.match(edge, /operation: "manual_signal_check"/);
@@ -227,4 +228,82 @@ test("die Prüfung hängt zwischen Fragebogen und Anlegen", () => {
   assert.match(frontend, /if \(blockiertJetzt\(\) && !state\.freigabe\) \{/);
   assert.match(frontend, /data-act="freigeben"/);
   assert.match(frontend, /Auf eigene Verantwortung übernehmen/);
+});
+
+test("YouTube nennt seine Untertitel, gibt ihren Text aber nicht heraus", async () => {
+  // Geprüft am 23.08.2026 an drei Videos: die Wiedergabeseite listet die Spuren,
+  // der Abruf des Textes kommt mit 200 und null Bytes zurück. Das gehört so
+  // gemeldet und nicht als Fehler des Werkzeugs.
+  const html = `<title>Video</title>"captionTracks":[{"baseUrl":"https://y/t?x=1","languageCode":"de"}],`;
+  const gesperrt = await ziehteQuelle("https://www.youtube.com/watch?v=abc", async (ziel) => (
+    ziel.includes("/t?x=1") ? { ok: true, text: "" } : { ok: true, text: html }
+  ));
+  assert.equal(gesperrt.ok, false);
+  assert.match(gesperrt.grund, /Dieses Video hat Untertitel \(de\)/);
+  assert.match(gesperrt.grund, /nicht an Server heraus/);
+
+  // Mit Beschreibung wird daraus ein dünner Entwurf, mit demselben Hinweis.
+  const mitBeschreibung = await ziehteQuelle("https://www.youtube.com/watch?v=abc", async (ziel) => (
+    ziel.includes("/t?x=1")
+      ? { ok: true, text: "" }
+      : { ok: true, text: `${html}"shortDescription":"${"Eigenmarken wachsen. ".repeat(12)}","` }
+  ));
+  assert.equal(mitBeschreibung.art, "description");
+  assert.match(mitBeschreibung.grund, /nicht an Server heraus/);
+});
+
+test("ein eingefügtes Transkript ist eine Quelle, ein Absatz ist keine", () => {
+  const kurz = transkriptQuelle("Zu wenig.");
+  assert.equal(kurz.ok, false);
+  assert.match(kurz.grund, /9 von 400 Zeichen/);
+
+  const lang = transkriptQuelle(`  ${"Der Eigenmarkenanteil liegt bei 41 Prozent. ".repeat(12)}  `, "Podcast Folge 212");
+  assert.equal(lang.ok, true);
+  assert.equal(lang.art, "transcript");
+  assert.equal(lang.plattform, "eingefügt");
+  assert.equal(lang.titel, "Podcast Folge 212");
+  assert.ok(lang.zeichen >= 400);
+  assert.doesNotMatch(lang.text, /^\s|\s$/);
+});
+
+test("beide Wege gehen durch denselben Entwurf und dieselbe Prüfung", () => {
+  // Server: Adresse oder Text, und beim Text ist er selbst die Quelle.
+  assert.match(edge, /const quelle = quelleUrl\n\s*\? await ziehteQuelle\(quelleUrl, quellenHoler\(\), artikelLeser\)\n\s*: transkriptQuelle\(quelleText, String\(body\.title \|\| ""\)\);/);
+  // Die Adresse aus dem Fragebogen wird mit derselben Kette gelesen wie ein gecrawlter Artikel.
+  assert.match(edge, /const gelesen = await fetchArticleContent\(url\);/);
+  assert.match(edge, /if \(!quelleUrl && !quelleText\.trim\(\)\) return errorResponse\(origin, "Weder Adresse noch Text angegeben\."\);/);
+  assert.match(edge, /const eingefuegt = transkriptQuelle\(pruefText\);/);
+
+  // Fragebogen: dritter Weg, eigenes Feld, Mindestlänge, und die Prüfung
+  // bekommt den eingefügten Text mitgeschickt.
+  assert.match(frontend, /\["transkript", "Transkript einfügen"\]/);
+  assert.match(frontend, /key: "quelle_text", label: "Transkript"[\s\S]{0,140}?art: "transkript"/);
+  assert.match(frontend, /source_text: state\.answers\.weg === "transkript"/);
+  assert.match(frontend, /ausText \? text\.length < 400 : !adresse/);
+  assert.match(frontend, /\{ text, lane: state\.answers\.lane \}/);
+});
+
+test("auf Artikelseiten liest die Kette des Crawlers, nicht der erste Teaserblock", async () => {
+  // packaging-journal.de: die erste <article> ist eine Teaserkarte mit 109
+  // Zeichen. Ohne den besseren Leser hiess das "zu wenig Text" (geprüft am
+  // 23.08.2026 an einer echten Seite).
+  const teaser = `<html><body><article><h2>Teaser</h2><p>Kurzer Anriss.</p></article>
+    <article class="content"><p>${"Der Eigenmarkenanteil liegt bei 41 Prozent. ".repeat(20)}</p></article></body></html>`;
+  const ohneLeser = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: true, text: teaser }));
+  assert.equal(ohneLeser.ok, false, "der einfache Leser nimmt den ersten Block");
+
+  const mitLeser = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: true, text: teaser }), async () => ({
+    titel: "Eigenmarken wachsen", text: "Der Eigenmarkenanteil liegt bei 41 Prozent. ".repeat(20),
+  }));
+  assert.equal(mitLeser.ok, true);
+  assert.equal(mitLeser.art, "article");
+  assert.equal(mitLeser.titel, "Eigenmarken wachsen");
+  assert.match(mitLeser.text, /41 Prozent/);
+
+  // Ein Leser, der nichts findet oder wirft, ändert nichts am Urteil.
+  const leerLeser = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: true, text: teaser }), async () => null);
+  assert.equal(leerLeser.ok, false);
+  const wirft = await ziehteQuelle("https://beispiel.de/x", async () => ({ ok: true, text: teaser }), async () => { throw new Error("kaputt"); });
+  assert.equal(wirft.ok, false);
+  assert.match(wirft.grund, /zu wenig Text/);
 });

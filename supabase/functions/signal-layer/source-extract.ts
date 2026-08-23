@@ -137,10 +137,19 @@ export function untertitelText(json3: unknown): string {
 type Holer = (url: string) => Promise<{ ok: boolean; text: string; json?: unknown }>;
 
 /**
- * Der eigentliche Abruf. `holen` wird hereingegeben, damit die Logik ohne Netz
- * geprüft werden kann.
+ * Ein besserer Leser für Artikelseiten als `seitenText`. Der Crawler hat dafür
+ * schon eine Kette aus JSON-LD, dichtegewichteter Containerwahl und
+ * Absatzsammlung; wer sie hereingibt, bekommt sie hier benutzt.
  */
-export async function ziehteQuelle(rohwert: string, holen: Holer): Promise<QuellenText> {
+type ArtikelLeser = (url: string) => Promise<{ titel: string; text: string } | null>;
+
+/**
+ * Der eigentliche Abruf. `holen` wird hereingegeben, damit die Logik ohne Netz
+ * geprüft werden kann. `artikelLeser` ist optional: ohne ihn liest `seitenText`
+ * die Seite, und der verliert auf Redaktionsseiten gegen den ersten
+ * Teaserblock.
+ */
+export async function ziehteQuelle(rohwert: string, holen: Holer, artikelLeser?: ArtikelLeser): Promise<QuellenText> {
   const gepruef = pruefeOeffentlicheUrl(rohwert);
   if (!gepruef.ok) {
     return { ok: false, art: null, plattform: "", titel: "", text: "", zeichen: 0, sprache: null, grund: gepruef.grund };
@@ -158,6 +167,7 @@ export async function ziehteQuelle(rohwert: string, holen: Holer): Promise<Quell
 
   if (plattform === "youtube") {
     const spur = untertitelSpur(seite.text);
+    let gesperrt = false;
     if (spur) {
       const untertitel = await holen(spur.url);
       const transkript = untertitel.ok ? untertitelText(untertitel.json ?? safeJson(untertitel.text)) : "";
@@ -168,6 +178,12 @@ export async function ziehteQuelle(rohwert: string, holen: Holer): Promise<Quell
           grund: spur.automatisch ? "Automatisch erzeugte Untertitel: Zahlen und Namen gegenprüfen." : "",
         };
       }
+      // Geprueft am 23.8.2026: die Wiedergabeseite nennt die Untertitelspuren,
+      // aber ihr Text kommt bei einem Serverabruf leer zurueck, in jedem Format
+      // und mit Referer wie Cookie. YouTube gibt ihn nur an einen Browser mit
+      // Sitzung heraus. Das ist keine Panne des Werkzeugs, und es wird auch
+      // nicht als eine gemeldet.
+      gesperrt = true;
     }
     const beschreibung = (seite.text.match(/"shortDescription":"([\s\S]{0,4000}?)","/) || ["", ""])[1]
       .replace(/\\n/g, " ").replace(/\\"/g, '"').replace(/\s+/g, " ").trim();
@@ -175,22 +191,63 @@ export async function ziehteQuelle(rohwert: string, holen: Holer): Promise<Quell
       return {
         ok: true, art: "description", plattform, titel, text: beschreibung,
         zeichen: beschreibung.length, sprache: null,
-        grund: "Kein Transkript verfügbar, nur die Videobeschreibung. Belege daraus sind meist zu dünn.",
+        grund: gesperrt
+          ? "YouTube gibt den Untertiteltext nicht an Server heraus, hier steht nur die Videobeschreibung. Für Zahlen und Zitate das Transkript einfügen."
+          : "Kein Transkript verfügbar, nur die Videobeschreibung. Belege daraus sind meist zu dünn.",
       };
     }
     return {
       ok: false, art: null, plattform, titel, text: "", zeichen: 0, sprache: null,
-      grund: "Dieses Video hat keine öffentlichen Untertitel. Text bitte manuell einsetzen.",
+      grund: gesperrt
+        ? `Dieses Video hat Untertitel (${spur?.sprache || "unbekannt"}), YouTube gibt ihren Text aber nicht an Server heraus. Transkript einfügen.`
+        : "Dieses Video hat keine öffentlichen Untertitel. Transkript einfügen oder Felder selbst füllen.",
     };
   }
 
-  if (text.length < 400) {
+  let artikelTitel = titel;
+  let artikelText = text;
+  if (artikelText.length < 400 && artikelLeser) {
+    // Der eigene Leser nimmt den ersten <article>-Block, und der ist auf
+    // Redaktionsseiten oft eine Teaserkarte. Die Kette des Crawlers wählt den
+    // Block nach Absatzdichte und findet den Artikel auch dann.
+    const gelesen = await artikelLeser(url).catch(() => null);
+    if (gelesen && gelesen.text.trim().length > artikelText.length) {
+      artikelText = gelesen.text.replace(/\s+/g, " ").trim().slice(0, MAX_ZEICHEN);
+      artikelTitel = entschaerfe(gelesen.titel) || artikelTitel;
+    }
+  }
+  if (artikelText.length < 400) {
     return {
-      ok: false, art: null, plattform, titel, text, zeichen: text.length, sprache: null,
+      ok: false, art: null, plattform, titel: artikelTitel, text: artikelText,
+      zeichen: artikelText.length, sprache: null,
       grund: "Die Seite gibt zu wenig Text her, oft wegen Paywall oder JavaScript.",
     };
   }
-  return { ok: true, art: "article", plattform, titel, text, zeichen: text.length, sprache: null, grund: "" };
+  return {
+    ok: true, art: "article", plattform, titel: artikelTitel, text: artikelText,
+    zeichen: artikelText.length, sprache: null, grund: "",
+  };
+}
+
+/**
+ * Ein eingefuegtes Transkript als Quelle. Der Weg fuer Videos: YouTube gibt
+ * den Untertiteltext keinem Server heraus, das lokale Werkzeug erzeugt ihn mit
+ * Whisper. Wer ihn einfuegt, ist selbst die Quelle, und derselbe Entwurf und
+ * dieselbe Pruefung laufen darauf.
+ */
+export function transkriptQuelle(rohtext: string, titel = ""): QuellenText {
+  const text = String(rohtext || "").replace(/\s+/g, " ").trim().slice(0, MAX_ZEICHEN);
+  if (text.length < 400) {
+    return {
+      ok: false, art: null, plattform: "eingefügt", titel: entschaerfe(titel), text,
+      zeichen: text.length, sprache: null,
+      grund: `Der Text ist zu kurz für einen Entwurf: ${text.length} von 400 Zeichen.`,
+    };
+  }
+  return {
+    ok: true, art: "transcript", plattform: "eingefügt", titel: entschaerfe(titel), text,
+    zeichen: text.length, sprache: null, grund: "",
+  };
 }
 
 function safeJson(text: string): unknown {
