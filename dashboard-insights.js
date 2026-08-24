@@ -16,6 +16,11 @@ export const DASHBOARD_WIDGETS = Object.freeze(WIDGET_DEFINITIONS.map((item) => 
 export function defaultDashboardPreferences() {
   return {
     period_days: 30,
+    filters: {
+      asset_scope: "roots",
+      creator_ids: [],
+      origin: "all",
+    },
     widgets: DASHBOARD_WIDGETS.map((item) => ({ id: item.id, visible: true, size: item.defaultSize })),
   };
 }
@@ -24,24 +29,17 @@ export function normalizeDashboardPreferences(value = {}) {
   const fallback = defaultDashboardPreferences();
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   const period = [7, 30, 90, 365].includes(Number(source.period_days)) ? Number(source.period_days) : 30;
-  const available = new Map(DASHBOARD_WIDGETS.map((item) => [item.id, item]));
-  const widgets = [];
-  const seen = new Set();
-  for (const candidate of Array.isArray(source.widgets) ? source.widgets : []) {
-    const definition = available.get(String(candidate?.id || ""));
-    if (!definition || seen.has(definition.id)) continue;
-    seen.add(definition.id);
-    widgets.push({
-      id: definition.id,
-      visible: candidate.visible !== false,
-      size: candidate.size === "compact" ? "compact" : "wide",
-    });
-  }
-  for (const candidate of fallback.widgets) {
-    if (!seen.has(candidate.id)) widgets.push(candidate);
-  }
-  if (!widgets.some((item) => item.visible)) widgets[0].visible = true;
-  return { period_days: period, widgets };
+  const rawFilters = source.filters && typeof source.filters === "object" && !Array.isArray(source.filters) ? source.filters : {};
+  const assetScope = rawFilters.asset_scope === "roots_private" ? "roots_private" : "roots";
+  const origin = ["automatic", "manual"].includes(rawFilters.origin) ? rawFilters.origin : "all";
+  const creatorIds = Array.isArray(rawFilters.creator_ids)
+    ? [...new Set(rawFilters.creator_ids.map(String).filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)))].slice(0, 50)
+    : [];
+  return {
+    period_days: period,
+    filters: { asset_scope: assetScope, creator_ids: creatorIds, origin },
+    widgets: fallback.widgets,
+  };
 }
 
 const numberValue = (value) => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
@@ -88,8 +86,17 @@ function assetTitle(asset) {
 
 export function summarizeDashboardData(payload = {}, nowMs = Date.now()) {
   const preferences = normalizeDashboardPreferences(payload.preferences);
-  const assets = Array.isArray(payload.assets) ? payload.assets : [];
-  const performance = Array.isArray(payload.performance) ? payload.performance : [];
+  const allAssets = Array.isArray(payload.assets) ? payload.assets : [];
+  const selectedCreators = new Set(preferences.filters.creator_ids);
+  const assets = allAssets.filter((asset) => {
+    const visibilityMatches = preferences.filters.asset_scope === "roots_private" || asset.visibility !== "private";
+    const creatorMatches = selectedCreators.size === 0 || selectedCreators.has(String(asset.creator_id || ""));
+    const originMatches = preferences.filters.origin === "all" || asset.origin === preferences.filters.origin;
+    return visibilityMatches && creatorMatches && originMatches;
+  });
+  const assetIds = new Set(assets.map((asset) => asset.id));
+  const performance = (Array.isArray(payload.performance) ? payload.performance : [])
+    .filter((row) => assetIds.has(row.asset_id));
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const periodMs = preferences.period_days * 86_400_000;
   const currentStart = nowMs - periodMs;
@@ -153,6 +160,7 @@ export function summarizeDashboardData(payload = {}, nowMs = Date.now()) {
 
   return {
     preferences,
+    allAssets,
     assets,
     performance,
     current,
@@ -175,7 +183,10 @@ export function summarizeDashboardData(payload = {}, nowMs = Date.now()) {
 export function deriveDashboardInsights(summary) {
   const insights = [];
   if (!summary.performance.length) {
-    return [{ tone: "info", title: "Noch keine KPI-Basis", text: "Sobald Sie beim ersten veröffentlichten Asset Werte hinterlegen, entstehen hier persönliche Performance-Hinweise." }];
+    return [
+      { tone: "info", title: "Asset-Basis steht", text: `${summary.assets.length} fertige Entwürfe sind mit den aktuellen Filtern ausgewählt.` },
+      { tone: "attention", title: "KPIs ergänzen", text: "Sobald reale Posting- oder Sales-Werte hinterlegt sind, werden Trends und Erfolgshebel automatisch berechnet." },
+    ];
   }
   const topMarketing = summary.ranked.find((row) => row.lane === "marketing");
   if (topMarketing) {
@@ -231,10 +242,6 @@ function deltaHtml(value) {
   return `<span class="pi-delta ${positive ? "is-positive" : "is-negative"}"><i class="fa-solid fa-arrow-${positive ? "trend-up" : "trend-down"}"></i>${rounded} %</span>`;
 }
 
-function emptyWidget(copy, settingsPanel = "dashboard-kpis") {
-  return `<div class="pi-empty"><i class="fa-regular fa-chart-bar"></i><p>${copy}</p><button type="button" class="btn-secondary" data-open-dashboard-settings="${settingsPanel}"><i class="fa-solid fa-plus"></i> KPIs hinterlegen</button></div>`;
-}
-
 function widgetShell(definition, preference, body) {
   return `<article class="pi-widget pi-widget--${preference.size}" data-widget-id="${definition.id}">
     <header class="pi-widget-head"><span><i class="${definition.icon}"></i>${definition.title}</span><em data-dashboard-live-label>Live</em></header>
@@ -270,44 +277,48 @@ function renderWidget(definition, preference, summary, escapeHtml) {
   const sales = summary.salesTotals;
   if (definition.id === "performance_pulse") {
     return widgetShell(definition, preference, `<div class="pi-pulse">
-      <div><span class="pi-eyebrow">Persönlicher Zeitraum · ${summary.preferences.period_days} Tage</span><h3>${summary.performance.length ? "Ihre Assets wirken messbar." : "Machen Sie Asset-Wirkung sichtbar."}</h3><p>${summary.performance.length ? `${summary.current.length} KPI-gepflegte Assets liegen im gewählten Zeitraum.` : "Verknüpfen Sie veröffentlichte LinkedIn-Posts und versendete Executive Memos mit ihren Ergebnissen."}</p></div>
-      <div class="pi-pulse-kpis">${stat("Marketing Views", formatNumber(marketing.impressions), deltaHtml(summary.deltas.impressions), "marketing")}${stat("Sales Pipeline", formatMoney(sales.influenced_pipeline_eur), deltaHtml(summary.deltas.pipeline), "sales")}</div>
-      <button type="button" class="btn-secondary" data-open-dashboard-settings="dashboard-kpis"><i class="fa-solid fa-sliders"></i> Dashboard anpassen</button>
+      <div><span class="pi-eyebrow">${summary.assets.length} ausgewählte Assets · ${summary.coverage.covered} mit KPIs</span><h3>${summary.performance.length ? "Asset-Wirkung auf einen Blick." : "Die Asset-Basis ist bereit."}</h3><p>${summary.performance.length ? `${summary.current.length} KPI-gepflegte Assets liegen im gewählten Zeitraum.` : "Alle Karten zeigen die reale Basis bereits mit Nullwerten. KPI-Werte werden in den Einstellungen an den fertigen Entwürfen ergänzt."}</p></div>
+      <div class="pi-pulse-kpis">${stat("Marketing Views", formatNumber(marketing.impressions), summary.performance.length ? deltaHtml(summary.deltas.impressions) : "Noch ohne KPI-Werte", "marketing")}${stat("Sales Pipeline", formatMoney(sales.influenced_pipeline_eur), summary.performance.length ? deltaHtml(summary.deltas.pipeline) : "Noch ohne KPI-Werte", "sales")}</div>
     </div>`);
   }
   if (definition.id === "marketing_performance") {
-    const body = summary.marketing.length ? `<div class="pi-stat-grid">${stat("Views", formatNumber(marketing.impressions))}${stat("Engagement", formatPercent(marketing.engagement_rate))}${stat("Kommentare", formatNumber(marketing.comments))}${stat("Link-Klicks", formatNumber(marketing.link_clicks))}</div>` : emptyWidget("Für Marketing-Insights fehlen noch Posting-KPIs.");
+    const body = `<div class="pi-stat-grid">${stat("Views", formatNumber(marketing.impressions))}${stat("Engagement", formatPercent(marketing.engagement_rate))}${stat("Kommentare", formatNumber(marketing.comments))}${stat("Link-Klicks", formatNumber(marketing.link_clicks))}</div>`;
     return widgetShell(definition, preference, body);
   }
   if (definition.id === "marketing_funnel") {
-    const body = summary.marketing.length ? funnelHtml([
+    const body = funnelHtml([
       { label: "Views", value: marketing.impressions },
       { label: "Engagiert", value: marketing.engagements },
       { label: "Klicks", value: marketing.link_clicks },
-    ], "var(--brand)") : emptyWidget("Views, Reaktionen und Klicks bilden hier Ihren Marketing-Funnel.");
+    ], "var(--brand)");
     return widgetShell(definition, preference, body);
   }
   if (definition.id === "sales_pipeline") {
-    const body = summary.sales.length ? `<div class="pi-stat-grid">${stat("Pipeline", formatMoney(sales.influenced_pipeline_eur))}${stat("Umsatz", formatMoney(sales.revenue_eur))}${stat("Termine", formatNumber(sales.meetings))}${stat("Win-Rate", formatPercent(sales.win_rate))}</div>` : emptyWidget("Für Sales-Insights fehlen noch KPI-Werte zu Executive Memos.");
+    const body = `<div class="pi-stat-grid">${stat("Pipeline", formatMoney(sales.influenced_pipeline_eur))}${stat("Umsatz", formatMoney(sales.revenue_eur))}${stat("Termine", formatNumber(sales.meetings))}${stat("Win-Rate", formatPercent(sales.win_rate))}</div>`;
     return widgetShell(definition, preference, body);
   }
   if (definition.id === "sales_funnel") {
-    const body = summary.sales.length ? funnelHtml([
+    const body = funnelHtml([
       { label: "Versendet", value: sales.sends },
       { label: "Geöffnet", value: sales.opens },
       { label: "Antworten", value: sales.replies },
       { label: "Termine", value: sales.meetings },
       { label: "Opportunities", value: sales.opportunities },
       { label: "Wins", value: sales.wins },
-    ], "#16a34a") : emptyWidget("Versand, Antworten, Termine und Opportunities bilden hier Ihren Sales-Funnel.");
+    ], "#16a34a");
     return widgetShell(definition, preference, body);
   }
   if (definition.id === "performance_trend") {
-    return widgetShell(definition, preference, summary.current.length ? trendHtml(summary) : emptyWidget("Im gewählten Zeitraum liegen noch keine KPI-Updates."));
+    return widgetShell(definition, preference, trendHtml(summary));
   }
   if (definition.id === "top_assets") {
     const rows = summary.ranked.slice(0, 6);
-    const body = rows.length ? `<div class="pi-leaderboard">${rows.map((row, index) => `<div><span class="pi-rank">${index + 1}</span><span class="pi-asset-icon is-${row.lane}"><i class="fa-solid ${row.lane === "marketing" ? "fa-bullhorn" : "fa-file-lines"}"></i></span><span><b>${escapeHtml(row.title)}</b><small>${escapeHtml(row.asset.company || (row.lane === "marketing" ? "Marketing" : "Sales"))}</small></span><em>${row.lane === "marketing" ? `${formatNumber(row.impressions)} Views` : formatMoney(row.influenced_pipeline_eur)}</em></div>`).join("")}</div>` : emptyWidget("Top-Assets erscheinen, sobald Performance-Werte vorliegen.");
+    const pending = summary.assets.slice(0, 6);
+    const body = `<div class="pi-leaderboard">${(rows.length ? rows : pending).map((row, index) => {
+      const asset = rows.length ? row.asset : row;
+      const lane = rows.length ? row.lane : (asset.kind === "memo" ? "sales" : "marketing");
+      return `<div><span class="pi-rank">${index + 1}</span><span class="pi-asset-icon is-${lane}"><i class="fa-solid ${lane === "marketing" ? "fa-bullhorn" : "fa-file-lines"}"></i></span><span><b>${escapeHtml(rows.length ? row.title : assetTitle(asset))}</b><small>${escapeHtml(asset.creator_short_name || asset.company || (asset.visibility === "private" ? "Privat" : "ROOTS"))}</small></span><em>${rows.length ? (lane === "marketing" ? `${formatNumber(row.impressions)} Views` : formatMoney(row.influenced_pipeline_eur)) : "KPI offen"}</em></div>`;
+    }).join("") || `<div class="pi-inline-empty">Keine Assets im aktuellen Filter</div>`}</div>`;
     return widgetShell(definition, preference, body);
   }
   if (definition.id === "smart_insights") {
@@ -319,13 +330,20 @@ function renderWidget(definition, preference, summary, escapeHtml) {
     const body = `<div class="pi-coverage"><div class="pi-ring" style="--coverage:${rate}"><b>${Math.round(rate)}%</b></div><div><b>${summary.coverage.covered} von ${summary.coverage.total}</b><span>fertigen Assets mit KPI-Daten</span><small>Marketing ${summary.coverage.marketing_covered}/${summary.coverage.marketing_total} · Sales ${summary.coverage.sales_covered}/${summary.coverage.sales_total}</small></div></div>`;
     return widgetShell(definition, preference, body);
   }
-  const body = summary.recent.length ? `<div class="pi-activity">${summary.recent.map((row) => `<div><i class="fa-solid ${row.lane === "marketing" ? "fa-bullhorn" : "fa-file-lines"}"></i><span><b>${escapeHtml(row.title)}</b><small>${formatDate(row.updated_at)} · ${row.lane === "marketing" ? `${formatNumber(row.impressions)} Views` : `${formatNumber(row.meetings)} Termine`}</small></span></div>`).join("")}</div>` : emptyWidget("Ihre letzten KPI-Aktualisierungen erscheinen hier.");
+  const pending = summary.assets.slice(0, 5);
+  const body = `<div class="pi-activity">${(summary.recent.length ? summary.recent : pending).map((row) => {
+    const asset = summary.recent.length ? row.asset : row;
+    const lane = summary.recent.length ? row.lane : (asset.kind === "memo" ? "sales" : "marketing");
+    return `<div><i class="fa-solid ${lane === "marketing" ? "fa-bullhorn" : "fa-file-lines"}"></i><span><b>${escapeHtml(summary.recent.length ? row.title : assetTitle(asset))}</b><small>${summary.recent.length ? `${formatDate(row.updated_at)} · ${lane === "marketing" ? `${formatNumber(row.impressions)} Views` : `${formatNumber(row.meetings)} Termine`}` : `${formatDate(asset.updated_at || asset.created_at)} · KPI offen`}</small></span></div>`;
+  }).join("") || `<div class="pi-inline-empty">Keine Assets im aktuellen Filter</div>`}</div>`;
   return widgetShell(definition, preference, body);
 }
 
 function labelForAsset(asset) {
   const type = asset.kind === "memo" ? "Sales · Executive Memo" : "Marketing · LinkedIn";
-  return `${type} · ${assetTitle(asset)}`;
+  const scope = asset.visibility === "private" ? "Privat" : "ROOTS";
+  const origin = asset.origin === "manual" ? "Manuell" : "Automatisch";
+  return `${scope} · ${asset.creator_short_name || "ROOTS"} · ${origin} · ${type} · ${assetTitle(asset)}`;
 }
 
 function inputField(name, label, value, { step = "1", suffix = "", min = "0" } = {}) {
@@ -335,26 +353,29 @@ function inputField(name, label, value, { step = "1", suffix = "", min = "0" } =
 export function initPerformanceDashboard({ client, callApi, toast, openSettingsPanel, escapeHtml: escape = null }) {
   const escapeHtml = escape || ((value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char])));
   const state = {
-    payload: { preferences: defaultDashboardPreferences(), assets: [], performance: [] },
+    payload: { preferences: defaultDashboardPreferences(), assets: [], creators: [], performance: [] },
+    savedPreferences: defaultDashboardPreferences(),
     summary: null,
     loading: false,
     loaded: false,
     realtimeStatus: "connecting",
     kpiLane: "marketing",
+    kpiSearch: "",
+    kpiAssetFilter: "all",
     selectedAssetId: "",
     reloadTimer: null,
+    preferenceSaveTimer: null,
     channel: null,
   };
   const hosts = [...document.querySelectorAll("[data-performance-dashboard]")];
-  const widgetList = document.getElementById("dashboard-widget-list");
-  const periodSelect = document.getElementById("dashboard-settings-period");
   const kpiSelect = document.getElementById("kpi-asset-select");
+  const kpiSearch = document.getElementById("kpi-asset-search");
+  const kpiAssetFilter = document.getElementById("kpi-asset-filter");
+  const kpiContext = document.getElementById("kpi-asset-context");
   const kpiForm = document.getElementById("kpi-performance-form");
   const kpiFields = document.getElementById("kpi-performance-fields");
   const kpiEmpty = document.getElementById("kpi-performance-empty");
   const kpiDelete = document.getElementById("btn-kpi-delete");
-  const widgetSave = document.getElementById("btn-dashboard-settings-save");
-  const widgetStatus = document.getElementById("dashboard-settings-status");
 
   const updateLiveLabels = () => {
     document.querySelectorAll("[data-dashboard-live-label]").forEach((label) => {
@@ -366,24 +387,33 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
   const renderDashboards = () => {
     state.summary = summarizeDashboardData(state.payload);
     for (const host of hosts) {
-      const visible = state.summary.preferences.widgets.filter((item) => item.visible);
-      host.innerHTML = `<div class="pi-toolbar"><div><span class="pi-eyebrow">My Signal Performance</span><h2>Dashboard Insights</h2><p>Persönlich, gespeichert und in Echtzeit synchronisiert.</p></div><div><label>Zeitraum<select class="signal-toolbar-select" data-dashboard-period>${[7, 30, 90, 365].map((days) => `<option value="${days}" ${days === state.summary.preferences.period_days ? "selected" : ""}>${days === 365 ? "12 Monate" : `${days} Tage`}</option>`).join("")}</select></label><button type="button" class="btn-secondary" data-open-dashboard-settings="dashboard-kpis"><i class="fa-solid fa-sliders"></i> Anpassen</button></div></div>
-        <div class="pi-grid">${visible.map((preference) => renderWidget(DASHBOARD_WIDGETS.find((item) => item.id === preference.id), preference, state.summary, escapeHtml)).join("")}</div>`;
+      const preferences = state.summary.preferences;
+      const selectedCreators = new Set(preferences.filters.creator_ids);
+      const creatorButtons = state.payload.creators.map((creator) => `<button type="button" data-dashboard-creator="${escapeHtml(creator.id)}" class="${selectedCreators.has(creator.id) ? "is-active" : ""}" aria-pressed="${selectedCreators.has(creator.id)}">${escapeHtml(creator.short_name || creator.name)}</button>`).join("");
+      host.innerHTML = `<div class="pi-toolbar">
+          <div><h2>Performance Dashboard</h2><p>ROOTS-Performance und eigene private Assets · persönlich gefiltert und in Echtzeit synchronisiert.</p></div>
+          <span class="pi-live-state" data-dashboard-live-label>Verbinde…</span>
+        </div>
+        <div class="pi-filter-panel" aria-label="Dashboard filtern">
+          <div class="pi-filter-group pi-filter-group--period"><span>Zeitraum</span><div class="pi-period-buttons" role="group" aria-label="Zeitraum">${[7, 30, 90, 365].map((days) => `<button type="button" data-dashboard-period="${days}" class="${days === preferences.period_days ? "is-active" : ""}" aria-pressed="${days === preferences.period_days}">${days === 365 ? "12 Monate" : `${days} Tage`}</button>`).join("")}</div></div>
+          <label class="pi-filter-group"><span>Asset-Basis</span><select class="signal-toolbar-select" data-dashboard-scope><option value="roots" ${preferences.filters.asset_scope === "roots" ? "selected" : ""}>Nur ROOTS</option><option value="roots_private" ${preferences.filters.asset_scope === "roots_private" ? "selected" : ""}>ROOTS + meine privaten</option></select></label>
+          <label class="pi-filter-group"><span>Quelle</span><select class="signal-toolbar-select" data-dashboard-origin><option value="all" ${preferences.filters.origin === "all" ? "selected" : ""}>Automatisch + manuell</option><option value="automatic" ${preferences.filters.origin === "automatic" ? "selected" : ""}>Nur automatisch</option><option value="manual" ${preferences.filters.origin === "manual" ? "selected" : ""}>Nur manuell</option></select></label>
+          <div class="pi-filter-group pi-filter-group--creators"><span>Erstellt von</span><div class="pi-creator-buttons"><button type="button" data-dashboard-creator="all" class="${selectedCreators.size === 0 ? "is-active" : ""}" aria-pressed="${selectedCreators.size === 0}">Alle</button>${creatorButtons}</div></div>
+          <div class="pi-filter-result"><b>${state.summary.assets.length}</b><span>Assets einbezogen</span></div>
+        </div>
+        <div class="pi-grid">${preferences.widgets.map((preference) => renderWidget(DASHBOARD_WIDGETS.find((item) => item.id === preference.id), preference, state.summary, escapeHtml)).join("")}</div>`;
     }
     updateLiveLabels();
   };
 
-  const renderWidgetSettings = () => {
-    if (!widgetList) return;
-    const preferences = normalizeDashboardPreferences(state.payload.preferences);
-    if (periodSelect) periodSelect.value = String(preferences.period_days);
-    widgetList.innerHTML = preferences.widgets.map((item, index) => {
-      const definition = DASHBOARD_WIDGETS.find((candidate) => candidate.id === item.id);
-      return `<div class="pi-widget-setting" data-widget-setting="${item.id}"><label><input type="checkbox" data-widget-visible ${item.visible ? "checked" : ""}><span><i class="${definition.icon}"></i><b>${definition.title}</b></span></label><select class="toolbar-select" data-widget-size aria-label="Größe von ${definition.title}"><option value="compact" ${item.size === "compact" ? "selected" : ""}>Kompakt</option><option value="wide" ${item.size === "wide" ? "selected" : ""}>Breit</option></select><span class="pi-order-buttons"><button type="button" data-widget-move="up" ${index === 0 ? "disabled" : ""} title="Nach oben"><i class="fa-solid fa-arrow-up"></i></button><button type="button" data-widget-move="down" ${index === preferences.widgets.length - 1 ? "disabled" : ""} title="Nach unten"><i class="fa-solid fa-arrow-down"></i></button></span></div>`;
-    }).join("");
-  };
-
-  const assetsForLane = () => state.payload.assets.filter((asset) => state.kpiLane === "marketing" ? asset.kind === "linkedin" : asset.kind === "memo");
+  const assetsForLane = () => state.payload.assets.filter((asset) => {
+    const laneMatches = state.kpiLane === "marketing" ? asset.kind === "linkedin" : asset.kind === "memo";
+    const filterMatches = state.kpiAssetFilter === "all"
+      || asset.visibility === state.kpiAssetFilter
+      || asset.origin === state.kpiAssetFilter;
+    const haystack = `${labelForAsset(asset)} ${asset.company || ""}`.toLocaleLowerCase("de");
+    return laneMatches && filterMatches && (!state.kpiSearch || haystack.includes(state.kpiSearch));
+  });
   const selectedPerformance = () => state.payload.performance.find((row) => row.asset_id === state.selectedAssetId) || {};
 
   const renderKpiFields = () => {
@@ -394,8 +424,15 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       kpiSelect.disabled = !assets.length;
     }
     const performance = selectedPerformance();
+    const selectedAsset = state.payload.assets.find((asset) => asset.id === state.selectedAssetId);
     if (kpiEmpty) kpiEmpty.hidden = Boolean(state.selectedAssetId);
     if (kpiForm) kpiForm.hidden = !state.selectedAssetId;
+    if (kpiContext) {
+      kpiContext.hidden = !selectedAsset;
+      if (selectedAsset) kpiContext.innerHTML = selectedAsset.visibility === "private"
+        ? `<i class="fa-solid fa-lock"></i><span><b>Privates Asset</b> Nur Sie sehen und pflegen diese KPI-Werte.</span>`
+        : `<i class="fa-solid fa-people-group"></i><span><b>ROOTS-Asset</b> KPI-Werte sind im Team-Dashboard sichtbar und gemeinsam pflegbar · erstellt von ${escapeHtml(selectedAsset.creator_name || "ROOTS Team")}.</span>`;
+    }
     if (!state.selectedAssetId || !kpiFields) return;
     const published = performance.published_at ? new Date(performance.published_at).toISOString().slice(0, 16) : "";
     const common = `<div class="pi-kpi-common"><label class="pi-kpi-field"><span>${state.kpiLane === "marketing" ? "Veröffentlicht am" : "Versendet am"}</span><input class="modern-input" type="datetime-local" name="published_at" value="${published}"></label><label class="pi-kpi-field"><span>Kanal</span><input class="modern-input" name="channel" maxlength="40" value="${escapeHtml(performance.channel || (state.kpiLane === "marketing" ? "LinkedIn" : "Direktansprache"))}"></label></div>`;
@@ -407,14 +444,19 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
   };
 
   const renderSettings = () => {
-    renderWidgetSettings();
     document.querySelectorAll("[data-kpi-lane]").forEach((button) => {
       const active = button.dataset.kpiLane === state.kpiLane;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", String(active));
     });
     renderKpiFields();
-    const coverage = state.summary?.coverage || summarizeDashboardData(state.payload).coverage;
+    const coverage = summarizeDashboardData({
+      ...state.payload,
+      preferences: {
+        ...state.payload.preferences,
+        filters: { asset_scope: "roots_private", creator_ids: [], origin: "all" },
+      },
+    }).coverage;
     document.querySelectorAll("[data-kpi-coverage]").forEach((node) => {
       const lane = node.dataset.kpiCoverage;
       node.textContent = lane === "marketing" ? `${coverage.marketing_covered}/${coverage.marketing_total}` : `${coverage.sales_covered}/${coverage.sales_total}`;
@@ -429,8 +471,10 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       state.payload = {
         preferences: normalizeDashboardPreferences(payload.preferences),
         assets: Array.isArray(payload.assets) ? payload.assets : [],
+        creators: Array.isArray(payload.creators) ? payload.creators : [],
         performance: Array.isArray(payload.performance) ? payload.performance : [],
       };
+      state.savedPreferences = state.payload.preferences;
       state.loaded = true;
       state.realtimeStatus = announce ? "refreshing" : state.realtimeStatus;
       renderDashboards();
@@ -445,31 +489,26 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
   };
 
   const savePreferences = async (preferences) => {
-    if (widgetSave) widgetSave.disabled = true;
-    if (widgetStatus) widgetStatus.textContent = "Wird gespeichert…";
+    state.payload.preferences = normalizeDashboardPreferences(preferences);
+    renderDashboards();
     try {
       const result = await callApi("save_dashboard_preferences", { preferences: normalizeDashboardPreferences(preferences) });
       state.payload.preferences = normalizeDashboardPreferences(result.preferences);
+      state.savedPreferences = state.payload.preferences;
       renderDashboards();
-      renderSettings();
-      if (widgetStatus) widgetStatus.textContent = "Persönliches Dashboard gespeichert.";
-      toast("Dashboard-Einstellungen gespeichert.", "ok");
     } catch (error) {
-      if (widgetStatus) widgetStatus.textContent = error.message;
+      state.payload.preferences = state.savedPreferences;
+      renderDashboards();
       toast(error.message, "err");
-    } finally {
-      if (widgetSave) widgetSave.disabled = false;
     }
   };
 
-  const preferencesFromSettings = () => ({
-    period_days: Number(periodSelect?.value || state.payload.preferences.period_days),
-    widgets: [...widgetList.querySelectorAll("[data-widget-setting]")].map((row) => ({
-      id: row.dataset.widgetSetting,
-      visible: row.querySelector("[data-widget-visible]").checked,
-      size: row.querySelector("[data-widget-size]").value,
-    })),
-  });
+  const queuePreferenceSave = (preferences) => {
+    clearTimeout(state.preferenceSaveTimer);
+    state.payload.preferences = normalizeDashboardPreferences(preferences);
+    renderDashboards();
+    state.preferenceSaveTimer = setTimeout(() => void savePreferences(state.payload.preferences), 220);
+  };
 
   document.addEventListener("click", (event) => {
     const settingsButton = event.target.closest("[data-open-dashboard-settings]");
@@ -485,30 +524,44 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       renderSettings();
       return;
     }
-    const moveButton = event.target.closest("[data-widget-move]");
-    if (moveButton && widgetList) {
-      const row = moveButton.closest("[data-widget-setting]");
-      const sibling = moveButton.dataset.widgetMove === "up" ? row.previousElementSibling : row.nextElementSibling;
-      if (sibling) {
-        if (moveButton.dataset.widgetMove === "up") widgetList.insertBefore(row, sibling);
-        else widgetList.insertBefore(sibling, row);
-        const draft = preferencesFromSettings();
-        state.payload.preferences = normalizeDashboardPreferences(draft);
-        renderWidgetSettings();
-      }
+    const periodButton = event.target.closest("[data-dashboard-period]");
+    if (periodButton) {
+      queuePreferenceSave({ ...state.payload.preferences, period_days: Number(periodButton.dataset.dashboardPeriod) });
+      return;
+    }
+    const creatorButton = event.target.closest("[data-dashboard-creator]");
+    if (creatorButton) {
+      const id = creatorButton.dataset.dashboardCreator;
+      const selected = new Set(state.payload.preferences.filters.creator_ids);
+      if (id === "all") selected.clear();
+      else if (selected.has(id)) selected.delete(id);
+      else selected.add(id);
+      queuePreferenceSave({ ...state.payload.preferences, filters: { ...state.payload.preferences.filters, creator_ids: [...selected] } });
     }
   });
 
   document.addEventListener("change", (event) => {
-    const dashboardPeriod = event.target.closest("[data-dashboard-period]");
-    if (dashboardPeriod) void savePreferences({ ...state.payload.preferences, period_days: Number(dashboardPeriod.value) });
+    const dashboardScope = event.target.closest("[data-dashboard-scope]");
+    if (dashboardScope) queuePreferenceSave({ ...state.payload.preferences, filters: { ...state.payload.preferences.filters, asset_scope: dashboardScope.value } });
+    const dashboardOrigin = event.target.closest("[data-dashboard-origin]");
+    if (dashboardOrigin) queuePreferenceSave({ ...state.payload.preferences, filters: { ...state.payload.preferences.filters, origin: dashboardOrigin.value } });
     if (event.target === kpiSelect) {
       state.selectedAssetId = kpiSelect.value;
       renderKpiFields();
     }
+    if (event.target === kpiAssetFilter) {
+      state.kpiAssetFilter = kpiAssetFilter.value;
+      state.selectedAssetId = "";
+      renderKpiFields();
+    }
   });
 
-  widgetSave?.addEventListener("click", () => void savePreferences(preferencesFromSettings()));
+  kpiSearch?.addEventListener("input", () => {
+    state.kpiSearch = kpiSearch.value.trim().toLocaleLowerCase("de");
+    state.selectedAssetId = "";
+    renderKpiFields();
+  });
+
   kpiForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!state.selectedAssetId) return;
@@ -548,7 +601,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
         state.reloadTimer = setTimeout(() => void load({ announce: true }), 180);
       };
       state.channel = client.channel(`signal-layer-dashboard-${session.user.id}`)
-        .on("postgres_changes", { event: "*", schema: "signal_layer", table: "asset_performance", filter: `user_id=eq.${session.user.id}` }, scheduleReload)
+        .on("postgres_changes", { event: "*", schema: "signal_layer", table: "asset_performance" }, scheduleReload)
         .on("postgres_changes", { event: "*", schema: "signal_layer", table: "user_dashboard_settings", filter: `user_id=eq.${session.user.id}` }, scheduleReload)
         .subscribe((status) => {
           state.realtimeStatus = status === "SUBSCRIBED" ? "live" : "connecting";

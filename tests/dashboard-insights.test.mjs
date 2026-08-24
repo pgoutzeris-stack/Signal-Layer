@@ -8,22 +8,49 @@ import {
   summarizeDashboardData,
 } from "../dashboard-insights.js";
 
-test("dashboard preferences remain complete, ordered and non-empty", () => {
+test("dashboard preferences keep a fixed widget set and normalize personal filters", () => {
   const preferences = normalizeDashboardPreferences({
     period_days: 90,
-    widgets: [
-      { id: "sales_funnel", visible: false, size: "compact" },
-      { id: "top_assets", visible: false, size: "wide" },
-      { id: "sales_funnel", visible: true, size: "wide" },
-      { id: "not_real", visible: true },
-    ],
+    filters: {
+      asset_scope: "roots_private",
+      creator_ids: ["11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111", "invalid"],
+      origin: "manual",
+    },
+    widgets: [{ id: "sales_funnel", visible: false, size: "wide" }],
   });
   assert.equal(preferences.period_days, 90);
-  assert.equal(preferences.widgets[0].id, "sales_funnel");
-  assert.equal(preferences.widgets[0].visible, false);
+  assert.equal(preferences.filters.asset_scope, "roots_private");
+  assert.equal(preferences.filters.origin, "manual");
+  assert.deepEqual(preferences.filters.creator_ids, ["11111111-1111-4111-8111-111111111111"]);
   assert.equal(preferences.widgets.length, DASHBOARD_WIDGETS.length);
   assert.equal(new Set(preferences.widgets.map((item) => item.id)).size, DASHBOARD_WIDGETS.length);
-  assert.ok(preferences.widgets.some((item) => item.visible));
+  assert.ok(preferences.widgets.every((item) => item.visible));
+});
+
+test("dashboard filters ROOTS, own private, creators and manual origin before aggregation", () => {
+  const summary = summarizeDashboardData({
+    preferences: {
+      period_days: 30,
+      filters: {
+        asset_scope: "roots_private",
+        creator_ids: ["11111111-1111-4111-8111-111111111111"],
+        origin: "manual",
+      },
+    },
+    assets: [
+      { id: "roots-pano-manual", kind: "linkedin", visibility: "roots", origin: "manual", creator_id: "11111111-1111-4111-8111-111111111111" },
+      { id: "roots-richard-auto", kind: "memo", visibility: "roots", origin: "automatic", creator_id: "22222222-2222-4222-8222-222222222222" },
+      { id: "private-pano-manual", kind: "linkedin", visibility: "private", origin: "manual", creator_id: "11111111-1111-4111-8111-111111111111" },
+    ],
+    performance: [
+      { asset_id: "roots-pano-manual", lane: "marketing", updated_at: new Date().toISOString(), impressions: 100 },
+      { asset_id: "roots-richard-auto", lane: "sales", updated_at: new Date().toISOString(), sends: 10 },
+      { asset_id: "private-pano-manual", lane: "marketing", updated_at: new Date().toISOString(), impressions: 50 },
+    ],
+  });
+  assert.deepEqual(summary.assets.map((asset) => asset.id), ["roots-pano-manual", "private-pano-manual"]);
+  assert.equal(summary.marketingTotals.impressions, 150);
+  assert.equal(summary.salesTotals.sends, 0);
 });
 
 test("marketing and sales KPIs produce separate rates and personal coverage", () => {
@@ -95,16 +122,26 @@ test("frontend, Edge Function and settings use the same dashboard actions", asyn
   }
   assert.match(html, /data-panel="dashboard-kpis"/);
   assert.match(html, /id="kpi-performance-form"/);
+  assert.match(html, /id="kpi-asset-search"/);
   assert.match(html, /data-performance-dashboard="advanced"/);
   assert.match(html, /data-performance-dashboard="simple"/);
+  assert.doesNotMatch(frontend, /My Signal Performance|Dashboard Insights|> Anpassen</);
+  assert.match(frontend, /data-dashboard-period/);
+  assert.match(frontend, /data-dashboard-creator/);
 });
 
-test("dashboard tables are owner-scoped and published for Realtime", async () => {
-  const migration = await readFile(new URL("../supabase/migrations/20260824144953_add_personalized_dashboard_kpis.sql", import.meta.url), "utf8");
-  assert.match(migration, /alter table signal_layer\.asset_performance enable row level security/);
-  assert.match(migration, /using \(\(select auth\.uid\(\)\) = user_id\)/);
-  assert.match(migration, /grant select on table signal_layer\.asset_performance to authenticated/);
-  assert.doesNotMatch(migration, /grant (insert|update|delete).*authenticated/i);
-  assert.match(migration, /alter publication supabase_realtime add table signal_layer\.asset_performance/);
-  assert.match(migration, /alter publication supabase_realtime add table signal_layer\.user_dashboard_settings/);
+test("ROOTS KPI rows are shared while private rows remain owner-scoped", async () => {
+  const [migration, backend, frontend] = await Promise.all([
+    readFile(new URL("../supabase/migrations/20260824152840_share_roots_asset_performance.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(migration, /create policy "asset performance visible by asset scope"/);
+  assert.match(migration, /visibility = 'private' and \(select auth\.uid\(\)\) = user_id/);
+  assert.match(migration, /visibility = 'roots'/);
+  assert.match(migration, /asset_performance_asset_id_key unique \(asset_id\)/);
+  assert.match(backend, /dashboardAssetVisibility/);
+  assert.match(backend, /upsert\(row, \{ onConflict: "asset_id" \}\)/);
+  assert.match(frontend, /table: "asset_performance"[\s\S]{0,80}scheduleReload/);
+  assert.doesNotMatch(frontend, /table: "asset_performance", filter:/);
 });

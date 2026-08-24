@@ -459,6 +459,11 @@ type DashboardWidgetPreference = {
 };
 type DashboardPreferences = {
   period_days: 7 | 30 | 90 | 365;
+  filters: {
+    asset_scope: "roots" | "roots_private";
+    creator_ids: string[];
+    origin: "all" | "automatic" | "manual";
+  };
   widgets: DashboardWidgetPreference[];
 };
 
@@ -478,28 +483,26 @@ function normalizeDashboardPreferences(raw: unknown): DashboardPreferences {
   const periodDays = ([7, 30, 90, 365] as const).includes(period as 7 | 30 | 90 | 365)
     ? period as 7 | 30 | 90 | 365
     : 30;
-  const submitted = Array.isArray(source.widgets) ? source.widgets : [];
-  const seen = new Set<string>();
-  const widgets: DashboardWidgetPreference[] = [];
-  for (const value of submitted) {
-    const item = objectRecord(value);
-    const id = String(item.id || "") as DashboardWidgetId;
-    if (!DASHBOARD_WIDGET_IDS.includes(id) || seen.has(id)) continue;
-    seen.add(id);
-    widgets.push({
-      id,
-      visible: item.visible !== false,
-      size: item.size === "compact" ? "compact" : "wide",
-    });
-  }
-  for (const id of DASHBOARD_WIDGET_IDS) {
-    if (seen.has(id)) continue;
-    widgets.push({ id, visible: true, size: DEFAULT_DASHBOARD_WIDE.has(id) ? "wide" : "compact" });
-  }
-  // Ein leeres Dashboard ist leicht versehentlich gespeichert. Der Pulse
-  // bleibt als Rueckweg in die Konfiguration immer sichtbar.
-  if (!widgets.some((item) => item.visible)) widgets[0].visible = true;
-  return { period_days: periodDays, widgets };
+  const rawFilters = objectRecord(source.filters);
+  const assetScope = rawFilters.asset_scope === "roots_private" ? "roots_private" : "roots";
+  const origin = ["automatic", "manual"].includes(String(rawFilters.origin))
+    ? String(rawFilters.origin) as "automatic" | "manual"
+    : "all";
+  const creatorIds = Array.isArray(rawFilters.creator_ids)
+    ? [...new Set(rawFilters.creator_ids.map(String).filter(isUuid))].slice(0, 50)
+    : [];
+  // Die Widgets folgen einer stabilen, sinnvollen Reihenfolge. Nutzerbezogen
+  // gespeichert werden nur Zeitraum und Asset-Filter.
+  const widgets = DASHBOARD_WIDGET_IDS.map((id) => ({
+    id,
+    visible: true,
+    size: DEFAULT_DASHBOARD_WIDE.has(id) ? "wide" as const : "compact" as const,
+  }));
+  return {
+    period_days: periodDays,
+    filters: { asset_scope: assetScope, creator_ids: creatorIds, origin },
+    widgets,
+  };
 }
 
 function dashboardMetric(value: unknown, max = 1_000_000_000): number {
@@ -525,6 +528,16 @@ function dashboardDate(value: unknown): string | null {
 function isUuid(value: unknown): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     .test(String(value || ""));
+}
+
+function dashboardAssetVisibility(asset: Record<string, unknown>): "roots" | "private" {
+  const answers = objectRecord(asset.answers);
+  return asset.kind === "linkedin" && answers.profile === "private" ? "private" : "roots";
+}
+
+function dashboardAssetOrigin(asset: Record<string, unknown>): "automatic" | "manual" {
+  const relation = Array.isArray(asset.article) ? asset.article[0] : asset.article;
+  return objectRecord(relation).article_type === "manual" ? "manual" : "automatic";
 }
 
 const ASSET_CANCELLED_MESSAGE = "Vom Nutzer abgebrochen.";
@@ -6411,23 +6424,60 @@ Deno.serve(async (req: Request) => {
       case "get_dashboard_insights": {
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
         const admin = getAdminClient();
-        const [{ data: setting, error: settingError }, { data: assets, error: assetError }, { data: performance, error: performanceError }] = await Promise.all([
+        const [{ data: setting, error: settingError }, { data: rawAssets, error: assetError }] = await Promise.all([
           admin.schema("signal_layer").from("user_dashboard_settings")
             .select("preferences,updated_at").eq("user_id", auth.userId).maybeSingle(),
           admin.schema("signal_layer").from("generated_assets")
-            .select("id,kind,company,created_at,updated_at,status,title:payload->>title,slide_title:payload->slides->0->>title")
-            .eq("created_by", auth.userId).eq("status", "done")
-            .order("created_at", { ascending: false }).limit(250),
-          admin.schema("signal_layer").from("asset_performance")
-            .select("id,asset_id,lane,channel,published_at,impressions,reactions,comments,reposts,saves,link_clicks,sends,opens,replies,meetings,opportunities,wins,influenced_pipeline_eur,revenue_eur,note,created_at,updated_at")
-            .eq("user_id", auth.userId).order("updated_at", { ascending: false }).limit(250),
+            .select("id,kind,company,created_by,created_at,updated_at,status,answers,title:payload->>title,slide_title:payload->slides->0->>title,article:articles(article_type)")
+            .eq("status", "done").order("created_at", { ascending: false }).limit(500),
         ]);
-        const firstError = settingError || assetError || performanceError;
+        const firstError = settingError || assetError;
         if (firstError) return errorResponse(origin, firstError.message, 500);
+
+        const visibleRawAssets = ((rawAssets || []) as Record<string, unknown>[]).filter((asset) => {
+          const visibility = dashboardAssetVisibility(asset);
+          return visibility === "roots" || String(asset.created_by || "") === auth.userId;
+        });
+        const assetIds = visibleRawAssets.map((asset) => String(asset.id)).filter(isUuid);
+        const creatorIds = [...new Set(visibleRawAssets.map((asset) => String(asset.created_by || "")).filter(isUuid))];
+        const [{ data: profiles, error: profileError }, { data: performance, error: performanceError }] = await Promise.all([
+          creatorIds.length
+            ? admin.schema("users").from("profiles").select("id,full_name,kuerzel").in("id", creatorIds)
+            : Promise.resolve({ data: [], error: null }),
+          assetIds.length
+            ? admin.schema("signal_layer").from("asset_performance")
+              .select("id,asset_id,user_id,updated_by,visibility,lane,channel,published_at,impressions,reactions,comments,reposts,saves,link_clicks,sends,opens,replies,meetings,opportunities,wins,influenced_pipeline_eur,revenue_eur,note,created_at,updated_at")
+              .in("asset_id", assetIds).order("updated_at", { ascending: false }).limit(500)
+            : Promise.resolve({ data: [], error: null }),
+        ]);
+        const relatedError = profileError || performanceError;
+        if (relatedError) return errorResponse(origin, relatedError.message, 500);
+        const profileById = new Map((profiles || []).map((profile) => [String(profile.id), profile]));
+        const assets = visibleRawAssets.map((asset) => {
+          const creatorId = String(asset.created_by || "");
+          const profile = profileById.get(creatorId);
+          const creatorName = String(profile?.full_name || profile?.kuerzel || "ROOTS Team").trim();
+          return {
+            ...asset,
+            article: undefined,
+            answers: undefined,
+            visibility: dashboardAssetVisibility(asset),
+            origin: dashboardAssetOrigin(asset),
+            creator_id: creatorId,
+            creator_name: creatorName,
+            creator_short_name: creatorName.split(/\s+/)[0] || "ROOTS",
+          };
+        });
+        const creators = [...new Map(assets.map((asset) => [asset.creator_id, {
+          id: asset.creator_id,
+          name: asset.creator_name,
+          short_name: asset.creator_short_name,
+        }])).values()].filter((creator) => isUuid(creator.id)).sort((a, b) => a.name.localeCompare(b.name, "de"));
         return corsResponse(origin, {
           preferences: normalizeDashboardPreferences(setting?.preferences),
           preferences_updated_at: setting?.updated_at || null,
-          assets: assets || [],
+          assets,
+          creators,
           performance: performance || [],
           realtime_tables: ["user_dashboard_settings", "asset_performance"],
         });
@@ -6450,17 +6500,20 @@ Deno.serve(async (req: Request) => {
         if (!isUuid(assetId)) return errorResponse(origin, "Ungültiges Asset");
         const admin = getAdminClient();
         const { data: asset, error: assetError } = await admin.schema("signal_layer")
-          .from("generated_assets").select("id,kind,status,created_by")
-          .eq("id", assetId).eq("created_by", auth.userId).maybeSingle();
+          .from("generated_assets").select("id,kind,status,created_by,answers")
+          .eq("id", assetId).maybeSingle();
         if (assetError) return errorResponse(origin, assetError.message, 500);
-        if (!asset || asset.status !== "done") {
-          return errorResponse(origin, "Nur eigene, fertig erzeugte Assets können KPIs erhalten.", 404);
+        const visibility = asset ? dashboardAssetVisibility(asset as Record<string, unknown>) : "private";
+        if (!asset || asset.status !== "done" || (visibility === "private" && asset.created_by !== auth.userId)) {
+          return errorResponse(origin, "Dieses Asset ist nicht sichtbar oder noch nicht fertig erzeugt.", 404);
         }
         const lane = asset.kind === "memo" ? "sales" : "marketing";
         const now = new Date().toISOString();
         const row = {
           asset_id: assetId,
-          user_id: auth.userId,
+          user_id: visibility === "private" ? auth.userId : (asset.created_by || auth.userId),
+          updated_by: auth.userId,
+          visibility,
           lane,
           channel: String(body.channel || (lane === "marketing" ? "linkedin" : "direkt")).trim().slice(0, 40) || "direkt",
           published_at: dashboardDate(body.published_at),
@@ -6482,7 +6535,7 @@ Deno.serve(async (req: Request) => {
           updated_at: now,
         };
         const { data: saved, error } = await admin.schema("signal_layer")
-          .from("asset_performance").upsert(row, { onConflict: "user_id,asset_id" })
+          .from("asset_performance").upsert(row, { onConflict: "asset_id" })
           .select("*").single();
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { performance: saved });
@@ -6492,9 +6545,18 @@ Deno.serve(async (req: Request) => {
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
         const assetId = String(body.asset_id || "");
         if (!isUuid(assetId)) return errorResponse(origin, "Ungültiges Asset");
-        const { error } = await getAdminClient().schema("signal_layer")
+        const admin = getAdminClient();
+        const { data: asset, error: assetError } = await admin.schema("signal_layer")
+          .from("generated_assets").select("id,status,created_by,kind,answers")
+          .eq("id", assetId).maybeSingle();
+        if (assetError) return errorResponse(origin, assetError.message, 500);
+        const visibility = asset ? dashboardAssetVisibility(asset as Record<string, unknown>) : "private";
+        if (!asset || asset.status !== "done" || (visibility === "private" && asset.created_by !== auth.userId)) {
+          return errorResponse(origin, "Dieses Asset ist nicht sichtbar oder noch nicht fertig erzeugt.", 404);
+        }
+        const { error } = await admin.schema("signal_layer")
           .from("asset_performance").delete()
-          .eq("asset_id", assetId).eq("user_id", auth.userId);
+          .eq("asset_id", assetId);
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { ok: true, asset_id: assetId });
       }
