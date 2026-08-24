@@ -9,7 +9,7 @@ import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleS
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
 import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260824-0305";
 import { openManualSignal } from "./manual-signal.js?v=20260824-0305";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260824-1728";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260824-1746";
 
 let sb = null;
 let sources = [];

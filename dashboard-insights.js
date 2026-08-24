@@ -389,7 +389,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     for (const host of hosts) {
       const preferences = state.summary.preferences;
       const selectedCreators = new Set(preferences.filters.creator_ids);
-      const creatorButtons = state.payload.creators.map((creator) => `<button type="button" data-dashboard-creator="${escapeHtml(creator.id)}" class="${selectedCreators.has(creator.id) ? "is-active" : ""}" aria-pressed="${selectedCreators.has(creator.id)}">${escapeHtml(creator.short_name || creator.name)}</button>`).join("");
+      const creatorButtons = state.payload.creators.map((creator) => `<button type="button" data-dashboard-creator="${escapeHtml(creator.id)}" class="${selectedCreators.has(creator.id) ? "is-active" : ""}" aria-pressed="${selectedCreators.has(creator.id)}">${escapeHtml(creator.short_name || creator.name)} <small>${numberValue(creator.asset_count)}</small></button>`).join("");
       host.innerHTML = `<div class="pi-toolbar">
           <div><h2>Performance Dashboard</h2><p>ROOTS-Performance und eigene private Assets · persönlich gefiltert und in Echtzeit synchronisiert.</p></div>
           <span class="pi-live-state" data-dashboard-live-label>Verbinde…</span>

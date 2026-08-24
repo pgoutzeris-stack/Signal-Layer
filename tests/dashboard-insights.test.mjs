@@ -141,6 +141,8 @@ test("ROOTS KPI rows are shared while private rows remain owner-scoped", async (
   assert.match(migration, /visibility = 'roots'/);
   assert.match(migration, /asset_performance_asset_id_key unique \(asset_id\)/);
   assert.match(backend, /dashboardAssetVisibility/);
+  assert.match(backend, /"rod", "jannik", "richard", "panagiotis", "pano"/);
+  assert.match(backend, /startsWith\("claude-debug@"\)/);
   assert.match(backend, /upsert\(row, \{ onConflict: "asset_id" \}\)/);
   assert.match(frontend, /table: "asset_performance"[\s\S]{0,80}scheduleReload/);
   assert.doesNotMatch(frontend, /table: "asset_performance", filter:/);

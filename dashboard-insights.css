@@ -20,6 +20,7 @@
 .pi-period-buttons button.is-active { color: #fff; background: var(--brand); box-shadow: 0 3px 8px rgba(32,110,251,.2); }
 .pi-creator-buttons button { min-height: 32px; border: 1px solid var(--line); background: var(--bg); }
 .pi-creator-buttons button.is-active { color: var(--brand-dark); border-color: #93c5fd; background: var(--brand-light); }
+.pi-creator-buttons button small { margin-left: 3px; color: inherit; font-size: .48rem; opacity: .72; }
 .pi-filter-result { min-height: 47px; padding: 7px 11px; display: grid; place-content: center; border-left: 1px solid var(--line); text-align: center; }
 .pi-filter-result b { font-size: .86rem; }
 .pi-filter-result span { color: var(--muted); font-size: .5rem; white-space: nowrap; }

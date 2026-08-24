@@ -540,6 +540,13 @@ function dashboardAssetOrigin(asset: Record<string, unknown>): "automatic" | "ma
   return objectRecord(relation).article_type === "manual" ? "manual" : "automatic";
 }
 
+const DASHBOARD_TEAM_CREATORS = new Set(["rod", "jannik", "richard", "panagiotis", "pano"]);
+
+function dashboardCreatorShortName(value: unknown): string {
+  const firstName = String(value || "ROOTS").trim().split(/\s+/)[0] || "ROOTS";
+  return firstName.toLocaleLowerCase("de") === "panagiotis" ? "Pano" : firstName;
+}
+
 const ASSET_CANCELLED_MESSAGE = "Vom Nutzer abgebrochen.";
 
 async function notifyGeneratedAssetSettled(row: Record<string, unknown>): Promise<void> {
@@ -6424,35 +6431,32 @@ Deno.serve(async (req: Request) => {
       case "get_dashboard_insights": {
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
         const admin = getAdminClient();
-        const [{ data: setting, error: settingError }, { data: rawAssets, error: assetError }] = await Promise.all([
+        const [{ data: setting, error: settingError }, { data: rawAssets, error: assetError }, { data: profiles, error: profileError }] = await Promise.all([
           admin.schema("signal_layer").from("user_dashboard_settings")
             .select("preferences,updated_at").eq("user_id", auth.userId).maybeSingle(),
           admin.schema("signal_layer").from("generated_assets")
             .select("id,kind,company,created_by,created_at,updated_at,status,answers,title:payload->>title,slide_title:payload->slides->0->>title,article:articles(article_type)")
             .eq("status", "done").order("created_at", { ascending: false }).limit(500),
+          admin.schema("users").from("profiles").select("id,email,full_name,kuerzel").limit(250),
         ]);
-        const firstError = settingError || assetError;
+        const firstError = settingError || assetError || profileError;
         if (firstError) return errorResponse(origin, firstError.message, 500);
 
+        const profileById = new Map((profiles || []).map((profile) => [String(profile.id), profile]));
         const visibleRawAssets = ((rawAssets || []) as Record<string, unknown>[]).filter((asset) => {
           const visibility = dashboardAssetVisibility(asset);
-          return visibility === "roots" || String(asset.created_by || "") === auth.userId;
+          const creatorId = String(asset.created_by || "");
+          const creator = profileById.get(creatorId);
+          const debugAccount = String(creator?.email || "").toLocaleLowerCase("de").startsWith("claude-debug@");
+          return !debugAccount && (visibility === "roots" || creatorId === auth.userId);
         });
         const assetIds = visibleRawAssets.map((asset) => String(asset.id)).filter(isUuid);
-        const creatorIds = [...new Set(visibleRawAssets.map((asset) => String(asset.created_by || "")).filter(isUuid))];
-        const [{ data: profiles, error: profileError }, { data: performance, error: performanceError }] = await Promise.all([
-          creatorIds.length
-            ? admin.schema("users").from("profiles").select("id,full_name,kuerzel").in("id", creatorIds)
-            : Promise.resolve({ data: [], error: null }),
-          assetIds.length
-            ? admin.schema("signal_layer").from("asset_performance")
-              .select("id,asset_id,user_id,updated_by,visibility,lane,channel,published_at,impressions,reactions,comments,reposts,saves,link_clicks,sends,opens,replies,meetings,opportunities,wins,influenced_pipeline_eur,revenue_eur,note,created_at,updated_at")
-              .in("asset_id", assetIds).order("updated_at", { ascending: false }).limit(500)
-            : Promise.resolve({ data: [], error: null }),
-        ]);
-        const relatedError = profileError || performanceError;
-        if (relatedError) return errorResponse(origin, relatedError.message, 500);
-        const profileById = new Map((profiles || []).map((profile) => [String(profile.id), profile]));
+        const { data: performance, error: performanceError } = assetIds.length
+          ? await admin.schema("signal_layer").from("asset_performance")
+            .select("id,asset_id,user_id,updated_by,visibility,lane,channel,published_at,impressions,reactions,comments,reposts,saves,link_clicks,sends,opens,replies,meetings,opportunities,wins,influenced_pipeline_eur,revenue_eur,note,created_at,updated_at")
+            .in("asset_id", assetIds).order("updated_at", { ascending: false }).limit(500)
+          : { data: [], error: null };
+        if (performanceError) return errorResponse(origin, performanceError.message, 500);
         const assets = visibleRawAssets.map((asset) => {
           const creatorId = String(asset.created_by || "");
           const profile = profileById.get(creatorId);
@@ -6465,14 +6469,21 @@ Deno.serve(async (req: Request) => {
             origin: dashboardAssetOrigin(asset),
             creator_id: creatorId,
             creator_name: creatorName,
-            creator_short_name: creatorName.split(/\s+/)[0] || "ROOTS",
+            creator_short_name: dashboardCreatorShortName(creatorName),
           };
         });
-        const creators = [...new Map(assets.map((asset) => [asset.creator_id, {
-          id: asset.creator_id,
-          name: asset.creator_name,
-          short_name: asset.creator_short_name,
-        }])).values()].filter((creator) => isUuid(creator.id)).sort((a, b) => a.name.localeCompare(b.name, "de"));
+        const creatorCounts = new Map<string, number>();
+        for (const asset of assets) creatorCounts.set(asset.creator_id, (creatorCounts.get(asset.creator_id) || 0) + 1);
+        const creators = (profiles || []).filter((profile) => {
+          const id = String(profile.id || "");
+          const shortName = dashboardCreatorShortName(profile.full_name || profile.kuerzel).toLocaleLowerCase("de");
+          return !String(profile.email || "").toLocaleLowerCase("de").startsWith("claude-debug@")
+            && (creatorCounts.has(id) || DASHBOARD_TEAM_CREATORS.has(shortName));
+        }).map((profile) => {
+          const id = String(profile.id || "");
+          const name = String(profile.full_name || profile.kuerzel || "ROOTS Team").trim();
+          return { id, name, short_name: dashboardCreatorShortName(name), asset_count: creatorCounts.get(id) || 0 };
+        }).filter((creator) => isUuid(creator.id)).sort((a, b) => a.name.localeCompare(b.name, "de"));
         return corsResponse(origin, {
           preferences: normalizeDashboardPreferences(setting?.preferences),
           preferences_updated_at: setting?.updated_at || null,
