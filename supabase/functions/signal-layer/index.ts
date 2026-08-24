@@ -438,6 +438,95 @@ export const DESIGN_TEMPLATE_MISSING =
 export const TONE_OF_VOICE_MISSING =
   "Für „KI + Tone of Voice“ ist noch kein Tonfall hinterlegt. Bitte in den Einstellungen unter Tone of Voice konfigurieren.";
 
+const DASHBOARD_WIDGET_IDS = [
+  "performance_pulse",
+  "marketing_performance",
+  "marketing_funnel",
+  "sales_pipeline",
+  "sales_funnel",
+  "performance_trend",
+  "top_assets",
+  "smart_insights",
+  "data_quality",
+  "recent_activity",
+] as const;
+
+type DashboardWidgetId = typeof DASHBOARD_WIDGET_IDS[number];
+type DashboardWidgetPreference = {
+  id: DashboardWidgetId;
+  visible: boolean;
+  size: "compact" | "wide";
+};
+type DashboardPreferences = {
+  period_days: 7 | 30 | 90 | 365;
+  widgets: DashboardWidgetPreference[];
+};
+
+const DEFAULT_DASHBOARD_WIDE = new Set<DashboardWidgetId>([
+  "performance_pulse", "performance_trend", "top_assets", "smart_insights",
+]);
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function normalizeDashboardPreferences(raw: unknown): DashboardPreferences {
+  const source = objectRecord(raw);
+  const period = Number(source.period_days);
+  const periodDays = ([7, 30, 90, 365] as const).includes(period as 7 | 30 | 90 | 365)
+    ? period as 7 | 30 | 90 | 365
+    : 30;
+  const submitted = Array.isArray(source.widgets) ? source.widgets : [];
+  const seen = new Set<string>();
+  const widgets: DashboardWidgetPreference[] = [];
+  for (const value of submitted) {
+    const item = objectRecord(value);
+    const id = String(item.id || "") as DashboardWidgetId;
+    if (!DASHBOARD_WIDGET_IDS.includes(id) || seen.has(id)) continue;
+    seen.add(id);
+    widgets.push({
+      id,
+      visible: item.visible !== false,
+      size: item.size === "compact" ? "compact" : "wide",
+    });
+  }
+  for (const id of DASHBOARD_WIDGET_IDS) {
+    if (seen.has(id)) continue;
+    widgets.push({ id, visible: true, size: DEFAULT_DASHBOARD_WIDE.has(id) ? "wide" : "compact" });
+  }
+  // Ein leeres Dashboard ist leicht versehentlich gespeichert. Der Pulse
+  // bleibt als Rueckweg in die Konfiguration immer sichtbar.
+  if (!widgets.some((item) => item.visible)) widgets[0].visible = true;
+  return { period_days: periodDays, widgets };
+}
+
+function dashboardMetric(value: unknown, max = 1_000_000_000): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.min(max, Math.round(parsed));
+}
+
+function dashboardMoney(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.min(1_000_000_000_000, Math.round(parsed * 100) / 100);
+}
+
+function dashboardDate(value: unknown): string | null {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const timestamp = Date.parse(text);
+  if (!Number.isFinite(timestamp)) return null;
+  return new Date(timestamp).toISOString();
+}
+
+function isUuid(value: unknown): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test(String(value || ""));
+}
+
 const ASSET_CANCELLED_MESSAGE = "Vom Nutzer abgebrochen.";
 
 async function notifyGeneratedAssetSettled(row: Record<string, unknown>): Promise<void> {
@@ -520,6 +609,8 @@ async function settleAssetError(
 }
 
 const SETTINGS_ACTIONS = new Set([
+  "get_dashboard_insights", "save_dashboard_preferences",
+  "save_asset_performance", "delete_asset_performance",
   "update_pipeline_settings",
   "add_source", "update_source", "set_source_login", "delete_source",
   "update_taxonomy",
@@ -6315,6 +6406,97 @@ Deno.serve(async (req: Request) => {
           .select("id,classification_status,ai_model,reviewer_model,classified_at").eq("id", articleId).single();
         if (updatedError) return errorResponse(origin, updatedError.message, 500);
         return corsResponse(origin, { ok: true, article: updated });
+      }
+
+      case "get_dashboard_insights": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const admin = getAdminClient();
+        const [{ data: setting, error: settingError }, { data: assets, error: assetError }, { data: performance, error: performanceError }] = await Promise.all([
+          admin.schema("signal_layer").from("user_dashboard_settings")
+            .select("preferences,updated_at").eq("user_id", auth.userId).maybeSingle(),
+          admin.schema("signal_layer").from("generated_assets")
+            .select("id,kind,company,created_at,updated_at,status,title:payload->>title,slide_title:payload->slides->0->>title")
+            .eq("created_by", auth.userId).eq("status", "done")
+            .order("created_at", { ascending: false }).limit(250),
+          admin.schema("signal_layer").from("asset_performance")
+            .select("id,asset_id,lane,channel,published_at,impressions,reactions,comments,reposts,saves,link_clicks,sends,opens,replies,meetings,opportunities,wins,influenced_pipeline_eur,revenue_eur,note,created_at,updated_at")
+            .eq("user_id", auth.userId).order("updated_at", { ascending: false }).limit(250),
+        ]);
+        const firstError = settingError || assetError || performanceError;
+        if (firstError) return errorResponse(origin, firstError.message, 500);
+        return corsResponse(origin, {
+          preferences: normalizeDashboardPreferences(setting?.preferences),
+          preferences_updated_at: setting?.updated_at || null,
+          assets: assets || [],
+          performance: performance || [],
+          realtime_tables: ["user_dashboard_settings", "asset_performance"],
+        });
+      }
+
+      case "save_dashboard_preferences": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const preferences = normalizeDashboardPreferences(body.preferences);
+        const updatedAt = new Date().toISOString();
+        const { error } = await getAdminClient().schema("signal_layer")
+          .from("user_dashboard_settings")
+          .upsert({ user_id: auth.userId, preferences, updated_at: updatedAt }, { onConflict: "user_id" });
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { preferences, updated_at: updatedAt });
+      }
+
+      case "save_asset_performance": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const assetId = String(body.asset_id || "");
+        if (!isUuid(assetId)) return errorResponse(origin, "Ungültiges Asset");
+        const admin = getAdminClient();
+        const { data: asset, error: assetError } = await admin.schema("signal_layer")
+          .from("generated_assets").select("id,kind,status,created_by")
+          .eq("id", assetId).eq("created_by", auth.userId).maybeSingle();
+        if (assetError) return errorResponse(origin, assetError.message, 500);
+        if (!asset || asset.status !== "done") {
+          return errorResponse(origin, "Nur eigene, fertig erzeugte Assets können KPIs erhalten.", 404);
+        }
+        const lane = asset.kind === "memo" ? "sales" : "marketing";
+        const now = new Date().toISOString();
+        const row = {
+          asset_id: assetId,
+          user_id: auth.userId,
+          lane,
+          channel: String(body.channel || (lane === "marketing" ? "linkedin" : "direkt")).trim().slice(0, 40) || "direkt",
+          published_at: dashboardDate(body.published_at),
+          impressions: lane === "marketing" ? dashboardMetric(body.impressions) : 0,
+          reactions: lane === "marketing" ? dashboardMetric(body.reactions) : 0,
+          comments: lane === "marketing" ? dashboardMetric(body.comments) : 0,
+          reposts: lane === "marketing" ? dashboardMetric(body.reposts) : 0,
+          saves: lane === "marketing" ? dashboardMetric(body.saves) : 0,
+          link_clicks: lane === "marketing" ? dashboardMetric(body.link_clicks) : 0,
+          sends: lane === "sales" ? dashboardMetric(body.sends) : 0,
+          opens: lane === "sales" ? dashboardMetric(body.opens) : 0,
+          replies: lane === "sales" ? dashboardMetric(body.replies) : 0,
+          meetings: lane === "sales" ? dashboardMetric(body.meetings) : 0,
+          opportunities: lane === "sales" ? dashboardMetric(body.opportunities) : 0,
+          wins: lane === "sales" ? dashboardMetric(body.wins) : 0,
+          influenced_pipeline_eur: lane === "sales" ? dashboardMoney(body.influenced_pipeline_eur) : 0,
+          revenue_eur: lane === "sales" ? dashboardMoney(body.revenue_eur) : 0,
+          note: String(body.note || "").trim().slice(0, 1000),
+          updated_at: now,
+        };
+        const { data: saved, error } = await admin.schema("signal_layer")
+          .from("asset_performance").upsert(row, { onConflict: "user_id,asset_id" })
+          .select("*").single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { performance: saved });
+      }
+
+      case "delete_asset_performance": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const assetId = String(body.asset_id || "");
+        if (!isUuid(assetId)) return errorResponse(origin, "Ungültiges Asset");
+        const { error } = await getAdminClient().schema("signal_layer")
+          .from("asset_performance").delete()
+          .eq("asset_id", assetId).eq("user_id", auth.userId);
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { ok: true, asset_id: assetId });
       }
 
       // Der Tonfall gehoert dem angemeldeten Nutzer. Ohne Anmeldung gibt es

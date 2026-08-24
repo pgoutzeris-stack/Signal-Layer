@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/circular-std">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="./dashboard-insights.css?v=20260824-1449">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
 <script defer src="https://pgoutzeris-stack.github.io/ROOTS_Intranet/roots-user-bridge.js?v=20260804-auth-dedupe-v1"></script>
 <style>
@@ -2083,6 +2084,7 @@
 
         <section class="app-view show" id="view-dashboard">
           <div class="view-header"><div><h2>Dashboard</h2></div></div>
+          <div class="pi-dashboard" data-performance-dashboard="advanced"></div>
           <div class="overview-grid">
             <article class="overview-card"><i class="fa-solid fa-shield-halved"></i><span>Zuverlässige Signale</span><b id="dashboard-reliable-count">–</b></article>
             <article class="overview-card"><i class="fa-solid fa-user-check"></i><span>Manuelle Prüfung</span><b id="dashboard-review-count">–</b></article>
@@ -2158,6 +2160,7 @@
         <!-- Einfacher Modus: Dashboard -->
         <section class="app-view" id="view-simple-dashboard">
           <div class="view-header"><div><h2>Dashboard</h2></div></div>
+          <div class="pi-dashboard" data-performance-dashboard="simple"></div>
           <div class="overview-grid">
             <article class="overview-card"><i class="fa-solid fa-bullhorn"></i><span>Marketing-Signale</span><b id="simple-dash-marketing">–</b></article>
             <article class="overview-card"><i class="fa-solid fa-chart-line"></i><span>Sales-Signale</span><b id="simple-dash-sales">–</b></article>
@@ -2284,6 +2287,9 @@
         <div class="settings-nav-item" data-panel="operations">
           <i class="fa-solid fa-wave-square"></i> Kosten &amp; Betrieb
         </div>
+        <div class="settings-nav-item" data-panel="dashboard-kpis">
+          <i class="fa-solid fa-chart-pie"></i> Dashboard &amp; KPIs
+        </div>
         <div class="settings-nav-item" data-panel="tone">
           <i class="fa-solid fa-feather"></i> Tone of Voice
         </div>
@@ -2365,6 +2371,33 @@
 
         <div class="settings-panel pipeline-panel" id="settings-panel-operations">
           <div class="pipeline-scroll"><div class="pipeline-section-head"><span>Laufender Betrieb</span><h3>Kosten &amp; Betrieb</h3><p>Kosten im Blick behalten und festlegen, welche KI-Modelle neue Artikel prüfen.</p></div><div id="operations-content"></div></div>
+        </div>
+
+        <div class="settings-panel pipeline-panel" id="settings-panel-dashboard-kpis">
+          <div class="pipeline-scroll">
+            <div class="pipeline-section-head"><span>Nur für Ihr Konto</span><h3>Dashboard &amp; Asset-KPIs</h3><p>Ordnen Sie Ihre Widgets und verknüpfen Sie veröffentlichte Marketing-Posts oder versendete Sales-Assets mit ihrer echten Performance. Änderungen werden sofort im persönlichen Dashboard sichtbar.</p></div>
+            <div class="pi-dashboard-settings">
+              <section class="pi-settings-block">
+                <div class="pi-settings-block-head"><div><h4>Persönliches Dashboard</h4><p>Sichtbarkeit, Reihenfolge und Breite werden nutzerbezogen in Supabase gespeichert.</p></div><label class="pi-kpi-field"><span>Standard-Zeitraum</span><select class="toolbar-select" id="dashboard-settings-period"><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="90">90 Tage</option><option value="365">12 Monate</option></select></label></div>
+                <div class="pi-settings-block-body">
+                  <div class="pi-widget-settings" id="dashboard-widget-list"></div>
+                  <div class="pi-settings-savebar"><span id="dashboard-settings-status">Ihre Auswahl gilt in Simple und Advanced.</span><button type="button" class="btn-primary" id="btn-dashboard-settings-save"><i class="fa-regular fa-floppy-disk"></i> Dashboard speichern</button></div>
+                </div>
+              </section>
+
+              <section class="pi-settings-block">
+                <div class="pi-settings-block-head"><div><h4>Performance erfassen</h4><p>Marketing nutzt Posting-KPIs. Sales bildet die Wirkung von Executive Memos bis zu Pipeline und Umsatz ab.</p></div><div class="pi-kpi-tabs" role="group" aria-label="Asset-Typ"><button type="button" class="is-active" data-kpi-lane="marketing" aria-pressed="true"><i class="fa-solid fa-bullhorn"></i> Marketing <em data-kpi-coverage="marketing">0/0</em></button><button type="button" data-kpi-lane="sales" aria-pressed="false"><i class="fa-solid fa-file-lines"></i> Sales <em data-kpi-coverage="sales">0/0</em></button></div></div>
+                <div class="pi-settings-block-body">
+                  <div class="pi-kpi-picker"><label for="kpi-asset-select">Fertiger Asset-Entwurf</label><select class="toolbar-select" id="kpi-asset-select"><option>Wird geladen…</option></select></div>
+                  <div class="pi-kpi-empty" id="kpi-performance-empty" hidden>Für diesen Bereich gibt es noch kein fertig erzeugtes Asset.</div>
+                  <form class="pi-kpi-form" id="kpi-performance-form" hidden>
+                    <div id="kpi-performance-fields"></div>
+                    <div class="pi-kpi-actions"><button type="button" class="btn-secondary" id="btn-kpi-delete" hidden><i class="fa-regular fa-trash-can"></i> KPI-Werte entfernen</button><button type="submit" class="btn-primary"><i class="fa-regular fa-floppy-disk"></i> KPI-Werte speichern</button></div>
+                  </form>
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
 
         <div class="settings-panel pipeline-panel" id="settings-panel-simple-pipeline">
@@ -2482,7 +2515,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260824-0305';
+  import { initApp } from './app.js?v=20260824-1449';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

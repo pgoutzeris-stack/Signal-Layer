@@ -9,6 +9,7 @@ import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleS
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
 import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260824-0305";
 import { openManualSignal } from "./manual-signal.js?v=20260824-0305";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260824-1449";
 
 let sb = null;
 let sources = [];
@@ -4451,7 +4452,7 @@ function bindUi() {
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
       document.getElementById(`settings-panel-${panel}`)?.classList.add("show");
       // Der Tonfall haengt nicht an der Pipeline-Konfiguration.
-      if (panel !== "apify" && panel !== "tone" && panel !== "design") void loadPipelineSettings().catch((error) => toast(error.message, "err"));
+      if (!new Set(["apify", "tone", "design", "dashboard-kpis"]).has(panel)) void loadPipelineSettings().catch((error) => toast(error.message, "err"));
       if (panel === "simple-pipeline") {
         void loadPipelineSettings()
           .then(() => renderSimpleSettings())
@@ -4699,6 +4700,7 @@ export function initApp(client) {
       openArticleDetail, technicalAuditPill,
       articleTypeLabels: ARTICLE_TYPE_LABELS, viewState: simpleViewState,
     });
+    initPerformanceDashboard({ client: sb, callApi, toast, openSettingsPanel, escapeHtml });
     applyPipelineMode(storedPipelineMode(), { persist: false });
   }
   void loadLastRun();
