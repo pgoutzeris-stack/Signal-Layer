@@ -53,7 +53,13 @@ export type CompanyProfileKpi = {
   source_url?: string;
   source_title?: string;
 };
-export type CompanyProfileSection = { title: string; items: string[] };
+/**
+ * "open" nennt, was auf genau dieser Karte offen blieb. Frueher stand das als
+ * ein Satz unter dem ganzen Steckbrief ("Nicht belegt: Mediabudget,
+ * Agenturbeziehungen, Personalwechsel") - dort war nicht erkennbar, welche
+ * Karte gemeint ist, und der Satz las sich wie ein Mangel des ganzen Profils.
+ */
+export type CompanyProfileSection = { title: string; items: string[]; open?: string };
 export type CompanyProfileSource = { title: string; uri: string };
 export type CompanyProfileLogoSourceKind =
   | "official_media"
@@ -163,9 +169,8 @@ danach, ohne Code-Zäune:
     {"label": "Marketingbudget", "value": "ca. 120 Mio. €", "scope": "de", "as_of": "2025", "hint": "geschätzt aus Branchenanteil 3-5% vom Umsatz", "estimated": true}
   ],
   "sections": [
-    {"title": "Allgemeine Unternehmensdaten", "items": ["Hauptsitz: ...", "Gegründet: ..."]}
-  ],
-  "unverified_note": "Was du NICHT belegen konntest, in einem Satz. Leer lassen, wenn alles belegt ist."
+    {"title": "Allgemeine Unternehmensdaten", "items": ["Hauptsitz: ...", "Gegründet: ..."], "open": "Mediabudget nicht belegt"}
+  ]
 }
 
 REGELN, sie entscheiden über die Brauchbarkeit:
@@ -205,9 +210,13 @@ REGELN, sie entscheiden über die Brauchbarkeit:
    Quelle und Datei müssen zum aktuellen Unternehmen passen. Bei Worldvectorlogo
    müssen Seiten- und SVG-Slug den exakten Unternehmensnamen eindeutig abbilden.
 5. In "sections" stehen nur belegte Angaben. Eine geschätzte Zahl gehört
-   ausschliesslich in "kpis", dort mit "estimated": true. In "unverified_note"
-   nennst du in einem Satz, welche Angaben geschätzt oder offen sind. Erfinde
-   niemals eine Quelle.
+   ausschliesslich in "kpis", dort mit "estimated": true. Erfinde niemals eine
+   Quelle.
+5a. Konntest du auf einer Karte etwas Naheliegendes nicht belegen - etwa
+   Agenturbeziehungen oder Personalwechsel - schreibst du es in "open" dieser
+   Karte, in maximal 12 Wörtern und ohne ganzen Satz, zum Beispiel
+   "Agenturbeziehungen und Personalwechsel nicht belegt". Ist auf einer Karte
+   nichts offen, lässt du "open" weg. Kein Sammelhinweis über das ganze Profil.
 6. Deutsch, knapp, keine Werbesprache. Kein Satz, der nur Offensichtliches sagt.
 7. Keine Zeilenumbrueche innerhalb der Zeichenketten - jeder Eintrag ist eine Zeile.`;
 }
@@ -346,14 +355,14 @@ function normalizeKpis(raw: unknown): CompanyProfileKpi[] {
 
 function normalizeSections(raw: unknown): CompanyProfileSection[] {
   if (!Array.isArray(raw)) return [];
-  const byTitle = new Map<string, string[]>();
+  const byTitle = new Map<string, { items: string[]; open?: string }>();
   for (const entry of raw) {
     const item = entry as Record<string, unknown>;
     const title = clean(item.title, 80);
     const items = Array.isArray(item.items)
       ? item.items.map((line) => clean(line, 320)).filter(Boolean).slice(0, 8)
       : [];
-    if (title && items.length) byTitle.set(title, items);
+    if (title && items.length) byTitle.set(title, { items, open: clean(item.open, 120) || undefined });
   }
   // Reihenfolge erzwingen, damit die Ansicht nicht vom Modell abhaengt.
   const ordered: CompanyProfileSection[] = [];
@@ -362,7 +371,8 @@ function normalizeSections(raw: unknown): CompanyProfileSection[] {
       key.toLowerCase().startsWith(wanted.toLowerCase().slice(0, 12))
     );
     if (match) {
-      ordered.push({ title: wanted, items: byTitle.get(match)! });
+      const treffer = byTitle.get(match)!;
+      ordered.push({ title: wanted, items: treffer.items, open: treffer.open });
       byTitle.delete(match);
     }
   }

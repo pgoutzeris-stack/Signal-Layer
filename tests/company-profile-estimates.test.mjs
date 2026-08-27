@@ -62,3 +62,16 @@ test("Kachel und Hinweis nutzen dieselbe graue Auszeichnung, hell und dunkel", (
   assert.match(styles, /\.cp-note \{[^}]*dashed var\(--status-border\)[^}]*var\(--muted\)/);
   assert.doesNotMatch(styles, /\.cp-note \{[^}]*#fffbeb/);
 });
+
+test("offene Punkte stehen an ihrer Karte, nicht als Sammelhinweis", () => {
+  // "Nicht belegt: Mediabudget, Agenturbeziehungen, Personalwechsel" unter dem
+  // ganzen Steckbrief liess offen, welche Karte gemeint war.
+  assert.doesNotMatch(frontend, /profile\.unverified_note/);
+  assert.match(frontend, /sec\.open \?/);
+  assert.match(frontend, /cp-note cp-note--sec/);
+  assert.match(styles, /\.cp-note--sec \{/);
+  // Der Nachweis bleibt Pflicht: die Karte nennt, was offen ist, in Stichworten.
+  assert.match(profileModule, /Kein Sammelhinweis über das ganze Profil/);
+  assert.match(profileModule, /open\?: string/);
+  assert.match(profileModule, /open: clean\(item\.open, 120\)/);
+});

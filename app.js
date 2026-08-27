@@ -3778,11 +3778,11 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
     ${sections.length || triggerCopy ? `<div class="cp-grid">${sections.map((sec) => `<section class="cp-sec">
       <h3>${escapeHtml(sec.title || "")}</h3>
       <ul>${(Array.isArray(sec.items) ? sec.items : []).map((item) => `<li>${escapeText(item)}</li>`).join("")}</ul>
+      ${sec.open ? `<p class="cp-note cp-note--sec"><i class="fa-solid fa-circle-question"></i> Nicht belegt: ${escapeText(sec.open)}</p>` : ""}
     </section>`).join("")}${triggerCopy ? `<section class="cp-sec cp-sec--trigger${triggerMuted ? " cp-sec--trigger-muted" : ""}">
       <h3><i class="fa-solid fa-bolt"></i> Trigger &amp; Aufhänger: warum jetzt?</h3>
       <ul><li>${escapeText(triggerCopy)}</li></ul>
     </section>` : ""}</div>` : ""}
-    ${profile.unverified_note ? `<div class="cp-note"><i class="fa-solid fa-calculator"></i> Nicht belegt: ${escapeText(profile.unverified_note)}</div>` : ""}
     ${sources.length ? `<div class="cp-sources"><b>Quellen:</b> ${sources.map((src) =>
       src.uri ? `<a href="${escapeHtml(src.uri)}" data-external target="_blank" rel="noopener noreferrer">${escapeHtml(src.title)}</a>` : escapeHtml(src.title)
     ).join(" · ")}${profile.article_count ? ` &nbsp;·&nbsp; ${Number(profile.article_count)} eigene Artikel im Bestand` : ""}</div>` : ""}
