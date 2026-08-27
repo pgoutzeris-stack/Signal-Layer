@@ -639,6 +639,7 @@ const SETTINGS_ACTIONS = new Set([
 ]);
 
 const ADMIN_ACTIONS = new Set([
+  "refresh_company_profiles",
   "start_classification_backfill",
   "resume_classification_backfill",
   "reformat_recent_articles",
@@ -1420,6 +1421,9 @@ async function enqueueCompanyProfiles(
   rows: Array<Record<string, unknown>>,
   researchModel: string,
   simpleRunId: string,
+  // Mit force wird auch ein bereits recherchiertes Unternehmen neu eingereiht.
+  // Ohne force bleibt es beim bisherigen Verhalten: einmal pro Unternehmen.
+  options: { force?: boolean } = {},
 ): Promise<number> {
   const companies = new Set<string>();
   for (const row of rows) {
@@ -1432,29 +1436,38 @@ async function enqueueCompanyProfiles(
   if (!companies.size) return 0;
   const admin = getAdminClient();
   const names = [...companies];
-  const { data: existing } = await admin.schema("signal_layer").from("company_profiles")
-    .select("company").in("company", names);
-  const existingNames = new Set((existing || []).map((entry: { company: string }) => entry.company));
-  const missing = names.filter((name) => !existingNames.has(name));
-  if (!missing.length) return 0;
+  const force = options.force === true;
+  let ziele = names;
+  if (!force) {
+    const { data: existing } = await admin.schema("signal_layer").from("company_profiles")
+      .select("company").in("company", names);
+    const existingNames = new Set((existing || []).map((entry: { company: string }) => entry.company));
+    ziele = names.filter((name) => !existingNames.has(name));
+  }
+  if (!ziele.length) return 0;
   const now = new Date().toISOString();
   const { error } = await admin.schema("signal_layer").from("company_profile_jobs").upsert(
-    missing.map((company) => ({
+    ziele.map((company) => ({
       company,
       simple_run_id: simpleRunId || null,
       research_model: researchModel,
       status: "queued",
+      force,
       available_at: now,
       processing_token: null,
       processing_until: null,
       finished_at: null,
+      attempt_count: 0,
+      last_error: null,
       updated_at: now,
     })),
-    { onConflict: "company", ignoreDuplicates: true },
+    // Bei einer erzwungenen Sammelaktualisierung muss ein vorhandener,
+    // abgeschlossener Job wieder auf "queued" gehen - sonst bliebe er liegen.
+    { onConflict: "company", ignoreDuplicates: !force },
   );
   if (error) throw new Error("Steckbrief-Jobs konnten nicht gespeichert werden: " + error.message);
   triggerCompanyProfileWorker();
-  return missing.length;
+  return ziele.length;
 }
 
 // Dieselbe Tier-1-Liste wie im Advanced-Modus, gecacht.
@@ -7879,6 +7892,34 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { heavy_work_enabled: on, reason: on ? null : reason || null });
       }
 
+      case "refresh_company_profiles": {
+        // Sammelaktualisierung der Steckbriefe. Ohne Liste werden alle aktiven
+        // Tier-1-Unternehmen eingereiht. Die Warteschlange arbeitet ein
+        // Unternehmen pro Funktionsaufruf ab, damit jede Recherche die volle
+        // Laufzeit fuer Grounding hat; jeder bisherige Stand bleibt als
+        // Version in company_profile_history erhalten.
+        const admin = getAdminClient();
+        const gewuenscht = Array.isArray((body as { companies?: unknown }).companies)
+          ? ((body as { companies: unknown[] }).companies).map((entry) => String(entry || "").trim()).filter(Boolean)
+          : [];
+        let namen = gewuenscht;
+        if (!namen.length) {
+          const { data: alle, error: tierError } = await admin.schema("signal_layer").from("tier1_companies")
+            .select("name").eq("active", true);
+          if (tierError) return errorResponse(origin, tierError.message, 500);
+          namen = (alle || []).map((entry: { name: string }) => String(entry.name || "").trim()).filter(Boolean);
+        }
+        if (!namen.length) return corsResponse(origin, { queued: 0, companies: [] });
+        const config = await getPipelineConfig();
+        const queued = await enqueueCompanyProfiles(
+          namen.map((name) => ({ tier1_companies: [name] })),
+          config.ai.simple_research_model || COMPANY_PROFILE_MODEL,
+          "",
+          { force: true },
+        );
+        return corsResponse(origin, { queued, companies: namen });
+      }
+
       case "resume_stalled_crawls": {
         if (!isScheduled) return errorResponse(origin, "Unauthorized", 401);
         // Apify's synchronous browser crawl may legitimately run for up to
@@ -7886,6 +7927,19 @@ Deno.serve(async (req: Request) => {
         // current Gemini batch before treating a source as truly stalled.
         const WATCHDOG_STALL_SECONDS = 360;
         const admin = getAdminClient();
+
+        // Steckbrief-Warteschlange. Der Worker stoesst sich nach jedem Profil
+        // selbst wieder an; faellt ein Aufruf aus - Neustart, Zeitgrenze,
+        // Netzfehler - bliebe der Rest sonst dauerhaft liegen. Eine
+        // Sammelaktualisierung ueber viele Unternehmen laeuft nur deshalb
+        // zuverlaessig durch.
+        {
+          const { data: offen } = await admin.schema("signal_layer").from("company_profile_jobs")
+            .select("id").eq("status", "queued").lte("available_at", new Date().toISOString()).limit(1);
+          const { data: haengend } = await admin.schema("signal_layer").from("company_profile_jobs")
+            .select("id").eq("status", "running").lt("processing_until", new Date().toISOString()).limit(1);
+          if ((offen || []).length || (haengend || []).length) triggerCompanyProfileWorker();
+        }
 
         // Angehaltener Lauf: im Nebentarif geht es von selbst weiter.
         {
@@ -8789,7 +8843,7 @@ Deno.serve(async (req: Request) => {
         const job = Array.isArray(jobs) ? jobs[0] : null;
         if (!job) return corsResponse(origin, { done: true, processed: 0 });
 
-        const result = await ensureCompanyProfile(job.company, false, {
+        const result = await ensureCompanyProfile(job.company, job.force === true, {
           researchModel: job.research_model,
           simpleRunId: job.simple_run_id,
         });
