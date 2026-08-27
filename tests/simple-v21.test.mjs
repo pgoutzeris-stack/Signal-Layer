@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 
 const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
 
-test("the canonical ROOTS match runs as a separate v2.6 ruleset", () => {
-  assert.equal(pipeline.SIMPLE_VERSION, "2.6");
-  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.6");
+test("the canonical ROOTS match runs as a separate v2.7 ruleset", () => {
+  assert.equal(pipeline.SIMPLE_VERSION, "2.7");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.7");
 });
 
 test("canonicalizes safe model variants to exact ROOTS database labels", () => {
@@ -239,7 +239,7 @@ function familyIds(article) {
   return pipeline.prefilterSimpleArticle(padded).families.map((family) => family.id);
 }
 
-test("v2.6 prefilter recovers the missed ROOTS occasions", () => {
+test("v2.7 prefilter recovers the missed ROOTS occasions", () => {
   assert.ok(familyIds({
     id: "d2p",
     title: "Cloudbasiertes Farbmanagement für den Verpackungsdruck",
@@ -313,7 +313,7 @@ test("v2.6 prefilter recovers the missed ROOTS occasions", () => {
   }).includes("marketing_strategie"));
 });
 
-test("v2.6 cuts LZ and New Business paywalls before the prefilter", () => {
+test("v2.7 cuts LZ and New Business paywalls before the prefilter", () => {
   const lede = "Livekindly Collective will Dalco Food schlucken, einen Hersteller für Handelsmarken und Private Label.";
   const body = `${lede}\n\nSie haben Fragen oder Anmerkungen zu diesem Artikel?\n${"Kontaktieren Sie die Redaktion wegen Nutzungsrechten. ".repeat(6)}`;
   const editorial = pipeline.deterministicEditorialCore(body);
@@ -333,7 +333,7 @@ test("an unproven model tail no longer discards the article", () => {
   assert.match(resolved.text, /Beefeater/);
 });
 
-test("the v2.6 prompt names the recovered ROOTS occasions and offerings", () => {
+test("the v2.7 prompt names the recovered ROOTS occasions and offerings", () => {
   const source = readFileSync(new URL("../supabase/functions/signal-layer/pipeline-simple.ts", import.meta.url), "utf8");
   assert.match(source, /<recognition_rules>/);
   assert.match(source, /Marketingressort/);
@@ -341,4 +341,24 @@ test("the v2.6 prompt names the recovered ROOTS occasions and offerings", () => 
   assert.match(source, /Handelsmarkenstrategie/);
   assert.match(source, /Customer Insights/);
   assert.match(source, /unbelegter Fremdblock verwirft das Signal nicht mehr|Ein unbelegtes Modell-Endzitat darf den Artikel nicht verwerfen/);
+});
+
+test("Design to Print steht genau einmal in den Themen", () => {
+  const labels = pipeline.SIMPLE_FAMILIES.map((family) => family.label);
+  const doppelt = labels.filter((label, index) => labels.indexOf(label) !== index);
+  assert.deepEqual(doppelt, [], `doppelte Themen: ${doppelt.join(", ")}`);
+  assert.equal(labels.filter((label) => label === "Design to Print").length, 1);
+});
+
+test("die Marketing-Bahn deckt KI und Marketing-Technologie ab", () => {
+  const familie = pipeline.SIMPLE_FAMILIES.find((entry) => entry.id === "ki_marketing");
+  assert.ok(familie, "ki_marketing fehlt");
+  assert.equal(familie.lane, "marketing");
+  // Anbieter- und Boersenmeldungen sind kein uebertragbares Prozesswissen.
+  assert.ok(familie.excludeTitle.test("borsengang der ki firma"));
+  assert.ok(familie.trigger.test("marketing automation"));
+  assert.ok(familie.trigger.test("kunstliche intelligenz"));
+  // Ohne Marketingbezug und ohne Erkenntnis kein Treffer.
+  assert.ok(!familie.context.test("neues rechenzentrum eroffnet"));
+  assert.ok(familie.context.test("studie zeigt: marketing teams steigern effizienz um 30 prozent"));
 });

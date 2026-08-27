@@ -32,10 +32,10 @@ import {
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
-export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.6";
+export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.7";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "2.6";
-export const SIMPLE_UPDATED_AT = "2026-08-15";
+export const SIMPLE_VERSION = "2.7";
+export const SIMPLE_UPDATED_AT = "2026-08-28";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
 // Auswahlbare Modelle des einfachen Modus mit den Preisen, die im Kostenledger
@@ -298,12 +298,20 @@ const MARKETING_FAMILIES: SimpleFamily[] = [
     excludeTitle: /\b(inflation\w*|verbraucherpreis\w*|bruttoinlandsprodukt|\bbip\b|konjunktur\w*|wirtschaftsstimmung|wirtschaftsklima|ifo|zinsen|leitzins\w*|quartal\w*|halbjahr\w*|jahreszahlen|bilanz\w*|umsatzplus|umsatzminus|umsatzruckgang|umsatzeinbruch|gewinn\w*|verlust\w*|ergebnis je aktie|prognose angehoben|wachst um|steigert umsatz|aktie\w*|dividende\w*|ubernimmt|ubernahme|fusion|akquisition)\b/,
   },
   {
-    id: "prozess_knowhow",
+    // Die Sales-Familie "design_to_print" deckt den Anlass beim Kunden ab. Eine
+    // zweite Familie mit demselben Namen in der Marketing-Bahn hat im Filter
+    // nur doppelt dagestanden. An ihre Stelle tritt das Feld, zu dem ROOTS
+    // mehrere Leistungen hat und bisher kein Signal: Marketing Automation,
+    // MarTech-Oekosystem, Data Analytics, Digital Maturity Assessment.
+    id: "ki_marketing",
     lane: "marketing",
-    label: "Design to Print",
-    definition: "Übertragbares Prozesswissen zu Artwork, Reinzeichnung, Druckvorstufe, Verpackungsdaten oder Marketing-Prozessoptimierung (Learnings, Benchmarks, Vorgehen).",
-    trigger: /\b(design to print|web to print|webtoprint|artwork\w*|reinzeichnung\w*|druckvorstufe|prepress|pre press|druckdaten|verpackungsdaten|packaging data|packaging artwork|verpackungsdesign\w*|packaging design|farbmanagement|color management|designstandard\w*|marketingprozess\w*|marketing operations|prozessoptimierung\w*|kampagnenprozess\w*|freigabeprozess\w*|workflow\w*)\b/,
-    context: /\b(studie\w*|analyse\w*|benchmark\w*|best practice\w*|learning\w*|erkenntnis\w*|leitfaden|how to|vorgehen|methode\w*|framework|whitepaper|report|checkliste|erfahrung\w*|prozent|effizien\w*|fehlerquote|durchlaufzeit\w*|time to market|automatisier\w*|standardisier\w*|digitalisier\w*)\b/,
+    label: "KI & Marketing-Technologie",
+    definition: "Übertragbares Wissen zum Einsatz von KI, Automatisierung, MarTech oder Analytics im Marketing - Studie, Benchmark, Vorgehen oder belegte Wirkung. Reine Produktankündigungen, Finanzierungsrunden und Aktienmeldungen von Technologieanbietern zählen nicht.",
+    trigger: /\b(kunstliche intelligenz|kunstlicher intelligenz|\bki\b|generative ki|genai|generative ai|\bai\b|\bllm\b|sprachmodell\w*|large language model\w*|chatgpt|copilot|agentic|ki agent\w*|ai agent\w*|marketing automation|marketingautomation|automatisierung\w*|martech|marketing technolog\w*|customer data platform|\bcdp\b|\bcrm\b|marketing analytics|predictive analytics|attribution\w*|personalisierung\w*|hyperpersonalisier\w*|dashboard\w*|datenstrategie\w*|data governance|first party data)\b/,
+    context: /\b(marketing|marke\w*|brand\w*|kampagn\w*|campaign|kommunikation|content|media|kunde\w*|customer|shopper|handel\w*|retail)\b.*\b(studie\w*|analyse\w*|benchmark\w*|best practice\w*|learning\w*|erkenntnis\w*|leitfaden|how to|vorgehen|methode\w*|framework|whitepaper|report|checkliste|erfahrung\w*|prozent|effizien\w*|produktivitat\w*|\broi\b|wirkung\w*|einsatz|eingesetzt|pilot\w*|rollout|roll out|skalier\w*|use case\w*|anwendungsfall\w*)\b/,
+    // Anbieter- und Boersenmeldungen sind kein uebertragbares Prozesswissen.
+    // Sie stehen genau so in der Ueberschrift.
+    excludeTitle: /\b(aktie\w*|borsengang|boersengang|\bipo\b|quartal\w*|umsatzplus|dividende\w*|finanzierungsrunde\w*|series [abcd]\b|bewertung von|milliardenbewertung|nvidia|openai kundigt|ubernimmt fur|ubernahme fur)\b/,
   },
 ];
 
@@ -506,10 +514,11 @@ const SIMPLE_FAMILY_OFFERINGS: Record<string, string[]> = {
     "performance_customer_journey_analytics", "planning_markt_wettbewerbsanalyse",
     "presence_content_strategie", "planning_ideation_workshops",
   ],
-  prozess_knowhow: [
-    "productivity_design_to_print_artwork", "productivity_marketing_operations_audit",
-    "productivity_marketing_prozesse", "productivity_governance_modell",
-    "productivity_project_management_office", "productivity_marketing_automation",
+  ki_marketing: [
+    "productivity_marketing_automation", "productivity_martech_oekosystem",
+    "people_data_analytics", "performance_digital_maturity_assessment",
+    "performance_datenstrategie_exekution", "performance_kpi_dashboards_reportings",
+    "performance_marketing_tool_auswahl",
   ],
 };
 
@@ -647,7 +656,7 @@ Ein Artikel ist ein Signal, wenn er einen konkreten ROOTS-Anlass belegt. lane=ke
 Sales auch ohne das Wort Strategie: Wechsel der Marketingleitung (auch Marketingressort, Marketingvorstand, Vorstand Marketing); Umbau von Filialnetz, Sortiment oder Flaeche im Handel; Wechsel der Leadagentur oder globales Agenturmodell; Verpackungs-, Artwork-, Farbmanagement- oder Web-to-Print-Prozess; Uebernahme oder Ausbau eines Private-Label-Produzenten.
 Marketing auch ohne das Compound-Wort Marketingstrategie: Markenfuehrung, Markenkonsistenz, Funktion der Marke, Marke als Infrastruktur; Shopper- oder Consumer-Index, YouGov, Studie zur Akzeptanz von Werbung oder KI-Kennzeichnung; uebertragbare Kampagnen- oder Influencer-Modelle fuer Marken; Verpackung als Markenbotschafter.
 Sammel-Personalien sind nur dann ein Signal, wenn EINE konkrete Person eine Marketing-, Marken- oder Transformationsrolle neu uebernimmt. Die Namensliste allein reicht nicht. Waehle nie cmo_wechsel fuer einen wissenschaftlichen Markenbeitrag ohne Personalie.
-Familienwahl nach dem Anlass: CMO-/Marketingvorstand → cmo_wechsel und Leistung "Die ersten 100 Tage als CMO" oder Marketing-Audit; D2P, Farbmanagement, Web-to-Print → design_to_print und Design-to-Print & Artwork; Handelsmarken-Uebernahme → eigenmarken_launch und Handelsmarkenstrategie; Markenessay → marken_strategie und Markenpositionierung oder Brand Audit; Shopper-Index → customer_insights und Customer Insights; Filial- oder Sortimentsumbau → strategiewechsel und Marketingstrategie oder Wachstumsstrategie; Leadagentur → marketing_prozess und Agenturen richtig briefen oder effiziente Agentur-Pitches.
+Familienwahl nach dem Anlass: CMO-/Marketingvorstand → cmo_wechsel und Leistung "Die ersten 100 Tage als CMO" oder Marketing-Audit; D2P, Farbmanagement, Web-to-Print → design_to_print und Design-to-Print & Artwork; Handelsmarken-Uebernahme → eigenmarken_launch und Handelsmarkenstrategie; Markenessay → marken_strategie und Markenpositionierung oder Brand Audit; Shopper-Index → customer_insights und Customer Insights; KI-Einsatz, Automatisierung, MarTech oder Analytics im Marketing → ki_marketing und Marketing Automation, MarTech-Oekosystem oder Data Analytics; Filial- oder Sortimentsumbau → strategiewechsel und Marketingstrategie oder Wachstumsstrategie; Leadagentur → marketing_prozess und Agenturen richtig briefen oder effiziente Agentur-Pitches.
 Ein Lieferantenartikel zu Farbmanagement, Artwork oder Web-to-Print bleibt ein Sales-Signal, wenn er den Weg von Design zu Druck konkret veraendert. Ein Paywall-Hinweis oder Abo-Kasten ist kein Grund fuer lane=keine.
 </recognition_rules>${hasViralCandidate ? `
 <viral_rules>
