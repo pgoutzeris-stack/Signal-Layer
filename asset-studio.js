@@ -797,6 +797,19 @@ const CHROME_CSS = `
 /* Bildplatz in der Vorlage: die Bedienung liegt als Auflage darauf. */
 #as-overlay .as-img--tpl{position:relative; display:block;}
 #as-overlay .as-img--bg{position:absolute; inset:0; z-index:3; display:block; pointer-events:none;}
+#as-overlay .as-img--bg.is-empty{background:linear-gradient(160deg,#eff6ff 0%,#dbeafe 100%);}
+/* Der Hinweis sitzt als Chip ueber dem Einfuegen-Knopf, nicht mittig auf der
+   Folie: dort liegt bei jeder Bildvorlage die Ueberschrift. */
+#as-overlay .as-img-empty{
+  position:absolute; right:24px; bottom:170px; max-width:62%;
+  display:grid; justify-items:end; gap:6px; padding:16px 20px;
+  border-radius:16px; background:rgba(255,255,255,.9);
+  box-shadow:0 8px 26px rgba(15,23,42,.14);
+  color:#1d4ed8; text-align:right;
+}
+#as-overlay .as-img-empty i{font-size:30px; opacity:.6;}
+#as-overlay .as-img-empty b{font-size:26px; font-weight:750;}
+#as-overlay .as-img-empty > span{font-size:20px; line-height:1.35; color:#3b6fd4;}
 #as-overlay .as-img--bg .as-img-ui{pointer-events:auto;}
 
 /* Vorschau der Varianten: 150px breite Buehne, also Faktor 150/1080. */
@@ -3198,6 +3211,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return model.image || emptyImage();
   }
 
+  /**
+   * Der Motivhinweis, den das Modell zur Folie geschrieben hat. Die Datei
+   * kommt vom Nutzer, deshalb ist der Hinweis das Einzige, was den leeren
+   * Platz erklaert.
+   */
+  function imageHintAt(model, key) {
+    if (!model) return "";
+    const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(String(key || ""));
+    if (treffer) {
+      const liste = model[treffer[1]];
+      const eintrag = Array.isArray(liste) ? liste[Number(treffer[2])] : null;
+      return String(eintrag?.image_hint || "");
+    }
+    return String(model.imageHint || model.image_hint || "");
+  }
+
   function setImageAt(model, key, image) {
     if (!model) return;
     const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(String(key || ""));
@@ -3393,10 +3422,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         return `<span class="as-img as-img--tpl" data-imgslot data-imgkey="${attr(key)}">${imgTag}${uiFor(key)}</span>`;
       });
     }
-    // Hintergrundbild (Vollbild und Zitat ueber Bild): Slot als Auflage.
+    // Hintergrundbild (Vollbild und Zitat ueber Bild): Slot als Auflage. Ohne
+    // Datei blieb dort eine weisse Flaeche unter dem Verlauf - in beiden
+    // Vorschauen sah die Folie schlicht kaputt aus. Jetzt steht dort, welches
+    // Motiv fehlt und dass es eingefuegt werden kann.
     if (/background-image:url\(/.test(html)) {
+      const bild = imageAt(model, "image");
+      const hinweis = imageHintAt(model, "image");
+      const leer = bild.src
+        ? ""
+        : `<span class="as-img-empty"><i class="fa-regular fa-image"></i><b>Motiv einfügen</b>${
+          hinweis ? `<span>${esc(hinweis)}</span>` : ""
+        }</span>`;
       return html.replace(/(<div style="position:absolute;inset:0;background-image:url\([^)]*\)[^"]*"><\/div>)/,
-        `$1<span class="as-img as-img--bg" data-imgslot data-imgkey="image">${uiFor("image")}</span>`);
+        `$1<span class="as-img as-img--bg${bild.src ? "" : " is-empty"}" data-imgslot data-imgkey="image">${leer}${uiFor("image")}</span>`);
     }
     return html;
   }

@@ -147,3 +147,23 @@ test("ROOTS KPI rows are shared while private rows remain owner-scoped", async (
   assert.match(frontend, /table: "asset_performance"[\s\S]{0,80}scheduleReload/);
   assert.doesNotMatch(frontend, /table: "asset_performance", filter:/);
 });
+
+test("die Dashboard-Filter zeigen ihre Auswahl wirklich an", async () => {
+  const [js, css, indexHtml] = await Promise.all([
+    readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8"),
+    readFile(new URL("../dashboard-insights.css", import.meta.url), "utf8"),
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+  ]);
+  // .signal-toolbar-select blendet das echte <select> aus, weil in der
+  // Signal-Leiste ein eigenes Menue darueber liegt. Im Dashboard blieb dadurch
+  // nur die Beschriftung stehen.
+  assert.match(indexHtml, /\.signal-toolbar-select \{[^}]*opacity: 0/);
+  assert.ok(!js.includes("signal-toolbar-select"), "Dashboard nutzt die unsichtbare Klasse");
+  assert.match(js, /class="toolbar-select" data-dashboard-scope/);
+  assert.match(js, /class="toolbar-select" data-dashboard-origin/);
+  // Die Leiste traegt dieselbe Auszeichnung wie die uebrigen Ansichten.
+  assert.match(css, /\.pi-toolbar \{[^}]*border-radius: 14px/);
+  assert.match(css, /\.pi-toolbar \{[^}]*box-shadow: var\(--shadow-dash\)/);
+  // Kein Erklaersatz unter der Ueberschrift.
+  assert.ok(!js.includes("persönlich gefiltert und in Echtzeit synchronisiert"));
+});

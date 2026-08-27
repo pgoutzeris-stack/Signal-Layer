@@ -2286,7 +2286,7 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260828-1900");
+  assert.equal(studioVersion, "20260828-2350");
   assert.match(indexHtml, /app\.js\?v=20260828-1900/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
@@ -2985,4 +2985,16 @@ test("Hinweise ohne Seitenstreifen und Navigation bleibt sichtbar", () => {
   assert.doesNotMatch(noticeCss, /border-left/);
   assert.match(studio, /fa-arrow-left[^\n]*Zurück/);
   assert.match(studio, /Weiter<i class="fa-solid fa-arrow-right/);
+});
+
+test("eine Bildvorlage ohne Datei zeigt das fehlende Motiv statt einer leeren Flaeche", () => {
+  const studioJs = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf8");
+  // Fuer C, D und J schreibt das Modell nur einen image_hint; die Datei kommt
+  // vom Nutzer. Ohne sie stand unter dem Verlauf nichts.
+  assert.match(studioJs, /function imageHintAt\(model, key\)/);
+  assert.match(studioJs, /as-img--bg\$\{bild\.src \? "" : " is-empty"\}/);
+  assert.match(studioJs, /Motiv einfügen/);
+  assert.match(studioJs, /\.as-img--bg\.is-empty\{background:linear-gradient/);
+  // Der Hinweis darf nicht ueber der Ueberschrift liegen.
+  assert.match(studioJs, /\.as-img-empty\{\s*position:absolute; right:24px; bottom:170px/);
 });
