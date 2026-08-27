@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionMenu } from "./simple-view-state.mjs?v=20260816-1430";
+import { paintAssetAuthors } from "./asset-authors.mjs?v=20260829-0030";
 
 let ctx = null;
 let els = {};
@@ -292,6 +293,7 @@ function renderLane(lane) {
   list.innerHTML = signals.length
     ? signals.map(signalCard).join("")
     : `<div class="track-card-empty">Keine Signale entsprechen den gewählten Filtern.</div>`;
+  if (signals.length) void paintAssetAuthors(list, ctx.callApi, esc);
 }
 
 function renderRejected(articles, rejectLabels) {

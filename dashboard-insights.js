@@ -384,12 +384,28 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     });
   };
 
+  /**
+   * Dasselbe Profilbild wie im Intranet. Fehlt es, stehen die Initialen da -
+   * ein leerer Kreis waere kein Hinweis, sondern ein Loch.
+   */
+  const avatarHtml = (person, extraClass = "") => {
+    const name = String(person?.name || person?.short_name || "ROOTS Team");
+    const url = String(person?.avatar_url || "");
+    const initialen = name.split(/\s+/).filter(Boolean).slice(0, 2).map((teil) => teil[0]).join("").toLocaleUpperCase("de");
+    const klasse = `pi-avatar${extraClass ? ` ${extraClass}` : ""}`;
+    return url
+      ? `<img class="${klasse}" src="${escapeHtml(url)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+      : `<span class="${klasse} pi-avatar--initials" aria-hidden="true">${escapeHtml(initialen || "R")}</span>`;
+  };
+
   const renderDashboards = () => {
     state.summary = summarizeDashboardData(state.payload);
     for (const host of hosts) {
       const preferences = state.summary.preferences;
       const selectedCreators = new Set(preferences.filters.creator_ids);
-      const creatorButtons = state.payload.creators.map((creator) => `<button type="button" data-dashboard-creator="${escapeHtml(creator.id)}" class="${selectedCreators.has(creator.id) ? "is-active" : ""}" aria-pressed="${selectedCreators.has(creator.id)}">${escapeHtml(creator.short_name || creator.name)} <small>${numberValue(creator.asset_count)}</small></button>`).join("");
+      const creatorButtons = state.payload.creators.map((creator) => `<button type="button" data-dashboard-creator="${escapeHtml(creator.id)}" class="${selectedCreators.has(creator.id) ? "is-active" : ""}" aria-pressed="${selectedCreators.has(creator.id)}">${
+        avatarHtml(creator)
+      }${escapeHtml(creator.short_name || creator.name)} <small>${numberValue(creator.asset_count)}</small></button>`).join("");
       host.innerHTML = `<div class="pi-toolbar">
           <h2><i class="fa-solid fa-chart-line"></i>Performance Dashboard</h2>
           <span class="pi-live-state" data-dashboard-live-label>Verbinde…</span>

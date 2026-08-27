@@ -7,9 +7,10 @@ import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOr
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260824-0305";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260828-2350";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260829-0030";
 import { openManualSignal } from "./manual-signal.js?v=20260824-0305";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260828-2350";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260829-0030";
+import { paintAssetAuthors } from "./asset-authors.mjs?v=20260829-0030";
 
 let sb = null;
 let sources = [];
@@ -1659,6 +1660,7 @@ function renderFindings(track) {
         </article>
       `;
     }).join("");
+    void paintAssetAuthors(listEl, callApi, escapeHtml);
 }
 
 const LOADER_HTML = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
@@ -4362,6 +4364,28 @@ function bindUi() {
       if (event.key === "Enter" || event.key === " ") openCardDetail(event);
     });
   });
+  // Ein Klick auf ein Gesicht fuehrt in genau den Entwurf dieser Person. Der
+  // Griff muss vor dem Kartenklick greifen, sonst oeffnet sich darunter das
+  // Artikel-Popup.
+  document.addEventListener("click", (event) => {
+    const gesicht = event.target.closest?.("[data-asset-author]");
+    if (!gesicht) return;
+    const assetId = gesicht.getAttribute("data-asset-author");
+    if (!assetId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const karte = gesicht.closest("[data-article-id]");
+    void openAssetStudio({
+      kind: gesicht.getAttribute("data-asset-kind") === "memo" ? "memo" : "linkedin",
+      articleId: karte?.getAttribute("data-article-id") || "",
+      assetId,
+      callApi,
+      escapeHtml,
+      notify: toast,
+      openSettingsPanel,
+    });
+  }, true);
+
   els.articleDetailModal.addEventListener("click", (event) => {
     // Muss vor der Schließen-Prüfung stehen, sonst räumt der Backdrop-Zweig das
     // Popup weg, sobald das Studio davor liegt.

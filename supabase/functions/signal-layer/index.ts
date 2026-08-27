@@ -548,6 +548,32 @@ function dashboardCreatorShortName(value: unknown): string {
   return firstName.toLocaleLowerCase("de") === "panagiotis" ? "Pano" : firstName;
 }
 
+export type AssetAuthor = { id: string; name: string; short_name: string; avatar_url: string | null };
+
+/**
+ * Wer einen Entwurf gemacht hat, steht nur als created_by am Asset. Name und
+ * Bild kommen aus dem Profil - dieselbe Quelle wie im Intranet, damit ueberall
+ * dasselbe Gesicht erscheint.
+ */
+async function assetAuthorsByIds(ids: string[]): Promise<Map<string, AssetAuthor>> {
+  const eindeutig = [...new Set(ids.map((id) => String(id || "")).filter(isUuid))];
+  const out = new Map<string, AssetAuthor>();
+  if (!eindeutig.length) return out;
+  const { data } = await getAdminClient().schema("users").from("profiles")
+    .select("id,full_name,kuerzel,avatar_url").in("id", eindeutig);
+  for (const profil of (data || []) as Array<Record<string, unknown>>) {
+    const id = String(profil.id || "");
+    const name = String(profil.full_name || profil.kuerzel || "ROOTS Team").trim();
+    out.set(id, {
+      id,
+      name,
+      short_name: dashboardCreatorShortName(name),
+      avatar_url: String(profil.avatar_url || "") || null,
+    });
+  }
+  return out;
+}
+
 const ASSET_CANCELLED_MESSAGE = "Vom Nutzer abgebrochen.";
 
 async function notifyGeneratedAssetSettled(row: Record<string, unknown>): Promise<void> {
@@ -6538,7 +6564,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("generated_assets")
             .select("id,kind,company,created_by,created_at,updated_at,status,answers,title:payload->>title,slide_title:payload->slides->0->>title,article:articles(article_type)")
             .eq("status", "done").order("created_at", { ascending: false }).limit(500),
-          admin.schema("users").from("profiles").select("id,email,full_name,kuerzel").limit(250),
+          admin.schema("users").from("profiles").select("id,email,full_name,kuerzel,avatar_url").limit(250),
         ]);
         const firstError = settingError || assetError || profileError;
         if (firstError) return errorResponse(origin, firstError.message, 500);
@@ -6571,6 +6597,7 @@ Deno.serve(async (req: Request) => {
             creator_id: creatorId,
             creator_name: creatorName,
             creator_short_name: dashboardCreatorShortName(creatorName),
+            creator_avatar_url: String(profile?.avatar_url || "") || null,
           };
         });
         const creatorCounts = new Map<string, number>();
@@ -6583,7 +6610,13 @@ Deno.serve(async (req: Request) => {
         }).map((profile) => {
           const id = String(profile.id || "");
           const name = String(profile.full_name || profile.kuerzel || "ROOTS Team").trim();
-          return { id, name, short_name: dashboardCreatorShortName(name), asset_count: creatorCounts.get(id) || 0 };
+          return {
+            id,
+            name,
+            short_name: dashboardCreatorShortName(name),
+            avatar_url: String(profile.avatar_url || "") || null,
+            asset_count: creatorCounts.get(id) || 0,
+          };
         }).filter((creator) => isUuid(creator.id)).sort((a, b) => a.name.localeCompare(b.name, "de"));
         return corsResponse(origin, {
           preferences: normalizeDashboardPreferences(setting?.preferences),
@@ -10784,11 +10817,61 @@ Deno.serve(async (req: Request) => {
         const { data: liste, error: listError } = await query;
         if (listError) return errorResponse(origin, listError.message, 500);
         const adminList = getAdminClient();
+        const autoren = await assetAuthorsByIds((liste || []).map((row) => String(row.created_by || "")));
         const assets = await Promise.all((liste || []).map(async (row) => {
           const gepflegt = await pflegeLaufendesAsset(adminList, row as Record<string, unknown>);
-          return gepflegt || row;
+          const basis = (gepflegt || row) as Record<string, unknown>;
+          const autor = autoren.get(String(basis.created_by || ""));
+          return {
+            ...basis,
+            creator_name: autor?.name || "ROOTS Team",
+            creator_short_name: autor?.short_name || "ROOTS",
+            creator_avatar_url: autor?.avatar_url || null,
+          };
         }));
         return corsResponse(origin, { assets });
+      }
+
+      case "list_asset_authors": {
+        // Wer hat zu welchem Artikel schon einen Entwurf gemacht. Die Ansicht
+        // fragt einmal fuer alle sichtbaren Artikel, statt je Karte einmal.
+        const rohIds = Array.isArray((body as { article_ids?: unknown }).article_ids)
+          ? ((body as { article_ids: unknown[] }).article_ids).map((id) => String(id || "")).filter(isUuid)
+          : [];
+        const artikelIds = [...new Set(rohIds)].slice(0, 200);
+        if (!artikelIds.length) return corsResponse(origin, { authors: {} });
+        const { data: zeilen, error: autorenFehler } = await getAdminClient().schema("signal_layer")
+          .from("generated_assets")
+          .select("id, kind, status, article_id, created_by, created_at")
+          .in("article_id", artikelIds)
+          .in("status", ["done", "running", "queued"])
+          .order("created_at", { ascending: false })
+          .limit(600);
+        if (autorenFehler) return errorResponse(origin, autorenFehler.message, 500);
+        const autoren = await assetAuthorsByIds((zeilen || []).map((row) => String(row.created_by || "")));
+        const proArtikel: Record<string, Array<Record<string, unknown>>> = {};
+        // Je Person und Artikel zaehlt der neueste Entwurf: die Karte zeigt
+        // Gesichter, keine Liste aller Versuche.
+        const gesehen = new Set<string>();
+        for (const row of (zeilen || []) as Array<Record<string, unknown>>) {
+          const artikel = String(row.article_id || "");
+          const person = String(row.created_by || "");
+          const schluessel = `${artikel}:${person}:${String(row.kind || "")}`;
+          if (!artikel || gesehen.has(schluessel)) continue;
+          gesehen.add(schluessel);
+          const autor = autoren.get(person);
+          (proArtikel[artikel] ||= []).push({
+            asset_id: String(row.id || ""),
+            kind: String(row.kind || ""),
+            status: String(row.status || ""),
+            created_at: row.created_at,
+            user_id: person,
+            name: autor?.name || "ROOTS Team",
+            short_name: autor?.short_name || "ROOTS",
+            avatar_url: autor?.avatar_url || null,
+          });
+        }
+        return corsResponse(origin, { authors: proArtikel });
       }
 
       case "get_asset": {

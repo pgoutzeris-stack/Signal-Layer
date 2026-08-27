@@ -955,6 +955,16 @@ const CHROME_CSS = `
   background:#fff; padding:10px 12px; display:flex; flex-direction:column; gap:4px;
 }
 #as-overlay .as-draft:hover{border-color:var(--brand,#206efb);}
+#as-overlay .as-draft{flex-direction:row; align-items:center; gap:10px;}
+#as-overlay .as-draft-body{min-width:0; display:flex; flex-direction:column; gap:3px; text-align:left;}
+#as-overlay .as-person{
+  width:30px; height:30px; flex:none; border-radius:50%; object-fit:cover;
+  background:var(--brand-light,#e8f0ff);
+}
+#as-overlay .as-person--initials{
+  display:grid; place-items:center; color:var(--brand-dark,#165fd9);
+  font-size:11px; font-weight:850;
+}
 #as-overlay .as-draft strong{font-size:13px;}
 #as-overlay .as-draft span{font-size:12px; color:var(--muted,#64748b); line-height:1.4;}
 #as-overlay .as-draft em{font-style:normal; font-size:11px; color:#64748b;}
@@ -1373,7 +1383,7 @@ export function closeAssetStudio() {
   if (openInstance) openInstance.close();
 }
 
-export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill } = {}) {
+export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill, assetId } = {}) {
   // Zwei Studios gleichzeitig würden sich Tastatur und Auswahl streitig machen.
   // Eine Instanz, deren Overlay nicht mehr im Dokument haengt, ist aber keine
   // Instanz mehr: sie entsteht, wenn das Popup unter dem Studio geschlossen
@@ -2408,6 +2418,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return "Nicht fertig";
   }
 
+  /** Profilbild der Person, sonst ihre Initialen. */
+  function personBildHtml(url, name) {
+    const klar = String(name || "ROOTS Team");
+    const initialen = klar.split(/\s+/).filter(Boolean).slice(0, 2).map((teil) => teil[0]).join("").toLocaleUpperCase("de");
+    return String(url || "")
+      ? `<img class="as-person" src="${attr(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" title="${attr(klar)}">`
+      : `<span class="as-person as-person--initials" title="${attr(klar)}">${esc(initialen || "R")}</span>`;
+  }
+
   function draftZeileHtml(row) {
     const status = String(row.status || "");
     const wann = formatDraftWhen(row.created_at);
@@ -2418,9 +2437,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const klasse = status === "error" ? " is-error" : status === "running" ? " is-run" : "";
     const unter = [draftStatusText(status), draftSettingsText(row)].filter(Boolean).join(" · ");
     return `<button type="button" class="as-draft${klasse}" data-act="open-draft" data-id="${attr(row.id)}">
-      <strong>${esc(draftTitel(row))}</strong>
-      <span>${esc(unter)}</span>
-      <em>${esc(meta || row.model || "")}</em>
+      ${personBildHtml(row.creator_avatar_url, row.creator_name || row.creator_short_name)}
+      <span class="as-draft-body">
+        <strong>${esc(draftTitel(row))}</strong>
+        <span>${esc(unter)}</span>
+        <em>${esc([row.creator_short_name || row.creator_name, meta || row.model || ""].filter(Boolean).join(" · "))}</em>
+      </span>
     </button>`;
   }
 
@@ -3426,7 +3448,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Datei blieb dort eine weisse Flaeche unter dem Verlauf - in beiden
     // Vorschauen sah die Folie schlicht kaputt aus. Jetzt steht dort, welches
     // Motiv fehlt und dass es eingefuegt werden kann.
-    if (/background-image:url\(/.test(html)) {
+    if (/background-image:url\(/.test(html) && (!model?.variant || MIT_BILD.has(model.variant))) {
       const bild = imageAt(model, "image");
       const hinweis = imageHintAt(model, "image");
       const leer = bild.src
@@ -5109,6 +5131,9 @@ ${stages}${post}
   }
 
   render();
+  // Mit assetId wird ein bestehender Entwurf geoeffnet - der Weg von einem
+  // Gesicht auf der Artikelkarte zu genau dem Entwurf dieser Person.
+  if (assetId) void openDraft(String(assetId));
   void ladeDrafts();
   void ladeToneOfVoice();
   void ladeDesignVorlagen();
