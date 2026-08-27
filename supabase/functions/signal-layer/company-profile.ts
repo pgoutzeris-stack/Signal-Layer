@@ -34,7 +34,25 @@ export const COMPANY_PROFILE_SECTIONS = [
 /** Kommt nicht aus der Recherche, sondern je Artikel aus dem Bewertungsaufruf. */
 export const COMPANY_PROFILE_ARTICLE_SECTION = "Trigger & Aufhänger — warum jetzt?";
 
-export type CompanyProfileKpi = { label: string; value: string; hint?: string; estimated?: boolean };
+/**
+ * Eine Kennzahl gehoert immer zu einer Ebene: "global" ist der Konzern
+ * weltweit, "de" ist das Deutschlandgeschaeft. Ohne diese Trennung stehen
+ * Konzernumsatz und Landesumsatz nebeneinander in derselben Kachel und der
+ * Steckbrief widerspricht jeder Google-Suche - beobachtet bei Aldi Sued:
+ * 203.146 Mitarbeitende weltweit gegen rund 50.000 in Deutschland.
+ * "source_url" traegt den Beleg genau dieser Zahl, nicht des ganzen Profils.
+ */
+export type CompanyProfileKpiScope = "global" | "de";
+export type CompanyProfileKpi = {
+  label: string;
+  value: string;
+  hint?: string;
+  estimated?: boolean;
+  scope?: CompanyProfileKpiScope;
+  as_of?: string;
+  source_url?: string;
+  source_title?: string;
+};
 export type CompanyProfileSection = { title: string; items: string[] };
 export type CompanyProfileSource = { title: string; uri: string };
 export type CompanyProfileLogoSourceKind =
@@ -90,6 +108,12 @@ Hauptsitz, Anzahl Märkte, Marktanteil, Eigenmarkenanteil, Mediabudget,
 Agenturbeziehungen, aktuelle Strategie, Markenportfolio, Personalwechsel im
 Marketing und in der Markenführung, laufende Umbauten.
 
+RECHERCHIERE JEDE KENNZAHL AUF ZWEI EBENEN, sofern das Unternehmen beide hat:
+weltweit (Konzern) und Deutschland. Suche beide Ebenen getrennt, mische sie
+niemals in einer Zahl. Ein Konzernumsatz neben einer Landesmitarbeiterzahl ist
+der schwerste Fehler in diesem Profil. Gibt es eine Ebene nicht oder findest du
+dafür keinen Beleg, lässt du sie weg statt zu schätzen.
+
 RECHERCHIERE AUSSERDEM DAS AKTUELLE UNTERNEHMENSLOGO. Nutze diese Quellen in
 genau dieser Priorität:
 A. Worldvectorlogo: exakte Unternehmensseite plus direkte SVG-Datei von
@@ -124,8 +148,9 @@ danach, ohne Code-Zäune:
   "logo_format": "svg | png | webp | jpg",
   "headline": "Branche · Kurzcharakterisierung in maximal 8 Wörtern",
   "kpis": [
-    {"label": "Umsatz GJ 2025", "value": "8,9 Mrd. €", "hint": "Konzern, brutto", "estimated": false},
-    {"label": "Marketingbudget", "value": "ca. 120 Mio. €", "hint": "geschätzt aus Branchenanteil 3-5% vom Umsatz", "estimated": true}
+    {"label": "Umsatz", "value": "8,9 Mrd. €", "scope": "global", "as_of": "GJ 2025", "hint": "Konzern, brutto", "estimated": false, "source_url": "https://www.beispiel.de/geschaeftsbericht", "source_title": "beispiel.de"},
+    {"label": "Mitarbeitende", "value": "50.000", "scope": "de", "as_of": "2025", "hint": "nur Deutschlandgeschäft", "estimated": false, "source_url": "https://www.beispiel.de/ueber-uns", "source_title": "beispiel.de"},
+    {"label": "Marketingbudget", "value": "ca. 120 Mio. €", "scope": "de", "as_of": "2025", "hint": "geschätzt aus Branchenanteil 3-5% vom Umsatz", "estimated": true}
   ],
   "sections": [
     {"title": "Allgemeine Unternehmensdaten", "items": ["Hauptsitz: ...", "Gegründet: ..."]}
@@ -134,13 +159,28 @@ danach, ohne Code-Zäune:
 }
 
 REGELN, sie entscheiden über die Brauchbarkeit:
-1. Genau 6 Einträge in "kpis". Jeder mit kurzem "value", der als große Zahl
-   lesbar ist. Konntest du eine Zahl per Suche belegen, setze "estimated": false.
-   Findest du sie nicht, gib eine begründete Schätzung, setze "estimated": true
-   und schreibe in "hint" in maximal 12 Wörtern, worauf die Schätzung beruht
-   (Bezugsgröße, Branchenanteil, Vergleichsunternehmen, Vorjahr). Eine Schätzung
-   ohne nachvollziehbare Grundlage lässt du weg. Kennzeichne sie im "value"
-   zusätzlich mit "ca.".
+1. Bis zu 12 Einträge in "kpis": bis zu 6 mit "scope": "global" und bis zu 6 mit
+   "scope": "de". Mindestens eine Ebene ist vollständig mit 6 Einträgen belegt.
+   Hat das Unternehmen kein nennenswertes Deutschlandgeschäft, lieferst du nur
+   "global"; ist es rein deutsch, nur "de". Beide Ebenen bilden dieselben
+   Kennzahlen ab, damit sie vergleichbar sind. Jeder Eintrag mit kurzem "value",
+   der als große Zahl lesbar ist. Konntest du eine Zahl per Suche belegen, setze
+   "estimated": false. Findest du sie nicht, gib eine begründete Schätzung, setze
+   "estimated": true und schreibe in "hint" in maximal 12 Wörtern,
+   worauf die Schätzung beruht (Bezugsgröße, Branchenanteil,
+   Vergleichsunternehmen, Vorjahr). Eine Schätzung ohne nachvollziehbare Grundlage lässt du weg.
+   Kennzeichne sie im "value" zusätzlich mit "ca.".
+1a. "label" enthält weder Ebene noch Jahr - die stehen in "scope" und "as_of".
+   Also "Umsatz", nicht "Umsatz GJ 2024 (weltweit)". In "as_of" steht der
+   Stichtag oder das Geschäftsjahr, auf das sich der Wert bezieht, zum Beispiel
+   "GJ 2024" oder "Q1 2026". Ohne belegten Stichtag lässt du "as_of" leer.
+1b. Jede nicht geschätzte Kennzahl bekommt in "source_url" die vollständige
+   Adresse der Seite, auf der genau dieser Wert steht, und in "source_title"
+   deren Domain. Kein Google-Ergebnislink, keine Weiterleitung. Nicht zulässig
+   als Beleg für Zahlen sind Foren, Bewertungs- und Social-Plattformen
+   (reddit, kununu, gutefrage, facebook, instagram, tiktok, x.com, quora,
+   pinterest, youtube). Findest du für eine Zahl nur solche Seiten, gilt sie als
+   nicht belegt: entweder weglassen oder als Schätzung kennzeichnen.
 2. Genau diese 5 Abschnitte in "sections", in dieser Reihenfolge, jeder mit 3 bis
    5 Einträgen, jeder Eintrag maximal 20 Wörter: ${COMPANY_PROFILE_SECTIONS.join(" | ")}
 3. Bei "Buying Center / Relevante Personen": Name, Rolle, und wenn belegbar seit
@@ -210,20 +250,83 @@ function extractJson(text: string): unknown {
   throw lastError instanceof Error ? lastError : new Error("company profile json unreadable");
 }
 
+/**
+ * Seiten, die als Beleg fuer eine Kennzahl nicht taugen. Gemini hat fuer Aldi
+ * Sued unter anderem reddit.com und kununu.com als Quelle gefuehrt; fuer Umsatz
+ * und Mitarbeitendenzahl ist das nicht zitierfaehig. Die Seite bleibt in der
+ * allgemeinen Quellenzeile, aber nicht als Beleg an der Zahl.
+ */
+const KPI_SOURCE_BLOCKLIST = [
+  "reddit.com",
+  "kununu.com",
+  "gutefrage.net",
+  "facebook.com",
+  "instagram.com",
+  "tiktok.com",
+  "x.com",
+  "twitter.com",
+  "quora.com",
+  "pinterest.de",
+  "pinterest.com",
+  "youtube.com",
+];
+
+/** Nur direkte, oeffentliche Seiten zaehlen als Beleg - keine Weiterleitung. */
+function acceptableKpiSource(raw: unknown): string {
+  const value = clean(raw, 400);
+  if (!/^https?:\/\//i.test(value)) return "";
+  let host = "";
+  try {
+    host = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+  if (!host) return "";
+  if (host.endsWith("vertexaisearch.cloud.google.com") || host.endsWith("google.com")) return "";
+  if (KPI_SOURCE_BLOCKLIST.some((bad) => host === bad || host.endsWith(`.${bad}`))) return "";
+  return value;
+}
+
+function normalizeKpiScope(raw: unknown): CompanyProfileKpiScope | undefined {
+  const value = clean(raw, 20).toLowerCase();
+  if (value === "de" || value === "deutschland" || value === "germany") return "de";
+  if (value === "global" || value === "weltweit" || value === "world" || value === "konzern") return "global";
+  return undefined;
+}
+
 function normalizeKpis(raw: unknown): CompanyProfileKpi[] {
   if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 6).map((entry) => {
+  // Je Ebene sechs Kacheln, damit eine ueberlange Antwort das Raster nicht
+  // sprengt und keine Ebene die andere verdraengt.
+  const perScope = new Map<string, number>();
+  const out: CompanyProfileKpi[] = [];
+  for (const entry of raw) {
     const item = entry as Record<string, unknown>;
-    return {
-      label: clean(item.label, 60),
-      value: clean(item.value, 40),
+    const label = clean(item.label, 60);
+    const value = clean(item.value, 40);
+    if (!label || !value) continue;
+    const scope = normalizeKpiScope(item.scope);
+    const bucket = scope || "none";
+    const used = perScope.get(bucket) || 0;
+    if (used >= 6) continue;
+    perScope.set(bucket, used + 1);
+    const sourceUrl = acceptableKpiSource(item.source_url);
+    out.push({
+      label,
+      value,
       hint: clean(item.hint, 80) || undefined,
       // Markierung immer mitnehmen, auch wenn das Modell die Grundlage in
       // "hint" schuldig bleibt: eine unmarkierte Schaetzung waere schlimmer als
       // eine Schaetzung ohne Begruendung.
       estimated: item.estimated === true ? true : undefined,
-    };
-  }).filter((kpi) => kpi.label && kpi.value);
+      scope,
+      as_of: clean(item.as_of, 40) || undefined,
+      source_url: sourceUrl || undefined,
+      source_title: sourceUrl ? (clean(item.source_title, 60) || new URL(sourceUrl).hostname.replace(/^www\./, "")) : undefined,
+    });
+    if (out.length >= 12) break;
+  }
+  return out;
 }
 
 function normalizeSections(raw: unknown): CompanyProfileSection[] {
@@ -523,6 +626,38 @@ function extractSources(candidate: Record<string, unknown>): CompanyProfileSourc
   return out;
 }
 
+/**
+ * Google liefert Belege nur als Weiterleitung ueber vertexaisearch. Diese Links
+ * sind zeitlich begrenzt gueltig - ein Steckbrief von heute zeigt in einigen
+ * Wochen ins Leere. Deshalb wird die Weiterleitung einmal beim Speichern
+ * aufgeloest und das Ziel abgelegt. Schlaegt das fehl, bleibt die Weiterleitung
+ * stehen: ein Link, der vielleicht noch geht, ist besser als keiner.
+ */
+async function resolveGroundingUri(uri: string): Promise<string> {
+  if (!/^https?:\/\/[^/]*vertexaisearch\.cloud\.google\.com\//i.test(uri)) return uri;
+  const control = new AbortController();
+  const timer = setTimeout(() => control.abort(), 6000);
+  try {
+    const response = await fetch(uri, { redirect: "follow", signal: control.signal });
+    // Der Rumpf wird nicht gebraucht, muss aber verworfen werden, damit die
+    // Verbindung nicht offen bleibt.
+    await response.body?.cancel();
+    const target = String(response.url || "");
+    return /^https?:\/\//i.test(target) && !target.includes("vertexaisearch.cloud.google.com") ? target : uri;
+  } catch {
+    return uri;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveSourceUris(sources: CompanyProfileSource[]): Promise<CompanyProfileSource[]> {
+  return await Promise.all(sources.map(async (source) => ({
+    ...source,
+    uri: source.uri ? await resolveGroundingUri(source.uri) : source.uri,
+  })));
+}
+
 function groundingSearchCount(candidate: Record<string, unknown>): number {
   const meta = candidate.groundingMetadata as Record<string, unknown> | undefined;
   const queries = Array.isArray(meta?.webSearchQueries) ? meta!.webSearchQueries as unknown[] : [];
@@ -642,7 +777,7 @@ export async function researchCompanyProfile(
       headline: clean(parsed.headline, 160) || null,
       kpis: normalizeKpis(parsed.kpis),
       sections: normalizeSections(parsed.sections),
-      sources: extractSources(candidate),
+      sources: await resolveSourceUris(extractSources(candidate)),
       unverified_note: clean(parsed.unverified_note, 400) || null,
     },
     usage: {

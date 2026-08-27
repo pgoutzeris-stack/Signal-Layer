@@ -3610,6 +3610,22 @@ function companyProfileOverlay() {
   host.innerHTML = `<div class="cp-card" role="dialog" aria-modal="true" aria-labelledby="cp-title"></div>`;
   document.body.appendChild(host);
   host.addEventListener("click", (event) => {
+    const scopeButton = event.target.closest("[data-kpi-scope]");
+    if (scopeButton) {
+      // Die Ebene wird nur umgeschaltet, nicht neu gerendert: der Steckbrief
+      // enthaelt beide Saetze bereits, ein Neurendern wuerde den Scrollstand
+      // der Karte verlieren.
+      const lanes = scopeButton.closest(".cp-kpi-lanes");
+      if (lanes) {
+        lanes.dataset.active = scopeButton.dataset.kpiScope;
+        lanes.querySelectorAll("[data-kpi-scope]").forEach((btn) => {
+          const active = btn.dataset.kpiScope === lanes.dataset.active;
+          btn.classList.toggle("is-active", active);
+          btn.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+      }
+      return;
+    }
     if (event.target === host || event.target.closest(".cp-close")) closeCompanyProfile();
   });
   document.addEventListener("keydown", (event) => {
@@ -3683,6 +3699,55 @@ function companyProfileHeadHtml(company, profile, triggerForHead = null, trigger
   </div>`;
 }
 
+const CP_KPI_SCOPES = [
+  { key: "global", label: "Weltweit" },
+  { key: "de", label: "Deutschland" },
+];
+
+function companyKpiTileHtml(k) {
+  // Geschätzte Kennzahlen bleiben sichtbar, aber grau und mit Icon: der
+  // Steckbrief soll die Zahl liefern und gleichzeitig zeigen, dass sie
+  // nicht belegt ist.
+  const geschaetzt = k.estimated === true;
+  const source = typeof k.source_url === "string" && /^https?:\/\//i.test(k.source_url) ? k.source_url : "";
+  const sourceName = escapeHtml(String(k.source_title || "").trim() || (source ? new URL(source).hostname.replace(/^www\./, "") : ""));
+  const klasse = `cp-kpi${geschaetzt ? " cp-kpi--estimated" : ""}${source ? " cp-kpi--linked" : ""}`;
+  const titel = geschaetzt ? "Geschätzt, nicht belegt" : source ? `Beleg: ${sourceName}` : "";
+  const inner = `<b>${escapeHtml(k.value || "–")}</b><span>${geschaetzt ? '<i class="fa-solid fa-calculator"></i> ' : ""}${escapeHtml(k.label || "")}</span>
+      ${k.as_of ? `<small class="cp-kpi-asof">${escapeHtml(k.as_of)}</small>` : ""}
+      ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}
+      ${source ? `<small class="cp-kpi-src"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${sourceName}</small>` : ""}`;
+  return source
+    ? `<a class="${klasse}" href="${escapeHtml(source)}" data-external target="_blank" rel="noopener noreferrer"${titel ? ` title="${escapeHtml(titel)}"` : ""}>${inner}</a>`
+    : `<div class="${klasse}"${titel ? ` title="${escapeHtml(titel)}"` : ""}>${inner}</div>`;
+}
+
+/**
+ * Kennzahlen nach Ebene getrennt. Aeltere Steckbriefe kennen "scope" nicht;
+ * deren Kacheln kommen ohne Umschalter in einem einzigen Raster, damit ein
+ * alter Stand nicht leer wirkt.
+ */
+function companyKpisHtml(kpis) {
+  if (!kpis.length) return "";
+  const lanes = CP_KPI_SCOPES
+    .map((scope) => ({ ...scope, items: kpis.filter((k) => k.scope === scope.key) }))
+    .filter((lane) => lane.items.length);
+  const ohneEbene = kpis.filter((k) => k.scope !== "global" && k.scope !== "de");
+  if (lanes.length < 2) {
+    const items = lanes.length === 1 ? [...lanes[0].items, ...ohneEbene] : ohneEbene;
+    return items.length ? `<div class="cp-kpis">${items.map(companyKpiTileHtml).join("")}</div>` : "";
+  }
+  const active = lanes[0].key;
+  return `<div class="cp-kpi-lanes" data-active="${active}">
+    <div class="cp-kpi-switch" role="group" aria-label="Ebene der Kennzahlen">${lanes.map((lane) =>
+      `<button type="button" data-kpi-scope="${lane.key}" class="${lane.key === active ? "is-active" : ""}" aria-pressed="${lane.key === active ? "true" : "false"}">${escapeHtml(lane.label)}</button>`
+    ).join("")}</div>
+    ${lanes.map((lane) => `<div class="cp-kpis" data-scope="${lane.key}">${
+      [...lane.items, ...(lane.key === active ? ohneEbene : [])].map(companyKpiTileHtml).join("")
+    }</div>`).join("")}
+  </div>`;
+}
+
 function renderCompanyProfile(company, profile, pending, trigger = null, triggerState = "", versions = [], refreshing = false) {
   const card = companyProfileOverlay().querySelector(".cp-card");
   if (!profile) {
@@ -3709,15 +3774,7 @@ function renderCompanyProfile(company, profile, pending, trigger = null, trigger
       : "");
   const triggerMuted = !trigger;
   card.innerHTML = companyProfileHeadHtml(company, profile, trigger, triggerState, versions) + `<div class="cp-body">
-    ${kpis.length ? `<div class="cp-kpis">${kpis.map((k) => {
-      // Geschätzte Kennzahlen bleiben sichtbar, aber grau und mit Icon: der
-      // Steckbrief soll die Zahl liefern und gleichzeitig zeigen, dass sie
-      // nicht belegt ist.
-      const geschaetzt = k.estimated === true;
-      return `<div class="cp-kpi${geschaetzt ? " cp-kpi--estimated" : ""}"${geschaetzt ? ' title="Geschätzt, nicht belegt"' : ""}>
-      <b>${escapeHtml(k.value || "–")}</b><span>${geschaetzt ? '<i class="fa-solid fa-calculator"></i> ' : ""}${escapeHtml(k.label || "")}</span>
-      ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}</div>`;
-    }).join("")}</div>` : ""}
+    ${companyKpisHtml(kpis)}
     ${sections.length || triggerCopy ? `<div class="cp-grid">${sections.map((sec) => `<section class="cp-sec">
       <h3>${escapeHtml(sec.title || "")}</h3>
       <ul>${(Array.isArray(sec.items) ? sec.items : []).map((item) => `<li>${escapeText(item)}</li>`).join("")}</ul>

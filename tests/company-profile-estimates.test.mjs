@@ -24,7 +24,35 @@ test("die Markierung ueberlebt die Normalisierung", () => {
 test("die geschaetzte Kachel wird grau und mit Icon gerendert", () => {
   assert.match(frontend, /cp-kpi--estimated/);
   assert.match(frontend, /fa-solid fa-calculator/);
-  assert.match(frontend, /title="Geschätzt, nicht belegt"/);
+  // Der Titel wird gebaut, weil eine belegte Kachel stattdessen die Quelle nennt.
+  assert.match(frontend, /"Geschätzt, nicht belegt"/);
+  assert.match(frontend, /titel \? ` title="\$\{escapeHtml\(titel\)\}"` : ""/);
+});
+
+test("Kennzahlen trennen Weltweit und Deutschland", () => {
+  // Ohne Ebene stehen Konzern- und Landeszahl nebeneinander und der Steckbrief
+  // widerspricht jeder Google-Suche.
+  assert.match(profileModule, /"scope": "global"/);
+  assert.match(profileModule, /"scope": "de"/);
+  assert.match(profileModule, /scope\?: CompanyProfileKpiScope/);
+  assert.match(frontend, /data-kpi-scope/);
+  assert.match(frontend, /CP_KPI_SCOPES/);
+  // Ein alter Stand ohne "scope" bleibt sichtbar, sonst wirkt er leer.
+  assert.match(frontend, /const ohneEbene = kpis\.filter/);
+  assert.match(styles, /\.cp-kpi-lanes\[data-active="de"\] \.cp-kpis\[data-scope="de"\]/);
+});
+
+test("jede belegte Kennzahl traegt ihre eigene Quelle", () => {
+  assert.match(profileModule, /source_url\?: string/);
+  assert.match(profileModule, /KPI_SOURCE_BLOCKLIST/);
+  // Foren und Bewertungsportale belegen keine Umsatz- oder Personalzahl.
+  assert.match(profileModule, /"kununu\.com"/);
+  assert.match(profileModule, /"reddit\.com"/);
+  // Google-Weiterleitungen verfallen, deshalb wird das Ziel gespeichert.
+  assert.match(profileModule, /function resolveGroundingUri/);
+  assert.match(profileModule, /await resolveSourceUris\(extractSources\(candidate\)\)/);
+  assert.match(frontend, /cp-kpi--linked/);
+  assert.match(styles, /\.cp-kpi--linked \{/);
 });
 
 test("Kachel und Hinweis nutzen dieselbe graue Auszeichnung, hell und dunkel", () => {
