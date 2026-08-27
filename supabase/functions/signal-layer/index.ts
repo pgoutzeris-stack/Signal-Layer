@@ -81,6 +81,7 @@ import {
 } from "./pipeline-simple.ts";
 import {
   COMPANY_LOGO_LOOKUP_VERSION,
+  enrichCompanyProfileKpis,
   COMPANY_PROFILE_MODEL,
   companyProfileIsUsable,
   researchCompanyLogo,
@@ -1344,6 +1345,91 @@ async function ensureCompanyProfile(
   }
 }
 
+/**
+ * Kennzahlen eines vorhandenen Steckbriefs einordnen und belegen, ohne das
+ * ganze Profil neu zu recherchieren. Alles andere - Karten, Logo, Trigger -
+ * bleibt unangetastet; der bisherige Stand bleibt als Version erhalten.
+ */
+async function enrichCompanyProfile(company: string): Promise<string> {
+  const name = String(company || "").trim();
+  if (!name) return "skipped";
+  const admin = getAdminClient();
+  const { data: vorhanden } = await admin.schema("signal_layer").from("company_profiles")
+    .select("*").eq("company", name).maybeSingle();
+  if (!vorhanden) return "skipped: kein Steckbrief vorhanden";
+  const alteKpis = Array.isArray(vorhanden.kpis) ? vorhanden.kpis : [];
+  if (!alteKpis.length) return "skipped: keine Kennzahlen";
+  // Schon eingeordnet: ein zweiter Lauf kostet Suchanfragen ohne Gewinn.
+  if (alteKpis.every((kpi: { scope?: string }) => kpi?.scope)) return "fresh";
+
+  let apiKey = "";
+  try {
+    apiKey = await getGeminiKey();
+  } catch { /* ohne Schluessel bleibt der gespeicherte Stand stehen */ }
+  if (!apiKey) return "skipped: kein Gemini-Schluessel";
+
+  const konfiguriert = (await getPipelineConfig()).ai.simple_research_model || COMPANY_PROFILE_MODEL;
+  const researchModel = konfiguriert.startsWith("gemini-") ? konfiguriert : COMPANY_PROFILE_MODEL;
+
+  try {
+    const { kpis, sources, usage } = await enrichCompanyProfileKpis(
+      { apiKey, model: researchModel },
+      name,
+      alteKpis,
+    );
+    const researchedAt = new Date().toISOString();
+    // Belege aus dem Nachtrag ergaenzen die bisherige Quellenzeile, sie
+    // ersetzen sie nicht: die alten Quellen stuetzen weiter die Karten.
+    const alteQuellen = Array.isArray(vorhanden.sources) ? vorhanden.sources : [];
+    const bekannt = new Set(alteQuellen.map((quelle: { title?: string }) => String(quelle?.title || "")));
+    const profileRow = {
+      ...vorhanden,
+      kpis,
+      sources: [...alteQuellen, ...sources.filter((quelle) => !bekannt.has(quelle.title))].slice(0, 14),
+      researched_at: researchedAt,
+      updated_at: researchedAt,
+    };
+    await admin.schema("signal_layer").from("company_profiles")
+      .upsert(profileRow, { onConflict: "company" });
+    await admin.schema("signal_layer").from("company_profile_history").insert({
+      company: name,
+      researched_at: researchedAt,
+      profile: profileRow,
+      model: researchModel,
+      pipeline_version: SIMPLE_PIPELINE_VERSION,
+    }).then(({ error }) => {
+      if (error) console.warn(`Steckbrief-Historie ${name} nicht geschrieben:`, error.message);
+    });
+
+    const cachedInput = Number(usage.cached_input_tokens || 0);
+    const thinking = Number(usage.thinking_tokens || 0);
+    const costFields = await modelCostFields(researchModel, {
+      input: Math.max(usage.prompt_tokens - cachedInput, 0), cachedInput,
+      output: usage.output_tokens, thinking, total: usage.total_tokens,
+    }, "standard", Number(usage.search_queries || 0));
+    await admin.schema("signal_layer").from("ai_usage_events").insert({
+      operation: "company_profile",
+      model: researchModel,
+      status: "ok",
+      input_tokens: usage.prompt_tokens,
+      cached_input_tokens: cachedInput,
+      output_tokens: usage.output_tokens,
+      thinking_tokens: thinking,
+      total_tokens: usage.total_tokens,
+      search_query_count: Number(usage.search_queries || 0),
+      ...costFields,
+    }).then(({ error }) => {
+      if (error) console.warn(`Kosten des Nachtrags ${name} nicht geschrieben:`, error.message);
+    });
+    console.log(`Steckbrief-Nachtrag ${name}: ${kpis.length} Kennzahlen, ${usage.search_queries || 0} Suchen`);
+    return "written";
+  } catch (error) {
+    const grund = error instanceof Error ? error.message : String(error);
+    console.warn(`Steckbrief-Nachtrag ${name} fehlgeschlagen:`, grund);
+    return `failed: ${grund}`;
+  }
+}
+
 async function ensureCompanyProfileLogo(company: string): Promise<string> {
   const name = String(company || "").trim();
   if (!name) return "skipped";
@@ -1423,7 +1509,7 @@ async function enqueueCompanyProfiles(
   simpleRunId: string,
   // Mit force wird auch ein bereits recherchiertes Unternehmen neu eingereiht.
   // Ohne force bleibt es beim bisherigen Verhalten: einmal pro Unternehmen.
-  options: { force?: boolean } = {},
+  options: { force?: boolean; mode?: "full" | "kpi_enrich" } = {},
 ): Promise<number> {
   const companies = new Set<string>();
   for (const row of rows) {
@@ -1437,6 +1523,7 @@ async function enqueueCompanyProfiles(
   const admin = getAdminClient();
   const names = [...companies];
   const force = options.force === true;
+  const mode = options.mode === "kpi_enrich" ? "kpi_enrich" : "full";
   let ziele = names;
   if (!force) {
     const { data: existing } = await admin.schema("signal_layer").from("company_profiles")
@@ -1453,6 +1540,7 @@ async function enqueueCompanyProfiles(
       research_model: researchModel,
       status: "queued",
       force,
+      mode,
       available_at: now,
       processing_token: null,
       processing_until: null,
@@ -7911,13 +7999,16 @@ Deno.serve(async (req: Request) => {
         }
         if (!namen.length) return corsResponse(origin, { queued: 0, companies: [] });
         const config = await getPipelineConfig();
+        // Nachtrag ist der guenstige Weg: bis zu 3 Suchanfragen statt 8, und er
+        // fasst nur die Kennzahlen an. Eine volle Neurecherche ist die Ausnahme.
+        const modus = (body as { mode?: string }).mode === "full" ? "full" : "kpi_enrich";
         const queued = await enqueueCompanyProfiles(
           namen.map((name) => ({ tier1_companies: [name] })),
           config.ai.simple_research_model || COMPANY_PROFILE_MODEL,
           "",
-          { force: true },
+          { force: true, mode: modus },
         );
-        return corsResponse(origin, { queued, companies: namen });
+        return corsResponse(origin, { queued, companies: namen, mode: modus });
       }
 
       case "resume_stalled_crawls": {
@@ -8843,10 +8934,12 @@ Deno.serve(async (req: Request) => {
         const job = Array.isArray(jobs) ? jobs[0] : null;
         if (!job) return corsResponse(origin, { done: true, processed: 0 });
 
-        const result = await ensureCompanyProfile(job.company, job.force === true, {
-          researchModel: job.research_model,
-          simpleRunId: job.simple_run_id,
-        });
+        const result = job.mode === "kpi_enrich"
+          ? await enrichCompanyProfile(job.company)
+          : await ensureCompanyProfile(job.company, job.force === true, {
+            researchModel: job.research_model,
+            simpleRunId: job.simple_run_id,
+          });
         const success = result === "written" || result === "fresh";
         const retry = !success && Number(job.attempt_count || 0) < 4;
         const now = new Date().toISOString();

@@ -7,6 +7,10 @@ const backend = readFileSync(
   "utf8",
 );
 const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const profileModule = readFileSync(
+  new URL("../supabase/functions/signal-layer/company-profile.ts", import.meta.url),
+  "utf8",
+);
 const migration = readFileSync(
   new URL("../supabase/migrations/20260804204544_add_company_profile_job_queue.sql", import.meta.url),
   "utf8",
@@ -39,7 +43,7 @@ test("eine Sammelaktualisierung erreicht alle Tier-1-Unternehmen", () => {
   assert.match(backend, /case "refresh_company_profiles"/);
   assert.match(backend, /ADMIN_ACTIONS = new Set\(\[\s*\n\s*"refresh_company_profiles"/);
   assert.match(backend, /ensureCompanyProfile\(job\.company, job\.force === true/);
-  assert.match(backend, /\{ force: true \}/);
+  assert.match(backend, /\{ force: true, mode: modus \}/);
   // Der alte Stand bleibt als Version erhalten.
   assert.match(backend, /from\("company_profile_history"\)\.insert\(/);
 });
@@ -52,4 +56,27 @@ test("der Waechter holt liegengebliebene Steckbrief-Jobs nach", () => {
   const wache = backend.slice(wachePos, wachePos + 3000);
   assert.match(wache, /from\("company_profile_jobs"\)/);
   assert.match(wache, /triggerCompanyProfileWorker\(\)/);
+});
+
+test("der Nachtrag kostet weniger als eine Neurecherche", () => {
+  const modeMigration = readFileSync(
+    new URL("../supabase/migrations/20260828130000_company_profile_job_mode.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(modeMigration, /mode in \('full', 'kpi_enrich'\)/);
+  // Suchanfragen sind der Kostentreiber, nicht die Token.
+  assert.match(profileModule, /SUCHBUDGET: höchstens 8 Suchanfragen/);
+  assert.match(profileModule, /SUCHBUDGET: hoechstens 3 Suchanfragen/);
+  assert.match(profileModule, /export async function enrichCompanyProfileKpis/);
+  // Der Nachtrag fasst nur die Kennzahlen an.
+  assert.match(profileModule, /Recherchiere keine zusaetzlichen Kennzahlen/);
+  assert.match(backend, /job\.mode === "kpi_enrich"/);
+  assert.match(backend, /async function enrichCompanyProfile\(/);
+  // Ein bereits eingeordneter Steckbrief wird nicht noch einmal gesucht.
+  assert.match(backend, /alteKpis\.every\(\(kpi: \{ scope\?: string \}\) => kpi\?\.scope\)/);
+  // Auch der Nachtrag legt eine Version an.
+  const nachtragPos = backend.indexOf("async function enrichCompanyProfile(");
+  const nachtrag = backend.slice(nachtragPos, nachtragPos + 4000);
+  assert.match(nachtrag, /from\("company_profile_history"\)\.insert\(/);
+  assert.match(nachtrag, /search_query_count/);
 });

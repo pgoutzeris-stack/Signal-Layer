@@ -107,17 +107,22 @@ export function buildCompanyProfilePrompt(
 UNTERNEHMEN: ${company}
 HEUTIGES DATUM: ${today}
 
-RECHERCHIERE mit der Google-Suche und stütze jede Zahl auf eine Quelle. Suche
-gezielt nach: Umsatz und Wachstum im letzten Geschäftsjahr, Mitarbeitenden,
-Hauptsitz, Anzahl Märkte, Marktanteil, Eigenmarkenanteil, Mediabudget,
-Agenturbeziehungen, aktuelle Strategie, Markenportfolio, Personalwechsel im
-Marketing und in der Markenführung, laufende Umbauten.
+RECHERCHIERE mit der Google-Suche und stütze jede Zahl auf eine Quelle.
 
-RECHERCHIERE JEDE KENNZAHL AUF ZWEI EBENEN, sofern das Unternehmen beide hat:
-weltweit (Konzern) und Deutschland. Suche beide Ebenen getrennt, mische sie
-niemals in einer Zahl. Ein Konzernumsatz neben einer Landesmitarbeiterzahl ist
-der schwerste Fehler in diesem Profil. Gibt es eine Ebene nicht oder findest du
-dafür keinen Beleg, lässt du sie weg statt zu schätzen.
+SUCHBUDGET: höchstens 8 Suchanfragen für das ganze Profil. Jede Suche kostet.
+Bündele deshalb, statt jede Angabe einzeln zu suchen: eine gute Anfrage nach
+Geschäftszahlen liefert Umsatz, Mitarbeitende und Märkte auf einmal, eine nach
+Strategie liefert Ausrichtung, Markenportfolio und laufende Umbauten. Was eine
+Unternehmensseite oder ein Geschäftsbericht bereits belegt, suchst du nicht
+erneut. Was du innerhalb des Budgets nicht belegen kannst, lässt du weg oder
+kennzeichnest es als Schätzung.
+
+TRENNE KONZERN UND DEUTSCHLAND, aber nur wo sich die Zahl wirklich
+unterscheidet: Umsatz, Wachstum, Mitarbeitende, Märkte, Marktanteil. Anteile und
+Quoten wie der Eigenmarkenanteil brauchen keine zweite Ebene. Mische die Ebenen
+niemals in einer Zahl - ein Konzernumsatz neben einer Landesmitarbeiterzahl ist
+der schwerste Fehler in diesem Profil. Bringt eine zweite Ebene keinen neuen
+Beleg, lässt du sie weg statt für sie zu suchen.
 
 RECHERCHIERE AUSSERDEM DAS AKTUELLE UNTERNEHMENSLOGO. Nutze diese Quellen in
 genau dieser Priorität:
@@ -164,11 +169,11 @@ danach, ohne Code-Zäune:
 }
 
 REGELN, sie entscheiden über die Brauchbarkeit:
-1. Bis zu 12 Einträge in "kpis": bis zu 6 mit "scope": "global" und bis zu 6 mit
-   "scope": "de". Mindestens eine Ebene ist vollständig mit 6 Einträgen belegt.
-   Hat das Unternehmen kein nennenswertes Deutschlandgeschäft, lieferst du nur
-   "global"; ist es rein deutsch, nur "de". Beide Ebenen bilden dieselben
-   Kennzahlen ab, damit sie vergleichbar sind. Jeder Eintrag mit kurzem "value",
+1. Sechs Einträge in "kpis" für die Hauptebene des Unternehmens, dazu nur die
+   Kennzahlen der zweiten Ebene, die du ohne zusätzliche Suche belegen konntest -
+   höchstens 12 zusammen. Hat das Unternehmen kein nennenswertes
+   Deutschlandgeschäft, lieferst du nur "global"; ist es rein deutsch, nur "de".
+   Jeder Eintrag mit kurzem "value",
    der als große Zahl lesbar ist. Konntest du eine Zahl per Suche belegen, setze
    "estimated": false. Findest du sie nicht, gib eine begründete Schätzung, setze
    "estimated": true und schreibe in "hint" in maximal 12 Wörtern,
@@ -790,6 +795,114 @@ export async function researchCompanyProfile(
       sources: await resolveSourceUris(extractSources(candidate)),
       unverified_note: clean(parsed.unverified_note, 400) || null,
     },
+    usage: {
+      prompt_tokens: Number(usageMeta.promptTokenCount || 0),
+      cached_input_tokens: Number(usageMeta.cachedContentTokenCount || 0),
+      output_tokens: Number(usageMeta.candidatesTokenCount || 0),
+      thinking_tokens: Number(usageMeta.thoughtsTokenCount || 0),
+      total_tokens: Number(usageMeta.totalTokenCount || 0),
+      search_queries: groundingSearchCount(candidate),
+    },
+  };
+}
+
+/**
+ * Nachtrag statt Neurecherche.
+ *
+ * Bestehende Steckbriefe tragen brauchbare Zahlen, aber ohne Ebene, ohne
+ * Stichtag und ohne Beleg an der einzelnen Kennzahl - die Felder gab es beim
+ * Anlegen noch nicht. Ein vollstaendiger neuer Lauf kostet rund 8 Suchanfragen
+ * und wuerde dieselben Karten noch einmal schreiben. Dieser Aufruf ordnet nur
+ * die vorhandenen Werte ein: er darf sie belegen, ihre Ebene und ihren Stichtag
+ * benennen und einen nachweislich falschen Wert korrigieren, aber keine neuen
+ * Kennzahlen erfinden und keine Abschnitte anfassen.
+ */
+export function buildCompanyKpiEnrichPrompt(
+  company: string,
+  kpis: CompanyProfileKpi[],
+  today: string = new Date().toISOString().slice(0, 10),
+): string {
+  const liste = kpis.map((kpi, index) =>
+    `${index + 1}. label: "${kpi.label}" | value: "${kpi.value}"${kpi.hint ? ` | hint: "${kpi.hint}"` : ""}${kpi.estimated ? " | geschaetzt" : ""}`
+  ).join("\n");
+  return `Du ordnest vorhandene Kennzahlen eines Unternehmensprofils ein.
+
+UNTERNEHMEN: ${company}
+HEUTIGES DATUM: ${today}
+
+VORHANDENE KENNZAHLEN:
+${liste}
+
+AUFGABE: Belege jede dieser Kennzahlen mit der Google-Suche und ergaenze Ebene,
+Stichtag und Quelle. Recherchiere keine zusaetzlichen Kennzahlen.
+
+SUCHBUDGET: hoechstens 3 Suchanfragen. Eine Anfrage nach den Geschaeftszahlen
+des Unternehmens belegt in der Regel mehrere dieser Werte auf einmal.
+
+REGELN:
+1. "scope" ist "global" fuer eine Konzernzahl weltweit und "de" fuer das
+   Deutschlandgeschaeft. Steht die Ebene bereits im label oder hint, uebernimm
+   sie von dort, ohne dafuer zu suchen. Bleibt sie unklar, lass "scope" leer.
+2. "as_of" ist das Geschaeftsjahr oder der Stichtag des Wertes, zum Beispiel
+   "GJ 2024". Steht ein Jahr im label, uebernimm es. Sonst leer lassen.
+3. "label" enthaelt danach weder Ebene noch Jahr: aus
+   "Umsatz GJ 2024 (weltweit)" wird "Umsatz".
+4. "value" bleibt unveraendert. Einzige Ausnahme: die Suche belegt eindeutig,
+   dass der Wert falsch oder veraltet ist - dann korrigierst du ihn und setzt
+   "corrected": true. Im Zweifel bleibt der alte Wert stehen.
+5. "source_url" ist die Seite, auf der genau dieser Wert steht, "source_title"
+   deren Domain. Foren, Bewertungs- und Social-Plattformen (reddit, kununu,
+   gutefrage, facebook, instagram, tiktok, x.com, quora, pinterest, youtube)
+   gelten nicht als Beleg. Findest du keinen brauchbaren Beleg, laesst du beide
+   Felder leer - erfinde niemals eine Quelle.
+6. "estimated" bleibt, wie es war, ausser die Suche belegt den Wert: dann faellt
+   die Markierung weg.
+
+ANTWORTE AUSSCHLIESSLICH MIT JSON, ohne Text davor oder danach, ohne Code-Zaeune,
+mit genau so vielen Eintraegen wie oben, in derselben Reihenfolge:
+
+{"kpis": [{"label": "Umsatz", "value": "8,9 Mrd. €", "hint": "Konzern, brutto", "scope": "global", "as_of": "GJ 2024", "estimated": false, "corrected": false, "source_url": "https://...", "source_title": "beispiel.de"}]}`;
+}
+
+export async function enrichCompanyProfileKpis(
+  deps: Pick<CompanyProfileDeps, "apiKey" | "model">,
+  company: string,
+  kpis: CompanyProfileKpi[],
+): Promise<{ kpis: CompanyProfileKpi[]; sources: CompanyProfileSource[]; usage: Record<string, number> }> {
+  if (!kpis.length) throw new Error("keine Kennzahlen zum Nachtragen");
+  const model = deps.model || COMPANY_PROFILE_MODEL;
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(deps.apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: buildCompanyKpiEnrichPrompt(company, kpis) }] }],
+        tools: [{ google_search: {} }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 4_000 },
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`gemini kpi enrich failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
+  }
+  const payload = await response.json() as Record<string, unknown>;
+  const candidate = (Array.isArray(payload.candidates) ? payload.candidates[0] : null) as Record<string, unknown> | null;
+  if (!candidate) throw new Error("gemini kpi enrich returned no candidate");
+  const finish = String(candidate.finishReason ?? "");
+  if (finish && finish !== "STOP") throw new Error(`gemini kpi enrich endete mit ${finish}`);
+  const parts = ((candidate.content as Record<string, unknown> | undefined)?.parts ?? []) as Array<Record<string, unknown>>;
+  const parsed = extractJson(parts.map((part) => String(part.text ?? "")).join("\n")) as Record<string, unknown>;
+  const angereichert = normalizeKpis(parsed.kpis);
+  // Eine Antwort, die Kennzahlen verliert, waere ein Rueckschritt gegenueber dem
+  // gespeicherten Stand. Dann bleibt der alte Satz stehen.
+  if (angereichert.length < kpis.length) {
+    throw new Error(`kpi enrich lieferte ${angereichert.length} statt ${kpis.length} Kennzahlen`);
+  }
+  const usageMeta = (payload.usageMetadata ?? {}) as Record<string, number>;
+  return {
+    kpis: angereichert,
+    sources: await resolveSourceUris(extractSources(candidate)),
     usage: {
       prompt_tokens: Number(usageMeta.promptTokenCount || 0),
       cached_input_tokens: Number(usageMeta.cachedContentTokenCount || 0),
