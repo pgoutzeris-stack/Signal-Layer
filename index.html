@@ -302,11 +302,15 @@
   .cp-kpi--linked { text-decoration: none; color: inherit; transition: border-color .15s, transform .15s; }
   .cp-kpi--linked:hover { border-color: var(--brand-dark); transform: translateY(-1px); }
   .cp-kpi-asof { font-weight: 650; color: var(--status-text) !important; }
-  .cp-kpi-src { color: var(--brand-dark) !important; font-weight: 650; }
+  .cp-kpi-src { margin-top: auto !important; padding-top: .35rem; color: var(--brand-dark) !important; font-weight: 650; overflow-wrap: anywhere; }
   .cp-kpi-src i { font-size: .62rem; margin-right: .15rem; }
-  .cp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; margin-bottom: 1.1rem; }
-  .cp-kpi { border: 1px solid var(--line); border-radius: 14px; padding: .9rem .7rem; background: var(--bg); text-align: center; box-shadow: var(--shadow-dash); }
-  .cp-kpi b { display: block; font-size: 1.45rem; font-weight: 730; color: var(--brand-dark); line-height: 1.15; }
+  /* Feste Spaltenzahl statt auto-fit: sechs Kennzahlen ergeben sonst eine Reihe
+     aus fuenf Kacheln plus einer einzelnen darunter. */
+  .cp-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; margin-bottom: 1.1rem; }
+  @media (min-width: 760px) { .cp-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .cp-kpi { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; padding: .9rem .7rem; background: var(--bg); text-align: center; box-shadow: var(--shadow-dash); }
+  /* Lange Werte wie "ca. 188 Mio. €" sprengen 150px bei fester Groesse. */
+  .cp-kpi b { display: block; font-size: clamp(1.05rem, 1.9vw + .35rem, 1.45rem); font-weight: 730; color: var(--brand-dark); line-height: 1.15; overflow-wrap: anywhere; hyphens: auto; }
   .cp-kpi span { display: block; font-size: .72rem; color: var(--status-text); margin-top: .3rem; font-weight: 650; }
   .cp-kpi small { display: block; font-size: .7rem; color: #94a3b8; margin-top: .15rem; }
   /* Geschaetzte Kennzahl: gestrichelter Rahmen, grauer Wert, Rechner-Icon. */

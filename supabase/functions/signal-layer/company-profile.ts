@@ -91,6 +91,10 @@ export function buildCompanyProfilePrompt(
   company: string,
   rootsPortfolio: string,
   articles: CompanyArticleHint[],
+  // Ohne das heutige Datum kann das Modell nicht beurteilen, ob ein gefundener
+  // Stand der aktuellste ist: sein Trainingswissen endet frueher als die Suche
+  // reicht, und es gibt dann bevorzugt das Jahr aus, das es kennt.
+  today: string = new Date().toISOString().slice(0, 10),
 ): string {
   const historie = articles.length
     ? articles.slice(0, 10).map((a) =>
@@ -101,6 +105,7 @@ export function buildCompanyProfilePrompt(
   return `Du erstellst ein Account-Profil für den Vertrieb einer Markenberatung.
 
 UNTERNEHMEN: ${company}
+HEUTIGES DATUM: ${today}
 
 RECHERCHIERE mit der Google-Suche und stütze jede Zahl auf eine Quelle. Suche
 gezielt nach: Umsatz und Wachstum im letzten Geschäftsjahr, Mitarbeitenden,
@@ -170,6 +175,11 @@ REGELN, sie entscheiden über die Brauchbarkeit:
    worauf die Schätzung beruht (Bezugsgröße, Branchenanteil,
    Vergleichsunternehmen, Vorjahr). Eine Schätzung ohne nachvollziehbare Grundlage lässt du weg.
    Kennzeichne sie im "value" zusätzlich mit "ca.".
+1c. Nimm für jede Kennzahl den zuletzt veröffentlichten Stand. Suche dafür
+   ausdrücklich nach dem laufenden und dem vorangegangenen Jahr, bevor du einen
+   älteren Wert übernimmst. Gibt es für das jüngste Geschäftsjahr noch keine
+   Zahl, nimm die letzte belegte und schreibe ihr Jahr in "as_of" - erfinde
+   niemals eine Fortschreibung auf das laufende Jahr.
 1a. "label" enthält weder Ebene noch Jahr - die stehen in "scope" und "as_of".
    Also "Umsatz", nicht "Umsatz GJ 2024 (weltweit)". In "as_of" steht der
    Stichtag oder das Geschäftsjahr, auf das sich der Wert bezieht, zum Beispiel
