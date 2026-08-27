@@ -219,6 +219,17 @@ test("erst die Pille KI oder selbst, dann das Dropdown mit Miniatur", () => {
   assert.match(studio, /as-img-ui"\[\\s\\S\]\*\?<\\\/div>\/g, ""\)/);
 });
 
+test("Bildvorlagen zeigen ein echtes lokales Motiv in jeder Vorschau", () => {
+  const previewImage = readFileSync(new URL("../assets/template-preview-strategic-clarity.webp", import.meta.url));
+  assert.equal(previewImage.subarray(0, 4).toString("ascii"), "RIFF");
+  assert.ok(previewImage.length > 20_000, "das Vorschaumotiv ist keine leere Platzhalterdatei");
+  assert.match(studio, /const TEMPLATE_PREVIEW_IMAGE = "assets\/template-preview-strategic-clarity\.webp"/);
+  assert.match(studio, /if \(MIT_BILD\.has\(variant\)\) \{\s*slide\.image\.src = TEMPLATE_PREVIEW_IMAGE;/);
+  assert.doesNotMatch(studio, /slide\.image\.src = "data:image\/svg\+xml/);
+  const renderer = readFileSync(new URL("../tools/render-asset-library.mjs", import.meta.url), "utf8");
+  assert.match(renderer, /assets\/template-preview-strategic-clarity\.webp/);
+});
+
 test("Sales heisst Ansprache", () => {
   const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
   assert.match(frontend, /"Ansprache erstellen"/);
@@ -2275,8 +2286,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260824-0305");
-  assert.match(indexHtml, /app\.js\?v=20260828-1200/);
+  assert.equal(studioVersion, "20260828-1900");
+  assert.match(indexHtml, /app\.js\?v=20260828-1900/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);

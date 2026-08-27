@@ -6,6 +6,10 @@
 /* ─────────────────────────  Konstanten und Vorgaben  ───────────────────────── */
 
 const LOGO_PATH = "assets/roots-logo.png";
+// Dauerhaftes, lokales Motiv fuer alle Bildvorlagen im Fragebogen. Dropdown,
+// grosse Vorschau und Carousel-Vorschau rendern dieselbe Demo-Folie und zeigen
+// dadurch immer genau dieses Bild statt einer unter dem Overlay leeren Flaeche.
+const TEMPLATE_PREVIEW_IMAGE = "assets/template-preview-strategic-clarity.webp";
 /** Ein Pixel ohne Farbe. Haelt den Platz des Logos, zeigt aber nichts. */
 const LEER_BILD = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 const SAVE_LIMIT = 900000;
@@ -37,7 +41,7 @@ const TOPIC_KICKERS = {
 const MEMO_SEITEN = 3;
 const MEMO_SEITE_PX = { w: 794, h: 1123 };
 
-// Nur diese Varianten sind vertraglich zugesagt; J fehlt bewusst.
+// Nur diese Varianten sind vertraglich zugesagt.
 const VARIANTS = [
   ["B", "Titel mit Einordnung"],
   ["A", "Zitat"],
@@ -2160,10 +2164,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       footer_left: state.chrome.footer_left || (state.chrome.custom ? "" : "ROOTS Consultants"),
       ...(beispiele[variant] || beispiele.B),
     });
-    // Ein abstraktes, lokales Motiv macht die Bildvorlagen verständlich, ohne
-    // ein fremdes Foto oder einen externen Abruf in die Vorschau zu ziehen.
+    // Ein eigenes, lokales Motiv macht die Bildvorlagen in jeder Vorschaugroesse
+    // verstaendlich, ohne fremdes Foto oder externen Abruf.
     if (MIT_BILD.has(variant)) {
-      slide.image.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDgwIDEzNTAiPjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0iZyIgeDI9IjEiIHkyPSIxIj48c3RvcCBzdG9wLWNvbG9yPSIjMGIxZjQ1Ii8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjA2ZWZiIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwODAiIGhlaWdodD0iMTM1MCIgZmlsbD0idXJsKCNnKSIvPjxjaXJjbGUgY3g9IjgyMCIgY3k9IjM2MCIgcj0iMzEwIiBmaWxsPSIjZmZmIiBvcGFjaXR5PSIuMTIiLz48Y2lyY2xlIGN4PSI2OTAiIGN5PSI4MjAiIHI9IjQyMCIgZmlsbD0iIzllYzBmZiIgb3BhY2l0eT0iLjIiLz48cGF0aCBkPSJNNTIwIDk4MGMxMzAtMjMwIDI5MC0zNTAgNTAwLTM3MHYzOTBINTIweiIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjE1Ii8+PC9zdmc+";
+      slide.image.src = TEMPLATE_PREVIEW_IMAGE;
     }
     return slide;
   }

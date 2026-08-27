@@ -23,19 +23,10 @@ const { ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, AS
 const LOGO = "data:image/png;base64," + readFileSync(resolve(WURZEL, "assets/roots-logo.png")).toString("base64");
 const FOOTER = "ROOTS Consultants";
 const DOMAIN = "roots-consultants.com";
-// Ein neutrales Motiv fuer die Vorlagen mit Bildflaeche: ohne Datei zeigten
-// C, D und J eine leere Kachel, die Vorschau sagte damit gar nichts.
-const MOTIV = "data:image/svg+xml;base64," + Buffer.from(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
-    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b1f45"/><stop offset="0.55" stop-color="#165fd9"/><stop offset="1" stop-color="#5a9bff"/>
-    </linearGradient></defs>
-    <rect width="1080" height="1350" fill="url(#g)"/>
-    <g fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="2">
-      ${Array.from({ length: 14 }, (_, i) => `<circle cx="${180 + i * 60}" cy="${520 + (i % 5) * 70}" r="${120 + i * 16}"/>`).join("")}
-    </g>
-    <rect width="1080" height="1350" fill="#0b1f45" fill-opacity="0.18"/>
-  </svg>`,
+// Dasselbe Motiv wie in Dropdown und grosser Fragebogen-Vorschau. Die
+// Bibliotheksbilder pruefen dadurch die tatsaechliche Overlay-Wirkung.
+const MOTIV = "data:image/webp;base64," + readFileSync(
+  resolve(WURZEL, "assets/template-preview-strategic-clarity.webp"),
 ).toString("base64");
 
 /** Beispielinhalte je Vorlage: derselbe Marketingfall wie in der Vorschau. */
