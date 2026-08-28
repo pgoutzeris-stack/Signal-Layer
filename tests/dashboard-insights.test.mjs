@@ -246,7 +246,18 @@ test("der Bestandsring teilt die bewerteten Artikel auf", async () => {
   assert.equal(boegen.length, 4);
   // Zwischen den Segmenten bleibt eine kleine Luecke, damit die runden Enden
   // nicht ineinanderlaufen - vier Luecken zu 0,9.
-  assert.ok(Math.abs(boegen.reduce((a, b) => a + b, 0) - (100 - 4 * 0.9)) < 0.05, `Summe der Boegen: ${boegen}`);
+  // Die Boegen fuellen den Kreis abzueglich der Luecken. Ein sehr kleines
+  // Segment wird auf eine Mindestlaenge angehoben, damit es sichtbar bleibt -
+  // deshalb ein Rahmen statt eines festen Werts.
+  const gesamt = boegen.reduce((a, b) => a + b, 0);
+  assert.ok(gesamt > 100 - 4 * 1.4 - 0.05 && gesamt < 100 - 2 * 1.4, `Summe der Boegen: ${boegen}`);
+  // Kein Segment ragt in das naechste hinein.
+  const positionen = [...html.matchAll(/stroke-dasharray="([\d.]+) [\d.]+" stroke-dashoffset="(-?[\d.]+)"/g)]
+    .map((treffer) => ({ laenge: Number(treffer[1]), start: -Number(treffer[2]) }));
+  positionen.slice(1).forEach((teil, index) => {
+    const vorher = positionen[index];
+    assert.ok(teil.start >= vorher.start + vorher.laenge, `Segment ${index + 1} beginnt vor dem Ende des vorigen`);
+  });
   // Die Mitte traegt die Summe der vier, nicht den Gesamtbestand.
   assert.match(html, /<b>5\.653<\/b><span>Artikel<\/span>/);
   // Der Gesamtbestand steht als Bezugsgroesse darunter.
@@ -354,7 +365,9 @@ test("der Ring laesst sich ohne die Aussortierten lesen", async () => {
   // Verlauf statt flacher Vollfarbe, runde Enden.
   assert.match(mit, /stroke="url\(#piGrad-marketing\)"/);
   assert.match(mit, /<linearGradient id="piGrad-sales"/);
-  assert.match(mit, /stroke-linecap="round"/);
+  // Gerade Enden: runde ragen ueber das Segment hinaus und lassen zwei kleine
+  // Gruppen uebereinanderliegen.
+  assert.match(mit, /stroke-linecap="butt"/);
   // Die Bindung fuer den Hover muss es geben - ohne sie wirft das Rendern.
   assert.equal(typeof module.bindBestandRing, "function");
 });
