@@ -100,15 +100,11 @@
 .pi-headline-line { display: block; animation: piLineIn .62s cubic-bezier(.2,.85,.28,1) both; animation-delay: calc(var(--pi-line, 0) * 130ms); }
 /* Die Zeichnung traegt dieselbe Fettung wie die Schrift daneben: die
    Strichstaerke steht im SVG, die Groesse folgt der Zeile. */
-/* Nicht currentColor: die Zahl daneben faerbt ueber background-clip und setzt
-   color auf transparent - das Zeichen waere unsichtbar geworden. */
-.pi-avg { width: .74em; height: .74em; margin-right: .14em; align-self: center; color: var(--brand); }
 
 @keyframes piLineIn { from { opacity: 0; transform: translateY(10px); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
 /* Zahlen und Quoten tragen dieselbe Auszeichnung: sie sind die Aussage der
    Zeile. Das Durchschnittszeichen gehoert zur Quote und faerbt mit. */
 .pi-num {
-  display: inline-flex; align-items: baseline;
   background: linear-gradient(96deg, var(--brand-dark) 0%, var(--brand) 34%, #93c5fd 50%, var(--brand) 66%, var(--brand-dark) 100%);
   background-size: 280% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent;

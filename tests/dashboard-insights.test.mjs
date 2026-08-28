@@ -297,6 +297,10 @@ test("der Server zaehlt Pruefung und Bestand mit", async () => {
   assert.match(backend, /review: review \|\| 0,\n\s*crawled: crawled \|\| 0,/);
 });
 
+// Zahlen bringen geschuetzte und schmale Leerzeichen mit; fuer den Vergleich
+// zaehlt der Wortlaut, nicht die Art des Abstands.
+const ohneSchmal = (text) => String(text).replace(/[\u00a0\u2009\u202f]/g, " ");
+
 test("die Uebersicht nennt die Lage in einem Satz", async () => {
   const module = await import("../dashboard-insights.js");
   const basis = {
@@ -313,13 +317,13 @@ test("die Uebersicht nennt die Lage in einem Satz", async () => {
   };
   const satz = module.uebersichtSatz(module.summarizeDashboardData(basis));
   // Bezugsgroesse ist, was die Pipeline bewertet hat, nicht der gesamte Bestand.
-  assert.equal(satz, "5.653 analysierte Artikel, davon 279 Marketing mit 12.400 Views und 117 Sales-Signale mit 22,5 % Return Rate.");
+  assert.equal(ohneSchmal(satz), "5.653 analysierte Artikel, davon 279 Marketing mit Ø 12.400 Views und 117 Sales-Signale mit Ø 22,5 % Return Rate.");
 
   // Ohne KPI-Werte bleibt der Satz stehen, nur ohne die Wirkungsangaben.
   const ohneKpi = module.uebersichtSatz(module.summarizeDashboardData({ ...basis, performance: [] }));
   // Ohne KPI-Werte stehen dort Nullen, keine Auslassung: die Zahl entsteht,
   // sobald jemand Werte am Asset eintraegt.
-  assert.equal(ohneKpi, "5.653 analysierte Artikel, davon 279 Marketing mit 0 Views und 117 Sales-Signale mit 0,0 % Return Rate.");
+  assert.equal(ohneSchmal(ohneKpi), "5.653 analysierte Artikel, davon 279 Marketing mit Ø 0 Views und 117 Sales-Signale mit Ø 0,0 % Return Rate.");
 
   // Ohne Signale wird nichts behauptet.
   const leer = module.uebersichtSatz(module.summarizeDashboardData({
@@ -385,6 +389,7 @@ test("die Kopfzeile laeuft in Teilen ein und hebt die Zahlen hervor", async () =
     signalCounts: { marketing: 279, sales: 117, rejected: 5157, review: 100 },
   });
   const html = module.uebersichtHeadlineHtml(summary);
+  const js = readFileSync(new URL("../dashboard-insights.js", import.meta.url), "utf8");
   // Drei Teile, jeder mit eigener Verzoegerung.
   assert.equal([...html.matchAll(/class="pi-headline-line"/g)].length, 3);
   assert.match(html, /--pi-line:2/);
@@ -392,22 +397,16 @@ test("die Kopfzeile laeuft in Teilen ein und hebt die Zahlen hervor", async () =
   assert.match(html, /<b class="pi-num">5\.653<\/b> analysierte Artikel/);
   assert.match(html, /<b class="pi-num">279<\/b> Marketing/);
   // Die Quote ist ebenfalls eine Zahl und traegt dieselbe Auszeichnung.
-  assert.match(html, /<b class="pi-num"><svg class="pi-avg"[^>]*>[\s\S]*?<\/svg>0,0 %<\/b> Return Rate/);
-  // Auch die Views sind ein Durchschnitt je Asset und tragen das Zeichen.
-  assert.match(html, /<b class="pi-num"><svg class="pi-avg"[^>]*>[\s\S]*?<\/svg>0<\/b> Views/);
-  // Die Strichstaerke haelt neben der 850er Fettung mit.
-  assert.match(html, /stroke-width="2\.6"/);
-  // Eigene Farbe statt currentColor: die Zahl daneben faerbt ueber
-  // background-clip und setzt color auf transparent.
+  // Das Durchschnittszeichen steht als Schriftzeichen in der Zahl: nur so erbt
+  // es Schnitt, Fettung und Grundlinie. Als SVG sass es zu hoch und zitterte.
+  assert.match(ohneSchmal(html), /<b class="pi-num">Ø 0,0 %<\/b> Return Rate/);
+  assert.match(ohneSchmal(html), /<b class="pi-num">Ø 0<\/b> Views/);
   const css = readFileSync(new URL("../dashboard-insights.css", import.meta.url), "utf8");
-  assert.match(css, /\.pi-avg \{[^}]*color: var\(--brand\)/);
-  assert.ok(!/\.pi-avg \{[^}]*color: currentColor/.test(css));
-  // Kein "Aus" davor, Return Rate mit Zeichen und Icon.
+  assert.ok(!css.includes(".pi-avg"), "die Sonderregeln fuer die Zeichnung sind entfallen");
+  assert.ok(!js.includes("<svg class=\"pi-avg\""), "kein eingebettetes SVG mehr");
+  // Kein "Aus" davor.
   assert.ok(!html.startsWith("<h3 class=\"pi-headline\"><span class=\"pi-headline-line\" style=\"--pi-line:0\">Aus"));
-  // Kein Pfeil mehr, das Durchschnittszeichen ist gezeichnet statt getippt.
   assert.ok(!html.includes("fa-reply"), "der Pfeil ist raus");
-  assert.ok(!html.includes("⌀"), "das Zeichen kommt aus der Zeichnung");
-  assert.match(html, /<circle cx="8" cy="8"/);
 });
 
 test("die Uebersicht stellt Satz und Kacheln nebeneinander", async () => {

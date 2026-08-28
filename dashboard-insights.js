@@ -316,6 +316,10 @@ export function uebersichtSatz(summary) {
  * im fertigen Satz nach ihr suchen zu muessen.
  */
 export function uebersichtZeilen(summary) {
+  // Das Durchschnittszeichen steht als Schriftzeichen in der Zahl, nicht als
+  // Zeichnung daneben: nur so erbt es Schnitt, Fettung und Grundlinie der
+  // Schrift. Als eingebettetes SVG sass es zu hoch und zitterte, weil es bei
+  // jedem Animationsschritt neu ausgerichtet wurde.
   const zahlen = summary.signalCounts || {};
   const marketing = summary.marketingTotals || {};
   const sales = summary.salesTotals || {};
@@ -340,7 +344,7 @@ export function uebersichtZeilen(summary) {
         { text: "davon " },
         { text: formatNumber(marketingSignale), zahl: true },
         { text: " Marketing mit " },
-        { text: formatNumber(views), zahl: true, symbol: "durchschnitt" },
+        { text: `Ø\u2009${formatNumber(views)}`, zahl: true },
         { text: " Views" },
       ],
     });
@@ -349,17 +353,13 @@ export function uebersichtZeilen(summary) {
         { text: "und " },
         { text: formatNumber(salesSignale), zahl: true },
         { text: " Sales-Signale mit " },
-        { text: formatPercent(returnRate), zahl: true, symbol: "durchschnitt" },
+        { text: `Ø\u2009${formatPercent(returnRate)}`, zahl: true },
         { text: " Return Rate." },
       ],
     });
   }
   return zeilen;
 }
-
-/** Das Durchschnittszeichen als Zeichnung. Die Strichstaerke ist an die
- *  Schrift angeglichen: 1,7 wirkte neben 850er Fettung wie ein Haarstrich. */
-const DURCHSCHNITT_SVG = `<svg class="pi-avg" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="2.6"></circle><line x1="3.6" y1="12.4" x2="12.4" y2="3.6" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"></line></svg>`;
 
 /**
  * Dieselben Zeilen als Auszeichnung: sie laufen nacheinander ein, die Zahlen
@@ -371,7 +371,7 @@ export function uebersichtHeadlineHtml(summary, escapeHtml = (value) => String(v
     zeile.teile.map((teil) => {
       const inhalt = escapeHtml(teil.text);
       if (!teil.zahl) return inhalt;
-      return `<b class="pi-num">${teil.symbol === "durchschnitt" ? DURCHSCHNITT_SVG : ""}${inhalt}</b>`;
+      return `<b class="pi-num">${inhalt}</b>`;
     }).join("")
   }</span>`).join("")}</h3>`;
 }
