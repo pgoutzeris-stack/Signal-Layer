@@ -246,7 +246,9 @@ test("die Werkbank bearbeitet in Echtzeit", () => {
   }
   assert.match(studio, /data-act="img-pick"/);
   assert.match(studio, /class="as-img-btn"/);
-  assert.match(studio, /data-act="variant"/);
+  // Die Vorlagenauswahl an der Folie ist entfallen: sie warf den fertigen Text
+  // in eine andere Feldstruktur. Gewaehlt wird im Fragebogen.
+  assert.doesNotMatch(studio, /<select data-act="variant"/);
   assert.match(studio, /function harvest\(\)/);
 });
 
@@ -516,7 +518,7 @@ test("die Vorschau ist ein Kasten, Memo blaettert seitenweise", () => {
   assert.match(studio, /if \(isMemo\) return MEMO_SEITEN/);
   assert.match(studio, /function markiereMemoSeiten/);
   assert.match(studio, /function zeigeAktiveFolie/);
-  assert.match(studio, /availH \/ h/);
+  assert.match(studio, /nutzbar \/ h/);
   assert.doesNotMatch(studio, /isMemo && availH/);
   assert.match(studio, /MEMO_SEITE_PX\.h/);
   assert.doesNotMatch(studio, /3368/);
@@ -1939,7 +1941,7 @@ test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-pot \.em-shot img[^}]*object-fit:cover/);
   assert.match(studio, /from "\.\/memo-template\.js/);
   assert.match(studio, /MEMO_TEMPLATE/);
-  assert.match(studio, /availH \/ h/);
+  assert.match(studio, /nutzbar \/ h/);
 });
 
 test("unbelegte Ziffern in der Ansprache fallen durch, qualitative Benchmarks nicht", () => {
@@ -2286,8 +2288,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260829-0210");
-  assert.match(indexHtml, /app\.js\?v=20260829-0210/);
+  assert.equal(studioVersion, "20260829-0320");
+  assert.match(indexHtml, /app\.js\?v=20260829-0320/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
@@ -3017,8 +3019,10 @@ test("Bildvorlagen bekommen ihr Motiv vom Bildmodell", () => {
   // Ein fehlgeschlagenes Motiv darf den fertigen Text nie verwerfen.
   assert.match(backend, /images_incomplete", \{ index, reason/);
   // Wer selbst hochladen will, waehlt das im Fragebogen.
-  assert.match(studio, /\["auto", "Motive erzeugen lassen"\]/);
-  assert.match(studio, /\["upload", "Eigene Bilder einsetzen"\]/);
+  assert.match(studio, /\["auto", "Motiv passend zum Signal erzeugen"\]/);
+  assert.match(studio, /\["upload", "Eigenes Bild hochladen"\]/);
+  // Die Frage erscheint nur, wenn eine Bildvorlage entstehen kann.
+  assert.match(studio, /when: \(answers\) => bildVorlageMoeglich\(answers\)/);
 });
 
 test("das Bild laesst sich wie in einem Grafikprogramm nachstellen", () => {
@@ -3034,4 +3038,28 @@ test("das Bild laesst sich wie in einem Grafikprogramm nachstellen", () => {
   assert.match(studio, /<div class="ov" style="\[\^"\]\*\)"/);
   // Ohne Bild keine Regler.
   assert.match(studio, /\$\{hat \? `<div class="as-img-tools">/);
+});
+
+test("der fertige Entwurf stellt Text und Visual nebeneinander", () => {
+  // Untereinander war das Asset der kleinste Teil der Ansicht.
+  assert.match(studio, /grid-template-columns:minmax\(260px,\.85fr\) minmax\(0,1\.35fr\)/);
+  assert.match(studio, /class="as-linkedin-col"/);
+  // Der blaue Streifen ueber dem Beitrag ist weg.
+  assert.doesNotMatch(studio, /border-top:3px solid var\(--brand/);
+  // Auf schmalem Schirm stapeln die Spalten wieder.
+  assert.match(studio, /@media \(max-width:900px\)\{\s*\n\s*#as-overlay \.as-linkedin-post\{grid-template-columns:minmax\(0,1fr\)/);
+});
+
+test("ein erzeugtes Hintergrundmotiv ueberlebt den Schrittwechsel", () => {
+  // Ein Hintergrundmotiv steht als CSS am Kasten, nicht als <img>. harvest las
+  // dort null und loeschte das Motiv bei jedem Wechsel.
+  assert.match(studio, /if \(slot\.classList\.contains\("as-img--bg"\)\) return;/);
+  // Transparenz, Groesse und Overlay bleiben ebenfalls erhalten.
+  assert.match(studio, /\{ \.\.\.vorher, src: img\.getAttribute\("src"\) \|\| ""/);
+});
+
+test("die Folie wird nicht unten abgeschnitten", () => {
+  // Ohne Hoehenmass wurde nur nach Breite skaliert.
+  assert.match(studio, /const nutzbar = gemessen > 80 \? gemessen : Math\.round\(window\.innerHeight \* 0\.62\)/);
+  assert.match(studio, /Math\.min\(1, safeW \/ w, nutzbar \/ h\)/);
 });
