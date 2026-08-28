@@ -548,6 +548,8 @@ async function loadDashboard() {
         marketing: Number(counts?.marketing || 0),
         sales: Number(counts?.sales || 0),
         rejected: Number(counts?.rejected || 0),
+        review: Number(counts?.review || 0),
+        crawled: Number(counts?.crawled || 0),
       });
     }
     lastRun = run || null;

@@ -7,7 +7,7 @@ const WIDGET_DEFINITIONS = [
   { id: "performance_trend", title: "Performance-Trend", icon: "fa-solid fa-chart-column", defaultSize: "wide" },
   { id: "top_assets", title: "Top-Assets", icon: "fa-solid fa-trophy", defaultSize: "wide" },
   { id: "smart_insights", title: "Insight Radar", icon: "fa-solid fa-wand-magic-sparkles", defaultSize: "wide" },
-  { id: "data_quality", title: "KPI-Abdeckung", icon: "fa-solid fa-gauge-high", defaultSize: "compact" },
+  { id: "data_quality", title: "Bestand", icon: "fa-solid fa-chart-pie", defaultSize: "compact" },
   { id: "recent_activity", title: "Letzte Updates", icon: "fa-solid fa-clock-rotate-left", defaultSize: "compact" },
 ];
 
@@ -280,6 +280,94 @@ function trendHtml(summary) {
     </div>`).join("")}</div>`;
 }
 
+/**
+ * Was aus den bewerteten Artikeln geworden ist, als Ring.
+ *
+ * Die Segmente sind Kreisboegen ueber stroke-dasharray: sie lassen sich
+ * animieren, einzeln anfassen und behalten bei jeder Groesse ihre Schaerfe.
+ * Die Mitte traegt die Summe, beim Zeigen auf ein Segment dessen Wert.
+ * Der Bahnfilter oben hebt hervor, statt zu verbergen - eine Verteilung mit
+ * nur einem Teil waere keine Verteilung mehr.
+ */
+const BESTAND_SEGMENTE = [
+  { key: "marketing", label: "Marketing-Signale", lane: "marketing", color: "var(--brand)" },
+  { key: "sales", label: "Sales-Signale", lane: "sales", color: "#0ea5e9" },
+  { key: "review", label: "Manuelle Prüfung", lane: null, color: "#f59e0b" },
+  { key: "rejected", label: "Aussortiert", lane: null, color: "#cbd5e1" },
+];
+
+export function bestandRingHtml(summary, escapeHtml = (value) => String(value ?? "")) {
+  const zahlen = summary.signalCounts || {};
+  const teile = BESTAND_SEGMENTE.map((segment) => ({ ...segment, wert: numberValue(zahlen[segment.key]) }));
+  const summe = teile.reduce((sum, teil) => sum + teil.wert, 0);
+  const gecrawlt = numberValue(zahlen.crawled);
+  if (!summe) {
+    return `<div class="pi-inline-empty">Noch keine bewerteten Artikel</div>`;
+  }
+  const lane = summary.preferences?.filters?.lane || "all";
+  const umfang = 100;
+  let offset = 0;
+  const boegen = teile.map((teil) => {
+    const anteil = teil.wert / summe * umfang;
+    const gedimmt = lane !== "all" && teil.lane !== lane;
+    const bogen = `<circle class="pi-slice${gedimmt ? " is-dimmed" : ""}" data-slice="${escapeHtml(teil.key)}"
+      data-label="${escapeHtml(teil.label)}" data-value="${teil.wert}" data-share="${Math.round(teil.wert / summe * 100)}"
+      cx="21" cy="21" r="15.9155" fill="none" stroke="${teil.color}" stroke-width="5"
+      stroke-dasharray="${anteil.toFixed(2)} ${(umfang - anteil).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}"
+      style="--pi-arc:${anteil.toFixed(2)}"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></circle>`;
+    offset += anteil;
+    return bogen;
+  }).join("");
+  const legende = teile.map((teil) => `<button type="button" class="pi-legend-row${lane !== "all" && teil.lane !== lane ? " is-dimmed" : ""}" data-slice-key="${escapeHtml(teil.key)}">
+    <i style="background:${teil.color}"></i><span>${escapeHtml(teil.label)}</span><b>${formatNumber(teil.wert)}</b>
+  </button>`).join("");
+  return `<div class="pi-donut" data-donut>
+    <div class="pi-donut-chart">
+      <svg viewBox="0 0 42 42" role="img" aria-label="Verteilung der bewerteten Artikel">
+        <circle class="pi-slice-track" cx="21" cy="21" r="15.9155" fill="none" stroke-width="5"></circle>
+        ${boegen}
+      </svg>
+      <div class="pi-donut-mitte" data-donut-center>
+        <b>${formatNumber(summe)}</b><span>bewertet</span>
+      </div>
+    </div>
+    <div class="pi-legend">${legende}${
+      gecrawlt ? `<small class="pi-legend-foot">${formatNumber(gecrawlt)} Artikel im Bestand</small>` : ""
+    }</div>
+  </div>`;
+}
+
+/**
+ * Zeigt man auf ein Segment, traegt die Mitte dessen Wert und Anteil. Der Ring
+ * bliebe sonst stumm: eine Zahl in der Mitte, die sich nie aendert, waere nur
+ * Dekoration.
+ */
+export function bindBestandRing(root, escapeHtml = (value) => String(value ?? "")) {
+  const donut = root?.querySelector?.("[data-donut]");
+  if (!donut || donut.dataset.gebunden === "1") return;
+  donut.dataset.gebunden = "1";
+  const mitte = donut.querySelector("[data-donut-center]");
+  const grund = mitte ? mitte.innerHTML : "";
+  const setzen = (key) => {
+    const bogen = key ? donut.querySelector(`[data-slice="${key}"]`) : null;
+    donut.querySelectorAll("[data-slice]").forEach((teil) => teil.classList.toggle("is-on", teil === bogen));
+    donut.querySelectorAll("[data-slice-key]").forEach((zeile) => zeile.classList.toggle("is-on", Boolean(key) && zeile.dataset.sliceKey === key));
+    if (!mitte) return;
+    mitte.innerHTML = bogen
+      ? `<b>${formatNumber(bogen.dataset.value)}</b><span>${escapeHtml(bogen.dataset.label)} · ${bogen.dataset.share}%</span>`
+      : grund;
+  };
+  donut.addEventListener("mouseover", (event) => {
+    const treffer = event.target.closest("[data-slice], [data-slice-key]");
+    if (treffer) setzen(treffer.dataset.slice || treffer.dataset.sliceKey);
+  });
+  donut.addEventListener("mouseleave", () => setzen(""));
+  donut.addEventListener("focusin", (event) => {
+    const treffer = event.target.closest("[data-slice-key]");
+    if (treffer) setzen(treffer.dataset.sliceKey);
+  });
+}
+
 function renderWidget(definition, preference, summary, escapeHtml) {
   const marketing = summary.marketingTotals;
   const sales = summary.salesTotals;
@@ -340,9 +428,7 @@ function renderWidget(definition, preference, summary, escapeHtml) {
     return widgetShell(definition, preference, body);
   }
   if (definition.id === "data_quality") {
-    const rate = summary.coverage.rate * 100;
-    const body = `<div class="pi-coverage"><div class="pi-ring" style="--coverage:${rate}"><b>${Math.round(rate)}%</b></div><div><b>${summary.coverage.covered} von ${summary.coverage.total}</b><span>fertigen Assets mit KPI-Daten</span><small>Marketing ${summary.coverage.marketing_covered}/${summary.coverage.marketing_total} · Sales ${summary.coverage.sales_covered}/${summary.coverage.sales_total}</small></div></div>`;
-    return widgetShell(definition, preference, body);
+    return widgetShell(definition, preference, bestandRingHtml(summary, escapeHtml));
   }
   const pending = summary.assets.slice(0, 5);
   const body = `<div class="pi-activity">${(summary.recent.length ? summary.recent : pending).map((row) => {
@@ -457,6 +543,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
           </div>
         </div>
         <div class="pi-grid">${preferences.widgets.map((preference) => renderWidget(DASHBOARD_WIDGETS.find((item) => item.id === preference.id), preference, state.summary, escapeHtml)).join("")}</div>`;
+      bindBestandRing(host, escapeHtml);
     }
     updateLiveLabels();
   };

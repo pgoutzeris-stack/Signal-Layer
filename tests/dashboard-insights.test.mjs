@@ -232,3 +232,48 @@ test("die Signalzahlen ueberstehen ein Neuzeichnen", async () => {
   const leer = module.summarizeDashboardData({ preferences: module.defaultDashboardPreferences(), assets: [] });
   assert.deepEqual(leer.signalCounts, { marketing: 0, sales: 0, rejected: 0 });
 });
+
+test("der Bestandsring teilt die bewerteten Artikel auf", async () => {
+  const module = await import("../dashboard-insights.js");
+  const summary = module.summarizeDashboardData({
+    preferences: module.defaultDashboardPreferences(),
+    assets: [], creators: [], performance: [],
+    signalCounts: { marketing: 279, sales: 117, rejected: 5157, review: 100, crawled: 21282 },
+  });
+  const html = module.bestandRingHtml(summary);
+  // Vier Segmente, deren Boegen zusammen den vollen Kreis ergeben.
+  const boegen = [...html.matchAll(/stroke-dasharray="([\d.]+) /g)].map((treffer) => Number(treffer[1]));
+  assert.equal(boegen.length, 4);
+  assert.ok(Math.abs(boegen.reduce((a, b) => a + b, 0) - 100) < 0.05, `Summe der Boegen: ${boegen}`);
+  // Die Mitte traegt die Summe der vier, nicht den Gesamtbestand.
+  assert.match(html, /<b>5\.653<\/b><span>bewertet<\/span>/);
+  // Der Gesamtbestand steht als Bezugsgroesse darunter.
+  assert.match(html, /21\.282 Artikel im Bestand/);
+  // Jedes Segment traegt Wert und Anteil fuer die Mitte.
+  assert.match(html, /data-label="Manuelle Prüfung" data-value="100"/);
+});
+
+test("ohne bewertete Artikel steht dort kein leerer Ring", async () => {
+  const module = await import("../dashboard-insights.js");
+  const summary = module.summarizeDashboardData({ preferences: module.defaultDashboardPreferences(), assets: [] });
+  assert.match(module.bestandRingHtml(summary), /Noch keine bewerteten Artikel/);
+});
+
+test("der Bahnfilter hebt hervor statt zu verbergen", async () => {
+  const module = await import("../dashboard-insights.js");
+  const summary = module.summarizeDashboardData({
+    preferences: { ...module.defaultDashboardPreferences(), filters: { asset_scope: "roots", creator_ids: [], origin: "all", lane: "sales" } },
+    assets: [], signalCounts: { marketing: 279, sales: 117, rejected: 5157, review: 100 },
+  });
+  const html = module.bestandRingHtml(summary);
+  // Eine Verteilung mit nur einem Teil waere keine Verteilung mehr.
+  assert.equal([...html.matchAll(/data-slice="/g)].length, 4);
+  assert.match(html, /class="pi-slice is-dimmed" data-slice="marketing"/);
+  assert.match(html, /class="pi-slice" data-slice="sales"/);
+});
+
+test("der Server zaehlt Pruefung und Bestand mit", async () => {
+  const backend = await readFile(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
+  assert.match(backend, /\.eq\("classification_status", "uncertain"\)/);
+  assert.match(backend, /review: review \|\| 0,\n\s*crawled: crawled \|\| 0,/);
+});

@@ -8433,7 +8433,11 @@ Deno.serve(async (req: Request) => {
 
       case "get_simple_dashboard": {
         const admin = getAdminClient();
-        const [{ count: marketing }, { count: sales }, { count: rejected }, { data: run }, { data: triggerBackfill }] = await Promise.all([
+        const [
+          { count: marketing }, { count: sales }, { count: rejected },
+          { count: review }, { count: crawled },
+          { data: run }, { data: triggerBackfill },
+        ] = await Promise.all([
           admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "marketing")
             .or(MANUAL_SIGNAL_EXCLUDE),
@@ -8443,6 +8447,12 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "rejected")
             .or(MANUAL_SIGNAL_EXCLUDE),
+          // Artikel, die ein Mensch entscheiden muss, und der gesamte
+          // gecrawlte Bestand als Bezugsgroesse fuer den Anteilsring.
+          admin.schema("signal_layer").from("articles")
+            .select("id", { count: "exact", head: true }).eq("classification_status", "uncertain"),
+          admin.schema("signal_layer").from("articles")
+            .select("id", { count: "exact", head: true }),
           admin.schema("signal_layer").from("simple_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
@@ -8450,7 +8460,13 @@ Deno.serve(async (req: Request) => {
         ]);
         const runWithError = run ? { ...run, ai_error_detail: await buildSimpleRunAiErrorDetail(run) } : null;
         return corsResponse(origin, {
-          counts: { marketing: marketing || 0, sales: sales || 0, rejected: rejected || 0 },
+          counts: {
+            marketing: marketing || 0,
+            sales: sales || 0,
+            rejected: rejected || 0,
+            review: review || 0,
+            crawled: crawled || 0,
+          },
           run: runWithError,
           trigger_backfill: triggerBackfill || null,
           forecast: await buildSimpleForecast(run),

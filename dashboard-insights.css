@@ -30,6 +30,38 @@
   .pi-bar-filters { justify-content: flex-start; }
 }
 
+/* Verteilungsring. Die Boegen wachsen beim Erscheinen aus dem Nichts, das
+   angezeigte Segment tritt hervor: dickerer Strich, Schatten, leicht nach
+   aussen. Ohne Bewegungsvorliebe steht alles sofort. */
+.pi-donut { padding: 14px; display: grid; grid-template-columns: 128px minmax(0, 1fr); align-items: center; gap: 14px; }
+.pi-donut-chart { position: relative; width: 128px; height: 128px; }
+.pi-donut-chart svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.pi-slice-track { stroke: color-mix(in srgb, var(--line) 60%, transparent); }
+.pi-slice {
+  cursor: pointer;
+  transform-origin: 21px 21px;
+  transition: stroke-width .18s ease, opacity .18s ease, transform .18s ease, filter .18s ease;
+  animation: piArcIn .7s cubic-bezier(.22,.8,.28,1) both;
+}
+@keyframes piArcIn { from { stroke-dasharray: 0 100; opacity: 0; } }
+.pi-slice:hover, .pi-slice.is-on { stroke-width: 7.4; transform: scale(1.045); filter: drop-shadow(0 4px 10px rgba(15,23,42,.22)); }
+.pi-slice.is-dimmed { opacity: .28; }
+.pi-donut-mitte { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
+.pi-donut-mitte b { display: block; color: var(--ink); font-size: 1.22rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.pi-donut-mitte span { color: var(--muted); font-size: .56rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+
+.pi-legend { min-width: 0; display: grid; gap: 3px; }
+.pi-legend-row { display: grid; grid-template-columns: 9px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 4px 6px; border: 0; border-radius: 8px; background: transparent; color: var(--status-text); font: inherit; font-size: .68rem; text-align: left; cursor: pointer; transition: background .15s, opacity .15s, transform .15s; }
+.pi-legend-row:hover, .pi-legend-row.is-on { background: var(--surface); transform: translateX(2px); }
+.pi-legend-row.is-dimmed { opacity: .4; }
+.pi-legend-row i { width: 9px; height: 9px; border-radius: 3px; }
+.pi-legend-row b { color: var(--ink); font-size: .72rem; font-weight: 800; }
+.pi-legend-foot { margin-top: 4px; padding-left: 6px; color: var(--muted); font-size: .58rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pi-slice { animation: none; }
+}
+
 .pi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
 .pi-widget { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--shadow-dash); animation: piWidgetIn .42s both; }
 .pi-widget:nth-child(2) { animation-delay: .035s; }
