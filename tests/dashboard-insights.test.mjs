@@ -399,3 +399,20 @@ test("die Kopfzeile laeuft in Teilen ein und hebt die Zahlen hervor", async () =
   assert.ok(!html.includes("⌀"), "das Zeichen kommt aus der Zeichnung");
   assert.match(html, /<circle cx="8" cy="8"/);
 });
+
+test("die Uebersicht stellt Satz und Kacheln nebeneinander", async () => {
+  const [js, css] = await Promise.all([
+    readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8"),
+    readFile(new URL("../dashboard-insights.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(js, /<div class="pi-overview">/);
+  // Die Aufteilung haengt an der Breite der Karte, nicht an der des Fensters:
+  // das Dashboard sitzt je nach Ansicht in unterschiedlich breiten Spalten.
+  assert.match(css, /\.pi-widget \{ container: pi-widget \/ inline-size/);
+  assert.match(css, /@container pi-widget \(min-width: 620px\)/);
+  assert.match(css, /\.pi-overview \{ grid-template-columns: minmax\(0, 1\.1fr\) minmax\(268px, \.9fr\)/);
+  // Vier Kacheln in zwei Reihen.
+  assert.match(css, /\.pi-pulse-kpis \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  // Die Schrift waechst mit der Karte, nicht mit dem Fenster.
+  assert.match(css, /font-size: clamp\(1\.32rem, 3\.4cqw, 2\.1rem\)/);
+});

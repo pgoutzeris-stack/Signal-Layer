@@ -475,14 +475,17 @@ function renderWidget(definition, preference, summary, escapeHtml, optionen = {}
     // eigene Kacheln unter dem Dashboard und wiederholten dessen Kopf.
     const zaehler = summary.signalCounts || {};
     const returnRate = numberValue(sales.sends) > 0 ? numberValue(sales.replies) / numberValue(sales.sends) : 0;
-    return widgetShell(definition, preference, `<div class="pi-pulse">
+    // Links die Aussage, rechts die Zahlen: der Satz traegt die Karte, die
+    // Kacheln belegen ihn. Untereinander gestapelt war beides gleich laut.
+    return widgetShell(definition, preference, `<div class="pi-overview">
+      <div class="pi-pulse">
       ${uebersichtHeadlineHtml(summary, escapeHtml)}
     </div><div class="pi-pulse-kpis">
       ${stat("Marketing-Signale", formatNumber(zaehler.marketing))}
       ${stat("Sales-Signale", formatNumber(zaehler.sales))}
       ${stat("Marketing Views", formatNumber(marketing.impressions), summary.performance.length ? deltaHtml(summary.deltas.impressions) : "")}
       ${stat("Return Rate", formatPercent(returnRate))}
-    </div>`);
+    </div></div>`);
   }
   if (definition.id === "marketing_performance") {
     const body = `<div class="pi-stat-grid">${stat("Views", formatNumber(marketing.impressions))}${stat("Engagement", formatPercent(marketing.engagement_rate))}${stat("Kommentare", formatNumber(marketing.comments))}${stat("Link-Klicks", formatNumber(marketing.link_clicks))}</div>`;
