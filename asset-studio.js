@@ -168,7 +168,7 @@ export function manualCarouselSelectionIssues(value, look = "hell") {
 
 const FORM_LINKEDIN = [
   {
-    key: "profile", label: "Für wen",
+    key: "profile", label: "Absender",
     options: [["roots", "ROOTS"], ["private", "Privatprofil"]],
   },
   // Die Auswahl haengt am Profil: ROOTS hat zwei feste Vorlagen, privat die in
@@ -179,7 +179,7 @@ const FORM_LINKEDIN = [
   // Slide-Arten, oder der Nutzer waehlt sie selbst.
   {
     key: "variant_mode", label: "Layout",
-    options: [["auto", "KI soll wählen"], ["custom", "Selbst auswählen"]],
+    options: [["auto", "KI Vorschlag"], ["custom", "Selbst auswählen"]],
     when: (answers) => answers.asset_type !== "carousel",
   },
   {
@@ -189,7 +189,7 @@ const FORM_LINKEDIN = [
   },
   {
     key: "slide_mix", label: "Inhalt",
-    options: [["auto", "KI soll wählen"], ["custom", "Selbst auswählen"]],
+    options: [["auto", "KI Vorschlag"], ["custom", "Selbst auswählen"]],
     when: (answers) => answers.asset_type === "carousel",
   },
   {
@@ -217,20 +217,14 @@ const FORM_LINKEDIN = [
   {
     key: "storyline",
     label: "Kernaussage",
-    options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich gebe den Text vor"]],
+    options: [["auto", "KI Vorschlag"], ["custom", "Ich gebe den Text vor"]],
     free: { key: "storyline_text", on: "custom", rows: 5, platzhalter: "Kernaussage, Stichpunkte oder fertiger Text" },
   },
   {
     key: "cta",
     label: "Call to Action",
-    options: [["auto", "Modell schlägt vor"], ["custom", "Eigener Text"]],
+    options: [["auto", "KI Vorschlag"], ["custom", "CTA schreiben"]],
     free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Termin vereinbaren" },
-  },
-  {
-    key: "sources",
-    label: "Quellen",
-    options: [["auto", "Nur belegte Aussagen aus dem Artikel"], ["custom", "Eigene Quellen angeben"]],
-    free: { key: "sources_text", on: "custom", rows: 3, platzhalter: "Studie, Herausgeber, Jahr" },
   },
   // Die Caption ist der Beitragstext unter dem Bild. Der Tonfall fuer die
   // zweite Wahl liegt je Nutzer in den Einstellungen.
@@ -238,7 +232,7 @@ const FORM_LINKEDIN = [
     key: "caption",
     label: "Caption",
     options: [
-      ["ai", "KI schreibt"],
+      ["ai", "KI Vorschlag"],
       ["ai_tone", "KI + Tone of Voice"],
       ["custom", "Selbst schreiben"],
     ],

@@ -207,7 +207,7 @@ test("erst die Pille KI oder selbst, dann das Dropdown mit Miniatur", () => {
   // Zwei Schritte wie beim Carousel: die Pille entscheidet, wer waehlt, das
   // Dropdown zeigt die Vorlage vor der Wahl.
   assert.match(studio, /key: "variant_mode", label: "Layout"/);
-  assert.match(studio, /\["auto", "KI soll wählen"\], \["custom", "Selbst auswählen"\]/);
+  assert.match(studio, /\["auto", "KI Vorschlag"\], \["custom", "Selbst auswählen"\]/);
   assert.match(studio, /key: "variant", label: "Vorlage", art: "dropdown"/);
   assert.match(studio, /answers\.asset_type !== "carousel" && answers\.variant_mode === "custom"/);
   assert.match(studio, /if \(state\.answers\.variant_mode !== "custom"\) state\.answers\.variant = "auto";/);
@@ -2292,8 +2292,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260830-1620");
-  assert.match(indexHtml, /app\.js\?v=20260830-1620/);
+  assert.equal(studioVersion, "20260830-1705");
+  assert.match(indexHtml, /app\.js\?v=20260830-1705/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
@@ -2837,7 +2837,7 @@ test("Carousel-Laenge und eigene Abfolge folgen der wirklichen Auswahl", async (
   assert.doesNotMatch(studio, /liste\.length < Number\(state\.answers\.slide_count/);
 });
 
-test("KI soll wählen verwirft eine widerrufene eigene Abfolge", async () => {
+test("KI Vorschlag verwirft eine widerrufene eigene Abfolge", async () => {
   // Wer erst selbst waehlt und dann zurueck auf KI geht, hat frueher weiter
   // manuell geprueft bekommen — und scheiterte an der fehlenden Endfolie.
   const zurueck = backend.normalizeAssetAnswers("linkedin", {
@@ -2902,7 +2902,7 @@ test("Formatwahl und jede Folienauswahl haben echte Vorschauen", () => {
 test("Inhalt führt über KI oder eigene Auswahl in eine echte, geschützte LinkedIn-Vorschau", () => {
   const form = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("const FORM_MEMO"));
   assert.match(form, /key: "slide_mix", label: "Inhalt"/);
-  assert.match(form, /\["auto", "KI soll wählen"\], \["custom", "Selbst auswählen"\]/);
+  assert.match(form, /\["auto", "KI Vorschlag"\], \["custom", "Selbst auswählen"\]/);
   assert.ok(form.indexOf('key: "slide_mix"') < form.indexOf('key: "slide_cover"'));
   assert.ok(form.indexOf('key: "slide_cover"') < form.indexOf('key: "slide_content"'));
   assert.ok(form.indexOf('key: "slide_content"') < form.indexOf('key: "slide_end"'));
@@ -3133,4 +3133,18 @@ test("die Kante bestimmt den Gegenstand vor dem Schreiben und legt ihn an der Ze
   assert.match(edge, /subject: gegenstand,/);
   // Fällt der Vorlaufschritt aus, läuft das Asset weiter wie bisher.
   assert.match(edge, /if \(!antwort\.ok\) return null;/);
+});
+
+test("der LinkedIn-Fragebogen benennt die KI-Wahl überall gleich", () => {
+  const form = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("function memoQuestions"));
+  assert.match(form, /key: "profile", label: "Absender"/);
+  assert.doesNotMatch(form, /label: "Für wen"/);
+  // Eine Beschriftung für dieselbe Sache: die KI macht einen Vorschlag.
+  assert.doesNotMatch(form, /KI soll wählen|Modell schlägt vor|Modell schreibt aus dem Signal|KI schreibt/);
+  assert.match(form, /label: "Kernaussage",\s*\n\s*options: \[\["auto", "KI Vorschlag"\]/);
+  assert.match(form, /label: "Call to Action",\s*\n\s*options: \[\["auto", "KI Vorschlag"\], \["custom", "CTA schreiben"\]\]/);
+  assert.match(form, /\["ai", "KI Vorschlag"\]/);
+  // Quellen kommen immer aus dem Signal, also gibt es dazu keine Frage mehr.
+  assert.doesNotMatch(form, /key: "sources"/);
+  assert.doesNotMatch(form, /Eigene Quellen angeben/);
 });

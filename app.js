@@ -7,10 +7,10 @@ import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOr
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260829-2210";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260830-1620";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260830-1705";
 import { openManualSignal } from "./manual-signal.js?v=20260824-0305";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260830-1330";
-import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1620";
+import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
 let sb = null;
 let sources = [];
