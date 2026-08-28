@@ -290,10 +290,10 @@ function trendHtml(summary) {
  * nur einem Teil waere keine Verteilung mehr.
  */
 const BESTAND_SEGMENTE = [
-  { key: "marketing", label: "Marketing-Signale", lane: "marketing", color: "var(--brand)" },
-  { key: "sales", label: "Sales-Signale", lane: "sales", color: "#0ea5e9" },
-  { key: "review", label: "Manuelle Prüfung", lane: null, color: "#f59e0b" },
-  { key: "rejected", label: "Aussortiert", lane: null, color: "#cbd5e1" },
+  { key: "marketing", label: "Marketing-Signale", lane: "marketing", color: "#206efb", light: "#7cb0ff" },
+  { key: "sales", label: "Sales-Signale", lane: "sales", color: "#0ea5e9", light: "#7dd3fc" },
+  { key: "review", label: "Manuelle Prüfung", lane: null, color: "#f59e0b", light: "#fcd34d" },
+  { key: "rejected", label: "Aussortiert", lane: null, color: "#94a3b8", light: "#cbd5e1" },
 ];
 
 /**
@@ -305,17 +305,20 @@ export function uebersichtSatz(summary, escapeHtml = (value) => String(value ?? 
   const zahlen = summary.signalCounts || {};
   const marketing = summary.marketingTotals || {};
   const sales = summary.salesTotals || {};
-  const bestand = numberValue(zahlen.crawled);
   const marketingSignale = numberValue(zahlen.marketing);
   const salesSignale = numberValue(zahlen.sales);
+  // Bezugsgroesse ist, was die Pipeline bewertet hat - nicht der gesamte
+  // gecrawlte Bestand. Ein Lauf nimmt die neuesten Artikel, nicht alle.
+  const bestand = marketingSignale + salesSignale
+    + numberValue(zahlen.rejected) + numberValue(zahlen.review);
   const views = numberValue(marketing.impressions);
   const antwortquote = numberValue(sales.sends) > 0 ? numberValue(sales.replies) / numberValue(sales.sends) : 0;
   const termine = numberValue(sales.meetings);
 
   if (!marketingSignale && !salesSignale) {
     return bestand
-      ? `${formatNumber(bestand)} Artikel im Bestand, noch kein Signal bewertet.`
-      : "Noch keine Artikel im Bestand.";
+      ? `${formatNumber(bestand)} Artikel analysiert, noch kein Signal bewertet.`
+      : "Noch keine Artikel analysiert.";
   }
   const teile = [];
   teile.push(`${formatNumber(marketingSignale)} Marketing-Signale${views ? ` mit ${formatNumber(views)} Views` : ""}`);
@@ -325,47 +328,67 @@ export function uebersichtSatz(summary, escapeHtml = (value) => String(value ?? 
       ? ` mit ${formatNumber(termine)} Terminen`
       : "";
   teile.push(`${formatNumber(salesSignale)} Sales-Signale${salesZusatz}`);
-  const kopf = bestand ? `Aus ${formatNumber(bestand)} Artikeln: ` : "";
+  const kopf = bestand ? `Aus ${formatNumber(bestand)} analysierten Artikeln: ` : "";
   return escapeHtml(`${kopf}${teile.join(" und ")}.`);
 }
 
-export function bestandRingHtml(summary, escapeHtml = (value) => String(value ?? "")) {
+export function bestandRingHtml(summary, escapeHtml = (value) => String(value ?? ""), optionen = {}) {
   const zahlen = summary.signalCounts || {};
-  const teile = BESTAND_SEGMENTE.map((segment) => ({ ...segment, wert: numberValue(zahlen[segment.key]) }));
+  const ohneAussortiert = optionen.hideRejected === true;
+  const alle = BESTAND_SEGMENTE.map((segment) => ({ ...segment, wert: numberValue(zahlen[segment.key]) }));
+  const teile = alle.filter((teil) => !(ohneAussortiert && teil.key === "rejected"));
   const summe = teile.reduce((sum, teil) => sum + teil.wert, 0);
-  const gecrawlt = numberValue(zahlen.crawled);
-  if (!summe) {
-    return `<div class="pi-inline-empty">Noch keine bewerteten Artikel</div>`;
+  const aussortiert = alle.find((teil) => teil.key === "rejected");
+  if (!alle.some((teil) => teil.wert)) {
+    return `<div class="pi-inline-empty">Noch keine analysierten Artikel</div>`;
   }
   const lane = summary.preferences?.filters?.lane || "all";
   const umfang = 100;
+  const luecke = teile.length > 1 ? 0.9 : 0;
   let offset = 0;
-  const boegen = teile.map((teil) => {
-    const anteil = teil.wert / summe * umfang;
+  const boegen = teile.map((teil, index) => {
+    const anteil = Math.max(0, teil.wert / (summe || 1) * umfang - luecke);
     const gedimmt = lane !== "all" && teil.lane !== lane;
     const bogen = `<circle class="pi-slice${gedimmt ? " is-dimmed" : ""}" data-slice="${escapeHtml(teil.key)}"
-      data-label="${escapeHtml(teil.label)}" data-value="${teil.wert}" data-share="${Math.round(teil.wert / summe * 100)}"
-      cx="21" cy="21" r="15.9155" fill="none" stroke="${teil.color}" stroke-width="5"
+      data-label="${escapeHtml(teil.label)}" data-value="${teil.wert}" data-share="${Math.round(teil.wert / (summe || 1) * 100)}"
+      cx="21" cy="21" r="15.9155" fill="none" stroke="url(#piGrad-${escapeHtml(teil.key)})" stroke-width="5.4" stroke-linecap="round"
       stroke-dasharray="${anteil.toFixed(2)} ${(umfang - anteil).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}"
-      style="--pi-arc:${anteil.toFixed(2)}"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></circle>`;
-    offset += anteil;
+      style="--pi-arc:${anteil.toFixed(2)};--pi-delay:${index * 90}ms"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></circle>`;
+    offset += anteil + luecke;
     return bogen;
   }).join("");
-  const legende = teile.map((teil) => `<button type="button" class="pi-legend-row${lane !== "all" && teil.lane !== lane ? " is-dimmed" : ""}" data-slice-key="${escapeHtml(teil.key)}">
-    <i style="background:${teil.color}"></i><span>${escapeHtml(teil.label)}</span><b>${formatNumber(teil.wert)}</b>
-  </button>`).join("");
+  // Ein Verlauf je Segment: dieselbe Farbe zweimal, einmal aufgehellt. Flache
+  // Vollfarben wirken auf einem hellen Grund wie ein Diagramm aus dem Handbuch.
+  const verlaeufe = alle.map((teil) => `<linearGradient id="piGrad-${escapeHtml(teil.key)}" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="${teil.color}"></stop>
+    <stop offset="100%" stop-color="${teil.light}"></stop>
+  </linearGradient>`).join("");
+  const legende = alle.map((teil) => {
+    const versteckt = ohneAussortiert && teil.key === "rejected";
+    return `<div class="pi-legend-row${lane !== "all" && teil.lane !== lane ? " is-dimmed" : ""}${versteckt ? " is-hidden" : ""}" data-slice-key="${escapeHtml(teil.key)}">
+      <i style="background:linear-gradient(135deg, ${teil.color}, ${teil.light})"></i>
+      <span>${escapeHtml(teil.label)}</span>
+      <b>${formatNumber(teil.wert)}</b>
+      ${teil.key === "rejected"
+        ? `<button type="button" class="pi-legend-toggle" data-toggle-rejected aria-pressed="${versteckt ? "false" : "true"}" title="${versteckt ? "Aussortierte wieder einrechnen" : "Aussortierte ausblenden"}" aria-label="${versteckt ? "Aussortierte wieder einrechnen" : "Aussortierte ausblenden"}"><i class="fa-regular fa-eye${versteckt ? "-slash" : ""}"></i></button>`
+        : `<span class="pi-legend-spacer"></span>`}
+    </div>`;
+  }).join("");
   return `<div class="pi-donut" data-donut>
     <div class="pi-donut-chart">
-      <svg viewBox="0 0 42 42" role="img" aria-label="Verteilung der bewerteten Artikel">
-        <circle class="pi-slice-track" cx="21" cy="21" r="15.9155" fill="none" stroke-width="5"></circle>
+      <svg viewBox="0 0 42 42" role="img" aria-label="Verteilung der analysierten Artikel">
+        <defs>${verlaeufe}</defs>
+        <circle class="pi-slice-track" cx="21" cy="21" r="15.9155" fill="none" stroke-width="5.4"></circle>
         ${boegen}
       </svg>
       <div class="pi-donut-mitte" data-donut-center>
-        <b>${formatNumber(summe)}</b><span>bewertet</span>
+        <b>${formatNumber(summe)}</b><span>Artikel</span>
       </div>
     </div>
     <div class="pi-legend">${legende}${
-      gecrawlt ? `<small class="pi-legend-foot">${formatNumber(gecrawlt)} Artikel im Bestand</small>` : ""
+      aussortiert && ohneAussortiert
+        ? `<small class="pi-legend-foot">${formatNumber(aussortiert.wert)} aussortierte nicht eingerechnet</small>`
+        : ""
     }</div>
   </div>`;
 }
@@ -395,13 +418,9 @@ export function bindBestandRing(root, escapeHtml = (value) => String(value ?? ""
     if (treffer) setzen(treffer.dataset.slice || treffer.dataset.sliceKey);
   });
   donut.addEventListener("mouseleave", () => setzen(""));
-  donut.addEventListener("focusin", (event) => {
-    const treffer = event.target.closest("[data-slice-key]");
-    if (treffer) setzen(treffer.dataset.sliceKey);
-  });
 }
 
-function renderWidget(definition, preference, summary, escapeHtml) {
+function renderWidget(definition, preference, summary, escapeHtml, optionen = {}) {
   const marketing = summary.marketingTotals;
   const sales = summary.salesTotals;
   if (definition.id === "performance_pulse") {
@@ -463,7 +482,7 @@ function renderWidget(definition, preference, summary, escapeHtml) {
     return widgetShell(definition, preference, body);
   }
   if (definition.id === "data_quality") {
-    return widgetShell(definition, preference, bestandRingHtml(summary, escapeHtml));
+    return widgetShell(definition, preference, bestandRingHtml(summary, escapeHtml, optionen));
   }
   const pending = summary.assets.slice(0, 5);
   const body = `<div class="pi-activity">${(summary.recent.length ? summary.recent : pending).map((row) => {
@@ -488,6 +507,10 @@ function inputField(name, label, value, { step = "1", suffix = "", min = "0" } =
 export function initPerformanceDashboard({ client, callApi, toast, openSettingsPanel, escapeHtml: escape = null }) {
   const escapeHtml = escape || ((value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char])));
   const state = {
+    // Reine Ansichtssache, deshalb nicht auf dem Server gespeichert: die
+    // Aussortierten sind meist die groesste Gruppe und druecken die uebrigen
+    // Segmente zusammen.
+    hideRejected: false,
     payload: { preferences: defaultDashboardPreferences(), assets: [], creators: [], performance: [] },
     savedPreferences: defaultDashboardPreferences(),
     summary: null,
@@ -577,7 +600,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
             </div>
           </div>
         </div>
-        <div class="pi-grid">${preferences.widgets.map((preference) => renderWidget(DASHBOARD_WIDGETS.find((item) => item.id === preference.id), preference, state.summary, escapeHtml)).join("")}</div>`;
+        <div class="pi-grid">${preferences.widgets.map((preference) => renderWidget(DASHBOARD_WIDGETS.find((item) => item.id === preference.id), preference, state.summary, escapeHtml, { hideRejected: state.hideRejected })).join("")}</div>`;
       bindBestandRing(host, escapeHtml);
     }
     updateLiveLabels();
@@ -719,6 +742,12 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     const periodButton = event.target.closest("[data-dashboard-period]");
     if (periodButton) {
       queuePreferenceSave({ ...state.payload.preferences, period_days: Number(periodButton.dataset.dashboardPeriod) });
+      return;
+    }
+    const ringToggle = event.target.closest("[data-toggle-rejected]");
+    if (ringToggle) {
+      state.hideRejected = !state.hideRejected;
+      renderDashboards();
       return;
     }
     const laneButtonBar = event.target.closest("[data-dashboard-lane]");

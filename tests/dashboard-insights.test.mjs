@@ -244,11 +244,16 @@ test("der Bestandsring teilt die bewerteten Artikel auf", async () => {
   // Vier Segmente, deren Boegen zusammen den vollen Kreis ergeben.
   const boegen = [...html.matchAll(/stroke-dasharray="([\d.]+) /g)].map((treffer) => Number(treffer[1]));
   assert.equal(boegen.length, 4);
-  assert.ok(Math.abs(boegen.reduce((a, b) => a + b, 0) - 100) < 0.05, `Summe der Boegen: ${boegen}`);
+  // Zwischen den Segmenten bleibt eine kleine Luecke, damit die runden Enden
+  // nicht ineinanderlaufen - vier Luecken zu 0,9.
+  assert.ok(Math.abs(boegen.reduce((a, b) => a + b, 0) - (100 - 4 * 0.9)) < 0.05, `Summe der Boegen: ${boegen}`);
   // Die Mitte traegt die Summe der vier, nicht den Gesamtbestand.
-  assert.match(html, /<b>5\.653<\/b><span>bewertet<\/span>/);
+  assert.match(html, /<b>5\.653<\/b><span>Artikel<\/span>/);
   // Der Gesamtbestand steht als Bezugsgroesse darunter.
-  assert.match(html, /21\.282 Artikel im Bestand/);
+  // Aussortierte lassen sich ausblenden; dann steht dort, was fehlt.
+  const ohne = module.bestandRingHtml(summary, (v) => String(v ?? ""), { hideRejected: true });
+  assert.match(ohne, /<b>496<\/b><span>Artikel<\/span>/);
+  assert.match(ohne, /5\.157 aussortierte nicht eingerechnet/);
   // Jedes Segment traegt Wert und Anteil fuer die Mitte.
   assert.match(html, /data-label="Manuelle Prüfung" data-value="100"/);
 });
@@ -256,7 +261,7 @@ test("der Bestandsring teilt die bewerteten Artikel auf", async () => {
 test("ohne bewertete Artikel steht dort kein leerer Ring", async () => {
   const module = await import("../dashboard-insights.js");
   const summary = module.summarizeDashboardData({ preferences: module.defaultDashboardPreferences(), assets: [] });
-  assert.match(module.bestandRingHtml(summary), /Noch keine bewerteten Artikel/);
+  assert.match(module.bestandRingHtml(summary), /Noch keine analysierten Artikel/);
 });
 
 test("der Bahnfilter hebt hervor statt zu verbergen", async () => {
@@ -293,17 +298,22 @@ test("die Uebersicht nennt die Lage in einem Satz", async () => {
     signalCounts: { marketing: 279, sales: 117, rejected: 5157, review: 100, crawled: 21282 },
   };
   const satz = module.uebersichtSatz(module.summarizeDashboardData(basis));
-  assert.match(satz, /^Aus 21\.282 Artikeln: 279 Marketing-Signale mit 12\.400 Views und 117 Sales-Signale mit 22,5 % Antwortquote\.$/);
+  // Bezugsgroesse ist, was die Pipeline bewertet hat, nicht der gesamte Bestand.
+  assert.match(satz, /^Aus 5\.653 analysierten Artikeln: 279 Marketing-Signale mit 12\.400 Views und 117 Sales-Signale mit 22,5 % Antwortquote\.$/);
 
   // Ohne KPI-Werte bleibt der Satz stehen, nur ohne die Wirkungsangaben.
   const ohneKpi = module.uebersichtSatz(module.summarizeDashboardData({ ...basis, performance: [] }));
-  assert.equal(ohneKpi, "Aus 21.282 Artikeln: 279 Marketing-Signale und 117 Sales-Signale.");
+  assert.equal(ohneKpi, "Aus 5.653 analysierten Artikeln: 279 Marketing-Signale und 117 Sales-Signale.");
 
   // Ohne Signale wird nichts behauptet.
   const leer = module.uebersichtSatz(module.summarizeDashboardData({
-    ...basis, performance: [], signalCounts: { marketing: 0, sales: 0, crawled: 21282 },
+    ...basis, performance: [], signalCounts: { marketing: 0, sales: 0, rejected: 5157, review: 100, crawled: 21282 },
   }));
-  assert.equal(leer, "21.282 Artikel im Bestand, noch kein Signal bewertet.");
+  assert.equal(leer, "5.257 Artikel analysiert, noch kein Signal bewertet.");
+
+  // Ganz ohne Zahlen wird gar nichts behauptet.
+  const nichts = module.uebersichtSatz(module.summarizeDashboardData({ ...basis, performance: [], signalCounts: {} }));
+  assert.equal(nichts, "Noch keine Artikel analysiert.");
 });
 
 test("das Dashboard holt die Signalzahlen selbst", async () => {
@@ -322,4 +332,29 @@ test("die Laufmeldung steht nicht mehr unter dem Dashboard", async () => {
   assert.ok(!indexHtml.includes('id="simple-dash-run"'), "die Box ist entfernt");
   assert.ok(!simple.includes("dashRun"), "der Code dazu ist entfernt");
   assert.ok(!simple.includes("Letzter Lauf:"), "der Text ist entfernt");
+});
+
+test("der Ring laesst sich ohne die Aussortierten lesen", async () => {
+  const module = await import("../dashboard-insights.js");
+  const summary = module.summarizeDashboardData({
+    preferences: module.defaultDashboardPreferences(),
+    assets: [], performance: [],
+    signalCounts: { marketing: 279, sales: 117, rejected: 5157, review: 100 },
+  });
+  const mit = module.bestandRingHtml(summary);
+  const ohne = module.bestandRingHtml(summary, (v) => String(v ?? ""), { hideRejected: true });
+  // Der Umschalter sitzt an der Zeile, die er betrifft.
+  assert.match(mit, /data-toggle-rejected aria-pressed="true"/);
+  assert.match(ohne, /data-toggle-rejected aria-pressed="false"/);
+  // Ausgeblendet zaehlt die Mitte nur noch die uebrigen drei.
+  assert.match(ohne, /<b>496<\/b>/);
+  // Die Zeile bleibt stehen, damit die Zahl nicht verschwindet.
+  assert.match(ohne, /class="pi-legend-row is-hidden" data-slice-key="rejected"/);
+  assert.match(ohne, /5\.157/);
+  // Verlauf statt flacher Vollfarbe, runde Enden.
+  assert.match(mit, /stroke="url\(#piGrad-marketing\)"/);
+  assert.match(mit, /<linearGradient id="piGrad-sales"/);
+  assert.match(mit, /stroke-linecap="round"/);
+  // Die Bindung fuer den Hover muss es geben - ohne sie wirft das Rendern.
+  assert.equal(typeof module.bindBestandRing, "function");
 });
