@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import {
   DASHBOARD_WIDGETS,
   deriveDashboardInsights,
@@ -392,6 +393,15 @@ test("die Kopfzeile laeuft in Teilen ein und hebt die Zahlen hervor", async () =
   assert.match(html, /<b class="pi-num">279<\/b> Marketing/);
   // Die Quote ist ebenfalls eine Zahl und traegt dieselbe Auszeichnung.
   assert.match(html, /<b class="pi-num"><svg class="pi-avg"[^>]*>[\s\S]*?<\/svg>0,0 %<\/b> Return Rate/);
+  // Auch die Views sind ein Durchschnitt je Asset und tragen das Zeichen.
+  assert.match(html, /<b class="pi-num"><svg class="pi-avg"[^>]*>[\s\S]*?<\/svg>0<\/b> Views/);
+  // Die Strichstaerke haelt neben der 850er Fettung mit.
+  assert.match(html, /stroke-width="2\.6"/);
+  // Eigene Farbe statt currentColor: die Zahl daneben faerbt ueber
+  // background-clip und setzt color auf transparent.
+  const css = readFileSync(new URL("../dashboard-insights.css", import.meta.url), "utf8");
+  assert.match(css, /\.pi-avg \{[^}]*color: var\(--brand\)/);
+  assert.ok(!/\.pi-avg \{[^}]*color: currentColor/.test(css));
   // Kein "Aus" davor, Return Rate mit Zeichen und Icon.
   assert.ok(!html.startsWith("<h3 class=\"pi-headline\"><span class=\"pi-headline-line\" style=\"--pi-line:0\">Aus"));
   // Kein Pfeil mehr, das Durchschnittszeichen ist gezeichnet statt getippt.

@@ -98,7 +98,11 @@
    bekommen einen Schimmer - erst danach steht der Satz ruhig. */
 .pi-headline { margin: 0; display: grid; gap: 3px; color: var(--ink); font-size: clamp(1.32rem, 3.4cqw, 2.1rem); font-weight: 850; line-height: 1.2; letter-spacing: -.035em; text-align: left; text-wrap: balance; }
 .pi-headline-line { display: block; animation: piLineIn .62s cubic-bezier(.2,.85,.28,1) both; animation-delay: calc(var(--pi-line, 0) * 130ms); }
-.pi-avg { width: .78em; height: .78em; margin-right: .18em; vertical-align: -.06em; color: var(--brand); }
+/* Die Zeichnung traegt dieselbe Fettung wie die Schrift daneben: die
+   Strichstaerke steht im SVG, die Groesse folgt der Zeile. */
+/* Nicht currentColor: die Zahl daneben faerbt ueber background-clip und setzt
+   color auf transparent - das Zeichen waere unsichtbar geworden. */
+.pi-avg { width: .74em; height: .74em; margin-right: .14em; align-self: center; color: var(--brand); }
 
 @keyframes piLineIn { from { opacity: 0; transform: translateY(10px); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
 /* Zahlen und Quoten tragen dieselbe Auszeichnung: sie sind die Aussage der

@@ -322,7 +322,10 @@ export function uebersichtZeilen(summary) {
   const marketingSignale = numberValue(zahlen.marketing);
   const salesSignale = numberValue(zahlen.sales);
   const analysiert = marketingSignale + salesSignale + numberValue(zahlen.rejected) + numberValue(zahlen.review);
-  const views = numberValue(marketing.impressions);
+  // Views je Asset statt Gesamtsumme: mit dem Durchschnittszeichen davor waere
+  // eine Summe schlicht falsch beschriftet.
+  const marketingAssets = Array.isArray(summary.marketing) ? summary.marketing.length : 0;
+  const views = marketingAssets > 0 ? Math.round(numberValue(marketing.impressions) / marketingAssets) : 0;
   // Return Rate: Antworten je Ansprache. Ohne Ansprachen gibt es keine Quote,
   // dann steht dort eine Null - nicht "keine Angabe".
   const returnRate = numberValue(sales.sends) > 0 ? numberValue(sales.replies) / numberValue(sales.sends) : 0;
@@ -337,7 +340,7 @@ export function uebersichtZeilen(summary) {
         { text: "davon " },
         { text: formatNumber(marketingSignale), zahl: true },
         { text: " Marketing mit " },
-        { text: formatNumber(views), zahl: true },
+        { text: formatNumber(views), zahl: true, symbol: "durchschnitt" },
         { text: " Views" },
       ],
     });
@@ -354,8 +357,9 @@ export function uebersichtZeilen(summary) {
   return zeilen;
 }
 
-/** Das Durchschnittszeichen als Zeichnung - keine Icon-Schrift kennt es. */
-const DURCHSCHNITT_SVG = `<svg class="pi-avg" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.7"></circle><line x1="3.2" y1="12.8" x2="12.8" y2="3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></line></svg>`;
+/** Das Durchschnittszeichen als Zeichnung. Die Strichstaerke ist an die
+ *  Schrift angeglichen: 1,7 wirkte neben 850er Fettung wie ein Haarstrich. */
+const DURCHSCHNITT_SVG = `<svg class="pi-avg" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="2.6"></circle><line x1="3.6" y1="12.4" x2="12.4" y2="3.6" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"></line></svg>`;
 
 /**
  * Dieselben Zeilen als Auszeichnung: sie laufen nacheinander ein, die Zahlen
