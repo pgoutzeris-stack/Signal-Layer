@@ -254,7 +254,7 @@ test("der Bestandsring teilt die bewerteten Artikel auf", async () => {
   // Runde Enden ragen ueber den Bogen hinaus; die sichtbare Laenge ist der
   // Bogen plus beide Kappen. Sie fuellt den Kreis abzueglich der Luecken.
   const sichtbar = boegen.reduce((sum, laenge) => sum + laenge + 5, 0);
-  assert.ok(Math.abs(sichtbar - (100 - 4 * 2.2)) < 0.05, `Sichtbare Laenge: ${boegen}`);
+  assert.ok(Math.abs(sichtbar - 100) < 0.05, `Sichtbare Laenge: ${boegen}`);
   // Kein Segment schrumpft zum Punkt: unter der Strichstaerke bleibt Bogen.
   boegen.forEach((laenge) => assert.ok(laenge >= 2.5, `Bogen zu kurz: ${laenge}`));
   // Kein Segment ragt in das naechste hinein.
@@ -455,6 +455,11 @@ test("der Ring bleibt in jeder Zusammensetzung heil", async () => {
       const vorher = teile[index];
       assert.ok(teil.start >= vorher.start + vorher.laenge - 0.001, `${name}: Segment ${index + 1} ueberlappt`);
     });
+    // Der Ring ist geschlossen: die Segmente stossen aneinander, ohne Kerbe.
+    teile.slice(1).forEach((teil, index) => {
+      const vorher = teile[index];
+      assert.ok(teil.start - (vorher.start + vorher.laenge) < 0.05, `${name}: Luecke im Ring`);
+    });
     // Der Ring laeuft nicht ueber den Kreisanfang hinaus.
     const ende = teile.length ? teile[teile.length - 1].start + teile[teile.length - 1].laenge : 0;
     assert.ok(ende <= 100.001, `${name}: Ring laeuft ${(ende - 100).toFixed(2)} ueber den Kreis`);
@@ -471,7 +476,7 @@ test("das angezeigte Segment wird nicht laenger", async () => {
   assert.match(css, /\.pi-slice:hover, \.pi-slice\.is-on \{ stroke-width: 8\.2/);
   // Die Nachbarn weichen aus, damit der dickere Strich sie nicht beruehrt.
   const js2 = readFileSync(new URL("../dashboard-insights.js", import.meta.url), "utf8");
-  assert.match(js2, /const WEICHEN = 1\.1;/);
+  assert.match(js2, /const WEICHEN = 1\.9;/);
   assert.match(js2, /teil\.style\.strokeDashoffset/);
   assert.match(css, /transition:[^;]*stroke-dashoffset/);
 });

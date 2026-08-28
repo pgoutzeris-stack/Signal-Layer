@@ -396,9 +396,11 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
   // Nur Gruppen mit Wert bekommen einen Bogen. Eine leere Gruppe hinterliess
   // sonst eine Kerbe im Ring ohne Segment darin.
   const sichtbar = teile.filter((teil) => teil.wert > 0);
-  // Die Luecke traegt die Trennung und muss den Zuwachs beim Zeigen
-  // aufnehmen: der Strich waechst dort um gut ein Viertel.
-  const luecke = sichtbar.length > 1 ? 2.2 : 0;
+  // Kein Abstand zwischen den Segmenten: der Ring ist geschlossen. Weil der
+  // Ueberstand der runden Kappen aus der Bogenlaenge herausgerechnet wird,
+  // stossen die sichtbaren Enden genau aneinander, ohne sich zu ueberlagern.
+  // Platz entsteht erst beim Zeigen, wenn die Nachbarn ausweichen.
+  const luecke = 0;
   // Die Luecken werden vom Kreis abgezogen, bevor die Anteile verteilt werden.
   // Vorher lag die Summe aus Boegen und Luecken ueber dem Umfang: der Ring lief
   // ueber den Kreisanfang hinaus, das letzte Segment in das erste hinein.
@@ -479,7 +481,7 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
  * Dekoration.
  */
 /** Wie weit die Nachbarn ausweichen, wenn ein Segment hervortritt. */
-const WEICHEN = 1.1;
+const WEICHEN = 1.9;
 
 export function bindBestandRing(root, escapeHtml = (value) => String(value ?? "")) {
   const donut = root?.querySelector?.("[data-donut]");
