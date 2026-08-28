@@ -278,6 +278,25 @@ export type AssetNormalizeContext = {
   rootsLink?: string | null;
   /** Recherchierte oder gelieferte Benchmarks, gelten als belegt. */
   benchmarkCorpus?: string | null;
+  /** Vorab bestimmter Gegenstand des Signals: worum es wirklich geht. */
+  subject?: AssetSubject | null;
+};
+
+/**
+ * Worum es in diesem Signal wirklich geht. Ein eigener, kurzer Modellschritt
+ * vor dem Schreiben bestimmt ihn. Ohne diesen Schritt ist der Gegenstand im
+ * Prompt nur implizit in der Überschrift enthalten - dann gewinnt beim
+ * Schreiben die auffälligste Zahl, weil sie die einzige ausgewiesene Größe im
+ * Material ist. Am 28.8.2026 stand deshalb "1,6 Millionen" auf einem
+ * Einzelbild, dessen Thema Croissants waren.
+ */
+export type AssetSubject = {
+  /** Der Gegenstand: Produkt, Marke, Kategorie. Ein Nominalausdruck. */
+  worum: string;
+  /** Die Veränderung, die das Signal meldet. Ein Satz mit Verb. */
+  was_passiert: string;
+  /** Warum das für Marketingentscheider zählt. Ein Satz. */
+  warum_relevant: string;
 };
 
 export type AssetAnswers = LinkedinAnswers | MemoAnswers;
@@ -1454,6 +1473,7 @@ export function autoContentSlideKeys(
   answers: LinkedinAnswers,
   articleText = "",
   signalText = "",
+  subject: AssetSubject | null = null,
 ): AssetSlideKey[] {
   const profil = assetEvidenceProfile(articleText, signalText);
   const keys: AssetSlideKey[] = answers.theme === "dark" ? ["M"] : ["B"];
@@ -1481,10 +1501,26 @@ export function autoContentSlideKeys(
     add("T5", profil.hasFunnel && profil.numberCount >= 5);
     add("T6", profil.hasRoadmap);
   }
+  // Beim Einzelbild traegt die eine Folie den Gegenstand. Eine Zahlenvorlage
+  // darf dann nur antreten, wenn die Zahl die gemeldete Veraenderung selbst
+  // misst. Im Carousel bleibt sie fuer die Mitte erlaubt: dort ist die These
+  // schon auf Folie 1 gesetzt.
+  if (subject && answers.asset_type !== "carousel" && !subjectLeadNumberKeys(subject).length) {
+    const ohneZahl = keys.filter((key) => !NUMBER_LAYOUT_KEYS.has(key));
+    return ohneZahl.length ? ohneZahl : [answers.theme === "dark" ? "M" : "B"];
+  }
   return keys;
 }
 
-export function allowedSlideKeys(answers: LinkedinAnswers, articleText = "", signalText = ""): AssetSlideKey[] {
+/** Vorlagen, deren Pointe eine Zahl ist. */
+const NUMBER_LAYOUT_KEYS = new Set<AssetSlideKey>(["E", "H", "L", "T1", "T2", "T3", "T4", "T5"]);
+
+export function allowedSlideKeys(
+  answers: LinkedinAnswers,
+  articleText = "",
+  signalText = "",
+  subject: AssetSubject | null = null,
+): AssetSlideKey[] {
   const picked = (answers.slide_types || []).filter(isSlideKey);
   if (picked.length) return [...new Set(picked)];
   if (answers.variant !== "auto" && isSlideKey(answers.variant)) {
@@ -1492,7 +1528,7 @@ export function allowedSlideKeys(answers: LinkedinAnswers, articleText = "", sig
     const [cover, ende] = carouselFrameKeys(answers.theme);
     return [cover, answers.variant, ende];
   }
-  const keys = autoContentSlideKeys(answers, articleText, signalText);
+  const keys = autoContentSlideKeys(answers, articleText, signalText, subject);
   if (answers.asset_type === "carousel") {
     const [cover, ende] = carouselFrameKeys(answers.theme);
     return [cover, ...keys, ende];
@@ -1656,18 +1692,140 @@ function signalSelectionText(signal: AssetSignalInput): string {
   ].filter(Boolean).join("\n");
 }
 
-function vorlagenwahlBlock(profil: AssetEvidenceProfile, erlaubt: AssetSlideKey[], carousel: boolean): string {
+/* ── Gegenstand: der Schritt vor der Vorlagenwahl ─────────────────────────── */
+
+export const ASSET_SUBJECT_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    worum: {
+      type: "STRING",
+      description: "Der Gegenstand in höchstens sechs Wörtern: Produkt, Marke, Kategorie oder Markt. Nominalausdruck ohne Verb, ohne Zahl, ohne Bewertung. Beispiel: „Croissants im Lidl-Sortiment“.",
+    },
+    was_passiert: {
+      type: "STRING",
+      description: "Die gemeldete Veränderung an genau diesem Gegenstand, ein Satz mit Verb, höchstens 20 Wörter. Eine Zahl nur, wenn sie die Veränderung selbst ist.",
+    },
+    warum_relevant: {
+      type: "STRING",
+      description: "Warum das für Marketingentscheider zählt, ein Satz, höchstens 25 Wörter. Keine ROOTS-Leistung, keine Handlungsempfehlung.",
+    },
+  },
+  required: ["worum", "was_passiert", "warum_relevant"],
+} as const;
+
+/**
+ * Kurzer Vorlaufschritt. Er schreibt nichts, er benennt nur: Gegenstand,
+ * Veränderung, Relevanz. Das Ergebnis geht als verbindlicher Block in den
+ * Schreibprompt und filtert zusätzlich die Vorlagenkandidaten.
+ */
+export function buildAssetSubjectPrompt(signal: AssetSignalInput, articleText: string): string {
+  return `Du bestimmst, worum es in diesem Signal wirklich geht. Du schreibst noch kein Asset.
+
+<aufgabe>
+Nenne den Gegenstand, die gemeldete Veränderung und die Relevanz für Marketingentscheider.
+worum ist das, was ein Leser auf einem Bild in drei Sekunden erkennen muss: das Produkt, die Marke, die Kategorie, der Markt. Nicht die Kennzahl, nicht die Person, nicht die Branche im Allgemeinen.
+was_passiert ist die Veränderung an genau diesem Gegenstand. Eine Zahl gehört nur hinein, wenn die Zahl die Veränderung selbst ist ("Der Absatz halbiert sich"), nicht wenn sie sie nur begleitet ("Das Werk produziert 1,6 Millionen Stück").
+warum_relevant ist die Folge für Marke, Positionierung, Auftritt oder Wettbewerb. Keine ROOTS-Leistung.
+Halte dich streng an das Material. Erfinde nichts.
+</aufgabe>
+
+<signal>
+${asData(signal.headline_de, 400)}
+${asData(signal.summary_de, 900)}
+${asData(signal.why_de, 600)}
+${asData(signal.evidence, 600)}
+</signal>
+
+<artikel>
+${asData(articleText, 6_000)}
+</artikel>
+
+Antworte ausschliesslich mit einem JSON-Objekt aus worum, was_passiert und warum_relevant, ohne Text davor oder danach.`;
+}
+
+export function normalizeAssetSubject(raw: unknown): AssetSubject | null {
+  const quelle = typeof raw === "string" ? parseLooseJsonObject(raw) : record(raw);
+  const subject: AssetSubject = {
+    worum: text(quelle.worum, 90),
+    was_passiert: text(quelle.was_passiert, 220),
+    warum_relevant: text(quelle.warum_relevant, 260),
+  };
+  // Ohne Gegenstand und Veränderung trägt der Block nichts. Dann lieber kein
+  // Block als ein leerer: der Schreibschritt läuft weiter wie bisher.
+  if (!subject.worum || !subject.was_passiert) return null;
+  return subject;
+}
+
+/** Zahlen, die den Gegenstand selbst tragen - nicht jede Zahl im Artikel. */
+export function subjectLeadNumberKeys(subject: AssetSubject | null | undefined): string[] {
+  if (!subject) return [];
+  return primaryLeadNumberKeys(`${subject.worum}\n${subject.was_passiert}`);
+}
+
+/** Wörter aus dem Gegenstand, an denen sich die Folie messen lässt. */
+export function subjectTokens(subject: AssetSubject | null | undefined): string[] {
+  if (!subject) return [];
+  const stopp = new Set([
+    "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer", "eines",
+    "und", "oder", "von", "vom", "bei", "beim", "für", "fuer", "mit", "aus", "auf", "als", "über",
+    "ueber", "unter", "nach", "vor", "seine", "seiner", "ihre", "ihrer", "sein", "ihr", "markt",
+    "marke", "produkt", "kategorie", "sortiment", "bereich", "thema", "deutschland",
+  ]);
+  return [...new Set(
+    String(subject.worum || "")
+      .toLocaleLowerCase("de")
+      .split(/[^a-zäöüß0-9]+/i)
+      .filter((wort) => wort.length >= 4 && !stopp.has(wort)),
+  )];
+}
+
+/**
+ * Trägt die erste Folie den Gegenstand? Beim Einzelbild ist das die einzige
+ * Folie, beim Carousel das Cover. Der Wortstamm reicht: "Croissants" deckt
+ * "Croissant-Regal". Findet der Gegenstand kein prüfbares Wort, entfällt die
+ * Prüfung - lieber keine Prüfung als eine, die an einem Eigennamen scheitert.
+ */
+export function coverMissesSubject(coverText: string, subject: AssetSubject | null | undefined): boolean {
+  const woerter = subjectTokens(subject);
+  if (!woerter.length) return false;
+  const sichtbar = String(coverText || "").toLocaleLowerCase("de");
+  return !woerter.some((wort) => sichtbar.includes(wort.slice(0, Math.max(4, wort.length - 2))));
+}
+
+function gegenstandBlock(subject: AssetSubject | null, carousel: boolean): string {
+  if (!subject) return "";
+  return `<gegenstand>
+worum: ${subject.worum}
+was_passiert: ${subject.was_passiert}
+warum_relevant: ${subject.warum_relevant}
+
+Das ist die Aufgabe, nicht der Artikel. ${carousel
+    ? "Slide 1 macht worum und was_passiert in drei Sekunden erfassbar; worum steht sichtbar in title oder subtitle. Die mittleren Folien belegen und entfalten diese These - dort darf eine Zahl die Folie tragen."
+    : "Die Folie macht worum und was_passiert in drei Sekunden erfassbar; worum steht sichtbar in title oder subtitle."}
+Jede Zahl ist Beleg für was_passiert, niemals der Ersatz dafür. Eine Zahl trägt eine Folie nur, wenn sie die Veränderung selbst misst.
+</gegenstand>`;
+}
+
+function vorlagenwahlBlock(
+  profil: AssetEvidenceProfile,
+  erlaubt: AssetSlideKey[],
+  carousel: boolean,
+  subject: AssetSubject | null = null,
+): string {
   const jaNein = (wert: boolean) => wert ? "ja" : "nein";
+  const zahlRegel = subject
+    ? `2. Eine Kennzahl-Vorlage (E, H, L) und eine Zahlen-Infografik tragen nur, wenn die Zahl was_passiert selbst misst. Begleitzahlen aus dem Artikel - Mengen, Umsätze, Kapazitäten neben der eigentlichen Veränderung - sind Beleg im subtitle, nie die Pointe der Folie. L nur, wenn genau diese Zahl durch drei verschiedene Belege gedeutet wird. H nur für mehrere eigenständige Zahlenbefunde.`
+    : "2. Eine zentrale Zahl aus Überschrift oder Zusammenfassung trägt E. L nur, wenn genau diese Zahl durch drei verschiedene Belege gedeutet wird. H nur für mehrere eigenständige Zahlenbefunde.";
   return `<vorlagenwahl>
 Die Kandidaten sind serverseitig aus der im Material beobachtbaren Struktur gefiltert: ${erlaubt.join(", ")}.
 Beobachtet: ${profil.numberCount} belastbare Zahlen, ${profil.percentCount} Prozentwerte, wörtliches Zitat ${jaNein(profil.hasDirectQuote)}, echter Gegensatz ${jaNein(profil.hasExplicitContrast)}, Liste ${jaNein(profil.hasParallelList)}, Ablauf ${jaNein(profil.hasSequence)}, Zeitreihe ${jaNein(profil.hasTimeSeries)}, echte 100-Prozent-Zusammensetzung ${jaNein(profil.hasComposition)}.
 Wähle nach der Argumentationsform, nicht nach optischer Auffälligkeit:
 1. Ein wörtliches, zugeschriebenes Zitat trägt A. Eine Paraphrase ist niemals ein Zitat.
-2. Eine zentrale Zahl aus Überschrift oder Zusammenfassung trägt E. L nur, wenn genau diese Zahl durch drei verschiedene Belege gedeutet wird. H nur für mehrere eigenständige Zahlenbefunde.
+${zahlRegel}
 3. G und K brauchen einen im Material wirklich vorhandenen Gegensatz. I braucht eine kausale Reihenfolge; F dagegen parallele Punkte.
 4. S- und T-Layouts sind Daten- oder Denkmodelle, keine Dekoration. Nutze sie ausschließlich bei der beschriebenen Struktur. T3 braucht drei disjunkte Anteile derselben Basis, die zusammen ungefähr 100 Prozent ergeben.
 5. B beziehungsweise M ist der starke Standard: eine konkrete These plus genau ein Beleg. Wähle den Standard, wenn eine Spezialvorlage den Inhalt verbiegen würde.
-${carousel ? "Im Carousel: Cover = These. Ordne die Mitte als Kontext → Beleg → Mechanik → Konsequenz. Jeder Slide beantwortet eine neue Frage; kein Slide paraphrasiert nur den vorherigen. Eine Spezialvorlage höchstens einmal, B/M darf bei verschiedenen Gedanken wiederkehren. Endfolie = Schlussfolgerung plus ein CTA." : "Beim Einzelbild muss genau ein Gedanke in höchstens drei Sekunden erfassbar sein. Keine Nebenargumente anhängen."}
+${subject ? "0. Vor allem anderen: die Vorlage muss worum und was_passiert tragen. Passt keine Spezialvorlage dazu, nimm den Standard.\n" : ""}${carousel ? "Im Carousel: Cover = These. Ordne die Mitte als Kontext → Beleg → Mechanik → Konsequenz. Jeder Slide beantwortet eine neue Frage; kein Slide paraphrasiert nur den vorherigen. Eine Spezialvorlage höchstens einmal, B/M darf bei verschiedenen Gedanken wiederkehren. Endfolie = Schlussfolgerung plus ein CTA." : "Beim Einzelbild muss genau ein Gedanke in höchstens drei Sekunden erfassbar sein. Keine Nebenargumente anhängen."}
 </vorlagenwahl>`;
 }
 
@@ -1676,10 +1834,11 @@ function linkedinPrompt(
   daten: string,
   articleText: string,
   signal: AssetSignalInput,
+  subject: AssetSubject | null = null,
 ): string {
   const carousel = answers.asset_type === "carousel";
   const selectionText = signalSelectionText(signal);
-  const erlaubt = allowedSlideKeys(answers, articleText, selectionText);
+  const erlaubt = allowedSlideKeys(answers, articleText, selectionText, subject);
   const evidenceProfile = assetEvidenceProfile(articleText, selectionText);
   const thema = assetThemeKicker(signal);
   // Beim Privatprofil traegt das Asset kein ROOTS-Zeichen und keinen
@@ -1721,10 +1880,11 @@ function linkedinPrompt(
     : "Du erstellst ein LinkedIn-Asset für ROOTS Brand Strategy Consultants aus einem geprüften Signal."}
 
 ${ASSETTYP_BRIEFING}
+${gegenstandBlock(subject, carousel)}
 <auftrag>
 ${auftrag}
 </auftrag>
-${vorlagenwahlBlock(evidenceProfile, erlaubt, carousel)}
+${vorlagenwahlBlock(evidenceProfile, erlaubt, carousel, subject)}
 ${variantenBlock(erlaubt, carousel)}
 ${LEITKENNZAHL}
 <aufbau>
@@ -1839,11 +1999,12 @@ export function buildAssetPrompt(
   signal: AssetSignalInput,
   article: AssetArticleInput,
   answers: AssetAnswers,
+  subject: AssetSubject | null = null,
 ): string {
   const signalForKind = kind === "memo" ? thematicMemoSignal(signal) : signal;
   const daten = signalBlock(signalForKind, article);
   const body = String(article.content_de || article.cleaned_content || article.content || "");
-  if (kind === "linkedin") return linkedinPrompt(answers as LinkedinAnswers, daten, body, signalForKind);
+  if (kind === "linkedin") return linkedinPrompt(answers as LinkedinAnswers, daten, body, signalForKind, subject);
   const memo = answers as MemoAnswers;
   const benchmarks = memo.benchmarks.length >= 3
     ? `\n${formatBenchmarkBlock(memo.benchmarks, memo.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\n<belegregeln_benchmarks>\nDie drei Benchmarks in <benchmarks> gelten als belegt, inklusive ihrer Quellen. Andere Zahlen weiter nur aus kennzahlen_im_artikel.\n</belegregeln_benchmarks>`
@@ -2623,7 +2784,7 @@ function normalizeLinkedin(
   const selectionText = [
     context.signalHeadline, context.signalSummary, context.rootsLink, context.rootsOffering,
   ].filter(Boolean).join("\n");
-  const autoAllowed = new Set(allowedSlideKeys(answers, corpus, selectionText));
+  const autoAllowed = new Set(allowedSlideKeys(answers, corpus, selectionText, context.subject || null));
   const [coverVariant, endVariant] = carouselFrameKeys(answers.theme);
   const selected = (answers.slide_types || []).filter(isSlideKey);
   const slides = (Array.isArray(raw.slides) ? raw.slides : [])
@@ -2691,6 +2852,7 @@ function normalizeLinkedin(
     corpus,
     eigenerText ? "Slides" : "Beitrag oder Slides",
   );
+  requireCoverSubject(kept, context, carousel);
   requirePrimaryLeadNumber(kept, context);
   rejectRepeatedLeadNumbers(kept);
 
@@ -2707,6 +2869,28 @@ function normalizeLinkedin(
     },
     slides: applyLinkedinChrome(kept, context, answers),
   };
+}
+
+/**
+ * Die erste Folie muss den Gegenstand benennen. Sie ist beim Einzelbild die
+ * einzige und im Carousel das Cover; wer sie liest, muss ohne Vorwissen
+ * erkennen, worum es geht. Eine Zahl allein leistet das nicht.
+ */
+function requireCoverSubject(
+  slides: AssetSlide[],
+  context: AssetNormalizeContext,
+  carousel: boolean,
+): void {
+  const subject = context.subject;
+  if (!subject || !slides.length) return;
+  const cover = slides[0];
+  const sichtbar = [cover.title, cover.subtitle, cover.takeaway, cover.stat.label, ...cover.bullets]
+    .filter(Boolean).join(" ");
+  if (!coverMissesSubject(sichtbar, subject)) return;
+  throw new Error(
+    `Die ${carousel ? "erste Folie" : "Folie"} nennt den Gegenstand nicht: „${subject.worum}“ kommt im sichtbaren Text nicht vor `
+    + `(${sichtbar.slice(0, 160) || "leer"}). Der Leser muss in drei Sekunden erkennen, worum es geht - eine Zahl allein leistet das nicht.`,
+  );
 }
 
 /** Dieselbe Ziffer auf zwei Folien. post_text darf alle Zahlen noch einmal nennen. */
@@ -2811,7 +2995,7 @@ function requirePrimaryLeadNumber(slides: AssetSlide[], context: AssetNormalizeC
  * bleiben ein harter Fehler: die kommen nicht von einer Tippvariante.
  */
 export function assetMangelIsRepairable(mangel: string): boolean {
-  return /kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|Vorrang vor nachgelagerten Detailzahlen|Jede Zahl nur auf einer Folie|belegte Kennzahlen|unbelegte Zahlen|source_context|Quellenausschnitt|sichtbare Aussage passt nicht|ungefüllte Zeichnungs-Slots|Vorlage|Vorlagenwahl|Infografik|wortgleiches Zitat|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel|100-Tage-CMO-Sprache|ROOTS-Leistung zum Titel|Nachrichtenmeldung im Titel/i.test(String(mangel || ""));
+  return /nennt den Gegenstand nicht|kein JSON-Objekt|beschaedigtes JSON|leere Antwort|kein Feld "slides"|inhaltsleer|belegte Leitkennzahl|Vorrang vor nachgelagerten Detailzahlen|Jede Zahl nur auf einer Folie|belegte Kennzahlen|unbelegte Zahlen|source_context|Quellenausschnitt|sichtbare Aussage passt nicht|ungefüllte Zeichnungs-Slots|Vorlage|Vorlagenwahl|Infografik|wortgleiches Zitat|Personalie|Signalüberschrift|Nachrichtenslogan|Cover-These|Beratungshebel|100-Tage-CMO-Sprache|ROOTS-Leistung zum Titel|Nachrichtenmeldung im Titel/i.test(String(mangel || ""));
 }
 
 function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {

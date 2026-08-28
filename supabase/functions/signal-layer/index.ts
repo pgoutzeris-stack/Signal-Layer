@@ -113,6 +113,7 @@ import {
   MEMO_PHOTO_BYTES_MAX,
   MEMO_PHOTO_USER_AGENT,
   DesignTemplate,
+  AssetSubject,
   LinkedinAnswers,
   MemoAnswers,
   MemoImageSlot,
@@ -133,7 +134,10 @@ import {
   assetOutputTokenBudget,
   assetRepairTimeoutMs,
   assetResponseSchema,
+  ASSET_SUBJECT_SCHEMA,
   buildAssetPrompt,
+  buildAssetSubjectPrompt,
+  normalizeAssetSubject,
   buildAssetRepairPrompt,
   buildMemoBenchmarkResearchPrompt,
   buildMemoBenchmarkReviewPrompt,
@@ -3483,6 +3487,38 @@ async function pricedSimpleModelCatalog() {
   });
 }
 
+/**
+ * Bestimmt vor dem Schreiben, worum es im Signal wirklich geht. Ein kurzer
+ * eigener Aufruf: er kostet wenige hundert Tokens und ersetzt das Raten des
+ * Schreibschritts, welcher Gegenstand hinter dem Material steht. Faellt er
+ * aus, laeuft das Asset wie zuvor - der Gegenstand ist eine Verbesserung,
+ * keine Voraussetzung.
+ */
+async function ermittleAssetGegenstand(options: {
+  model: string;
+  apiKey: string;
+  signal: Record<string, unknown>;
+  articleText: string;
+}): Promise<AssetSubject | null> {
+  try {
+    const antwort = await callJsonModel({
+      model: options.model,
+      apiKey: options.apiKey,
+      schema: ASSET_SUBJECT_SCHEMA,
+      prompt: buildAssetSubjectPrompt(options.signal, options.articleText),
+      maxOutputTokens: 400,
+      maxTotalTokens: 3_000,
+      temperature: 0,
+      attempts: 1,
+      timeoutMs: 30_000,
+    });
+    if (!antwort.ok) return null;
+    return normalizeAssetSubject(antwort.text);
+  } catch {
+    return null;
+  }
+}
+
 async function modelApiKey(model: string): Promise<string> {
   return modelProvider(model) === "deepseek" ? await getDeepseekKey() : await getGeminiKey();
 }
@@ -5681,7 +5717,9 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       territory: assetArticle.territory || assetSignal.territory || null,
       article_type: assetArticle.article_type || assetSignal.article_type || null,
     };
+    const gegenstand = normalizeAssetSubject(row.subject);
     const assetContext = {
+      subject: gegenstand,
       articleText: [
         assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
         assetSignal.evidence, assetSignal.why_de, assetSignal.summary_de, assetSignal.headline_de,
@@ -5805,7 +5843,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         await persist({ status: "error", error_message: `Für ${assetModel} ist kein API-Schlüssel hinterlegt` });
         return;
       }
-      const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
+      const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers, gegenstand);
       result = await callJsonModel({
         model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
         schema: assetResponseSchema(assetKind, assetAnswers, [
@@ -6030,7 +6068,15 @@ async function retryGeneratedAssetModel(assetId: string): Promise<void> {
       await persist({});
     };
 
-    const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
+    let gegenstand = normalizeAssetSubject(row.subject);
+    if (!gegenstand && assetKind === "linkedin") {
+      gegenstand = await ermittleAssetGegenstand({
+        model: assetModel, apiKey: assetKey, signal: signalForAsset,
+        articleText: String(assetArticle.content_de || assetArticle.cleaned_content || assetArticle.content || ""),
+      });
+      if (gegenstand) await persist({ subject: gegenstand });
+    }
+    const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers, gegenstand);
     loggen("model_start", { stream: true, retry: true });
     await persist({ stage: "modell" });
     const result = await callJsonModel({
@@ -10694,7 +10740,18 @@ Deno.serve(async (req: Request) => {
             }
             await persist({ answers: assetAnswers });
           }
-          const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers);
+          // Erst der Gegenstand, dann die Vorlage. Beim LinkedIn-Asset
+          // entscheidet er mit, welche Vorlagen ueberhaupt antreten duerfen.
+          let gegenstand: AssetSubject | null = null;
+          if (assetKind === "linkedin") {
+            gegenstand = await ermittleAssetGegenstand({
+              model: assetModel, apiKey: assetKey, signal: signalForAsset,
+              articleText: String(assetArticle.content_de || assetArticle.cleaned_content || assetArticle.content || ""),
+            });
+            loggen("gegenstand", gegenstand ? { ...gegenstand } : { ok: false });
+            if (gegenstand) await persist({ subject: gegenstand });
+          }
+          const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers, gegenstand);
           if (!(await nochAktiv())) return;
           await abschnitt("modell");
           loggen("model_start", { stream: true });

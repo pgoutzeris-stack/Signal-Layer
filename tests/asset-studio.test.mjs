@@ -3037,3 +3037,100 @@ test("der Entwurf traegt keinen blauen Streifen mehr", () => {
   // Fragebogen.
   assert.match(studio, /else if \(showDrafts\) \{ state\.formTab = "drafts"; render\(\); \}/);
 });
+
+test("der Gegenstand steht vor der Vorlagenwahl und trägt die erste Folie", () => {
+  const croissant = {
+    worum: "Croissants im Lidl-Sortiment",
+    was_passiert: "Lidl backt seine Croissants künftig selbst statt sie zuzukaufen",
+    warum_relevant: "Die Handelsmarke greift das Bäckerhandwerk im Frischesegment an.",
+  };
+  const artikel = "Lidl übernimmt die Eigenproduktion. Das Werk liefert 1,6 Millionen Stück pro Jahr an 3.200 Filialen.";
+  const signalText = "Lidl backt Croissants selbst";
+
+  // Der Vorlauf liefert nur, was er wirklich benannt hat.
+  assert.equal(backend.normalizeAssetSubject('{"worum":"","was_passiert":"x"}'), null);
+  assert.deepEqual(backend.normalizeAssetSubject(JSON.stringify(croissant)), croissant);
+  assert.match(backend.buildAssetSubjectPrompt({ headline_de: signalText }, artikel), /worum/);
+
+  // Eine Begleitzahl macht keine Zahlenvorlage: beim Einzelbild fallen E, H, L
+  // und die Zahlen-Infografiken aus der Kandidatenliste.
+  const single = backend.normalizeAssetAnswers("linkedin", { asset_type: "single" });
+  const ohneGegenstand = backend.allowedSlideKeys(single, artikel, signalText);
+  const mitGegenstand = backend.allowedSlideKeys(single, artikel, signalText, croissant);
+  assert.ok(ohneGegenstand.includes("E"));
+  assert.ok(!mitGegenstand.includes("E"));
+  assert.ok(!mitGegenstand.some((key) => ["E", "H", "L", "T1", "T2", "T3", "T4", "T5"].includes(key)));
+  assert.ok(mitGegenstand.length);
+
+  // Misst die Zahl die Veränderung selbst, bleibt die Zahlenvorlage erlaubt.
+  const zahlIstDieNachricht = { ...croissant, was_passiert: "Der Absatz bricht um 42 Prozent ein" };
+  assert.ok(backend.allowedSlideKeys(single, artikel, signalText, zahlIstDieNachricht).includes("E"));
+
+  // Im Carousel darf eine mittlere Folie weiter die Zahl tragen: die These
+  // steht schon auf Folie 1.
+  const carousel = backend.normalizeAssetAnswers("linkedin", { asset_type: "carousel", slides: 5 });
+  assert.ok(backend.allowedSlideKeys(carousel, artikel, signalText, croissant).includes("E"));
+
+  // Der Gegenstand steht als verbindlicher Block im Prompt.
+  const prompt = backend.buildAssetPrompt(
+    "linkedin",
+    { headline_de: signalText, topics: ["handel"] },
+    { title: signalText, content: artikel },
+    single,
+    croissant,
+  );
+  assert.match(prompt, /<gegenstand>/);
+  assert.match(prompt, /worum: Croissants im Lidl-Sortiment/);
+  assert.match(prompt, /Jede Zahl ist Beleg für was_passiert/);
+  assert.match(prompt, /Kennzahl-Vorlage \(E, H, L\)[^\n]*nur, wenn die Zahl was_passiert selbst misst/);
+
+  // Ohne Gegenstand bleibt der Prompt wie zuvor.
+  const ohneBlock = backend.buildAssetPrompt(
+    "linkedin", { headline_de: signalText }, { title: signalText, content: artikel }, single,
+  );
+  assert.doesNotMatch(ohneBlock, /<gegenstand>/);
+
+  // Eine Folie, die nur die Zahl zeigt, wird nicht ausgeliefert, sondern neu
+  // geschrieben - der Leser muss den Gegenstand sehen.
+  const nurZahl = () => backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{
+      variant: "B",
+      kicker: "HANDEL",
+      title: "1,6 Millionen Stück verlassen das Werk",
+      subtitle: "Die Eigenproduktion läuft an 3.200 Filialen.",
+      footer_left: "Quelle",
+    }],
+  }), single, { articleText: artikel, subject: croissant });
+  assert.throws(nurZahl, /nennt den Gegenstand nicht/);
+  assert.ok(backend.assetMangelIsRepairable("Die Folie nennt den Gegenstand nicht: „Croissants“"));
+
+  // Steht der Gegenstand sichtbar, geht dieselbe Folie durch.
+  const mitGegenstandSlide = backend.normalizeAssetPayload("linkedin", JSON.stringify({
+    slides: [{
+      variant: "B",
+      kicker: "HANDEL",
+      title: "Lidl backt seine Croissants künftig selbst",
+      subtitle: "Die Eigenproduktion läuft an 3.200 Filialen.",
+      footer_left: "Quelle",
+    }],
+  }), single, { articleText: artikel, subject: croissant });
+  assert.equal(mitGegenstandSlide.slides.length, 1);
+
+  // Der Wortstamm reicht, damit Beugung und Zusammensetzung nicht scheitern.
+  assert.equal(backend.coverMissesSubject("Das Croissant-Regal wird zur Eigenmarke", croissant), false);
+  assert.equal(backend.coverMissesSubject("1,6 Millionen Stück", croissant), true);
+  // Ohne prüfbares Wort keine Prüfung.
+  assert.equal(backend.coverMissesSubject("Egal was", { worum: "Der Markt", was_passiert: "x" }), false);
+});
+
+test("die Kante bestimmt den Gegenstand vor dem Schreiben und legt ihn an der Zeile ab", () => {
+  assert.match(edge, /ermittleAssetGegenstand/);
+  assert.match(edge, /ASSET_SUBJECT_SCHEMA/);
+  // Der Schreibschritt bekommt ihn mit, die spätere Prüfung liest ihn aus der Zeile.
+  assert.match(edge, /buildAssetPrompt\(assetKind, signalForAsset, assetArticle, assetAnswers, gegenstand\)/);
+  assert.match(edge, /persist\(\{ subject: gegenstand \}\)/);
+  assert.match(edge, /normalizeAssetSubject\(row\.subject\)/);
+  assert.match(edge, /subject: gegenstand,/);
+  // Fällt der Vorlaufschritt aus, läuft das Asset weiter wie bisher.
+  assert.match(edge, /if \(!antwort\.ok\) return null;/);
+});
