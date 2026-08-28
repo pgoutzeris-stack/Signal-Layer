@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/circular-std">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="./dashboard-insights.css?v=20260829-0130">
+<link rel="stylesheet" href="./dashboard-insights.css?v=20260829-0210">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
 <script defer src="https://pgoutzeris-stack.github.io/ROOTS_Intranet/roots-user-bridge.js?v=20260804-auth-dedupe-v1"></script>
 <style>
@@ -291,14 +291,18 @@
   .cp-confirm-actions { grid-column: 2; display: flex; justify-content: flex-end; gap: 7px; margin-top: .2rem; }
   .cp-body { padding: 1.25rem 1.4rem 1.5rem; background: var(--surface); }
   /* Gesichter der Personen, die zu diesem Artikel schon einen Entwurf haben. */
-  .asset-authors { display: inline-flex; align-items: center; gap: 4px; margin-right: 2px; }
+  /* Unten rechts an der Karte: die Kopfzeile gehoert dem Signal, nicht der
+     Frage, wer schon einen Entwurf hat. */
+  .asset-authors { position: absolute; right: .85rem; bottom: .7rem; z-index: 3; display: inline-flex; align-items: center; gap: 4px; }
+  .archive-item { position: relative; }
+  /* Platz freihalten, sonst laege eine volle letzte Zeile unter den Gesichtern. */
+  .finding-item:has(.asset-authors), .archive-item:has(.asset-authors) { padding-bottom: 2.3rem; }
   .asset-author { width: 22px; height: 22px; padding: 0; flex: none; border: 1.5px solid var(--bg); border-radius: 50%; background: var(--brand-light); overflow: hidden; cursor: pointer; }
   .asset-author + .asset-author { margin-left: -8px; }
   .asset-author img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .asset-author:hover { border-color: var(--brand); transform: translateY(-1px); }
   .asset-author-initials { display: grid; width: 100%; height: 100%; place-items: center; color: var(--brand-dark); font-size: .5rem; font-weight: 850; }
   .asset-author--rest { display: grid; place-items: center; color: var(--muted); background: var(--status-bg); font-size: .5rem; font-weight: 800; cursor: default; }
-  .asset-authors small { margin-left: 3px; color: var(--muted); font-size: .6rem; font-weight: 650; white-space: nowrap; }
   .cp-kpi-lanes { margin-bottom: 1.1rem; }
   .cp-kpi-lanes .cp-kpis { margin-bottom: 0; }
   .cp-kpi-lanes .cp-kpis[data-scope] { display: none; }
@@ -2537,7 +2541,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260829-0130';
+  import { initApp } from './app.js?v=20260829-0210';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

@@ -2,8 +2,10 @@
 //
 // Die Information steht am Asset (created_by, created_at), nicht am Artikel.
 // Ohne sie beginnt jemand einen Entwurf, den eine Kollegin vor zwei Stunden
-// schon gebaut hat. Die Karte zeigt deshalb die Gesichter der Personen und den
-// Zeitpunkt des juengsten Entwurfs; ein Klick fuehrt in genau diesen Entwurf.
+// schon gebaut hat. Die Karte zeigt deshalb unten rechts die Gesichter der
+// Personen; ein Klick fuehrt in genau deren Entwurf. Der Zeitpunkt steht im
+// Titel des Gesichts, nicht als Zeile daneben - auf der Kachel zaehlt das
+// Signal, nicht die Bearbeitungshistorie.
 
 /** "vor 3 Std", "vor 2 Tagen" - grob genug, um ohne Uhrzeit zu tragen. */
 export function relativeWhen(value, now = Date.now()) {
@@ -48,8 +50,6 @@ export function assetAuthorsBadgeHtml(list, escapeHtml, now = Date.now()) {
   const personen = [...proPerson.values()];
   const sichtbar = personen.slice(0, 3);
   const rest = personen.length - sichtbar.length;
-  const juengste = sortiert[0];
-  const wann = relativeWhen(juengste?.created_at, now);
   const bilder = sichtbar.map((person) => {
     const name = String(person.name || person.short_name || "ROOTS Team");
     const titel = `${name} · ${person.kind === "memo" ? "Executive Memo" : "LinkedIn-Asset"} · ${relativeWhen(person.created_at, now)}`;
@@ -62,7 +62,7 @@ export function assetAuthorsBadgeHtml(list, escapeHtml, now = Date.now()) {
   }).join("");
   return `<span class="asset-authors" aria-label="Entwürfe zu diesem Artikel">${bilder}${
     rest > 0 ? `<span class="asset-author asset-author--rest">+${rest}</span>` : ""
-  }${wann ? `<small>${esc(wann)}</small>` : ""}</span>`;
+  }</span>`;
 }
 
 /**
@@ -89,8 +89,6 @@ export async function paintAssetAuthors(root, callApi, escapeHtml) {
     if (!Array.isArray(liste) || !liste.length) continue;
     const html = assetAuthorsBadgeHtml(liste, escapeHtml, jetzt);
     if (!html) continue;
-    const ziel = karte.querySelector(".finding-top-tags, .archive-item-top, .finding-item-top");
-    if (ziel) ziel.insertAdjacentHTML("afterbegin", html);
-    else karte.insertAdjacentHTML("afterbegin", html);
+    karte.insertAdjacentHTML("beforeend", html);
   }
 }

@@ -67,3 +67,13 @@ test("ein Klick auf das Gesicht oeffnet genau diesen Entwurf", () => {
   assert.match(appJs, /assetId,/);
   assert.match(styles, /\.asset-author \{/);
 });
+
+test("die Gesichter stehen unten rechts und ohne Zeitzeile", () => {
+  const modul = readFileSync(new URL("../asset-authors.mjs", import.meta.url), "utf8");
+  // Der Zeitpunkt steht im Titel des Gesichts, nicht als sichtbare Zeile.
+  assert.ok(!modul.includes("<small>${esc(wann)}</small>"));
+  assert.match(modul, /karte\.insertAdjacentHTML\("beforeend", html\)/);
+  assert.match(styles, /\.asset-authors \{ position: absolute; right: \.85rem; bottom: \.7rem/);
+  // Ohne Platz laege die letzte Textzeile unter den Bildern.
+  assert.match(styles, /:has\(\.asset-authors\)[^}]*padding-bottom: 2\.3rem/);
+});
