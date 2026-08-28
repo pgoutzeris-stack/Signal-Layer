@@ -36,23 +36,31 @@
    gedraengt wirkte er wie eine Randnotiz. */
 .pi-donut { padding: 20px 16px 16px; display: grid; justify-items: center; gap: 16px; }
 .pi-donut-chart { position: relative; width: min(232px, 76%); aspect-ratio: 1; }
-.pi-donut-chart svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
-.pi-slice-track { stroke: color-mix(in srgb, var(--line) 55%, transparent); }
+.pi-donut-chart svg { width: 100%; height: 100%; overflow: visible; }
+/* Jedes Segment ist ein Ringsektor: ein geschlossener Pfad zwischen innerem
+   und aeusserem Radius. Benachbarte Sektoren teilen sich dieselbe Kante und
+   koennen sich nicht ueberlagern - anders als Kreisboegen mit Strichmuster,
+   deren runde Enden ueber ihre Grenzen hinausragen.
+   Beim Zeigen wandert der Sektor entlang seiner Mittelachse nach aussen; die
+   Winkel bleiben, also beruehrt er die Nachbarn auch dabei nicht. */
 .pi-slice {
   cursor: pointer;
-  transition: stroke-width .22s cubic-bezier(.22,.8,.28,1), stroke-dashoffset .26s cubic-bezier(.22,.8,.28,1), opacity .2s ease, filter .22s ease;
-  animation: piArcIn .85s cubic-bezier(.22,.9,.24,1) both;
+  stroke-width: .9;
+  stroke-linejoin: round;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform .24s cubic-bezier(.22,.8,.28,1), opacity .2s ease, filter .24s ease;
+  animation: piArcIn .55s cubic-bezier(.22,.9,.24,1) both;
   animation-delay: var(--pi-delay, 0ms);
 }
-/* Der Bogen waechst aus dem Nichts. Ohne "to" bleibt der Endwert der im
-   Attribut gesetzte - so muss die Laenge nicht doppelt gepflegt werden. */
-@keyframes piArcIn { from { stroke-dasharray: 0 100; opacity: 0; } }
-/* Kein Skalieren: die Bogenlaenge steht in Pfadeinheiten, ein groesserer Kreis
-   verlaengert sie mit. Der Strich waechst stattdessen in der Staerke, und die
-   Nachbarn ruecken ein Stueck weg - siehe bindBestandRing. */
-.pi-slice:hover, .pi-slice.is-on { stroke-width: 8.2; filter: drop-shadow(0 5px 12px rgba(32,110,251,.32)); }
-.pi-donut-chart:hover .pi-slice:not(:hover):not(.is-on) { opacity: .55; }
-.pi-slice.is-dimmed { opacity: .22; }
+@keyframes piArcIn { from { opacity: 0; transform: scale(.82); } }
+.pi-slice:hover, .pi-slice.is-on {
+  transform: translate(calc(var(--pi-x, 0) * 1.15px), calc(var(--pi-y, 0) * 1.15px));
+  filter: drop-shadow(0 5px 12px rgba(32,110,251,.3));
+}
+.pi-slice.is-dimmed { opacity: .26; }
+.pi-donut-chart:hover .pi-slice:not(:hover):not(.is-on) { opacity: .58; }
+
 .pi-donut-mitte { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
 .pi-donut-mitte b { display: block; color: var(--ink); font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; animation: piCenterIn .32s ease both; }
 .pi-donut-mitte span { display: block; margin-top: 2px; color: var(--muted); font-size: .6rem; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }

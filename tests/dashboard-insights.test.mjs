@@ -244,35 +244,16 @@ test("der Bestandsring teilt die bewerteten Artikel auf", async () => {
     signalCounts: { marketing: 279, sales: 117, rejected: 5157, review: 100, crawled: 21282 },
   });
   const html = module.bestandRingHtml(summary);
-  // Vier Segmente, deren Boegen zusammen den vollen Kreis ergeben.
-  const boegen = [...html.matchAll(/stroke-dasharray="([\d.]+) /g)].map((treffer) => Number(treffer[1]));
-  assert.equal(boegen.length, 4);
-  // Zwischen den Segmenten bleibt eine kleine Luecke, damit die runden Enden
-  // nicht ineinanderlaufen - vier Luecken zu 0,9.
-  // Boegen und Luecken ergeben genau den Kreis - auch die Luecke nach dem
-  // letzten Segment ist so breit wie die uebrigen.
-  // Runde Enden ragen ueber den Bogen hinaus; die sichtbare Laenge ist der
-  // Bogen plus beide Kappen. Sie fuellt den Kreis abzueglich der Luecken.
-  const sichtbar = boegen.reduce((sum, laenge) => sum + laenge + 5, 0);
-  assert.ok(Math.abs(sichtbar - 100) < 0.05, `Sichtbare Laenge: ${boegen}`);
-  // Kein Segment schrumpft zum Punkt: unter der Strichstaerke bleibt Bogen.
-  boegen.forEach((laenge) => assert.ok(laenge >= 2.5, `Bogen zu kurz: ${laenge}`));
-  // Kein Segment ragt in das naechste hinein.
-  const positionen = [...html.matchAll(/stroke-dasharray="([\d.]+) [\d.]+" stroke-dashoffset="(-?[\d.]+)"/g)]
-    .map((treffer) => ({ laenge: Number(treffer[1]), start: -Number(treffer[2]) }));
-  positionen.slice(1).forEach((teil, index) => {
-    const vorher = positionen[index];
-    assert.ok(teil.start >= vorher.start + vorher.laenge, `Segment ${index + 1} beginnt vor dem Ende des vorigen`);
-  });
-  // Die Mitte traegt die Summe der vier, nicht den Gesamtbestand.
+  // Vier Sektoren, die den Kreis genau einmal umrunden.
+  assert.equal([...html.matchAll(/<path class="pi-slice/g)].length, 4);
+  const ecken = [...html.matchAll(/d="M ([\d.]+) ([\d.]+) A/g)].map((treffer) => [Number(treffer[1]), Number(treffer[2])]);
+  // Der erste Sektor beginnt oben in der Mitte.
+  assert.deepEqual(ecken[0], [21, 2]);
+  // Die Mitte traegt die Summe.
   assert.match(html, /<b>5\.653<\/b><span>Artikel<\/span>/);
-  // Der Gesamtbestand steht als Bezugsgroesse darunter.
-  // Aussortierte lassen sich ausblenden; dann steht dort, was fehlt.
   const ohne = module.bestandRingHtml(summary, (v) => String(v ?? ""), { hideRejected: true });
   assert.match(ohne, /<b>496<\/b><span>Artikel<\/span>/);
   assert.match(ohne, /5\.157 aussortierte nicht eingerechnet/);
-  // Jedes Segment traegt Wert und Anteil fuer die Mitte.
-  assert.match(html, /data-label="Manuelle Prüfung" data-value="100"/);
 });
 
 test("ohne bewertete Artikel steht dort kein leerer Ring", async () => {
@@ -377,9 +358,9 @@ test("der Ring laesst sich ohne die Aussortierten lesen", async () => {
   // Verlauf statt flacher Vollfarbe, runde Enden.
   assert.match(mit, /stroke="url\(#piGrad-marketing\)"/);
   assert.match(mit, /<linearGradient id="piGrad-sales"/);
-  // Runde Enden - der Ueberstand der Kappen ist aus der Bogenlaenge
-  // herausgerechnet, damit sie nicht in den Nachbarn ragen.
-  assert.match(mit, /stroke-linecap="round"/);
+  // Ringsektoren mit weichen Ecken statt Boegen mit ueberstehenden Kappen.
+  const cssRing = readFileSync(new URL("../dashboard-insights.css", import.meta.url), "utf8");
+  assert.match(cssRing, /stroke-linejoin: round/);
   // Die Bindung fuer den Hover muss es geben - ohne sie wirft das Rendern.
   assert.equal(typeof module.bindBestandRing, "function");
 });
@@ -436,12 +417,17 @@ test("der Ring bleibt in jeder Zusammensetzung heil", async () => {
   const ring = (counts) => module.bestandRingHtml(module.summarizeDashboardData({
     preferences: module.defaultDashboardPreferences(), assets: [], performance: [], signalCounts: counts,
   }));
-  // Gemessen wird die sichtbare Form: Bogen plus beide runden Kappen.
-  const geometrie = (html) => [...html.matchAll(/stroke-linecap="(\w+)"\s*\n?\s*stroke-dasharray="([\d.]+) [\d.]+" stroke-dashoffset="(-?[\d.]+)"/g)]
-    .map((treffer) => {
-      const kappe = treffer[1] === "round" ? 2.5 : 0;
-      return { laenge: Number(treffer[2]) + 2 * kappe, start: -Number(treffer[3]) - kappe };
-    });
+  // Aus den Pfaden den Winkel jeder Kante zurueckrechnen: benachbarte Sektoren
+  // muessen sich dieselbe Kante teilen, ohne Luecke und ohne Ueberlappung.
+  const winkel = (x, y) => {
+    const grad = Math.atan2(y - 21, x - 21) * 180 / Math.PI + 90;
+    return (grad % 360 + 360) % 360;
+  };
+  const kanten = (html) => [...html.matchAll(/d="M ([\d.]+) ([\d.]+) A [\d.]+ [\d.]+ 0 \d 1 ([\d.]+) ([\d.]+)/g)]
+    .map((treffer) => ({
+      von: winkel(Number(treffer[1]), Number(treffer[2])),
+      bis: winkel(Number(treffer[3]), Number(treffer[4])),
+    }));
 
   for (const [name, counts] of [
     ["voll", { marketing: 279, sales: 117, rejected: 5157, review: 100 }],
@@ -449,34 +435,24 @@ test("der Ring bleibt in jeder Zusammensetzung heil", async () => {
     ["winzige Gruppen", { marketing: 1, sales: 1, rejected: 99999, review: 1 }],
     ["nur eine Gruppe", { marketing: 0, sales: 0, rejected: 12, review: 0 }],
   ]) {
-    const teile = geometrie(ring(counts));
-    // Kein Segment beginnt vor dem Ende des vorigen.
+    const teile = kanten(ring(counts));
     teile.slice(1).forEach((teil, index) => {
       const vorher = teile[index];
-      assert.ok(teil.start >= vorher.start + vorher.laenge - 0.001, `${name}: Segment ${index + 1} ueberlappt`);
+      assert.ok(Math.abs(teil.von - vorher.bis) < 0.02, `${name}: Kante ${index + 1} passt nicht (${vorher.bis} / ${teil.von})`);
     });
-    // Der Ring ist geschlossen: die Segmente stossen aneinander, ohne Kerbe.
-    teile.slice(1).forEach((teil, index) => {
-      const vorher = teile[index];
-      assert.ok(teil.start - (vorher.start + vorher.laenge) < 0.05, `${name}: Luecke im Ring`);
-    });
-    // Der Ring laeuft nicht ueber den Kreisanfang hinaus.
-    const ende = teile.length ? teile[teile.length - 1].start + teile[teile.length - 1].laenge : 0;
-    assert.ok(ende <= 100.001, `${name}: Ring laeuft ${(ende - 100).toFixed(2)} ueber den Kreis`);
   }
-  // Eine leere Gruppe bekommt keinen Bogen und hinterlaesst keine Kerbe.
-  assert.equal(geometrie(ring({ marketing: 279, sales: 117, rejected: 5157, review: 0 })).length, 3);
+  // Eine leere Gruppe bekommt keinen Sektor.
+  assert.equal(kanten(ring({ marketing: 279, sales: 117, rejected: 5157, review: 0 })).length, 3);
 });
 
-test("das angezeigte Segment wird nicht laenger", async () => {
-  const css = await readFile(new URL("../dashboard-insights.css", import.meta.url), "utf8");
-  // Die Bogenlaenge steht in Pfadeinheiten: ein groesserer Kreis verlaengert
-  // sie mit, das Segment liefe in das naechste.
-  assert.ok(!/\.pi-slice[^{]*\{[^}]*transform: scale/.test(css), "kein Skalieren am Bogen");
-  assert.match(css, /\.pi-slice:hover, \.pi-slice\.is-on \{ stroke-width: 8\.2/);
-  // Die Nachbarn weichen aus, damit der dickere Strich sie nicht beruehrt.
-  const js2 = readFileSync(new URL("../dashboard-insights.js", import.meta.url), "utf8");
-  assert.match(js2, /const WEICHEN = 1\.9;/);
-  assert.match(js2, /teil\.style\.strokeDashoffset/);
-  assert.match(css, /transition:[^;]*stroke-dashoffset/);
+test("das angezeigte Segment wandert nach aussen statt zu wachsen", async () => {
+  const [css, js] = await Promise.all([
+    readFile(new URL("../dashboard-insights.css", import.meta.url), "utf8"),
+    readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8"),
+  ]);
+  // Die Winkel bleiben, also kann der Sektor die Nachbarn nicht beruehren.
+  assert.match(css, /\.pi-slice:hover, \.pi-slice\.is-on \{\s*\n\s*transform: translate\(calc\(var\(--pi-x/);
+  assert.match(js, /function hervorRichtung\(von, bis\)/);
+  // Kein Strichmuster mehr, dessen runde Enden ueberstehen.
+  assert.ok(!js.includes("stroke-dasharray"), "die Boegen sind Sektoren");
 });

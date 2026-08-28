@@ -283,14 +283,18 @@ function trendHtml(summary) {
 /**
  * Was aus den bewerteten Artikeln geworden ist, als Ring.
  *
- * Die Segmente sind Kreisboegen ueber stroke-dasharray: sie lassen sich
+ * Die Segmente sind Ringsektoren: sie lassen sich
  * animieren, einzeln anfassen und behalten bei jeder Groesse ihre Schaerfe.
  * Die Mitte traegt die Summe, beim Zeigen auf ein Segment dessen Wert.
  * Der Bahnfilter oben hebt hervor, statt zu verbergen - eine Verteilung mit
  * nur einem Teil waere keine Verteilung mehr.
  */
-/** Strichstaerke des Rings in Pfadeinheiten. Legt zugleich die Kappenlaenge fest. */
-const STRICH = 5;
+/** Aussen- und Innenradius des Rings im Koordinatensystem der Zeichnung. */
+const RING = { mitte: 21, aussen: 19, innen: 12.4 };
+/** Wie weit ein Segment beim Zeigen nach aussen wandert. */
+const HERVOR = 1.15;
+/** Kleinster Anteil, damit auch eine winzige Gruppe sichtbar bleibt. */
+const MINDEST_ANTEIL = 0.016;
 
 const BESTAND_SEGMENTE = [
   { key: "marketing", label: "Marketing-Signale", lane: "marketing", color: "#206efb", light: "#7cb0ff" },
@@ -299,11 +303,44 @@ const BESTAND_SEGMENTE = [
   { key: "rejected", label: "Aussortiert", lane: null, color: "#94a3b8", light: "#cbd5e1" },
 ];
 
+/** Punkt auf einem Kreis. Null Grad steht oben, gezaehlt wird im Uhrzeigersinn. */
+function ringPunkt(radius, anteil) {
+  const winkel = (anteil * 360 - 90) * Math.PI / 180;
+  return {
+    x: RING.mitte + radius * Math.cos(winkel),
+    y: RING.mitte + radius * Math.sin(winkel),
+  };
+}
+
 /**
- * Der Satz ueber den Kennzahlen. Er nennt in einer Zeile, was aus dem Bestand
- * geworden ist und was es gebracht hat - und laesst weg, wofuer es noch keine
- * Zahl gibt, statt Nullen auszuschreiben.
+ * Ein Ringsektor als geschlossener Pfad: aussen im Uhrzeigersinn, innen
+ * zurueck. Anders als ein Kreis mit Strichmuster hat ein Sektor keine Kappen,
+ * die ueber seine Grenzen hinausragen - benachbarte Sektoren teilen sich
+ * dieselbe Kante und koennen sich nicht ueberlagern.
  */
+function sektorPfad(von, bis) {
+  const grosserBogen = bis - von > 0.5 ? 1 : 0;
+  const a1 = ringPunkt(RING.aussen, von);
+  const a2 = ringPunkt(RING.aussen, bis);
+  const i2 = ringPunkt(RING.innen, bis);
+  const i1 = ringPunkt(RING.innen, von);
+  const r = RING.aussen;
+  const ri = RING.innen;
+  return [
+    `M ${a1.x.toFixed(3)} ${a1.y.toFixed(3)}`,
+    `A ${r} ${r} 0 ${grosserBogen} 1 ${a2.x.toFixed(3)} ${a2.y.toFixed(3)}`,
+    `L ${i2.x.toFixed(3)} ${i2.y.toFixed(3)}`,
+    `A ${ri} ${ri} 0 ${grosserBogen} 0 ${i1.x.toFixed(3)} ${i1.y.toFixed(3)}`,
+    "Z",
+  ].join(" ");
+}
+
+/** Richtung, in die ein Segment beim Zeigen ausweicht. */
+function hervorRichtung(von, bis) {
+  const p = ringPunkt(1, (von + bis) / 2);
+  return { x: (p.x - RING.mitte).toFixed(3), y: (p.y - RING.mitte).toFixed(3) };
+}
+
 export function uebersichtSatz(summary) {
   return uebersichtZeilen(summary)
     .map((zeile) => zeile.teile.map((teil) => teil.text).join(""))
@@ -392,59 +429,35 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
     return `<div class="pi-inline-empty">Noch keine analysierten Artikel</div>`;
   }
   const lane = summary.preferences?.filters?.lane || "all";
-  const umfang = 100;
-  // Nur Gruppen mit Wert bekommen einen Bogen. Eine leere Gruppe hinterliess
-  // sonst eine Kerbe im Ring ohne Segment darin.
   const sichtbar = teile.filter((teil) => teil.wert > 0);
-  // Kein Abstand zwischen den Segmenten: der Ring ist geschlossen. Weil der
-  // Ueberstand der runden Kappen aus der Bogenlaenge herausgerechnet wird,
-  // stossen die sichtbaren Enden genau aneinander, ohne sich zu ueberlagern.
-  // Platz entsteht erst beim Zeigen, wenn die Nachbarn ausweichen.
-  const luecke = 0;
-  // Die Luecken werden vom Kreis abgezogen, bevor die Anteile verteilt werden.
-  // Vorher lag die Summe aus Boegen und Luecken ueber dem Umfang: der Ring lief
-  // ueber den Kreisanfang hinaus, das letzte Segment in das erste hinein.
-  const platz = umfang - sichtbar.length * luecke;
-  // Runde Enden brauchen Platz: zwei Kappen fuellen bereits die Strichstaerke.
-  // Bleibt darunter kaum Bogen, wird aus dem Segment ein Punkt. Sehr kleine
-  // Gruppen werden deshalb ueberzeichnet - Legende und Tooltip nennen
-  // weiterhin den echten Wert.
-  const mindest = STRICH + 2.6;
-  const laengen = sichtbar.map((teil) => Math.max(mindest, teil.wert / (summe || 1) * platz));
-  // Was ein sehr kleines Segment zusaetzlich braucht, gibt das groesste ab.
-  const ueberschuss = laengen.reduce((sum, laenge) => sum + laenge, 0) - platz;
+
+  // Anteile, mit Untergrenze fuer winzige Gruppen. Was diese zusaetzlich
+  // brauchen, gibt die groesste ab - sonst waere der Kreis mehr als voll.
+  const anteile = sichtbar.map((teil) => Math.max(MINDEST_ANTEIL, teil.wert / (summe || 1)));
+  const ueberschuss = anteile.reduce((sum, anteil) => sum + anteil, 0) - 1;
   if (ueberschuss > 0) {
-    const groesster = laengen.indexOf(Math.max(...laengen));
-    laengen[groesster] = Math.max(mindest, laengen[groesster] - ueberschuss);
+    const groesster = anteile.indexOf(Math.max(...anteile));
+    anteile[groesster] = Math.max(MINDEST_ANTEIL, anteile[groesster] - ueberschuss);
   }
-  // Runde Enden ragen um die halbe Strichstaerke ueber den Bogen hinaus. Damit
-  // das Segment trotzdem genau seinen Anteil einnimmt, wird der Bogen um beide
-  // Kappen gekuerzt und um eine Kappe nach vorn gesetzt. Ein Segment, das
-  // kuerzer als zwei Kappen ist, bekommt gerade Enden - sonst waere es
-  // breiter gezeichnet als sein Anteil.
-  const kappe = STRICH / 2;
-  let offset = 0;
-  const boegen = sichtbar.map((teil, index) => {
-    const anteil = laengen[index];
-    const rund = anteil >= kappe * 2 + 0.4;
-    const laenge = rund ? anteil - kappe * 2 : anteil;
-    const start = rund ? offset + kappe : offset;
+
+  let gelaufen = 0;
+  const sektoren = sichtbar.map((teil, index) => {
+    const von = gelaufen;
+    const bis = index === sichtbar.length - 1 ? 1 : gelaufen + anteile[index];
+    gelaufen = bis;
+    const richtung = hervorRichtung(von, bis);
     const gedimmt = lane !== "all" && teil.lane !== lane;
-    const bogen = `<circle class="pi-slice${gedimmt ? " is-dimmed" : ""}" data-slice="${escapeHtml(teil.key)}"
+    return `<path class="pi-slice${gedimmt ? " is-dimmed" : ""}" data-slice="${escapeHtml(teil.key)}"
       data-label="${escapeHtml(teil.label)}" data-value="${teil.wert}" data-share="${Math.round(teil.wert / (summe || 1) * 100)}"
-      data-start="${start.toFixed(2)}" data-mitte="${(offset + anteil / 2).toFixed(2)}"
-      cx="21" cy="21" r="15.9155" fill="none" stroke="url(#piGrad-${escapeHtml(teil.key)})" stroke-width="${STRICH}" stroke-linecap="${rund ? "round" : "butt"}"
-      stroke-dasharray="${laenge.toFixed(2)} ${(umfang - laenge).toFixed(2)}" stroke-dashoffset="${(-start).toFixed(2)}"
-      style="--pi-delay:${index * 90}ms"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></circle>`;
-    offset += anteil + luecke;
-    return bogen;
+      d="${sektorPfad(von, bis)}" fill="url(#piGrad-${escapeHtml(teil.key)})" stroke="url(#piGrad-${escapeHtml(teil.key)})"
+      style="--pi-delay:${index * 90}ms;--pi-x:${richtung.x};--pi-y:${richtung.y}"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></path>`;
   }).join("");
-  // Ein Verlauf je Segment: dieselbe Farbe zweimal, einmal aufgehellt. Flache
-  // Vollfarben wirken auf einem hellen Grund wie ein Diagramm aus dem Handbuch.
+
   const verlaeufe = alle.map((teil) => `<linearGradient id="piGrad-${escapeHtml(teil.key)}" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="${teil.color}"></stop>
     <stop offset="100%" stop-color="${teil.light}"></stop>
   </linearGradient>`).join("");
+
   const legende = alle.map((teil) => {
     const versteckt = ohneAussortiert && teil.key === "rejected";
     return `<div class="pi-legend-row${lane !== "all" && teil.lane !== lane ? " is-dimmed" : ""}${versteckt ? " is-hidden" : ""}" data-slice-key="${escapeHtml(teil.key)}">
@@ -460,8 +473,7 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
     <div class="pi-donut-chart">
       <svg viewBox="0 0 42 42" role="img" aria-label="Verteilung der analysierten Artikel">
         <defs>${verlaeufe}</defs>
-        <circle class="pi-slice-track" cx="21" cy="21" r="15.9155" fill="none" stroke-width="${STRICH}"></circle>
-        ${boegen}
+        ${sektoren}
       </svg>
       <div class="pi-donut-mitte" data-donut-center>
         <b>${formatNumber(summe)}</b><span>Artikel</span>
@@ -480,9 +492,6 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
  * bliebe sonst stumm: eine Zahl in der Mitte, die sich nie aendert, waere nur
  * Dekoration.
  */
-/** Wie weit die Nachbarn ausweichen, wenn ein Segment hervortritt. */
-const WEICHEN = 1.9;
-
 export function bindBestandRing(root, escapeHtml = (value) => String(value ?? "")) {
   const donut = root?.querySelector?.("[data-donut]");
   if (!donut || donut.dataset.gebunden === "1") return;
@@ -492,20 +501,6 @@ export function bindBestandRing(root, escapeHtml = (value) => String(value ?? ""
   const alleBoegen = [...donut.querySelectorAll("[data-slice]")];
   const setzen = (key) => {
     const bogen = key ? donut.querySelector(`[data-slice="${key}"]`) : null;
-    // Der hervorgehobene Strich waechst nach beiden Seiten. Damit er die
-    // Nachbarn nicht beruehrt, ruecken sie ein Stueck von ihm weg - die
-    // dahinter nach vorn, die davor zurueck.
-    const mitte = bogen ? Number(bogen.dataset.mitte) : null;
-    alleBoegen.forEach((teil) => {
-      const start = Number(teil.dataset.start);
-      if (!Number.isFinite(start)) return;
-      let versatz = 0;
-      if (bogen && teil !== bogen && Number.isFinite(mitte)) {
-        const abstand = ((Number(teil.dataset.mitte) - mitte) % 100 + 100) % 100;
-        versatz = abstand < 50 ? WEICHEN : -WEICHEN;
-      }
-      teil.style.strokeDashoffset = (-(start + versatz)).toFixed(2);
-    });
     alleBoegen.forEach((teil) => teil.classList.toggle("is-on", teil === bogen));
     donut.querySelectorAll("[data-slice-key]").forEach((zeile) => zeile.classList.toggle("is-on", Boolean(key) && zeile.dataset.sliceKey === key));
     if (!mitte) return;
