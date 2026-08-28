@@ -218,7 +218,11 @@ test("erst die Pille KI oder selbst, dann das Dropdown mit Miniatur", () => {
   // Die Miniatur darf keinen Knopf enthalten: ein Knopf im Knopf schliesst die
   // Zeile vorzeitig, Variante C stand dadurch leer in der Liste.
   assert.match(studio, /function miniatur\(variant\)/);
-  assert.match(studio, /as-img-ui"\[\\s\\S\]\*\?<\\\/div>\/g, ""\)/);
+  // Die Knoepfe werden nicht mehr nachtraeglich aus dem HTML geschnitten: ohne
+  // Bearbeitung entstehen sie gar nicht erst. Verschachtelte <button> hatten
+  // die Dropdown-Zeile aufgebrochen.
+  assert.match(studio, /function wrapImageSlots\(html, model, editable = true\)/);
+  assert.match(studio, /if \(!editable\) return "";/);
 });
 
 test("Bildvorlagen zeigen ein echtes lokales Motiv in jeder Vorschau", () => {
@@ -2288,8 +2292,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260829-0930");
-  assert.match(indexHtml, /app\.js\?v=20260829-0930/);
+  assert.equal(studioVersion, "20260829-1120");
+  assert.match(indexHtml, /app\.js\?v=20260829-1120/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
@@ -2994,9 +2998,14 @@ test("eine Bildvorlage ohne Datei zeigt das fehlende Motiv statt einer leeren Fl
   // Fuer C, D und J schreibt das Modell nur einen image_hint; die Datei kommt
   // vom Nutzer. Ohne sie stand unter dem Verlauf nichts.
   assert.match(studioJs, /function imageHintAt\(model, key\)/);
-  assert.match(studioJs, /as-img--bg\$\{bild\.src \? "" : " is-empty"\}/);
+  assert.match(studioJs, /as-picslot--bg\$\{bild\.src \? "" : " is-empty"\}/);
+  // Eigener Namensraum: .as-img gibt es im Vorlagen-CSS, .as-slot im Studio -
+  // beide mit deckendem Grund. Der Slot legte sich dadurch ueber die ganze
+  // Folie, bei "Titel mit Bild" war weder Motiv noch Text zu sehen.
+  assert.doesNotMatch(studioJs, /class="as-img as-img--(tpl|bg)/);
+  assert.doesNotMatch(studioJs, /class="as-slot as-slot--(tpl|bg)/);
   assert.match(studioJs, /Motiv einfügen/);
-  assert.match(studioJs, /\.as-img--bg\.is-empty\{background:linear-gradient/);
+  assert.match(studioJs, /\.as-picslot--bg\.is-empty\{background:linear-gradient/);
   // Der Hinweis darf nicht ueber der Ueberschrift liegen.
   assert.match(studioJs, /\.as-img-empty\{\s*position:absolute; right:24px; bottom:170px/);
 });
@@ -3007,4 +3016,17 @@ test("Marketing fragt nicht mehr nach automatisch erzeugten Motiven", () => {
   assert.doesNotMatch(linkedinForm, /Motive erzeugen lassen/);
   assert.doesNotMatch(backendSource, /ASSET_IMAGE_MODEL/);
   assert.doesNotMatch(edge, /operation: "asset_image"/);
+});
+
+test("das Bild laesst sich in der Werkbank nachstellen", () => {
+  // Zuschneiden, Groesse, Transparenz, Overlay, ersetzen, entfernen.
+  assert.match(studio, /data-act="img-crop"/);
+  assert.match(studio, /data-act="img-zoom"/);
+  assert.match(studio, /data-imgrange="opacity"/);
+  assert.match(studio, /data-imgrange="overlay"/);
+  assert.match(studio, /background-size:\$\{Math\.round\(zoom \* 100\)\}% auto;opacity:\$\{deckung\}/);
+  // Ohne Bild keine Regler.
+  assert.match(studio, /\$\{hat \? `<div class="as-img-tools">/);
+  // Ein Hintergrundmotiv ueberlebt den Schrittwechsel.
+  assert.match(studio, /if \(slot\.classList\.contains\("as-picslot--bg"\)\) return;/);
 });

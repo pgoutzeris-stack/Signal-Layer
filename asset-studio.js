@@ -222,7 +222,7 @@ const FORM_LINKEDIN = [
   },
   {
     key: "cta",
-    label: "Handlungsaufruf",
+    label: "Call to Action",
     options: [["auto", "Modell schlägt vor"], ["custom", "Eigener Text"]],
     free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Termin vereinbaren" },
   },
@@ -633,14 +633,14 @@ const CHROME_CSS = `
 #as-overlay .em-shot-hint{display:none !important;}
 #as-overlay .li-photo-hint{display:none !important;}
 #as-overlay .em-shot:not(:has(img[src]:not([src=""]))),
-#as-overlay .as-img--tpl:not(:has(img[src]:not([src=""]))){
+#as-overlay .as-picslot--tpl:not(:has(img[src]:not([src=""]))){
   background:#eff6ff;
 }
 #as-overlay .em-shot:has(img[src]:not([src=""])){
   background:var(--status-bg,#f8fafc);
 }
 #as-overlay .em-shot:not(:has(img[src]:not([src=""])))::after,
-#as-overlay .as-img--tpl:not(:has(img[src]:not([src=""])))::after{
+#as-overlay .as-picslot--tpl:not(:has(img[src]:not([src=""])))::after{
   content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
   background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'><rect x='3' y='5' width='18' height='14' rx='2' stroke='%23206efb' stroke-width='1.75'/><circle cx='8.2' cy='10' r='1.4' fill='%23206efb'/><path d='M5 17l4.2-4.2 2.6 2.6 2.4-2.4L19 17' stroke='%23206efb' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/28px 28px no-repeat;
 }
@@ -795,9 +795,14 @@ const CHROME_CSS = `
 #as-overlay .as-stage--tpl{width:1080px; height:1350px; flex:0 0 auto; overflow:hidden; border-radius:0;}
 
 /* Bildplatz in der Vorlage: die Bedienung liegt als Auflage darauf. */
-#as-overlay .as-img--tpl{position:relative; display:block;}
-#as-overlay .as-img--bg{position:absolute; inset:0; z-index:3; display:block; pointer-events:none;}
-#as-overlay .as-img--bg.is-empty{background:linear-gradient(160deg,#eff6ff 0%,#dbeafe 100%);}
+/* Eigener Namensraum ohne Basisklasse. Die Slots hiessen frueher .as-img und
+   danach .as-slot - beides existiert bereits, einmal im Vorlagen-CSS und
+   einmal im Studio, jeweils mit deckendem Grund. Der Slot legte sich dadurch
+   ueber die ganze Folie: bei "Titel mit Bild" war weder Motiv noch Text zu
+   sehen. */
+#as-overlay .as-picslot--tpl{position:relative; display:block;}
+#as-overlay .as-picslot--bg{position:absolute; inset:0; z-index:3; display:block; pointer-events:none;}
+#as-overlay .as-picslot--bg.is-empty{background:linear-gradient(160deg,#eff6ff 0%,#dbeafe 100%);}
 /* Der Hinweis sitzt als Chip ueber dem Einfuegen-Knopf, nicht mittig auf der
    Folie: dort liegt bei jeder Bildvorlage die Ueberschrift. */
 #as-overlay .as-img-empty{
@@ -810,7 +815,7 @@ const CHROME_CSS = `
 #as-overlay .as-img-empty i{font-size:30px; opacity:.6;}
 #as-overlay .as-img-empty b{font-size:26px; font-weight:750;}
 #as-overlay .as-img-empty > span{font-size:20px; line-height:1.35; color:#3b6fd4;}
-#as-overlay .as-img--bg .as-img-ui{pointer-events:auto;}
+#as-overlay .as-picslot--bg .as-img-ui{pointer-events:auto;}
 
 /* Vorschau der Varianten: 150px breite Buehne, also Faktor 150/1080. */
 /* Platzhalter, wenn das Modell das Layout waehlt. Kein Rahmen um Leere, sondern
@@ -1139,12 +1144,22 @@ const CHROME_CSS = `
   box-shadow:0 6px 16px rgba(15,23,42,.22);
 }
 #as-overlay .as-img-btn:hover{background:rgba(15,23,42,.88);}
+#as-overlay .as-img-tools{
+  display:flex; align-items:center; gap:8px; margin-right:6px; padding:6px 10px;
+  border-radius:12px; background:rgba(15,23,42,.72); color:#fff;
+  box-shadow:0 6px 16px rgba(15,23,42,.22);
+}
+#as-overlay .as-img-tools .as-img-btn{width:26px; height:26px; font-size:11px; background:transparent; box-shadow:none;}
+#as-overlay .as-img-tools .as-img-btn:hover{background:rgba(255,255,255,.16);}
+#as-overlay .as-img-value{min-width:38px; font-size:11px; font-weight:750; text-align:center;}
+#as-overlay .as-img-range{display:flex; align-items:center; gap:5px; font-size:11px;}
+#as-overlay .as-img-range input{width:64px; accent-color:#6ea3ff;}
 #as-overlay .as-img-btn.is-clear{width:28px; height:28px; font-size:12px; background:rgba(255,255,255,.94); color:#0f172a;}
 #as-overlay .as-shot:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
-#as-overlay .as-img--tpl:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
+#as-overlay .as-picslot--tpl:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
 #as-overlay .em-shot:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear){opacity:0;}
 #as-overlay .as-shot:hover .as-img-btn,
-#as-overlay .as-img--tpl:hover .as-img-btn,
+#as-overlay .as-picslot--tpl:hover .as-img-btn,
 #as-overlay .em-shot:hover .as-img-btn{opacity:1;}
 
 #as-overlay .as-hint{font-size:12px; line-height:1.5; color:var(--muted,#475569); margin:0;}
@@ -1808,7 +1823,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         </div>`;
       }
       if (state.prevIndex >= MEMO_SEITEN) state.prevIndex = 0;
-      const html = markiereMemoSeiten(memoHtml(applyFormImages(demoMemo()), false).replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, ""));
+      const html = markiereMemoSeiten(memoHtml(applyFormImages(demoMemo()), false));
       return `<span class="as-prev-scale">${html}</span>${blaetterNavHtml()}`;
     }
     const carousel = state.answers.asset_type === "carousel";
@@ -2357,9 +2372,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * dadurch leer in der Liste.
    */
   function miniatur(variant) {
-    const html = slideHtml(demoSlide(variant), false)
-      .replace(/<div class="as-img-ui"[\s\S]*?<\/div>/g, "");
-    return `<span class="as-mini"><span class="as-mini-in">${html}</span></span>`;
+    // slideHtml ohne Bearbeitung liefert die Folie bereits ohne Knoepfe.
+    return `<span class="as-mini"><span class="as-mini-in">${slideHtml(demoSlide(variant), false)}</span></span>`;
   }
 
   function benchesHtml() {
@@ -3261,6 +3275,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return String(model.imageHint || model.image_hint || "");
   }
 
+  /** Grenzen des Groessenreglers. Kleiner als der Ausschnitt liesse Raender. */
+  const BILD_ZOOM = { min: 1, max: 2.5, schritt: 0.1 };
+
+  function bildWert(bild, feld, standard) {
+    const wert = Number(bild?.[feld]);
+    return Number.isFinite(wert) ? wert : standard;
+  }
+
+  /** Das Modell, an dem der Slot haengt: Memo oder die sichtbare Folie. */
+  function aktuellesModelFuer(key) {
+    if (isMemo || /^(benchmarks|potentials)\./.test(String(key || ""))) return state.memo;
+    return state.slides[state.prevIndex] || null;
+  }
+
+  function setzeBildWert(key, feld, wert) {
+    const model = aktuellesModelFuer(key);
+    if (!model) return;
+    const bild = imageAt(model, key);
+    if (!bild.src) return;
+    setImageAt(model, key, { ...bild, [feld]: wert });
+    mountStages(state.step === "edit");
+  }
+
   function setImageAt(model, key, image) {
     if (!model) return;
     const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(String(key || ""));
@@ -3305,6 +3342,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         image: {
           src: String(item?.image?.src || ""),
           pos: String(item?.image?.pos || "50% 50%"),
+          zoom: Number(item?.image?.zoom) || 1,
+          opacity: Number(item?.image?.opacity) || 1,
+          overlay: Number(item?.image?.overlay ?? 1),
         },
       })),
       potentials_title: String(src.potentials_title || ""),
@@ -3317,6 +3357,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         image: {
           src: String(item?.image?.src || ""),
           pos: String(item?.image?.pos || "50% 50%"),
+          zoom: Number(item?.image?.zoom) || 1,
+          opacity: Number(item?.image?.opacity) || 1,
+          overlay: Number(item?.image?.overlay ?? 1),
         },
       })),
       cta: String(src.cta || ""),
@@ -3339,7 +3382,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     html = expandRepeats(html, slide);
     html = fillTemplate(html, slide);
     html = ergaenzeZitatQuelle(html, slide);
-    html = wrapImageSlots(html, slide);
+    html = wrapImageSlots(html, slide, editable);
     if (editable) {
       html = html.replace(/data-field="([a-z0-9_.]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
     }
@@ -3441,11 +3484,30 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   /** Fotos bekommen ein Bild-Icon. Der Zuschnitt läuft im Popup, nicht als Leiste auf der Folie. */
-  function wrapImageSlots(html, model) {
+  /**
+   * Die Knoepfe am Bild gehoeren nur in die Werkbank. In Miniatur und Vorschau
+   * steckten sie als <button> in einem <button> - ungueltiges HTML, das der
+   * Parser aufbricht: die Dropdown-Zeile verlor dadurch ihren Namen und ihr
+   * Markup rutschte heraus.
+   */
+  function wrapImageSlots(html, model, editable = true) {
     const uiFor = (key) => {
+      if (!editable) return "";
       const bild = imageAt(model, key);
       const hat = Boolean(bild.src);
+      const zoom = bildWert(bild, "zoom", 1);
+      const deckung = Math.round(bildWert(bild, "opacity", 1) * 100);
+      const overlay = Math.round(bildWert(bild, "overlay", 1) * 100);
+      // Ohne Bild bleibt es beim einen Knopf: Regler auf nichts sind Attrappen.
       return `<div class="as-img-ui" data-as-chrome>
+      ${hat ? `<div class="as-img-tools">
+        <button type="button" class="as-img-btn" data-act="img-crop" data-imgkey="${attr(key)}" aria-label="Zuschneiden" title="Zuschneiden"><i class="fa-solid fa-crop-simple"></i></button>
+        <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="-1" data-imgkey="${attr(key)}" aria-label="Kleiner" title="Kleiner"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+        <span class="as-img-value">${Math.round(zoom * 100)}%</span>
+        <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="1" data-imgkey="${attr(key)}" aria-label="Größer" title="Größer"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+        <label class="as-img-range" title="Transparenz"><i class="fa-solid fa-circle-half-stroke"></i><input type="range" min="20" max="100" step="5" value="${deckung}" data-imgrange="opacity" data-imgkey="${attr(key)}" aria-label="Transparenz"></label>
+        <label class="as-img-range" title="Overlay"><i class="fa-solid fa-layer-group"></i><input type="range" min="0" max="100" step="5" value="${overlay}" data-imgrange="overlay" data-imgkey="${attr(key)}" aria-label="Overlay"></label>
+      </div>` : ""}
       <button type="button" class="as-img-btn" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><i class="fa-regular fa-image"></i></button>
       ${hat ? `<button type="button" class="as-img-btn is-clear" data-act="img-clear" data-imgkey="${attr(key)}" aria-label="Bild entfernen" title="Bild entfernen"><i class="fa-solid fa-xmark"></i></button>` : ""}
     </div>`;
@@ -3453,7 +3515,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (html.includes("data-imgsrc")) {
       return html.replace(/(<img[^>]*data-imgsrc[^>]*>)/g, (imgTag) => {
         const key = /data-imgkey="([^"]+)"/.exec(imgTag)?.[1] || "image";
-        return `<span class="as-img as-img--tpl" data-imgslot data-imgkey="${attr(key)}">${imgTag}${uiFor(key)}</span>`;
+        return `<span class="as-picslot--tpl" data-imgslot data-imgkey="${attr(key)}">${imgTag}${uiFor(key)}</span>`;
       });
     }
     // Hintergrundbild (Vollbild und Zitat ueber Bild): Slot als Auflage. Ohne
@@ -3463,13 +3525,25 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (/background-image:url\(/.test(html) && (!model?.variant || MIT_BILD.has(model.variant))) {
       const bild = imageAt(model, "image");
       const hinweis = imageHintAt(model, "image");
+      // Transparenz, Groesse und Overlay stehen am Bild, nicht in der Vorlage:
+      // dieselbe Vorlage traegt jedes Motiv, und der Export liest denselben Wert.
+      if (bild.src) {
+        const zoom = bildWert(bild, "zoom", 1);
+        const deckung = bildWert(bild, "opacity", 1);
+        html = html.replace(/(<div style="position:absolute;inset:0;background-image:url\([^)]*\)[^"]*)"/,
+          (_m, kopf) => `${kopf};background-size:${Math.round(zoom * 100)}% auto;opacity:${deckung}"`);
+        const overlay = bildWert(bild, "overlay", 1);
+        if (overlay !== 1) {
+          html = html.replace(/(<div class="ov" style="[^"]*)"/, (_m, kopf) => `${kopf};opacity:${overlay}"`);
+        }
+      }
       const leer = bild.src
         ? ""
         : `<span class="as-img-empty"><i class="fa-regular fa-image"></i><b>Motiv einfügen</b>${
           hinweis ? `<span>${esc(hinweis)}</span>` : ""
         }</span>`;
       return html.replace(/(<div style="position:absolute;inset:0;background-image:url\([^)]*\)[^"]*"><\/div>)/,
-        `$1<span class="as-img as-img--bg${bild.src ? "" : " is-empty"}" data-imgslot data-imgkey="image">${leer}${uiFor("image")}</span>`);
+        `$1<span class="as-picslot--bg${bild.src ? "" : " is-empty"}" data-imgslot data-imgkey="image">${leer}${uiFor("image")}</span>`);
     }
     return html;
   }
@@ -3521,7 +3595,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (typeof bearbeitet === "string") return bearbeitet;
       return markiere(esc(wert || ""));
     });
-    html = wrapImageSlots(html, memo);
+    html = wrapImageSlots(html, memo, editable);
     if (editable) {
       html = html.replace(/data-field="((?!benchmarks\.\d+\.image_hint)(?!potentials\.\d+\.image_hint)[a-z0-9_.]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
     }
@@ -4045,10 +4119,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // dem DOM gelesen werden. Sonst löscht ein Variantenwechsel das Motiv.
       stage.querySelectorAll("[data-imgslot]").forEach((slot) => {
         const key = slot.getAttribute("data-imgkey") || "image";
+        const vorher = imageAt(model, key);
+        // Ein Hintergrundmotiv steht als CSS am Kasten, nicht als <img>. Der
+        // alte Zweig las dort null und loeschte das Bild bei jedem
+        // Schrittwechsel; Transparenz, Groesse und Overlay gingen mit.
+        if (slot.classList.contains("as-picslot--bg")) return;
         const img = slot.querySelector("img");
         setImageAt(model, key, img
-          ? { src: img.getAttribute("src") || "", pos: img.style.objectPosition || "50% 50%" }
-          : { src: "", pos: imageAt(model, key).pos });
+          ? { ...vorher, src: img.getAttribute("src") || "", pos: img.style.objectPosition || "50% 50%" }
+          : { ...vorher, src: "" });
       });
     });
     const post = shell.querySelector("[data-post]");
@@ -4836,6 +4915,20 @@ ${stages}${post}
       if (id) void openDraft(id);
       return;
     }
+    if (act === "img-crop") {
+      const key = hit.getAttribute("data-imgkey") || "image";
+      const uid = hit.closest("[data-stage]")?.getAttribute("data-uid") || "";
+      openCropSheet(uid || "form", key);
+      return;
+    }
+    if (act === "img-zoom") {
+      const key = hit.getAttribute("data-imgkey") || "image";
+      const jetzt = bildWert(imageAt(aktuellesModelFuer(key), key), "zoom", 1);
+      const richtung = Number(hit.getAttribute("data-imgdelta")) < 0 ? -1 : 1;
+      setzeBildWert(key, "zoom", Math.min(BILD_ZOOM.max, Math.max(BILD_ZOOM.min,
+        Number((jetzt + richtung * BILD_ZOOM.schritt).toFixed(2)))));
+      return;
+    }
     if (act === "form-img-pick") {
       pickFormImage(hit.getAttribute("data-imgkey") || "image");
       return;
@@ -5005,6 +5098,15 @@ ${stages}${post}
   }
 
   function onInput(event) {
+    // Die Bildregler wirken in der Werkbank, nicht im Fragebogen - deshalb vor
+    // der Fragebogen-Schranke.
+    const regler = event.target.closest?.("[data-imgrange]");
+    if (regler) {
+      const feld = regler.getAttribute("data-imgrange") === "overlay" ? "overlay" : "opacity";
+      const key = regler.getAttribute("data-imgkey") || "image";
+      setzeBildWert(key, feld, Math.min(100, Math.max(0, Number(regler.value) || 0)) / 100);
+      return;
+    }
     if (state.step !== "form") return;
     const free = event.target.closest?.("[data-free]");
     if (!free) return;
