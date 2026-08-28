@@ -159,17 +159,19 @@ test("die Dashboard-Filter zeigen ihre Auswahl wirklich an", async () => {
   // nur die Beschriftung stehen.
   assert.match(indexHtml, /\.signal-toolbar-select \{[^}]*opacity: 0/);
   assert.ok(!js.includes("signal-toolbar-select"), "Dashboard nutzt die unsichtbare Klasse");
-  // Die Auswahl steht in einem eigenen Feld mit ROOTS-Rahmen; die Klasse
-  // signal-toolbar-select wuerde sie unsichtbar machen.
-  assert.match(js, /<select data-dashboard-scope>/);
-  assert.match(js, /<select data-dashboard-origin>/);
+  // Kein natives <select> mehr in der Leiste: es bringt Pfeil, Schriftgroesse
+  // und Menue des Browsers mit und stand als Fremdkoerper darin.
+  assert.ok(!js.includes("<select data-dashboard-scope"), "Auswahl ist kein Dropdown mehr");
+  assert.ok(!js.includes("<select data-dashboard-origin"), "Auswahl ist kein Dropdown mehr");
+  assert.match(js, /const segmentHtml = \(feld, aktuell, optionen, beschriftung\)/);
+  assert.match(js, /data-dashboard-\$\{escapeHtml\(feld\)\}/);
   // Eine Leiste statt Kopfzeile plus Filterkasten.
   assert.match(js, /class="pi-bar"/);
   assert.ok(!js.includes("pi-filter-panel"), "der zweite Kasten ist entfallen");
   assert.match(css, /\.pi-bar \{[^}]*box-shadow: var\(--shadow-dash\)/);
-  // Eigener Pfeil statt Browservorgabe.
-  assert.match(css, /\.pi-field select \{[^}]*appearance: none/);
-  assert.match(css, /\.pi-field::after \{[^}]*border-right: 1\.3px solid var\(--brand\)/);
+  // Alle Filter tragen dieselbe Segmentform.
+  assert.match(css, /\.pi-seg button\.is-active \{ color: #fff; background: var\(--brand\)/);
+  assert.ok(!/\.pi-field select/.test(css), "die Dropdown-Regeln sind entfallen");
   // Kein Erklaersatz unter der Ueberschrift.
   assert.ok(!js.includes("persönlich gefiltert und in Echtzeit synchronisiert"));
 });

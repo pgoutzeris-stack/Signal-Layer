@@ -398,6 +398,16 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       : `<span class="${klasse} pi-avatar--initials" aria-hidden="true">${escapeHtml(initialen || "R")}</span>`;
   };
 
+  /**
+   * Auswahl mit zwei oder drei Moeglichkeiten gehoert nicht in ein Dropdown:
+   * ein natives <select> bringt Pfeil, Schriftgroesse und Menue des Browsers
+   * mit und steht damit als Fremdkoerper in der Leiste. Dieselben Segmente wie
+   * beim Zeitraum zeigen die Wahl, ohne dass man sie aufklappen muss.
+   */
+  const segmentHtml = (feld, aktuell, optionen, beschriftung) => `<div class="pi-seg" role="group" aria-label="${escapeHtml(beschriftung)}">${
+    optionen.map(([wert, text]) => `<button type="button" data-dashboard-${escapeHtml(feld)}="${escapeHtml(wert)}" class="${wert === aktuell ? "is-active" : ""}" aria-pressed="${wert === aktuell}">${escapeHtml(text)}</button>`).join("")
+  }</div>`;
+
   const renderDashboards = () => {
     state.summary = summarizeDashboardData(state.payload);
     for (const host of hosts) {
@@ -411,8 +421,8 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
           <h2><i class="fa-solid fa-chart-line"></i>Performance</h2>
           <div class="pi-bar-filters">
             <div class="pi-seg" role="group" aria-label="Zeitraum">${[7, 30, 90, 365].map((days) => `<button type="button" data-dashboard-period="${days}" class="${days === preferences.period_days ? "is-active" : ""}" aria-pressed="${days === preferences.period_days}">${days === 365 ? "12 M" : `${days} T`}</button>`).join("")}</div>
-            <label class="pi-field"><span class="pi-sr">Asset-Basis</span><select data-dashboard-scope><option value="roots" ${preferences.filters.asset_scope === "roots" ? "selected" : ""}>Nur ROOTS</option><option value="roots_private" ${preferences.filters.asset_scope === "roots_private" ? "selected" : ""}>ROOTS + privat</option></select></label>
-            <label class="pi-field"><span class="pi-sr">Quelle</span><select data-dashboard-origin><option value="all" ${preferences.filters.origin === "all" ? "selected" : ""}>Alle Quellen</option><option value="automatic" ${preferences.filters.origin === "automatic" ? "selected" : ""}>Automatisch</option><option value="manual" ${preferences.filters.origin === "manual" ? "selected" : ""}>Manuell</option></select></label>
+            ${segmentHtml("scope", preferences.filters.asset_scope, [["roots", "ROOTS"], ["roots_private", "+ privat"]], "Asset-Basis")}
+            ${segmentHtml("origin", preferences.filters.origin, [["all", "Alle"], ["automatic", "Automatisch"], ["manual", "Manuell"]], "Quelle")}
             <div class="pi-creators" role="group" aria-label="Erstellt von">
               <button type="button" class="pi-creator pi-creator--all${selectedCreators.size === 0 ? " is-active" : ""}" data-dashboard-creator="all" aria-pressed="${selectedCreators.size === 0}" title="Alle Erstellenden">Alle</button>${creatorButtons}
             </div>
@@ -548,6 +558,16 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       queuePreferenceSave({ ...state.payload.preferences, period_days: Number(periodButton.dataset.dashboardPeriod) });
       return;
     }
+    const scopeButton = event.target.closest("[data-dashboard-scope]");
+    if (scopeButton) {
+      queuePreferenceSave({ ...state.payload.preferences, filters: { ...state.payload.preferences.filters, asset_scope: scopeButton.dataset.dashboardScope } });
+      return;
+    }
+    const originButton = event.target.closest("[data-dashboard-origin]");
+    if (originButton) {
+      queuePreferenceSave({ ...state.payload.preferences, filters: { ...state.payload.preferences.filters, origin: originButton.dataset.dashboardOrigin } });
+      return;
+    }
     const creatorButton = event.target.closest("[data-dashboard-creator]");
     if (creatorButton) {
       const id = creatorButton.dataset.dashboardCreator;
@@ -560,10 +580,6 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
   });
 
   document.addEventListener("change", (event) => {
-    const dashboardScope = event.target.closest("[data-dashboard-scope]");
-    if (dashboardScope) queuePreferenceSave({ ...state.payload.preferences, filters: { ...state.payload.preferences.filters, asset_scope: dashboardScope.value } });
-    const dashboardOrigin = event.target.closest("[data-dashboard-origin]");
-    if (dashboardOrigin) queuePreferenceSave({ ...state.payload.preferences, filters: { ...state.payload.preferences.filters, origin: dashboardOrigin.value } });
     if (event.target === kpiSelect) {
       state.selectedAssetId = kpiSelect.value;
       renderKpiFields();

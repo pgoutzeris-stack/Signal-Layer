@@ -10,14 +10,10 @@
 .pi-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .pi-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
-.pi-seg button { min-height: 24px; padding: 0 9px; border: 0; border-radius: 999px; color: var(--muted); background: transparent; font: inherit; font-size: .64rem; font-weight: 750; cursor: pointer; transition: color .15s, background .15s; }
+.pi-seg button { min-height: 24px; padding: 0 10px; border: 0; border-radius: 999px; color: var(--muted); background: transparent; font: inherit; font-size: .64rem; font-weight: 750; cursor: pointer; transition: color .15s, background .15s; }
 .pi-seg button:hover { color: var(--brand-dark); }
 .pi-seg button.is-active { color: #fff; background: var(--brand); }
 
-.pi-field { position: relative; display: inline-flex; }
-.pi-field select { height: 28px; padding: 0 24px 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--status-text); font: inherit; font-size: .66rem; font-weight: 650; cursor: pointer; appearance: none; -webkit-appearance: none; transition: border-color .15s, color .15s; }
-.pi-field select:hover, .pi-field select:focus { border-color: color-mix(in srgb, var(--brand) 48%, var(--line)); color: var(--ink); outline: none; }
-.pi-field::after { content: ""; position: absolute; right: 10px; top: 50%; width: 5px; height: 5px; margin-top: -4px; border-right: 1.3px solid var(--brand); border-bottom: 1.3px solid var(--brand); transform: rotate(45deg); pointer-events: none; }
 
 .pi-creators { display: inline-flex; align-items: center; gap: 3px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
 .pi-creator { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
