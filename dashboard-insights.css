@@ -40,7 +40,7 @@
 .pi-slice-track { stroke: color-mix(in srgb, var(--line) 55%, transparent); }
 .pi-slice {
   cursor: pointer;
-  transition: stroke-width .22s cubic-bezier(.22,.8,.28,1), opacity .2s ease, filter .22s ease;
+  transition: stroke-width .22s cubic-bezier(.22,.8,.28,1), stroke-dashoffset .26s cubic-bezier(.22,.8,.28,1), opacity .2s ease, filter .22s ease;
   animation: piArcIn .85s cubic-bezier(.22,.9,.24,1) both;
   animation-delay: var(--pi-delay, 0ms);
 }
@@ -48,8 +48,8 @@
    Attribut gesetzte - so muss die Laenge nicht doppelt gepflegt werden. */
 @keyframes piArcIn { from { stroke-dasharray: 0 100; opacity: 0; } }
 /* Kein Skalieren: die Bogenlaenge steht in Pfadeinheiten, ein groesserer Kreis
-   verlaengert sie mit - das angezeigte Segment lief dann in das naechste. Der
-   Strich waechst nach aussen, das reicht als Hervorhebung. */
+   verlaengert sie mit. Der Strich waechst stattdessen in der Staerke, und die
+   Nachbarn ruecken ein Stueck weg - siehe bindBestandRing. */
 .pi-slice:hover, .pi-slice.is-on { stroke-width: 8.2; filter: drop-shadow(0 5px 12px rgba(32,110,251,.32)); }
 .pi-donut-chart:hover .pi-slice:not(:hover):not(.is-on) { opacity: .55; }
 .pi-slice.is-dimmed { opacity: .22; }
@@ -72,7 +72,11 @@
 .pi-legend-foot { margin-top: 5px; padding-left: 7px; color: var(--muted); font-size: .58rem; }
 
 @media (prefers-reduced-motion: reduce) {
-  .pi-slice, .pi-donut-mitte b, .pi-headline-line, .pi-num { animation: none; }
+  .pi-slice, .pi-donut-mitte b, .pi-headline-line, /* Das Durchschnittszeichen: kleiner als die Zahl, aber im selben Koerper -
+   es faerbt und schimmert mit. */
+.pi-avg { font-size: .62em; font-weight: 800; letter-spacing: -.02em; }
+
+.pi-num { animation: none; }
 }
 
 .pi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch; }

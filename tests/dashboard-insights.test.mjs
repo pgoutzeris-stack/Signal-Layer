@@ -251,8 +251,12 @@ test("der Bestandsring teilt die bewerteten Artikel auf", async () => {
   // nicht ineinanderlaufen - vier Luecken zu 0,9.
   // Boegen und Luecken ergeben genau den Kreis - auch die Luecke nach dem
   // letzten Segment ist so breit wie die uebrigen.
-  const gesamt = boegen.reduce((a, b) => a + b, 0);
-  assert.ok(Math.abs(gesamt - (100 - 4 * 1.4)) < 0.05, `Summe der Boegen: ${boegen}`);
+  // Runde Enden ragen ueber den Bogen hinaus; die sichtbare Laenge ist der
+  // Bogen plus beide Kappen. Sie fuellt den Kreis abzueglich der Luecken.
+  const sichtbar = boegen.reduce((sum, laenge) => sum + laenge + 5, 0);
+  assert.ok(Math.abs(sichtbar - (100 - 4 * 2.2)) < 0.05, `Sichtbare Laenge: ${boegen}`);
+  // Kein Segment schrumpft zum Punkt: unter der Strichstaerke bleibt Bogen.
+  boegen.forEach((laenge) => assert.ok(laenge >= 2.5, `Bogen zu kurz: ${laenge}`));
   // Kein Segment ragt in das naechste hinein.
   const positionen = [...html.matchAll(/stroke-dasharray="([\d.]+) [\d.]+" stroke-dashoffset="(-?[\d.]+)"/g)]
     .map((treffer) => ({ laenge: Number(treffer[1]), start: -Number(treffer[2]) }));
@@ -316,13 +320,13 @@ test("die Uebersicht nennt die Lage in einem Satz", async () => {
   };
   const satz = module.uebersichtSatz(module.summarizeDashboardData(basis));
   // Bezugsgroesse ist, was die Pipeline bewertet hat, nicht der gesamte Bestand.
-  assert.equal(ohneSchmal(satz), "5.653 analysierte Artikel, davon 279 Marketing mit Ø 12.400 Views und 117 Sales-Signale mit Ø 22,5 % Return Rate.");
+  assert.equal(ohneSchmal(satz), "5.653 analysierte Artikel, davon 279 Marketing mit 12.400 Views und 117 Sales-Signale mit 22,5 % Return Rate.");
 
   // Ohne KPI-Werte bleibt der Satz stehen, nur ohne die Wirkungsangaben.
   const ohneKpi = module.uebersichtSatz(module.summarizeDashboardData({ ...basis, performance: [] }));
   // Ohne KPI-Werte stehen dort Nullen, keine Auslassung: die Zahl entsteht,
   // sobald jemand Werte am Asset eintraegt.
-  assert.equal(ohneSchmal(ohneKpi), "5.653 analysierte Artikel, davon 279 Marketing mit Ø 0 Views und 117 Sales-Signale mit Ø 0,0 % Return Rate.");
+  assert.equal(ohneSchmal(ohneKpi), "5.653 analysierte Artikel, davon 279 Marketing mit 0 Views und 117 Sales-Signale mit 0,0 % Return Rate.");
 
   // Ohne Signale wird nichts behauptet.
   const leer = module.uebersichtSatz(module.summarizeDashboardData({
@@ -373,9 +377,9 @@ test("der Ring laesst sich ohne die Aussortierten lesen", async () => {
   // Verlauf statt flacher Vollfarbe, runde Enden.
   assert.match(mit, /stroke="url\(#piGrad-marketing\)"/);
   assert.match(mit, /<linearGradient id="piGrad-sales"/);
-  // Gerade Enden: runde ragen ueber das Segment hinaus und lassen zwei kleine
-  // Gruppen uebereinanderliegen.
-  assert.match(mit, /stroke-linecap="butt"/);
+  // Runde Enden - der Ueberstand der Kappen ist aus der Bogenlaenge
+  // herausgerechnet, damit sie nicht in den Nachbarn ragen.
+  assert.match(mit, /stroke-linecap="round"/);
   // Die Bindung fuer den Hover muss es geben - ohne sie wirft das Rendern.
   assert.equal(typeof module.bindBestandRing, "function");
 });
@@ -398,10 +402,12 @@ test("die Kopfzeile laeuft in Teilen ein und hebt die Zahlen hervor", async () =
   // Die Quote ist ebenfalls eine Zahl und traegt dieselbe Auszeichnung.
   // Das Durchschnittszeichen steht als Schriftzeichen in der Zahl: nur so erbt
   // es Schnitt, Fettung und Grundlinie. Als SVG sass es zu hoch und zitterte.
-  assert.match(ohneSchmal(html), /<b class="pi-num">Ø 0,0 %<\/b> Return Rate/);
-  assert.match(ohneSchmal(html), /<b class="pi-num">Ø 0<\/b> Views/);
+  // Das Zeichen steht kleiner im selben Zahlkoerper und schimmert mit.
+  assert.match(ohneSchmal(html), /<b class="pi-num"><small class="pi-avg">Ø<\/small> 0,0 %<\/b> Return Rate/);
+  assert.match(ohneSchmal(html), /<b class="pi-num"><small class="pi-avg">Ø<\/small> 0<\/b> Views/);
+  const cssAvg = readFileSync(new URL("../dashboard-insights.css", import.meta.url), "utf8");
+  assert.match(cssAvg, /\.pi-avg \{ font-size: \.62em/);
   const css = readFileSync(new URL("../dashboard-insights.css", import.meta.url), "utf8");
-  assert.ok(!css.includes(".pi-avg"), "die Sonderregeln fuer die Zeichnung sind entfallen");
   assert.ok(!js.includes("<svg class=\"pi-avg\""), "kein eingebettetes SVG mehr");
   // Kein "Aus" davor.
   assert.ok(!html.startsWith("<h3 class=\"pi-headline\"><span class=\"pi-headline-line\" style=\"--pi-line:0\">Aus"));
@@ -430,8 +436,12 @@ test("der Ring bleibt in jeder Zusammensetzung heil", async () => {
   const ring = (counts) => module.bestandRingHtml(module.summarizeDashboardData({
     preferences: module.defaultDashboardPreferences(), assets: [], performance: [], signalCounts: counts,
   }));
-  const geometrie = (html) => [...html.matchAll(/stroke-dasharray="([\d.]+) [\d.]+" stroke-dashoffset="(-?[\d.]+)"/g)]
-    .map((treffer) => ({ laenge: Number(treffer[1]), start: -Number(treffer[2]) }));
+  // Gemessen wird die sichtbare Form: Bogen plus beide runden Kappen.
+  const geometrie = (html) => [...html.matchAll(/stroke-linecap="(\w+)"\s*\n?\s*stroke-dasharray="([\d.]+) [\d.]+" stroke-dashoffset="(-?[\d.]+)"/g)]
+    .map((treffer) => {
+      const kappe = treffer[1] === "round" ? 2.5 : 0;
+      return { laenge: Number(treffer[2]) + 2 * kappe, start: -Number(treffer[3]) - kappe };
+    });
 
   for (const [name, counts] of [
     ["voll", { marketing: 279, sales: 117, rejected: 5157, review: 100 }],
@@ -459,4 +469,9 @@ test("das angezeigte Segment wird nicht laenger", async () => {
   // sie mit, das Segment liefe in das naechste.
   assert.ok(!/\.pi-slice[^{]*\{[^}]*transform: scale/.test(css), "kein Skalieren am Bogen");
   assert.match(css, /\.pi-slice:hover, \.pi-slice\.is-on \{ stroke-width: 8\.2/);
+  // Die Nachbarn weichen aus, damit der dickere Strich sie nicht beruehrt.
+  const js2 = readFileSync(new URL("../dashboard-insights.js", import.meta.url), "utf8");
+  assert.match(js2, /const WEICHEN = 1\.1;/);
+  assert.match(js2, /teil\.style\.strokeDashoffset/);
+  assert.match(css, /transition:[^;]*stroke-dashoffset/);
 });

@@ -289,6 +289,9 @@ function trendHtml(summary) {
  * Der Bahnfilter oben hebt hervor, statt zu verbergen - eine Verteilung mit
  * nur einem Teil waere keine Verteilung mehr.
  */
+/** Strichstaerke des Rings in Pfadeinheiten. Legt zugleich die Kappenlaenge fest. */
+const STRICH = 5;
+
 const BESTAND_SEGMENTE = [
   { key: "marketing", label: "Marketing-Signale", lane: "marketing", color: "#206efb", light: "#7cb0ff" },
   { key: "sales", label: "Sales-Signale", lane: "sales", color: "#0ea5e9", light: "#7dd3fc" },
@@ -344,7 +347,7 @@ export function uebersichtZeilen(summary) {
         { text: "davon " },
         { text: formatNumber(marketingSignale), zahl: true },
         { text: " Marketing mit " },
-        { text: `Ø\u2009${formatNumber(views)}`, zahl: true },
+        { text: formatNumber(views), zahl: true, schnitt: true },
         { text: " Views" },
       ],
     });
@@ -353,7 +356,7 @@ export function uebersichtZeilen(summary) {
         { text: "und " },
         { text: formatNumber(salesSignale), zahl: true },
         { text: " Sales-Signale mit " },
-        { text: `Ø\u2009${formatPercent(returnRate)}`, zahl: true },
+        { text: formatPercent(returnRate), zahl: true, schnitt: true },
         { text: " Return Rate." },
       ],
     });
@@ -371,7 +374,9 @@ export function uebersichtHeadlineHtml(summary, escapeHtml = (value) => String(v
     zeile.teile.map((teil) => {
       const inhalt = escapeHtml(teil.text);
       if (!teil.zahl) return inhalt;
-      return `<b class="pi-num">${inhalt}</b>`;
+      // Das Durchschnittszeichen steht kleiner im selben Zahlkoerper: es faerbt
+      // und schimmert mit, drueckt die Zahl daneben aber nicht.
+      return `<b class="pi-num">${teil.schnitt ? '<small class="pi-avg">Ø</small>\u2009' : ""}${inhalt}</b>`;
     }).join("")
   }</span>`).join("")}</h3>`;
 }
@@ -391,12 +396,18 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
   // Nur Gruppen mit Wert bekommen einen Bogen. Eine leere Gruppe hinterliess
   // sonst eine Kerbe im Ring ohne Segment darin.
   const sichtbar = teile.filter((teil) => teil.wert > 0);
-  const luecke = sichtbar.length > 1 ? 1.4 : 0;
+  // Die Luecke traegt die Trennung und muss den Zuwachs beim Zeigen
+  // aufnehmen: der Strich waechst dort um gut ein Viertel.
+  const luecke = sichtbar.length > 1 ? 2.2 : 0;
   // Die Luecken werden vom Kreis abgezogen, bevor die Anteile verteilt werden.
   // Vorher lag die Summe aus Boegen und Luecken ueber dem Umfang: der Ring lief
   // ueber den Kreisanfang hinaus, das letzte Segment in das erste hinein.
   const platz = umfang - sichtbar.length * luecke;
-  const mindest = 0.8;
+  // Runde Enden brauchen Platz: zwei Kappen fuellen bereits die Strichstaerke.
+  // Bleibt darunter kaum Bogen, wird aus dem Segment ein Punkt. Sehr kleine
+  // Gruppen werden deshalb ueberzeichnet - Legende und Tooltip nennen
+  // weiterhin den echten Wert.
+  const mindest = STRICH + 2.6;
   const laengen = sichtbar.map((teil) => Math.max(mindest, teil.wert / (summe || 1) * platz));
   // Was ein sehr kleines Segment zusaetzlich braucht, gibt das groesste ab.
   const ueberschuss = laengen.reduce((sum, laenge) => sum + laenge, 0) - platz;
@@ -404,14 +415,24 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
     const groesster = laengen.indexOf(Math.max(...laengen));
     laengen[groesster] = Math.max(mindest, laengen[groesster] - ueberschuss);
   }
+  // Runde Enden ragen um die halbe Strichstaerke ueber den Bogen hinaus. Damit
+  // das Segment trotzdem genau seinen Anteil einnimmt, wird der Bogen um beide
+  // Kappen gekuerzt und um eine Kappe nach vorn gesetzt. Ein Segment, das
+  // kuerzer als zwei Kappen ist, bekommt gerade Enden - sonst waere es
+  // breiter gezeichnet als sein Anteil.
+  const kappe = STRICH / 2;
   let offset = 0;
   const boegen = sichtbar.map((teil, index) => {
     const anteil = laengen[index];
+    const rund = anteil >= kappe * 2 + 0.4;
+    const laenge = rund ? anteil - kappe * 2 : anteil;
+    const start = rund ? offset + kappe : offset;
     const gedimmt = lane !== "all" && teil.lane !== lane;
     const bogen = `<circle class="pi-slice${gedimmt ? " is-dimmed" : ""}" data-slice="${escapeHtml(teil.key)}"
       data-label="${escapeHtml(teil.label)}" data-value="${teil.wert}" data-share="${Math.round(teil.wert / (summe || 1) * 100)}"
-      cx="21" cy="21" r="15.9155" fill="none" stroke="url(#piGrad-${escapeHtml(teil.key)})" stroke-width="6" stroke-linecap="butt"
-      stroke-dasharray="${anteil.toFixed(2)} ${(umfang - anteil).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}"
+      data-start="${start.toFixed(2)}" data-mitte="${(offset + anteil / 2).toFixed(2)}"
+      cx="21" cy="21" r="15.9155" fill="none" stroke="url(#piGrad-${escapeHtml(teil.key)})" stroke-width="${STRICH}" stroke-linecap="${rund ? "round" : "butt"}"
+      stroke-dasharray="${laenge.toFixed(2)} ${(umfang - laenge).toFixed(2)}" stroke-dashoffset="${(-start).toFixed(2)}"
       style="--pi-delay:${index * 90}ms"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></circle>`;
     offset += anteil + luecke;
     return bogen;
@@ -437,7 +458,7 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
     <div class="pi-donut-chart">
       <svg viewBox="0 0 42 42" role="img" aria-label="Verteilung der analysierten Artikel">
         <defs>${verlaeufe}</defs>
-        <circle class="pi-slice-track" cx="21" cy="21" r="15.9155" fill="none" stroke-width="6"></circle>
+        <circle class="pi-slice-track" cx="21" cy="21" r="15.9155" fill="none" stroke-width="${STRICH}"></circle>
         ${boegen}
       </svg>
       <div class="pi-donut-mitte" data-donut-center>
@@ -457,15 +478,33 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
  * bliebe sonst stumm: eine Zahl in der Mitte, die sich nie aendert, waere nur
  * Dekoration.
  */
+/** Wie weit die Nachbarn ausweichen, wenn ein Segment hervortritt. */
+const WEICHEN = 1.1;
+
 export function bindBestandRing(root, escapeHtml = (value) => String(value ?? "")) {
   const donut = root?.querySelector?.("[data-donut]");
   if (!donut || donut.dataset.gebunden === "1") return;
   donut.dataset.gebunden = "1";
   const mitte = donut.querySelector("[data-donut-center]");
   const grund = mitte ? mitte.innerHTML : "";
+  const alleBoegen = [...donut.querySelectorAll("[data-slice]")];
   const setzen = (key) => {
     const bogen = key ? donut.querySelector(`[data-slice="${key}"]`) : null;
-    donut.querySelectorAll("[data-slice]").forEach((teil) => teil.classList.toggle("is-on", teil === bogen));
+    // Der hervorgehobene Strich waechst nach beiden Seiten. Damit er die
+    // Nachbarn nicht beruehrt, ruecken sie ein Stueck von ihm weg - die
+    // dahinter nach vorn, die davor zurueck.
+    const mitte = bogen ? Number(bogen.dataset.mitte) : null;
+    alleBoegen.forEach((teil) => {
+      const start = Number(teil.dataset.start);
+      if (!Number.isFinite(start)) return;
+      let versatz = 0;
+      if (bogen && teil !== bogen && Number.isFinite(mitte)) {
+        const abstand = ((Number(teil.dataset.mitte) - mitte) % 100 + 100) % 100;
+        versatz = abstand < 50 ? WEICHEN : -WEICHEN;
+      }
+      teil.style.strokeDashoffset = (-(start + versatz)).toFixed(2);
+    });
+    alleBoegen.forEach((teil) => teil.classList.toggle("is-on", teil === bogen));
     donut.querySelectorAll("[data-slice-key]").forEach((zeile) => zeile.classList.toggle("is-on", Boolean(key) && zeile.dataset.sliceKey === key));
     if (!mitte) return;
     mitte.innerHTML = bogen
