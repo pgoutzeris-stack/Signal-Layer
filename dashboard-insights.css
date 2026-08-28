@@ -92,10 +92,13 @@
    bekommen einen Schimmer - erst danach steht der Satz ruhig. */
 .pi-headline { margin: 0; display: grid; gap: 2px; color: var(--ink); font-size: 1.28rem; font-weight: 800; line-height: 1.28; letter-spacing: -.025em; text-align: left; }
 .pi-headline-line { display: block; animation: piLineIn .5s cubic-bezier(.2,.8,.3,1) both; animation-delay: calc(var(--pi-line, 0) * 140ms); }
-.pi-headline-line i { margin-right: 7px; color: var(--brand); font-size: .82em; }
-.pi-headline-line:last-child { color: var(--muted); font-weight: 750; }
+.pi-avg { width: .78em; height: .78em; margin-right: .18em; vertical-align: -.06em; color: var(--brand); }
+
 @keyframes piLineIn { from { opacity: 0; transform: translateY(6px); } }
+/* Zahlen und Quoten tragen dieselbe Auszeichnung: sie sind die Aussage der
+   Zeile. Das Durchschnittszeichen gehoert zur Quote und faerbt mit. */
 .pi-num {
+  display: inline-flex; align-items: baseline;
   background: linear-gradient(96deg, var(--brand-dark) 0%, var(--brand) 34%, #93c5fd 50%, var(--brand) 66%, var(--brand-dark) 100%);
   background-size: 280% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent;

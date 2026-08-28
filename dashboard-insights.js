@@ -301,15 +301,19 @@ const BESTAND_SEGMENTE = [
  * geworden ist und was es gebracht hat - und laesst weg, wofuer es noch keine
  * Zahl gibt, statt Nullen auszuschreiben.
  */
-export function uebersichtSatz(summary, escapeHtml = (value) => String(value ?? "")) {
-  const zeilen = uebersichtZeilen(summary);
-  return escapeHtml(zeilen.map((zeile) => zeile.text).join(" "));
+export function uebersichtSatz(summary) {
+  return uebersichtZeilen(summary)
+    .map((zeile) => zeile.teile.map((teil) => teil.text).join(""))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
- * Die Kopfzeile der Uebersicht, in Teilen. Jeder Teil ist eine Aussage fuer
- * sich: Bestand, Marketing, Sales. Getrennt geschrieben laesst sich der Satz
- * zeilenweise einblenden und einzeln weglassen, wenn eine Zahl fehlt.
+ * Die Kopfzeile der Uebersicht, in Teilen. Jede Zeile ist eine Aussage fuer
+ * sich - Bestand, Marketing, Sales - und besteht aus Text und Zahlen. Getrennt
+ * gehalten laesst sich zeilenweise einblenden und jede Zahl hervorheben, ohne
+ * im fertigen Satz nach ihr suchen zu muessen.
  */
 export function uebersichtZeilen(summary) {
   const zahlen = summary.signalCounts || {};
@@ -323,21 +327,35 @@ export function uebersichtZeilen(summary) {
   // dann steht dort eine Null - nicht "keine Angabe".
   const returnRate = numberValue(sales.sends) > 0 ? numberValue(sales.replies) / numberValue(sales.sends) : 0;
 
-  if (!analysiert) return [{ text: "Noch keine Artikel analysiert.", zahl: "" }];
-  const zeilen = [{ zahl: formatNumber(analysiert), text: `${formatNumber(analysiert)} analysierte Artikel,` }];
+  if (!analysiert) return [{ teile: [{ text: "Noch keine Artikel analysiert." }] }];
+  const zeilen = [{
+    teile: [{ text: formatNumber(analysiert), zahl: true }, { text: " analysierte Artikel," }],
+  }];
   if (marketingSignale || salesSignale) {
     zeilen.push({
-      zahl: formatNumber(marketingSignale),
-      text: `davon ${formatNumber(marketingSignale)} Marketing mit ${formatNumber(views)} Views`,
+      teile: [
+        { text: "davon " },
+        { text: formatNumber(marketingSignale), zahl: true },
+        { text: " Marketing mit " },
+        { text: formatNumber(views), zahl: true },
+        { text: " Views" },
+      ],
     });
     zeilen.push({
-      zahl: formatNumber(salesSignale),
-      text: `und ${formatNumber(salesSignale)} Sales-Signale mit ⌀ ${formatPercent(returnRate)} Return Rate.`,
-      icon: "fa-solid fa-reply",
+      teile: [
+        { text: "und " },
+        { text: formatNumber(salesSignale), zahl: true },
+        { text: " Sales-Signale mit " },
+        { text: formatPercent(returnRate), zahl: true, symbol: "durchschnitt" },
+        { text: " Return Rate." },
+      ],
     });
   }
   return zeilen;
 }
+
+/** Das Durchschnittszeichen als Zeichnung - keine Icon-Schrift kennt es. */
+const DURCHSCHNITT_SVG = `<svg class="pi-avg" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.7"></circle><line x1="3.2" y1="12.8" x2="12.8" y2="3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></line></svg>`;
 
 /**
  * Dieselben Zeilen als Auszeichnung: sie laufen nacheinander ein, die Zahlen
@@ -345,15 +363,13 @@ export function uebersichtZeilen(summary) {
  */
 export function uebersichtHeadlineHtml(summary, escapeHtml = (value) => String(value ?? "")) {
   const zeilen = uebersichtZeilen(summary);
-  return `<h3 class="pi-headline">${zeilen.map((zeile, index) => {
-    const inhalt = escapeHtml(zeile.text).replace(
-      new RegExp(`(${zeile.zahl ? zeile.zahl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : "(?!)"})`),
-      '<b class="pi-num">$1</b>',
-    );
-    return `<span class="pi-headline-line" style="--pi-line:${index}">${
-      zeile.icon ? `<i class="${escapeHtml(zeile.icon)}" aria-hidden="true"></i>` : ""
-    }${inhalt}</span>`;
-  }).join("")}</h3>`;
+  return `<h3 class="pi-headline">${zeilen.map((zeile, index) => `<span class="pi-headline-line" style="--pi-line:${index}">${
+    zeile.teile.map((teil) => {
+      const inhalt = escapeHtml(teil.text);
+      if (!teil.zahl) return inhalt;
+      return `<b class="pi-num">${teil.symbol === "durchschnitt" ? DURCHSCHNITT_SVG : ""}${inhalt}</b>`;
+    }).join("")
+  }</span>`).join("")}</h3>`;
 }
 
 export function bestandRingHtml(summary, escapeHtml = (value) => String(value ?? ""), optionen = {}) {

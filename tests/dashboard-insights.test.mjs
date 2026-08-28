@@ -312,13 +312,13 @@ test("die Uebersicht nennt die Lage in einem Satz", async () => {
   };
   const satz = module.uebersichtSatz(module.summarizeDashboardData(basis));
   // Bezugsgroesse ist, was die Pipeline bewertet hat, nicht der gesamte Bestand.
-  assert.equal(satz, "5.653 analysierte Artikel, davon 279 Marketing mit 12.400 Views und 117 Sales-Signale mit ⌀ 22,5 % Return Rate.");
+  assert.equal(satz, "5.653 analysierte Artikel, davon 279 Marketing mit 12.400 Views und 117 Sales-Signale mit 22,5 % Return Rate.");
 
   // Ohne KPI-Werte bleibt der Satz stehen, nur ohne die Wirkungsangaben.
   const ohneKpi = module.uebersichtSatz(module.summarizeDashboardData({ ...basis, performance: [] }));
   // Ohne KPI-Werte stehen dort Nullen, keine Auslassung: die Zahl entsteht,
   // sobald jemand Werte am Asset eintraegt.
-  assert.equal(ohneKpi, "5.653 analysierte Artikel, davon 279 Marketing mit 0 Views und 117 Sales-Signale mit ⌀ 0,0 % Return Rate.");
+  assert.equal(ohneKpi, "5.653 analysierte Artikel, davon 279 Marketing mit 0 Views und 117 Sales-Signale mit 0,0 % Return Rate.");
 
   // Ohne Signale wird nichts behauptet.
   const leer = module.uebersichtSatz(module.summarizeDashboardData({
@@ -390,8 +390,12 @@ test("die Kopfzeile laeuft in Teilen ein und hebt die Zahlen hervor", async () =
   // Die Zahlen tragen den Schimmer.
   assert.match(html, /<b class="pi-num">5\.653<\/b> analysierte Artikel/);
   assert.match(html, /<b class="pi-num">279<\/b> Marketing/);
+  // Die Quote ist ebenfalls eine Zahl und traegt dieselbe Auszeichnung.
+  assert.match(html, /<b class="pi-num"><svg class="pi-avg"[^>]*>[\s\S]*?<\/svg>0,0 %<\/b> Return Rate/);
   // Kein "Aus" davor, Return Rate mit Zeichen und Icon.
   assert.ok(!html.startsWith("<h3 class=\"pi-headline\"><span class=\"pi-headline-line\" style=\"--pi-line:0\">Aus"));
-  assert.match(html, /⌀ 0,0 % Return Rate/);
-  assert.match(html, /fa-solid fa-reply/);
+  // Kein Pfeil mehr, das Durchschnittszeichen ist gezeichnet statt getippt.
+  assert.ok(!html.includes("fa-reply"), "der Pfeil ist raus");
+  assert.ok(!html.includes("⌀"), "das Zeichen kommt aus der Zeichnung");
+  assert.match(html, /<circle cx="8" cy="8"/);
 });
