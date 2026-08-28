@@ -296,6 +296,39 @@ const BESTAND_SEGMENTE = [
   { key: "rejected", label: "Aussortiert", lane: null, color: "#cbd5e1" },
 ];
 
+/**
+ * Der Satz ueber den Kennzahlen. Er nennt in einer Zeile, was aus dem Bestand
+ * geworden ist und was es gebracht hat - und laesst weg, wofuer es noch keine
+ * Zahl gibt, statt Nullen auszuschreiben.
+ */
+export function uebersichtSatz(summary, escapeHtml = (value) => String(value ?? "")) {
+  const zahlen = summary.signalCounts || {};
+  const marketing = summary.marketingTotals || {};
+  const sales = summary.salesTotals || {};
+  const bestand = numberValue(zahlen.crawled);
+  const marketingSignale = numberValue(zahlen.marketing);
+  const salesSignale = numberValue(zahlen.sales);
+  const views = numberValue(marketing.impressions);
+  const antwortquote = numberValue(sales.sends) > 0 ? numberValue(sales.replies) / numberValue(sales.sends) : 0;
+  const termine = numberValue(sales.meetings);
+
+  if (!marketingSignale && !salesSignale) {
+    return bestand
+      ? `${formatNumber(bestand)} Artikel im Bestand, noch kein Signal bewertet.`
+      : "Noch keine Artikel im Bestand.";
+  }
+  const teile = [];
+  teile.push(`${formatNumber(marketingSignale)} Marketing-Signale${views ? ` mit ${formatNumber(views)} Views` : ""}`);
+  const salesZusatz = antwortquote
+    ? ` mit ${formatPercent(antwortquote)} Antwortquote`
+    : termine
+      ? ` mit ${formatNumber(termine)} Terminen`
+      : "";
+  teile.push(`${formatNumber(salesSignale)} Sales-Signale${salesZusatz}`);
+  const kopf = bestand ? `Aus ${formatNumber(bestand)} Artikeln: ` : "";
+  return escapeHtml(`${kopf}${teile.join(" und ")}.`);
+}
+
 export function bestandRingHtml(summary, escapeHtml = (value) => String(value ?? "")) {
   const zahlen = summary.signalCounts || {};
   const teile = BESTAND_SEGMENTE.map((segment) => ({ ...segment, wert: numberValue(zahlen[segment.key]) }));
@@ -375,7 +408,9 @@ function renderWidget(definition, preference, summary, escapeHtml) {
     // Bestand und Wirkung in einer Karte. Die drei Signalzahlen standen als
     // eigene Kacheln unter dem Dashboard und wiederholten dessen Kopf.
     const zaehler = summary.signalCounts || {};
-    return widgetShell(definition, preference, `<div class="pi-pulse-kpis">
+    return widgetShell(definition, preference, `<div class="pi-pulse">
+      <p class="pi-pulse-satz">${uebersichtSatz(summary, escapeHtml)}</p>
+    </div><div class="pi-pulse-kpis">
       ${stat("Marketing-Signale", formatNumber(zaehler.marketing), "", "marketing")}
       ${stat("Sales-Signale", formatNumber(zaehler.sales), "", "sales")}
       ${stat("Aussortierte Artikel", formatNumber(zaehler.rejected))}
@@ -609,12 +644,27 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     if (state.loading) return;
     state.loading = true;
     try {
-      const payload = await callApi("get_dashboard_insights");
+      // Die Signalzahlen holt das Dashboard selbst. Frueher reichte sie nur
+      // der einfache Modus herein - wer die Ansicht ohne ihn oeffnete, sah
+      // Nullen, obwohl die Zahlen laengst in der Datenbank standen.
+      const [payload, bestand] = await Promise.all([
+        callApi("get_dashboard_insights"),
+        callApi("get_simple_dashboard").catch(() => null),
+      ]);
       state.payload = {
         preferences: normalizeDashboardPreferences(payload.preferences),
         assets: Array.isArray(payload.assets) ? payload.assets : [],
         creators: Array.isArray(payload.creators) ? payload.creators : [],
         performance: Array.isArray(payload.performance) ? payload.performance : [],
+        signalCounts: bestand?.counts
+          ? {
+            marketing: numberValue(bestand.counts.marketing),
+            sales: numberValue(bestand.counts.sales),
+            rejected: numberValue(bestand.counts.rejected),
+            review: numberValue(bestand.counts.review),
+            crawled: numberValue(bestand.counts.crawled),
+          }
+          : state.payload.signalCounts,
       };
       state.savedPreferences = state.payload.preferences;
       state.loaded = true;

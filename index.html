@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/circular-std">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="./dashboard-insights.css?v=20260829-2030">
+<link rel="stylesheet" href="./dashboard-insights.css?v=20260829-2210">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
 <script defer src="https://pgoutzeris-stack.github.io/ROOTS_Intranet/roots-user-bridge.js?v=20260804-auth-dedupe-v1"></script>
 <style>
@@ -180,8 +180,6 @@
   body:not(.mode-simple) #view-simple-dashboard,
   body:not(.mode-simple) #view-simple-results,
   body:not(.mode-simple) #view-simple-archive { display: none !important; }
-  .simple-dash-run { margin-top: 1.2rem; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: var(--shadow-dash); font-size: .74rem; color: var(--muted); }
-  .simple-dash-run b { color: var(--ink); }
   .simple-archive-reason { display: flex; gap: 6px; margin: .45rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.4; }
   .simple-archive-reason i { flex: 0 0 auto; margin-top: 1px; color: var(--brand); }
   body.mode-simple .settings-nav-item[data-settings-mode="advanced"] { display: none; }
@@ -2201,7 +2199,6 @@
         <!-- Einfacher Modus: Dashboard -->
         <section class="app-view" id="view-simple-dashboard">
           <div class="pi-dashboard" data-performance-dashboard="simple"></div>
-          <section class="simple-dash-run" id="simple-dash-run"></section>
         </section>
 
         <!-- Einfacher Modus: Archiv -->
@@ -2544,7 +2541,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260829-2030';
+  import { initApp } from './app.js?v=20260829-2210';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

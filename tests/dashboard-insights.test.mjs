@@ -277,3 +277,49 @@ test("der Server zaehlt Pruefung und Bestand mit", async () => {
   assert.match(backend, /\.eq\("classification_status", "uncertain"\)/);
   assert.match(backend, /review: review \|\| 0,\n\s*crawled: crawled \|\| 0,/);
 });
+
+test("die Uebersicht nennt die Lage in einem Satz", async () => {
+  const module = await import("../dashboard-insights.js");
+  const basis = {
+    preferences: module.defaultDashboardPreferences(),
+    assets: [
+      { id: "1", kind: "linkedin", visibility: "roots", origin: "automatic", created_at: new Date().toISOString() },
+      { id: "2", kind: "memo", visibility: "roots", origin: "automatic", created_at: new Date().toISOString() },
+    ],
+    performance: [
+      { asset_id: "1", lane: "marketing", impressions: 12400, published_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { asset_id: "2", lane: "sales", sends: 40, replies: 9, published_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    ],
+    signalCounts: { marketing: 279, sales: 117, rejected: 5157, review: 100, crawled: 21282 },
+  };
+  const satz = module.uebersichtSatz(module.summarizeDashboardData(basis));
+  assert.match(satz, /^Aus 21\.282 Artikeln: 279 Marketing-Signale mit 12\.400 Views und 117 Sales-Signale mit 22,5 % Antwortquote\.$/);
+
+  // Ohne KPI-Werte bleibt der Satz stehen, nur ohne die Wirkungsangaben.
+  const ohneKpi = module.uebersichtSatz(module.summarizeDashboardData({ ...basis, performance: [] }));
+  assert.equal(ohneKpi, "Aus 21.282 Artikeln: 279 Marketing-Signale und 117 Sales-Signale.");
+
+  // Ohne Signale wird nichts behauptet.
+  const leer = module.uebersichtSatz(module.summarizeDashboardData({
+    ...basis, performance: [], signalCounts: { marketing: 0, sales: 0, crawled: 21282 },
+  }));
+  assert.equal(leer, "21.282 Artikel im Bestand, noch kein Signal bewertet.");
+});
+
+test("das Dashboard holt die Signalzahlen selbst", async () => {
+  const js = await readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8");
+  // Frueher reichte sie nur der einfache Modus herein - wer die Ansicht ohne
+  // ihn oeffnete, sah Nullen.
+  assert.match(js, /callApi\("get_simple_dashboard"\)\.catch\(\(\) => null\)/);
+  assert.match(js, /signalCounts: bestand\?\.counts/);
+});
+
+test("die Laufmeldung steht nicht mehr unter dem Dashboard", async () => {
+  const [indexHtml, simple] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../simple-mode.js", import.meta.url), "utf8"),
+  ]);
+  assert.ok(!indexHtml.includes('id="simple-dash-run"'), "die Box ist entfernt");
+  assert.ok(!simple.includes("dashRun"), "der Code dazu ist entfernt");
+  assert.ok(!simple.includes("Letzter Lauf:"), "der Text ist entfernt");
+});

@@ -57,7 +57,6 @@ function cacheEls() {
     salesCount: el("simple-sales-count"),
     rejectedList: el("simple-rejected-list"),
     rejectedCount: el("simple-rejected-count"),
-    dashRun: el("simple-dash-run"),
     archiveList: el("simple-archive-list"),
     archiveReason: el("simple-archive-reason-filter"),
     archiveSource: el("simple-archive-source-filter"),
@@ -556,19 +555,9 @@ async function loadDashboard() {
     triggerBackfill = triggerRun || null;
     running = lastRun?.status === "running" || triggerBackfill?.status === "running";
     ctx.setSimpleRunStatus(lastRun, forecast || null, triggerBackfill);
-    if (els.dashRun) {
-      const eur = (value) => value === null || value === undefined
-        ? "–"
-        : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
-      els.dashRun.innerHTML = lastRun
-        ? `Letzter Lauf: <b>${escText(lastRun.status === "running" ? "läuft" : lastRun.status === "error" ? "mit Fehler beendet" : "abgeschlossen")}</b> ·
-           <b>${Number(lastRun.processed_count || 0).toLocaleString("de-DE")} / ${Number(lastRun.total_count || 0).toLocaleString("de-DE")}</b> Artikel geprüft ·
-           Modell <b>${escText(lastRun.model || "–")}</b>${forecast ? ` · Kosten bisher <b>${eur(forecast.spent_eur)}</b>` : ""}
-           ${lastRun.ai_error_detail?.summary || lastRun.error_message ? `<br><span style="color:var(--danger)">${escText(lastRun.ai_error_detail?.summary || lastRun.error_message)}</span>` : ""}`
-        : "Noch kein Lauf gestartet. Der einfache Modus prüft gespeicherte Artikel; gestartet wird er im Backend.";
-    }
   } catch (error) {
-    if (els.dashRun) els.dashRun.textContent = error.message || "Dashboard konnte nicht geladen werden.";
+    // Der Zustand des Laufs steht im Kopf der Ansicht; hier waere er doppelt.
+    ctx.toast?.(error.message || "Dashboard konnte nicht geladen werden.", "err");
   }
 }
 
