@@ -388,23 +388,31 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
   }
   const lane = summary.preferences?.filters?.lane || "all";
   const umfang = 100;
-  // Runde Enden ragen um die halbe Strichstaerke ueber das Segment hinaus -
-  // bei 5,4 Einheiten Strich sind das je Seite 2,7 Prozent des Kreises. Zwei
-  // kleine Segmente nebeneinander lagen dadurch uebereinander. Gerade Enden
-  // enden dort, wo das Segment endet; die Trennung leistet die Luecke.
-  const luecke = teile.length > 1 ? 1.4 : 0;
+  // Nur Gruppen mit Wert bekommen einen Bogen. Eine leere Gruppe hinterliess
+  // sonst eine Kerbe im Ring ohne Segment darin.
+  const sichtbar = teile.filter((teil) => teil.wert > 0);
+  const luecke = sichtbar.length > 1 ? 1.4 : 0;
+  // Die Luecken werden vom Kreis abgezogen, bevor die Anteile verteilt werden.
+  // Vorher lag die Summe aus Boegen und Luecken ueber dem Umfang: der Ring lief
+  // ueber den Kreisanfang hinaus, das letzte Segment in das erste hinein.
+  const platz = umfang - sichtbar.length * luecke;
+  const mindest = 0.8;
+  const laengen = sichtbar.map((teil) => Math.max(mindest, teil.wert / (summe || 1) * platz));
+  // Was ein sehr kleines Segment zusaetzlich braucht, gibt das groesste ab.
+  const ueberschuss = laengen.reduce((sum, laenge) => sum + laenge, 0) - platz;
+  if (ueberschuss > 0) {
+    const groesster = laengen.indexOf(Math.max(...laengen));
+    laengen[groesster] = Math.max(mindest, laengen[groesster] - ueberschuss);
+  }
   let offset = 0;
-  const boegen = teile.map((teil, index) => {
-    // Ein Segment darf nie unter die Luecke fallen: sonst verschwindet eine
-    // kleine Gruppe ganz, statt als schmaler Strich sichtbar zu bleiben.
-    const roh = teil.wert / (summe || 1) * umfang;
-    const anteil = teil.wert > 0 ? Math.max(0.6, roh - luecke) : 0;
+  const boegen = sichtbar.map((teil, index) => {
+    const anteil = laengen[index];
     const gedimmt = lane !== "all" && teil.lane !== lane;
     const bogen = `<circle class="pi-slice${gedimmt ? " is-dimmed" : ""}" data-slice="${escapeHtml(teil.key)}"
       data-label="${escapeHtml(teil.label)}" data-value="${teil.wert}" data-share="${Math.round(teil.wert / (summe || 1) * 100)}"
       cx="21" cy="21" r="15.9155" fill="none" stroke="url(#piGrad-${escapeHtml(teil.key)})" stroke-width="6" stroke-linecap="butt"
       stroke-dasharray="${anteil.toFixed(2)} ${(umfang - anteil).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}"
-      style="--pi-arc:${anteil.toFixed(2)};--pi-delay:${index * 90}ms"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></circle>`;
+      style="--pi-delay:${index * 90}ms"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></circle>`;
     offset += anteil + luecke;
     return bogen;
   }).join("");

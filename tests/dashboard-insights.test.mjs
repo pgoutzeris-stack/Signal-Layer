@@ -249,11 +249,10 @@ test("der Bestandsring teilt die bewerteten Artikel auf", async () => {
   assert.equal(boegen.length, 4);
   // Zwischen den Segmenten bleibt eine kleine Luecke, damit die runden Enden
   // nicht ineinanderlaufen - vier Luecken zu 0,9.
-  // Die Boegen fuellen den Kreis abzueglich der Luecken. Ein sehr kleines
-  // Segment wird auf eine Mindestlaenge angehoben, damit es sichtbar bleibt -
-  // deshalb ein Rahmen statt eines festen Werts.
+  // Boegen und Luecken ergeben genau den Kreis - auch die Luecke nach dem
+  // letzten Segment ist so breit wie die uebrigen.
   const gesamt = boegen.reduce((a, b) => a + b, 0);
-  assert.ok(gesamt > 100 - 4 * 1.4 - 0.05 && gesamt < 100 - 2 * 1.4, `Summe der Boegen: ${boegen}`);
+  assert.ok(Math.abs(gesamt - (100 - 4 * 1.4)) < 0.05, `Summe der Boegen: ${boegen}`);
   // Kein Segment ragt in das naechste hinein.
   const positionen = [...html.matchAll(/stroke-dasharray="([\d.]+) [\d.]+" stroke-dashoffset="(-?[\d.]+)"/g)]
     .map((treffer) => ({ laenge: Number(treffer[1]), start: -Number(treffer[2]) }));
@@ -424,4 +423,40 @@ test("die Uebersicht stellt Satz und Kacheln nebeneinander", async () => {
   assert.match(css, /\.pi-pulse-kpis \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   // Die Schrift waechst mit der Karte, nicht mit dem Fenster.
   assert.match(css, /font-size: clamp\(1\.32rem, 3\.4cqw, 2\.1rem\)/);
+});
+
+test("der Ring bleibt in jeder Zusammensetzung heil", async () => {
+  const module = await import("../dashboard-insights.js");
+  const ring = (counts) => module.bestandRingHtml(module.summarizeDashboardData({
+    preferences: module.defaultDashboardPreferences(), assets: [], performance: [], signalCounts: counts,
+  }));
+  const geometrie = (html) => [...html.matchAll(/stroke-dasharray="([\d.]+) [\d.]+" stroke-dashoffset="(-?[\d.]+)"/g)]
+    .map((treffer) => ({ laenge: Number(treffer[1]), start: -Number(treffer[2]) }));
+
+  for (const [name, counts] of [
+    ["voll", { marketing: 279, sales: 117, rejected: 5157, review: 100 }],
+    ["eine Gruppe leer", { marketing: 279, sales: 117, rejected: 5157, review: 0 }],
+    ["winzige Gruppen", { marketing: 1, sales: 1, rejected: 99999, review: 1 }],
+    ["nur eine Gruppe", { marketing: 0, sales: 0, rejected: 12, review: 0 }],
+  ]) {
+    const teile = geometrie(ring(counts));
+    // Kein Segment beginnt vor dem Ende des vorigen.
+    teile.slice(1).forEach((teil, index) => {
+      const vorher = teile[index];
+      assert.ok(teil.start >= vorher.start + vorher.laenge - 0.001, `${name}: Segment ${index + 1} ueberlappt`);
+    });
+    // Der Ring laeuft nicht ueber den Kreisanfang hinaus.
+    const ende = teile.length ? teile[teile.length - 1].start + teile[teile.length - 1].laenge : 0;
+    assert.ok(ende <= 100.001, `${name}: Ring laeuft ${(ende - 100).toFixed(2)} ueber den Kreis`);
+  }
+  // Eine leere Gruppe bekommt keinen Bogen und hinterlaesst keine Kerbe.
+  assert.equal(geometrie(ring({ marketing: 279, sales: 117, rejected: 5157, review: 0 })).length, 3);
+});
+
+test("das angezeigte Segment wird nicht laenger", async () => {
+  const css = await readFile(new URL("../dashboard-insights.css", import.meta.url), "utf8");
+  // Die Bogenlaenge steht in Pfadeinheiten: ein groesserer Kreis verlaengert
+  // sie mit, das Segment liefe in das naechste.
+  assert.ok(!/\.pi-slice[^{]*\{[^}]*transform: scale/.test(css), "kein Skalieren am Bogen");
+  assert.match(css, /\.pi-slice:hover, \.pi-slice\.is-on \{ stroke-width: 8\.2/);
 });

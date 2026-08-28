@@ -40,13 +40,18 @@
 .pi-slice-track { stroke: color-mix(in srgb, var(--line) 55%, transparent); }
 .pi-slice {
   cursor: pointer;
-  transform-origin: 21px 21px;
-  transition: stroke-width .22s cubic-bezier(.22,.8,.28,1), opacity .2s ease, transform .22s cubic-bezier(.22,.8,.28,1), filter .22s ease;
+  transition: stroke-width .22s cubic-bezier(.22,.8,.28,1), opacity .2s ease, filter .22s ease;
   animation: piArcIn .85s cubic-bezier(.22,.9,.24,1) both;
   animation-delay: var(--pi-delay, 0ms);
 }
+/* Der Bogen waechst aus dem Nichts. Ohne "to" bleibt der Endwert der im
+   Attribut gesetzte - so muss die Laenge nicht doppelt gepflegt werden. */
 @keyframes piArcIn { from { stroke-dasharray: 0 100; opacity: 0; } }
-.pi-slice:hover, .pi-slice.is-on { stroke-width: 7.6; transform: scale(1.055); filter: drop-shadow(0 6px 14px rgba(32,110,251,.3)); }
+/* Kein Skalieren: die Bogenlaenge steht in Pfadeinheiten, ein groesserer Kreis
+   verlaengert sie mit - das angezeigte Segment lief dann in das naechste. Der
+   Strich waechst nach aussen, das reicht als Hervorhebung. */
+.pi-slice:hover, .pi-slice.is-on { stroke-width: 8.2; filter: drop-shadow(0 5px 12px rgba(32,110,251,.32)); }
+.pi-donut-chart:hover .pi-slice:not(:hover):not(.is-on) { opacity: .55; }
 .pi-slice.is-dimmed { opacity: .22; }
 .pi-donut-mitte { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
 .pi-donut-mitte b { display: block; color: var(--ink); font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; animation: piCenterIn .32s ease both; }
