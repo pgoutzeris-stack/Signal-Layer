@@ -212,7 +212,9 @@ test("die Uebersicht traegt Bestand und Wirkung, ohne Erklaertext", async () => 
   assert.ok(!js.includes("Performance Pulse"), "der alte Name ist weg");
   // Die drei Zahlen der Signalansicht stehen jetzt in der Uebersicht.
   assert.match(js, /Marketing-Signale/);
-  assert.match(js, /Aussortierte Artikel/);
+  // Die Aussortierten stehen im Ring, nicht als eigene Kachel in der Uebersicht.
+  assert.ok(!/stat\("Aussortierte Artikel"/.test(js), "keine eigene Kachel mehr");
+  assert.match(js, /stat\("Return Rate"/);
   assert.ok(!indexHtml.includes('id="simple-dash-marketing"'), "die Kachelreihe unter dem Dashboard ist entfallen");
   assert.match(simple, /ctx\.setDashboardSignalCounts\(/);
   // Kein Satz, der die Ansicht erklaert.
@@ -310,17 +312,19 @@ test("die Uebersicht nennt die Lage in einem Satz", async () => {
   };
   const satz = module.uebersichtSatz(module.summarizeDashboardData(basis));
   // Bezugsgroesse ist, was die Pipeline bewertet hat, nicht der gesamte Bestand.
-  assert.match(satz, /^Aus 5\.653 analysierten Artikeln: 279 Marketing-Signale mit 12\.400 Views und 117 Sales-Signale mit 22,5 % Antwortquote\.$/);
+  assert.equal(satz, "5.653 analysierte Artikel, davon 279 Marketing mit 12.400 Views und 117 Sales-Signale mit ⌀ 22,5 % Return Rate.");
 
   // Ohne KPI-Werte bleibt der Satz stehen, nur ohne die Wirkungsangaben.
   const ohneKpi = module.uebersichtSatz(module.summarizeDashboardData({ ...basis, performance: [] }));
-  assert.equal(ohneKpi, "Aus 5.653 analysierten Artikeln: 279 Marketing-Signale und 117 Sales-Signale.");
+  // Ohne KPI-Werte stehen dort Nullen, keine Auslassung: die Zahl entsteht,
+  // sobald jemand Werte am Asset eintraegt.
+  assert.equal(ohneKpi, "5.653 analysierte Artikel, davon 279 Marketing mit 0 Views und 117 Sales-Signale mit ⌀ 0,0 % Return Rate.");
 
   // Ohne Signale wird nichts behauptet.
   const leer = module.uebersichtSatz(module.summarizeDashboardData({
     ...basis, performance: [], signalCounts: { marketing: 0, sales: 0, rejected: 5157, review: 100, crawled: 21282 },
   }));
-  assert.equal(leer, "5.257 Artikel analysiert, noch kein Signal bewertet.");
+  assert.equal(leer, "5.257 analysierte Artikel,");
 
   // Ganz ohne Zahlen wird gar nichts behauptet.
   const nichts = module.uebersichtSatz(module.summarizeDashboardData({ ...basis, performance: [], signalCounts: {} }));
@@ -370,4 +374,24 @@ test("der Ring laesst sich ohne die Aussortierten lesen", async () => {
   assert.match(mit, /stroke-linecap="butt"/);
   // Die Bindung fuer den Hover muss es geben - ohne sie wirft das Rendern.
   assert.equal(typeof module.bindBestandRing, "function");
+});
+
+test("die Kopfzeile laeuft in Teilen ein und hebt die Zahlen hervor", async () => {
+  const module = await import("../dashboard-insights.js");
+  const summary = module.summarizeDashboardData({
+    preferences: module.defaultDashboardPreferences(),
+    assets: [], performance: [],
+    signalCounts: { marketing: 279, sales: 117, rejected: 5157, review: 100 },
+  });
+  const html = module.uebersichtHeadlineHtml(summary);
+  // Drei Teile, jeder mit eigener Verzoegerung.
+  assert.equal([...html.matchAll(/class="pi-headline-line"/g)].length, 3);
+  assert.match(html, /--pi-line:2/);
+  // Die Zahlen tragen den Schimmer.
+  assert.match(html, /<b class="pi-num">5\.653<\/b> analysierte Artikel/);
+  assert.match(html, /<b class="pi-num">279<\/b> Marketing/);
+  // Kein "Aus" davor, Return Rate mit Zeichen und Icon.
+  assert.ok(!html.startsWith("<h3 class=\"pi-headline\"><span class=\"pi-headline-line\" style=\"--pi-line:0\">Aus"));
+  assert.match(html, /⌀ 0,0 % Return Rate/);
+  assert.match(html, /fa-solid fa-reply/);
 });

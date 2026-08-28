@@ -302,34 +302,58 @@ const BESTAND_SEGMENTE = [
  * Zahl gibt, statt Nullen auszuschreiben.
  */
 export function uebersichtSatz(summary, escapeHtml = (value) => String(value ?? "")) {
+  const zeilen = uebersichtZeilen(summary);
+  return escapeHtml(zeilen.map((zeile) => zeile.text).join(" "));
+}
+
+/**
+ * Die Kopfzeile der Uebersicht, in Teilen. Jeder Teil ist eine Aussage fuer
+ * sich: Bestand, Marketing, Sales. Getrennt geschrieben laesst sich der Satz
+ * zeilenweise einblenden und einzeln weglassen, wenn eine Zahl fehlt.
+ */
+export function uebersichtZeilen(summary) {
   const zahlen = summary.signalCounts || {};
   const marketing = summary.marketingTotals || {};
   const sales = summary.salesTotals || {};
   const marketingSignale = numberValue(zahlen.marketing);
   const salesSignale = numberValue(zahlen.sales);
-  // Bezugsgroesse ist, was die Pipeline bewertet hat - nicht der gesamte
-  // gecrawlte Bestand. Ein Lauf nimmt die neuesten Artikel, nicht alle.
-  const bestand = marketingSignale + salesSignale
-    + numberValue(zahlen.rejected) + numberValue(zahlen.review);
+  const analysiert = marketingSignale + salesSignale + numberValue(zahlen.rejected) + numberValue(zahlen.review);
   const views = numberValue(marketing.impressions);
-  const antwortquote = numberValue(sales.sends) > 0 ? numberValue(sales.replies) / numberValue(sales.sends) : 0;
-  const termine = numberValue(sales.meetings);
+  // Return Rate: Antworten je Ansprache. Ohne Ansprachen gibt es keine Quote,
+  // dann steht dort eine Null - nicht "keine Angabe".
+  const returnRate = numberValue(sales.sends) > 0 ? numberValue(sales.replies) / numberValue(sales.sends) : 0;
 
-  if (!marketingSignale && !salesSignale) {
-    return bestand
-      ? `${formatNumber(bestand)} Artikel analysiert, noch kein Signal bewertet.`
-      : "Noch keine Artikel analysiert.";
+  if (!analysiert) return [{ text: "Noch keine Artikel analysiert.", zahl: "" }];
+  const zeilen = [{ zahl: formatNumber(analysiert), text: `${formatNumber(analysiert)} analysierte Artikel,` }];
+  if (marketingSignale || salesSignale) {
+    zeilen.push({
+      zahl: formatNumber(marketingSignale),
+      text: `davon ${formatNumber(marketingSignale)} Marketing mit ${formatNumber(views)} Views`,
+    });
+    zeilen.push({
+      zahl: formatNumber(salesSignale),
+      text: `und ${formatNumber(salesSignale)} Sales-Signale mit ⌀ ${formatPercent(returnRate)} Return Rate.`,
+      icon: "fa-solid fa-reply",
+    });
   }
-  const teile = [];
-  teile.push(`${formatNumber(marketingSignale)} Marketing-Signale${views ? ` mit ${formatNumber(views)} Views` : ""}`);
-  const salesZusatz = antwortquote
-    ? ` mit ${formatPercent(antwortquote)} Antwortquote`
-    : termine
-      ? ` mit ${formatNumber(termine)} Terminen`
-      : "";
-  teile.push(`${formatNumber(salesSignale)} Sales-Signale${salesZusatz}`);
-  const kopf = bestand ? `Aus ${formatNumber(bestand)} analysierten Artikeln: ` : "";
-  return escapeHtml(`${kopf}${teile.join(" und ")}.`);
+  return zeilen;
+}
+
+/**
+ * Dieselben Zeilen als Auszeichnung: sie laufen nacheinander ein, die Zahlen
+ * bekommen einen Schimmer. Ohne Bewegungsvorliebe steht der Satz sofort.
+ */
+export function uebersichtHeadlineHtml(summary, escapeHtml = (value) => String(value ?? "")) {
+  const zeilen = uebersichtZeilen(summary);
+  return `<h3 class="pi-headline">${zeilen.map((zeile, index) => {
+    const inhalt = escapeHtml(zeile.text).replace(
+      new RegExp(`(${zeile.zahl ? zeile.zahl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : "(?!)"})`),
+      '<b class="pi-num">$1</b>',
+    );
+    return `<span class="pi-headline-line" style="--pi-line:${index}">${
+      zeile.icon ? `<i class="${escapeHtml(zeile.icon)}" aria-hidden="true"></i>` : ""
+    }${inhalt}</span>`;
+  }).join("")}</h3>`;
 }
 
 export function bestandRingHtml(summary, escapeHtml = (value) => String(value ?? ""), optionen = {}) {
@@ -434,14 +458,14 @@ function renderWidget(definition, preference, summary, escapeHtml, optionen = {}
     // Bestand und Wirkung in einer Karte. Die drei Signalzahlen standen als
     // eigene Kacheln unter dem Dashboard und wiederholten dessen Kopf.
     const zaehler = summary.signalCounts || {};
+    const returnRate = numberValue(sales.sends) > 0 ? numberValue(sales.replies) / numberValue(sales.sends) : 0;
     return widgetShell(definition, preference, `<div class="pi-pulse">
-      <p class="pi-pulse-satz">${uebersichtSatz(summary, escapeHtml)}</p>
+      ${uebersichtHeadlineHtml(summary, escapeHtml)}
     </div><div class="pi-pulse-kpis">
-      ${stat("Marketing-Signale", formatNumber(zaehler.marketing), "", "marketing")}
-      ${stat("Sales-Signale", formatNumber(zaehler.sales), "", "sales")}
-      ${stat("Aussortierte Artikel", formatNumber(zaehler.rejected))}
-      ${stat("Marketing Views", formatNumber(marketing.impressions), summary.performance.length ? deltaHtml(summary.deltas.impressions) : "", "marketing")}
-      ${stat("Sales Pipeline", formatMoney(sales.influenced_pipeline_eur), summary.performance.length ? deltaHtml(summary.deltas.pipeline) : "", "sales")}
+      ${stat("Marketing-Signale", formatNumber(zaehler.marketing))}
+      ${stat("Sales-Signale", formatNumber(zaehler.sales))}
+      ${stat("Marketing Views", formatNumber(marketing.impressions), summary.performance.length ? deltaHtml(summary.deltas.impressions) : "")}
+      ${stat("Return Rate", formatPercent(returnRate))}
     </div>`);
   }
   if (definition.id === "marketing_performance") {
