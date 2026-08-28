@@ -82,3 +82,37 @@ test("die Gesichter stehen unten rechts und ohne Zeitzeile", () => {
   // Ohne Platz laege die letzte Textzeile unter den Bildern.
   assert.match(styles, /:has\(\.asset-authors\)[^}]*padding-bottom: 2\.3rem/);
 });
+
+test("die Karte zeigt den Verantwortlichen, nicht jeden Ersteller", async () => {
+  const modul = readFileSync(new URL("../asset-authors.mjs", import.meta.url), "utf8");
+  const studio = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf8");
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260830140000_generated_assets_owner.sql", import.meta.url),
+    "utf8",
+  );
+  // Die Karte liest die Uebernahmen, nicht die Entwuerfe.
+  assert.match(modul, /antwort\.owners\) \|\| \{\}/);
+  assert.match(modul, /antwort\.owners && antwort\.owners\[articleId\]/);
+  assert.match(modul, /Übernommen von/);
+  // Server und Datenbank fuehren die Uebernahme.
+  assert.match(migration, /add column if not exists owner_id uuid/);
+  assert.match(backend, /case "set_asset_owner"/);
+  assert.match(backend, /owners: proArtikelOwner/);
+  // Freigeben darf nur, wer uebernommen hat.
+  assert.match(backend, /Nur wer den Entwurf übernommen hat, kann ihn freigeben/);
+  // Im Studio steht der Knopf neben dem Speichern.
+  assert.match(studio, /data-act="own"/);
+  assert.match(studio, /Als meinen übernehmen/);
+  assert.match(studio, /data-act="save"><i class="fa-regular fa-floppy-disk"><\/i>Entwurf speichern/);
+});
+
+test("der Entwurf stellt Text und Asset je zur Haelfte", () => {
+  const studio = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf8");
+  assert.match(studio, /grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/);
+  assert.match(studio, /class="as-linkedin-col"/);
+  // Die Leiste ueber der Folie ist entfallen.
+  assert.ok(!studio.includes("${editable ? slideTools(slide, index) : \"\"}"), "keine Leiste ueber der Folie");
+  // Ohne Hoehenmass wurde nur nach Breite skaliert, die Folie lief unten raus.
+  assert.match(studio, /const nutzbar = gemessen > 80/);
+  assert.match(studio, /Math\.min\(1, safeW \/ w, nutzbar \/ h\)/);
+});

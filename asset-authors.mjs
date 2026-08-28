@@ -1,11 +1,10 @@
 // Wer hat zu einem Artikel schon einen Entwurf gemacht.
 //
 // Die Information steht am Asset (created_by, created_at), nicht am Artikel.
-// Ohne sie beginnt jemand einen Entwurf, den eine Kollegin vor zwei Stunden
-// schon gebaut hat. Die Karte zeigt deshalb unten rechts die Gesichter der
-// Personen; ein Klick fuehrt in genau deren Entwurf. Der Zeitpunkt steht im
-// Titel des Gesichts, nicht als Zeile daneben - auf der Kachel zaehlt das
-// Signal, nicht die Bearbeitungshistorie.
+// Auf der Karte steht, wer den Beitrag verantwortet: das Bild derjenigen, die
+// einen Entwurf zu diesem Artikel uebernommen haben. Wer nur einen Entwurf
+// gebaut hat, erscheint dort nicht - das sagt nichts darueber, wer am Ende
+// dafuer einsteht. Die Entwurfsliste im Studio zeigt weiterhin jeden Ersteller.
 
 /** "vor 3 Std", "vor 2 Tagen" - grob genug, um ohne Uhrzeit zu tragen. */
 export function relativeWhen(value, now = Date.now()) {
@@ -52,7 +51,7 @@ export function assetAuthorsBadgeHtml(list, escapeHtml, now = Date.now()) {
   const rest = personen.length - sichtbar.length;
   const bilder = sichtbar.map((person) => {
     const name = String(person.name || person.short_name || "ROOTS Team");
-    const titel = `${name} · ${person.kind === "memo" ? "Executive Memo" : "LinkedIn-Asset"} · ${relativeWhen(person.created_at, now)}`;
+    const titel = `${name} verantwortet dieses ${person.kind === "memo" ? "Executive Memo" : "LinkedIn-Asset"} · ${relativeWhen(person.created_at, now)}`;
     const url = String(person.avatar_url || "");
     return `<button type="button" class="asset-author" data-asset-author="${esc(person.asset_id || "")}" data-asset-kind="${esc(person.kind || "linkedin")}" title="${esc(titel)}" aria-label="${esc(titel)}">${
       url
@@ -78,7 +77,10 @@ export async function paintAssetAuthors(root, callApi, escapeHtml) {
   let authors = {};
   try {
     const antwort = await callApi("list_asset_authors", { article_ids: ids });
-    authors = (antwort && antwort.authors) || {};
+    // Auf der Karte zaehlt, wer den Beitrag verantwortet - nicht jeder, der
+    // irgendwann einen Entwurf gebaut hat. Die Entwurfsliste im Studio zeigt
+    // weiterhin alle Ersteller.
+    authors = (antwort && antwort.owners) || {};
   } catch (_) {
     // Ein fehlender Hinweis ist kein Grund, die Liste rot zu faerben.
     return;
@@ -103,7 +105,7 @@ export async function paintArticleAuthors(container, articleId, callApi, escapeH
   let liste = [];
   try {
     const antwort = await callApi("list_asset_authors", { article_ids: [articleId] });
-    liste = (antwort && antwort.authors && antwort.authors[articleId]) || [];
+    liste = (antwort && antwort.owners && antwort.owners[articleId]) || [];
   } catch (_) {
     return;
   }
@@ -126,6 +128,6 @@ export async function paintArticleAuthors(container, articleId, callApi, escapeH
       <span class="article-author-copy"><b>${esc(name)}</b><small>${esc(person.kind === "memo" ? "Ansprache" : "LinkedIn-Asset")}${wann ? ` · ${esc(wann)}` : ""}</small></span>
     </button>`;
   }).join("");
-  container.innerHTML = `<span class="decision-label">Entwürfe im Team</span><div class="article-authors">${zeilen}</div>`;
+  container.innerHTML = `<span class="decision-label">Übernommen von</span><div class="article-authors">${zeilen}</div>`;
   container.hidden = false;
 }

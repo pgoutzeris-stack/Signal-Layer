@@ -10834,7 +10834,7 @@ Deno.serve(async (req: Request) => {
         if (listKind && !isAssetKind(listKind)) return errorResponse(origin, "kind muss linkedin oder memo sein");
         let query = getAdminClient().schema("signal_layer")
           .from("generated_assets")
-          .select("id, kind, status, stage, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, article_id, title:payload->>title, slide_title:payload->slides->0->>title")
+          .select("id, kind, status, stage, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, owner_id, owned_at, article_id, title:payload->>title, slide_title:payload->slides->0->>title")
           .eq("article_id", listArticleId)
           .order("created_at", { ascending: false })
           .limit(40);
@@ -10857,6 +10857,35 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { assets });
       }
 
+      case "set_asset_owner": {
+        // Uebernehmen heisst: dieser Entwurf geht auf meinen Namen raus. Nur
+        // die eigene Kennung wird gesetzt, nie eine fremde.
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const ownerAssetId = String((body as { asset_id?: unknown }).asset_id || "");
+        if (!isUuid(ownerAssetId)) return errorResponse(origin, "asset_id fehlt", 400);
+        const uebernehmen = (body as { owned?: unknown }).owned !== false;
+        // Freigeben darf nur, wer es uebernommen hat - sonst koennte jemand
+        // anderen die Verantwortung wegnehmen.
+        if (!uebernehmen) {
+          const { data: bisher } = await getAdminClient().schema("signal_layer")
+            .from("generated_assets").select("owner_id").eq("id", ownerAssetId).maybeSingle();
+          if (bisher?.owner_id && bisher.owner_id !== auth.userId) {
+            return errorResponse(origin, "Nur wer den Entwurf übernommen hat, kann ihn freigeben.", 403);
+          }
+        }
+        const { data: geaendert, error: ownerFehler } = await getAdminClient().schema("signal_layer")
+          .from("generated_assets")
+          .update({
+            owner_id: uebernehmen ? auth.userId : null,
+            owned_at: uebernehmen ? new Date().toISOString() : null,
+          })
+          .eq("id", ownerAssetId)
+          .select("id, owner_id, owned_at").maybeSingle();
+        if (ownerFehler) return errorResponse(origin, ownerFehler.message, 500);
+        if (!geaendert) return errorResponse(origin, "Asset nicht gefunden", 404);
+        return corsResponse(origin, { asset: geaendert });
+      }
+
       case "list_asset_authors": {
         // Wer hat zu welchem Artikel schon einen Entwurf gemacht. Die Ansicht
         // fragt einmal fuer alle sichtbaren Artikel, statt je Karte einmal.
@@ -10867,13 +10896,39 @@ Deno.serve(async (req: Request) => {
         if (!artikelIds.length) return corsResponse(origin, { authors: {} });
         const { data: zeilen, error: autorenFehler } = await getAdminClient().schema("signal_layer")
           .from("generated_assets")
-          .select("id, kind, status, article_id, created_by, created_at")
+          .select("id, kind, status, article_id, created_by, created_at, owner_id, owned_at")
           .in("article_id", artikelIds)
           .in("status", ["done", "running", "queued"])
           .order("created_at", { ascending: false })
           .limit(600);
         if (autorenFehler) return errorResponse(origin, autorenFehler.message, 500);
-        const autoren = await assetAuthorsByIds((zeilen || []).map((row) => String(row.created_by || "")));
+        const autoren = await assetAuthorsByIds([
+          ...(zeilen || []).map((row) => String(row.created_by || "")),
+          ...(zeilen || []).map((row) => String(row.owner_id || "")),
+        ]);
+        // Die Karte zeigt, wer den Beitrag verantwortet. Die Entwurfsliste im
+        // Studio zeigt weiterhin, wer welchen Entwurf gebaut hat.
+        const proArtikelOwner: Record<string, Array<Record<string, unknown>>> = {};
+        const ownerGesehen = new Set<string>();
+        for (const row of (zeilen || []) as Array<Record<string, unknown>>) {
+          const artikel = String(row.article_id || "");
+          const owner = String(row.owner_id || "");
+          if (!artikel || !owner) continue;
+          const schluessel = `${artikel}:${owner}`;
+          if (ownerGesehen.has(schluessel)) continue;
+          const person = autoren.get(owner);
+          if (!person) continue;
+          ownerGesehen.add(schluessel);
+          (proArtikelOwner[artikel] ||= []).push({
+            asset_id: String(row.id || ""),
+            kind: String(row.kind || ""),
+            created_at: row.owned_at || row.created_at,
+            user_id: owner,
+            name: person.name,
+            short_name: person.short_name,
+            avatar_url: person.avatar_url,
+          });
+        }
         const proArtikel: Record<string, Array<Record<string, unknown>>> = {};
         // Je Person und Artikel zaehlt der neueste Entwurf: die Karte zeigt
         // Gesichter, keine Liste aller Versuche.
@@ -10898,7 +10953,7 @@ Deno.serve(async (req: Request) => {
             avatar_url: autor.avatar_url,
           });
         }
-        return corsResponse(origin, { authors: proArtikel });
+        return corsResponse(origin, { authors: proArtikel, owners: proArtikelOwner });
       }
 
       case "get_asset": {

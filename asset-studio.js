@@ -1061,8 +1061,8 @@ const CHROME_CSS = `
 /* Fertiger LinkedIn-Entwurf: vertraute Feed-Hierarchie in der ROOTS-Anmutung.
    Die echte Asset-Buehne bleibt unveraendert und wird nur in den Post gesetzt. */
 #as-overlay .as-work--feed{display:flex; justify-content:center; overflow:auto; padding:0 8px 8px;}
-#as-overlay .as-linkedin-post{width:min(680px,100%); height:100%; min-height:520px; display:grid;
-  grid-template-rows:auto auto minmax(260px,1fr) auto; overflow:hidden; background:#fff;
+#as-overlay .as-linkedin-post{width:min(1180px,100%); height:100%; min-height:520px; display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr); overflow:hidden; background:#fff;
   border:1px solid var(--line,#e2e8f0); border-radius:16px;
   box-shadow:0 14px 42px rgba(15,23,42,.12); color:#0f172a;}
 #as-overlay .as-linkedin-head{display:flex; align-items:center; gap:11px; padding:14px 16px 10px;}
@@ -1077,8 +1077,15 @@ const CHROME_CSS = `
 #as-overlay .as-linkedin-caption{padding:2px 16px 12px;}
 #as-overlay .as-linkedin-copy{margin:0; font-size:13px; line-height:1.48; white-space:pre-wrap; color:#1e293b;}
 #as-overlay .as-linkedin-caption:empty{display:none;}
-#as-overlay .as-stagearea--linkedin{min-height:260px; padding:8px 42px 20px; background:#f8fafc;
-  border-top:1px solid #edf2f7; border-bottom:1px solid #edf2f7;}
+#as-overlay .as-stagearea--linkedin{min-width:0; min-height:260px; padding:16px; background:#f8fafc;
+  display:flex; align-items:center; justify-content:center;}
+#as-overlay .as-linkedin-col{min-width:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto;
+  border-right:1px solid #edf2f7;}
+#as-overlay .as-linkedin-col .as-linkedin-caption{min-height:0; overflow:auto;}
+@media (max-width:900px){
+  #as-overlay .as-linkedin-post{grid-template-columns:minmax(0,1fr);}
+  #as-overlay .as-linkedin-col{border-right:0; border-bottom:1px solid #edf2f7;}
+}
 #as-overlay .as-linkedin-actions{display:grid; grid-template-columns:repeat(4,1fr); gap:2px; padding:7px 10px; background:#fff;}
 #as-overlay .as-linkedin-action{display:flex; align-items:center; justify-content:center; gap:6px; min-height:34px;
   border-radius:7px; color:#475569; font-size:11px; font-weight:600;}
@@ -1086,6 +1093,7 @@ const CHROME_CSS = `
 #as-overlay .as-stage--memo{border-radius:14px; background:#fff !important;}
 #as-overlay .as-stage--memo .em-page{border-radius:14px; overflow:hidden;}
 #as-overlay .as-stage--memo .em-cover{border-radius:14px;}
+#as-overlay .as-btn--owned{border-color:#bbf7d0; background:#f0fdf4; color:#15803d;}
 #as-overlay .as-slidetools{
   width:100%; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
   background:var(--bg,#fff); border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:8px 10px;
@@ -1456,6 +1464,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     leftRunning: false,
     drafts: [],
     formTab: "form",
+    // Wer uebernimmt, steht dafuer ein: der Entwurf geht auf seinen Namen raus
+    // und erscheint mit seinem Bild an der Artikelkarte.
+    owned: false,
     draftsUhr: 0,
     draftsError: "",
     prevIndex: 0,
@@ -1772,19 +1783,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const logo = state.chrome.logo || state.logo || LOGO_PATH;
     return `<div class="as-work as-work--feed" data-kind="linkedin">
       <article class="as-linkedin-post" aria-label="LinkedIn-Vorschau">
-        <header class="as-linkedin-head">
-          <span class="as-linkedin-avatar"><img src="${attr(logo)}" alt=""></span>
-          <span class="as-linkedin-byline"><strong>${esc(name)}</strong><span>${esc(rolle)}</span><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span>
-          <button type="button" class="as-linkedin-more" aria-label="Weitere Optionen" tabindex="-1"><i class="fa-solid fa-ellipsis"></i></button>
-        </header>
-        <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
+        <div class="as-linkedin-col">
+          <header class="as-linkedin-head">
+            <span class="as-linkedin-avatar"><img src="${attr(logo)}" alt=""></span>
+            <span class="as-linkedin-byline"><strong>${esc(name)}</strong><span>${esc(rolle)}</span><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span>
+          </header>
+          <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
+          <footer class="as-linkedin-actions" aria-hidden="true">
+            <span class="as-linkedin-action"><i class="fa-regular fa-thumbs-up"></i>Gefällt mir</span>
+            <span class="as-linkedin-action"><i class="fa-regular fa-comment-dots"></i>Kommentieren</span>
+            <span class="as-linkedin-action"><i class="fa-solid fa-retweet"></i>Teilen</span>
+            <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
+          </footer>
+        </div>
         <div class="as-stagearea as-stagearea--linkedin" data-stagearea></div>
-        <footer class="as-linkedin-actions" aria-hidden="true">
-          <span class="as-linkedin-action"><i class="fa-regular fa-thumbs-up"></i>Gefällt mir</span>
-          <span class="as-linkedin-action"><i class="fa-regular fa-comment-dots"></i>Kommentieren</span>
-          <span class="as-linkedin-action"><i class="fa-solid fa-retweet"></i>Teilen</span>
-          <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
-        </footer>
       </article>
     </div>`;
   }
@@ -3129,6 +3141,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (state.cancelRequested) return;
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       state.assetId = row.id || null;
+      state.owned = Boolean(row.owner_id);
       uebernehmeLaufstand(row);
       const fertig = row.status === "running" ? await warteAufAsset(row.id) : row;
       if (state.cancelRequested) return;
@@ -3641,7 +3654,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (state.prevIndex >= state.slides.length) state.prevIndex = 0;
       area.innerHTML = state.slides.map((slide, index) => `
         <div class="as-frame${index === state.prevIndex ? "" : " is-off"}" data-uid="${attr(slide.uid)}">
-          ${editable ? slideTools(slide, index) : ""}
           <div class="as-pagehost"><div class="as-scaler">${slideHtml(slide, editable)}</div>${fsBtnHtml()}</div>
         </div>`).join("")
         + blaetterNavHtml();
@@ -4092,9 +4104,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
       const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
       const zoom = Math.max(1, Number(state.viewZoom) || 1);
-      const base = availH > 80
-        ? Math.min(1, safeW / w, availH / h)
-        : Math.min(1, safeW / w);
+      // Ohne brauchbares Hoehenmass wurde nur nach Breite skaliert: eine
+      // 1350 px hohe Folie lief dann unten aus ihrem Kasten heraus.
+      const gemessen = availH > 80 ? availH : Math.round(area.getBoundingClientRect().height);
+      const nutzbar = gemessen > 80 ? gemessen : Math.round(window.innerHeight * 0.62);
+      const base = Math.min(1, safeW / w, nutzbar / h);
       const scale = base * zoom;
       scaler.style.width = `${Math.round(w * scale)}px`;
       scaler.style.height = `${Math.round(h * scale)}px`;
@@ -4156,7 +4170,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <span>Ausgabe</span>
         <button type="button" class="as-btn" data-act="download"><i class="fa-solid fa-download"></i>HTML herunterladen</button>
         <button type="button" class="as-btn" data-act="print"><i class="fa-solid fa-print"></i>Drucken / PDF</button>
-        <button type="button" class="as-btn as-btn--primary" data-act="save"><i class="fa-regular fa-floppy-disk"></i>Speichern</button>
+        <button type="button" class="as-btn as-btn--primary" data-act="save"><i class="fa-regular fa-floppy-disk"></i>Entwurf speichern</button>
+        ${state.assetId ? `<button type="button" class="as-btn${state.owned ? " as-btn--owned" : ""}" data-act="own">
+          <i class="fa-solid fa-${state.owned ? "user-check" : "user-plus"}"></i>${state.owned ? "Übernommen — freigeben" : "Als meinen übernehmen"}
+        </button>` : ""}
         <p class="as-savehint" data-savehint></p>
       </div>
     </aside>`;
@@ -4778,6 +4795,23 @@ ${stages}${post}
     }
   }
 
+  /** Entwurf uebernehmen oder wieder freigeben. */
+  async function uebernehmen() {
+    if (!state.assetId) return;
+    const knopf = shell.querySelector('[data-act="own"]');
+    if (knopf) knopf.disabled = true;
+    try {
+      const antwort = await api("set_asset_owner", { asset_id: state.assetId, owned: !state.owned });
+      state.owned = Boolean(antwort?.asset?.owner_id);
+      showSaveHint(state.owned ? "Der Entwurf laeuft jetzt auf deinen Namen." : "Der Entwurf hat keinen Verantwortlichen mehr.");
+      render();
+    } catch (err) {
+      showSaveHint(err && err.message ? String(err.message) : "Übernehmen fehlgeschlagen.");
+    } finally {
+      if (knopf) knopf.disabled = false;
+    }
+  }
+
   async function copyPost() {
     const box = shell.querySelector("[data-post]");
     if (!box) return;
@@ -4913,6 +4947,10 @@ ${stages}${post}
     if (act === "open-draft") {
       const id = hit.getAttribute("data-id");
       if (id) void openDraft(id);
+      return;
+    }
+    if (act === "own") {
+      void uebernehmen();
       return;
     }
     if (act === "img-crop") {

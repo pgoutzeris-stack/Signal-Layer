@@ -522,7 +522,7 @@ test("die Vorschau ist ein Kasten, Memo blaettert seitenweise", () => {
   assert.match(studio, /if \(isMemo\) return MEMO_SEITEN/);
   assert.match(studio, /function markiereMemoSeiten/);
   assert.match(studio, /function zeigeAktiveFolie/);
-  assert.match(studio, /availH \/ h/);
+  assert.match(studio, /nutzbar \/ h/);
   assert.doesNotMatch(studio, /isMemo && availH/);
   assert.match(studio, /MEMO_SEITE_PX\.h/);
   assert.doesNotMatch(studio, /3368/);
@@ -1945,7 +1945,7 @@ test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-pot \.em-shot img[^}]*object-fit:cover/);
   assert.match(studio, /from "\.\/memo-template\.js/);
   assert.match(studio, /MEMO_TEMPLATE/);
-  assert.match(studio, /availH \/ h/);
+  assert.match(studio, /nutzbar \/ h/);
 });
 
 test("unbelegte Ziffern in der Ansprache fallen durch, qualitative Benchmarks nicht", () => {
@@ -2292,8 +2292,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260829-1420");
-  assert.match(indexHtml, /app\.js\?v=20260830-1330/);
+  assert.equal(studioVersion, "20260830-1450");
+  assert.match(indexHtml, /app\.js\?v=20260830-1450/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
