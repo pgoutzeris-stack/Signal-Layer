@@ -464,6 +464,7 @@ type DashboardPreferences = {
     asset_scope: "roots" | "roots_private";
     creator_ids: string[];
     origin: "all" | "automatic" | "manual";
+    lane: "all" | "marketing" | "sales";
   };
   widgets: DashboardWidgetPreference[];
 };
@@ -489,6 +490,10 @@ function normalizeDashboardPreferences(raw: unknown): DashboardPreferences {
   const origin = ["automatic", "manual"].includes(String(rawFilters.origin))
     ? String(rawFilters.origin) as "automatic" | "manual"
     : "all";
+  // LinkedIn-Assets sind die Marketing-Bahn, Executive Memos die Sales-Bahn.
+  const lane = ["marketing", "sales"].includes(String(rawFilters.lane))
+    ? String(rawFilters.lane) as "marketing" | "sales"
+    : "all";
   const creatorIds = Array.isArray(rawFilters.creator_ids)
     ? [...new Set(rawFilters.creator_ids.map(String).filter(isUuid))].slice(0, 50)
     : [];
@@ -501,7 +506,7 @@ function normalizeDashboardPreferences(raw: unknown): DashboardPreferences {
   }));
   return {
     period_days: periodDays,
-    filters: { asset_scope: assetScope, creator_ids: creatorIds, origin },
+    filters: { asset_scope: assetScope, creator_ids: creatorIds, origin, lane },
     widgets,
   };
 }

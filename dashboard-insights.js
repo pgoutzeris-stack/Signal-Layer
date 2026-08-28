@@ -20,6 +20,7 @@ export function defaultDashboardPreferences() {
       asset_scope: "roots",
       creator_ids: [],
       origin: "all",
+      lane: "all",
     },
     widgets: DASHBOARD_WIDGETS.map((item) => ({ id: item.id, visible: true, size: item.defaultSize })),
   };
@@ -32,12 +33,14 @@ export function normalizeDashboardPreferences(value = {}) {
   const rawFilters = source.filters && typeof source.filters === "object" && !Array.isArray(source.filters) ? source.filters : {};
   const assetScope = rawFilters.asset_scope === "roots_private" ? "roots_private" : "roots";
   const origin = ["automatic", "manual"].includes(rawFilters.origin) ? rawFilters.origin : "all";
+  // LinkedIn-Assets sind die Marketing-Bahn, Executive Memos die Sales-Bahn.
+  const lane = ["marketing", "sales"].includes(rawFilters.lane) ? rawFilters.lane : "all";
   const creatorIds = Array.isArray(rawFilters.creator_ids)
     ? [...new Set(rawFilters.creator_ids.map(String).filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)))].slice(0, 50)
     : [];
   return {
     period_days: period,
-    filters: { asset_scope: assetScope, creator_ids: creatorIds, origin },
+    filters: { asset_scope: assetScope, creator_ids: creatorIds, origin, lane },
     widgets: fallback.widgets,
   };
 }
@@ -92,7 +95,9 @@ export function summarizeDashboardData(payload = {}, nowMs = Date.now()) {
     const visibilityMatches = preferences.filters.asset_scope === "roots_private" || asset.visibility !== "private";
     const creatorMatches = selectedCreators.size === 0 || selectedCreators.has(String(asset.creator_id || ""));
     const originMatches = preferences.filters.origin === "all" || asset.origin === preferences.filters.origin;
-    return visibilityMatches && creatorMatches && originMatches;
+    const laneMatches = preferences.filters.lane === "all" || !preferences.filters.lane
+      || (preferences.filters.lane === "marketing" ? asset.kind === "linkedin" : asset.kind === "memo");
+    return visibilityMatches && creatorMatches && originMatches && laneMatches;
   });
   const assetIds = new Set(assets.map((asset) => asset.id));
   const performance = (Array.isArray(payload.performance) ? payload.performance : [])
@@ -421,13 +426,12 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
           <h2><i class="fa-solid fa-chart-line"></i>Performance</h2>
           <div class="pi-bar-filters">
             <div class="pi-seg" role="group" aria-label="Zeitraum">${[7, 30, 90, 365].map((days) => `<button type="button" data-dashboard-period="${days}" class="${days === preferences.period_days ? "is-active" : ""}" aria-pressed="${days === preferences.period_days}">${days === 365 ? "12 M" : `${days} T`}</button>`).join("")}</div>
-            ${segmentHtml("scope", preferences.filters.asset_scope, [["roots", "ROOTS"], ["roots_private", "+ privat"]], "Asset-Basis")}
-            ${segmentHtml("origin", preferences.filters.origin, [["all", "Alle"], ["automatic", "Automatisch"], ["manual", "Manuell"]], "Quelle")}
+            ${segmentHtml("lane", preferences.filters.lane || "all", [["all", "Alle"], ["marketing", "Marketing"], ["sales", "Sales"]], "Bahn")}
+            ${segmentHtml("scope", preferences.filters.asset_scope, [["roots", "ROOTS"], ["roots_private", "Privat"]], "Asset-Basis")}
+            ${segmentHtml("origin", preferences.filters.origin, [["all", "Alle"], ["automatic", "KI"], ["manual", "Manuell"]], "Quelle")}
             <div class="pi-creators" role="group" aria-label="Erstellt von">
               <button type="button" class="pi-creator pi-creator--all${selectedCreators.size === 0 ? " is-active" : ""}" data-dashboard-creator="all" aria-pressed="${selectedCreators.size === 0}" title="Alle Erstellenden">Alle</button>${creatorButtons}
             </div>
-            <span class="pi-count"><b>${state.summary.assets.length}</b> Assets</span>
-            <span class="pi-live" data-dashboard-live-label title="Verbindung">Verbinde…</span>
           </div>
         </div>
         <div class="pi-grid">${preferences.widgets.map((preference) => renderWidget(DASHBOARD_WIDGETS.find((item) => item.id === preference.id), preference, state.summary, escapeHtml)).join("")}</div>`;
@@ -556,6 +560,11 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     const periodButton = event.target.closest("[data-dashboard-period]");
     if (periodButton) {
       queuePreferenceSave({ ...state.payload.preferences, period_days: Number(periodButton.dataset.dashboardPeriod) });
+      return;
+    }
+    const laneButtonBar = event.target.closest("[data-dashboard-lane]");
+    if (laneButtonBar) {
+      queuePreferenceSave({ ...state.payload.preferences, filters: { ...state.payload.preferences.filters, lane: laneButtonBar.dataset.dashboardLane } });
       return;
     }
     const scopeButton = event.target.closest("[data-dashboard-scope]");

@@ -175,3 +175,29 @@ test("die Dashboard-Filter zeigen ihre Auswahl wirklich an", async () => {
   // Kein Erklaersatz unter der Ueberschrift.
   assert.ok(!js.includes("persönlich gefiltert und in Echtzeit synchronisiert"));
 });
+
+test("die Leiste filtert auch nach Bahn und bleibt ohne Beiwerk", async () => {
+  const [js, css] = await Promise.all([
+    readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8"),
+    readFile(new URL("../dashboard-insights.css", import.meta.url), "utf8"),
+  ]);
+  // Marketing sind die LinkedIn-Assets, Sales die Executive Memos.
+  assert.match(js, /lane: "all"/);
+  assert.match(js, /\[\["all", "Alle"\], \["marketing", "Marketing"\], \["sales", "Sales"\]\]/);
+  assert.match(js, /asset\.kind === "linkedin" : asset\.kind === "memo"/);
+  // "Automatisch" heisst, was es ist.
+  assert.match(js, /\["automatic", "KI"\]/);
+  // Zaehler und Verbindungspunkt sind aus der Leiste raus.
+  assert.ok(!js.includes('class="pi-count"'), "der Zaehler ist entfallen");
+  assert.ok(!js.includes('class="pi-live"'), "der pulsierende Punkt ist entfallen");
+  assert.ok(!css.includes(".pi-live"), "die Regeln dazu sind entfallen");
+  // "Alle" bei den Gesichtern war oval: Rundung von der Kreisform, Breite vom Text.
+  assert.match(css, /\.pi-creator--all \{[^}]*border-radius: 999px/);
+});
+
+test("die Bahn wird auch serverseitig als Vorliebe akzeptiert", async () => {
+  const backend = await readFile(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
+  assert.match(backend, /lane: "all" \| "marketing" \| "sales";/);
+  assert.match(backend, /\["marketing", "sales"\]\.includes\(String\(rawFilters\.lane\)\)/);
+  assert.match(backend, /creator_ids: creatorIds, origin, lane/);
+});

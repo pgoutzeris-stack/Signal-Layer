@@ -14,26 +14,15 @@
 .pi-seg button:hover { color: var(--brand-dark); }
 .pi-seg button.is-active { color: #fff; background: var(--brand); }
 
-
 .pi-creators { display: inline-flex; align-items: center; gap: 3px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
 .pi-creator { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
-.pi-creator--all { width: auto; padding: 0 9px; color: var(--muted); font: inherit; font-size: .64rem; font-weight: 750; }
+.pi-creator--all { width: auto; height: 24px; padding: 0 10px; border-radius: 999px; color: var(--muted); font: inherit; font-size: .64rem; font-weight: 750; }
 .pi-creator--all.is-active { color: #fff; background: var(--brand); }
 .pi-creator .pi-avatar { opacity: .45; transition: opacity .15s, box-shadow .15s; }
 .pi-creator:hover .pi-avatar { opacity: .8; }
 .pi-creator.is-active .pi-avatar { opacity: 1; box-shadow: 0 0 0 2px var(--brand); }
 .pi-avatar { width: 20px; height: 20px; flex: none; border-radius: 50%; object-fit: cover; background: var(--brand-light); }
 .pi-avatar--initials { display: inline-grid; place-items: center; color: var(--brand-dark); font-size: .5rem; font-weight: 850; }
-
-.pi-count { color: var(--muted); font-size: .64rem; font-weight: 650; white-space: nowrap; }
-.pi-count b { color: var(--ink); font-size: .74rem; font-weight: 800; }
-
-.pi-live { display: inline-flex; align-items: center; gap: 5px; padding: 0 10px 0 8px; height: 24px; border-radius: 999px; color: var(--muted); background: var(--status-bg); font-size: .56rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
-.pi-live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; }
-/* Laeuft alles, genuegt der Punkt. Ein Wort "LIVE" neben jedem Widget-Kopf,
-   der es ohnehin sagt, ist doppelt. */
-.pi-live.is-live { color: #15803d; font-size: 0; padding: 0; width: 22px; justify-content: center; }
-.pi-live.is-live::before { background: #22c55e; animation: piLivePulse 2.2s ease-in-out infinite; }
 
 @media (max-width: 900px) {
   .pi-bar { border-radius: 16px; padding: .55rem .7rem; }
@@ -190,6 +179,6 @@
   .pi-funnel-row > small { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pi-widget, .pi-trend-bars i, .pi-widget-head em.is-live::before, .pi-live.is-live::before, .pi-dashboard-loader span { animation: none !important; }
+  .pi-widget, .pi-trend-bars i, .pi-widget-head em.is-live::before, .pi-dashboard-loader span { animation: none !important; }
   .pi-funnel-row > div > i { transition: none; }
 }
