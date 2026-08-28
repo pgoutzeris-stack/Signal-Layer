@@ -2286,8 +2286,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260829-0030");
-  assert.match(indexHtml, /app\.js\?v=20260829-0030/);
+  assert.equal(studioVersion, "20260829-0130");
+  assert.match(indexHtml, /app\.js\?v=20260829-0130/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
@@ -2997,4 +2997,41 @@ test("eine Bildvorlage ohne Datei zeigt das fehlende Motiv statt einer leeren Fl
   assert.match(studioJs, /\.as-img--bg\.is-empty\{background:linear-gradient/);
   // Der Hinweis darf nicht ueber der Ueberschrift liegen.
   assert.match(studioJs, /\.as-img-empty\{\s*position:absolute; right:24px; bottom:170px/);
+});
+
+test("Bildvorlagen bekommen ihr Motiv vom Bildmodell", () => {
+  const server = readFileSync(new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url), "utf8");
+  const backend = readFileSync(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
+  assert.match(server, /export const ASSET_IMAGE_MODEL = "gemini-2\.5-flash-image"/);
+  assert.match(server, /responseModalities: \["IMAGE"\]/);
+  // Hochformat wie die Folie, sonst muesste jedes Motiv beschnitten werden.
+  assert.match(server, /LINKEDIN_IMAGE_ASPECT = "4:5"/);
+  // Kein Text im Motiv: Schrift im Bild kollidiert mit der Vorlage.
+  assert.match(server, /Kein Text, keine Schrift/);
+  // Nur die Vorlagen mit Bildflaeche, und nur wenn noch keine Datei da ist.
+  assert.match(server, /LINKEDIN_IMAGE_VARIANTS = new Set\(\["C", "D", "J"\]\)/);
+  assert.match(server, /export function linkedinSlidesNeedingImages/);
+  // Ein Preis muss hinterlegt sein, sonst wirft die Kostenbuchung.
+  assert.match(backend, /"gemini-2\.5-flash-image": \{ currency: "USD"/);
+  assert.match(backend, /operation: "asset_image"/);
+  // Ein fehlgeschlagenes Motiv darf den fertigen Text nie verwerfen.
+  assert.match(backend, /images_incomplete", \{ index, reason/);
+  // Wer selbst hochladen will, waehlt das im Fragebogen.
+  assert.match(studio, /\["auto", "Motive erzeugen lassen"\]/);
+  assert.match(studio, /\["upload", "Eigene Bilder einsetzen"\]/);
+});
+
+test("das Bild laesst sich wie in einem Grafikprogramm nachstellen", () => {
+  // Zuschneiden, Groesse, Transparenz, Overlay, ersetzen, entfernen.
+  assert.match(studio, /data-act="img-crop"/);
+  assert.match(studio, /data-act="img-zoom"/);
+  assert.match(studio, /data-imgrange="opacity"/);
+  assert.match(studio, /data-imgrange="overlay"/);
+  assert.match(studio, /data-act="img-pick"/);
+  assert.match(studio, /data-act="img-clear"/);
+  // Die Werte haengen am Bild und wirken auf die Vorlage.
+  assert.match(studio, /background-size:\$\{Math\.round\(zoom \* 100\)\}% auto;opacity:\$\{deckung\}/);
+  assert.match(studio, /<div class="ov" style="\[\^"\]\*\)"/);
+  // Ohne Bild keine Regler.
+  assert.match(studio, /\$\{hat \? `<div class="as-img-tools">/);
 });

@@ -175,6 +175,16 @@ const FORM_LINKEDIN = [
   // den Einstellungen hinterlegten. Traegt zugleich hell/dunkel.
   { key: "design", label: "Design", art: "design", options: [["roots-hell", "ROOTS Hell"]] },
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
+  // Bildvorlagen bekommen ihr Motiv vom Bildmodell. Wer ein eigenes Foto hat,
+  // laedt es in der Werkbank hoch; die Vorlage bleibt bis dahin leer.
+  {
+    key: "images",
+    label: "Motive",
+    options: [
+      ["auto", "Motive erzeugen lassen"],
+      ["upload", "Eigene Bilder einsetzen"],
+    ],
+  },
   // Einzelbild: genau ein Layout. Carousel: entweder das Modell mischt die
   // Slide-Arten, oder der Nutzer waehlt sie selbst.
   {
@@ -1139,6 +1149,16 @@ const CHROME_CSS = `
   box-shadow:0 6px 16px rgba(15,23,42,.22);
 }
 #as-overlay .as-img-btn:hover{background:rgba(15,23,42,.88);}
+#as-overlay .as-img-tools{
+  display:flex; align-items:center; gap:8px; margin-right:6px; padding:6px 10px;
+  border-radius:12px; background:rgba(15,23,42,.72); color:#fff;
+  box-shadow:0 6px 16px rgba(15,23,42,.22);
+}
+#as-overlay .as-img-tools .as-img-btn{width:26px; height:26px; font-size:11px; background:transparent; box-shadow:none;}
+#as-overlay .as-img-tools .as-img-btn:hover{background:rgba(255,255,255,.16);}
+#as-overlay .as-img-value{min-width:38px; font-size:11px; font-weight:750; text-align:center;}
+#as-overlay .as-img-range{display:flex; align-items:center; gap:5px; font-size:11px;}
+#as-overlay .as-img-range input{width:64px; accent-color:#6ea3ff;}
 #as-overlay .as-img-btn.is-clear{width:28px; height:28px; font-size:12px; background:rgba(255,255,255,.94); color:#0f172a;}
 #as-overlay .as-shot:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
 #as-overlay .as-img--tpl:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
@@ -3249,6 +3269,31 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return String(model.imageHint || model.image_hint || "");
   }
 
+  /** Grenzen der Bildregler. Ein Bild kleiner als der Ausschnitt liesse Raender. */
+  const BILD_ZOOM = { min: 1, max: 2.5, schritt: 0.1 };
+
+  function bildWert(bild, feld, standard) {
+    const wert = Number(bild?.[feld]);
+    return Number.isFinite(wert) ? wert : standard;
+  }
+
+  /** Setzt einen Regler am Bild des Slots und zeichnet die Buehne neu. */
+  function setzeBildWert(key, feld, wert) {
+    const model = aktuellesModelFuer(key);
+    if (!model) return;
+    const bild = imageAt(model, key);
+    if (!bild.src) return;
+    setImageAt(model, key, { ...bild, [feld]: wert });
+    mountStages(state.step === "edit");
+  }
+
+  /** Das Modell, an dem der Slot haengt: Memo oder die sichtbare Folie. */
+  function aktuellesModelFuer(key) {
+    if (isMemo) return state.memo;
+    if (/^(benchmarks|potentials)\./.test(String(key || ""))) return state.memo;
+    return state.slides[state.prevIndex] || null;
+  }
+
   function setImageAt(model, key, image) {
     if (!model) return;
     const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(String(key || ""));
@@ -3293,6 +3338,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         image: {
           src: String(item?.image?.src || ""),
           pos: String(item?.image?.pos || "50% 50%"),
+          zoom: Number(item?.image?.zoom) || 1,
+          opacity: Number(item?.image?.opacity) || 1,
+          overlay: Number(item?.image?.overlay ?? 1),
         },
       })),
       potentials_title: String(src.potentials_title || ""),
@@ -3305,6 +3353,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         image: {
           src: String(item?.image?.src || ""),
           pos: String(item?.image?.pos || "50% 50%"),
+          zoom: Number(item?.image?.zoom) || 1,
+          opacity: Number(item?.image?.opacity) || 1,
+          overlay: Number(item?.image?.overlay ?? 1),
         },
       })),
       cta: String(src.cta || ""),
@@ -3433,7 +3484,19 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const uiFor = (key) => {
       const bild = imageAt(model, key);
       const hat = Boolean(bild.src);
+      const zoom = bildWert(bild, "zoom", 1);
+      const deckung = Math.round(bildWert(bild, "opacity", 1) * 100);
+      const overlay = Math.round(bildWert(bild, "overlay", 1) * 100);
+      // Ohne Bild bleibt es beim einen Knopf: Regler auf nichts sind Attrappen.
       return `<div class="as-img-ui" data-as-chrome>
+      ${hat ? `<div class="as-img-tools">
+        <button type="button" class="as-img-btn" data-act="img-crop" data-imgkey="${attr(key)}" aria-label="Zuschneiden" title="Zuschneiden"><i class="fa-solid fa-crop-simple"></i></button>
+        <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="-1" data-imgkey="${attr(key)}" aria-label="Kleiner" title="Kleiner"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+        <span class="as-img-value">${Math.round(zoom * 100)}%</span>
+        <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="1" data-imgkey="${attr(key)}" aria-label="Größer" title="Größer"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+        <label class="as-img-range" title="Transparenz"><i class="fa-solid fa-circle-half-stroke"></i><input type="range" min="20" max="100" step="5" value="${deckung}" data-imgrange="opacity" data-imgkey="${attr(key)}" aria-label="Transparenz"></label>
+        <label class="as-img-range" title="Overlay"><i class="fa-solid fa-layer-group"></i><input type="range" min="0" max="100" step="5" value="${overlay}" data-imgrange="overlay" data-imgkey="${attr(key)}" aria-label="Overlay"></label>
+      </div>` : ""}
       <button type="button" class="as-img-btn" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><i class="fa-regular fa-image"></i></button>
       ${hat ? `<button type="button" class="as-img-btn is-clear" data-act="img-clear" data-imgkey="${attr(key)}" aria-label="Bild entfernen" title="Bild entfernen"><i class="fa-solid fa-xmark"></i></button>` : ""}
     </div>`;
@@ -3451,6 +3514,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (/background-image:url\(/.test(html) && (!model?.variant || MIT_BILD.has(model.variant))) {
       const bild = imageAt(model, "image");
       const hinweis = imageHintAt(model, "image");
+      // Transparenz, Groesse und Overlay stehen am Bild, nicht in der Vorlage:
+      // dieselbe Vorlage traegt jedes Motiv, und der Export liest denselben Wert.
+      if (bild.src) {
+        const zoom = bildWert(bild, "zoom", 1);
+        const deckung = bildWert(bild, "opacity", 1);
+        html = html.replace(/(<div style="position:absolute;inset:0;background-image:url\([^)]*\)[^"]*)"/,
+          (_m, kopf) => `${kopf};background-size:${Math.round(zoom * 100)}% auto;opacity:${deckung}"`);
+        const overlay = bildWert(bild, "overlay", 1);
+        if (overlay !== 1) {
+          html = html.replace(/(<div class="ov" style="[^"]*)"/, (_m, kopf) => `${kopf};opacity:${overlay}"`);
+        }
+      }
       const leer = bild.src
         ? ""
         : `<span class="as-img-empty"><i class="fa-regular fa-image"></i><b>Motiv einfügen</b>${
@@ -4824,6 +4899,21 @@ ${stages}${post}
       if (id) void openDraft(id);
       return;
     }
+    if (act === "img-crop") {
+      const key = hit.getAttribute("data-imgkey") || "image";
+      const uid = hit.closest("[data-stage]")?.getAttribute("data-uid") || "";
+      openCropSheet(uid || "form", key);
+      return;
+    }
+    if (act === "img-zoom") {
+      const key = hit.getAttribute("data-imgkey") || "image";
+      const model = aktuellesModelFuer(key);
+      const jetzt = bildWert(imageAt(model, key), "zoom", 1);
+      const richtung = Number(hit.getAttribute("data-imgdelta")) < 0 ? -1 : 1;
+      const naechster = Math.min(BILD_ZOOM.max, Math.max(BILD_ZOOM.min, Number((jetzt + richtung * BILD_ZOOM.schritt).toFixed(2))));
+      setzeBildWert(key, "zoom", naechster);
+      return;
+    }
     if (act === "form-img-pick") {
       pickFormImage(hit.getAttribute("data-imgkey") || "image");
       return;
@@ -4993,6 +5083,16 @@ ${stages}${post}
   }
 
   function onInput(event) {
+    // Die Bildregler wirken in der Werkbank, nicht im Fragebogen - deshalb vor
+    // der Fragebogen-Schranke.
+    const regler = event.target.closest?.("[data-imgrange]");
+    if (regler) {
+      const feld = regler.getAttribute("data-imgrange");
+      const key = regler.getAttribute("data-imgkey") || "image";
+      const wert = Math.min(100, Math.max(0, Number(regler.value) || 0)) / 100;
+      setzeBildWert(key, feld === "overlay" ? "overlay" : "opacity", wert);
+      return;
+    }
     if (state.step !== "form") return;
     const free = event.target.closest?.("[data-free]");
     if (!free) return;
