@@ -101,21 +101,6 @@ const SLIDE_ROLE = {
   U3: "end", U4: "end", U7: "end", U8: "end",
 };
 const MIT_BILD = new Set(["C", "D", "J"]);
-
-/**
- * Kann in diesem Auftrag ueberhaupt eine Folie mit Bildflaeche entstehen?
- * Bei "Modell waehlt" ja, weil das Modell eine Bildvorlage nehmen darf; bei
- * fester Wahl nur, wenn die gewaehlte Vorlage eine Bildflaeche hat.
- */
-function bildVorlageMoeglich(answers = {}) {
-  if (answers.asset_type === "carousel") {
-    if (answers.slide_mix !== "custom") return true;
-    const gewaehlt = [answers.slide_cover, answers.slide_end, ...(Array.isArray(answers.slide_content) ? answers.slide_content : [])];
-    return gewaehlt.some((art) => MIT_BILD.has(String(art || "")));
-  }
-  if (answers.variant_mode !== "custom") return true;
-  return MIT_BILD.has(String(answers.variant || ""));
-}
 const CAROUSEL_RECOMMENDED_MIN = 8;
 const CAROUSEL_RECOMMENDED_MAX = 12;
 const LINKEDIN_DOCUMENT_PAGE_MAX = 300;
@@ -190,19 +175,6 @@ const FORM_LINKEDIN = [
   // den Einstellungen hinterlegten. Traegt zugleich hell/dunkel.
   { key: "design", label: "Design", art: "design", options: [["roots-hell", "ROOTS Hell"]] },
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
-  // Bildvorlagen bekommen ihr Motiv vom Bildmodell. Wer ein eigenes Foto hat,
-  // laedt es in der Werkbank hoch; die Vorlage bleibt bis dahin leer. Die
-  // Frage erscheint nur, wenn ueberhaupt eine Folie mit Bildflaeche entstehen
-  // kann - bei einer festen Textvorlage waere sie ohne Wirkung.
-  {
-    key: "images",
-    label: "Motive",
-    options: [
-      ["auto", "Motiv passend zum Signal erzeugen"],
-      ["upload", "Eigenes Bild hochladen"],
-    ],
-    when: (answers) => bildVorlageMoeglich(answers),
-  },
   // Einzelbild: genau ein Layout. Carousel: entweder das Modell mischt die
   // Slide-Arten, oder der Nutzer waehlt sie selbst.
   {
@@ -1084,17 +1056,10 @@ const CHROME_CSS = `
 /* Fertiger LinkedIn-Entwurf: vertraute Feed-Hierarchie in der ROOTS-Anmutung.
    Die echte Asset-Buehne bleibt unveraendert und wird nur in den Post gesetzt. */
 #as-overlay .as-work--feed{display:flex; justify-content:center; overflow:auto; padding:0 8px 8px;}
-#as-overlay .as-linkedin-post{width:min(1180px,100%); height:100%; min-height:520px; display:grid;
-  grid-template-columns:minmax(260px,.85fr) minmax(0,1.35fr); gap:0; overflow:hidden; background:#fff;
-  border:1px solid var(--line,#e2e8f0); border-radius:16px;
+#as-overlay .as-linkedin-post{width:min(680px,100%); height:100%; min-height:520px; display:grid;
+  grid-template-rows:auto auto minmax(260px,1fr) auto; overflow:hidden; background:#fff;
+  border:1px solid var(--line,#e2e8f0); border-top:3px solid var(--brand,#206efb); border-radius:16px;
   box-shadow:0 14px 42px rgba(15,23,42,.12); color:#0f172a;}
-#as-overlay .as-linkedin-col{min-width:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto;
-  border-right:1px solid #edf2f7;}
-#as-overlay .as-linkedin-col .as-linkedin-caption{min-height:0; overflow:auto;}
-@media (max-width:900px){
-  #as-overlay .as-linkedin-post{grid-template-columns:minmax(0,1fr);}
-  #as-overlay .as-linkedin-col{border-right:0; border-bottom:1px solid #edf2f7;}
-}
 #as-overlay .as-linkedin-head{display:flex; align-items:center; gap:11px; padding:14px 16px 10px;}
 #as-overlay .as-linkedin-avatar{display:grid; place-items:center; flex:0 0 auto; width:46px; height:46px;
   padding:7px; overflow:hidden; border:1px solid #dbe7ff; border-radius:9px; background:#fff;}
@@ -1107,8 +1072,8 @@ const CHROME_CSS = `
 #as-overlay .as-linkedin-caption{padding:2px 16px 12px;}
 #as-overlay .as-linkedin-copy{margin:0; font-size:13px; line-height:1.48; white-space:pre-wrap; color:#1e293b;}
 #as-overlay .as-linkedin-caption:empty{display:none;}
-#as-overlay .as-stagearea--linkedin{min-width:0; min-height:260px; padding:16px; background:#f8fafc;
-  display:flex; align-items:center; justify-content:center;}
+#as-overlay .as-stagearea--linkedin{min-height:260px; padding:8px 42px 20px; background:#f8fafc;
+  border-top:1px solid #edf2f7; border-bottom:1px solid #edf2f7;}
 #as-overlay .as-linkedin-actions{display:grid; grid-template-columns:repeat(4,1fr); gap:2px; padding:7px 10px; background:#fff;}
 #as-overlay .as-linkedin-action{display:flex; align-items:center; justify-content:center; gap:6px; min-height:34px;
   border-radius:7px; color:#475569; font-size:11px; font-weight:600;}
@@ -1174,16 +1139,6 @@ const CHROME_CSS = `
   box-shadow:0 6px 16px rgba(15,23,42,.22);
 }
 #as-overlay .as-img-btn:hover{background:rgba(15,23,42,.88);}
-#as-overlay .as-img-tools{
-  display:flex; align-items:center; gap:8px; margin-right:6px; padding:6px 10px;
-  border-radius:12px; background:rgba(15,23,42,.72); color:#fff;
-  box-shadow:0 6px 16px rgba(15,23,42,.22);
-}
-#as-overlay .as-img-tools .as-img-btn{width:26px; height:26px; font-size:11px; background:transparent; box-shadow:none;}
-#as-overlay .as-img-tools .as-img-btn:hover{background:rgba(255,255,255,.16);}
-#as-overlay .as-img-value{min-width:38px; font-size:11px; font-weight:750; text-align:center;}
-#as-overlay .as-img-range{display:flex; align-items:center; gap:5px; font-size:11px;}
-#as-overlay .as-img-range input{width:64px; accent-color:#6ea3ff;}
 #as-overlay .as-img-btn.is-clear{width:28px; height:28px; font-size:12px; background:rgba(255,255,255,.94); color:#0f172a;}
 #as-overlay .as-shot:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
 #as-overlay .as-img--tpl:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
@@ -1796,25 +1751,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       : "ROOTS Consultants";
     const rolle = privat ? "Beraterprofil" : "Brand Strategy Consultants";
     const logo = state.chrome.logo || state.logo || LOGO_PATH;
-    // Zwei Spalten: links der Beitragstext, rechts das Visual in voller
-    // Groesse. Untereinander war das Asset - der eigentliche Gegenstand des
-    // Entwurfs - der kleinste Teil der Ansicht.
     return `<div class="as-work as-work--feed" data-kind="linkedin">
       <article class="as-linkedin-post" aria-label="LinkedIn-Vorschau">
-        <div class="as-linkedin-col">
-          <header class="as-linkedin-head">
-            <span class="as-linkedin-avatar"><img src="${attr(logo)}" alt=""></span>
-            <span class="as-linkedin-byline"><strong>${esc(name)}</strong><span>${esc(rolle)}</span><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span>
-          </header>
-          <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
-          <footer class="as-linkedin-actions" aria-hidden="true">
-            <span class="as-linkedin-action"><i class="fa-regular fa-thumbs-up"></i>Gefällt mir</span>
-            <span class="as-linkedin-action"><i class="fa-regular fa-comment-dots"></i>Kommentieren</span>
-            <span class="as-linkedin-action"><i class="fa-solid fa-retweet"></i>Teilen</span>
-            <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
-          </footer>
-        </div>
+        <header class="as-linkedin-head">
+          <span class="as-linkedin-avatar"><img src="${attr(logo)}" alt=""></span>
+          <span class="as-linkedin-byline"><strong>${esc(name)}</strong><span>${esc(rolle)}</span><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span>
+          <button type="button" class="as-linkedin-more" aria-label="Weitere Optionen" tabindex="-1"><i class="fa-solid fa-ellipsis"></i></button>
+        </header>
+        <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
         <div class="as-stagearea as-stagearea--linkedin" data-stagearea></div>
+        <footer class="as-linkedin-actions" aria-hidden="true">
+          <span class="as-linkedin-action"><i class="fa-regular fa-thumbs-up"></i>Gefällt mir</span>
+          <span class="as-linkedin-action"><i class="fa-regular fa-comment-dots"></i>Kommentieren</span>
+          <span class="as-linkedin-action"><i class="fa-solid fa-retweet"></i>Teilen</span>
+          <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
+        </footer>
       </article>
     </div>`;
   }
@@ -3298,31 +3249,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return String(model.imageHint || model.image_hint || "");
   }
 
-  /** Grenzen der Bildregler. Ein Bild kleiner als der Ausschnitt liesse Raender. */
-  const BILD_ZOOM = { min: 1, max: 2.5, schritt: 0.1 };
-
-  function bildWert(bild, feld, standard) {
-    const wert = Number(bild?.[feld]);
-    return Number.isFinite(wert) ? wert : standard;
-  }
-
-  /** Setzt einen Regler am Bild des Slots und zeichnet die Buehne neu. */
-  function setzeBildWert(key, feld, wert) {
-    const model = aktuellesModelFuer(key);
-    if (!model) return;
-    const bild = imageAt(model, key);
-    if (!bild.src) return;
-    setImageAt(model, key, { ...bild, [feld]: wert });
-    mountStages(state.step === "edit");
-  }
-
-  /** Das Modell, an dem der Slot haengt: Memo oder die sichtbare Folie. */
-  function aktuellesModelFuer(key) {
-    if (isMemo) return state.memo;
-    if (/^(benchmarks|potentials)\./.test(String(key || ""))) return state.memo;
-    return state.slides[state.prevIndex] || null;
-  }
-
   function setImageAt(model, key, image) {
     if (!model) return;
     const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(String(key || ""));
@@ -3367,9 +3293,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         image: {
           src: String(item?.image?.src || ""),
           pos: String(item?.image?.pos || "50% 50%"),
-          zoom: Number(item?.image?.zoom) || 1,
-          opacity: Number(item?.image?.opacity) || 1,
-          overlay: Number(item?.image?.overlay ?? 1),
         },
       })),
       potentials_title: String(src.potentials_title || ""),
@@ -3382,9 +3305,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         image: {
           src: String(item?.image?.src || ""),
           pos: String(item?.image?.pos || "50% 50%"),
-          zoom: Number(item?.image?.zoom) || 1,
-          opacity: Number(item?.image?.opacity) || 1,
-          overlay: Number(item?.image?.overlay ?? 1),
         },
       })),
       cta: String(src.cta || ""),
@@ -3513,19 +3433,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const uiFor = (key) => {
       const bild = imageAt(model, key);
       const hat = Boolean(bild.src);
-      const zoom = bildWert(bild, "zoom", 1);
-      const deckung = Math.round(bildWert(bild, "opacity", 1) * 100);
-      const overlay = Math.round(bildWert(bild, "overlay", 1) * 100);
-      // Ohne Bild bleibt es beim einen Knopf: Regler auf nichts sind Attrappen.
       return `<div class="as-img-ui" data-as-chrome>
-      ${hat ? `<div class="as-img-tools">
-        <button type="button" class="as-img-btn" data-act="img-crop" data-imgkey="${attr(key)}" aria-label="Zuschneiden" title="Zuschneiden"><i class="fa-solid fa-crop-simple"></i></button>
-        <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="-1" data-imgkey="${attr(key)}" aria-label="Kleiner" title="Kleiner"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
-        <span class="as-img-value">${Math.round(zoom * 100)}%</span>
-        <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="1" data-imgkey="${attr(key)}" aria-label="Größer" title="Größer"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
-        <label class="as-img-range" title="Transparenz"><i class="fa-solid fa-circle-half-stroke"></i><input type="range" min="20" max="100" step="5" value="${deckung}" data-imgrange="opacity" data-imgkey="${attr(key)}" aria-label="Transparenz"></label>
-        <label class="as-img-range" title="Overlay"><i class="fa-solid fa-layer-group"></i><input type="range" min="0" max="100" step="5" value="${overlay}" data-imgrange="overlay" data-imgkey="${attr(key)}" aria-label="Overlay"></label>
-      </div>` : ""}
       <button type="button" class="as-img-btn" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><i class="fa-regular fa-image"></i></button>
       ${hat ? `<button type="button" class="as-img-btn is-clear" data-act="img-clear" data-imgkey="${attr(key)}" aria-label="Bild entfernen" title="Bild entfernen"><i class="fa-solid fa-xmark"></i></button>` : ""}
     </div>`;
@@ -3543,18 +3451,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (/background-image:url\(/.test(html) && (!model?.variant || MIT_BILD.has(model.variant))) {
       const bild = imageAt(model, "image");
       const hinweis = imageHintAt(model, "image");
-      // Transparenz, Groesse und Overlay stehen am Bild, nicht in der Vorlage:
-      // dieselbe Vorlage traegt jedes Motiv, und der Export liest denselben Wert.
-      if (bild.src) {
-        const zoom = bildWert(bild, "zoom", 1);
-        const deckung = bildWert(bild, "opacity", 1);
-        html = html.replace(/(<div style="position:absolute;inset:0;background-image:url\([^)]*\)[^"]*)"/,
-          (_m, kopf) => `${kopf};background-size:${Math.round(zoom * 100)}% auto;opacity:${deckung}"`);
-        const overlay = bildWert(bild, "overlay", 1);
-        if (overlay !== 1) {
-          html = html.replace(/(<div class="ov" style="[^"]*)"/, (_m, kopf) => `${kopf};opacity:${overlay}"`);
-        }
-      }
       const leer = bild.src
         ? ""
         : `<span class="as-img-empty"><i class="fa-regular fa-image"></i><b>Motiv einfügen</b>${
@@ -4027,9 +3923,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function slideTools(slide, index) {
-    // Die Vorlage steht mit dem Entwurf fest. Ein Wechsel hier hat den fertigen
-    // Text in eine andere Feldstruktur geworfen; wer eine andere Vorlage will,
-    // waehlt sie im Fragebogen. Die Slide-Verwaltung bleibt im Carousel.
+    const opts = VARIANTS_ALL.map(([value, label]) => `<option value="${attr(value)}"${slide.variant === value ? " selected" : ""}>${esc(label)}</option>`).join("");
+    // Die Variante lässt sich immer wechseln, die Slide-Verwaltung nur im Carousel.
     const manage = isCarousel() ? `
       <button type="button" class="as-btn as-btn--icon" data-act="slide-up" title="Nach oben" aria-label="Nach oben"><i class="fa-solid fa-arrow-up"></i></button>
       <button type="button" class="as-btn as-btn--icon" data-act="slide-down" title="Nach unten" aria-label="Nach unten"><i class="fa-solid fa-arrow-down"></i></button>
@@ -4038,6 +3933,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <button type="button" class="as-btn as-btn--ghost" data-act="slide-add"><i class="fa-solid fa-plus"></i>Slide hinzufügen</button>` : "";
     return `<div class="as-slidetools" data-uid="${attr(slide.uid)}">
       <span class="as-num">Slide ${index + 1}</span>
+      <select data-act="variant" aria-label="Variante">${opts}</select>
       ${manage}
     </div>`;
   }
@@ -4110,12 +4006,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
       const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
       const zoom = Math.max(1, Number(state.viewZoom) || 1);
-      // Ohne brauchbares Hoehenmass wurde nur nach Breite skaliert: eine
-      // 1350 px hohe Folie lief dann unten aus ihrem Kasten heraus. Als Ersatz
-      // dient die sichtbare Hoehe des Kastens im Fenster.
-      const gemessen = availH > 80 ? availH : Math.round(area.getBoundingClientRect().height);
-      const nutzbar = gemessen > 80 ? gemessen : Math.round(window.innerHeight * 0.62);
-      const base = Math.min(1, safeW / w, nutzbar / h);
+      const base = availH > 80
+        ? Math.min(1, safeW / w, availH / h)
+        : Math.min(1, safeW / w);
       const scale = base * zoom;
       scaler.style.width = `${Math.round(w * scale)}px`;
       scaler.style.height = `${Math.round(h * scale)}px`;
@@ -4140,15 +4033,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // dem DOM gelesen werden. Sonst löscht ein Variantenwechsel das Motiv.
       stage.querySelectorAll("[data-imgslot]").forEach((slot) => {
         const key = slot.getAttribute("data-imgkey") || "image";
-        const vorher = imageAt(model, key);
-        // Ein Hintergrundmotiv steht als CSS am Kasten, nicht als <img>. Der
-        // alte Zweig las deshalb null und loeschte das erzeugte Motiv bei jedem
-        // Schrittwechsel. Nur ein echter Bildplatz darf aus dem DOM lesen.
-        if (slot.classList.contains("as-img--bg")) return;
         const img = slot.querySelector("img");
         setImageAt(model, key, img
-          ? { ...vorher, src: img.getAttribute("src") || "", pos: img.style.objectPosition || "50% 50%" }
-          : { ...vorher, src: "" });
+          ? { src: img.getAttribute("src") || "", pos: img.style.objectPosition || "50% 50%" }
+          : { src: "", pos: imageAt(model, key).pos });
       });
     });
     const post = shell.querySelector("[data-post]");
@@ -4936,21 +4824,6 @@ ${stages}${post}
       if (id) void openDraft(id);
       return;
     }
-    if (act === "img-crop") {
-      const key = hit.getAttribute("data-imgkey") || "image";
-      const uid = hit.closest("[data-stage]")?.getAttribute("data-uid") || "";
-      openCropSheet(uid || "form", key);
-      return;
-    }
-    if (act === "img-zoom") {
-      const key = hit.getAttribute("data-imgkey") || "image";
-      const model = aktuellesModelFuer(key);
-      const jetzt = bildWert(imageAt(model, key), "zoom", 1);
-      const richtung = Number(hit.getAttribute("data-imgdelta")) < 0 ? -1 : 1;
-      const naechster = Math.min(BILD_ZOOM.max, Math.max(BILD_ZOOM.min, Number((jetzt + richtung * BILD_ZOOM.schritt).toFixed(2))));
-      setzeBildWert(key, "zoom", naechster);
-      return;
-    }
     if (act === "form-img-pick") {
       pickFormImage(hit.getAttribute("data-imgkey") || "image");
       return;
@@ -5120,16 +4993,6 @@ ${stages}${post}
   }
 
   function onInput(event) {
-    // Die Bildregler wirken in der Werkbank, nicht im Fragebogen - deshalb vor
-    // der Fragebogen-Schranke.
-    const regler = event.target.closest?.("[data-imgrange]");
-    if (regler) {
-      const feld = regler.getAttribute("data-imgrange");
-      const key = regler.getAttribute("data-imgkey") || "image";
-      const wert = Math.min(100, Math.max(0, Number(regler.value) || 0)) / 100;
-      setzeBildWert(key, feld === "overlay" ? "overlay" : "opacity", wert);
-      return;
-    }
     if (state.step !== "form") return;
     const free = event.target.closest?.("[data-free]");
     if (!free) return;

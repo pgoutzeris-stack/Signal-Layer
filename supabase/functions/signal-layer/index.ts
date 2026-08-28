@@ -89,11 +89,6 @@ import {
   researchWikimediaLogo,
 } from "./company-profile.ts";
 import {
-  ASSET_IMAGE_MODEL,
-  attachSlideImage,
-  buildSlideImagePrompt,
-  generateSlideImage,
-  linkedinSlidesNeedingImages,
   ASSET_EDITED_HTML_LIMIT,
   ASSET_HANG_ERROR,
   ASSET_FIRST_BYTE_STALE_MS,
@@ -190,7 +185,6 @@ import {
   worldvectorlogoCdnUrl,
   worldvectorlogoSlugCandidates,
 } from "./asset-studio.ts";
-import type { LinkedinPayload } from "./asset-studio.ts";
 import type { Netz } from "./source-extract.ts";
 import {
   MANUAL_CHECK_SCHEMA,
@@ -3376,9 +3370,6 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
   "gemini-3.5-flash": { currency: "USD", standard: { input: 1.5, cachedInput: 0.15, output: 9 }, batch: { input: 0.75, cachedInput: 0.075, output: 4.5 } },
   "gemini-3.5-flash-lite": { currency: "USD", standard: { input: 0.3, cachedInput: 0.03, output: 2.5 }, batch: { input: 0.15, cachedInput: 0.02, output: 1.25 } },
   "gemini-3-flash-preview": { currency: "USD", standard: { input: 0.5, cachedInput: 0.05, output: 3 } },
-  // Bildausgabe rechnet Google in Ausgabetokens ab: 1290 Tokens je Motiv,
-  // 30 USD je Million - rund 3,9 Cent pro Bild.
-  "gemini-2.5-flash-image": { currency: "USD", standard: { input: 0.3, cachedInput: 0.075, output: 30 } },
 };
 
 function zeroCostFields(model: string): Record<string, unknown> {
@@ -5918,70 +5909,6 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         } finally {
           clearInterval(beat);
         }
-    }
-
-    // LinkedIn: die Bildvorlagen bekommen ihr Motiv vom Bildmodell. Ohne das
-    // blieb die Flaeche unter dem Verlauf leer, bis jemand von Hand eine Datei
-    // einsetzte - in kleiner wie grosser Vorschau sah die Folie kaputt aus.
-    if (assetKind === "linkedin" && payload && (assetAnswers as { images?: string }).images !== "upload") {
-      const offeneMotive = linkedinSlidesNeedingImages(payload);
-      if (offeneMotive.length) {
-        await abschnitt("bilder");
-        const bildSchluessel = await getGeminiKey().catch(() => "");
-        const empfaenger = String(
-          assetSignal.company
-          || assetArticle.primary_company
-          || (Array.isArray(assetSignal.tier1_companies) ? assetSignal.tier1_companies[0] : "")
-          || "",
-        );
-        if (!bildSchluessel) {
-          loggen("images_skip", { reason: "kein Gemini-Schluessel" });
-        } else {
-          for (const { index, slide } of offeneMotive) {
-            // Ein fehlendes Motiv darf den fertigen Text nie verwerfen: bricht
-            // die Erzeugung ab, bleibt der Platz leer und im Studio steht der
-            // Hinweis mit dem beschriebenen Motiv.
-            if (assetPhaseRemainingMs(isolateStartedAt) < 20_000) {
-              loggen("images_skip", { reason: "zu wenig Restzeit", index });
-              break;
-            }
-            try {
-              const motiv = await generateSlideImage(
-                bildSchluessel,
-                ASSET_IMAGE_MODEL,
-                buildSlideImagePrompt(slide, empfaenger),
-              );
-              payload = attachSlideImage(payload as LinkedinPayload, index, motiv.src);
-              loggen("image_ok", { index, bytes: motiv.src.length });
-              await persist({ payload });
-              try {
-                const bildKosten = await modelCostFields(ASSET_IMAGE_MODEL, {
-                  input: Number(motiv.usage.prompt_tokens || 0),
-                  cachedInput: Number(motiv.usage.cached_input_tokens || 0),
-                  output: Number(motiv.usage.output_tokens || 0),
-                  thinking: Number(motiv.usage.thinking_tokens || 0),
-                  total: Number(motiv.usage.total_tokens || 0),
-                });
-                await admin.schema("signal_layer").from("ai_usage_events").insert({
-                  operation: "asset_image",
-                  model: ASSET_IMAGE_MODEL,
-                  status: "ok",
-                  article_id: assetArticle.id || null,
-                  input_tokens: Number(motiv.usage.prompt_tokens || 0),
-                  output_tokens: Number(motiv.usage.output_tokens || 0),
-                  thinking_tokens: Number(motiv.usage.thinking_tokens || 0),
-                  total_tokens: Number(motiv.usage.total_tokens || 0),
-                  ...bildKosten,
-                });
-              } catch (kostenFehler) {
-                loggen("image_cost_fail", { message: String(kostenFehler).slice(0, 200) });
-              }
-            } catch (bildFehler) {
-              loggen("images_incomplete", { index, reason: String(bildFehler).slice(0, 300) });
-            }
-          }
-        }
-      }
     }
 
     if (

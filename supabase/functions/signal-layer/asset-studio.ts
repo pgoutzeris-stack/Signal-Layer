@@ -106,8 +106,6 @@ export type LinkedinAnswers = {
   slide_types?: string[];
   variant: AssetSlideKey | "auto";
   theme: "light" | "dark";
-  /** "auto" laesst das Bildmodell die Motive erzeugen, "upload" laesst sie leer. */
-  images: "auto" | "upload";
   slides: number;
   /** Leer heisst: das Modell entwickelt die Storyline selbst. */
   storyline: string;
@@ -737,9 +735,6 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
         ? variantRaw
         : "auto",
       theme,
-      // Bildvorlagen bekommen ihr Motiv vom Bildmodell, ausser der Nutzer will
-      // selbst eines einsetzen.
-      images: /upload|eigen|eigene|manual|selbst/i.test(pick(source, "images", "bilder")) ? "upload" as const : "auto" as const,
       slides: assetType === "carousel" ? slideCount : 1,
       storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
       cta: choiceText(source, ["cta"], ["cta_text"], 240),
@@ -812,105 +807,6 @@ export const MEMO_BENCHMARK_EXAMPLE: MemoBenchmarkBrief[] = [
 
 export const MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS = 90_000;
 export const MEMO_BENCHMARK_RESEARCH_MODEL = "gemini-2.5-flash";
-
-/**
- * Motive fuer die Bildvorlagen eines LinkedIn-Assets.
- *
- * Das Textmodell schreibt nur einen image_hint - die Beschreibung der Szene.
- * Bisher blieb die Flaeche darunter leer, bis jemand von Hand eine Datei
- * einsetzte. Das Bildmodell erzeugt daraus ein eigenes Motiv: kein fremdes
- * Foto, keine ungeklaerte Lizenz, und der Beitrag ist ohne Zwischenschritt
- * fertig. Wer lieber selbst hochlaedt, waehlt das im Fragebogen.
- */
-export const ASSET_IMAGE_MODEL = "gemini-2.5-flash-image";
-/** Nur diese Vorlagen haben ueberhaupt eine Bildflaeche. */
-export const LINKEDIN_IMAGE_VARIANTS = new Set(["C", "D", "J"]);
-/** Hochformat wie die Folie selbst: 1080 x 1350. */
-export const LINKEDIN_IMAGE_ASPECT = "4:5";
-
-export function buildSlideImagePrompt(slide: AssetSlide, addressee = ""): string {
-  const hinweis = String(slide?.image_hint || "").trim();
-  const titel = String(slide?.title || slide?.quote || "").trim();
-  const bezug = String(addressee || "").trim();
-  return [
-    "Erzeuge ein fotorealistisches, redaktionelles Motiv fuer einen LinkedIn-Beitrag einer Markenberatung.",
-    hinweis ? `Szene: ${hinweis}` : "Szene: ruhige, moderne Arbeits- oder Handelssituation.",
-    titel ? `Der Beitrag handelt von: ${titel}` : "",
-    bezug ? `Branchenkontext: ${bezug}. Zeige keine Logos, keine Marken- oder Firmenzeichen.` : "Zeige keine Logos, keine Marken- oder Firmenzeichen.",
-    "Bildaufbau: Hochformat, ruhige Bildruhe auf der linken Haelfte, damit dort Text stehen kann.",
-    "Kein Text, keine Schrift, keine Zahlen, keine Wasserzeichen, keine Collage, keine Infografik.",
-    "Natuerliches Licht, zurueckhaltende Farben, dokumentarisch statt werblich. Keine erkennbaren Gesichter im Vordergrund.",
-  ].filter(Boolean).join("\n");
-}
-
-/** Welche Folien ein Motiv brauchen: Bildvorlage, aber noch keine Datei. */
-export function linkedinSlidesNeedingImages(payload: unknown): Array<{ index: number; slide: AssetSlide }> {
-  const slides = (payload && typeof payload === "object" && Array.isArray((payload as LinkedinPayload).slides))
-    ? (payload as LinkedinPayload).slides
-    : [];
-  const out: Array<{ index: number; slide: AssetSlide }> = [];
-  slides.forEach((slide, index) => {
-    if (!LINKEDIN_IMAGE_VARIANTS.has(String(slide?.variant || ""))) return;
-    const vorhanden = String((slide as unknown as { image?: { src?: string } })?.image?.src || "");
-    if (vorhanden) return;
-    out.push({ index, slide });
-  });
-  return out;
-}
-
-export function attachSlideImage(payload: LinkedinPayload, index: number, src: string): LinkedinPayload {
-  const slide = payload?.slides?.[index];
-  if (!slide || !src) return payload;
-  (slide as unknown as { image?: MemoImage }).image = { src, pos: "50% 50%" };
-  return payload;
-}
-
-/**
- * Ein Motiv vom Bildmodell. Antwort ist inlineData mit base64 - daraus wird
- * dieselbe data-URL, die auch ein Upload erzeugt, damit Vorschau, Werkbank und
- * Export keinen Sonderweg brauchen.
- */
-export async function generateSlideImage(
-  apiKey: string,
-  model: string,
-  prompt: string,
-): Promise<{ src: string; usage: Record<string, number> }> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || ASSET_IMAGE_MODEL)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseModalities: ["IMAGE"],
-          imageConfig: { aspectRatio: LINKEDIN_IMAGE_ASPECT },
-        },
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`bildmodell antwortet ${response.status}: ${(await response.text()).slice(0, 300)}`);
-  }
-  const payload = await response.json() as Record<string, unknown>;
-  const candidate = (Array.isArray(payload.candidates) ? payload.candidates[0] : null) as Record<string, unknown> | null;
-  const parts = ((candidate?.content as Record<string, unknown> | undefined)?.parts ?? []) as Array<Record<string, unknown>>;
-  const bild = parts.map((part) => part.inlineData as Record<string, unknown> | undefined).find((teil) => teil?.data);
-  if (!bild?.data) throw new Error("bildmodell lieferte kein Motiv");
-  const mime = String(bild.mimeType || "image/png");
-  const usageMeta = (payload.usageMetadata ?? {}) as Record<string, number>;
-  return {
-    src: `data:${mime};base64,${String(bild.data)}`,
-    usage: {
-      prompt_tokens: Number(usageMeta.promptTokenCount || 0),
-      cached_input_tokens: Number(usageMeta.cachedContentTokenCount || 0),
-      output_tokens: Number(usageMeta.candidatesTokenCount || 0),
-      thinking_tokens: Number(usageMeta.thoughtsTokenCount || 0),
-      total_tokens: Number(usageMeta.totalTokenCount || 0),
-    },
-  };
-}
-
 /** Ein Versuch reicht oft nicht: Suche plus JSON endet bei Flash gern mit MAX_TOKENS. */
 export const MEMO_BENCHMARK_RESEARCH_ATTEMPTS = 2;
 /** Antwortbudget ohne Thinking. 2400 plus Default-Thinking hat am 14.8.2026 leere Streams geliefert. */
