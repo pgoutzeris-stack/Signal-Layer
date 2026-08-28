@@ -1713,7 +1713,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const own = order.indexOf(key);
     let stateName = own === current ? "active" : own < current ? "done" : "todo";
     if (key === "form" && state.formTab === "drafts" && state.step === "form") stateName = "todo";
-    const act = key === "form" ? ` data-act="to-form"` : "";
+    const erreichbar = key === "form"
+      || (key === "draft" && (state.payload || state.busy))
+      || (key === "edit" && state.payload && !state.busy);
+    const ziel = { form: "to-form", draft: "to-draft", edit: "to-edit" }[key];
+    const act = erreichbar && !(own === current && state.formTab !== "drafts") ? ` data-act="${ziel}"` : "";
     return `<li data-state="${stateName}"${act}><b>${index}</b>${esc(label)}</li>`;
   }
 
@@ -1727,21 +1731,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function topActions() {
-    if (state.step === "form" && state.formTab === "drafts") {
-      return `<button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Fragebogen</button>`;
-    }
-    if (state.step === "form") {
-      // Der schrittweise Fragebogen endet bewusst mit seiner Bereit-Karte.
-      // Ein zweiter Erzeugen-Knopf im Kopf wuerde alle offenen Fragen umgehen.
-      return "";
-    }
-    if (state.step === "draft") {
-      if (state.busy || !state.payload) {
-        return `<button type="button" class="as-btn as-btn--icon as-close" data-act="close-popup" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>`;
-      }
-      return `<button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Fragebogen</button><button type="button" class="as-btn as-btn--primary" data-act="to-edit"><i class="fa-solid fa-pen-to-square"></i>Bearbeiten</button>`;
-    }
-    return `<button type="button" class="as-btn" data-act="to-draft"><i class="fa-solid fa-arrow-rotate-left"></i>Entwurf</button>`;
+    return `<button type="button" class="as-btn as-btn--icon as-close" data-act="close-popup" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>`;
   }
 
   function stepContent() {
@@ -2669,6 +2659,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       if (!row.id) throw new Error("Entwurf nicht gefunden.");
       state.assetId = row.id;
+      state.owned = Boolean(row.owner_id);
       state.answers = answersToForm(row.answers, row);
       state.forecastMs = Number(row.forecast_ms) || 0;
       if (row.status === "running") {
