@@ -362,3 +362,18 @@ test("die Marketing-Bahn deckt KI und Marketing-Technologie ab", () => {
   assert.ok(!familie.context.test("neues rechenzentrum eroffnet"));
   assert.ok(familie.context.test("studie zeigt: marketing teams steigern effizienz um 30 prozent"));
 });
+
+test("kein Thema traegt den Namen eines anderen", () => {
+  // Der Themenfilter baut sich aus den gespeicherten Signalen. Zwei Familien
+  // mit demselben Label waren dort nicht auseinanderzuhalten - die Migration
+  // 20260829150000 benennt den Altbestand um.
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260829150000_rename_prozess_knowhow_label.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(migration, /set signal_label = 'Prozess-Know-how'/);
+  assert.match(migration, /where signal_id = 'prozess_knowhow' and signal_label = 'Design to Print'/);
+  // Auch die Versionsstaende werden mitgezogen, sonst kaeme der Name ueber die
+  // Verlaufsauswahl zurueck.
+  assert.match(migration, /simple_signal_history/);
+});
