@@ -201,3 +201,34 @@ test("die Bahn wird auch serverseitig als Vorliebe akzeptiert", async () => {
   assert.match(backend, /\["marketing", "sales"\]\.includes\(String\(rawFilters\.lane\)\)/);
   assert.match(backend, /creator_ids: creatorIds, origin, lane/);
 });
+
+test("die Uebersicht traegt Bestand und Wirkung, ohne Erklaertext", async () => {
+  const [js, indexHtml, simple] = await Promise.all([
+    readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8"),
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../simple-mode.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(js, /title: "Übersicht"/);
+  assert.ok(!js.includes("Performance Pulse"), "der alte Name ist weg");
+  // Die drei Zahlen der Signalansicht stehen jetzt in der Uebersicht.
+  assert.match(js, /Marketing-Signale/);
+  assert.match(js, /Aussortierte Artikel/);
+  assert.ok(!indexHtml.includes('id="simple-dash-marketing"'), "die Kachelreihe unter dem Dashboard ist entfallen");
+  assert.match(simple, /ctx\.setDashboardSignalCounts\(/);
+  // Kein Satz, der die Ansicht erklaert.
+  assert.ok(!js.includes("Die Asset-Basis ist bereit"), "der Erklaertext ist weg");
+  assert.ok(!js.includes("ausgewählte Assets"), "die Zeile daruber ist weg");
+});
+
+test("die Signalzahlen ueberstehen ein Neuzeichnen", async () => {
+  const module = await import("../dashboard-insights.js");
+  const summary = module.summarizeDashboardData({
+    preferences: module.defaultDashboardPreferences(),
+    assets: [], creators: [], performance: [],
+    signalCounts: { marketing: 62, sales: 51, rejected: 118 },
+  });
+  assert.deepEqual(summary.signalCounts, { marketing: 62, sales: 51, rejected: 118 });
+  // Ohne Zahlen steht dort eine Null, keine leere Kachel.
+  const leer = module.summarizeDashboardData({ preferences: module.defaultDashboardPreferences(), assets: [] });
+  assert.deepEqual(leer.signalCounts, { marketing: 0, sales: 0, rejected: 0 });
+});

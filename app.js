@@ -4,12 +4,12 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260824-0305";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260829-1900";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
 import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260829-1420";
 import { openManualSignal } from "./manual-signal.js?v=20260824-0305";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260829-1730";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260829-1900";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260829-1420";
 
 let sb = null;
@@ -4793,13 +4793,17 @@ export function initApp(client) {
     mountResultsHeader();
     enhanceHeaderSelects();
     bindSourceErrorTooltip();
+    // Das Dashboard zeigt die Signalzahlen in seiner Uebersicht; geladen
+    // werden sie im einfachen Modus. Deshalb erst das Dashboard, dann der
+    // Modus, der die Zahlen hineinreicht.
+    const performanceDashboard = initPerformanceDashboard({ client: sb, callApi, toast, openSettingsPanel, escapeHtml });
     initSimpleMode({
       callApi, toast, escapeHtml, escapeText, openExternalUrl,
       setSimpleRunStatus, enhanceHeaderSelects, pruneSelection,
       openArticleDetail, technicalAuditPill,
+      setDashboardSignalCounts: performanceDashboard?.setSignalCounts,
       articleTypeLabels: ARTICLE_TYPE_LABELS, viewState: simpleViewState,
     });
-    initPerformanceDashboard({ client: sb, callApi, toast, openSettingsPanel, escapeHtml });
     applyPipelineMode(storedPipelineMode(), { persist: false });
   }
   void loadLastRun();

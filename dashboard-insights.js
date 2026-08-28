@@ -1,5 +1,5 @@
 const WIDGET_DEFINITIONS = [
-  { id: "performance_pulse", title: "Performance Pulse", icon: "fa-solid fa-bolt", defaultSize: "wide" },
+  { id: "performance_pulse", title: "Übersicht", icon: "fa-solid fa-bolt", defaultSize: "wide" },
   { id: "marketing_performance", title: "Marketing Performance", icon: "fa-solid fa-bullhorn", defaultSize: "compact" },
   { id: "marketing_funnel", title: "Marketing Funnel", icon: "fa-solid fa-filter", defaultSize: "compact" },
   { id: "sales_pipeline", title: "Sales Pipeline", icon: "fa-solid fa-chart-line", defaultSize: "compact" },
@@ -179,6 +179,9 @@ export function summarizeDashboardData(payload = {}, nowMs = Date.now()) {
     },
     ranked,
     coverage,
+    // Die Zahlen der Signalansicht: sie standen als eigene Kacheln unter dem
+    // Dashboard und gehoeren in dieselbe Uebersicht wie die Wirkung.
+    signalCounts: payload.signalCounts || { marketing: 0, sales: 0, rejected: 0 },
     trend: trendBuckets(current, preferences.period_days, nowMs),
     recent: [...performance].sort((a, b) => performanceDate(b) - performanceDate(a)).slice(0, 5)
       .map((row) => ({ ...row, asset: assetById.get(row.asset_id) || {}, title: assetTitle(assetById.get(row.asset_id)) })),
@@ -281,9 +284,15 @@ function renderWidget(definition, preference, summary, escapeHtml) {
   const marketing = summary.marketingTotals;
   const sales = summary.salesTotals;
   if (definition.id === "performance_pulse") {
-    return widgetShell(definition, preference, `<div class="pi-pulse">
-      <div><span class="pi-eyebrow">${summary.assets.length} ausgewählte Assets · ${summary.coverage.covered} mit KPIs</span><h3>${summary.performance.length ? "Asset-Wirkung auf einen Blick." : "Die Asset-Basis ist bereit."}</h3><p>${summary.performance.length ? `${summary.current.length} KPI-gepflegte Assets liegen im gewählten Zeitraum.` : "Alle Karten zeigen die reale Basis bereits mit Nullwerten. KPI-Werte werden in den Einstellungen an den fertigen Entwürfen ergänzt."}</p></div>
-      <div class="pi-pulse-kpis">${stat("Marketing Views", formatNumber(marketing.impressions), summary.performance.length ? deltaHtml(summary.deltas.impressions) : "Noch ohne KPI-Werte", "marketing")}${stat("Sales Pipeline", formatMoney(sales.influenced_pipeline_eur), summary.performance.length ? deltaHtml(summary.deltas.pipeline) : "Noch ohne KPI-Werte", "sales")}</div>
+    // Bestand und Wirkung in einer Karte. Die drei Signalzahlen standen als
+    // eigene Kacheln unter dem Dashboard und wiederholten dessen Kopf.
+    const zaehler = summary.signalCounts || {};
+    return widgetShell(definition, preference, `<div class="pi-pulse-kpis">
+      ${stat("Marketing-Signale", formatNumber(zaehler.marketing), "", "marketing")}
+      ${stat("Sales-Signale", formatNumber(zaehler.sales), "", "sales")}
+      ${stat("Aussortierte Artikel", formatNumber(zaehler.rejected))}
+      ${stat("Marketing Views", formatNumber(marketing.impressions), summary.performance.length ? deltaHtml(summary.deltas.impressions) : "", "marketing")}
+      ${stat("Sales Pipeline", formatMoney(sales.influenced_pipeline_eur), summary.performance.length ? deltaHtml(summary.deltas.pipeline) : "", "sales")}
     </div>`);
   }
   if (definition.id === "marketing_performance") {
@@ -412,6 +421,19 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
   const segmentHtml = (feld, aktuell, optionen, beschriftung) => `<div class="pi-seg" role="group" aria-label="${escapeHtml(beschriftung)}">${
     optionen.map(([wert, text]) => `<button type="button" data-dashboard-${escapeHtml(feld)}="${escapeHtml(wert)}" class="${wert === aktuell ? "is-active" : ""}" aria-pressed="${wert === aktuell}">${escapeHtml(text)}</button>`).join("")
   }</div>`;
+
+  /** Zahlen aus der Signalansicht. Der einfache Modus laedt sie ohnehin. */
+  const setSignalCounts = (counts) => {
+    state.payload = {
+      ...state.payload,
+      signalCounts: {
+        marketing: numberValue(counts?.marketing),
+        sales: numberValue(counts?.sales),
+        rejected: numberValue(counts?.rejected),
+      },
+    };
+    if (state.payload.assets) renderDashboards();
+  };
 
   const renderDashboards = () => {
     state.summary = summarizeDashboardData(state.payload);
@@ -660,5 +682,5 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
   for (const host of hosts) host.innerHTML = '<div class="pi-dashboard-loader"><span></span><span></span><span></span></div>';
   void load();
   void connectRealtime();
-  return { reload: load, state };
+  return { reload: load, state, setSignalCounts };
 }

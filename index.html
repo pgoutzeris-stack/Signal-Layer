@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/circular-std">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="./dashboard-insights.css?v=20260829-1730">
+<link rel="stylesheet" href="./dashboard-insights.css?v=20260829-1900">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
 <script defer src="https://pgoutzeris-stack.github.io/ROOTS_Intranet/roots-user-bridge.js?v=20260804-auth-dedupe-v1"></script>
 <style>
@@ -2201,11 +2201,6 @@
         <!-- Einfacher Modus: Dashboard -->
         <section class="app-view" id="view-simple-dashboard">
           <div class="pi-dashboard" data-performance-dashboard="simple"></div>
-          <div class="overview-grid">
-            <article class="overview-card"><i class="fa-solid fa-bullhorn"></i><span>Marketing-Signale</span><b id="simple-dash-marketing">–</b></article>
-            <article class="overview-card"><i class="fa-solid fa-chart-line"></i><span>Sales-Signale</span><b id="simple-dash-sales">–</b></article>
-            <article class="overview-card overview-card--archive"><i class="fa-solid fa-filter-circle-xmark"></i><span>Aussortierte Artikel</span><b id="simple-dash-rejected">–</b></article>
-          </div>
           <section class="simple-dash-run" id="simple-dash-run"></section>
         </section>
 
@@ -2549,7 +2544,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260829-1730';
+  import { initApp } from './app.js?v=20260829-1900';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

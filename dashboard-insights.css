@@ -45,10 +45,9 @@
 .pi-widget-head em.is-live { color: #15803d; }
 .pi-widget-head em.is-live::before { background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.1); animation: piLivePulse 2.2s ease-in-out infinite; }
 
-.pi-pulse { min-height: 168px; padding: 18px; display: grid; grid-template-columns: minmax(220px, 1.3fr) minmax(280px, 1fr); align-items: center; gap: 20px; background: linear-gradient(118deg, rgba(32,110,251,.08), rgba(255,255,255,0) 54%); }
-.pi-pulse h3 { margin: 5px 0 5px; font-size: 1.14rem; letter-spacing: -.02em; }
-.pi-pulse p { max-width: 560px; color: var(--muted); font-size: .72rem; line-height: 1.5; }
-.pi-pulse-kpis { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+/* Die Uebersicht besteht nur noch aus Kennzahlen: Bestand aus der
+   Signalansicht und Wirkung aus den Assets, in einem Raster. */
+.pi-pulse-kpis { padding: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 10px; }
 .pi-stat { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
 .pi-stat > span { display: block; color: var(--muted); font-size: .58rem; font-weight: 700; }
 .pi-stat > b { display: block; margin-top: 5px; color: var(--ink); font-size: 1.08rem; line-height: 1.15; }
@@ -164,14 +163,12 @@
 @keyframes piLoader { 50% { transform: translateY(-5px); opacity: .45; } }
 
 @media (max-width: 980px) {
-  .pi-pulse { grid-template-columns: 1fr 1fr; }
   .pi-kpi-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 720px) {
   .pi-grid { grid-template-columns: 1fr; }
   .pi-widget--wide { grid-column: auto; }
-  .pi-pulse { grid-template-columns: 1fr; }
-  .pi-pulse-kpis, .pi-insight-list, .pi-kpi-common { grid-template-columns: 1fr; }
+  .pi-insight-list, .pi-kpi-common { grid-template-columns: 1fr; }
   .pi-kpi-picker-tools { grid-template-columns: 1fr; }
   .pi-stat-grid, .pi-kpi-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .pi-trend-chart { overflow-x: auto; grid-auto-columns: 42px; grid-template-columns: repeat(12,42px); }

@@ -57,9 +57,6 @@ function cacheEls() {
     salesCount: el("simple-sales-count"),
     rejectedList: el("simple-rejected-list"),
     rejectedCount: el("simple-rejected-count"),
-    dashMarketing: el("simple-dash-marketing"),
-    dashSales: el("simple-dash-sales"),
-    dashRejected: el("simple-dash-rejected"),
     dashRun: el("simple-dash-run"),
     archiveList: el("simple-archive-list"),
     archiveReason: el("simple-archive-reason-filter"),
@@ -544,9 +541,15 @@ function bindUi() {
 async function loadDashboard() {
   try {
     const { counts, run, forecast, trigger_backfill: triggerRun } = await ctx.callApi("get_simple_dashboard");
-    if (els.dashMarketing) els.dashMarketing.textContent = Number(counts?.marketing || 0).toLocaleString("de-DE");
-    if (els.dashSales) els.dashSales.textContent = Number(counts?.sales || 0).toLocaleString("de-DE");
-    if (els.dashRejected) els.dashRejected.textContent = Number(counts?.rejected || 0).toLocaleString("de-DE");
+    // Die Zahlen stehen in der Uebersicht des Dashboards, nicht mehr als
+    // eigene Kachelreihe darunter.
+    if (typeof ctx.setDashboardSignalCounts === "function") {
+      ctx.setDashboardSignalCounts({
+        marketing: Number(counts?.marketing || 0),
+        sales: Number(counts?.sales || 0),
+        rejected: Number(counts?.rejected || 0),
+      });
+    }
     lastRun = run || null;
     triggerBackfill = triggerRun || null;
     running = lastRun?.status === "running" || triggerBackfill?.status === "running";
