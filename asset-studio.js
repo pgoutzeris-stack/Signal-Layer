@@ -1219,6 +1219,9 @@ const CHROME_CSS = `
   transform-origin:center center; pointer-events:none; user-select:none;
 }
 #as-overlay .as-crop-actions{display:flex; justify-content:flex-end; gap:8px;}
+#as-overlay .as-own-card{width:min(460px,100%);}
+#as-overlay .as-own-card p{margin:0; font-size:13px; line-height:1.55; color:#64748b;}
+#as-overlay .as-own-actions{display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;}
 #as-overlay .as-crop-zoom{display:flex; align-items:center; gap:12px; font-size:13px; color:#475569;}
 #as-overlay .as-crop-zoom input{flex:1; accent-color:#206efb;}
 
@@ -1532,6 +1535,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </div>
     </div>`;
   overlay.appendChild(cropOverlay);
+
+  const ownOverlay = document.createElement("div");
+  ownOverlay.className = "as-crop";
+  ownOverlay.hidden = true;
+  ownOverlay.innerHTML = `
+    <div class="as-crop-card as-own-card">
+      <h3>Ownerschaft übernehmen?</h3>
+      <p>Andere Nutzer werden informiert, dass dieses Asset von dir geowned wird. Sie können es weiterhin generieren; die Angabe verhindert nur doppelt veröffentlichte Assets.</p>
+      <div class="as-own-actions">
+        <button type="button" class="as-btn" data-act="own-skip">Ohne Ownerschaft speichern</button>
+        <button type="button" class="as-btn as-btn--primary" data-act="own-confirm">Ownerschaft übernehmen</button>
+      </div>
+    </div>`;
+  overlay.appendChild(ownOverlay);
 
   const fsExit = document.createElement("button");
   fsExit.type = "button";
@@ -4172,7 +4189,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <button type="button" class="as-btn" data-act="print"><i class="fa-solid fa-print"></i>Drucken / PDF</button>
         <button type="button" class="as-btn as-btn--primary" data-act="save"><i class="fa-regular fa-floppy-disk"></i>Entwurf speichern</button>
         ${state.assetId ? `<button type="button" class="as-btn${state.owned ? " as-btn--owned" : ""}" data-act="own">
-          <i class="fa-solid fa-${state.owned ? "user-check" : "user-plus"}"></i>${state.owned ? "Übernommen — freigeben" : "Als meinen übernehmen"}
+          <i class="fa-solid fa-${state.owned ? "user-check" : "user-plus"}"></i>${state.owned ? "Übernommen — freigeben" : "Ownerschaft übernehmen"}
         </button>` : ""}
         <p class="as-savehint" data-savehint></p>
       </div>
@@ -4255,7 +4272,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function updateFormatBar() {
     if (!fmtBar) return;
-    if (state.step !== "edit" || !cropOverlay.hidden) {
+    if (state.step !== "edit" || !cropOverlay.hidden || !ownOverlay.hidden) {
       fmtBar.setAttribute("data-open", "0");
       return;
     }
@@ -4764,6 +4781,15 @@ ${stages}${post}
     if (hint) hint.textContent = text;
   }
 
+  /** Vor dem Speichern einmal nach der Ownerschaft fragen. */
+  function onSaveClick() {
+    if (state.assetId && !state.owned) {
+      ownOverlay.hidden = false;
+      return;
+    }
+    void save();
+  }
+
   async function save() {
     harvest();
     if (!state.assetId) {
@@ -5077,7 +5103,13 @@ ${stages}${post}
     }
     if (act === "download") { download(); return; }
     if (act === "print") { harvest(); window.print(); return; }
-    if (act === "save") { save(); return; }
+    if (act === "save") { onSaveClick(); return; }
+    if (act === "own-skip") { ownOverlay.hidden = true; void save(); return; }
+    if (act === "own-confirm") {
+      ownOverlay.hidden = true;
+      void (async () => { await uebernehmen(); await save(); })();
+      return;
+    }
     if (act === "copy-post") { copyPost(); return; }
     if (act === "crop-cancel") {
       cropOverlay.hidden = true;
@@ -5171,6 +5203,10 @@ ${stages}${post}
     // Ohne Stopp würde der Backdrop-Zweig der App das Artikel-Popup mitschließen.
     event.stopPropagation();
     event.preventDefault();
+    if (!ownOverlay.hidden) {
+      ownOverlay.hidden = true;
+      return;
+    }
     if (!cropOverlay.hidden) {
       cropOverlay.hidden = true;
       return;

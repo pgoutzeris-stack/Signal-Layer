@@ -102,7 +102,7 @@ test("die Karte zeigt den Verantwortlichen, nicht jeden Ersteller", async () => 
   assert.match(backend, /Nur wer den Entwurf übernommen hat, kann ihn freigeben/);
   // Im Studio steht der Knopf neben dem Speichern.
   assert.match(studio, /data-act="own"/);
-  assert.match(studio, /Als meinen übernehmen/);
+  assert.match(studio, /Ownerschaft übernehmen/);
   assert.match(studio, /data-act="save"><i class="fa-regular fa-floppy-disk"><\/i>Entwurf speichern/);
 });
 
