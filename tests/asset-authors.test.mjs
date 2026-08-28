@@ -56,7 +56,9 @@ test("Server liefert Gesichter zu Artikeln und Entwuerfen", () => {
   assert.match(backend, /case "list_asset_authors"/);
   assert.match(backend, /async function assetAuthorsByIds/);
   // Dasselbe Profilbild wie im Intranet.
-  assert.match(backend, /schema\("users"\)\.from\("profiles"\)\s*\n\s*\.select\("id,full_name,kuerzel,avatar_url"\)/);
+  assert.match(backend, /\.select\("id,email,full_name,kuerzel,avatar_url"\)/);
+  // Das Debug-Konto ist kein Kollege und erscheint auf keiner Karte.
+  assert.match(backend, /claude-debug@/);
   assert.match(backend, /creator_avatar_url/);
   // Ein Abruf fuer alle Karten, nicht einer je Karte.
   assert.match(backend, /article_ids/);

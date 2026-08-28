@@ -1558,8 +1558,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       logo: design.logo || "",
       custom: state.answers.profile === "private",
     };
-    const passt = layoutOptionen().some(([key]) => key === state.answers.variant);
-    if (!passt) state.answers.variant = "auto";
+    // Bei "Selbst auswählen" faellt die Vorlage auf die erste passende zurueck,
+    // nicht auf "auto": sonst stuende dort wieder die Wahl, die der Nutzer
+    // gerade abgelehnt hat.
+    const selbst = state.answers.variant_mode === "custom" && state.answers.asset_type !== "carousel";
+    const passt = layoutOptionen(!selbst).some(([key]) => key === state.answers.variant);
+    if (!passt) state.answers.variant = selbst ? (layoutOptionen(false)[0]?.[0] || "auto") : "auto";
     const rahmen = state.answers.look === "dunkel"
       ? { U1: "U2", U2: "U2", U3: "U4", U4: "U4", U5: "U6", U6: "U6", U7: "U8", U8: "U8" }
       : { U1: "U1", U2: "U1", U3: "U3", U4: "U3", U5: "U5", U6: "U5", U7: "U7", U8: "U7" };
@@ -2196,9 +2200,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   /** Layouts der gewaehlten Anmutung. "Modell waehlt" bleibt immer dabei. */
-  function layoutOptionen() {
+  /**
+   * Die Vorlagen zum aktuellen Look. "Modell wählt" gehoert nur dorthin, wo die
+   * Wahl offen ist - im Dropdown unter "Selbst auswählen" war es ein
+   * Widerspruch zur eben getroffenen Entscheidung und blieb als Vorauswahl
+   * stehen, sodass rechts weiter der Platzhalter statt einer Vorlage stand.
+   */
+  function layoutOptionen(mitAuto = true) {
     const look = state.answers.look === "dunkel" ? "dunkel" : "hell";
-    return [["auto", "Modell wählt"], ...CONTENT_VARIANTS.filter(([key]) => LOOK[key] === look)];
+    const vorlagen = CONTENT_VARIANTS.filter(([key]) => LOOK[key] === look);
+    return mitAuto ? [["auto", "Modell wählt"], ...vorlagen] : vorlagen;
   }
 
   /**
@@ -2207,10 +2218,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * anderes zeigen als das Ergebnis.
    */
   function dropdownHtml(q) {
-    const optionen = layoutOptionen();
+    const optionen = layoutOptionen(false);
     const gewaehlt = optionen.some(([key]) => key === state.answers[q.key])
       ? state.answers[q.key]
-      : "auto";
+      : optionen[0][0];
     if (gewaehlt !== state.answers[q.key]) state.answers[q.key] = gewaehlt;
     const label = (optionen.find(([key]) => key === gewaehlt) || optionen[0])[1];
     const zeilen = optionen.map(([value, text]) => `
@@ -2724,8 +2735,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     if (q.art === "design") return aktivesDesign().name;
     if (q.art === "dropdown") {
-      const treffer = layoutOptionen().find(([key]) => key === state.answers[q.key]);
-      return treffer ? treffer[1] : "Modell wählt";
+      const optionen = layoutOptionen(false);
+      const treffer = optionen.find(([key]) => key === state.answers[q.key]);
+      return treffer ? treffer[1] : optionen[0][1];
     }
     const wert = state.answers[q.key];
     const treffer = (q.options || []).find(([key]) => key === wert);

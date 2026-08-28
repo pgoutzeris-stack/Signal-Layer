@@ -560,8 +560,12 @@ async function assetAuthorsByIds(ids: string[]): Promise<Map<string, AssetAuthor
   const out = new Map<string, AssetAuthor>();
   if (!eindeutig.length) return out;
   const { data } = await getAdminClient().schema("users").from("profiles")
-    .select("id,full_name,kuerzel,avatar_url").in("id", eindeutig);
+    .select("id,email,full_name,kuerzel,avatar_url").in("id", eindeutig);
   for (const profil of (data || []) as Array<Record<string, unknown>>) {
+    // Das Debug-Konto erzeugt Entwuerfe fuer Pruefzwecke. Es ist kein Kollege
+    // und hat auf keiner Karte etwas zu suchen - dieselbe Regel wie im
+    // Dashboard.
+    if (String(profil.email || "").toLocaleLowerCase("de").startsWith("claude-debug@")) continue;
     const id = String(profil.id || "");
     const name = String(profil.full_name || profil.kuerzel || "ROOTS Team").trim();
     out.set(id, {
@@ -10860,15 +10864,17 @@ Deno.serve(async (req: Request) => {
           if (!artikel || gesehen.has(schluessel)) continue;
           gesehen.add(schluessel);
           const autor = autoren.get(person);
+          // Kein Profil, kein Gesicht: so faellt auch das Debug-Konto heraus.
+          if (!autor) continue;
           (proArtikel[artikel] ||= []).push({
             asset_id: String(row.id || ""),
             kind: String(row.kind || ""),
             status: String(row.status || ""),
             created_at: row.created_at,
             user_id: person,
-            name: autor?.name || "ROOTS Team",
-            short_name: autor?.short_name || "ROOTS",
-            avatar_url: autor?.avatar_url || null,
+            name: autor.name,
+            short_name: autor.short_name,
+            avatar_url: autor.avatar_url,
           });
         }
         return corsResponse(origin, { authors: proArtikel });

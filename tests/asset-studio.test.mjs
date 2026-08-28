@@ -190,7 +190,9 @@ test("Profil, Design, Format - in dieser Reihenfolge", () => {
 test("die Anmutung filtert die Layouts, sie faerbt nichts um", () => {
   // Umfaerben hatte weisse Schrift auf weissem Grund erzeugt. Die Wahl schraenkt
   // jetzt die Liste ein: jedes gebaute Asset behaelt seinen Look.
-  assert.match(studio, /function layoutOptionen\(\)/);
+  assert.match(studio, /function layoutOptionen\(mitAuto = true\)/);
+  // Unter "Selbst auswählen" gehoert "Modell wählt" nicht in die Liste.
+  assert.match(studio, /const optionen = layoutOptionen\(false\);/);
   assert.match(studio, /CONTENT_VARIANTS\.filter\(\(\[key\]\) => LOOK\[key\] === look\)/);
   assert.doesNotMatch(studio, /class="li li-dark/);
   assert.doesNotMatch(studio, /data-act="theme"/);
@@ -2286,8 +2288,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260829-0345");
-  assert.match(indexHtml, /app\.js\?v=20260829-0345/);
+  assert.equal(studioVersion, "20260829-0930");
+  assert.match(indexHtml, /app\.js\?v=20260829-0930/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);

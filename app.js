@@ -7,10 +7,10 @@ import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOr
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260824-0305";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260829-0345";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260829-0930";
 import { openManualSignal } from "./manual-signal.js?v=20260824-0305";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260829-0320";
-import { paintAssetAuthors } from "./asset-authors.mjs?v=20260829-0320";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260829-0930";
+import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260829-0930";
 
 let sb = null;
 let sources = [];
@@ -2573,6 +2573,7 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
             <i class="fa-solid fa-arrow-right asset-launch-arrow"></i>
           </button>
         </div>` : ""}
+        <div class="decision-block" data-article-authors hidden></div>
         <div class="decision-block">
           <span class="decision-label">Tags & Routing</span>
           <div class="decision-tags">${renderDetailTags(article) || `<span class="decision-lead">Keine Tags vergeben</span>`}</div>
@@ -2584,6 +2585,12 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
         </div>
       </aside>`;
     bindEvidenceHover();
+    void paintArticleAuthors(
+      els.articleDetailContent.querySelector("[data-article-authors]"),
+      article.id || articleId,
+      callApi,
+      escapeHtml,
+    );
   } catch (err) {
     els.articleDetailContent.innerHTML = `<button type="button" class="article-detail-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button><div class="detail-loading">Detail konnte nicht geladen werden: ${escapeHtml(err.message)}</div>`;
   }

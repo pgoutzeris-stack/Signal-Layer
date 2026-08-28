@@ -92,3 +92,40 @@ export async function paintAssetAuthors(root, callApi, escapeHtml) {
     karte.insertAdjacentHTML("beforeend", html);
   }
 }
+
+/**
+ * Dieselben Gesichter im geoeffneten Artikel. Dort ist Platz fuer den Namen,
+ * deshalb steht er neben dem Bild - auf der Karte waere er eine zweite Zeile.
+ */
+export async function paintArticleAuthors(container, articleId, callApi, escapeHtml) {
+  if (!container || !articleId || typeof callApi !== "function") return;
+  const esc = typeof escapeHtml === "function" ? escapeHtml : (value) => String(value ?? "");
+  let liste = [];
+  try {
+    const antwort = await callApi("list_asset_authors", { article_ids: [articleId] });
+    liste = (antwort && antwort.authors && antwort.authors[articleId]) || [];
+  } catch (_) {
+    return;
+  }
+  if (!Array.isArray(liste) || !liste.length) return;
+  const jetzt = Date.now();
+  const proPerson = new Map();
+  for (const eintrag of [...liste].sort((a, b) =>
+    new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime())) {
+    const schluessel = String(eintrag.user_id || eintrag.name || "");
+    if (!proPerson.has(schluessel)) proPerson.set(schluessel, eintrag);
+  }
+  const zeilen = [...proPerson.values()].map((person) => {
+    const name = String(person.name || person.short_name || "ROOTS Team");
+    const url = String(person.avatar_url || "");
+    const wann = relativeWhen(person.created_at, jetzt);
+    return `<button type="button" class="article-author" data-asset-author="${esc(person.asset_id || "")}" data-asset-kind="${esc(person.kind || "linkedin")}" title="Entwurf öffnen">
+      ${url
+        ? `<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : `<span class="asset-author-initials">${esc(initialsOf(name))}</span>`}
+      <span class="article-author-copy"><b>${esc(name)}</b><small>${esc(person.kind === "memo" ? "Ansprache" : "LinkedIn-Asset")}${wann ? ` · ${esc(wann)}` : ""}</small></span>
+    </button>`;
+  }).join("");
+  container.innerHTML = `<span class="decision-label">Entwürfe im Team</span><div class="article-authors">${zeilen}</div>`;
+  container.hidden = false;
+}

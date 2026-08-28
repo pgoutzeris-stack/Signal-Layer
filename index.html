@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/circular-std">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="./dashboard-insights.css?v=20260829-0320">
+<link rel="stylesheet" href="./dashboard-insights.css?v=20260829-0930">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
 <script defer src="https://pgoutzeris-stack.github.io/ROOTS_Intranet/roots-user-bridge.js?v=20260804-auth-dedupe-v1"></script>
 <style>
@@ -302,6 +302,14 @@
   .asset-author img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .asset-author:hover { border-color: var(--brand); transform: translateY(-1px); }
   .asset-author-initials { display: grid; width: 100%; height: 100%; place-items: center; color: var(--brand-dark); font-size: .5rem; font-weight: 850; }
+  /* Im geoeffneten Artikel ist Platz fuer den Namen neben dem Bild. */
+  .article-authors { display: flex; flex-wrap: wrap; gap: 6px; }
+  .article-author { display: inline-flex; align-items: center; gap: 8px; padding: .35rem .7rem .35rem .35rem; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); cursor: pointer; text-align: left; transition: border-color .15s; }
+  .article-author:hover { border-color: var(--brand); }
+  .article-author img, .article-author .asset-author-initials { width: 26px; height: 26px; flex: none; border-radius: 50%; object-fit: cover; background: var(--brand-light); }
+  .article-author-copy { display: flex; flex-direction: column; line-height: 1.25; }
+  .article-author-copy b { color: var(--ink); font-size: .74rem; font-weight: 700; }
+  .article-author-copy small { color: var(--muted); font-size: .62rem; }
   .asset-author--rest { display: grid; place-items: center; color: var(--muted); background: var(--status-bg); font-size: .5rem; font-weight: 800; cursor: default; }
   .cp-kpi-lanes { margin-bottom: 1.1rem; }
   .cp-kpi-lanes .cp-kpis { margin-bottom: 0; }
@@ -2541,7 +2549,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260829-0345';
+  import { initApp } from './app.js?v=20260829-0930';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
