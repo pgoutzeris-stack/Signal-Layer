@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionMenu } from "./simple-view-state.mjs?v=20260816-1430";
-import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1450";
+import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1620";
 
 let ctx = null;
 let els = {};

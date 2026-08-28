@@ -611,7 +611,7 @@ const CHROME_CSS = `
 #as-overlay .as-fs-btn:hover{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
 #as-overlay .as-fs-exit{
   display:none; position:absolute; top:12px; right:12px; z-index:60;
-  width:40px; height:40px; border-radius:12px;
+  width:36px; height:36px; border-radius:10px;
   border:1px solid var(--line,#e2e8f0); background:#fff; color:#0f172a;
   box-shadow:0 8px 24px rgba(15,23,42,.16);
   place-items:center;
