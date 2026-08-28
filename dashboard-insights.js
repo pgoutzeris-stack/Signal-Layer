@@ -295,6 +295,13 @@ const RING = { mitte: 21, aussen: 19, innen: 12.4 };
 const HERVOR = 1.15;
 /** Kleinster Anteil, damit auch eine winzige Gruppe sichtbar bleibt. */
 const MINDEST_ANTEIL = 0.016;
+/**
+ * Jedes Segment greift ein Stueck hinter seinen Anfang zurueck und schiebt
+ * sich dadurch leicht ueber das vorige. Die helle Aussenkontur zeichnet dabei
+ * die Kante nach - so entsteht eine sichtbare, saubere Trennung, ohne dass
+ * eine Luecke im Ring klafft.
+ */
+const UEBERLAPPUNG = 0.012;
 
 const BESTAND_SEGMENTE = [
   { key: "marketing", label: "Marketing-Signale", lane: "marketing", color: "#206efb", light: "#7cb0ff" },
@@ -445,11 +452,14 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
     const von = gelaufen;
     const bis = index === sichtbar.length - 1 ? 1 : gelaufen + anteile[index];
     gelaufen = bis;
+    // Das erste Segment greift nicht zurueck: dort liegt der Ringschluss, und
+    // das letzte Segment deckt es ohnehin von hinten.
+    const gezeichnetVon = index === 0 ? von : von - UEBERLAPPUNG;
     const richtung = hervorRichtung(von, bis);
     const gedimmt = lane !== "all" && teil.lane !== lane;
     return `<path class="pi-slice${gedimmt ? " is-dimmed" : ""}" data-slice="${escapeHtml(teil.key)}"
       data-label="${escapeHtml(teil.label)}" data-value="${teil.wert}" data-share="${Math.round(teil.wert / (summe || 1) * 100)}"
-      d="${sektorPfad(von, bis)}" fill="url(#piGrad-${escapeHtml(teil.key)})" stroke="url(#piGrad-${escapeHtml(teil.key)})"
+      d="${sektorPfad(gezeichnetVon, bis)}" fill="url(#piGrad-${escapeHtml(teil.key)})"
       style="--pi-delay:${index * 90}ms;--pi-x:${richtung.x};--pi-y:${richtung.y}"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></path>`;
   }).join("");
 
@@ -499,8 +509,20 @@ export function bindBestandRing(root, escapeHtml = (value) => String(value ?? ""
   const mitte = donut.querySelector("[data-donut-center]");
   const grund = mitte ? mitte.innerHTML : "";
   const alleBoegen = [...donut.querySelectorAll("[data-slice]")];
+  const svg = donut.querySelector("svg");
+  const grundfolge = [...alleBoegen];
+  // Ein Sektor, der beim Zeigen nach vorn geholt wird, kommt neu ins Dokument
+  // und wuerde seine Einlaufbewegung noch einmal spielen. Nach dem ersten
+  // Durchlauf wird sie deshalb abgelegt.
+  alleBoegen.forEach((teil) => {
+    teil.addEventListener("animationend", () => { teil.style.animation = "none"; }, { once: true });
+  });
   const setzen = (key) => {
     const bogen = key ? donut.querySelector(`[data-slice="${key}"]`) : null;
+    // Wer hervortritt, gehoert nach vorn: sonst schoebe sich der Nachbar, der
+    // spaeter gezeichnet wird, ueber das angehobene Segment.
+    if (bogen) svg?.appendChild(bogen);
+    else grundfolge.forEach((teil) => svg?.appendChild(teil));
     alleBoegen.forEach((teil) => teil.classList.toggle("is-on", teil === bogen));
     donut.querySelectorAll("[data-slice-key]").forEach((zeile) => zeile.classList.toggle("is-on", Boolean(key) && zeile.dataset.sliceKey === key));
     if (!mitte) return;

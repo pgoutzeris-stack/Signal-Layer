@@ -356,7 +356,11 @@ test("der Ring laesst sich ohne die Aussortierten lesen", async () => {
   assert.match(ohne, /class="pi-legend-row is-hidden" data-slice-key="rejected"/);
   assert.match(ohne, /5\.157/);
   // Verlauf statt flacher Vollfarbe, runde Enden.
-  assert.match(mit, /stroke="url\(#piGrad-marketing\)"/);
+  assert.match(mit, /fill="url\(#piGrad-marketing\)"/);
+  // Die Kontur kommt aus dem Stil und traegt die Kartenfarbe - sie zeichnet
+  // die Kante nach, wo sich zwei Segmente ueberlagern.
+  const cssKontur = readFileSync(new URL("../dashboard-insights.css", import.meta.url), "utf8");
+  assert.match(cssKontur, /\.pi-slice \{[^}]*stroke: var\(--bg\)/);
   assert.match(mit, /<linearGradient id="piGrad-sales"/);
   // Ringsektoren mit weichen Ecken statt Boegen mit ueberstehenden Kappen.
   const cssRing = readFileSync(new URL("../dashboard-insights.css", import.meta.url), "utf8");
@@ -436,9 +440,12 @@ test("der Ring bleibt in jeder Zusammensetzung heil", async () => {
     ["nur eine Gruppe", { marketing: 0, sales: 0, rejected: 12, review: 0 }],
   ]) {
     const teile = kanten(ring(counts));
+    // Jedes Segment greift genau ein Stueck hinter seinen Anfang zurueck:
+    // leichte Ueberlagerung statt Kerbe, ueberall gleich viel.
     teile.slice(1).forEach((teil, index) => {
       const vorher = teile[index];
-      assert.ok(Math.abs(teil.von - vorher.bis) < 0.02, `${name}: Kante ${index + 1} passt nicht (${vorher.bis} / ${teil.von})`);
+      const griff = vorher.bis - teil.von;
+      assert.ok(Math.abs(griff - 0.012 * 360) < 0.05, `${name}: Kante ${index + 1} greift ${griff.toFixed(2)} statt 4,32 Grad`);
     });
   }
   // Eine leere Gruppe bekommt keinen Sektor.
@@ -455,4 +462,14 @@ test("das angezeigte Segment wandert nach aussen statt zu wachsen", async () => 
   assert.match(js, /function hervorRichtung\(von, bis\)/);
   // Kein Strichmuster mehr, dessen runde Enden ueberstehen.
   assert.ok(!js.includes("stroke-dasharray"), "die Boegen sind Sektoren");
+});
+
+test("das hervortretende Segment kommt nach vorn, ohne neu einzulaufen", async () => {
+  const js = await readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8");
+  // Sonst schoebe sich der spaeter gezeichnete Nachbar ueber das angehobene
+  // Segment - SVG kennt kein z-index.
+  assert.match(js, /if \(bogen\) svg\?\.appendChild\(bogen\);/);
+  assert.match(js, /grundfolge\.forEach\(\(teil\) => svg\?\.appendChild\(teil\)\)/);
+  // Ein neu eingefuegtes Element spielt seine Einlaufbewegung erneut.
+  assert.match(js, /addEventListener\("animationend", \(\) => \{ teil\.style\.animation = "none"; \}/);
 });

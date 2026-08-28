@@ -45,7 +45,10 @@
    Winkel bleiben, also beruehrt er die Nachbarn auch dabei nicht. */
 .pi-slice {
   cursor: pointer;
-  stroke-width: .9;
+  /* Die Kontur in der Kartenfarbe zeichnet die Kante nach, wo sich zwei
+     Segmente ueberlagern, und rundet zugleich die Ecken. */
+  stroke: var(--bg);
+  stroke-width: 1.1;
   stroke-linejoin: round;
   transform-box: fill-box;
   transform-origin: center;
@@ -55,7 +58,7 @@
 }
 @keyframes piArcIn { from { opacity: 0; transform: scale(.82); } }
 .pi-slice:hover, .pi-slice.is-on {
-  transform: translate(calc(var(--pi-x, 0) * 1.15px), calc(var(--pi-y, 0) * 1.15px));
+  transform: translate(calc(var(--pi-x, 0) * 1.3px), calc(var(--pi-y, 0) * 1.3px));
   filter: drop-shadow(0 5px 12px rgba(32,110,251,.3));
 }
 .pi-slice.is-dimmed { opacity: .26; }
