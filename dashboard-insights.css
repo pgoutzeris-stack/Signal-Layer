@@ -1,37 +1,49 @@
 .pi-dashboard { margin: 0 0 1.25rem; }
-/* Dieselbe Leiste wie in den uebrigen Ansichten: Rahmen, Radius, Grundton und
-   Schatten kommen aus .signal-toolbar, damit das Dashboard nicht wie ein
-   fremder Bereich wirkt. */
-.pi-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 92%, var(--surface)); box-shadow: var(--shadow-dash); }
-.pi-toolbar h2 { min-width: 0; margin: 0; display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: .88rem; font-weight: 750; letter-spacing: -.01em; }
-.pi-toolbar h2 i { color: var(--brand); font-size: .82rem; }
-.pi-eyebrow { color: var(--brand); font-size: .57rem; font-weight: 850; letter-spacing: .11em; text-transform: uppercase; }
-.pi-live-state { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--bg); font-size: .55rem; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
-.pi-live-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; }
-.pi-live-state.is-live { color: #15803d; border-color: #bbf7d0; }
-.pi-live-state.is-live::before { background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.1); animation: piLivePulse 2.2s ease-in-out infinite; }
+/* Eine Leiste statt Kopfzeile plus Filterkasten. Alles auf einer Hoehe, feste
+   Reihenfolge, kein Element ueber dem anderen. Die Auswahlfelder tragen den
+   ROOTS-Rahmen statt der Browservorgabe: appearance:none plus eigener Pfeil. */
+.pi-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 0 0 12px; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); background: color-mix(in srgb, var(--bg) 92%, var(--surface)); box-shadow: var(--shadow-dash); }
+.pi-bar h2 { min-width: 0; margin: 0 0 0 .5rem; display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: .82rem; font-weight: 750; letter-spacing: -.01em; white-space: nowrap; }
+.pi-bar h2 i { color: var(--brand); font-size: .78rem; }
+.pi-bar-filters { min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
-.pi-filter-panel { margin-bottom: 14px; padding: 12px; display: grid; grid-template-columns: auto minmax(170px,.7fr) minmax(180px,.7fr) minmax(240px,1fr) auto; align-items: end; gap: 10px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 92%, var(--surface)); box-shadow: var(--shadow-dash); }
-.pi-filter-group { min-width: 0; display: grid; gap: 6px; }
-.pi-filter-group > span { color: var(--muted); font-size: .54rem; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
-/* Die Auswahl stand vorher unter .signal-toolbar-select. Diese Klasse blendet
-   in der Signal-Leiste das echte <select> aus, weil dort ein eigenes Menue
-   darueber liegt - im Dashboard blieb dadurch nur die Beschriftung stehen. */
-.pi-filter-group select { width: 100%; min-width: 0; height: 34px; padding: 0 11px; font-size: .68rem; font-weight: 650; background: var(--bg); }
-.pi-period-buttons, .pi-creator-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
-.pi-period-buttons { padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
-.pi-period-buttons button, .pi-creator-buttons button { min-height: 30px; padding: 0 10px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; font: inherit; font-size: .57rem; font-weight: 800; cursor: pointer; transition: color .18s ease, background .18s ease, box-shadow .18s ease; }
-.pi-period-buttons button:hover, .pi-creator-buttons button:hover { color: var(--brand-dark); background: var(--brand-light); }
-.pi-period-buttons button.is-active { color: #fff; background: var(--brand); box-shadow: 0 3px 8px rgba(32,110,251,.2); }
-.pi-creator-buttons button { min-height: 32px; border: 1px solid var(--line); background: var(--bg); }
-.pi-creator-buttons button.is-active { color: var(--brand-dark); border-color: #93c5fd; background: var(--brand-light); }
-.pi-creator-buttons button small { margin-left: 3px; color: inherit; font-size: .48rem; opacity: .72; }
-.pi-creator-buttons button { display: inline-flex; align-items: center; gap: 6px; }
+.pi-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.pi-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
+.pi-seg button { min-height: 24px; padding: 0 9px; border: 0; border-radius: 999px; color: var(--muted); background: transparent; font: inherit; font-size: .64rem; font-weight: 750; cursor: pointer; transition: color .15s, background .15s; }
+.pi-seg button:hover { color: var(--brand-dark); }
+.pi-seg button.is-active { color: #fff; background: var(--brand); }
+
+.pi-field { position: relative; display: inline-flex; }
+.pi-field select { height: 28px; padding: 0 24px 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--status-text); font: inherit; font-size: .66rem; font-weight: 650; cursor: pointer; appearance: none; -webkit-appearance: none; transition: border-color .15s, color .15s; }
+.pi-field select:hover, .pi-field select:focus { border-color: color-mix(in srgb, var(--brand) 48%, var(--line)); color: var(--ink); outline: none; }
+.pi-field::after { content: ""; position: absolute; right: 10px; top: 50%; width: 5px; height: 5px; margin-top: -4px; border-right: 1.3px solid var(--brand); border-bottom: 1.3px solid var(--brand); transform: rotate(45deg); pointer-events: none; }
+
+.pi-creators { display: inline-flex; align-items: center; gap: 3px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
+.pi-creator { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.pi-creator--all { width: auto; padding: 0 9px; color: var(--muted); font: inherit; font-size: .64rem; font-weight: 750; }
+.pi-creator--all.is-active { color: #fff; background: var(--brand); }
+.pi-creator .pi-avatar { opacity: .45; transition: opacity .15s, box-shadow .15s; }
+.pi-creator:hover .pi-avatar { opacity: .8; }
+.pi-creator.is-active .pi-avatar { opacity: 1; box-shadow: 0 0 0 2px var(--brand); }
 .pi-avatar { width: 20px; height: 20px; flex: none; border-radius: 50%; object-fit: cover; background: var(--brand-light); }
-.pi-avatar--initials { display: inline-grid; place-items: center; color: var(--brand-dark); font-size: .48rem; font-weight: 850; letter-spacing: .02em; }
-.pi-filter-result { min-height: 47px; padding: 7px 11px; display: grid; place-content: center; border-left: 1px solid var(--line); text-align: center; }
-.pi-filter-result b { font-size: .86rem; }
-.pi-filter-result span { color: var(--muted); font-size: .5rem; white-space: nowrap; }
+.pi-avatar--initials { display: inline-grid; place-items: center; color: var(--brand-dark); font-size: .5rem; font-weight: 850; }
+
+.pi-count { color: var(--muted); font-size: .64rem; font-weight: 650; white-space: nowrap; }
+.pi-count b { color: var(--ink); font-size: .74rem; font-weight: 800; }
+
+.pi-live { display: inline-flex; align-items: center; gap: 5px; padding: 0 10px 0 8px; height: 24px; border-radius: 999px; color: var(--muted); background: var(--status-bg); font-size: .56rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.pi-live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; }
+/* Laeuft alles, genuegt der Punkt. Ein Wort "LIVE" neben jedem Widget-Kopf,
+   der es ohnehin sagt, ist doppelt. */
+.pi-live.is-live { color: #15803d; font-size: 0; padding: 0; width: 22px; justify-content: center; }
+.pi-live.is-live::before { background: #22c55e; animation: piLivePulse 2.2s ease-in-out infinite; }
+
+@media (max-width: 900px) {
+  .pi-bar { border-radius: 16px; padding: .55rem .7rem; }
+  .pi-bar h2 { margin-left: .1rem; }
+  .pi-bar-filters { justify-content: flex-start; }
+}
 
 .pi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
 .pi-widget { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--shadow-dash); animation: piWidgetIn .42s both; }
@@ -167,17 +179,10 @@
 @keyframes piLoader { 50% { transform: translateY(-5px); opacity: .45; } }
 
 @media (max-width: 980px) {
-  .pi-filter-panel { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .pi-filter-group--creators { grid-column: 1 / -1; }
-  .pi-filter-result { border-left: 0; border-top: 1px solid var(--line); }
   .pi-pulse { grid-template-columns: 1fr 1fr; }
   .pi-kpi-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 720px) {
-  .pi-toolbar { align-items: stretch; flex-direction: column; }
-  .pi-live-state { align-self: flex-start; }
-  .pi-filter-panel { grid-template-columns: 1fr; }
-  .pi-filter-group--creators { grid-column: auto; }
   .pi-grid { grid-template-columns: 1fr; }
   .pi-widget--wide { grid-column: auto; }
   .pi-pulse { grid-template-columns: 1fr; }
@@ -189,6 +194,6 @@
   .pi-funnel-row > small { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pi-widget, .pi-trend-bars i, .pi-widget-head em.is-live::before, .pi-dashboard-loader span { animation: none !important; }
+  .pi-widget, .pi-trend-bars i, .pi-widget-head em.is-live::before, .pi-live.is-live::before, .pi-dashboard-loader span { animation: none !important; }
   .pi-funnel-row > div > i { transition: none; }
 }

@@ -159,11 +159,17 @@ test("die Dashboard-Filter zeigen ihre Auswahl wirklich an", async () => {
   // nur die Beschriftung stehen.
   assert.match(indexHtml, /\.signal-toolbar-select \{[^}]*opacity: 0/);
   assert.ok(!js.includes("signal-toolbar-select"), "Dashboard nutzt die unsichtbare Klasse");
-  assert.match(js, /class="toolbar-select" data-dashboard-scope/);
-  assert.match(js, /class="toolbar-select" data-dashboard-origin/);
-  // Die Leiste traegt dieselbe Auszeichnung wie die uebrigen Ansichten.
-  assert.match(css, /\.pi-toolbar \{[^}]*border-radius: 14px/);
-  assert.match(css, /\.pi-toolbar \{[^}]*box-shadow: var\(--shadow-dash\)/);
+  // Die Auswahl steht in einem eigenen Feld mit ROOTS-Rahmen; die Klasse
+  // signal-toolbar-select wuerde sie unsichtbar machen.
+  assert.match(js, /<select data-dashboard-scope>/);
+  assert.match(js, /<select data-dashboard-origin>/);
+  // Eine Leiste statt Kopfzeile plus Filterkasten.
+  assert.match(js, /class="pi-bar"/);
+  assert.ok(!js.includes("pi-filter-panel"), "der zweite Kasten ist entfallen");
+  assert.match(css, /\.pi-bar \{[^}]*box-shadow: var\(--shadow-dash\)/);
+  // Eigener Pfeil statt Browservorgabe.
+  assert.match(css, /\.pi-field select \{[^}]*appearance: none/);
+  assert.match(css, /\.pi-field::after \{[^}]*border-right: 1\.3px solid var\(--brand\)/);
   // Kein Erklaersatz unter der Ueberschrift.
   assert.ok(!js.includes("persönlich gefiltert und in Echtzeit synchronisiert"));
 });

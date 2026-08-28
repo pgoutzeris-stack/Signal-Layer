@@ -403,19 +403,22 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     for (const host of hosts) {
       const preferences = state.summary.preferences;
       const selectedCreators = new Set(preferences.filters.creator_ids);
-      const creatorButtons = state.payload.creators.map((creator) => `<button type="button" data-dashboard-creator="${escapeHtml(creator.id)}" class="${selectedCreators.has(creator.id) ? "is-active" : ""}" aria-pressed="${selectedCreators.has(creator.id)}">${
-        avatarHtml(creator)
-      }${escapeHtml(creator.short_name || creator.name)} <small>${numberValue(creator.asset_count)}</small></button>`).join("");
-      host.innerHTML = `<div class="pi-toolbar">
-          <h2><i class="fa-solid fa-chart-line"></i>Performance Dashboard</h2>
-          <span class="pi-live-state" data-dashboard-live-label>Verbinde…</span>
-        </div>
-        <div class="pi-filter-panel" aria-label="Dashboard filtern">
-          <div class="pi-filter-group pi-filter-group--period"><span>Zeitraum</span><div class="pi-period-buttons" role="group" aria-label="Zeitraum">${[7, 30, 90, 365].map((days) => `<button type="button" data-dashboard-period="${days}" class="${days === preferences.period_days ? "is-active" : ""}" aria-pressed="${days === preferences.period_days}">${days === 365 ? "12 Monate" : `${days} Tage`}</button>`).join("")}</div></div>
-          <label class="pi-filter-group"><span>Asset-Basis</span><select class="toolbar-select" data-dashboard-scope><option value="roots" ${preferences.filters.asset_scope === "roots" ? "selected" : ""}>Nur ROOTS</option><option value="roots_private" ${preferences.filters.asset_scope === "roots_private" ? "selected" : ""}>ROOTS + meine privaten</option></select></label>
-          <label class="pi-filter-group"><span>Quelle</span><select class="toolbar-select" data-dashboard-origin><option value="all" ${preferences.filters.origin === "all" ? "selected" : ""}>Automatisch + manuell</option><option value="automatic" ${preferences.filters.origin === "automatic" ? "selected" : ""}>Nur automatisch</option><option value="manual" ${preferences.filters.origin === "manual" ? "selected" : ""}>Nur manuell</option></select></label>
-          <div class="pi-filter-group pi-filter-group--creators"><span>Erstellt von</span><div class="pi-creator-buttons"><button type="button" data-dashboard-creator="all" class="${selectedCreators.size === 0 ? "is-active" : ""}" aria-pressed="${selectedCreators.size === 0}">Alle</button>${creatorButtons}</div></div>
-          <div class="pi-filter-result"><b>${state.summary.assets.length}</b><span>Assets einbezogen</span></div>
+      const creatorButtons = state.payload.creators.map((creator) => `<button type="button" class="pi-creator${selectedCreators.has(creator.id) ? " is-active" : ""}" data-dashboard-creator="${escapeHtml(creator.id)}" aria-pressed="${selectedCreators.has(creator.id)}" title="${escapeHtml(creator.name)} · ${numberValue(creator.asset_count)} Assets">${avatarHtml(creator)}</button>`).join("");
+      // Eine Leiste statt Kopfzeile plus Filterkasten: Titel links, Filter
+      // rechts, alles in einer Hoehe. Zahlen und Namen stehen im Titel des
+      // jeweiligen Knopfs, nicht als zweite Zeile daneben.
+      host.innerHTML = `<div class="pi-bar">
+          <h2><i class="fa-solid fa-chart-line"></i>Performance</h2>
+          <div class="pi-bar-filters">
+            <div class="pi-seg" role="group" aria-label="Zeitraum">${[7, 30, 90, 365].map((days) => `<button type="button" data-dashboard-period="${days}" class="${days === preferences.period_days ? "is-active" : ""}" aria-pressed="${days === preferences.period_days}">${days === 365 ? "12 M" : `${days} T`}</button>`).join("")}</div>
+            <label class="pi-field"><span class="pi-sr">Asset-Basis</span><select data-dashboard-scope><option value="roots" ${preferences.filters.asset_scope === "roots" ? "selected" : ""}>Nur ROOTS</option><option value="roots_private" ${preferences.filters.asset_scope === "roots_private" ? "selected" : ""}>ROOTS + privat</option></select></label>
+            <label class="pi-field"><span class="pi-sr">Quelle</span><select data-dashboard-origin><option value="all" ${preferences.filters.origin === "all" ? "selected" : ""}>Alle Quellen</option><option value="automatic" ${preferences.filters.origin === "automatic" ? "selected" : ""}>Automatisch</option><option value="manual" ${preferences.filters.origin === "manual" ? "selected" : ""}>Manuell</option></select></label>
+            <div class="pi-creators" role="group" aria-label="Erstellt von">
+              <button type="button" class="pi-creator pi-creator--all${selectedCreators.size === 0 ? " is-active" : ""}" data-dashboard-creator="all" aria-pressed="${selectedCreators.size === 0}" title="Alle Erstellenden">Alle</button>${creatorButtons}
+            </div>
+            <span class="pi-count"><b>${state.summary.assets.length}</b> Assets</span>
+            <span class="pi-live" data-dashboard-live-label title="Verbindung">Verbinde…</span>
+          </div>
         </div>
         <div class="pi-grid">${preferences.widgets.map((preference) => renderWidget(DASHBOARD_WIDGETS.find((item) => item.id === preference.id), preference, state.summary, escapeHtml)).join("")}</div>`;
     }
