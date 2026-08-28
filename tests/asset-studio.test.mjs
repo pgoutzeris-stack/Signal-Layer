@@ -145,7 +145,7 @@ test("die Kosten werden als asset_generation gebucht", () => {
 test("das Studio arbeitet im Rahmen des Artikel-Popups", () => {
   // Als eigene Vollflaeche wuerde es das Popup verdecken statt darin zu leben:
   // der Artikel bliebe offen im Hintergrund, der Weg zurueck waere unklar.
-  assert.match(studio, /openAssetStudio\(\{ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill, assetId \} = \{\}\)/);
+  assert.match(studio, /openAssetStudio\(\{ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill, assetId, showDrafts \} = \{\}\)/);
   assert.match(studio, /const mount = host instanceof HTMLElement \? host : document\.body/);
   assert.match(studio, /#as-overlay\.as-in-host\{position:absolute/);
   const frontend = readFileSync(new URL("../app.js", import.meta.url), "utf8");
@@ -2292,8 +2292,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260829-1120");
-  assert.match(indexHtml, /app\.js\?v=20260829-1120/);
+  assert.equal(studioVersion, "20260829-1240");
+  assert.match(indexHtml, /app\.js\?v=20260829-1240/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);
@@ -3029,4 +3029,11 @@ test("das Bild laesst sich in der Werkbank nachstellen", () => {
   assert.match(studio, /\$\{hat \? `<div class="as-img-tools">/);
   // Ein Hintergrundmotiv ueberlebt den Schrittwechsel.
   assert.match(studio, /if \(slot\.classList\.contains\("as-picslot--bg"\)\) return;/);
+});
+
+test("der Entwurf traegt keinen blauen Streifen mehr", () => {
+  assert.doesNotMatch(studio, /border-top:3px solid var\(--brand/);
+  // Aus dem Artikel heraus oeffnet das Studio die Uebersicht, nicht den
+  // Fragebogen.
+  assert.match(studio, /else if \(showDrafts\) \{ state\.formTab = "drafts"; render\(\); \}/);
 });

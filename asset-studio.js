@@ -1063,7 +1063,7 @@ const CHROME_CSS = `
 #as-overlay .as-work--feed{display:flex; justify-content:center; overflow:auto; padding:0 8px 8px;}
 #as-overlay .as-linkedin-post{width:min(680px,100%); height:100%; min-height:520px; display:grid;
   grid-template-rows:auto auto minmax(260px,1fr) auto; overflow:hidden; background:#fff;
-  border:1px solid var(--line,#e2e8f0); border-top:3px solid var(--brand,#206efb); border-radius:16px;
+  border:1px solid var(--line,#e2e8f0); border-radius:16px;
   box-shadow:0 14px 42px rgba(15,23,42,.12); color:#0f172a;}
 #as-overlay .as-linkedin-head{display:flex; align-items:center; gap:11px; padding:14px 16px 10px;}
 #as-overlay .as-linkedin-avatar{display:grid; place-items:center; flex:0 0 auto; width:46px; height:46px;
@@ -1398,7 +1398,7 @@ export function closeAssetStudio() {
   if (openInstance) openInstance.close();
 }
 
-export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill, assetId } = {}) {
+export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill, assetId, showDrafts } = {}) {
   // Zwei Studios gleichzeitig würden sich Tastatur und Auswahl streitig machen.
   // Eine Instanz, deren Overlay nicht mehr im Dokument haengt, ist aber keine
   // Instanz mehr: sie entsteht, wenn das Popup unter dem Studio geschlossen
@@ -5248,6 +5248,9 @@ ${stages}${post}
   // Mit assetId wird ein bestehender Entwurf geoeffnet - der Weg von einem
   // Gesicht auf der Artikelkarte zu genau dem Entwurf dieser Person.
   if (assetId) void openDraft(String(assetId));
+  // Aus dem Artikel heraus interessiert zuerst, was es schon gibt - nicht ein
+  // neuer Fragebogen.
+  else if (showDrafts) { state.formTab = "drafts"; render(); }
   void ladeDrafts();
   void ladeToneOfVoice();
   void ladeDesignVorlagen();

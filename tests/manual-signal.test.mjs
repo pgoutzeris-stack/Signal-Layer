@@ -257,7 +257,7 @@ test("die Übergabe belegt den Asset-Fragebogen mit den eigenen Texten vor", () 
   // Das Studio nimmt nur Schlüssel an, die sein Fragebogen kennt.
   const studio = readFileSync(new URL("../asset-studio.js", import.meta.url), "utf8");
   assert.match(studio, /export const ASSET_CHROME_CSS = CHROME_CSS;/);
-  assert.match(studio, /openSettingsPanel, prefill, assetId \} = \{\}\)/);
+  assert.match(studio, /openSettingsPanel, prefill, assetId, showDrafts \} = \{\}\)/);
   assert.match(studio, /function vorbelegung\(list, prefill\)/);
   assert.match(studio, /if \(erlaubt\.has\(key\) && wert !== undefined && wert !== null\) out\[key\] = wert;/);
 });

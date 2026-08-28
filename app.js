@@ -7,10 +7,10 @@ import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOr
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260824-0305";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260829-1120";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260829-1240";
 import { openManualSignal } from "./manual-signal.js?v=20260824-0305";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260829-1120";
-import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260829-1120";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260829-1240";
+import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260829-1240";
 
 let sb = null;
 let sources = [];
@@ -4371,25 +4371,36 @@ function bindUi() {
       if (event.key === "Enter" || event.key === " ") openCardDetail(event);
     });
   });
-  // Ein Klick auf ein Gesicht fuehrt in genau den Entwurf dieser Person. Der
+  // Ein Klick auf ein Gesicht fuehrt zu den Entwuerfen dieses Artikels. Der
   // Griff muss vor dem Kartenklick greifen, sonst oeffnet sich darunter das
   // Artikel-Popup.
   document.addEventListener("click", (event) => {
     const gesicht = event.target.closest?.("[data-asset-author]");
     if (!gesicht) return;
-    const assetId = gesicht.getAttribute("data-asset-author");
-    if (!assetId) return;
     event.preventDefault();
     event.stopPropagation();
+    // Im geoeffneten Artikel steht die Kennung nicht an der Karte, sondern am
+    // gerade geladenen Artikel. Ohne sie laedt das Studio keine Entwuerfe.
     const karte = gesicht.closest("[data-article-id]");
+    const artikelId = karte?.getAttribute("data-article-id")
+      || els.articleDetailContent?.querySelector("[data-asset-studio]")?.getAttribute("data-article-id")
+      || detailArticle?.id
+      || "";
+    if (!artikelId) return;
+    const imPopup = Boolean(els.articleDetailModal?.contains(gesicht));
     void openAssetStudio({
       kind: gesicht.getAttribute("data-asset-kind") === "memo" ? "memo" : "linkedin",
-      articleId: karte?.getAttribute("data-article-id") || "",
-      assetId,
+      articleId: artikelId,
+      // Die Uebersicht zuerst: dort steht jeder Entwurf zu diesem Artikel, mit
+      // Person und Zeitpunkt. Ein einzelner Entwurf ist von dort einen Klick
+      // entfernt.
+      showDrafts: true,
+      signal: detailArticle,
       callApi,
       escapeHtml,
       notify: toast,
       openSettingsPanel,
+      host: imPopup ? els.articleDetailContent : undefined,
     });
   }, true);
 

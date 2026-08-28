@@ -64,9 +64,12 @@ test("Server liefert Gesichter zu Artikeln und Entwuerfen", () => {
   assert.match(backend, /article_ids/);
 });
 
-test("ein Klick auf das Gesicht oeffnet genau diesen Entwurf", () => {
+test("ein Klick auf das Gesicht oeffnet die Entwuerfe dieses Artikels", () => {
   assert.match(appJs, /data-asset-author/);
-  assert.match(appJs, /assetId,/);
+  // Die Uebersicht zuerst: dort steht jeder Entwurf mit Person und Zeitpunkt.
+  assert.match(appJs, /showDrafts: true/);
+  // Im geoeffneten Artikel steht die Kennung nicht an der Karte.
+  assert.match(appJs, /detailArticle\?\.id/);
   assert.match(styles, /\.asset-author \{/);
 });
 
