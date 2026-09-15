@@ -1304,7 +1304,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(studio, /function memoSeiteHatUeberlauf/);
   assert.match(studio, /function passeUndPruefeMemo/);
   assert.match(studio, /data-memomess/);
-  assert.match(studio, /em-foot-abs/);
+  assert.match(studio, /em-footer/);
   assert.match(studio, /Folie \$\{ueber\.join/);
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
@@ -1924,25 +1924,19 @@ test("CMO-Wechsel und 100-Tage-CMO bleiben getrennt vom Executive Memo", () => {
 test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
   const tpl = await import("../memo-template.js");
   assert.match(tpl.MEMO_TEMPLATE, /as-stage--memo/);
-  assert.equal((tpl.MEMO_TEMPLATE.match(/em-page/g) || []).length, 3);
-  assert.match(tpl.MEMO_TEMPLATE, /01 · Marktdynamik/);
-  assert.match(tpl.MEMO_TEMPLATE, /02 · Benchmarks/);
-  assert.match(tpl.MEMO_TEMPLATE, /03 · Potenziale/);
-  assert.match(tpl.MEMO_TEMPLATE, /Kontakt aufnehmen/);
-  assert.match(tpl.MEMO_TEMPLATE, /\{\{title\}\}/);
-  assert.match(tpl.MEMO_TEMPLATE, /\{\{market_title\}\}/);
-  assert.match(tpl.MEMO_TEMPLATE, /\{\{bm1_name\}\}/);
-  assert.match(tpl.MEMO_TEMPLATE, /\{\{pot1_finding\}\}/);
-  assert.match(tpl.MEMO_TEMPLATE, /\{\{cta\}\}/);
-  assert.match(tpl.MEMO_TEMPLATE, /\{\{about_fit\}\}/);
-  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.as-stage--memo/);
-  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-kpi \.n\{[^}]*white-space:nowrap/);
-  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-kpi \.n\{[^}]*overflow:hidden/);
-  assert.match(tpl.MEMO_TEMPLATE_CSS, /-webkit-line-clamp:3/);
-  assert.match(tpl.MEMO_TEMPLATE_CSS, /padding-bottom:72mm/);
-  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-shot\{[^}]*background:#fff/);
-  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-shot img[^}]*object-fit:contain/);
-  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-pot \.em-shot img[^}]*object-fit:cover/);
+  assert.equal(tpl.MEMO_PAGE_COUNT, 4);
+  assert.equal((tpl.MEMO_TEMPLATE.match(/class="em-page/g) || []).length, 4);
+  for (const field of ["title", "market_title", "bm1_name", "pot1_finding", "cta", "about_fit", "document_date", "contact_email", "quote_text", "kpi1_source"]) {
+    assert.ok(tpl.MEMO_TEMPLATE.includes(`{{${field}}}`), field);
+  }
+  assert.equal(tpl.MEMO_DEFAULTS.cta_label, "Kontakt aufnehmen");
+  assert.equal(tpl.MEMO_DEFAULTS.market_section, "01 Marktdynamik");
+  assert.match(tpl.MEMO_TEMPLATE, /data-memo-template="roots-v15"/);
+  assert.match(tpl.MEMO_TEMPLATE, /data-ci="locked"/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /font-family:'ROOTS Memo'/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-kpi \.em-n\{[^}]*white-space:nowrap/);
+  assert.match(tpl.MEMO_TEMPLATE_CSS, /page-break-after:always/);
+  assert.doesNotMatch(tpl.MEMO_TEMPLATE_CSS, /-webkit-line-clamp/);
   assert.match(studio, /from "\.\/memo-template\.js/);
   assert.match(studio, /MEMO_TEMPLATE/);
   assert.match(studio, /nutzbar \/ h/);
@@ -2289,11 +2283,11 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   // ihre Rundung verschwunden (16.8.2026).
   assert.match(studio, /const opts = kind === "benchmark" \? \{ fit: "contain" \} : \{\};/);
   assert.match(studio, /fitSlotImage\(eintrag\.image\.src, spec, opts\)/);
-  assert.match(memoTpl, /\.em-pot \.em-shot img.*object-fit:cover/);
+  assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260830-1705");
-  assert.match(indexHtml, /app\.js\?v=20260830-1705/);
+  assert.equal(studioVersion, "20260915-1");
+  assert.match(indexHtml, /app\.js\?v=20260915-1/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);

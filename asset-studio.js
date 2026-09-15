@@ -15,8 +15,8 @@ const LEER_BILD = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAA
 const SAVE_LIMIT = 900000;
 // Platzhalter-Geometrie des Executive Memo. Uploads werden auf dieses
 // Seitenverhältnis gezwungen, bevor sie in den Slot kommen.
-const MEMO_SHOT_ASPECT = { benchmark: { w: 46, h: 28 }, potential: { w: 52, h: 36 } };
-const MEMO_SHOT_PIXELS = { benchmark: { w: 920, h: 560 }, potential: { w: 936, h: 648 } };
+const MEMO_SHOT_ASPECT = { benchmark: { w: 72, h: 40 }, potential: { w: 52, h: 36 } };
+const MEMO_SHOT_PIXELS = { benchmark: { w: 864, h: 480 }, potential: { w: 936, h: 648 } };
 const LINKEDIN_SHOT_PIXELS = { w: 1080, h: 1350 };
 const BENCH_EXAMPLE = [
   { name: "Decathlon", text: "Hat die Eigenmarken unter eine Führung gestellt und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche" },
@@ -37,8 +37,8 @@ const TOPIC_KICKERS = {
   operational_excellence: "OPERATIONAL EXCELLENCE",
   empowered_marketers: "EMPOWERED MARKETERS",
 };
-// Drei A4-Seiten, in der Vorschau einzeln. 210 mm × 297 mm bei 96 dpi.
-const MEMO_SEITEN = 3;
+// Vier A4-Seiten, in der Vorschau einzeln. 210 mm × 297 mm bei 96 dpi.
+const MEMO_SEITEN = MEMO_PAGE_COUNT;
 const MEMO_SEITE_PX = { w: 794, h: 1123 };
 
 // Nur diese Varianten sind vertraglich zugesagt.
@@ -1287,6 +1287,9 @@ function themeKicker(source = {}) {
 
 function cropSpecFor(key) {
   const name = String(key || "");
+  if (name === "cover") return { w: 1100, h: 933, mm: { w: 210, h: 178.2 }, label: "Titelmotiv" };
+  if (name === "insight") return { w: 630, h: 900, mm: { w: 105, h: 150 }, label: "Marktbild" };
+  if (name.endsWith("_portrait")) return { w: 180, h: 180, mm: { w: 14, h: 14 }, label: "Porträt" };
   if (name.startsWith("benchmarks.")) {
     return { ...MEMO_SHOT_PIXELS.benchmark, mm: MEMO_SHOT_ASPECT.benchmark, label: "Benchmark" };
   }
@@ -1385,7 +1388,8 @@ function sanitizeFragment(html) {
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS } from "./memo-template.js?v=20260816-1500";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260915-1";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260915-1";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1436,6 +1440,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     stage: { theme: "light", accent: "brand", band: true, corners: "round" },
     slides: [],
     memo: null,
+    memoExample: false,
     postText: "",
     toneOfVoice: "",
     toneGeladen: false,
@@ -1735,7 +1740,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return `<div class="as-split2">
         <div class="as-split2-form">${state.formTab === "drafts" ? draftsHtml() : formHtml()}</div>
         <div class="as-split2-prev">
-          <span class="as-prev-label">Vorschau</span>
+          <span class="as-prev-label">${isMemo ? "Executive Memo v15 · 4 Seiten" : "Vorschau"}</span>${isMemo ? `<button type="button" class="as-btn" data-act="memo-example">${state.memoExample ? "Zur Signal-Vorschau" : "Deichmann-Beispiel ansehen"}</button>` : ""}
           <div class="as-prev-host">
             <div class="as-pagehost">
               <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
@@ -2142,6 +2147,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function demoMemo() {
+    if (state.memoExample) {
+      const memo = normalizeMemo({});
+      memo.html = Object.fromEntries(Object.entries(MEMO_EXAMPLE.html).map(([key, value]) => [memoFieldPath(key), value]));
+      for (const [key, value] of Object.entries(MEMO_EXAMPLE.images)) setImageAt(memo, key, { ...value });
+      return memo;
+    }
     const gemini = state.answers.images !== "upload";
     const hint = (kind) => gemini
       ? `Unternehmenslogo für ${kind} (Worldvectorlogo, Website, Wikimedia).`
@@ -2690,8 +2701,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         return;
       }
       adoptPayload(row.payload || row);
-      applyFormImages(state.memo);
-      await compactAdoptedImages();
+      if (isMemo && row.edited_html) restoreMemoEdits(row.edited_html);
+      else {
+        applyFormImages(state.memo);
+        await compactAdoptedImages();
+      }
       state.step = "draft";
       state.busy = false;
       state.error = "";
@@ -3271,6 +3285,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const eintrag = Array.isArray(liste) ? liste[Number(treffer[2])] : null;
       return eintrag?.image || emptyImage();
     }
+    if (["cover", "insight", "quote_portrait", "contact_portrait"].includes(key)) return model[key] || emptyImage();
     return model.image || emptyImage();
   }
 
@@ -3305,6 +3320,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function setzeBildWert(key, feld, wert) {
+    harvest();
     const model = aktuellesModelFuer(key);
     if (!model) return;
     const bild = imageAt(model, key);
@@ -3322,7 +3338,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (eintrag) eintrag.image = image;
       return;
     }
-    if ("image" in model) model.image = image;
+    if (["cover", "insight", "quote_portrait", "contact_portrait"].includes(key)) model[key] = image;
+    else if ("image" in model) model.image = image;
   }
 
   function padItems(list, count) {
@@ -3337,7 +3354,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const benchmarks = padItems(toArray(src.benchmarks), 3);
     const potentials = padItems(toArray(src.potentials), 3);
     return {
+      ...MEMO_DEFAULTS,
+      ...Object.fromEntries(Object.keys(MEMO_DEFAULTS).filter((key) => !/^(kpi|bm|pot)\d/.test(key)).map((key) => [key, String(src[key] ?? MEMO_DEFAULTS[key])])),
       uid: uid(),
+      document_label: String(src.document_label || company || "Executive Memo"),
+      document_date: String(src.document_date || new Date().toLocaleDateString("de-DE", { month: "long", year: "numeric" })),
+      summary_0: String(src.summary_0 || src.market_title || ""),
+      summary_1: String(src.summary_1 || src.benchmark_title || ""),
+      summary_2: String(src.summary_2 || src.potentials_title || ""),
+      insight_title: String(src.insight_title || src.market_title || ""),
+      quote_text: String(src.quote_text || src.potentials_lead || ""),
+      cover: src.cover || emptyImage(),
+      insight: src.insight || emptyImage(),
+      quote_portrait: src.quote_portrait || emptyImage(),
+      contact_portrait: src.contact_portrait || { ...MEMO_EXAMPLE.images.contact_portrait },
+      fieldStyles: {},
       title: String(src.title || ""),
       standfirst: String(src.standfirst || ""),
       market_title: String(src.market_title || ""),
@@ -3346,11 +3377,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       kpis: kpis.map((item) => ({
         value: String(item?.value || ""),
         label: String(item?.label || ""),
+        source: String(item?.source || ""),
       })),
       benchmark_title: String(src.benchmark_title || ""),
       benchmark_lead: String(src.benchmark_lead || ""),
       benchmarks: benchmarks.map((item) => ({
         name: String(item?.name || ""),
+        title: String(item?.title || ""),
         text: String(item?.text || ""),
         tag: String(item?.tag || ""),
         image_hint: String(item?.image_hint || ""),
@@ -3364,7 +3397,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       })),
       potentials_title: String(src.potentials_title || ""),
       potentials_lead: String(src.potentials_lead || ""),
-      potentials: potentials.map((item) => ({
+      potentials: potentials.map((item, i) => ({
+        label: String(item?.label || MEMO_DEFAULTS[`pot${i + 1}_label`]),
         title: String(item?.title || ""),
         finding: String(item?.finding || ""),
         potential: String(item?.potential || ""),
@@ -3521,7 +3555,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <span class="as-img-value">${Math.round(zoom * 100)}%</span>
         <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="1" data-imgkey="${attr(key)}" aria-label="Größer" title="Größer"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
         <label class="as-img-range" title="Transparenz"><i class="fa-solid fa-circle-half-stroke"></i><input type="range" min="20" max="100" step="5" value="${deckung}" data-imgrange="opacity" data-imgkey="${attr(key)}" aria-label="Transparenz"></label>
-        <label class="as-img-range" title="Overlay"><i class="fa-solid fa-layer-group"></i><input type="range" min="0" max="100" step="5" value="${overlay}" data-imgrange="overlay" data-imgkey="${attr(key)}" aria-label="Overlay"></label>
+        ${isMemo ? "" : `<label class="as-img-range" title="Overlay"><i class="fa-solid fa-layer-group"></i><input type="range" min="0" max="100" step="5" value="${overlay}" data-imgrange="overlay" data-imgkey="${attr(key)}" aria-label="Overlay"></label>`}
       </div>` : ""}
       <button type="button" class="as-img-btn" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><i class="fa-regular fa-image"></i></button>
       ${hat ? `<button type="button" class="as-img-btn is-clear" data-act="img-clear" data-imgkey="${attr(key)}" aria-label="Bild entfernen" title="Bild entfernen"><i class="fa-solid fa-xmark"></i></button>` : ""}
@@ -3565,6 +3599,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function memoHtml(memo, editable = true) {
     const werte = {
+      ...MEMO_DEFAULTS,
+      ...Object.fromEntries(Object.keys(MEMO_DEFAULTS).map((key) => [key, memo[key] ?? MEMO_DEFAULTS[key]])),
       uid: memo.uid,
       logo: state.logo || LOGO_PATH,
       title: memo.title,
@@ -3583,9 +3619,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     (memo.kpis || []).forEach((kpi, i) => {
       werte[`kpi${i + 1}_value`] = kpi?.value || "";
       werte[`kpi${i + 1}_label`] = kpi?.label || "";
+      werte[`kpi${i + 1}_source`] = kpi?.source || "";
     });
     (memo.benchmarks || []).forEach((eintrag, i) => {
       werte[`bm${i + 1}_name`] = eintrag?.name || "";
+      werte[`bm${i + 1}_title`] = eintrag?.title || "";
+      werte[`benchmarks_${i}_image`] = eintrag?.image?.src || "";
       werte[`bm${i + 1}_text`] = eintrag?.text || "";
       werte[`bm${i + 1}_tag`] = eintrag?.tag || "";
       werte[`bm${i + 1}_hint`] = eintrag?.image_hint || "";
@@ -3594,21 +3633,32 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
     (memo.potentials || []).forEach((eintrag, i) => {
       werte[`pot${i + 1}_title`] = eintrag?.title || "";
+      werte[`pot${i + 1}_label`] = eintrag?.label || "";
+      werte[`potentials_${i}_image`] = eintrag?.image?.src || "";
       werte[`pot${i + 1}_finding`] = eintrag?.finding || "";
       werte[`pot${i + 1}_potential`] = eintrag?.potential || "";
       werte[`pot${i + 1}_hint`] = eintrag?.image_hint || "";
       werte[`pot${i + 1}_image`] = eintrag?.image?.src || "";
       werte[`pot${i + 1}_pos`] = eintrag?.image?.pos || "50% 50%";
     });
+    for (const key of ["cover", "insight", "quote_portrait", "contact_portrait"]) werte[`${key}_image`] = memo[key]?.src || "";
+    werte.contact_href = ""; // Rebuilt from the edited contact field, never from arbitrary HTML.
     let html = MEMO_TEMPLATE.replace(/\{\{([a-z0-9_]+)\}\}/g, (_m, name) => {
       const wert = werte[name];
-      if (name === "logo" || name.endsWith("_image") || name.endsWith("_pos") || name === "uid") {
+      if (name === "contact_href" || name === "logo" || name.endsWith("_image") || name.endsWith("_pos") || name === "uid") {
         return attr(wert || "");
       }
       const pfad = memoFieldPath(name);
       const bearbeitet = pfad ? memo.html?.[pfad] : undefined;
       if (typeof bearbeitet === "string") return bearbeitet;
       return markiere(esc(wert || ""));
+    });
+    html = html.replace(/<img[^>]*data-imgsrc[^>]*>/g, (tag) => {
+      const key = /data-imgkey="([^"]+)"/.exec(tag)?.[1];
+      const img = imageAt(memo, key);
+      const zoom = Math.min(2.5, Math.max(1, Number(img.zoom) || 1));
+      const opacity = Math.min(1, Math.max(0.2, Number(img.opacity) || 1));
+      return tag.replace(/ style="[^"]*"/, "").replace(/>$/, ` style="object-position:${attr(img.pos || "50% 50%")};transform:scale(${zoom});opacity:${opacity}">`);
     });
     html = wrapImageSlots(html, memo, editable);
     if (editable) {
@@ -3627,13 +3677,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       cta: "cta", about_fit: "about_fit", sources: "sources",
     };
     if (einfach[name]) return einfach[name];
-    const kpi = /^kpi(\d+)_(value|label)$/.exec(name);
+    const kpi = /^kpi(\d+)_(value|label|source)$/.exec(name);
     if (kpi) return `kpis.${Number(kpi[1]) - 1}.${kpi[2]}`;
-    const bm = /^bm(\d+)_(name|text|tag|hint)$/.exec(name);
+    const bm = /^bm(\d+)_(name|title|text|tag|hint)$/.exec(name);
     if (bm) return `benchmarks.${Number(bm[1]) - 1}.${bm[2] === "hint" ? "image_hint" : bm[2]}`;
-    const pot = /^pot(\d+)_(title|finding|potential|hint)$/.exec(name);
+    const pot = /^pot(\d+)_(label|title|finding|potential|hint)$/.exec(name);
     if (pot) return `potentials.${Number(pot[1]) - 1}.${pot[2] === "hint" ? "image_hint" : pot[2]}`;
-    return "";
+    return Object.hasOwn(MEMO_DEFAULTS, name) ? name : "";
   }
 
   /* ── Bühnen einhängen und einpassen ── */
@@ -3664,6 +3714,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       area.querySelectorAll("[data-field]").forEach((node) => {
         const pfad = String(node.getAttribute("data-field") || "");
         if (/\.image_hint$/.test(pfad)) return;
+        if (isMemo && !node.textContent.trim()) node.setAttribute("data-ph", "Text eingeben");
         node.setAttribute("contenteditable", "true");
         node.setAttribute("spellcheck", "false");
       });
@@ -3675,6 +3726,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         node.removeAttribute("contenteditable");
         node.removeAttribute("spellcheck");
       });
+    }
+    if (isMemo) {
+      area.querySelectorAll("[data-field]").forEach((node) => {
+        const style = state.memo?.fieldStyles?.[node.dataset.field];
+        if (style) Object.assign(node.style, style);
+      });
+      syncMemoLinks(area);
     }
     passeSlideTexteAn(area);
     fitStages();
@@ -3909,7 +3967,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * auf der skalierten Vorschau.
    */
   function passeMemoKpisAn(wurzel) {
-    wurzel.querySelectorAll(".em-kpi .n").forEach((el) => {
+    wurzel.querySelectorAll(".em-kpi .em-n").forEach((el) => {
       if (!String(el.textContent || "").trim()) return;
       el.style.fontSize = "";
       let px = parseFloat(getComputedStyle(el).fontSize) || 21;
@@ -3923,16 +3981,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function memoSeiteHatUeberlauf(seite) {
-    if (seite.scrollHeight > seite.clientHeight + 2) return true;
-    for (const el of seite.querySelectorAll(".em-kpi .n")) {
-      if (String(el.textContent || "").trim() && el.scrollWidth > el.clientWidth + 1) return true;
+    if (seite.scrollHeight > seite.clientHeight + 2 || seite.scrollWidth > seite.clientWidth + 2) return true;
+    const pageBox = seite.getBoundingClientRect();
+    for (const el of seite.querySelectorAll("[data-field]")) {
+      if (!el.textContent.trim()) continue;
+      const box = el.getBoundingClientRect();
+      if (box.bottom > pageBox.bottom + 2 || box.right > pageBox.right + 2 || el.scrollWidth > el.clientWidth + 2) return true;
     }
-    const fuss = seite.querySelector(".em-foot-abs");
-    if (!fuss) return false;
-    const oben = fuss.getBoundingClientRect().top;
-    for (const karte of seite.querySelectorAll(".em-pot")) {
-      if (karte.getBoundingClientRect().bottom > oben + 2) return true;
-    }
+    const footer = seite.querySelector(".em-footer");
+    const cards = seite.querySelector(".em-pots");
+    const cta = footer?.querySelector(".em-cta");
+    if (cards && cta && cards.getBoundingClientRect().bottom > cta.getBoundingClientRect().top + 2) return true;
     return false;
   }
 
@@ -3955,14 +4014,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return { live, mess };
   }
 
-  /** Alle drei Seiten messen, auch die gerade nicht sichtbare. Schrift zurück ins Original. */
+  /** Alle Seiten messen, auch die gerade nicht sichtbare. Schrift zurück ins Original. */
   function passeUndPruefeMemo() {
     const paket = messMemoKopie();
     if (!paket) return [];
     const { live, mess } = paket;
     passeMemoKpisAn(mess);
-    const liveKpis = live.querySelectorAll(".em-kpi .n");
-    mess.querySelectorAll(".em-kpi .n").forEach((el, i) => {
+    const liveKpis = live.querySelectorAll(".em-kpi .em-n");
+    mess.querySelectorAll(".em-kpi .em-n").forEach((el, i) => {
       if (liveKpis[i]) liveKpis[i].style.fontSize = el.style.fontSize;
     });
     const treffer = [];
@@ -4130,6 +4189,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (!model) return;
       stage.querySelectorAll("[data-field]").forEach((node) => {
         model.html[node.getAttribute("data-field")] = sanitizeFragment(node.innerHTML);
+        if (isMemo) model.fieldStyles[node.getAttribute("data-field")] = memoTextStyle(node);
       });
       // Nur wenn die Variante gerade einen Bildplatz zeigt, darf das Bild aus
       // dem DOM gelesen werden. Sonst löscht ein Variantenwechsel das Motiv.
@@ -4153,6 +4213,54 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function modelByUid(id) {
     if (isMemo) return state.memo && state.memo.uid === id ? state.memo : null;
     return state.slides.find((slide) => slide.uid === id) || null;
+  }
+
+  function memoTextStyle(node) {
+    const out = {};
+    if (/^\d+(\.\d+)?px$/.test(node.style.fontSize)) out.fontSize = node.style.fontSize;
+    if (["left", "center", "right"].includes(node.style.textAlign)) out.textAlign = node.style.textAlign;
+    return out;
+  }
+
+  function restoreMemoEdits(savedHtml) {
+    if (!state.memo || !savedHtml) return;
+    const saved = new DOMParser().parseFromString(String(savedHtml), "text/html");
+    const template = new DOMParser().parseFromString(MEMO_TEMPLATE, "text/html");
+    const fields = new Set([...template.querySelectorAll("[data-field]")].map((el) => el.dataset.field));
+    const slots = new Set([...template.querySelectorAll("[data-imgsrc]")].map((el) => el.dataset.imgkey));
+    saved.querySelectorAll(".as-stage--memo [data-field]").forEach((node) => {
+      if (!fields.has(node.dataset.field)) return;
+      state.memo.html[node.dataset.field] = sanitizeFragment(node.innerHTML);
+      state.memo.fieldStyles[node.dataset.field] = memoTextStyle(node);
+    });
+    saved.querySelectorAll(".as-stage--memo [data-imgsrc]").forEach((node) => {
+      if (!slots.has(node.dataset.imgkey)) return;
+      const src = node.getAttribute("src") || "";
+      if (src && !/^(data:image\/(?:png|jpeg|webp|gif|svg\+xml)[;,]|https?:\/\/)/i.test(src)) return;
+      setImageAt(state.memo, node.dataset.imgkey, { src, pos: node.style.objectPosition || "50% 50%",
+        zoom: Number(/scale\(([\d.]+)\)/.exec(node.style.transform)?.[1]) || 1,
+        opacity: Number(node.style.opacity) || 1 });
+    });
+  }
+
+  function syncMemoLinks(root) {
+    if (!root) return;
+    const value = (field) => root.querySelector(`[data-field="${field}"]`)?.textContent.trim() || "";
+    const email = value("contact_email");
+    const cta = root.querySelector(".em-cta a");
+    if (cta) {
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) cta.setAttribute("href", `mailto:${email}?subject=${encodeURIComponent(value("document_label"))}`);
+      else cta.removeAttribute("href");
+    }
+    for (const [key, prefix] of [["email", "mailto:"], ["phone", "tel:"], ["web", "https://"], ["linkedin", "https://"]]) {
+      const node = root.querySelector(`[data-field="contact_${key}"]`);
+      if (!node || node.isContentEditable) continue;
+      const text = node.textContent.trim();
+      const target = prefix === "https://" ? text.replace(/^https?:\/\//, "") : text;
+      if (!target || (prefix === "https://" && !/^[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s]*)?$/i.test(target))) continue;
+      const a = document.createElement("a"); a.textContent = text; a.href = prefix + target;
+      node.replaceChildren(a);
+    }
   }
 
   /* ── Inspektor ── */
@@ -4402,6 +4510,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     showCropEditor(false);
     cropOverlay.hidden = false;
     if (fmtBar) fmtBar.setAttribute("data-open", "0");
+    const current = isMemo && uid !== "form" ? imageAt(state.memo, cropState.key) : null;
+    if (current?.src) {
+      const openedKey = cropState.key;
+      void loadHtmlImage(current.src).then((img) => {
+        if (cropOverlay.hidden || cropState.uid !== uid || cropState.key !== openedKey || cropState.img) return;
+        cropState.img = img;
+        cropImgEl().src = img.src;
+        showCropEditor(true);
+        requestAnimationFrame(layoutCropPreview);
+      }).catch(() => { /* A replacement can still be uploaded. */ });
+    }
   }
 
   function loadHtmlImage(src) {
@@ -4664,7 +4783,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function printCss(memoKind) {
     const page = memoKind ? "size:A4; margin:0;" : "size:1080px 1350px; margin:0;";
     const bruch = memoKind
-      ? `#as-overlay .as-stage--memo{height:891mm !important; background:#eef2f7 !important; break-after:auto; page-break-after:auto;}
+      ? `#as-overlay .as-stage--memo{height:auto !important; background:#eef2f7 !important; break-after:auto; page-break-after:auto;}
   #as-overlay .as-stage--memo .em-page{display:flex !important; break-after:page; page-break-after:always;}
   #as-overlay .as-stage--memo .em-page:last-child{break-after:auto; page-break-after:auto;}`
       : `#as-overlay .as-stage{break-after:page; page-break-after:always;}
@@ -4692,6 +4811,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!area) return [];
     return [...area.querySelectorAll("[data-stage]")].map((stage) => {
       const clone = stage.cloneNode(true);
+      if (isMemo) syncMemoLinks(clone);
       clone.removeAttribute("style");
       clone.removeAttribute("data-stage");
       clone.querySelectorAll("[data-as-chrome]").forEach((node) => node.remove());
@@ -4704,7 +4824,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // errechnete Schriftgröße bleibt als style am Element.
       clone.querySelectorAll("[data-as-font]").forEach((node) => node.removeAttribute("data-as-font"));
       clone.querySelectorAll(".em-page.is-off").forEach((node) => node.classList.remove("is-off"));
-      if (clone.classList.contains("as-stage--memo")) clone.style.height = "891mm";
+      if (clone.classList.contains("as-stage--memo")) clone.style.height = "auto";
       return clone.outerHTML;
     });
   }
@@ -4746,8 +4866,17 @@ ${stages}${post}
 </html>`;
   }
 
+  function memoOutputReady() {
+    if (!isMemo) return true;
+    const pages = passeUndPruefeMemo();
+    if (!pages.length) return true;
+    showSaveHint(`Seite ${pages.join(", ")} läuft über den Rahmen. Text kürzen, dann exportieren.`);
+    return false;
+  }
+
   function download() {
     harvest();
+    if (!memoOutputReady()) return;
     const doc = exportDocument();
     const blob = new Blob([doc], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -4898,6 +5027,7 @@ ${stages}${post}
     const hit = event.target.closest("[data-act]");
     if (!hit) return;
     const act = hit.getAttribute("data-act");
+    if (act === "memo-example") { state.memoExample = !state.memoExample; state.prevIndex = 0; render(); return; }
     const frame = hit.closest("[data-uid]");
     const id = frame ? frame.getAttribute("data-uid") : null;
 
@@ -5087,7 +5217,7 @@ ${stages}${post}
       return;
     }
     if (act === "download") { download(); return; }
-    if (act === "print") { harvest(); window.print(); return; }
+    if (act === "print") { harvest(); if (memoOutputReady()) window.print(); return; }
     if (act === "save") { onSaveClick(); return; }
     if (act === "own-skip") { ownOverlay.hidden = true; void save(); return; }
     if (act === "own-confirm") {
@@ -5160,6 +5290,15 @@ ${stages}${post}
       const feld = regler.getAttribute("data-imgrange") === "overlay" ? "overlay" : "opacity";
       const key = regler.getAttribute("data-imgkey") || "image";
       setzeBildWert(key, feld, Math.min(100, Math.max(0, Number(regler.value) || 0)) / 100);
+      return;
+    }
+    const edited = event.target.closest?.('[data-field][contenteditable="true"]');
+    if (isMemo && edited) {
+      const path = edited.dataset.field;
+      shell.querySelectorAll(`[data-stagearea] [data-field="${CSS.escape(path)}"]`).forEach((node) => {
+        if (node !== edited) node.innerHTML = sanitizeFragment(edited.innerHTML);
+      });
+      syncMemoLinks(shell.querySelector("[data-stagearea]"));
       return;
     }
     if (state.step !== "form") return;
