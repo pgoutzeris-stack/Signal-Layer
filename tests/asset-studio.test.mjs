@@ -13,9 +13,9 @@ const backend = await import("../supabase/functions/signal-layer/asset-studio.ts
 
 function dreiBenchmarks() {
   return [
-    { name: "Marke A", text: "Hat den Hebel gezogen.", tag: "Eigenmarke zuerst", image_hint: "Regal" },
-    { name: "Marke B", text: "Hat den Kanal umgebaut.", tag: "Kanal vor Fläche", image_hint: "Shop" },
-    { name: "Marke C", text: "Hat die Marke geschärft.", tag: "Klarheit vor Breite", image_hint: "Kampagne" },
+    { name: "Marke A", title: "Eigenmarke zur Leitmarke gemacht", text: "Hat den Hebel gezogen.", tag: "Eigenmarke zuerst", image_hint: "Regal" },
+    { name: "Marke B", title: "Kanal und Fläche zusammengeführt", text: "Hat den Kanal umgebaut.", tag: "Kanal vor Fläche", image_hint: "Shop" },
+    { name: "Marke C", title: "Das Profil der Marke geschärft", text: "Hat die Marke geschärft.", tag: "Klarheit vor Breite", image_hint: "Kampagne" },
   ];
 }
 
@@ -31,13 +31,18 @@ function memoRoh(extra = {}) {
   return {
     title: "Der Umbau braucht eine Entscheidung",
     standfirst: "Lage und Beleg aus dem Artikel",
+    summary_0: "Sortiment trägt, Marke bleibt unscharf",
+    summary_1: "Der Markt verschiebt sich",
+    summary_2: "Eigenmarken als eigene Marken führen",
     market_title: "Der Markt verschiebt sich",
     market_p1: "Was im Markt passiert ist.",
     market_p2: "Warum der Moment jetzt ist.",
-    kpis: [{ value: "14 %", label: "Anteil" }],
+    kpis: [{ value: "14 %", label: "Anteil", source: "Blatt, 2026" }],
+    insight_title: "Das Sortiment trägt den Umsatz, der Auftritt noch nicht",
     benchmark_title: "Benchmarks ziehen denselben Hebel",
     benchmark_lead: "Drei Marken haben vorgemacht.",
     benchmarks: dreiBenchmarks(),
+    quote_text: "Eine Eigenmarke wird stark, wenn sie eine eigene Handschrift bekommt.",
     potentials_title: "Drei Hebel für das Unternehmen",
     potentials_lead: "Der Check zeigt drei Ansatzpunkte.",
     potentials: dreiPotenziale(),
@@ -71,7 +76,7 @@ test("die Nutzlast des Backends passt zu den Feldern, die das Frontend liest", (
   assert.equal(linkedin.theme, "dark");
 
   const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
-  for (const feld of ["title", "standfirst", "market_title", "market_p1", "market_p2", "kpis", "benchmark_title", "benchmark_lead", "benchmarks", "potentials_title", "potentials_lead", "potentials", "cta", "about_fit", "sources"]) {
+  for (const feld of ["title", "standfirst", "summary_0", "summary_1", "summary_2", "market_title", "market_p1", "market_p2", "kpis", "insight_title", "benchmark_title", "benchmark_lead", "benchmarks", "quote_text", "potentials_title", "potentials_lead", "potentials", "cta", "about_fit", "sources"]) {
     assert.ok(feld in memo, `Memo-Feld ${feld} fehlt`);
   }
   assert.equal(memo.benchmarks.length, 3);
@@ -1989,6 +1994,193 @@ test("der LinkedIn-Kicker kommt aus der Artikelfamilie, nicht vom Zielkunden", (
   assert.doesNotMatch(studio, /kicker: company \? company\.toUpperCase/);
 });
 
+test("das erzeugte Memo füllt dieselbe vierseitige Struktur wie die Referenz", () => {
+  // Die Vorlage ist fest. Ein Feld, das die KI nicht liefert, hinterlässt auf
+  // der Seite eine Lücke oder zwingt das Frontend, ein anderes Feld zweimal zu
+  // zeigen: vorher stand die Bildaussage auf Seite 2 gleich der Seitenüberschrift
+  // und das Zitat gleich dem Empfehlungs-Lead.
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
+  assert.equal(memo.summary_0, "Sortiment trägt, Marke bleibt unscharf");
+  assert.notEqual(memo.insight_title, memo.market_title);
+  assert.notEqual(memo.quote_text, memo.potentials_lead);
+  assert.ok(memo.benchmarks.every((eintrag) => eintrag.title), "jede Benchmark-Karte trägt eine Überschrift");
+  assert.ok(memo.kpis.every((kpi) => kpi.value && kpi.label && kpi.source), "jede Kennzahl trägt eine Quellenzeile");
+
+  for (const feld of ["summary_0", "summary_1", "summary_2", "insight_title", "quote_text"]) {
+    assert.throws(
+      () => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({ [feld]: "" })), backend.normalizeAssetAnswers("memo", {})),
+      new RegExp(`tragende Felder: ${feld}`),
+      `${feld} muss tragend sein`,
+    );
+  }
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    benchmarks: dreiBenchmarks().map(({ title: _weg, ...rest }) => rest),
+  })), backend.normalizeAssetAnswers("memo", {})), /eigene Überschrift/);
+
+  // Eine Zahl ohne sichtbare Quelle steht im Kasten ohne Deckung.
+  const ohneQuelle = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    kpis: [{ value: "14 %", label: "Anteil", source: "Blatt, 2026" }, { value: "22 %", label: "Zuwachs" }],
+  })), backend.normalizeAssetAnswers("memo", {}));
+  assert.equal(ohneQuelle.kpis.length, 1);
+
+  // Schema und Prompt verlangen dasselbe wie der Normalisierer.
+  for (const feld of ["summary_0", "summary_1", "summary_2", "insight_title", "quote_text", "kpis"]) {
+    assert.ok(backend.ASSET_SCHEMA_MEMO.required.includes(feld), `${feld} fehlt im Schema`);
+  }
+  assert.deepEqual(backend.ASSET_SCHEMA_MEMO.properties.kpis.items.required, ["value", "label", "source"]);
+  assert.ok(backend.ASSET_SCHEMA_MEMO.properties.benchmarks.items.required.includes("title"));
+  const prompt = backend.buildAssetPrompt("memo", { company: "Aeffe" }, { title: "A" },
+    backend.normalizeAssetAnswers("memo", {}));
+  assert.match(prompt, /vier A4-Seiten/);
+  assert.match(prompt, /summary_0, summary_1, summary_2/);
+  assert.match(prompt, /insight_title/);
+  assert.match(prompt, /quote_text/);
+  assert.match(prompt, /genau vier Kennzahlen/);
+});
+
+test("die Memo-Vorschau zeigt denselben Feldsatz wie das fertige Dokument", () => {
+  // Vorher fehlten der Vorschau die Kennzahlenquellen, die Karten-Überschriften,
+  // die Bildaussage und das Zitat: der Nutzer sah eine ärmere Seite als die,
+  // die er am Ende bekam.
+  const demo = studio.slice(studio.indexOf("function demoMemo()"), studio.indexOf("function demoSlide("));
+  for (const feld of ["summary_0:", "summary_1:", "summary_2:", "insight_title:", "quote_text:", "source: quelle", "title: \"Eigenmarke zur Leitmarke gemacht\""]) {
+    assert.ok(demo.includes(feld), `Vorschau ohne ${feld}`);
+  }
+  assert.equal((demo.match(/\{ value:/g) || []).length, 4, "vier Kennzahlenkästen");
+  // Erfundene Prozentwerte wären von belegten nicht zu unterscheiden.
+  assert.match(demo, /const quelle = "Platzhalter, Quelle aus dem Artikel";/);
+
+  // Das Referenzmemo ist kein Schaltknopf mehr; nur die beiden Porträts bleiben.
+  assert.doesNotMatch(studio, /memo-example"/);
+  assert.doesNotMatch(studio, /memoExample/);
+  assert.doesNotMatch(studio, /Deichmann/);
+  assert.match(studio, /MEMO_EXAMPLE\.images\.contact_portrait/);
+  // Das Zitat trägt dieselbe Person wie der Kontakt.
+  assert.match(memoTpl, /"quote_name": "Richard Erbler"/);
+});
+
+test("Feldvertrag: Fragebogen, Prompt und Prüfung lesen dieselben Zahlen", async () => {
+  const guides = await import("../memo-guides.mjs");
+  // Der Prompt trägt eine Kopie des Vertrags. Läuft sie dem Modul davon, sieht
+  // der Nutzer im Fragebogen andere Grenzen als das Modell im Prompt.
+  assert.equal(backend.MEMO_LAENGEN, guides.memoLaengenVertrag());
+  assert.equal(guides.MEMO_FIELDS.length, backend.MEMO_FIELD_KEYS.length);
+  for (const key of backend.MEMO_FIELD_KEYS) {
+    assert.ok(guides.memoFeld(key), `Feld ${key} fehlt im Regelwerk`);
+  }
+  // Die Längen stammen aus dem Referenzmemo: der Absatz trägt die Seitenhöhe.
+  assert.equal(guides.memoFeld("market_p1").min, 45);
+  assert.equal(guides.memoFeld("bm1_text").min, 22);
+
+  assert.equal(guides.memoFeldFehler("title", ""), "Titel fehlt.");
+  assert.equal(guides.memoFeldFehler("standfirst", ""), "");
+  assert.match(guides.memoFeldFehler("title", "Nur drei Wörter"), /mindestens 6/);
+  assert.match(guides.memoFeldFehler("summary_0", "eins zwei drei vier fünf sechs sieben acht neun"), /höchstens 8/);
+  assert.match(guides.memoFeldFehler("kpi1_value", "keine Zahl"), /Ziffer/);
+  assert.match(guides.memoFeldFehler("kpi1_source", "Simon-Kucher"), /Jahr/);
+
+  // Eine Zahl ohne Bezug und Quelle fällt später aus dem Memo. Der Abschnitt
+  // meldet das, solange der Text noch im Feld steht.
+  assert.deepEqual(guides.memoAbschnittFehler("memo_kpis", { kpi1_value: "42 %" }).slice(-1),
+    ["Kennzahl 1 braucht Zahl, Bezug und Quelle. Ohne alle drei fällt der Kasten weg."]);
+  assert.deepEqual(guides.memoAbschnittFehler("memo_kpis",
+    { kpi1_value: "42 %", kpi1_label: "der Verbraucher greifen zur Eigenmarke", kpi1_source: "Simon-Kucher, 2026" }), []);
+
+  const hinweise = guides.memoFeldHinweise("title", "Zwei Traditionsmarken brauchen eigene Profile vor der Trennung.");
+  assert.match(hinweise[0].text, /8 Wörter · Zielbereich 6 bis 15/);
+  assert.ok(hinweise.some((z) => /ohne Punkt/.test(z.text)), "Überschrift mit Punkt wird gemeldet");
+});
+
+test("Selbst geschriebene Abschnitte stehen wortgleich im Memo", () => {
+  const eigene = {
+    title: "Zwei Traditionsmarken brauchen eigene Profile vor der Trennung",
+    summary_0: "Zwei Häuser, ein Auftritt",
+    kpi1_value: "37 %",
+    kpi1_label: "der Kundinnen kaufen beide Marken",
+    kpi1_source: "Eigene Erhebung, 2026",
+    bm2_title: "Kanal und Fläche zusammengeführt",
+    pot3_potential: "Die Fläche bekommt je Haus eine eigene Handschrift, sichtbar ab dem Eingang.",
+    sources: "Erhebung · Eigene Zählung · 2026; Marktbericht · Blatt · 2025",
+  };
+  const answers = backend.normalizeAssetAnswers("memo", Object.fromEntries(
+    Object.entries(eigene).map(([key, wert]) => [`memo_${key}`, wert]),
+  ));
+  // Der Normalisierer setzt vor der Einheit ein geschütztes Leerzeichen, sonst
+  // bricht „37 %“ im Kasten um.
+  const ohneSchmalraum = (bag) => Object.fromEntries(Object.entries(bag).map(([k, v]) => [k, v.replace(/\u00a0/g, " ")]));
+  assert.deepEqual(ohneSchmalraum(answers.memo_fields), eigene);
+
+  // Das Modell liefert etwas anderes. Der Nutzer gewinnt, sonst hätte er
+  // fünfzig Felder für nichts geschrieben.
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    title: "Modelltitel, der nicht zählt",
+    kpis: [{ value: "99 %", label: "Modellzahl", source: "Modell, 2026" }],
+  })), answers, { articleText: "Ein Artikel ohne diese Zahlen." });
+  assert.equal(memo.title, eigene.title);
+  assert.equal(memo.summary_0, eigene.summary_0);
+  assert.deepEqual(ohneSchmalraum(memo.kpis[0]), { value: "37 %", label: eigene.kpi1_label, source: eigene.kpi1_source });
+  assert.equal(memo.benchmarks[1].title, eigene.bm2_title);
+  assert.equal(memo.potentials[2].potential, eigene.pot3_potential);
+  assert.deepEqual(memo.sources, ["Erhebung · Eigene Zählung · 2026", "Marktbericht · Blatt · 2025"]);
+
+  // Ein selbst geschriebenes Cover darf den Lauf nicht abbrechen, nur weil das
+  // Modell dasselbe Feld nicht noch einmal geliefert hat.
+  const ohneModell = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
+    summary_0: "", insight_title: "", quote_text: "",
+  })), backend.normalizeAssetAnswers("memo", {
+    memo_summary_0: "Zwei Häuser, ein Auftritt",
+    memo_insight_title: "Das Sortiment trägt den Umsatz, der Auftritt noch nicht",
+    memo_quote_text: "Eine Eigenmarke wird stark, wenn sie eine eigene Handschrift bekommt und sie hält.",
+  }));
+  assert.equal(ohneModell.summary_0, "Zwei Häuser, ein Auftritt");
+
+  const prompt = backend.buildAssetPrompt("memo", { company: "Aeffe" }, { title: "A" }, answers);
+  assert.match(prompt, /<eigene_inhalte>/);
+  assert.match(prompt, /wortgleich/);
+  assert.match(prompt, /title: Zwei Traditionsmarken/);
+  assert.match(prompt, /<laengen>/);
+  assert.match(prompt, /market_p1: 45 bis 85 Wörter/);
+  assert.match(prompt, /vier A4-Seiten/);
+});
+
+test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () => {
+  // Eine einzelne Textbox für den ganzen Inhalt hat den Nutzer raten lassen,
+  // was in welches Feld gehört und wie lang es sein darf.
+  const memoFragen = studio.slice(studio.indexOf("function memoQuestions"), studio.indexOf("const FORM_MEMO"));
+  assert.doesNotMatch(memoFragen, /storyline_text/);
+  assert.match(memoFragen, /Ich schreibe die Abschnitte selbst/);
+  assert.match(studio, /art: "memo-section"/);
+  assert.match(studio, /if \(q\.art === "memo-section"\) return memoSectionHtml\(q\);/);
+  assert.match(studio, /function memoSectionHtml/);
+  assert.match(studio, /function memoFeldGetippt/);
+  assert.match(studio, /data-memofeld/);
+  assert.match(studio, /data-memoguide/);
+  // Die Vorschau blättert auf die Seite des offenen Abschnitts und zeigt beim
+  // Tippen sofort, wohin der Text läuft.
+  assert.match(studio, /if \(isMemo && abschnitt\) state\.prevIndex = abschnitt\.seite - 1;/);
+  assert.match(studio, /as-mf-ziel/);
+  assert.match(studio, /function mitEigenenFeldern/);
+  // Das Beispiel aus dem Referenzmemo steht an jedem Feld.
+  assert.match(studio, /Referenzmemo/);
+  assert.match(studio, /#as-overlay \.as-mf-feld:focus-within \.as-mf-bsp\{display:block;\}/);
+});
+
+test("Kurze Inhalte hinterlassen keine weisse Wanne mehr", () => {
+  // Seite 3 und 4 standen bei kurzen Texten oben und liessen darunter ein
+  // leeres Drittel bis zum Fussband stehen.
+  assert.match(memoTpl, /\.em-sec--fill\{flex:1 1 auto;\}/);
+  assert.equal((memoTpl.match(/em-sec em-sec--fill em-pad/g) || []).length, 2);
+  assert.match(memoTpl, /\.em-sec--fill \.em-cases\{flex:1 1 auto;justify-content:space-between;\}/);
+  assert.match(memoTpl, /\.em-sec--fill \.em-pots\{margin-top:auto;\}/);
+  // Eine lange Kennzahl liess ihre Spalte wachsen: die Leiste schob sich über
+  // den rechten Rand und die Schriftanpassung sah keinen Überlauf.
+  assert.match(memoTpl, /\.em-kpis\{grid-template-columns:repeat\(4, minmax\(0, 1fr\)\);\}/);
+  // Die Anpassung lief nur beim Speichern. Bis dahin ragte die Zahl sichtbar
+  // in die Nachbarspalte.
+  assert.match(studio, /syncMemoLinks\(area\);\n      \/\/ Eine lange Kennzahl/);
+  assert.match(studio, /passeUndPruefeMemo\(\);\n    \}/);
+});
+
 test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Fotos", async () => {
   assert.equal(backend.MEMO_SHOT_ASPECT.benchmark.w / backend.MEMO_SHOT_ASPECT.benchmark.h, 46 / 28);
   assert.equal(backend.MEMO_SHOT_ASPECT.potential.w / backend.MEMO_SHOT_ASPECT.potential.h, 52 / 36);
@@ -2014,9 +2206,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   // geholt, obwohl das Memo für einen Sporthändler war (16.8.2026).
   const sportMemo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({
     benchmarks: [
-      { name: "Decathlon", text: "Hat den Hebel gezogen.", tag: "Eigenmarke zuerst", image_hint: "Decathlon" },
-      { name: "Adidas", text: "Hat den Kanal umgebaut.", tag: "Direktvertrieb", image_hint: "Adidas" },
-      { name: "Nike", text: "Hat die Marke geschärft.", tag: "Marke vor Fläche", image_hint: "Nike" },
+      { name: "Decathlon", title: "Eigenmarken unter eine Führung gestellt", text: "Hat den Hebel gezogen.", tag: "Eigenmarke zuerst", image_hint: "Decathlon" },
+      { name: "Adidas", title: "Den Direktvertrieb zur Bühne gemacht", text: "Hat den Kanal umgebaut.", tag: "Direktvertrieb", image_hint: "Adidas" },
+      { name: "Nike", title: "Das Markenprofil geschärft", text: "Hat die Marke geschärft.", tag: "Marke vor Fläche", image_hint: "Nike" },
     ],
     potentials: [
       { title: "Vom Markenartikel zur Eigenmarke", finding: "Eigenmarken stehen unverbunden.", potential: "ROOTS bündelt sie.", image_hint: "Regal mit Sportartikeln, Preisschilder, Kunde vergleicht" },
@@ -2286,8 +2478,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260915-1");
-  assert.match(indexHtml, /app\.js\?v=20260915-1/);
+  assert.equal(studioVersion, "20260915-2");
+  assert.match(indexHtml, /app\.js\?v=20260915-2/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);

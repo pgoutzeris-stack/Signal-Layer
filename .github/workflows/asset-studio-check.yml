@@ -8,6 +8,7 @@ on:
       - "asset-templates.js"
       - "memo-template.js"
       - "memo-example.js"
+      - "memo-guides.mjs"
       - "tools/check-memo-browser.mjs"
       - "app.js"
       - "index.html"
@@ -30,6 +31,7 @@ on:
       - "asset-templates.js"
       - "memo-template.js"
       - "memo-example.js"
+      - "memo-guides.mjs"
       - "tools/check-memo-browser.mjs"
       - "app.js"
       - "index.html"
@@ -64,6 +66,7 @@ jobs:
           node --check asset-templates.js
           node --check memo-template.js
           node --check memo-example.js
+          node --check memo-guides.mjs
           node --check tools/check-memo-browser.mjs
           node --check manual-signal.js
           node --check linkedin-guides.mjs

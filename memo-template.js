@@ -46,8 +46,8 @@ export const MEMO_DEFAULTS = {
   "bm3_tag": "",
   "sources": "",
   "quote_text": "",
-  "quote_name": "ROOTS",
-  "quote_role": "Brand Strategy Consultants",
+  "quote_name": "Richard Erbler",
+  "quote_role": "Founder, Managing Partner, ROOTS",
   "potentials_section": "03 ROOTS Empfehlung",
   "potentials_title": "",
   "potentials_lead": "",
@@ -251,6 +251,25 @@ export const MEMO_TEMPLATE_CSS = `@font-face { font-family: "ROOTS Memo"; font-s
 .as-stage--memo .em-case > .as-picslot--tpl img{position:absolute;inset:0;height:100%;}
 .as-stage--memo .em-page [data-field]:empty[contenteditable="true"]{min-height:1em;min-width:1em;}
 .as-stage--memo .em-page [data-ci]{user-select:none;}
+
+/* Kurze Inhalte hinterliessen eine weisse Wanne zwischen Inhalt und Fussband:
+   der Abschnitt stand oben, der Rest der Seite blieb leer. Der Abschnitt nimmt
+   den freien Platz jetzt selbst auf. Bei langen Inhalten aendert sich nichts,
+   flex-grow wirkt nur auf uebrigen Raum. */
+.as-stage--memo .em-sec--fill{flex:1 1 auto;}
+.as-stage--memo .em-sec--fill .em-cases{flex:1 1 auto;justify-content:space-between;}
+.as-stage--memo .em-sec--fill > .em-src:last-child{margin-top:var(--s2);}
+/* Die Karten behalten ihre natuerliche Hoehe und ruecken an das blaue Band.
+   Der freie Platz sammelt sich damit an einer Stelle, zwischen Vorspann und
+   Karten, statt als Wanne unter den Karten zu stehen. */
+.as-stage--memo .em-sec--fill .em-pots{margin-top:auto;}
+/* Eine lange Kennzahl wie "8,9 Mrd. €" steht auf nowrap. Ohne minmax(0,1fr)
+   waechst ihre Spalte auf die Textbreite, die Leiste schiebt sich ueber den
+   rechten Rand, und die Schriftanpassung sieht keinen Ueberlauf, weil der
+   Kasten mitgewachsen ist. Mit der Untergrenze 0 bleibt die Spalte bei einem
+   Viertel und die Anpassung greift. */
+.as-stage--memo .em-kpis{grid-template-columns:repeat(4, minmax(0, 1fr));}
+.as-stage--memo .em-kpi .em-n{max-width:100%;}
 `;
 export const MEMO_TEMPLATE = `<div class="as-stage as-stage--memo" lang="de" data-stage data-uid="{{uid}}" data-memo-template="roots-v15">
 
@@ -306,7 +325,7 @@ export const MEMO_TEMPLATE = `<div class="as-stage as-stage--memo" lang="de" dat
 
 <section class="em-page">
   <div class="em-head em-light"><span class="em-rh" data-field="document_label">{{document_label}}</span><div class="em-lock" data-ci="locked"><svg class="em-roots-logo" role="img" aria-label="ROOTS" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 21"> <defs> <path id="memo-2-arl1" d="M.041.084h47.558v20.733H.041z"></path> </defs> <g fill="#ffffff" fill-rule="evenodd"> <path d="M3.68 10.443V4.138h5.602c2.314 0 3.345 1.576 3.345 3.153 0 1.576-1.003 3.152-3.345 3.152H3.68zm12.627-3.237c0-3.406-2.426-6.502-7.025-6.53C6.188.676 3.094.648 0 .648v19.731h3.68v-6.586h3.54l5.686 6.586h4.376v-.253l-5.91-6.727c3.708-.76 4.935-3.49 4.935-6.193zM82.164.676H66.11v3.377h6.188V20.38h3.68V4.053h6.187zm9.616 20.21c4.35 0 8.196-1.886 8.196-6.277 0-4.7-3.791-5.77-7.86-6.277-2.342-.282-4.349-.76-4.349-2.477 0-1.464 1.31-2.618 4.042-2.618 2.118 0 3.958 1.07 4.627 2.196l2.927-1.52C97.885.873 94.736 0 91.697 0c-3.596.028-7.553 1.689-7.553 5.742 0 4.42 3.679 5.49 7.665 5.968 2.592.281 4.515 1.041 4.515 2.899 0 2.14-2.174 2.956-4.487 2.956-2.37 0-4.627-.958-5.492-3.125l-3.066 1.604c1.45 3.604 4.516 4.842 8.502 4.842"></path> <g transform="translate(18.264 .124)"> <mask id="brl1" fill="#fff"> <use xlink:href="#memo-2-arl1"></use> </mask> <path d="M37.333.084c-5.718 0-10.328 4.61-14.785 9.07-4.12 4.12-8.01 8.011-12.241 8.011-3.666 0-6.65-3.012-6.65-6.714 0-3.703 2.984-6.715 6.65-6.715 3.558 0 6.875 2.752 10.29 6.078.436-.43.874-.869 1.314-1.31.419-.418.839-.838 1.26-1.255C19.297 3.472 15.21.084 10.308.084 4.647.084.041 4.734.041 10.45c0 5.716 4.605 10.366 10.266 10.366 5.719 0 10.328-4.61 14.786-9.069 4.119-4.12 8.01-8.012 12.24-8.012 3.667 0 6.65 3.012 6.65 6.715 0 3.702-2.983 6.714-6.65 6.714-3.557 0-6.875-2.752-10.29-6.078-.435.43-.873.869-1.314 1.31-.418.418-.838.838-1.26 1.255 3.875 3.777 7.962 7.165 12.864 7.165 5.661 0 10.266-4.65 10.266-10.366C47.6 4.734 42.994.084 37.333.084" mask="url(#memo-2-brl1)"></path> </g> </g> </svg><div class="em-roots-sub">Brand Strategy Consultants</div></div></div>
-  <div class="em-sec em-pad">
+  <div class="em-sec em-sec--fill em-pad">
     <div class="em-kick2" data-field="benchmark_section">{{benchmark_section}}</div>
     <h2 class="em-at" data-field="benchmark_title">{{benchmark_title}}</h2>
 
@@ -345,7 +364,7 @@ export const MEMO_TEMPLATE = `<div class="as-stage as-stage--memo" lang="de" dat
 
 <section class="em-page">
   <div class="em-head em-light"><span class="em-rh" data-field="document_label">{{document_label}}</span><div class="em-lock" data-ci="locked"><svg class="em-roots-logo" role="img" aria-label="ROOTS" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 21"> <defs> <path id="memo-3-arl1" d="M.041.084h47.558v20.733H.041z"></path> </defs> <g fill="#ffffff" fill-rule="evenodd"> <path d="M3.68 10.443V4.138h5.602c2.314 0 3.345 1.576 3.345 3.153 0 1.576-1.003 3.152-3.345 3.152H3.68zm12.627-3.237c0-3.406-2.426-6.502-7.025-6.53C6.188.676 3.094.648 0 .648v19.731h3.68v-6.586h3.54l5.686 6.586h4.376v-.253l-5.91-6.727c3.708-.76 4.935-3.49 4.935-6.193zM82.164.676H66.11v3.377h6.188V20.38h3.68V4.053h6.187zm9.616 20.21c4.35 0 8.196-1.886 8.196-6.277 0-4.7-3.791-5.77-7.86-6.277-2.342-.282-4.349-.76-4.349-2.477 0-1.464 1.31-2.618 4.042-2.618 2.118 0 3.958 1.07 4.627 2.196l2.927-1.52C97.885.873 94.736 0 91.697 0c-3.596.028-7.553 1.689-7.553 5.742 0 4.42 3.679 5.49 7.665 5.968 2.592.281 4.515 1.041 4.515 2.899 0 2.14-2.174 2.956-4.487 2.956-2.37 0-4.627-.958-5.492-3.125l-3.066 1.604c1.45 3.604 4.516 4.842 8.502 4.842"></path> <g transform="translate(18.264 .124)"> <mask id="brl1" fill="#fff"> <use xlink:href="#memo-3-arl1"></use> </mask> <path d="M37.333.084c-5.718 0-10.328 4.61-14.785 9.07-4.12 4.12-8.01 8.011-12.241 8.011-3.666 0-6.65-3.012-6.65-6.714 0-3.703 2.984-6.715 6.65-6.715 3.558 0 6.875 2.752 10.29 6.078.436-.43.874-.869 1.314-1.31.419-.418.839-.838 1.26-1.255C19.297 3.472 15.21.084 10.308.084 4.647.084.041 4.734.041 10.45c0 5.716 4.605 10.366 10.266 10.366 5.719 0 10.328-4.61 14.786-9.069 4.119-4.12 8.01-8.012 12.24-8.012 3.667 0 6.65 3.012 6.65 6.715 0 3.702-2.983 6.714-6.65 6.714-3.557 0-6.875-2.752-10.29-6.078-.435.43-.873.869-1.314 1.31-.418.418-.838.838-1.26 1.255 3.875 3.777 7.962 7.165 12.864 7.165 5.661 0 10.266-4.65 10.266-10.366C47.6 4.734 42.994.084 37.333.084" mask="url(#memo-3-brl1)"></path> </g> </g> </svg><div class="em-roots-sub">Brand Strategy Consultants</div></div></div>
-  <div class="em-sec em-pad">
+  <div class="em-sec em-sec--fill em-pad">
     <div class="em-kick2" data-field="potentials_section">{{potentials_section}}</div>
     <h2 class="em-at" data-field="potentials_title">{{potentials_title}}</h2>
     <p class="em-lead" data-field="potentials_lead">{{potentials_lead}}</p>

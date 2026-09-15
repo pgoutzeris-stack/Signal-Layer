@@ -200,9 +200,53 @@ export type MemoAnswers = {
   benchmarks: MemoBenchmarkBrief[];
   storyline: string;
   cta: string;
+  /**
+   * Selbst geschriebene Felder aus dem Abschnitts-Fragebogen, nach den
+   * Platzhalternamen der Vorlage (title, market_p1, kpi2_label, bm1_text …).
+   * Was hier steht, gilt: das Modell fuellt nur den Rest.
+   */
+  memo_fields: Record<string, string>;
   /** theme = Executive Memo. cmo100 = eigener Sonderfall, derzeit Platzhalter. */
   memo_track: "theme" | "cmo100";
 };
+
+/** Die Feldnamen, die der Abschnitts-Fragebogen schreiben darf. Muss zu
+ *  memo-guides.mjs passen; der Test haelt beide zusammen. */
+export const MEMO_FIELD_KEYS = [
+  "title", "standfirst", "summary_0", "summary_1", "summary_2",
+  "market_title", "market_p1", "insight_title", "market_p2",
+  ...[1, 2, 3, 4].flatMap((i) => [`kpi${i}_value`, `kpi${i}_label`, `kpi${i}_source`]),
+  "benchmark_title", "benchmark_lead",
+  ...[1, 2, 3].flatMap((i) => [`bm${i}_name`, `bm${i}_title`, `bm${i}_text`, `bm${i}_tag`]),
+  "quote_text", "sources",
+  "potentials_title", "potentials_lead",
+  ...[1, 2, 3].flatMap((i) => [`pot${i}_title`, `pot${i}_finding`, `pot${i}_potential`]),
+  "cta", "about_fit",
+] as const;
+
+/**
+ * Der Laengenvertrag der Vorlage, am Referenzmemo gemessen. Die Zwillingsdatei
+ * memo-guides.mjs erzeugt denselben Text fuer den Fragebogen; der Test
+ * vergleicht beide Zeichen fuer Zeichen, damit Prompt und Oberflaeche nicht
+ * auseinanderlaufen.
+ */
+export const MEMO_LAENGEN = `Cover: title: 6 bis 15 Wörter; standfirst: 12 bis 30 Wörter; summary_0: 3 bis 8 Wörter; summary_1: 3 bis 8 Wörter; summary_2: 3 bis 8 Wörter.
+01 Marktdynamik: market_title: 8 bis 18 Wörter; market_p1: 45 bis 85 Wörter; insight_title: 6 bis 16 Wörter; market_p2: 45 bis 85 Wörter.
+Kennzahlen: kpiN_value: 1 bis 4 Wörter; kpiN_label: 4 bis 16 Wörter; kpiN_source: 1 bis 6 Wörter.
+02 Benchmarks: benchmark_title: 8 bis 20 Wörter; benchmark_lead: 6 bis 24 Wörter; quote_text: 14 bis 34 Wörter; sources: 3 bis 45 Wörter; bmN_name: 1 bis 5 Wörter; bmN_title: 3 bis 9 Wörter; bmN_text: 22 bis 48 Wörter; bmN_tag: 5 bis 16 Wörter.
+03 ROOTS Empfehlung: potentials_title: 6 bis 16 Wörter; potentials_lead: 28 bis 65 Wörter; cta: 5 bis 16 Wörter; about_fit: 15 bis 50 Wörter; potN_title: 3 bis 9 Wörter; potN_finding: 8 bis 28 Wörter; potN_potential: 18 bis 45 Wörter.`;
+
+/** Liest die selbst geschriebenen Felder aus den Antworten des Fragebogens. */
+export function parseMemoFields(source: unknown): Record<string, string> {
+  const roh = record(source);
+  const bag = record(roh.memo_fields);
+  const out: Record<string, string> = {};
+  for (const key of MEMO_FIELD_KEYS) {
+    const wert = text(bag[key] ?? roh[`memo_${key}`], key === "market_p1" || key === "market_p2" ? 900 : 600);
+    if (wert) out[key] = wert;
+  }
+  return out;
+}
 
 /** 100-Tage-CMO ist kein Executive Memo und noch nicht gebaut. */
 export const CMO_HUNDRED_DAYS_WIP =
@@ -339,8 +383,12 @@ export type LinkedinPayload = {
 };
 
 export type MemoImage = { src: string; pos: string };
+/** Kennzahl des Memos. Anders als die LinkedIn-Kennzahl traegt sie die
+ *  sichtbare Quellenzeile unter dem Wert, so wie im Referenzmemo. */
+export type MemoStat = { value: string; label: string; source: string };
 export type MemoBenchmark = {
   name: string;
+  title: string;
   text: string;
   tag: string;
   image_hint: string;
@@ -357,13 +405,18 @@ export type MemoPotential = {
 export type MemoPayload = {
   title: string;
   standfirst: string;
+  summary_0: string;
+  summary_1: string;
+  summary_2: string;
   market_title: string;
   market_p1: string;
   market_p2: string;
-  kpis: AssetStat[];
+  kpis: MemoStat[];
+  insight_title: string;
   benchmark_title: string;
   benchmark_lead: string;
   benchmarks: MemoBenchmark[];
+  quote_text: string;
   potentials_title: string;
   potentials_lead: string;
   potentials: MemoPotential[];
@@ -670,6 +723,22 @@ function stats(value: unknown, max: number): AssetStat[] {
   return value.map(stat).filter((entry) => entry.value || entry.label).slice(0, max);
 }
 
+function memoStat(value: unknown): MemoStat {
+  const item = record(value);
+  return {
+    value: text(item.value, 24),
+    label: text(item.label, 100),
+    source: text(item.source, 60),
+  };
+}
+
+/** Eine Kennzahl ohne sichtbare Quelle steht im Memo ohne Deckung. Sie faellt
+ *  hier weg, statt als nackte Zahl in den Kasten zu laufen. */
+function memoStats(value: unknown, max: number): MemoStat[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(memoStat).filter((entry) => entry.value && entry.label && entry.source).slice(0, max);
+}
+
 // ---------------------------------------------------------------------------
 // Fragebogenantworten
 //
@@ -796,6 +865,7 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
     benchmarks: parseMemoBenchmarkBriefs(source),
     storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
     cta: choiceText(source, ["cta"], ["cta_text"], 240),
+    memo_fields: parseMemoFields(source),
     memo_track: /cmo100|100\s*tage|hundert\s*tage/i.test(pick(source, "memo_track", "track", "unterlage"))
       ? "cmo100"
       : "theme",
@@ -1539,7 +1609,7 @@ export function allowedSlideKeys(
 const ASSETTYP_BRIEFING = `<assettypen>
 LinkedIn Einzelbild: eine These, ein Gedanke. Genau ein sichtbares Feld trägt die Pointe. Foto-Layouts C, D und J nur, wenn der Nutzer sie gewählt hat; die Datei kommt vom Nutzer.
 LinkedIn Karussell: eine zusammenhängende, mobile Geschichte statt einer Sammlung einzelner Poster. Erste Folie setzt eine konkrete These und einen Grund zum Weiterwischen. Jede mittlere Folie beantwortet genau eine nächste Frage: Kontext, Beleg, Mechanik oder Konsequenz. Keine Wiederholung und keine überleitungslose Themenänderung. Jede Folie muss allein verständlich sein und zugleich logisch zur nächsten führen. Dieselbe Ziffer darf nicht auf zwei Folien die Pointe tragen. Letzte Folie bündelt den Nutzen und nennt genau einen klaren Handlungsaufruf.
-Ansprache: immer dasselbe Executive Memo, drei Seiten. Kein internes Vermerk, keine Optionsmatrix. Der rote Faden ist roots_anschluss plus roots_leistung: welche Herausforderung ROOTS hier wirklich bearbeitet. Das Signal ist der Anlass, nicht die Geschichte. Cover = Action Title dieser Herausforderung, nicht der Leistungsname, nicht die Nachricht. Seite 2 belegt denselben Hebel mit Markt und drei Benchmarks, die ihn schon gezogen haben. Seite 3 macht ihn für den Adressaten konkret. Die ROOTS-Leistung selbst steht erst in about_fit.
+Ansprache: immer dasselbe Executive Memo, vier Seiten (Cover, Marktdynamik, Benchmarks, Empfehlung). Kein internes Vermerk, keine Optionsmatrix. Der rote Faden ist roots_anschluss plus roots_leistung: welche Herausforderung ROOTS hier wirklich bearbeitet. Das Signal ist der Anlass, nicht die Geschichte. Cover = Action Title dieser Herausforderung, nicht der Leistungsname, nicht die Nachricht. Seite 2 belegt denselben Hebel mit Markt und drei Benchmarks, die ihn schon gezogen haben. Seite 3 macht ihn für den Adressaten konkret. Die ROOTS-Leistung selbst steht erst in about_fit.
 </assettypen>`;
 
 const LEITKENNZAHL = `<leitkennzahl>
@@ -1920,12 +1990,14 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
     : "Benchmarks: genau drei, die denselben Hebel schon gezogen haben. Nur aus <benchmarks> oder aus artikel.";
   const nennen = answers.company_named !== "no" && Boolean(firma);
   const firmaZeile = !nennen
-    ? "Kein Unternehmensname im Briefing. title und die drei Seiten bleiben ohne Firmenname."
+    ? "Kein Unternehmensname im Briefing. title und die Inhaltsseiten bleiben ohne Firmenname."
     : `Unternehmen nennen: ${firma}. Der Cover-Titel (title) enthält ${firma} als Teil der Herausforderung, nicht als Briefkopf und nicht als Nachsatz „für ${firma}“. Muster, Tonlage nicht abschreiben: „Wie kann ${firma} …?“ oder „${firma}: …“. market_title bleibt die Kategorie ohne Firmenname. Kicker und Labels bleiben ohne Firmenaufdruck. Potenziale sprechen DIESES Unternehmen an.`;
   const auftrag = [
     "Sprache an eine Entscheiderin oder einen Entscheider, ohne Briefkopf-Name.",
     firmaZeile,
-    answers.storyline
+    Object.keys(answers.memo_fields).length
+      ? "Inhalt: der Nutzer hat Felder selbst geschrieben, sie stehen in <eigene_inhalte>. Übernimm sie wortgleich und schreibe nur die übrigen Felder."
+      : answers.storyline
       ? `Inhalt, verbindlich: ${answers.storyline}`
       : "Inhalt: Signal und Artikel sind der Anlass und der Beleg. Die Cover-These ist die Herausforderung aus roots_anschluss, in der Sprache des Falls. Nicht der Name der ROOTS-Leistung, nicht die Personalie, nicht die Nachrichtenüberschrift, nicht die 100-Tage-CMO-Agenda.",
     answers.cta
@@ -1936,11 +2008,20 @@ function memoPrompt(answers: MemoAnswers, signal: AssetSignalInput, daten: strin
     bilder,
   ].filter(Boolean).join("\n");
 
-  return `Du erstellst das ROOTS Executive Memo. Es ist immer dasselbe Dokument aus drei A4-Seiten. Ziel: in einer Minute steht fest, welche Herausforderung jetzt anliegt und warum ROOTS der richtige Gesprächspartner ist. Es ist ein Türöffner, der Kompetenz zeigt, keine Strategiearbeit, keine Optionsmatrix, kein internes Vermerk, keine Nachrichtenzusammenfassung.
+  const eigeneKeys = Object.keys(answers.memo_fields);
+  const eigeneInhalte = eigeneKeys.length
+    ? `<eigene_inhalte>
+Der Nutzer hat diese Felder selbst geschrieben. Sie sind verbindlich: übernimm jeden Wert wortgleich in das Feld gleichen Namens, ohne zu kürzen, zu glätten oder umzustellen. Die nicht genannten Felder schreibst du selbst, im selben Ton und passend zu diesen hier.
+${eigeneKeys.map((key) => `${key}: ${answers.memo_fields[key]}`).join("\n")}
+</eigene_inhalte>
+`
+    : "";
+
+  return `Du erstellst das ROOTS Executive Memo. Es ist immer dasselbe Dokument aus vier A4-Seiten: Cover, 01 Marktdynamik, 02 Benchmarks, 03 ROOTS Empfehlung. Ziel: in einer Minute steht fest, welche Herausforderung jetzt anliegt und warum ROOTS der richtige Gesprächspartner ist. Es ist ein Türöffner, der Kompetenz zeigt, keine Strategiearbeit, keine Optionsmatrix, kein internes Vermerk, keine Nachrichtenzusammenfassung.
 
 ${ASSETTYP_BRIEFING}
 <ziel>
-Das Memo überzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu sprechen. Der rote Faden ist roots_anschluss: welche offene Aufgabe ROOTS hier wirklich bearbeitet. Cover = Action Title dieser Aufgabe. Seite 2 belegt denselben Hebel. Seite 3 macht ihn für DIESES Unternehmen konkret. Die ROOTS-Leistung selbst kommt erst in about_fit.
+Das Memo überzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu sprechen. Der rote Faden ist roots_anschluss: welche offene Aufgabe ROOTS hier wirklich bearbeitet. Cover = Action Title dieser Aufgabe, darunter die drei Schlüssel. Seite 2 belegt die Marktbewegung mit vier Kennzahlen. Seite 3 zeigt drei Benchmarks am selben Hebel. Seite 4 macht ihn für DIESES Unternehmen konkret. Die ROOTS-Leistung selbst kommt erst in about_fit.
 </ziel>
 <hebel>
 Zuerst roots_anschluss, dann roots_leistung, dann begründung. Das ist die Übersetzung, die ROOTS schon geleistet hat. Daraus entsteht das Memo.
@@ -1965,28 +2046,46 @@ Ein Führungswechsel, eine Kampagne, eine Transaktion oder eine Zahl ist nur dan
 Eine 100-Tage-CMO-Unterlage ist ein anderes Dokument, nicht dieses Memo. Auch wenn roots_leistung, roots_anschluss oder der Anlass ein CMO-Wechsel oder „Die ersten 100 Tage als CMO“ enthalten: dieses Executive Memo behandelt ausschließlich die thematische Markt- oder Markenherausforderung. Keine 100-Tage-Agenda, keine CMO-Onboarding-Sprache, keine ersten 100 Tage in title, standfirst, about_fit, Potenzialen oder CTA.
 </sonderfall>
 <zusammenhang>
-title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss. market_title und die KPIs belegen, dass der Markt sich bewegt. Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Nur positive Ausgänge. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel in der Sprache des Falls, ohne den Leistungsnamen zu wiederholen. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation. Nichts erzählt die Signalüberschrift noch einmal.
+title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss. Die drei summary-Schlüssel darunter fassen Lage, Marktbefund und Hebel in je höchstens acht Wörtern, ohne eine Überschrift zu kopieren. market_title und die vier KPIs mit ihren Quellenzeilen belegen, dass der Markt sich bewegt; insight_title zieht daraus den Befund zum Adressaten. Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Nur positive Ausgänge. quote_text zieht die Lehre der drei Fälle als ROOTS-Haltung. Die drei potentials übersetzen das auf den Adressaten: finding ist der belegte Zustand, potential der ROOTS-Hebel in der Sprache des Falls, ohne den Leistungsnamen zu wiederholen. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation. Nichts erzählt die Signalüberschrift noch einmal.
 </zusammenhang>
 <auftrag>
 ${auftrag}
 </auftrag>
 <aufbau>
+Die Vorlage ist fest. Jedes Feld hat seinen Platz auf einer der vier Seiten und wird ausgefüllt. Ein leeres Feld hinterlässt eine sichtbare Lücke, ein doppelt verwendeter Satz eine sichtbare Wiederholung. Kein Feld wiederholt ein anderes wörtlich.
+
+Seite 1, Cover:
 title: Whitepaper-Titel, These mit Verb, höchstens 15 Wörter. Die Herausforderung aus roots_anschluss, nicht die Leistung, nicht die Meldung${nennen ? `, mit ${firma} im Satz` : ", kein Firmenname"}.
 standfirst: ein bis zwei Sätze, warum diese Herausforderung jetzt anliegt. Beleg aus dem Artikel als Timing, keine zweite These, keine Ernennung, kein Deal-Text.
-market_title: Überschrift von 01 Marktdynamik. Die Kategorie oder der Markt, nicht das Unternehmen.
-market_p1, market_p2: je ein Absatz. Lage des Marktes, dann warum der Moment jetzt ist. Zahlen nur aus kennzahlen_im_artikel.
-kpis: drei oder vier belegte Kennzahlen. value in einer Zeile, ohne Umbruch, z. B. 14 % oder 329 Mio. €. label erklärt den Bezug. Leer, wenn keine Ziffer vorliegt.
-benchmark_title: Überschrift von 02. Was Benchmarks am selben Hebel richtig machen.
+summary_0, summary_1, summary_2: die drei Schlüssel unter dem Standfirst, in den festen Spalten „Status quo“, „Markt-Insight“, „Das Potenzial“. Je höchstens acht Wörter, kein Punkt am Ende, kein ganzer Satz. summary_0 ist die heutige Lage des Adressaten, summary_1 der Marktbefund, wenn möglich mit einer belegten Zahl, summary_2 der Hebel. Keine Kopie von title, market_title, benchmark_title oder potentials_title.
+
+Seite 2, 01 Marktdynamik:
+market_title: Überschrift der Seite. Die Kategorie oder der Markt, nicht das Unternehmen.
+market_p1: ein Absatz zur Lage des Marktes. Zahlen nur aus kennzahlen_im_artikel.
+kpis: genau vier Kennzahlen in der Leiste. Jede trägt value, label und source. value steht in einer Zeile, ohne Umbruch, deutsch formatiert, z. B. 42 % oder 8,9 Mrd. €. label ist der Bezug in einem halben Satz. source ist „Herausgeber, Jahr“, z. B. „Simon-Kucher, 2026“. Eine Kennzahl ohne belegte Quelle wird verworfen, also liefere nur belegte. Liegen im Artikel weniger als vier belegte Zahlen, nimm belegte Marktzahlen aus dem Datenblock und lass den Rest weg statt zu erfinden.
+insight_title: die Aussage neben dem Bild am Seitenfuß, ein Satz. Der Befund zum Adressaten, nicht die Wiederholung von market_title.
+market_p2: der Absatz unter insight_title. Warum der Moment jetzt ist.
+
+Seite 3, 02 Benchmarks:
+benchmark_title: Überschrift der Seite. Was die drei Marken am selben Hebel gemeinsam richtig machen.
 benchmark_lead: ein Satz, worin der ROOTS-Hebel liegt, nicht die Nachricht.
-benchmarks: genau drei. name, text und tag kommen aus <benchmarks>, wenn der Block steht. Sonst qualitative Analogie aus artikel zum selben Hebel. Ziffern nur mit Beleg. Nur positive Ausgänge, keine gescheiterten Versuche.
-potentials_title: Überschrift von 03. Der Channel- oder Lage-Check DIESES Unternehmens.
-potentials_lead: ein Satz, wie viele Ansatzpunkte der Check zeigt.
-potentials: genau drei. title mit Verb oder Gegensatz („vom … zur …“), höchstens acht Wörter. finding = belegter Zustand, ein bis zwei kurze Sätze. potential = was ROOTS daraus macht, ein bis zwei kurze Sätze, ohne erfundene Zahl. Beide Felder müssen auf der Karte über dem Futter bleiben. image_hint: kurze Szene zum Finding, kein Firmenlogo, kein Personenporträt.
+benchmarks: genau drei. name ist die Marke, bei Handelsmarken „Händler · Marke“. title ist die eigene Überschrift der Karte: was dieser Benchmark getan hat, höchstens acht Wörter, ohne Punkt. text ist der Beleg, tag die übertragbare Lehre in einem Satz. name, text und tag kommen aus <benchmarks>, wenn der Block steht; title formulierst du dazu. Sonst qualitative Analogie aus artikel zum selben Hebel. Ziffern nur mit Beleg. Nur positive Ausgänge, keine gescheiterten Versuche.
+quote_text: das Zitat im blauen Band unter den Benchmarks, ein bis zwei Sätze. Es zieht die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person, kein Slogan. Die Zuschreibung darunter ist fest.
+sources: „Titel · Herausgeber · Jahr“, nur Belege aus signal oder artikel. Sie stehen als Quellenzeile auf dieser Seite.
+
+Seite 4, 03 ROOTS Empfehlung:
+potentials_title: Überschrift der Seite. Der Channel- oder Lage-Check DIESES Unternehmens.
+potentials_lead: ein bis zwei Sätze, was der Check für diesen Adressaten zeigt.
+potentials: genau drei. Die Spaltenlabels „Strategie“, „Wachstum“, „Aktivierung“ sind fest. title mit Verb oder Gegensatz („vom … zur …“), höchstens acht Wörter. finding = belegter Zustand, ein bis zwei kurze Sätze. potential = was ROOTS daraus macht, ein bis zwei kurze Sätze, ohne erfundene Zahl. Beide Felder müssen auf der Karte über dem Futter bleiben. image_hint: kurze Szene zum Finding, kein Firmenlogo, kein Personenporträt.
 cta: die Frage im blauen Band, an den Adressaten, ohne Werbeton.
 about_fit: ein Satz, der roots_leistung an diesen Fall bindet. Der ROOTS-Stammtext davor ist fest. Erst hier darf die Leistung beim Namen genannt werden.
-sources: „Titel · Herausgeber · Jahr“, nur Belege aus signal oder artikel.
 </aufbau>
-${SPRACHREGELN}
+<laengen>
+Die Vorlage ist auf feste Seitenhöhen gesetzt. Zu kurze Felder hinterlassen eine leere Fläche über dem Fussband, zu lange schieben die Seite über den Rand. Diese Zielbereiche sind am Referenzmemo gemessen und gelten für jedes Feld:
+${MEMO_LAENGEN}
+Die Absätze (market_p1, market_p2, potentials_lead, bmN_text, potN_potential) tragen die Seitenhöhe. Sie unter den Mindestwert zu schreiben ist der häufigste Fehler.
+</laengen>
+${eigeneInhalte}${SPRACHREGELN}
 ${BELEGREGELN}
 ${DATENHINWEIS}
 ${daten}
@@ -2088,13 +2187,24 @@ export const ASSET_SCHEMA_LINKEDIN = {
   },
 };
 
+const MEMO_STAT_SCHEMA = {
+  type: "OBJECT",
+  required: ["value", "label", "source"],
+  properties: {
+    value: { type: "STRING", description: "Zahl im Kasten, deutsch formatiert, eine Zeile, z. B. 42 % oder 8,9 Mrd. €." },
+    label: { type: "STRING", description: "Bezug der Zahl in einem halben Satz, z. B. „der Verbraucher greifen überwiegend zu Eigenmarken“." },
+    source: { type: "STRING", description: "Quellenzeile unter dem Kasten: „Herausgeber, Jahr“, z. B. „Simon-Kucher, 2026“. Nur belegte Quellen, nicht erfinden." },
+  },
+};
+
 const BENCH_SCHEMA = {
   type: "OBJECT",
-  required: ["name", "text", "tag"],
+  required: ["name", "title", "text", "tag"],
   properties: {
-    name: { type: "STRING", description: "Firma oder Marke des Benchmarks." },
+    name: { type: "STRING", description: "Firma oder Marke des Benchmarks, z. B. „Lidl · Parkside“." },
+    title: { type: "STRING", description: "Überschrift der Benchmark-Karte: was dieser Benchmark getan hat, höchstens acht Wörter, ohne Punkt." },
     text: { type: "STRING", description: "Beleg, was der Benchmark getan hat und warum es gewirkt hat. Kein Flop. Ziffern nur mit Artikelbeleg." },
-    tag: { type: "STRING", description: "Übertragbare Lehre in wenigen Worten." },
+    tag: { type: "STRING", description: "Übertragbare Lehre in einem Satz." },
     image_hint: { type: "STRING", description: "Bildmotiv in Worten. Die Datei kommt vom Nutzer." },
   },
 };
@@ -2112,19 +2222,29 @@ const POT_SCHEMA = {
 
 export const ASSET_SCHEMA_MEMO = {
   type: "OBJECT",
-  required: ["title", "standfirst", "market_title", "market_p1", "benchmarks", "potentials", "cta"],
+  required: [
+    "title", "standfirst", "summary_0", "summary_1", "summary_2",
+    "market_title", "market_p1", "market_p2", "kpis", "insight_title",
+    "benchmark_title", "benchmark_lead", "benchmarks", "quote_text",
+    "potentials_title", "potentials_lead", "potentials", "cta", "about_fit", "sources",
+  ],
   properties: {
     title: { type: "STRING", description: "Action Title, These mit Verb, höchstens 15 Wörter. Herausforderung für Marke oder Markt, nicht die Nachrichtenmeldung." },
     standfirst: { type: "STRING", description: "Ein bis zwei Sätze, warum diese Herausforderung jetzt anliegt. Keine Personalie." },
+    summary_0: { type: "STRING", description: "Erster Schlüsselsatz auf dem Cover unter „Status quo“: die heutige Lage des Adressaten, höchstens acht Wörter, kein Punkt." },
+    summary_1: { type: "STRING", description: "Zweiter Schlüsselsatz auf dem Cover unter „Markt-Insight“: der Marktbefund, wenn möglich mit belegter Zahl, höchstens acht Wörter, kein Punkt." },
+    summary_2: { type: "STRING", description: "Dritter Schlüsselsatz auf dem Cover unter „Das Potenzial“: der Hebel, höchstens acht Wörter, kein Punkt." },
     market_title: { type: "STRING", description: "Überschrift von 01 Marktdynamik. Kategorie oder Markt, nicht das Unternehmen." },
     market_p1: { type: "STRING", description: "Erster Absatz: Lage des Marktes." },
-    market_p2: { type: "STRING", description: "Zweiter Absatz: warum der Moment jetzt ist." },
-    kpis: { type: "ARRAY", items: STAT_SCHEMA, description: "Drei oder vier belegte Kennzahlen. Leer, wenn keine Ziffer vorliegt." },
-    benchmark_title: { type: "STRING", description: "Überschrift von 02 Benchmarks." },
+    market_p2: { type: "STRING", description: "Zweiter Absatz neben dem Bild: warum der Moment jetzt ist." },
+    kpis: { type: "ARRAY", items: MEMO_STAT_SCHEMA, description: "Genau vier belegte Kennzahlen, jede mit value, label und source. Kennzahlen ohne Quelle werden verworfen." },
+    insight_title: { type: "STRING", description: "Die Aussage neben dem Bild auf Seite 2: der Befund zum Adressaten in einem Satz. Nicht market_title wiederholen." },
+    benchmark_title: { type: "STRING", description: "Überschrift von 02 Benchmarks: was die drei Marken gemeinsam richtig machen." },
     benchmark_lead: { type: "STRING", description: "Ein Satz, worin der Hebel der Benchmarks liegt." },
-    benchmarks: { type: "ARRAY", items: BENCH_SCHEMA, description: "Genau drei Benchmarks mit positivem Ausgang." },
-    potentials_title: { type: "STRING", description: "Überschrift von 03 Potenziale." },
-    potentials_lead: { type: "STRING", description: "Ein Satz, wie viele Ansatzpunkte der Check zeigt." },
+    benchmarks: { type: "ARRAY", items: BENCH_SCHEMA, description: "Genau drei Benchmarks mit positivem Ausgang, jeder mit eigener Kartenüberschrift." },
+    quote_text: { type: "STRING", description: "Das Zitat im blauen Band unter den Benchmarks: die Lehre der drei Fälle als ROOTS-Haltung, ein bis zwei Sätze. Kein Artikelzitat, keine fremde Person." },
+    potentials_title: { type: "STRING", description: "Überschrift von 03 ROOTS Empfehlung." },
+    potentials_lead: { type: "STRING", description: "Ein bis zwei Sätze, was der Check für diesen Adressaten zeigt." },
     potentials: { type: "ARRAY", items: POT_SCHEMA, description: "Genau drei Potenziale für DIESES Unternehmen." },
     cta: { type: "STRING", description: "Gesprächsfrage im blauen Band. Der Knopftext ist fest." },
     about_fit: { type: "STRING", description: "Ein Satz, der roots_leistung an diesen Fall bindet." },
@@ -3004,6 +3124,7 @@ function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {
     const item = record(entry);
     return {
       name: text(item.name, 80),
+      title: text(item.title, 90),
       text: text(item.text, 420),
       tag: text(item.tag, 80),
       image_hint: text(item.image_hint, 200),
@@ -3127,10 +3248,12 @@ function rejectMemoNewsRetelling(
 
 function rejectMemoCmoHundredDays(memo: MemoPayload): void {
   const text = [
-    memo.title, memo.standfirst, memo.market_title, memo.market_p1, memo.market_p2,
-    memo.benchmark_title, memo.benchmark_lead, memo.potentials_title, memo.potentials_lead,
+    memo.title, memo.standfirst, memo.summary_0, memo.summary_1, memo.summary_2,
+    memo.market_title, memo.market_p1, memo.market_p2, memo.insight_title,
+    memo.benchmark_title, memo.benchmark_lead, memo.quote_text,
+    memo.potentials_title, memo.potentials_lead,
     memo.cta, memo.about_fit,
-    ...memo.benchmarks.flatMap((eintrag) => [eintrag.name, eintrag.text, eintrag.tag]),
+    ...memo.benchmarks.flatMap((eintrag) => [eintrag.name, eintrag.title, eintrag.text, eintrag.tag]),
     ...memo.potentials.flatMap((eintrag) => [eintrag.title, eintrag.finding, eintrag.potential]),
   ].join("\n");
   if (/100[\s-]*tage|erste[n]?\s+(?:hundert|100)[\s-]*tage/i.test(text)) {
@@ -3151,17 +3274,60 @@ function normalizePotentials(raw: unknown): MemoPotential[] {
   }).filter((item) => item.title || item.finding || item.potential);
 }
 
+/**
+ * Legt die selbst geschriebenen Felder ueber die Modellantwort. Der Nutzer hat
+ * sie im Abschnitts-Fragebogen gegen den Feldvertrag geschrieben; ein Modell,
+ * das sie "glaettet", haette seine Arbeit verworfen. Deshalb gewinnt hier der
+ * Nutzer, nicht das Modell.
+ */
+function applyMemoFields(memo: MemoPayload, fields: Record<string, string>): MemoPayload {
+  for (const [key, wert] of Object.entries(fields)) {
+    if (!wert) continue;
+    const kpi = /^kpi([1-4])_(value|label|source)$/.exec(key);
+    if (kpi) {
+      const i = Number(kpi[1]) - 1;
+      while (memo.kpis.length <= i) memo.kpis.push({ value: "", label: "", source: "" });
+      memo.kpis[i] = { ...memo.kpis[i], [kpi[2]]: wert };
+      continue;
+    }
+    const bm = /^bm([1-3])_(name|title|text|tag)$/.exec(key);
+    if (bm) {
+      const i = Number(bm[1]) - 1;
+      while (memo.benchmarks.length <= i) memo.benchmarks.push({ name: "", title: "", text: "", tag: "", image_hint: "" });
+      memo.benchmarks[i] = { ...memo.benchmarks[i], [bm[2]]: wert };
+      continue;
+    }
+    const pot = /^pot([1-3])_(title|finding|potential)$/.exec(key);
+    if (pot) {
+      const i = Number(pot[1]) - 1;
+      while (memo.potentials.length <= i) memo.potentials.push({ title: "", finding: "", potential: "", image_hint: "" });
+      memo.potentials[i] = { ...memo.potentials[i], [pot[2]]: wert };
+      continue;
+    }
+    if (key === "sources") {
+      memo.sources = wert.split(/[;\n]/).map((zeile) => zeile.trim()).filter(Boolean).slice(0, 6);
+      continue;
+    }
+    if (key in memo) (memo as unknown as Record<string, string>)[key] = wert;
+  }
+  return memo;
+}
+
 function normalizeMemo(
   raw: Record<string, unknown>,
   answers: MemoAnswers,
   context: AssetNormalizeContext,
 ): MemoPayload {
-  const title = capWords(text(raw.title, 160), 15);
-  const standfirst = text(raw.standfirst, 400);
+  const eigeneFelder = answers.memo_fields;
+  const title = eigeneFelder.title || capWords(text(raw.title, 160), 15);
+  const standfirst = eigeneFelder.standfirst || text(raw.standfirst, 400);
   let benchmarks = normalizeBenchmarks(raw.benchmarks);
   if (benchmarks.length < 3 && answers.benchmarks.length >= 3) {
     benchmarks = answers.benchmarks.slice(0, 3).map((item) => ({
       name: item.name,
+      // Der Steckbrief aus dem Fragebogen kennt keine Kartenueberschrift. Die
+      // Lehre traegt sie hier, damit die Karte nicht ohne Titel bleibt.
+      title: capWords(item.tag, 8),
       text: item.text,
       tag: item.tag,
       image_hint: "",
@@ -3175,30 +3341,61 @@ function normalizeMemo(
     aboutFit = [aboutFit, `ROOTS setzt hier mit ${leistung} an.`].filter(Boolean).join(" ");
   }
 
-  if (!title || !standfirst) {
-    const fehlt = [!title ? "title" : "", !standfirst ? "standfirst" : ""].filter(Boolean);
+  // Das Memo ist eine feste vierseitige Vorlage. Jedes Feld darin hat eine
+  // eigene Aufgabe; ein leeres Feld faellt in der Seite als Luecke auf oder
+  // zwingt das Frontend, ein anderes Feld zweimal zu zeigen. Deshalb sind die
+  // Cover-Schluessel, die Bildaussage und das Zitat hier tragend, nicht optional.
+  // Was der Nutzer selbst geschrieben hat, zaehlt als geliefert: er hat das
+  // Feld vor dem Lauf gefuellt, das Modell musste es nicht noch einmal
+  // schreiben. Sonst haette ein selbst geschriebenes Cover den Lauf abgebrochen.
+  const eigen = answers.memo_fields;
+  const summary0 = eigen.summary_0 || text(raw.summary_0, 90);
+  const summary1 = eigen.summary_1 || text(raw.summary_1, 90);
+  const summary2 = eigen.summary_2 || text(raw.summary_2, 90);
+  const insightTitle = eigen.insight_title || text(raw.insight_title, 200);
+  const quoteText = eigen.quote_text || text(raw.quote_text, 320);
+  const fehlt = [
+    !title ? "title" : "", !standfirst ? "standfirst" : "",
+    !summary0 ? "summary_0" : "", !summary1 ? "summary_1" : "", !summary2 ? "summary_2" : "",
+    !insightTitle ? "insight_title" : "", !quoteText ? "quote_text" : "",
+  ].filter(Boolean);
+  if (fehlt.length) {
     throw new Error(`Der Ansprache fehlen tragende Felder: ${fehlt.join(", ")}. Geliefert wurden: ${Object.keys(raw).join(", ") || "keine Felder"}.`);
   }
   if (benchmarks.length < 3) {
     throw new Error(`Das Memo braucht genau drei Benchmarks. Geliefert: ${benchmarks.length}.`);
   }
+  const ohneTitel = benchmarks.filter((eintrag, i) => !eintrag.title && !eigen[`bm${i + 1}_title`]).length;
+  if (ohneTitel) {
+    throw new Error(`Jede Benchmark-Karte braucht eine eigene Überschrift. Ohne Überschrift: ${ohneTitel}.`);
+  }
   if (potentials.length < 3) {
     throw new Error(`Das Memo braucht genau drei Potenziale. Geliefert: ${potentials.length}.`);
   }
 
-  const corpus = [context.articleText, context.rootsOffering, context.rootsLink, context.benchmarkCorpus].filter(Boolean).join("\n");
-  const kpis = stats(raw.kpis, 4).filter((eintrag) => !corpus || !digitKey(eintrag.value) || numberIsAttested(eintrag.value, corpus));
+  const corpus = [
+    context.articleText, context.rootsOffering, context.rootsLink, context.benchmarkCorpus,
+    // Was der Nutzer selbst geschrieben hat, behauptet er selbst. Diese Zahlen
+    // gegen den Artikel zu pruefen haette seine eigene Eingabe verworfen.
+    ...Object.values(answers.memo_fields),
+  ].filter(Boolean).join("\n");
+  const kpis = memoStats(raw.kpis, 4).filter((eintrag) => !corpus || !digitKey(eintrag.value) || numberIsAttested(eintrag.value, corpus));
 
   const memo: MemoPayload = {
     title,
     standfirst,
+    summary_0: summary0,
+    summary_1: summary1,
+    summary_2: summary2,
     market_title: text(raw.market_title, 160),
     market_p1: richText(raw.market_p1, 700),
     market_p2: richText(raw.market_p2, 700),
     kpis,
+    insight_title: insightTitle,
     benchmark_title: text(raw.benchmark_title, 160),
     benchmark_lead: text(raw.benchmark_lead, 320),
     benchmarks,
+    quote_text: quoteText,
     potentials_title: text(raw.potentials_title, 160),
     potentials_lead: text(raw.potentials_lead, 320),
     potentials,
@@ -3206,12 +3403,18 @@ function normalizeMemo(
     about_fit: aboutFit,
     sources: list(raw.sources, 6, 200),
   };
+  applyMemoFields(memo, answers.memo_fields);
+  // Auch nach der Uebernahme gilt: eine Zahl ohne Bezug und Quelle steht im
+  // Kasten ohne Deckung.
+  memo.kpis = memo.kpis.filter((eintrag) => eintrag.value && eintrag.label && eintrag.source).slice(0, 4);
   rejectUnattested([
-    memo.title, memo.standfirst, memo.market_title, memo.market_p1, memo.market_p2,
-    memo.benchmark_title, memo.benchmark_lead, memo.potentials_title, memo.potentials_lead,
+    memo.title, memo.standfirst, memo.summary_0, memo.summary_1, memo.summary_2,
+    memo.market_title, memo.market_p1, memo.market_p2, memo.insight_title,
+    memo.benchmark_title, memo.benchmark_lead, memo.quote_text,
+    memo.potentials_title, memo.potentials_lead,
     memo.cta, memo.about_fit,
     ...memo.kpis.flatMap((kpi) => [kpi.value, kpi.label]),
-    ...memo.benchmarks.flatMap((eintrag) => [eintrag.name, eintrag.text, eintrag.tag, eintrag.image_hint]),
+    ...memo.benchmarks.flatMap((eintrag) => [eintrag.name, eintrag.title, eintrag.text, eintrag.tag, eintrag.image_hint]),
     ...memo.potentials.flatMap((eintrag) => [eintrag.title, eintrag.finding, eintrag.potential, eintrag.image_hint]),
     ...memo.sources,
   ].join("\n"), corpus, "Die Ansprache");

@@ -278,9 +278,18 @@ function memoQuestions(firma, cmoHundredDays = false) {
       key: "storyline",
       label: "Inhalt",
       when: nurThema,
-      options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich gebe den Text vor"]],
-      free: { key: "storyline_text", on: "custom", rows: 5, platzhalter: "Kernaussage, Stichpunkte oder fertiger Text" },
+      hint: "Selbst schreiben öffnet die vier Seiten des Memos als eigene Schritte. Jedes Feld, das leer bleibt, schreibt das Modell.",
+      options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich schreibe die Abschnitte selbst"]],
     },
+    ...MEMO_SECTIONS.map((section) => ({
+      key: section.id,
+      art: "memo-section",
+      section,
+      label: section.label,
+      hint: section.hinweis,
+      when: (answers) => answers.storyline === "custom" && nurThema(answers),
+      options: [],
+    })),
     {
       key: "benchmarks",
       label: "Benchmarking",
@@ -899,6 +908,67 @@ const CHROME_CSS = `
 @keyframes lg-guide-in{from{opacity:0; transform:translateY(-2px);} to{opacity:1; transform:none;}}
 #as-overlay .as-free:focus{outline:none; border-color:var(--brand,#206efb); box-shadow:var(--shadow-focus,0 0 0 3px rgba(32,110,251,.15));}
 
+/* ── Abschnitts-Editor der Ansprache ── */
+#as-overlay .as-mf{display:flex; flex-direction:column; gap:12px; margin-top:4px;}
+#as-overlay .as-mf-kopf{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  font-size:12px; color:var(--muted,#475569);
+}
+#as-overlay .as-mf-kopf b{font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--brand,#206efb);}
+#as-overlay .as-mf-feld{
+  border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:10px 12px 11px;
+  background:var(--surface,#f8fafc); display:flex; flex-direction:column; gap:6px;
+  transition:border-color .18s ease, background .18s ease;
+}
+#as-overlay .as-mf-feld:focus-within{border-color:var(--brand,#206efb); background:#fff;}
+#as-overlay .as-mf-feld > label{
+  font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:700;
+  color:var(--muted,#475569); display:flex; align-items:center; gap:7px;
+}
+#as-overlay .as-mf-feld > label .as-mf-pflicht{color:var(--brand,#206efb);}
+#as-overlay .as-mf-hilfe{font-size:12px; line-height:1.45; color:var(--muted,#475569); margin:0;}
+#as-overlay .as-mf-feld input, #as-overlay .as-mf-feld textarea{
+  width:100%; border:1px solid var(--line,#e2e8f0); border-radius:9px; padding:8px 10px;
+  font:inherit; font-size:13px; line-height:1.5; background:#fff; color:inherit; resize:vertical;
+}
+#as-overlay .as-mf-feld input:focus, #as-overlay .as-mf-feld textarea:focus{
+  outline:none; border-color:var(--brand,#206efb); box-shadow:var(--shadow-focus,0 0 0 3px rgba(32,110,251,.15));
+}
+/* Das Beispiel aus dem Referenzmemo erscheint, sobald im Feld geschrieben
+   wird. Dauerhaft sichtbar waere die Karte bei dreizehn Feldern eine
+   Bildschirmlaenge laenger, und gelesen wird es genau dann. */
+#as-overlay .as-mf-bsp{
+  margin:0; font-size:12px; line-height:1.5; color:var(--muted,#475569);
+  background:#fff; border-radius:9px; padding:7px 10px; display:none;
+  animation:as-mf-bsp-in .22s cubic-bezier(.22,1,.36,1);
+}
+#as-overlay .as-mf-feld:focus-within .as-mf-bsp{display:block;}
+@keyframes as-mf-bsp-in{from{opacity:0; transform:translateY(-3px);} to{opacity:1; transform:none;}}
+@media (prefers-reduced-motion:reduce){#as-overlay .as-mf-bsp{animation:none;}}
+#as-overlay .as-mf-bsp b{color:var(--brand,#206efb); font-size:11px; letter-spacing:.06em; text-transform:uppercase; display:block; margin-bottom:2px;}
+#as-overlay .as-mf-reihe{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+#as-overlay .as-mf-block{
+  display:flex; flex-direction:column; gap:10px;
+  border-radius:12px; padding:0;
+}
+#as-overlay .as-mf-block > h5{
+  margin:6px 0 0; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--brand,#206efb);
+}
+/* Das Feld, in dem geschrieben wird, blinkt in der Vorschau kurz auf. Ohne das
+   sucht man bei fünfzig Feldern jedes Mal, wohin der Text gelaufen ist. */
+#as-overlay [data-livepreview] [data-field].as-mf-ziel{
+  animation:as-mf-puls 1.1s cubic-bezier(.22,1,.36,1);
+  border-radius:4px;
+}
+@keyframes as-mf-puls{
+  0%{box-shadow:0 0 0 6px rgba(32,110,251,.28); background:rgba(32,110,251,.12);}
+  100%{box-shadow:0 0 0 6px rgba(32,110,251,0); background:transparent;}
+}
+@media (prefers-reduced-motion:reduce){
+  #as-overlay [data-livepreview] [data-field].as-mf-ziel{animation:none; background:rgba(32,110,251,.12);}
+}
+
 #as-overlay .as-benches{display:flex; flex-direction:column; gap:10px; margin-top:4px;}
 #as-overlay .as-bench{
   display:grid; grid-template-columns:1fr; gap:6px;
@@ -1387,9 +1457,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260915-2";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260915-1";
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260915-1";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260915-2";
+// Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
+// nie in ein erzeugtes Memo.
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260915-2";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1440,7 +1513,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     stage: { theme: "light", accent: "brand", band: true, corners: "round" },
     slides: [],
     memo: null,
-    memoExample: false,
     postText: "",
     toneOfVoice: "",
     toneGeladen: false,
@@ -1652,9 +1724,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const out = {};
     // Mehrfachauswahl startet leer: eine vorausgewaehlte Slide-Art waere eine
     // Entscheidung, die niemand getroffen hat.
-    for (const q of list) out[q.key] = ["multi", "multi-content", "frame"].includes(q.art) ? "" : q.options[0][0];
+    for (const q of list) out[q.key] = ["multi", "multi-content", "frame", "memo-section"].includes(q.art) ? "" : q.options[0][0];
     for (const q of list) if (q.free) out[q.free.key] = "";
     if (isMemo) {
+      for (const section of MEMO_SECTIONS) {
+        for (const feld of section.fields) out[`memo_${feld.key}`] = "";
+      }
       for (let i = 0; i < 3; i += 1) {
         out[`bench_${i}_name`] = "";
         out[`bench_${i}_text`] = "";
@@ -1740,7 +1815,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return `<div class="as-split2">
         <div class="as-split2-form">${state.formTab === "drafts" ? draftsHtml() : formHtml()}</div>
         <div class="as-split2-prev">
-          <span class="as-prev-label">${isMemo ? "Executive Memo v15 · 4 Seiten" : "Vorschau"}</span>${isMemo ? `<button type="button" class="as-btn" data-act="memo-example">${state.memoExample ? "Zur Signal-Vorschau" : "Deichmann-Beispiel ansehen"}</button>` : ""}
+          <span class="as-prev-label">${isMemo ? "Executive Memo v15 · 4 Seiten" : "Vorschau"}</span>
           <div class="as-prev-host">
             <div class="as-pagehost">
               <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
@@ -2146,35 +2221,43 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     </div>`;
   }
 
+  /**
+   * Vorschau des Memos: dieselbe vierseitige Vorlage mit demselben Feldsatz wie
+   * das fertige Dokument. Jedes Feld, das die KI später füllt, steht auch hier,
+   * damit die Vorschau nicht weniger zeigt als das Ergebnis. Die Zahlen sind
+   * als Platzhalter gekennzeichnet: eine erfundene Quelle in der Vorschau wäre
+   * von einer belegten nicht zu unterscheiden.
+   */
   function demoMemo() {
-    if (state.memoExample) {
-      const memo = normalizeMemo({});
-      memo.html = Object.fromEntries(Object.entries(MEMO_EXAMPLE.html).map(([key, value]) => [memoFieldPath(key), value]));
-      for (const [key, value] of Object.entries(MEMO_EXAMPLE.images)) setImageAt(memo, key, { ...value });
-      return memo;
-    }
     const gemini = state.answers.images !== "upload";
     const hint = (kind) => gemini
       ? `Unternehmenslogo für ${kind} (Worldvectorlogo, Website, Wikimedia).`
       : `Eigenes Bild hier zuschneiden, genau in den ${kind}-Platzhalter.`;
-    return normalizeMemo({
+    const quelle = "Platzhalter, Quelle aus dem Artikel";
+    return normalizeMemo(mitEigenenFeldern({
       title: previewMemoTitle(state.answers, company),
       standfirst: "Der Markt hat sich bewegt. Wer denselben Hebel schon gezogen hat, setzt die neue Messlatte. Dieser Check macht den Moment für den Adressaten konkret.",
+      summary_0: "Sortiment trägt, Marke bleibt unscharf",
+      summary_1: "Der Markt entscheidet schneller als die Fläche",
+      summary_2: "Eigenmarken als eigene Marken führen",
       market_title: "Der Markt belohnt, wer die Marke führt",
       market_p1: "Anbieter, die Sortiment, Kanal und Auftritt als eine Handschrift führen, gewinnen Sichtbarkeit und Tempo.",
-      market_p2: "Wer den Hebel liegen lässt, bleibt in der Fläche vergleichbar und im Dialog austauschbar.",
       kpis: [
-        { value: "3", label: "Hebel im Check" },
-        { value: "1", label: "strategischer Moment" },
-        { value: "4", label: "Wochen bis zum Gespräch" },
+        { value: "42 %", label: "Beispielwert: Marktbewegung aus dem Artikel", source: quelle },
+        { value: "81 %", label: "Beispielwert: Verhalten der Kundenseite", source: quelle },
+        { value: "76 %", label: "Beispielwert: Vergleich zum Wettbewerb", source: quelle },
+        { value: "8,9 Mrd. €", label: "Beispielwert: Größe des Adressaten", source: quelle },
       ],
+      insight_title: "Das Sortiment trägt den Umsatz, der Auftritt trägt ihn noch nicht",
+      market_p2: "Wer den Hebel liegen lässt, bleibt in der Fläche vergleichbar und im Dialog austauschbar.",
       benchmark_title: "Benchmarks ziehen denselben Hebel",
       benchmark_lead: "Drei Marken haben vorgemacht, was übertragbar ist.",
       benchmarks: [
-        { name: "Benchmark A", text: "Hat die Eigenmarke zur Leitmarke gemacht und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche", image_hint: hint("Benchmark") },
-        { name: "Benchmark B", text: "Hat Kanal und Fläche unter eine Handschrift gestellt.", tag: "Eine Linie, zwei Kanäle", image_hint: hint("Benchmark") },
-        { name: "Benchmark C", text: "Hat Kampagnen durch eine haltbare Linie ersetzt.", tag: "Linie vor Saison", image_hint: hint("Benchmark") },
+        { name: "Benchmark A", title: "Eigenmarke zur Leitmarke gemacht", text: "Hat die Eigenmarke zur Leitmarke gemacht und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche", image_hint: hint("Benchmark") },
+        { name: "Benchmark B", title: "Kanal und Fläche zusammengeführt", text: "Hat Kanal und Fläche unter eine Handschrift gestellt.", tag: "Eine Linie, zwei Kanäle", image_hint: hint("Benchmark") },
+        { name: "Benchmark C", title: "Kampagne durch eine Linie ersetzt", text: "Hat Kampagnen durch eine haltbare Linie ersetzt.", tag: "Linie vor Saison", image_hint: hint("Benchmark") },
       ],
+      quote_text: "Eine Eigenmarke wird nicht stärker, weil sie günstiger ist, sondern weil sie eine eigene Handschrift bekommt.",
       potentials_title: "Drei Hebel für den Adressaten",
       potentials_lead: "Der Check zeigt drei Ansatzpunkte, die sich aus dem Signal ergeben.",
       potentials: [
@@ -2184,8 +2267,48 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ],
       cta: "Sollen wir den Check gemeinsam durchgehen?",
       about_fit: "ROOTS setzt hier mit Markenstrategie und Marketing Operations an.",
-      sources: [],
-    });
+      sources: ["Titel des Belegs · Herausgeber · Jahr"],
+    }));
+  }
+
+  /**
+   * Legt die selbst geschriebenen Felder ueber den Platzhalterinhalt. Die
+   * Vorschau zeigt dadurch beim Tippen schon das spaetere Dokument, und was
+   * leer bleibt, steht weiter als Platzhalter da.
+   */
+  function mitEigenenFeldern(basis) {
+    if (state.answers.storyline !== "custom") return basis;
+    const memo = { ...basis, kpis: [...(basis.kpis || [])], benchmarks: [...(basis.benchmarks || [])], potentials: [...(basis.potentials || [])] };
+    for (const section of MEMO_SECTIONS) {
+      for (const feld of section.fields) {
+        const wert = memoFeldWert(feld.key).trim();
+        if (!wert) continue;
+        const kpi = /^kpi(\d)_(value|label|source)$/.exec(feld.key);
+        if (kpi) {
+          const i = Number(kpi[1]) - 1;
+          memo.kpis[i] = { ...(memo.kpis[i] || {}), [kpi[2]]: wert };
+          continue;
+        }
+        const bm = /^bm(\d)_(name|title|text|tag)$/.exec(feld.key);
+        if (bm) {
+          const i = Number(bm[1]) - 1;
+          memo.benchmarks[i] = { ...(memo.benchmarks[i] || {}), [bm[2]]: wert };
+          continue;
+        }
+        const pot = /^pot(\d)_(title|finding|potential)$/.exec(feld.key);
+        if (pot) {
+          const i = Number(pot[1]) - 1;
+          memo.potentials[i] = { ...(memo.potentials[i] || {}), [pot[2]]: wert };
+          continue;
+        }
+        if (feld.key === "sources") {
+          memo.sources = wert.split(";").map((zeile) => zeile.trim()).filter(Boolean);
+          continue;
+        }
+        memo[feld.key] = wert;
+      }
+    }
+    return memo;
   }
 
   /** Aussagekräftige Marketingbeispiele statt Blindtext. Jede Vorschau zeigt
@@ -2400,6 +2523,86 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return `<span class="as-mini"><span class="as-mini-in">${slideHtml(demoSlide(variant), false)}</span></span>`;
   }
 
+  /** Was der Nutzer in ein Memo-Feld geschrieben hat. */
+  function memoFeldWert(key) {
+    return String(state.answers[`memo_${key}`] ?? "");
+  }
+
+  /** Die selbst geschriebenen Felder als flaches Objekt, leere fallen weg. */
+  function eigeneMemoFelder() {
+    const out = {};
+    for (const section of MEMO_SECTIONS) {
+      for (const feld of section.fields) {
+        const wert = memoFeldWert(feld.key).trim();
+        if (wert) out[feld.key] = wert;
+      }
+    }
+    return out;
+  }
+
+  function memoFeldHtml(feld) {
+    const wert = memoFeldWert(feld.key);
+    const id = `as-mf-${feld.key}`;
+    const eingabe = Number(feld.rows) <= 1
+      ? `<input id="${attr(id)}" data-memofeld="${attr(feld.key)}" value="${esc(wert)}" placeholder="${attr(feld.beispiel.slice(0, 60))}">`
+      : `<textarea id="${attr(id)}" rows="${Number(feld.rows) || 3}" data-memofeld="${attr(feld.key)}" placeholder="${attr(feld.beispiel.slice(0, 90))}">${esc(wert)}</textarea>`;
+    return `<div class="as-mf-feld">
+      <label for="${attr(id)}">${esc(feld.label)}${feld.pflicht ? `<span class="as-mf-pflicht">Pflicht</span>` : ""}</label>
+      <p class="as-mf-hilfe">${esc(feld.hilfe)}</p>
+      ${eingabe}
+      <div data-memoguide="${attr(feld.key)}">${guideMarkup(memoFeldHinweise(feld.key, wert), esc)}</div>
+      <p class="as-mf-bsp"><b>Referenzmemo</b>${esc(feld.beispiel)}</p>
+    </div>`;
+  }
+
+  /**
+   * Ein Abschnitt des Memos als Schritt im Fragebogen. Wiederholte Bloecke
+   * (Kennzahl 1 bis 4, Benchmark 1 bis 3, Hebel 1 bis 3) stehen unter einer
+   * eigenen Zwischenueberschrift, sonst laufen fuenfzig Felder als eine Wand.
+   */
+  function memoSectionHtml(q) {
+    const section = q.section;
+    const gefuellt = section.fields.filter((f) => memoFeldWert(f.key).trim()).length;
+    const bloecke = [];
+    let offeneGruppe = null;
+    for (const feld of section.fields) {
+      if (feld.gruppe === undefined) {
+        offeneGruppe = null;
+        bloecke.push(memoFeldHtml(feld));
+        continue;
+      }
+      if (feld.gruppe !== offeneGruppe) {
+        offeneGruppe = feld.gruppe;
+        bloecke.push(`</div><div class="as-mf-block"><h5>${esc(gruppenTitel(section, feld.gruppe))}</h5>`);
+      }
+      bloecke.push(memoFeldHtml(feld));
+    }
+    const fehler = memoAbschnittFehler(section.id, memoFelderRoh());
+    const hinweis = fehler.length
+      ? `<ul class="lg-guide">${fehler.map((zeile) => `<li class="lg-guide-row lg-guide-row--warn"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(zeile)}</span></li>`).join("")}</ul>`
+      : "";
+    return `<div class="as-mf" data-memosection="${attr(section.id)}">
+      <div class="as-mf-kopf"><b>Seite ${section.seite}</b><span>${gefuellt} von ${section.fields.length} Feldern selbst geschrieben</span></div>
+      <div class="as-mf-block">${bloecke.join("")}</div>
+      <div data-memosectionfehler>${hinweis}</div>
+    </div>`;
+  }
+
+  function gruppenTitel(section, gruppe) {
+    if (section.id === "memo_kpis") return `Kennzahl ${gruppe + 1}`;
+    if (section.id === "memo_benchmarks") return `Benchmark ${gruppe + 1}`;
+    return `Hebel ${gruppe + 1}`;
+  }
+
+  /** Rohwerte aller Memo-Felder, auch der leeren: die Pruefung braucht beide. */
+  function memoFelderRoh() {
+    const out = {};
+    for (const section of MEMO_SECTIONS) {
+      for (const feld of section.fields) out[feld.key] = memoFeldWert(feld.key);
+    }
+    return out;
+  }
+
   function benchesHtml() {
     const zeilen = [0, 1, 2].map((i) => `
       <div class="as-bench">
@@ -2526,6 +2729,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     else if (isMemo) teile.push("recherchierte Logos");
     if (a.cta) teile.push("eigener CTA");
     if (a.storyline) teile.push("eigener Inhalt");
+    const eigeneFelder = a.memo_fields && typeof a.memo_fields === "object" ? Object.keys(a.memo_fields).length : 0;
+    if (eigeneFelder) teile.push(`${eigeneFelder} eigene Felder`);
     if (a.asset_type === "carousel") teile.push(`Karussell ${a.slides || ""}`.trim());
     else if (a.asset_type === "single") teile.push("Einzelbild");
     return teile.filter(Boolean).join(" · ") || (row.prompt_version || "");
@@ -2627,7 +2832,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       a[`bench_${i}_text`] = item?.text || "";
       a[`bench_${i}_tag`] = item?.tag || "";
     });
-    a.storyline = src.storyline ? "custom" : "auto";
+    const eigene = src.memo_fields && typeof src.memo_fields === "object" ? src.memo_fields : {};
+    for (const [key, wert] of Object.entries(eigene)) a[`memo_${key}`] = String(wert || "");
+    a.storyline = Object.keys(eigene).length || src.storyline ? "custom" : "auto";
     a.storyline_text = src.storyline || "";
     a.cta = src.cta ? "custom" : "auto";
     a.cta_text = src.cta || "";
@@ -2743,6 +2950,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       else if (key === "slide_content") state.prevIndex = 1;
       else if (key === "slide_end") state.prevIndex = Math.max(0, fragebogenCarouselVarianten().length - 1);
     }
+    const abschnitt = MEMO_SECTIONS.find((s) => s.id === key);
+    if (isMemo && abschnitt) state.prevIndex = abschnitt.seite - 1;
     if (key && key !== ENDE && !state.stepSeen.includes(key)) state.stepSeen.push(key);
   }
 
@@ -2767,6 +2976,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Was in der zusammengeklappten Zeile als Antwort steht. */
   function antwortLabel(q) {
+    if (q.art === "memo-section") {
+      const gefuellt = q.section.fields.filter((f) => memoFeldWert(f.key).trim()).length;
+      if (!gefuellt) return "das Modell schreibt";
+      return `${gefuellt} von ${q.section.fields.length} Feldern selbst`;
+    }
     if (q.art === "multi-content") {
       const gewaehlt = inhaltsArten();
       return gewaehlt.length === 1 ? "1 Inhaltsfolie" : `${gewaehlt.length} Inhaltsfolien`;
@@ -2799,6 +3013,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       toneLoaded: state.toneGeladen,
       toneOfVoice: state.toneOfVoice,
     })) return false;
+    if (q.art === "memo-section") return memoAbschnittFehler(q.key, memoFelderRoh()).length === 0;
     if (q.art === "multi-content") {
       return inhaltsArten().length > 0 && inhaltsArten().every((key) => LOOK[key] === state.answers.look);
     }
@@ -2822,6 +3037,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!q) return false;
     if (!frageErledigt(q)) return false;
     if (q.art === "multi-content") return false;
+    if (q.art === "memo-section") return false;
     // Bei der Formatwahl bleibt die Frage offen, damit Einzelbild und Carousel
     // vor dem Weitergehen sichtbar verglichen werden koennen.
     if (q.key === "asset_type") return false;
@@ -2888,6 +3104,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (q.art === "frame") return frameDropdownHtml(q);
     if (q.art === "multi-content") return contentMultiHtml(q);
     if (q.art === "design") return designHtml(q);
+    if (q.art === "memo-section") return memoSectionHtml(q);
     const opts = q.options.map(([value, label]) => {
       // Der Look steht am Layout statt in einer eigenen Frage, und die
       // Infografiken tragen den Hinweis, dass ihre Zahlen zu setzen sind.
@@ -3044,6 +3261,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         if (box) state.answers[q.free.key] = box.value;
       }
     }
+    form.querySelectorAll("[data-memofeld]").forEach((box) => {
+      state.answers[`memo_${box.getAttribute("data-memofeld")}`] = box.value;
+    });
     form.querySelectorAll("[data-bench]").forEach((box) => {
       const key = box.getAttribute("data-bench") || "";
       const [i, feld] = key.split("-");
@@ -3359,6 +3579,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       uid: uid(),
       document_label: String(src.document_label || company || "Executive Memo"),
       document_date: String(src.document_date || new Date().toLocaleDateString("de-DE", { month: "long", year: "numeric" })),
+      // Die Felder kommen aus der Nutzlast. Die Rückfälle greifen nur für alte
+      // Entwürfe, die vor der vierseitigen Vorlage erzeugt wurden; neue
+      // Nutzlasten tragen sie selbst, sonst lehnt das Backend sie ab.
       summary_0: String(src.summary_0 || src.market_title || ""),
       summary_1: String(src.summary_1 || src.benchmark_title || ""),
       summary_2: String(src.summary_2 || src.potentials_title || ""),
@@ -3366,7 +3589,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       quote_text: String(src.quote_text || src.potentials_lead || ""),
       cover: src.cover || emptyImage(),
       insight: src.insight || emptyImage(),
-      quote_portrait: src.quote_portrait || emptyImage(),
+      // Das Zitat trägt dieselbe Person wie der Kontakt, also auch dasselbe
+      // Porträt. Ohne Bild blendet die Vorlage den Kreis aus und die Zeile
+      // rutscht an den Rand.
+      quote_portrait: src.quote_portrait || { ...MEMO_EXAMPLE.images.contact_portrait },
       contact_portrait: src.contact_portrait || { ...MEMO_EXAMPLE.images.contact_portrait },
       fieldStyles: {},
       title: String(src.title || ""),
@@ -3733,6 +3959,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         if (style) Object.assign(node.style, style);
       });
       syncMemoLinks(area);
+      // Eine lange Kennzahl passt erst nach der Schriftanpassung in ihren
+      // Kasten. Bisher lief die nur beim Speichern, also sah der Nutzer bis
+      // dahin eine Zahl, die in die Nachbarspalte ragte.
+      passeUndPruefeMemo();
     }
     passeSlideTexteAn(area);
     fitStages();
@@ -5027,7 +5257,6 @@ ${stages}${post}
     const hit = event.target.closest("[data-act]");
     if (!hit) return;
     const act = hit.getAttribute("data-act");
-    if (act === "memo-example") { state.memoExample = !state.memoExample; state.prevIndex = 0; render(); return; }
     const frame = hit.closest("[data-uid]");
     const id = frame ? frame.getAttribute("data-uid") : null;
 
@@ -5302,6 +5531,11 @@ ${stages}${post}
       return;
     }
     if (state.step !== "form") return;
+    const memofeld = event.target.closest?.("[data-memofeld]");
+    if (memofeld) {
+      memoFeldGetippt(memofeld);
+      return;
+    }
     const free = event.target.closest?.("[data-free]");
     if (!free) return;
     // Nur die Vorschau, nicht das Formular: sonst verliert das Feld den Fokus.
@@ -5321,6 +5555,55 @@ ${stages}${post}
     if (free.getAttribute("data-free") === "caption_text") zeichneCaption();
     aktualisiereSchreibhilfe(free.getAttribute("data-free"));
   }
+
+  /**
+   * Ein Memo-Feld wurde getippt. Drei Dinge zugleich, ohne das Formular neu zu
+   * zeichnen: der Text landet in der Vorschau, die Schreibhilfe rechnet mit,
+   * und der Abschnitt meldet, ob er noch gegen seinen Vertrag laeuft. Ein
+   * Neuzeichnen wuerde die Schreibmarke aus dem Feld werfen.
+   */
+  function memoFeldGetippt(box) {
+    const key = box.getAttribute("data-memofeld") || "";
+    state.answers[`memo_${key}`] = box.value;
+    const pfad = memoFieldPath(key);
+    const ziel = pfad ? shell.querySelector(`[data-livepreview] [data-field="${CSS.escape(pfad)}"]`) : null;
+    if (ziel && box.value.trim()) {
+      ziel.textContent = box.value;
+      ziel.classList.remove("as-mf-ziel");
+      // Neu anstossen: ohne den Reflow startet dieselbe Animation nicht erneut.
+      void ziel.offsetWidth;
+      ziel.classList.add("as-mf-ziel");
+    }
+    const hilfe = shell.querySelector(`[data-memoguide="${CSS.escape(key)}"]`);
+    if (hilfe) hilfe.innerHTML = guideMarkup(memoFeldHinweise(key, box.value), esc);
+    const fragen = aktiveFragen();
+    const offen = fragen[schrittIndex(fragen)];
+    const weiter = shell.querySelector('[data-act="step-next"]');
+    if (weiter && offen) weiter.disabled = !frageErledigt(offen);
+    if (offen?.art === "memo-section") {
+      const host = shell.querySelector("[data-memosectionfehler]");
+      const fehler = memoAbschnittFehler(offen.key, memoFelderRoh());
+      if (host) {
+        host.innerHTML = fehler.length
+          ? `<ul class="lg-guide">${fehler.map((zeile) => `<li class="lg-guide-row lg-guide-row--warn"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(zeile)}</span></li>`).join("")}</ul>`
+          : "";
+      }
+      const stand = shell.querySelector("[data-memosection] .as-mf-kopf span");
+      if (stand) {
+        const gefuellt = offen.section.fields.filter((f) => memoFeldWert(f.key).trim()).length;
+        stand.textContent = `${gefuellt} von ${offen.section.fields.length} Feldern selbst geschrieben`;
+      }
+    }
+    // Ein geleertes Feld faellt auf den Platzhaltertext zurueck. Das sieht man
+    // erst nach einem vollstaendigen Aufbau, deshalb hier verzoegert.
+    clearTimeout(memoVorschauTimer);
+    memoVorschauTimer = setTimeout(() => {
+      const prev = shell.querySelector("[data-livepreview]");
+      if (prev && state.step === "form") prev.innerHTML = livePreviewHtml();
+      fitPreview();
+    }, 500);
+  }
+  let memoVorschauTimer = 0;
 
   function onKeyDown(event) {
     if (event.key !== "Escape") return;
