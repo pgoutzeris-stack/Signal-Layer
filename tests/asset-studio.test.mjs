@@ -2166,6 +2166,9 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   // Formular: fuenfzig Felder mit Erklaerkasten waren eine Wand.
   assert.doesNotMatch(studio, /as-mf-hilfe|as-mf-erkl/);
   assert.match(studio, /function tipHtml/);
+  // Alle Pillen gleich hoch: vorher richtete sich die Hoehe nach der laengsten
+  // Beschriftung, "Bilder" war doppelt so dick wie "Benchmarking".
+  assert.match(studio, /min-height:40px; white-space:nowrap; max-width:100%;/);
   assert.match(studio, /class="as-tip-box" role="tooltip"/);
   assert.match(studio, /\.as-tip:hover \.as-tip-box, #as-overlay \.as-tip:focus-within \.as-tip-box/);
   // Der Rahmen zeigt in der Vorschau, wo gerade geschrieben wird.
@@ -2555,8 +2558,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260916-4");
-  assert.match(indexHtml, /app\.js\?v=20260916-4/);
+  assert.equal(studioVersion, "20260916-5");
+  assert.match(indexHtml, /app\.js\?v=20260916-5/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
