@@ -56,7 +56,7 @@ export const MEMO_SECTIONS = [
   {
     id: "memo_cover",
     seite: 1,
-    ziel: ".em-cover-in",
+    ziel: ".em-cover-mid",
     label: "Cover",
     zweck: "Die Titelseite entscheidet in zehn Sekunden, ob weitergelesen wird. Sie nennt die Aufgabe, nicht die Nachricht.",
     hinweis: "Die These des Memos und die drei Schlüssel darunter.",

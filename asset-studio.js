@@ -285,7 +285,6 @@ function memoQuestions(firma, cmoHundredDays = false) {
       art: "memo-section",
       section,
       label: section.label,
-      hint: section.hinweis,
       when: (answers) => answers.storyline === "custom" && nurThema(answers),
       options: [],
     })),
@@ -925,24 +924,59 @@ const CHROME_CSS = `
   font-size:12px; color:var(--muted,#475569);
 }
 #as-overlay .as-mf-kopf b{font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--brand,#206efb);}
-/* Kopf des Abschnitts: wofuer die Seite da ist und was hineingehoert. Ohne das
-   raet man bei fuenfzig Feldern, was der Unterschied zwischen Absatz 1 und
-   Absatz 2 sein soll. */
-#as-overlay .as-mf-erkl{
-  border-radius:12px; padding:11px 13px 12px; background:var(--brand-light,#eff6ff);
-  display:flex; flex-direction:column; gap:8px;
+/* Erklaerung liegt hinter einem Symbol, nicht in einem Kasten ueber dem
+   Formular. Bei fuenf Abschnitten und fuenfzig Feldern war der Kasten eine
+   Wand, die nach dem ersten Lesen nur noch Platz kostete. */
+#as-overlay .as-tip{position:relative; display:inline-flex; vertical-align:middle;}
+#as-overlay .as-tip-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:17px; height:17px; padding:0; border:0; border-radius:50%;
+  background:transparent; color:var(--xmut,#94a3b8); font-size:12px; cursor:help;
+  transition:color .15s ease;
 }
-#as-overlay .as-mf-zweck{margin:0; font-size:12.5px; line-height:1.5; color:var(--brand-dark,#165fd9); font-weight:700;}
-#as-overlay .as-mf-liste{margin:0; padding:0 0 0 16px; display:flex; flex-direction:column; gap:4px;}
-#as-overlay .as-mf-liste li{font-size:12px; line-height:1.45; color:var(--muted,#475569);}
-#as-overlay .as-mf-bilder{
-  margin:0; display:flex; gap:7px; align-items:flex-start;
-  font-size:12px; line-height:1.45; color:var(--muted,#475569);
+#as-overlay .as-tip-btn:hover, #as-overlay .as-tip:focus-within .as-tip-btn{color:var(--brand,#206efb);}
+#as-overlay .as-tip-box{
+  position:absolute; left:0; top:calc(100% + 8px); z-index:40; width:290px; max-width:60vw;
+  padding:11px 13px 12px; border-radius:12px;
+  background:var(--ink,#0f172a); color:#e8eef8;
+  font-size:12px; line-height:1.5; font-weight:500; text-transform:none; letter-spacing:0;
+  box-shadow:0 14px 34px rgba(15,23,42,.28);
+  opacity:0; transform:translateY(-4px); pointer-events:none;
+  transition:opacity .16s ease, transform .16s cubic-bezier(.22,1,.36,1);
 }
-#as-overlay .as-mf-bilder i{flex:0 0 auto; margin-top:2px; color:var(--brand,#206efb);}
+#as-overlay .as-tip:hover .as-tip-box, #as-overlay .as-tip:focus-within .as-tip-box{
+  opacity:1; transform:none; pointer-events:auto;
+}
+#as-overlay .as-tip-box::before{
+  content:""; position:absolute; left:4px; top:-5px; width:10px; height:10px;
+  background:inherit; transform:rotate(45deg); border-radius:2px;
+}
+#as-overlay .as-tip-box p{margin:0;}
+#as-overlay .as-tip-zweck{font-weight:700; color:#fff; margin-bottom:7px !important;}
+#as-overlay .as-tip-liste{margin:0; padding:0 0 0 15px; display:flex; flex-direction:column; gap:4px;}
+#as-overlay .as-tip-liste li{color:#c9d6ee;}
+#as-overlay .as-tip-bilder{display:flex; gap:7px; margin-top:8px !important; color:#c9d6ee;}
+#as-overlay .as-tip-bilder i{flex:0 0 auto; margin-top:2px; color:var(--navy-kick,#6ea3ff);}
+#as-overlay .as-tip-text{color:#dce6f7;}
+#as-overlay .as-tip-bsp{margin-top:8px !important; padding-top:8px; border-top:1px solid rgba(255,255,255,.14); color:#c9d6ee;}
+#as-overlay .as-tip-bsp b{display:block; margin-bottom:2px; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--navy-kick,#6ea3ff);}
+@media (prefers-reduced-motion:reduce){#as-overlay .as-tip-box{transition:none;}}
+
+/* Der Rahmen zeigt in der Vorschau, an welcher Stelle des Dokuments gerade
+   geschrieben wird. Der weite Schatten legt den Rest der Seite leise zurueck. */
+#as-overlay .as-zoomring{
+  position:absolute; pointer-events:none; z-index:6;
+  border-style:solid; border-color:var(--brand,#206efb);
+  box-shadow:0 0 0 9999px rgba(15,23,42,.07);
+  animation:as-ring-in .36s cubic-bezier(.22,1,.36,1);
+}
+@keyframes as-ring-in{from{opacity:0;} to{opacity:1;}}
 /* Der Zoom auf den Abschnitt faehrt weich, damit man den Weg sieht. */
-#as-overlay [data-livepreview] .as-prev-scale{transition:transform .32s cubic-bezier(.22,1,.36,1);}
-@media (prefers-reduced-motion:reduce){#as-overlay [data-livepreview] .as-prev-scale{transition:none;}}
+#as-overlay [data-livepreview] .as-prev-scale{transition:transform .34s cubic-bezier(.22,1,.36,1);}
+@media (prefers-reduced-motion:reduce){
+  #as-overlay [data-livepreview] .as-prev-scale{transition:none;}
+  #as-overlay .as-zoomring{animation:none;}
+}
 
 #as-overlay .as-mf-feld{
   border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:10px 12px 11px;
@@ -954,8 +988,8 @@ const CHROME_CSS = `
   font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:700;
   color:var(--muted,#475569); display:flex; align-items:center; gap:7px;
 }
+#as-overlay .as-mf-kopf .as-tip{margin-right:auto;}
 #as-overlay .as-mf-feld > label .as-mf-pflicht{color:var(--brand,#206efb);}
-#as-overlay .as-mf-hilfe{font-size:12px; line-height:1.45; color:var(--muted,#475569); margin:0;}
 #as-overlay .as-mf-feld input, #as-overlay .as-mf-feld textarea{
   width:100%; border:1px solid var(--line,#e2e8f0); border-radius:9px; padding:8px 10px;
   font:inherit; font-size:13px; line-height:1.5; background:#fff; color:inherit; resize:vertical;
@@ -963,18 +997,6 @@ const CHROME_CSS = `
 #as-overlay .as-mf-feld input:focus, #as-overlay .as-mf-feld textarea:focus{
   outline:none; border-color:var(--brand,#206efb); box-shadow:var(--shadow-focus,0 0 0 3px rgba(32,110,251,.15));
 }
-/* Das Beispiel aus dem Referenzmemo erscheint, sobald im Feld geschrieben
-   wird. Dauerhaft sichtbar waere die Karte bei dreizehn Feldern eine
-   Bildschirmlaenge laenger, und gelesen wird es genau dann. */
-#as-overlay .as-mf-bsp{
-  margin:0; font-size:12px; line-height:1.5; color:var(--muted,#475569);
-  background:#fff; border-radius:9px; padding:7px 10px; display:none;
-  animation:as-mf-bsp-in .22s cubic-bezier(.22,1,.36,1);
-}
-#as-overlay .as-mf-feld:focus-within .as-mf-bsp{display:block;}
-@keyframes as-mf-bsp-in{from{opacity:0; transform:translateY(-3px);} to{opacity:1; transform:none;}}
-@media (prefers-reduced-motion:reduce){#as-overlay .as-mf-bsp{animation:none;}}
-#as-overlay .as-mf-bsp b{color:var(--brand,#206efb); font-size:11px; letter-spacing:.06em; text-transform:uppercase; display:block; margin-bottom:2px;}
 #as-overlay .as-mf-reihe{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
 #as-overlay .as-mf-block{
   display:flex; flex-direction:column; gap:10px;
@@ -1486,12 +1508,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-3";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-4";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-3";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-4";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-3";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-4";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1543,6 +1565,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     slides: [],
     memo: null,
     postText: "",
+    prevHtml: "",
     toneOfVoice: "",
     toneGeladen: false,
     designs: [],
@@ -1946,7 +1969,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       }
       if (state.prevIndex >= MEMO_SEITEN) state.prevIndex = 0;
       const html = markiereMemoSeiten(memoHtml(applyFormImages(demoMemo()), false));
-      return `<span class="as-prev-scale">${html}</span>${blaetterNavHtml()}`;
+      return `<span class="as-prev-scale">${html}</span><div data-prevnav>${blaetterNavHtml()}</div>`;
     }
     const carousel = state.answers.asset_type === "carousel";
     const dunkel = state.answers.look === "dunkel";
@@ -2007,10 +2030,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function markiereMemoSeiten(html) {
     let n = 0;
-    return html.replace(/class="em-page/g, () => {
-      const i = n++;
-      return i === state.prevIndex ? 'class="em-page' : 'class="em-page is-off';
-    });
+    return html.replace(/class="em-page/g, () => (n++ === 0 ? 'class="em-page' : 'class="em-page is-off'));
   }
 
   /** Nur die aktuelle Memo-Seite ist sichtbar, damit die Bühne eine A4-Seite misst. */
@@ -2572,18 +2592,28 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return out;
   }
 
+  /** Hinweis hinter einem Symbol. Fuenfzig Felder mit dauerhaftem Erklaertext
+   *  waren eine Wand; gelesen wird er genau einmal, beim ersten Feld. */
+  function tipHtml(inhalt, beschriftung = "Hinweis") {
+    if (!inhalt) return "";
+    return `<span class="as-tip">
+      <button type="button" class="as-tip-btn" aria-label="${attr(beschriftung)}"><i class="fa-regular fa-circle-question"></i></button>
+      <span class="as-tip-box" role="tooltip">${inhalt}</span>
+    </span>`;
+  }
+
   function memoFeldHtml(feld) {
     const wert = memoFeldWert(feld.key);
     const id = `as-mf-${feld.key}`;
     const eingabe = Number(feld.rows) <= 1
       ? `<input id="${attr(id)}" data-memofeld="${attr(feld.key)}" value="${esc(wert)}" placeholder="${attr(feld.beispiel.slice(0, 60))}">`
       : `<textarea id="${attr(id)}" rows="${Number(feld.rows) || 3}" data-memofeld="${attr(feld.key)}" placeholder="${attr(feld.beispiel.slice(0, 90))}">${esc(wert)}</textarea>`;
+    const hinweis = `<p class="as-tip-text">${esc(feld.hilfe)}</p>
+      <p class="as-tip-bsp"><b>Referenzmemo</b>${esc(feld.beispiel)}</p>`;
     return `<div class="as-mf-feld">
-      <label for="${attr(id)}">${esc(feld.label)}${feld.pflicht ? `<span class="as-mf-pflicht">Pflicht</span>` : ""}</label>
-      <p class="as-mf-hilfe">${esc(feld.hilfe)}</p>
+      <label for="${attr(id)}">${esc(feld.label)}${feld.pflicht ? `<span class="as-mf-pflicht">Pflicht</span>` : ""}${tipHtml(hinweis, `Hinweis zu ${feld.label}`)}</label>
       ${eingabe}
       <div data-memoguide="${attr(feld.key)}">${guideMarkup(memoFeldHinweise(feld.key, wert), esc)}</div>
-      <p class="as-mf-bsp"><b>Referenzmemo</b>${esc(feld.beispiel)}</p>
     </div>`;
   }
 
@@ -2615,14 +2645,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       : "";
     const erwartet = (section.erwartet || []).map((zeile) => `<li>${esc(zeile)}</li>`).join("");
     const bilder = section.bilder
-      ? `<p class="as-mf-bilder"><i class="fa-regular fa-image"></i><span>${esc(section.bilder)}</span></p>`
+      ? `<p class="as-tip-bilder"><i class="fa-regular fa-image"></i><span>${esc(section.bilder)}</span></p>`
       : "";
+    const erklaerung = `<p class="as-tip-zweck">${esc(section.zweck || "")}</p>
+      ${erwartet ? `<ul class="as-tip-liste">${erwartet}</ul>` : ""}${bilder}`;
     return `<div class="as-mf" data-memosection="${attr(section.id)}">
-      <div class="as-mf-kopf"><b>Seite ${section.seite}</b><span>${gefuellt} von ${section.fields.length} Feldern selbst geschrieben</span></div>
-      <div class="as-mf-erkl">
-        <p class="as-mf-zweck">${esc(section.zweck || "")}</p>
-        ${erwartet ? `<ul class="as-mf-liste">${erwartet}</ul>` : ""}
-        ${bilder}
+      <div class="as-mf-kopf">
+        <b>Seite ${section.seite}</b>${tipHtml(erklaerung, `Was auf Seite ${section.seite} gehört`)}
+        <span data-memostand>${gefuellt} von ${section.fields.length} Feldern selbst geschrieben</span>
       </div>
       <div class="as-mf-block">${bloecke.join("")}</div>
       <div data-memosectionfehler>${hinweis}</div>
@@ -3271,10 +3301,34 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const form = shell.querySelector(".as-split2-form");
     if (form) form.innerHTML = state.formTab === "drafts" ? draftsHtml() : formHtml();
     zeigeOffeneKarte();
-    const prev = shell.querySelector("[data-livepreview]");
-    if (prev) prev.innerHTML = livePreviewHtml();
+    erneuereVorschau();
     zeichneCaption();
     fitPreview();
+  }
+
+  /**
+   * Die Vorschau nur dann neu aufbauen, wenn sich ihr Inhalt wirklich geaendert
+   * hat. Ein Klick im Fragebogen aendert meist nur den Ausschnitt; das Memo mit
+   * seinen eingebetteten Bildern neu einzuhaengen hat dabei sichtbar geflackert.
+   */
+  function erneuereVorschau() {
+    const prev = shell.querySelector("[data-livepreview]");
+    if (!prev) return;
+    const html = livePreviewHtml();
+    // Die Kennung der Buehne wird bei jedem Aufbau neu gezogen. Sie aus dem
+    // Vergleich zu nehmen ist der Unterschied zwischen "nichts geaendert" und
+    // "sieht jedes Mal anders aus".
+    // Die Blaetterleiste traegt die Seitenzahl und wird gleich danach fuer sich
+    // erneuert; im Vergleich hat sie nichts verloren.
+    const vergleich = html
+      .replace(/ data-uid="[^"]*"/g, "")
+      .replace(/<div data-prevnav>[\s\S]*$/, "");
+    if (vergleich !== state.prevHtml || !prev.firstChild) {
+      prev.innerHTML = html;
+      state.prevHtml = vergleich;
+    }
+    const nav = prev.querySelector("[data-prevnav]");
+    if (nav) nav.innerHTML = blaetterNavHtml();
   }
 
   /** Die offene Frage in die Mitte des Sichtfelds. "nearest" liess sie an der
@@ -4413,29 +4467,69 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   /**
-   * Zoomt den Ausschnitt in den Vorschaukasten. Gemessen wird ohne Skalierung,
-   * sonst rechnet man die eigene Skalierung ein zweites Mal ein.
+   * Lage eines Elements in der Buehne, in Layoutpixeln. Ueber die
+   * getBoundingClientRect zu gehen war falsch: Buehne und Skalierungsrahmen
+   * tragen beide ein transform, das Ergebnis war um den Faktor daneben und der
+   * Rahmen lag im Bild statt am Abschnitt.
    */
+  function versatzInBuehne(el, buehne) {
+    let x = 0;
+    let y = 0;
+    let n = el;
+    while (n && n !== buehne) {
+      x += n.offsetLeft;
+      y += n.offsetTop;
+      n = n.offsetParent;
+    }
+    return { x, y, w: el.offsetWidth, h: el.offsetHeight };
+  }
+
+  /** Zoomt den Ausschnitt in den Vorschaukasten. */
   function zoomeAufAbschnitt(box, inner, stage, ziel, breite, hoehe) {
-    const alt = inner.style.transform;
-    inner.style.transform = "none";
-    const sRect = stage.getBoundingClientRect();
-    const zRect = ziel.getBoundingClientRect();
-    const x = zRect.left - sRect.left;
-    const y = zRect.top - sRect.top;
-    const w = zRect.width || 1;
-    const h = zRect.height || 1;
-    inner.style.transform = alt;
-    const rand = 14;
+    const { x, y, w, h } = versatzInBuehne(ziel, stage);
+    if (!w || !h) return;
+    const rand = 16;
     const faktor = Math.min(breite / (w + rand * 2), hoehe / (h + rand * 2));
+    // Den Ausschnitt mittig setzen. Oben links angeschlagen sammelte sich der
+    // uebrige Platz auf einer Seite und die Seite sah unten leer aus.
+    const uebrigX = (breite / faktor - w) / 2;
+    const uebrigY = (hoehe / faktor - h) / 2;
     box.style.width = `${Math.round(breite)}px`;
     box.style.height = `${Math.round(hoehe)}px`;
     inner.style.transformOrigin = "0 0";
-    inner.style.transform = `scale(${faktor}) translate(${-(x - rand)}px, ${-(y - rand)}px)`;
+    inner.style.transform = `scale(${faktor}) translate(${-(x - uebrigX)}px, ${-(y - uebrigY)}px)`;
     inner.style.width = `${stage.offsetWidth || MEMO_SEITE_PX.w}px`;
     inner.style.height = `${stage.offsetHeight || MEMO_SEITE_PX.h}px`;
     inner.style.marginRight = "0px";
     inner.style.marginBottom = "0px";
+    setzeZoomRing(stage, x, y, w, h, faktor);
+  }
+
+  /**
+   * Der Rahmen um den Abschnitt, an dem gerade geschrieben wird. Er liegt in
+   * der skalierten Buehne, deshalb wird jede Staerke durch den Faktor geteilt:
+   * sonst waere die Linie bei starkem Zoom fingerdick.
+   */
+  function setzeZoomRing(stage, x, y, w, h, faktor) {
+    let ring = stage.querySelector("[data-zoomring]");
+    if (!ring) {
+      ring = document.createElement("div");
+      ring.setAttribute("data-zoomring", "");
+      ring.setAttribute("data-as-chrome", "");
+      ring.className = "as-zoomring";
+      stage.appendChild(ring);
+    }
+    const luft = 10;
+    ring.style.left = `${Math.round(x - luft)}px`;
+    ring.style.top = `${Math.round(y - luft)}px`;
+    ring.style.width = `${Math.round(w + luft * 2)}px`;
+    ring.style.height = `${Math.round(h + luft * 2)}px`;
+    ring.style.borderWidth = `${(2 / faktor).toFixed(2)}px`;
+    ring.style.borderRadius = `${(14 / faktor).toFixed(1)}px`;
+  }
+
+  function entferneZoomRing(wurzel) {
+    wurzel?.querySelectorAll("[data-zoomring]").forEach((ring) => ring.remove());
   }
 
   function fitPreview() {
@@ -4466,6 +4560,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return;
     }
     inner.style.transformOrigin = "";
+    entferneZoomRing(stage);
     const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
     const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
     const faktor = Math.min(breite / w, hoehe / h);
@@ -5485,7 +5580,7 @@ ${stages}${post}
       state.prevIndex = (state.prevIndex + richtung + anzahl) % anzahl;
       const box = shell.querySelector("[data-livepreview]");
       if (box) {
-        box.innerHTML = livePreviewHtml();
+        erneuereVorschau();
         fitPreview();
         return;
       }
@@ -5687,7 +5782,7 @@ ${stages}${post}
           ? `<ul class="lg-guide">${fehler.map((zeile) => `<li class="lg-guide-row lg-guide-row--warn"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(zeile)}</span></li>`).join("")}</ul>`
           : "";
       }
-      const stand = shell.querySelector("[data-memosection] .as-mf-kopf span");
+      const stand = shell.querySelector("[data-memostand]");
       if (stand) {
         const gefuellt = offen.section.fields.filter((f) => memoFeldWert(f.key).trim()).length;
         stand.textContent = `${gefuellt} von ${offen.section.fields.length} Feldern selbst geschrieben`;
@@ -5697,8 +5792,7 @@ ${stages}${post}
     // erst nach einem vollstaendigen Aufbau, deshalb hier verzoegert.
     clearTimeout(memoVorschauTimer);
     memoVorschauTimer = setTimeout(() => {
-      const prev = shell.querySelector("[data-livepreview]");
-      if (prev && state.step === "form") prev.innerHTML = livePreviewHtml();
+      if (state.step === "form") erneuereVorschau();
       fitPreview();
     }, 500);
   }

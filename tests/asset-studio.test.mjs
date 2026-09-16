@@ -2162,7 +2162,18 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   assert.match(studio, /function mitEigenenFeldern/);
   // Das Beispiel aus dem Referenzmemo steht an jedem Feld.
   assert.match(studio, /Referenzmemo/);
-  assert.match(studio, /#as-overlay \.as-mf-feld:focus-within \.as-mf-bsp\{display:block;\}/);
+  // Erklaerung und Beispiel liegen hinter einem Symbol, nicht als Dauertext im
+  // Formular: fuenfzig Felder mit Erklaerkasten waren eine Wand.
+  assert.doesNotMatch(studio, /as-mf-hilfe|as-mf-erkl/);
+  assert.match(studio, /function tipHtml/);
+  assert.match(studio, /class="as-tip-box" role="tooltip"/);
+  assert.match(studio, /\.as-tip:hover \.as-tip-box, #as-overlay \.as-tip:focus-within \.as-tip-box/);
+  // Der Rahmen zeigt in der Vorschau, wo gerade geschrieben wird.
+  assert.match(studio, /function setzeZoomRing/);
+  assert.match(studio, /ring\.className = "as-zoomring"/);
+  // Ein Klick im Fragebogen baut die Vorschau nicht neu auf.
+  assert.match(studio, /function erneuereVorschau/);
+  assert.match(studio, /if \(vergleich !== state\.prevHtml \|\| !prev\.firstChild\)/);
 });
 
 test("Kurze Inhalte hinterlassen keine weisse Wanne mehr", () => {
@@ -2544,8 +2555,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260916-3");
-  assert.match(indexHtml, /app\.js\?v=20260916-3/);
+  assert.equal(studioVersion, "20260916-4");
+  assert.match(indexHtml, /app\.js\?v=20260916-4/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
