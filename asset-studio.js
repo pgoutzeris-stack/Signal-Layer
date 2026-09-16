@@ -257,7 +257,6 @@ function memoQuestions(firma, cmoHundredDays = false) {
     {
       key: "company_named",
       label: "Unternehmen",
-      hint: "Nur bei Ja steht der Name im Cover-Titel. Nein lässt den Titel ohne Firma.",
       when: nurThema,
       options: [
         ["yes", "Ja, das Unternehmen nennen"],
@@ -303,7 +302,7 @@ function memoQuestions(firma, cmoHundredDays = false) {
       when: nurThema,
       options: [
         ["auto", "KI sucht Bilder & Logos"],
-        ["upload", "Eigene Bilder & Logos verwenden"],
+        ["upload", "Eigene Bilder & Logos"],
       ],
     },
     {
@@ -975,12 +974,12 @@ const CHROME_CSS = `
   border-style:solid; border-color:var(--brand,#206efb);
   /* Der weite Schatten legt alles ausser der bearbeiteten Stelle zurueck.
      Die Seite bleibt ganz sichtbar, nur eben leiser. */
-  box-shadow:0 0 0 9999px rgba(241,245,251,.74);
+  box-shadow:0 0 0 9999px rgba(248,250,252,.62);
   transition:left .3s cubic-bezier(.22,1,.36,1), top .3s cubic-bezier(.22,1,.36,1),
     width .3s cubic-bezier(.22,1,.36,1), height .3s cubic-bezier(.22,1,.36,1);
   animation:as-ring-in .32s cubic-bezier(.22,1,.36,1);
 }
-@keyframes as-ring-in{from{opacity:0; box-shadow:0 0 0 9999px rgba(241,245,251,0);} to{opacity:1;}}
+@keyframes as-ring-in{from{opacity:0; box-shadow:0 0 0 9999px rgba(248,250,252,0);} to{opacity:1;}}
 /* Der Zoom auf den Abschnitt faehrt weich, damit man den Weg sieht. */
 #as-overlay [data-livepreview] .as-prev-scale{transition:transform .34s cubic-bezier(.22,1,.36,1);}
 @media (prefers-reduced-motion:reduce){
@@ -1507,12 +1506,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-9";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-1";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-9";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-1";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-9";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-1";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2331,8 +2330,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * leer bleibt, steht weiter als Platzhalter da.
    */
   function mitEigenenFeldern(basis) {
-    if (state.answers.storyline !== "custom") return basis;
+    if (state.answers.storyline !== "custom" && state.answers.benchmarks !== "custom") return basis;
     const memo = { ...basis, kpis: [...(basis.kpis || [])], benchmarks: [...(basis.benchmarks || [])], potentials: [...(basis.potentials || [])] };
+    // Eigene Benchmarks aus dem Fragebogen stehen sofort in der Vorschau.
+    if (state.answers.benchmarks === "custom") {
+      eigeneBenchmarks().forEach((eintrag, i) => {
+        const vorhanden = memo.benchmarks[i] || {};
+        memo.benchmarks[i] = {
+          ...vorhanden,
+          name: eintrag.name || vorhanden.name || "",
+          text: eintrag.text || vorhanden.text || "",
+          tag: eintrag.tag || vorhanden.tag || "",
+        };
+      });
+    }
     for (const section of MEMO_SECTIONS) {
       for (const feld of section.fields) {
         const wert = memoFeldWert(feld.key).trim();
@@ -2695,32 +2706,41 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <h5>Benchmark ${i + 1}</h5>
         ${feld("name", "Marke", "Die Marke, bei Handelsmarken „Händler · Marke“. Beispiel: Lidl · Parkside", false)}
         ${feld("text", "Beleg", "Was sie konkret getan haben und warum es gewirkt hat. Eine Handlung, kein Slogan.", true)}
-        ${feld("tag", "Lehre", "Was davon auf den Adressaten übertragbar ist, ein Satz.", false)}
+        ${feld("tag", "Statement", "Was davon auf den Adressaten übertragbar ist, ein Satz.", false)}
       </div>`;
     }).join("");
     return `<div class="as-mf">
       ${zeilen}
-      <button type="button" class="as-pill" data-act="bench-example">Beispielform einsetzen</button>
     </div>`;
   }
 
   function slotsHtml() {
-    const zeilen = [
-      ["benchmarks.0", "Benchmark 1", "46 × 28 mm", false],
-      ["benchmarks.1", "Benchmark 2", "46 × 28 mm", false],
-      ["benchmarks.2", "Benchmark 3", "46 × 28 mm", false],
-      ["potentials.0", "Potenzial 1", "52 × 36 mm", true],
-      ["potentials.1", "Potenzial 2", "52 × 36 mm", true],
-      ["potentials.2", "Potenzial 3", "52 × 36 mm", true],
-    ].map(([key, label, mass, pot]) => {
+    const platz = ([key, label, mass, pot]) => {
       const bild = state.formImages[key];
       return `<button type="button" class="as-slot" data-act="form-img-pick" data-imgkey="${attr(key)}">
         <b>${esc(label)}</b>
         <span class="as-slot-frame${pot ? " is-pot" : ""}">${bild?.src ? `<img src="${attr(bild.src)}" alt="">` : `<i class="fa-solid fa-crop"></i>`}</span>
         <small>${bild?.src ? "Ausschnitt ersetzen" : `Zuschneiden auf ${mass}`}</small>
       </button>`;
-    }).join("");
-    return `<div class="as-slots">${zeilen}</div>`;
+    };
+    // Zwei Bloecke: die Motive stehen im Dokument auf zwei verschiedenen
+    // Seiten und meinen zwei verschiedene Dinge.
+    const gruppe = (titel, zeilen) => `<div class="as-mf-block">
+      <h5>${esc(titel)}</h5>
+      <div class="as-slots">${zeilen.map(platz).join("")}</div>
+    </div>`;
+    return `<div class="as-mf">
+      ${gruppe("Benchmarks · Seite 3", [
+        ["benchmarks.0", "Benchmark 1", "46 × 28 mm", false],
+        ["benchmarks.1", "Benchmark 2", "46 × 28 mm", false],
+        ["benchmarks.2", "Benchmark 3", "46 × 28 mm", false],
+      ])}
+      ${gruppe("Potenziale · Seite 4", [
+        ["potentials.0", "Potenzial 1", "52 × 36 mm", true],
+        ["potentials.1", "Potenzial 2", "52 × 36 mm", true],
+        ["potentials.2", "Potenzial 3", "52 × 36 mm", true],
+      ])}
+    </div>`;
   }
 
   function draftsHtml() {
@@ -3113,6 +3133,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return Boolean(wert && SLIDE_ROLE[wert] === q.role && LOOK[wert] === state.answers.look);
     }
     if (q.key === "slide_count") return carouselRequestedSlides(state.answers) > 0;
+    if (isMemo && q.key === "cta" && state.answers.cta === "custom") {
+      return Boolean(memoFeldWert("cta").trim()) && !memoFeldFehler("cta", memoFeldWert("cta"));
+    }
     if (q.free && state.answers[q.key] === q.free.on) {
       return Boolean(String(state.answers[q.free.key] || "").trim());
     }
@@ -3219,6 +3242,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       : q.key === "profile" && state.answers.profile === "private" && state.designsGeladen && !state.designs.length
         ? noticeHtml("fa-swatchbook", "Für das Privatprofil ist noch keine Design-Vorlage hinterlegt", "open-designs")
         : "";
+    if (isMemo && q.key === "cta" && state.answers.cta === "custom") {
+      // Derselbe Feldvertrag wie im Abschnitt: es ist dasselbe Feld im Dokument.
+      return `<div class="as-opts">${opts}</div><div class="as-mf"><div class="as-mf-block">${memoFeldHtml(memoFeld("cta"))}</div></div>`;
+    }
     const benches = q.key === "benchmarks" && state.answers.benchmarks === "custom" ? benchesHtml() : "";
     const slots = q.key === "images" && state.answers.images === "upload" ? slotsHtml() : "";
     const empfehlung = q.key === "slide_count"
@@ -5743,17 +5770,6 @@ ${stages}${post}
     }
     if (act === "crop-ok") { confirmCrop(); return; }
     if (act === "crop-browse") { browseCropFile(); return; }
-    if (act === "bench-example") {
-      BENCH_EXAMPLE.forEach((item, i) => {
-        state.answers[`bench_${i}_name`] = item.name;
-        state.answers[`bench_${i}_text`] = item.text;
-        state.answers[`bench_${i}_tag`] = item.tag;
-      });
-      state.answers.benchmarks = "custom";
-      state.formError = "Das ist nur die Form. Bitte Name, Handlung und Lehre durch Benchmarks zu diesem Signal ersetzen.";
-      zeichneForm();
-      return;
-    }
     if (act === "img-pick" && stageEl) {
       pickImage(stageEl, hit.getAttribute("data-imgkey") || "image");
       return;
@@ -5815,6 +5831,19 @@ ${stages}${post}
     const memofeld = event.target.closest?.("[data-memofeld]");
     if (memofeld) {
       memoFeldGetippt(memofeld);
+      return;
+    }
+    const bench = event.target.closest?.("[data-bench]");
+    if (bench) {
+      const key = bench.getAttribute("data-bench") || "";
+      const [i, teil] = key.split("-");
+      if (teil) state.answers[`bench_${i}_${teil}`] = bench.value;
+      const weiterBench = shell.querySelector('[data-act="step-next"]');
+      const fragenB = aktiveFragen();
+      const offenB = fragenB[schrittIndex(fragenB)];
+      if (weiterBench && offenB) weiterBench.disabled = !frageErledigt(offenB);
+      clearTimeout(memoVorschauTimer);
+      memoVorschauTimer = setTimeout(() => { erneuereVorschau(); fitPreview(); }, 450);
       return;
     }
     const free = event.target.closest?.("[data-free]");
@@ -5942,6 +5971,11 @@ ${stages}${post}
   on(overlay, "click", (event) => event.stopPropagation());
   on(overlay, "change", onChange);
   on(overlay, "input", onInput);
+  // Zeigen genuegt: wer mit der Maus ueber einen Bildplatz faehrt, sieht in der
+  // Vorschau sofort, welche Stelle gemeint ist.
+  on(overlay, "pointerover", (event) => {
+    if (event.target.closest?.("[data-imgkey], [data-bench], [data-memofeld]")) zeigeStelleZu(event.target);
+  });
   on(overlay, "focusin", (event) => {
     const field = event.target.closest?.("[data-field]");
     if (field && field.getAttribute("contenteditable") === "true") lastField = field;

@@ -2184,6 +2184,16 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   // Die eigenen Benchmarks tragen dieselbe flache Form wie die Abschnitte.
   assert.doesNotMatch(studio, /class="as-bench"/);
   assert.match(studio, /feld\("name", "Marke"/);
+  // v19 traegt keine Kundenlogos mehr am Fuss der letzten Seite.
+  assert.doesNotMatch(memoTpl, /class="em-clients"/);
+  // Bildplaetze stehen nach Seiten getrennt, eigene Benchmarks wirken sofort.
+  assert.match(studio, /Benchmarks · Seite 3/);
+  assert.match(studio, /Potenziale · Seite 4/);
+  assert.match(studio, /if \(state\.answers\.benchmarks === "custom"\) \{\n      eigeneBenchmarks\(\)/);
+  // Zeigen genuegt fuer die Markierung.
+  assert.match(studio, /on\(overlay, "pointerover"/);
+  // Der eigene CTA ist dasselbe Feld wie im Abschnitt, mit denselben Regeln.
+  assert.match(studio, /memoFeldHtml\(memoFeld\("cta"\)\)/);
   assert.match(studio, /as-mf-ziel/);
   assert.match(studio, /function mitEigenenFeldern/);
   // Das Beispiel aus dem Referenzmemo steht an jedem Feld.
@@ -2584,8 +2594,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260916-9");
-  assert.match(indexHtml, /app\.js\?v=20260916-9/);
+  assert.equal(studioVersion, "20260917-1");
+  assert.match(indexHtml, /app\.js\?v=20260917-1/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -2643,7 +2653,6 @@ test("das erkannte Unternehmen ist überschreibbar und steht im Titel, wenn gena
   ), "Hugo Boss");
   assert.match(studio, /companyFrom/);
   assert.match(studio, /primary_company/);
-  assert.match(studio, /Nur bei Ja steht der Name im Cover-Titel/);
   assert.match(edge, /resolveAssetCompany/);
 });
 
@@ -2789,8 +2798,9 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
 
   assert.match(studio, /key: "benchmarks"/);
   assert.match(studio, /Gemini recherchiert/);
-  assert.match(studio, /data-act="bench-example"/);
-  assert.match(studio, /Beispielform einsetzen/);
+  // Der Beispielknopf ist weg: die Form steht im Hinweis am Feld.
+  assert.doesNotMatch(studio, /data-act="bench-example"/);
+  assert.match(studio, /feld\("tag", "Statement"/);
   assert.match(studio, /function eigeneBenchmarksPruefen/);
   assert.match(studio, /assetEtaLabel/);
   assert.match(edge, /function researchMemoBenchmarksWithGemini/);
@@ -2855,7 +2865,6 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
 
 test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   assert.match(studio, /key: "company_named"/);
-  assert.match(studio, /Nur bei Ja steht der Name im Cover-Titel/);
   assert.doesNotMatch(studio, /key: "addressee"/);
   assert.match(studio, /label: "CTA"/);
   assert.match(studio, /label: "Benchmarking"/);
