@@ -326,11 +326,11 @@ test("Entwurf erzeugen ist verdrahtet und der Vorschautitel nimmt die Firma auf"
   assert.doesNotMatch(PREVIEW_MEMO_TITLE, /Hebel/);
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Roblox"),
-    "Wie kann Roblox Thema XY umsetzen?",
+    "Roblox: Chancen in der Markenpositionierung",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "Pille" }, "Roblox"),
-    "Wie kann Pille Thema XY umsetzen?",
+    "Pille: Chancen in der Markenpositionierung",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "  " }, "Roblox"),
@@ -2181,6 +2181,56 @@ test("Kurze Inhalte hinterlassen keine weisse Wanne mehr", () => {
   assert.match(studio, /passeUndPruefeMemo\(\);\n    \}/);
 });
 
+test("Die Vorschautexte halten denselben Feldvertrag wie das fertige Memo", async () => {
+  // Die Vorschau stand mit vierzehn Wörtern dort, wo der Vertrag fünfundvierzig
+  // verlangt: Seite 2 bis 4 sahen halb leer aus, obwohl das Ergebnis voll wird.
+  const guides = await import("../memo-guides.mjs");
+  const demo = studio.slice(studio.indexOf("function demoMemo()"), studio.indexOf("function mitEigenenFeldern"));
+  const worte = (text) => text.split(/\s+/).filter(Boolean).length;
+  const pruefe = (key, text) => {
+    const feld = guides.memoFeld(key);
+    assert.ok(feld, `Feld ${key} fehlt im Regelwerk`);
+    const n = worte(text);
+    assert.ok(n >= feld.min && n <= feld.max, `${key}: ${n} Wörter, Vertrag ${feld.min} bis ${feld.max}`);
+  };
+  const flach = /(standfirst|market_title|market_p1|market_p2|insight_title|benchmark_title|benchmark_lead|quote_text|potentials_title|potentials_lead|cta|about_fit): "([^"]+)"/g;
+  const gesehen = new Set();
+  for (const treffer of demo.matchAll(flach)) { pruefe(treffer[1], treffer[2]); gesehen.add(treffer[1]); }
+  assert.equal(gesehen.size, 12, "jedes Textfeld der Vorschau wird geprüft");
+
+  const liste = (muster, keyFuer) => {
+    let i = 0;
+    for (const treffer of demo.matchAll(muster)) { i += 1; pruefe(keyFuer(i), treffer[1]); }
+    assert.equal(i, 3, `drei Einträge für ${keyFuer(1)}`);
+  };
+  liste(/\{ name: "[^"]*", title: "[^"]*", text: "([^"]+)"/g, (i) => `bm${i}_text`);
+  liste(/\{ title: "[^"]*", finding: "([^"]+)"/g, (i) => `pot${i}_finding`);
+  liste(/finding: "[^"]*", potential: "([^"]+)"/g, (i) => `pot${i}_potential`);
+
+  // „Thema XY" war ein nackter Platzhalter und steht im Prompt selbst als
+  // Beispiel für einen schwachen Titel.
+  const { previewMemoTitle } = await import("../asset-studio.js");
+  const titel = previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Testfirma AG");
+  assert.doesNotMatch(titel, /Thema XY/);
+  pruefe("title", titel);
+});
+
+test("Die reine Vorschau zeigt keine Bedienspuren im Bild", () => {
+  // Auf dem Titelbild standen „Bild einfügen" und ein Bildsymbol, obwohl in der
+  // Vorschau nichts einzufügen ist.
+  assert.match(studio, /as-stage as-stage--memo is-readonly/);
+  assert.match(studio, /\.as-stage--memo\.is-readonly \.as-picslot--tpl::after,\n#as-overlay \.as-stage--memo\.is-readonly \[data-imgslot\]::before\{content:none !important;\}/);
+});
+
+test("Kein Leerzeichen-Ausgleich gegen eine Schrift, die ihn nicht braucht", () => {
+  // -0.31em war für ein Circular Std mit 0,58 em Leerzeichen gedacht. Die hier
+  // eingebettete Schrift misst 0,247 em; die Korrektur klebte die Wörter
+  // zusammen (1,4 px statt 3,1 px bei 12,5 px Schrift).
+  assert.doesNotMatch(memoTpl, /\.as-stage--memo \*\{word-spacing/);
+  assert.doesNotMatch(memoTpl, /word-spacing: -0\.12em/);
+  assert.match(memoTpl, /Kein word-spacing hier/);
+});
+
 test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Fotos", async () => {
   assert.equal(backend.MEMO_SHOT_ASPECT.benchmark.w / backend.MEMO_SHOT_ASPECT.benchmark.h, 46 / 28);
   assert.equal(backend.MEMO_SHOT_ASPECT.potential.w / backend.MEMO_SHOT_ASPECT.potential.h, 52 / 36);
@@ -2478,8 +2528,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260915-2");
-  assert.match(indexHtml, /app\.js\?v=20260915-2/);
+  assert.equal(studioVersion, "20260916-1");
+  assert.match(indexHtml, /app\.js\?v=20260916-1/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);

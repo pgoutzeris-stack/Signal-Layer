@@ -642,6 +642,10 @@ const CHROME_CSS = `
 #as-overlay .em-shot:has(img[src]:not([src=""])){
   background:var(--status-bg,#f8fafc);
 }
+/* Ohne Bearbeitung bleibt die leere Flaeche ruhig: kein Symbol, keine
+   Aufforderung. Eingefuegt wird erst in der Werkbank. */
+#as-overlay .as-stage--memo.is-readonly .as-picslot--tpl::after,
+#as-overlay .as-stage--memo.is-readonly [data-imgslot]::before{content:none !important;}
 #as-overlay .em-shot:not(:has(img[src]:not([src=""])))::after,
 #as-overlay .as-picslot--tpl:not(:has(img[src]:not([src=""])))::after{
   content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
@@ -1341,7 +1345,7 @@ export function previewMemoTitle(answers = {}, erkannt = "") {
   const custom = String(answers.company_mode || "") === "custom";
   const firma = String((custom ? answers.company_text : erkannt) || "").trim();
   if (!firma) return PREVIEW_MEMO_TITLE;
-  return `Wie kann ${firma} Thema XY umsetzen?`;
+  return `${firma}: Chancen in der Markenpositionierung`;
 }
 
 function themeKicker(source = {}) {
@@ -1457,12 +1461,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260915-2";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-1";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260915-2";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-1";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260915-2";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-1";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2240,8 +2244,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       summary_0: "Sortiment trägt, Marke bleibt unscharf",
       summary_1: "Der Markt entscheidet schneller als die Fläche",
       summary_2: "Eigenmarken als eigene Marken führen",
-      market_title: "Der Markt belohnt, wer die Marke führt",
-      market_p1: "Anbieter, die Sortiment, Kanal und Auftritt als eine Handschrift führen, gewinnen Sichtbarkeit und Tempo.",
+      market_title: "Der Markt belohnt, wer die Marke führt, nicht nur das Sortiment",
+      market_p1: "Im Handel hat sich die Rolle der Eigenmarke in den vergangenen Jahren grundlegend verschoben. Was früher der günstige Kompromiss war, ist heute eine bewusste Kaufentscheidung. Anbieter, die Sortiment, Kanal und Auftritt als eine Handschrift führen, gewinnen Sichtbarkeit und Tempo. Was vielen fehlt, ist eine Architektur, in der einzelne Marken Kategorien sichtbar besetzen.",
       kpis: [
         { value: "42 %", label: "Beispielwert: Marktbewegung aus dem Artikel", source: quelle },
         { value: "81 %", label: "Beispielwert: Verhalten der Kundenseite", source: quelle },
@@ -2249,24 +2253,24 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         { value: "8,9 Mrd. €", label: "Beispielwert: Größe des Adressaten", source: quelle },
       ],
       insight_title: "Das Sortiment trägt den Umsatz, der Auftritt trägt ihn noch nicht",
-      market_p2: "Wer den Hebel liegen lässt, bleibt in der Fläche vergleichbar und im Dialog austauschbar.",
-      benchmark_title: "Benchmarks ziehen denselben Hebel",
+      market_p2: "Ein Blick auf die Fläche zeigt die heutige Logik: Das Sortiment ist nach Zielgruppen und Preislagen sauber strukturiert, der Auftritt der einzelnen Marken unterscheidet sich davon kaum. Wer den Hebel liegen lässt, bleibt in der Fläche vergleichbar und im Dialog austauschbar. Das Potenzial eines eigenständigen Markenprofils bleibt damit ungenutzt.",
+      benchmark_title: "Drei Marken schaffen einen eigenen Auftritt mit Design, Kanälen und Botschaftern",
       benchmark_lead: "Drei Marken haben vorgemacht, was übertragbar ist.",
       benchmarks: [
-        { name: "Benchmark A", title: "Eigenmarke zur Leitmarke gemacht", text: "Hat die Eigenmarke zur Leitmarke gemacht und den Auftritt vereinheitlicht.", tag: "Marke vor Fläche", image_hint: hint("Benchmark") },
-        { name: "Benchmark B", title: "Kanal und Fläche zusammengeführt", text: "Hat Kanal und Fläche unter eine Handschrift gestellt.", tag: "Eine Linie, zwei Kanäle", image_hint: hint("Benchmark") },
-        { name: "Benchmark C", title: "Kampagne durch eine Linie ersetzt", text: "Hat Kampagnen durch eine haltbare Linie ersetzt.", tag: "Linie vor Saison", image_hint: hint("Benchmark") },
+        { name: "Benchmark A", title: "Eigenmarke zur Leitmarke gemacht", text: "Hat das Sortiment in Themenwelten mit je einer Ankermarke geordnet. Die Leitmarke tritt im eigenen Farbcode auf, führt einen eigenen Claim und hat seit zwei Jahren ein eigenes Gesicht in der Kommunikation.", tag: "Ein einheitliches Markenbild gibt der Eigenmarke einen Charakter.", image_hint: hint("Benchmark") },
+        { name: "Benchmark B", title: "Kanal und Fläche zusammengeführt", text: "Baut die Marke über eigene Kanäle auf: eine eigene Community, Kooperationen mit Creatorinnen und ein Tempo bei Neuheiten, das sonst nur Herstellermarken vorlegen. Der Regalplatz ist nur noch ein Kanal von mehreren.", tag: "Eigene Kanäle erzeugen Bindung, die kein Regalplatz ersetzt.", image_hint: hint("Benchmark") },
+        { name: "Benchmark C", title: "Kampagne durch eine Linie ersetzt", text: "Hat aus siebzig Sortimentslabels neun Kategoriemarken gemacht und die stärksten mit eigenen Stores und eigenem Sponsoring ausgestattet. Aus dem Label wurde eine Marke, die auch ausserhalb der Fläche sichtbar ist.", tag: "Sichtbarkeit ausserhalb der Fläche macht aus dem Label eine Marke.", image_hint: hint("Benchmark") },
       ],
       quote_text: "Eine Eigenmarke wird nicht stärker, weil sie günstiger ist, sondern weil sie eine eigene Handschrift bekommt.",
-      potentials_title: "Drei Hebel für den Adressaten",
-      potentials_lead: "Der Check zeigt drei Ansatzpunkte, die sich aus dem Signal ergeben.",
+      potentials_title: "Drei strategische Hebel für die Eigenmarken des Adressaten",
+      potentials_lead: "Der Check zeigt: Die Ausgangslage im Sortiment ist stark, die Marken sind eingeführt und die Fläche ist da. Das zusätzliche Potenzial liegt darin, sie über ihre heutige funktionale Rolle hinaus zu eigenständigen Marken zu entwickeln. Drei Hebel setzen dafür an Positionierung, Reichweite und Markenerlebnis an.",
       potentials: [
-        { title: "Vom Sortiment zur Marke", finding: "Die Eigenmarken stehen unverbunden nebeneinander.", potential: "ROOTS bündelt sie unter einer Führung.", image_hint: hint("Potenzial") },
-        { title: "Vom Kanal zum System", finding: "Online und Fläche sprechen unterschiedlich.", potential: "Eine Handschrift über beide Kanäle.", image_hint: hint("Potenzial") },
-        { title: "Von der Kampagne zur Linie", finding: "Jede Saison wird der Auftritt neu erfunden.", potential: "Eine Linie, die über die Saison hält.", image_hint: hint("Potenzial") },
+        { title: "Vom Sortiment zur Marke", finding: "Die Eigenmarken stehen unverbunden nebeneinander und überschneiden sich in Zielgruppe und Preislage.", potential: "Zielgruppen und Preissegmente klar voneinander abgrenzen und für die Kernmarken eigenständige Leistungsversprechen definieren, die über den Preis hinaus Orientierung schaffen.", image_hint: hint("Potenzial") },
+        { title: "Vom Kanal zum System", finding: "Online und Fläche sprechen unterschiedlich und ohne gemeinsame Linie.", potential: "Für ausgewählte Kernmarken eigene Markenwelten über digitale Kanäle, zielgruppenrelevanten Content und Kooperationen aufbauen, so entstehen Kontaktpunkte jenseits der Fläche.", image_hint: hint("Potenzial") },
+        { title: "Von der Kampagne zur Linie", finding: "Jede Saison wird der Auftritt neu erfunden, nichts trägt über das Jahr.", potential: "Eine haltbare Linie an die Stelle der Saisonkampagne setzen und die Markenwerte konsequent bis ins Produkt übersetzen, von der Verpackung bis zur Fläche.", image_hint: hint("Potenzial") },
       ],
       cta: "Sollen wir den Check gemeinsam durchgehen?",
-      about_fit: "ROOTS setzt hier mit Markenstrategie und Marketing Operations an.",
+      about_fit: "KI-optimierte Markenstrategien und Marketing Operations für mehr Wirksamkeit, Effizienz und Speed im Marketing. Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu unseren Kernkompetenzen.",
       sources: ["Titel des Belegs · Herausgeber · Jahr"],
     }));
   }
@@ -3889,6 +3893,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     html = wrapImageSlots(html, memo, editable);
     if (editable) {
       html = html.replace(/data-field="((?!benchmarks\.\d+\.image_hint)(?!potentials\.\d+\.image_hint)[a-z0-9_.]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
+    } else {
+      // In der reinen Vorschau ist nichts einzufuegen. "Bild einfuegen" und das
+      // Bildsymbol standen dort trotzdem mitten auf dem Titelbild.
+      html = html.replace('class="as-stage as-stage--memo"', 'class="as-stage as-stage--memo is-readonly"');
     }
     return html;
   }
