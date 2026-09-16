@@ -1287,7 +1287,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(memoPrompt, /<hebel>/);
   assert.match(memoPrompt, /<titel>/);
   assert.match(memoPrompt, /<zusammenhang>/);
-  assert.match(memoPrompt, /01 Marktdynamik/);
+  assert.match(memoPrompt, /01 Reality Check/);
   assert.match(memoPrompt, /Benchmarks/);
   assert.match(memoPrompt, /Potenziale/);
   assert.match(memoPrompt, /Marketing Audit \+ Markenstrategie/);
@@ -1331,7 +1331,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(memoPrompt, /Wie kann Aeffe/);
   assert.match(memoPrompt, /mit Aeffe im Satz/);
   assert.match(memoPrompt, /thematische Fotos/);
-  assert.match(memoPrompt, /kurze Szene zum Finding/);
+  assert.match(memoPrompt, /Konzeptbild zum Hebel/);
   assert.match(studio, /key: "company_mode"/);
   assert.match(studio, /key: "images"/);
   assert.match(studio, /Logos und Motive recherchieren/);
@@ -1935,8 +1935,8 @@ test("das Executive Memo liegt als HTML-Vorlage im Signal Layer", async () => {
     assert.ok(tpl.MEMO_TEMPLATE.includes(`{{${field}}}`), field);
   }
   assert.equal(tpl.MEMO_DEFAULTS.cta_label, "Kontakt aufnehmen");
-  assert.equal(tpl.MEMO_DEFAULTS.market_section, "01 Marktdynamik");
-  assert.match(tpl.MEMO_TEMPLATE, /data-memo-template="roots-v15"/);
+  assert.equal(tpl.MEMO_DEFAULTS.market_section, "01 Reality Check");
+  assert.match(tpl.MEMO_TEMPLATE, /data-memo-template="roots-v19"/);
   assert.match(tpl.MEMO_TEMPLATE, /data-ci="locked"/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /font-family:'ROOTS Memo'/);
   assert.match(tpl.MEMO_TEMPLATE_CSS, /\.em-kpi \.em-n\{[^}]*white-space:nowrap/);
@@ -2069,13 +2069,13 @@ test("Feldvertrag: Fragebogen, Prompt und Prüfung lesen dieselben Zahlen", asyn
     assert.ok(guides.memoFeld(key), `Feld ${key} fehlt im Regelwerk`);
   }
   // Die Längen stammen aus dem Referenzmemo: der Absatz trägt die Seitenhöhe.
-  assert.equal(guides.memoFeld("market_p1").min, 45);
-  assert.equal(guides.memoFeld("bm1_text").min, 22);
+  assert.equal(guides.memoFeld("market_p1").min, 22);
+  assert.equal(guides.memoFeld("bm1_text").min, 20);
 
   assert.equal(guides.memoFeldFehler("title", ""), "Titel fehlt.");
   assert.equal(guides.memoFeldFehler("standfirst", ""), "");
-  assert.match(guides.memoFeldFehler("title", "Nur drei Wörter"), /mindestens 6/);
-  assert.match(guides.memoFeldFehler("summary_0", "eins zwei drei vier fünf sechs sieben acht neun"), /höchstens 8/);
+  assert.match(guides.memoFeldFehler("title", "Nur drei"), /mindestens 4/);
+  assert.match(guides.memoFeldFehler("summary_0", "eins zwei drei vier fünf sechs sieben acht neun zehn elf zwölf dreizehn vierzehn fünfzehn"), /höchstens 14/);
   assert.match(guides.memoFeldFehler("kpi1_value", "keine Zahl"), /Ziffer/);
   assert.match(guides.memoFeldFehler("kpi1_source", "Simon-Kucher"), /Jahr/);
 
@@ -2086,8 +2086,8 @@ test("Feldvertrag: Fragebogen, Prompt und Prüfung lesen dieselben Zahlen", asyn
   assert.deepEqual(guides.memoAbschnittFehler("memo_kpis",
     { kpi1_value: "42 %", kpi1_label: "der Verbraucher greifen zur Eigenmarke", kpi1_source: "Simon-Kucher, 2026" }), []);
 
-  const hinweise = guides.memoFeldHinweise("title", "Zwei Traditionsmarken brauchen eigene Profile vor der Trennung.");
-  assert.match(hinweise[0].text, /8 Wörter · Zielbereich 6 bis 15/);
+  const hinweise = guides.memoFeldHinweise("title", "Vom Preisargument zur eigenständigen Marke.");
+  assert.match(hinweise[0].text, /5 Wörter · Zielbereich 4 bis 12/);
   assert.ok(hinweise.some((z) => /ohne Punkt/.test(z.text)), "Überschrift mit Punkt wird gemeldet");
 });
 
@@ -2139,7 +2139,7 @@ test("Selbst geschriebene Abschnitte stehen wortgleich im Memo", () => {
   assert.match(prompt, /wortgleich/);
   assert.match(prompt, /title: Zwei Traditionsmarken/);
   assert.match(prompt, /<laengen>/);
-  assert.match(prompt, /market_p1: 45 bis 85 Wörter/);
+  assert.match(prompt, /market_p1: 22 bis 48 Wörter/);
   assert.match(prompt, /vier A4-Seiten/);
 });
 
@@ -2169,9 +2169,13 @@ test("Kurze Inhalte hinterlassen keine weisse Wanne mehr", () => {
   // Seite 3 und 4 standen bei kurzen Texten oben und liessen darunter ein
   // leeres Drittel bis zum Fussband stehen.
   assert.match(memoTpl, /\.em-sec--fill\{flex:1 1 auto;\}/);
-  assert.equal((memoTpl.match(/em-sec em-sec--fill em-pad/g) || []).length, 2);
+  // Nur Seite 3 verteilt den freien Platz. Seite 4 traegt ihre Hoehe ueber die
+  // Kartenhoehe; dort verschob das Wachsen den Kartentext unter das Fussband.
+  assert.equal((memoTpl.match(/em-sec em-sec--fill em-pad/g) || []).length, 1);
   assert.match(memoTpl, /\.em-sec--fill \.em-cases\{flex:1 1 auto;justify-content:space-between;\}/);
-  assert.match(memoTpl, /\.em-sec--fill \.em-pots\{margin-top:auto;\}/);
+  // Die Karten an das Fussband zu schieben lief ihren Text unter das blaue
+  // Band, das sich 46 px in die Kartenreihe schiebt.
+  assert.doesNotMatch(memoTpl, /\.em-sec--fill \.em-pots\{margin-top:auto;\}/);
   // Eine lange Kennzahl liess ihre Spalte wachsen: die Leiste schob sich über
   // den rechten Rand und die Schriftanpassung sah keinen Überlauf.
   assert.match(memoTpl, /\.em-kpis\{grid-template-columns:repeat\(4, minmax\(0, 1fr\)\);\}/);
@@ -2193,10 +2197,10 @@ test("Die Vorschautexte halten denselben Feldvertrag wie das fertige Memo", asyn
     const n = worte(text);
     assert.ok(n >= feld.min && n <= feld.max, `${key}: ${n} Wörter, Vertrag ${feld.min} bis ${feld.max}`);
   };
-  const flach = /(standfirst|market_title|market_p1|market_p2|insight_title|benchmark_title|benchmark_lead|quote_text|potentials_title|potentials_lead|cta|about_fit): "([^"]+)"/g;
+  const flach = /(standfirst|market_title|market_p1|market_lead2|market_p2|insight_title|benchmark_title|quote_text|potentials_title|potentials_lead|potentials_lead2|cta|about_fit|about_fit2): "([^"]+)"/g;
   const gesehen = new Set();
   for (const treffer of demo.matchAll(flach)) { pruefe(treffer[1], treffer[2]); gesehen.add(treffer[1]); }
-  assert.equal(gesehen.size, 12, "jedes Textfeld der Vorschau wird geprüft");
+  assert.equal(gesehen.size, 14, "jedes Textfeld der Vorschau wird geprüft");
 
   const liste = (muster, keyFuer) => {
     let i = 0;
@@ -2204,8 +2208,8 @@ test("Die Vorschautexte halten denselben Feldvertrag wie das fertige Memo", asyn
     assert.equal(i, 3, `drei Einträge für ${keyFuer(1)}`);
   };
   liste(/\{ name: "[^"]*", title: "[^"]*", text: "([^"]+)"/g, (i) => `bm${i}_text`);
-  liste(/\{ title: "[^"]*", finding: "([^"]+)"/g, (i) => `pot${i}_finding`);
-  liste(/finding: "[^"]*", potential: "([^"]+)"/g, (i) => `pot${i}_potential`);
+  liste(/\{ title: "([^"]+)", potential: "/g, (i) => `pot${i}_title`);
+  liste(/\{ title: "[^"]*", potential: "([^"]+)"/g, (i) => `pot${i}_potential`);
 
   // „Thema XY" war ein nackter Platzhalter und steht im Prompt selbst als
   // Beispiel für einen schwachen Titel.
@@ -2213,6 +2217,11 @@ test("Die Vorschautexte halten denselben Feldvertrag wie das fertige Memo", asyn
   const titel = previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Testfirma AG");
   assert.doesNotMatch(titel, /Thema XY/);
   pruefe("title", titel);
+  // Die Vorlage v19 kennt keinen Befund und keine Spaltenlabels mehr.
+  assert.doesNotMatch(demo, /finding:/);
+  assert.match(demo, /market_lead2:/);
+  assert.match(demo, /potentials_lead2:/);
+  assert.match(demo, /about_fit2:/);
 });
 
 test("Die reine Vorschau zeigt keine Bedienspuren im Bild", () => {
@@ -2228,7 +2237,11 @@ test("Kein Leerzeichen-Ausgleich gegen eine Schrift, die ihn nicht braucht", () 
   // zusammen (1,4 px statt 3,1 px bei 12,5 px Schrift).
   assert.doesNotMatch(memoTpl, /\.as-stage--memo \*\{word-spacing/);
   assert.doesNotMatch(memoTpl, /word-spacing: -0\.12em/);
-  assert.match(memoTpl, /Kein word-spacing hier/);
+  assert.match(memoTpl, /Leerzeichen: gemessen, nicht ausgeglichen/);
+  // Die Ziffernausrichtung gehoert an die Kennzahl, nicht an die ganze Seite:
+  // tabular-nums ersetzt in dieser Schrift auch das Leerzeichen.
+  assert.doesNotMatch(memoTpl, /font-variant-numeric: tabular-nums; -webkit-font-smoothing/);
+  assert.match(memoTpl, /\.em-kpi \.em-n\{font-variant-numeric: tabular-nums;\}/);
 });
 
 test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Fotos", async () => {
@@ -2528,8 +2541,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260916-1");
-  assert.match(indexHtml, /app\.js\?v=20260916-1/);
+  assert.equal(studioVersion, "20260916-2");
+  assert.match(indexHtml, /app\.js\?v=20260916-2/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /Logos und Motive recherchieren/);

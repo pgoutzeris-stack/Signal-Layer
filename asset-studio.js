@@ -919,6 +919,25 @@ const CHROME_CSS = `
   font-size:12px; color:var(--muted,#475569);
 }
 #as-overlay .as-mf-kopf b{font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--brand,#206efb);}
+/* Kopf des Abschnitts: wofuer die Seite da ist und was hineingehoert. Ohne das
+   raet man bei fuenfzig Feldern, was der Unterschied zwischen Absatz 1 und
+   Absatz 2 sein soll. */
+#as-overlay .as-mf-erkl{
+  border-radius:12px; padding:11px 13px 12px; background:var(--brand-light,#eff6ff);
+  display:flex; flex-direction:column; gap:8px;
+}
+#as-overlay .as-mf-zweck{margin:0; font-size:12.5px; line-height:1.5; color:var(--brand-dark,#165fd9); font-weight:700;}
+#as-overlay .as-mf-liste{margin:0; padding:0 0 0 16px; display:flex; flex-direction:column; gap:4px;}
+#as-overlay .as-mf-liste li{font-size:12px; line-height:1.45; color:var(--muted,#475569);}
+#as-overlay .as-mf-bilder{
+  margin:0; display:flex; gap:7px; align-items:flex-start;
+  font-size:12px; line-height:1.45; color:var(--muted,#475569);
+}
+#as-overlay .as-mf-bilder i{flex:0 0 auto; margin-top:2px; color:var(--brand,#206efb);}
+/* Der Zoom auf den Abschnitt faehrt weich, damit man den Weg sieht. */
+#as-overlay [data-livepreview] .as-prev-scale{transition:transform .32s cubic-bezier(.22,1,.36,1);}
+@media (prefers-reduced-motion:reduce){#as-overlay [data-livepreview] .as-prev-scale{transition:none;}}
+
 #as-overlay .as-mf-feld{
   border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:10px 12px 11px;
   background:var(--surface,#f8fafc); display:flex; flex-direction:column; gap:6px;
@@ -1461,12 +1480,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-1";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-2";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-1";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-2";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-1";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-2";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1819,7 +1838,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return `<div class="as-split2">
         <div class="as-split2-form">${state.formTab === "drafts" ? draftsHtml() : formHtml()}</div>
         <div class="as-split2-prev">
-          <span class="as-prev-label">${isMemo ? "Executive Memo v15 · 4 Seiten" : "Vorschau"}</span>
+          <span class="as-prev-label">${isMemo ? "Executive Memo v19 · 4 Seiten" : "Vorschau"}</span>
           <div class="as-prev-host">
             <div class="as-pagehost">
               <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
@@ -2240,12 +2259,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const quelle = "Platzhalter, Quelle aus dem Artikel";
     return normalizeMemo(mitEigenenFeldern({
       title: previewMemoTitle(state.answers, company),
-      standfirst: "Der Markt hat sich bewegt. Wer denselben Hebel schon gezogen hat, setzt die neue Messlatte. Dieser Check macht den Moment für den Adressaten konkret.",
-      summary_0: "Sortiment trägt, Marke bleibt unscharf",
-      summary_1: "Der Markt entscheidet schneller als die Fläche",
-      summary_2: "Eigenmarken als eigene Marken führen",
-      market_title: "Der Markt belohnt, wer die Marke führt, nicht nur das Sortiment",
-      market_p1: "Im Handel hat sich die Rolle der Eigenmarke in den vergangenen Jahren grundlegend verschoben. Was früher der günstige Kompromiss war, ist heute eine bewusste Kaufentscheidung. Anbieter, die Sortiment, Kanal und Auftritt als eine Handschrift führen, gewinnen Sichtbarkeit und Tempo. Was vielen fehlt, ist eine Architektur, in der einzelne Marken Kategorien sichtbar besetzen.",
+      standfirst: "Wie die Eigenmarken des Adressaten ihr Wachstumspotenzial entfalten.",
+      summary_0: "Wachsende Eigenmarkenanteile treffen auf höhere Kundenansprüche",
+      summary_1: "Erfolgreiche Eigenmarken werden wie eigenständige Marken geführt",
+      summary_2: "Eigenmarken mit klarem Profil und eigenen Markenwelten entwickeln",
+      market_title: "Eigenmarken stehen vor der nächsten Entwicklungsstufe",
+      market_p1: "Mit steigenden Kundenerwartungen wachsen die Anforderungen an Qualität, Innovation und Markenführung. Was früher der günstige Kompromiss war, ist heute eine bewusste Kaufentscheidung. Für den Adressaten trifft diese Entwicklung auf eine starke Ausgangslage im Sortiment.",
+      market_lead2: "Was bislang fehlt, ist eine Architektur, in der einzelne Marken Kategorien sichtbar besetzen und über den Preis hinaus ein eigenständiges Profil entwickeln.",
       kpis: [
         { value: "42 %", label: "Beispielwert: Marktbewegung aus dem Artikel", source: quelle },
         { value: "81 %", label: "Beispielwert: Verhalten der Kundenseite", source: quelle },
@@ -2253,9 +2273,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         { value: "8,9 Mrd. €", label: "Beispielwert: Größe des Adressaten", source: quelle },
       ],
       insight_title: "Das Sortiment trägt den Umsatz, der Auftritt trägt ihn noch nicht",
-      market_p2: "Ein Blick auf die Fläche zeigt die heutige Logik: Das Sortiment ist nach Zielgruppen und Preislagen sauber strukturiert, der Auftritt der einzelnen Marken unterscheidet sich davon kaum. Wer den Hebel liegen lässt, bleibt in der Fläche vergleichbar und im Dialog austauschbar. Das Potenzial eines eigenständigen Markenprofils bleibt damit ungenutzt.",
-      benchmark_title: "Drei Marken schaffen einen eigenen Auftritt mit Design, Kanälen und Botschaftern",
-      benchmark_lead: "Drei Marken haben vorgemacht, was übertragbar ist.",
+      market_p2: "Ein Blick auf die Fläche zeigt die heutige Logik: Das Sortiment ist nach Zielgruppen und Preislagen sauber strukturiert, der Auftritt der einzelnen Marken unterscheidet sich davon kaum. Am Regal stehen sie im direkten Wettbewerbsumfeld etablierter Herstellermarken und werden vor allem über Sortiment, Preis und Produktleistung differenziert. Das Potenzial eines eigenständigen Markenprofils bleibt damit ungenutzt.",
+      benchmark_title: "Drei Marken schaffen einen eigenen Auftritt mit Design, Botschaftern und eigenen Kanälen",
+      benchmark_lead: "",
       benchmarks: [
         { name: "Benchmark A", title: "Eigenmarke zur Leitmarke gemacht", text: "Hat das Sortiment in Themenwelten mit je einer Ankermarke geordnet. Die Leitmarke tritt im eigenen Farbcode auf, führt einen eigenen Claim und hat seit zwei Jahren ein eigenes Gesicht in der Kommunikation.", tag: "Ein einheitliches Markenbild gibt der Eigenmarke einen Charakter.", image_hint: hint("Benchmark") },
         { name: "Benchmark B", title: "Kanal und Fläche zusammengeführt", text: "Baut die Marke über eigene Kanäle auf: eine eigene Community, Kooperationen mit Creatorinnen und ein Tempo bei Neuheiten, das sonst nur Herstellermarken vorlegen. Der Regalplatz ist nur noch ein Kanal von mehreren.", tag: "Eigene Kanäle erzeugen Bindung, die kein Regalplatz ersetzt.", image_hint: hint("Benchmark") },
@@ -2263,15 +2283,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ],
       quote_text: "Eine Eigenmarke wird nicht stärker, weil sie günstiger ist, sondern weil sie eine eigene Handschrift bekommt.",
       potentials_title: "Drei strategische Hebel für die Eigenmarken des Adressaten",
-      potentials_lead: "Der Check zeigt: Die Ausgangslage im Sortiment ist stark, die Marken sind eingeführt und die Fläche ist da. Das zusätzliche Potenzial liegt darin, sie über ihre heutige funktionale Rolle hinaus zu eigenständigen Marken zu entwickeln. Drei Hebel setzen dafür an Positionierung, Reichweite und Markenerlebnis an.",
+      potentials_lead: "Die Analyse zeigt: Die Ausgangslage im Sortiment ist stark und die Marken sind eingeführt. Das zusätzliche Potenzial liegt darin, sie über ihre funktionale Rolle hinaus zu eigenständigen Marken zu entwickeln.",
+      potentials_lead2: "Drei strategische Hebel setzen hier an: Positionierung, Reichweite und Markenerlebnis.",
       potentials: [
-        { title: "Vom Sortiment zur Marke", finding: "Die Eigenmarken stehen unverbunden nebeneinander und überschneiden sich in Zielgruppe und Preislage.", potential: "Zielgruppen und Preissegmente klar voneinander abgrenzen und für die Kernmarken eigenständige Leistungsversprechen definieren, die über den Preis hinaus Orientierung schaffen.", image_hint: hint("Potenzial") },
-        { title: "Vom Kanal zum System", finding: "Online und Fläche sprechen unterschiedlich und ohne gemeinsame Linie.", potential: "Für ausgewählte Kernmarken eigene Markenwelten über digitale Kanäle, zielgruppenrelevanten Content und Kooperationen aufbauen, so entstehen Kontaktpunkte jenseits der Fläche.", image_hint: hint("Potenzial") },
-        { title: "Von der Kampagne zur Linie", finding: "Jede Saison wird der Auftritt neu erfunden, nichts trägt über das Jahr.", potential: "Eine haltbare Linie an die Stelle der Saisonkampagne setzen und die Markenwerte konsequent bis ins Produkt übersetzen, von der Verpackung bis zur Fläche.", image_hint: hint("Potenzial") },
+        { title: "Positionierung und Markenarchitektur schärfen", potential: "Zielgruppen und Preissegmente klar voneinander abgrenzen, um Überschneidungen zwischen den Eigenmarken zu reduzieren. Für die Kernmarken eigenständige Leistungsversprechen definieren, die über den Preis hinaus Orientierung schaffen.", image_hint: hint("Potenzial") },
+        { title: "Kanäle und Touchpoints gezielt aufbauen", potential: "Für die Kernmarken eigene Markenwelten über digitale Kanäle, zielgruppenrelevanten Content und Kooperationen aufbauen. So entstehen Kontaktpunkte jenseits der Fläche und Bindung über den POS hinaus.", image_hint: hint("Potenzial") },
+        { title: "Marke am POS und im Produkt erlebbar machen", potential: "Eigenmarken auf der Ladenfläche visuell klar differenzieren und ihre Markenwerte bis ins Produkt übersetzen. Konsistente Designcodes machen die Marke an jedem Touchpoint erlebbar.", image_hint: hint("Potenzial") },
       ],
       cta: "Sollen wir den Check gemeinsam durchgehen?",
-      about_fit: "KI-optimierte Markenstrategien und Marketing Operations für mehr Wirksamkeit, Effizienz und Speed im Marketing. Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu unseren Kernkompetenzen.",
-      sources: ["Titel des Belegs · Herausgeber · Jahr"],
+      about_fit: "ROOTS entwickelt KI-optimierte Markenstrategien und Marketing Operations für mehr Wirksamkeit, Effizienz und Speed im Marketing, mit Managementerfahrung bis CMO-Ebene im Handel.",
+      about_fit2: "Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu unseren Kernkompetenzen: Wir haben zahlreiche führende Handelsmarken im Food und Non-Food mitgeprägt.",
+      sources: ["Herausgeber, Presseinformationen (2022 bis 2026); Fachzeitschrift, Interview; Herausgeber, Geschäftsbericht (2025)"],
     }));
   }
 
@@ -2585,8 +2607,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const hinweis = fehler.length
       ? `<ul class="lg-guide">${fehler.map((zeile) => `<li class="lg-guide-row lg-guide-row--warn"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(zeile)}</span></li>`).join("")}</ul>`
       : "";
+    const erwartet = (section.erwartet || []).map((zeile) => `<li>${esc(zeile)}</li>`).join("");
+    const bilder = section.bilder
+      ? `<p class="as-mf-bilder"><i class="fa-regular fa-image"></i><span>${esc(section.bilder)}</span></p>`
+      : "";
     return `<div class="as-mf" data-memosection="${attr(section.id)}">
       <div class="as-mf-kopf"><b>Seite ${section.seite}</b><span>${gefuellt} von ${section.fields.length} Feldern selbst geschrieben</span></div>
+      <div class="as-mf-erkl">
+        <p class="as-mf-zweck">${esc(section.zweck || "")}</p>
+        ${erwartet ? `<ul class="as-mf-liste">${erwartet}</ul>` : ""}
+        ${bilder}
+      </div>
       <div class="as-mf-block">${bloecke.join("")}</div>
       <div data-memosectionfehler>${hinweis}</div>
     </div>`;
@@ -3603,6 +3634,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       standfirst: String(src.standfirst || ""),
       market_title: String(src.market_title || ""),
       market_p1: String(src.market_p1 || ""),
+      market_lead2: String(src.market_lead2 || ""),
       market_p2: String(src.market_p2 || ""),
       kpis: kpis.map((item) => ({
         value: String(item?.value || ""),
@@ -3627,10 +3659,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       })),
       potentials_title: String(src.potentials_title || ""),
       potentials_lead: String(src.potentials_lead || ""),
-      potentials: potentials.map((item, i) => ({
-        label: String(item?.label || MEMO_DEFAULTS[`pot${i + 1}_label`]),
+      potentials_lead2: String(src.potentials_lead2 || ""),
+      potentials: potentials.map((item) => ({
+        label: "",
         title: String(item?.title || ""),
-        finding: String(item?.finding || ""),
+        finding: "",
         potential: String(item?.potential || ""),
         image_hint: String(item?.image_hint || ""),
         image: {
@@ -3643,6 +3676,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       })),
       cta: String(src.cta || ""),
       about_fit: String(src.about_fit || ""),
+      about_fit2: String(src.about_fit2 || ""),
       sources: toArray(src.sources).map((line) => String(line || "")),
       html: {},
     };
@@ -3842,8 +3876,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       benchmark_lead: memo.benchmark_lead,
       potentials_title: memo.potentials_title,
       potentials_lead: memo.potentials_lead,
+      market_lead2: memo.market_lead2,
+      potentials_lead2: memo.potentials_lead2,
       cta: memo.cta,
       about_fit: memo.about_fit,
+      about_fit2: memo.about_fit2,
       sources: memo.sources.filter(Boolean).join(" · "),
     };
     (memo.kpis || []).forEach((kpi, i) => {
@@ -3905,10 +3942,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function memoFieldPath(name) {
     const einfach = {
       title: "title", standfirst: "standfirst",
-      market_title: "market_title", market_p1: "market_p1", market_p2: "market_p2",
+      market_title: "market_title", market_p1: "market_p1", market_lead2: "market_lead2",
+      market_p2: "market_p2",
       benchmark_title: "benchmark_title", benchmark_lead: "benchmark_lead",
       potentials_title: "potentials_title", potentials_lead: "potentials_lead",
-      cta: "cta", about_fit: "about_fit", sources: "sources",
+      potentials_lead2: "potentials_lead2",
+      cta: "cta", about_fit: "about_fit", about_fit2: "about_fit2", sources: "sources",
     };
     if (einfach[name]) return einfach[name];
     const kpi = /^kpi(\d+)_(value|label|source)$/.exec(name);
@@ -4353,6 +4392,46 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   /** Passt die grosse Vorschau in ihre Spalte ein. Gleiche Rechnung wie fitStages. */
+  /**
+   * Der Ausschnitt, den die Vorschau gerade zeigen soll. Steht im Fragebogen
+   * ein Abschnitt des Memos offen, ist das dessen Bereich auf der Seite; sonst
+   * die ganze Seite. Ohne den Zoom sucht man bei 12 pt Schrift in einer
+   * Miniatur, wohin der eigene Text gelaufen ist.
+   */
+  function memoZoomZiel(stage) {
+    if (!isMemo || state.step !== "form" || !stage) return null;
+    const fragen = aktiveFragen();
+    const offen = fragen[schrittIndex(fragen)];
+    if (offen?.art !== "memo-section" || !offen.section?.ziel) return null;
+    return stage.querySelector(`.em-page:not(.is-off) ${offen.section.ziel}`);
+  }
+
+  /**
+   * Zoomt den Ausschnitt in den Vorschaukasten. Gemessen wird ohne Skalierung,
+   * sonst rechnet man die eigene Skalierung ein zweites Mal ein.
+   */
+  function zoomeAufAbschnitt(box, inner, stage, ziel, breite, hoehe) {
+    const alt = inner.style.transform;
+    inner.style.transform = "none";
+    const sRect = stage.getBoundingClientRect();
+    const zRect = ziel.getBoundingClientRect();
+    const x = zRect.left - sRect.left;
+    const y = zRect.top - sRect.top;
+    const w = zRect.width || 1;
+    const h = zRect.height || 1;
+    inner.style.transform = alt;
+    const rand = 14;
+    const faktor = Math.min(breite / (w + rand * 2), hoehe / (h + rand * 2));
+    box.style.width = `${Math.round(breite)}px`;
+    box.style.height = `${Math.round(hoehe)}px`;
+    inner.style.transformOrigin = "0 0";
+    inner.style.transform = `scale(${faktor}) translate(${-(x - rand)}px, ${-(y - rand)}px)`;
+    inner.style.width = `${stage.offsetWidth || MEMO_SEITE_PX.w}px`;
+    inner.style.height = `${stage.offsetHeight || MEMO_SEITE_PX.h}px`;
+    inner.style.marginRight = "0px";
+    inner.style.marginBottom = "0px";
+  }
+
   function fitPreview() {
     const box = shell.querySelector("[data-livepreview]");
     const host = box?.closest(".as-prev-host");
@@ -4375,6 +4454,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     zeigeAktiveMemoSeite(box);
     passeSlideTexteAn(box);
     legeMemoSeiteMass(stage);
+    const ziel = memoZoomZiel(stage);
+    if (ziel) {
+      zoomeAufAbschnitt(box, inner, stage, ziel, breite, hoehe);
+      return;
+    }
+    inner.style.transformOrigin = "";
     const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
     const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
     const faktor = Math.min(breite / w, hoehe / h);
