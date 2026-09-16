@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260917-2";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260917-3";
 import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260824-0305";
 
 const OVERLAY_ID = "ms-overlay";

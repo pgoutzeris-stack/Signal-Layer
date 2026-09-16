@@ -2180,6 +2180,16 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   // Number("") ist 0: ohne diese Schranke griff der Benchmark-Zweig bei jedem
   // Klick und die Vorschau sprang bei jeder Antwort auf Seite 3.
   assert.match(studio, /if \(!bench\) return null;/);
+  // Eine Auswahl zeigt auf kein einzelnes Feld: die Markierung faellt zurueck
+  // auf das Ziel der Frage, statt am zuletzt angefassten Feld zu haengen.
+  assert.match(studio, /if \(el\.closest\?\.\(".as-opt"\)\)/);
+  // Blaettern in der Vorschau verschiebt die Stelle im Fragebogen nicht.
+  assert.match(studio, /if \(seite && state\.prevIndex !== seite - 1\) return null;/);
+  // Die Motive stehen im Abschnitt, zu dem sie gehoeren.
+  assert.match(studio, /function bildgruppeHtml/);
+  assert.match(studio, /Motive der Benchmarks/);
+  assert.match(studio, /Motive der Hebel/);
+  assert.match(studio, /when: \(answers\) => nurThema\(answers\) && answers\.storyline !== "custom"/);
   // Der Bildschirmaufbau merkt sich seine Vorschau, sonst galt der erste Klick
   // danach als Aenderung und baute alles neu auf.
   assert.match(studio, /function livePreviewGemerkt/);
@@ -2601,8 +2611,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-2");
-  assert.match(indexHtml, /app\.js\?v=20260917-2/);
+  assert.equal(studioVersion, "20260917-3");
+  assert.match(indexHtml, /app\.js\?v=20260917-3/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

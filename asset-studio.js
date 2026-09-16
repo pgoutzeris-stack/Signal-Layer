@@ -299,7 +299,8 @@ function memoQuestions(firma, cmoHundredDays = false) {
     {
       key: "images",
       label: "Bilder",
-      when: nurThema,
+      // Beim Selbstschreiben stehen die Motive in ihren Abschnitten.
+      when: (answers) => nurThema(answers) && answers.storyline !== "custom",
       options: [
         ["auto", "KI sucht Bilder & Logos"],
         ["upload", "Eigene Bilder & Logos"],
@@ -974,7 +975,7 @@ const CHROME_CSS = `
   border-style:solid; border-color:var(--brand,#206efb);
   /* Der weite Schatten legt alles ausser der bearbeiteten Stelle zurueck.
      Die Seite bleibt ganz sichtbar, nur eben leiser. */
-  box-shadow:0 0 0 9999px rgba(248,250,252,.62);
+  box-shadow:0 0 0 9999px rgba(248,250,252,.62), 0 0 0 1px rgba(32,110,251,.35) inset;
   transition:left .3s cubic-bezier(.22,1,.36,1), top .3s cubic-bezier(.22,1,.36,1),
     width .3s cubic-bezier(.22,1,.36,1), height .3s cubic-bezier(.22,1,.36,1);
   animation:as-ring-in .32s cubic-bezier(.22,1,.36,1);
@@ -1506,12 +1507,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-2";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-3";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-2";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-3";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-2";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-3";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1783,6 +1784,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       for (const section of MEMO_SECTIONS) {
         for (const feld of section.fields) out[`memo_${feld.key}`] = "";
       }
+      out.benchmarks_images = "auto";
+      out.potentials_images = "auto";
       for (let i = 0; i < 3; i += 1) {
         out[`bench_${i}_name`] = "";
         out[`bench_${i}_text`] = "";
@@ -2635,6 +2638,39 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * (Kennzahl 1 bis 4, Benchmark 1 bis 3, Hebel 1 bis 3) stehen unter einer
    * eigenen Zwischenueberschrift, sonst laufen fuenfzig Felder als eine Wand.
    */
+  /** Die Motive eines Abschnitts: Wahl und, bei eigener Wahl, die Plaetze.
+   *  Sie stehen dort, wo der Text dazu steht, nicht in einer eigenen Frage. */
+  function bildgruppeHtml(gruppe) {
+    const key = `${gruppe}_images`;
+    const eigen = state.answers[key] === "upload";
+    const titel = gruppe === "benchmarks" ? "Motive der Benchmarks" : "Motive der Hebel";
+    const hinweis = gruppe === "benchmarks"
+      ? "Je Fall ein Motiv der Marke: Kampagnenmotiv, Kanal oder Auftritt. Ein Logo allein trägt die Karte nicht."
+      : "Je Hebel ein Konzeptbild: wie es aussähe, wenn der Hebel gezogen ist. Kein Logo, kein Porträt.";
+    const masse = gruppe === "benchmarks" ? "46 × 28 mm" : "52 × 36 mm";
+    const namen = gruppe === "benchmarks" ? ["Benchmark 1", "Benchmark 2", "Benchmark 3"] : ["Hebel 1", "Hebel 2", "Hebel 3"];
+    const wahl = [["auto", "KI sucht die Motive"], ["upload", "Eigene Motive"]].map(([wert, text]) => `
+      <label class="as-opt">
+        <input type="radio" name="as-${attr(key)}" value="${attr(wert)}"${eigen === (wert === "upload") ? " checked" : ""}>
+        <span>${esc(text)}</span>
+      </label>`).join("");
+    const plaetze = eigen
+      ? `<div class="as-slots">${[0, 1, 2].map((i) => {
+        const bild = state.formImages[`${gruppe}.${i}`];
+        return `<button type="button" class="as-slot" data-act="form-img-pick" data-imgkey="${attr(`${gruppe}.${i}`)}">
+          <b>${esc(namen[i])}</b>
+          <span class="as-slot-frame${gruppe === "potentials" ? " is-pot" : ""}">${bild?.src ? `<img src="${attr(bild.src)}" alt="">` : `<i class="fa-solid fa-crop"></i>`}</span>
+          <small>${bild?.src ? "Ausschnitt ersetzen" : `Zuschneiden auf ${masse}`}</small>
+        </button>`;
+      }).join("")}</div>`
+      : "";
+    return `<div class="as-mf-block">
+      <h5>${esc(titel)}${tipHtml(`<p class="as-tip-text">${esc(hinweis)}</p>`, titel)}</h5>
+      <div class="as-opts">${wahl}</div>
+      ${plaetze}
+    </div>`;
+  }
+
   function memoSectionHtml(q) {
     const section = q.section;
     const gefuellt = section.fields.filter((f) => memoFeldWert(f.key).trim()).length;
@@ -2668,6 +2704,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <span data-memostand>${gefuellt} von ${section.fields.length} Feldern selbst geschrieben</span>
       </div>
       <div class="as-mf-block">${bloecke.join("")}</div>
+      ${section.bildgruppe ? bildgruppeHtml(section.bildgruppe) : ""}
       <div data-memosectionfehler>${hinweis}</div>
     </div>`;
   }
@@ -3408,6 +3445,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function readForm() {
     const form = shell.querySelector("[data-form]");
     if (!form) return;
+    for (const gruppe of ["benchmarks", "potentials"]) {
+      const gewaehlt = form.querySelector(`input[name="as-${gruppe}_images"]:checked`);
+      if (gewaehlt) state.answers[`${gruppe}_images`] = gewaehlt.value;
+    }
+    // Der Lauf kennt nur eine Antwort zu den Bildern. Sobald eine der beiden
+    // Gruppen eigene Motive traegt, gilt sie als eigene Wahl.
+    if (state.answers.storyline === "custom") {
+      state.answers.images = state.answers.benchmarks_images === "upload" || state.answers.potentials_images === "upload"
+        ? "upload"
+        : "auto";
+    }
     // Waehlt die KI das Layout, darf keine alte eigene Wahl stehen bleiben.
     if (state.answers.variant_mode !== "custom") state.answers.variant = "auto";
     for (const q of questions) {
@@ -4539,6 +4587,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function memoHervorhebung(stage) {
     if (!isMemo || state.step !== "form" || !stage) return null;
+    // Wer in der Vorschau blaettert, verschiebt damit nicht seine Stelle im
+    // Fragebogen. Steht eine andere Seite im Bild, bleibt die Markierung weg.
+    const seite = state.fokusZiel?.seite || memoSeiteZurFrage();
+    if (seite && state.prevIndex !== seite - 1) return null;
     const suche = (sel) => {
       const treffer = stage.querySelector(`.em-page:not(.is-off) ${sel}`);
       return treffer?.offsetWidth && treffer.offsetHeight ? treffer : null;
@@ -4565,6 +4617,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    */
   function zeigeStelleZu(el) {
     if (!isMemo || state.step !== "form") return;
+    // Eine Auswahl beantwortet die Frage, sie zeigt auf kein einzelnes Feld.
+    // Ohne das Zuruecksetzen blieb die Markierung am zuletzt angefassten Feld
+    // haengen, auch wenn man eine Frage weiter etwas anderes gewaehlt hat.
+    if (el.closest?.(".as-opt")) {
+      if (state.fokusZiel) {
+        state.fokusZiel = null;
+        state.memoFokus = "";
+        fitPreview();
+      }
+      return;
+    }
     const ziel = fokusZielFuer(el);
     if (!ziel || ziel.key === state.fokusZiel?.key) return;
     state.fokusZiel = ziel;
@@ -4653,7 +4716,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ring.style.top = `${Math.round(y - luft)}px`;
     ring.style.width = `${Math.round(w + luft * 2)}px`;
     ring.style.height = `${Math.round(h + luft * 2)}px`;
-    ring.style.borderWidth = `${(2 / faktor).toFixed(2)}px`;
+    ring.style.borderWidth = `${(3 / faktor).toFixed(2)}px`;
     ring.style.borderRadius = `${(14 / faktor).toFixed(1)}px`;
   }
 
