@@ -1506,12 +1506,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-1";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-2";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-1";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-2";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-1";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-2";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1871,7 +1871,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           ${isMemo ? "" : `<span class="as-prev-label">Vorschau</span>`}
           <div class="as-prev-host">
             <div class="as-pagehost">
-              <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
+              <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewGemerkt()}</div>
               <button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="Vollbild"><i class="fa-solid fa-expand"></i></button>
             </div>
           </div>
@@ -3358,18 +3358,33 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * hat. Ein Klick im Fragebogen aendert meist nur den Ausschnitt; das Memo mit
    * seinen eingebetteten Bildern neu einzuhaengen hat dabei sichtbar geflackert.
    */
+  /**
+   * Der Vergleichswert einer Vorschau. Ohne die Kennung der Buehne, die bei
+   * jedem Aufbau neu gezogen wird, und ohne die Blaetterleiste, die die
+   * Seitenzahl traegt und fuer sich erneuert wird.
+   */
+  function vorschauSignatur(html) {
+    return String(html)
+      .replace(/ data-uid="[^"]*"/g, "")
+      .replace(/<div data-prevnav>[\s\S]*$/, "");
+  }
+
+  /**
+   * Dieselbe Vorschau, aber gemerkt. Der Bildschirmaufbau setzt sie direkt in
+   * seine Vorlage; ohne diesen Merker hielt der Vergleich den ersten Klick
+   * danach fuer eine Aenderung und baute alles neu auf.
+   */
+  function livePreviewGemerkt() {
+    const html = livePreviewHtml();
+    state.prevHtml = vorschauSignatur(html);
+    return html;
+  }
+
   function erneuereVorschau() {
     const prev = shell.querySelector("[data-livepreview]");
     if (!prev) return;
     const html = livePreviewHtml();
-    // Die Kennung der Buehne wird bei jedem Aufbau neu gezogen. Sie aus dem
-    // Vergleich zu nehmen ist der Unterschied zwischen "nichts geaendert" und
-    // "sieht jedes Mal anders aus".
-    // Die Blaetterleiste traegt die Seitenzahl und wird gleich danach fuer sich
-    // erneuert; im Vergleich hat sie nichts verloren.
-    const vergleich = html
-      .replace(/ data-uid="[^"]*"/g, "")
-      .replace(/<div data-prevnav>[\s\S]*$/, "");
+    const vergleich = vorschauSignatur(html);
     if (vergleich !== state.prevHtml || !prev.firstChild) {
       prev.innerHTML = html;
       state.prevHtml = vergleich;
@@ -4582,7 +4597,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return { seite: bildkey.startsWith("benchmarks") ? 3 : 4, sel: `[data-imgkey="${CSS.escape(bildkey)}"]`, key: bildkey };
     }
     const bench = el.closest?.("[data-bench]");
-    const nr = Number(String(bench?.getAttribute("data-bench") || "").split("-")[0]);
+    // Ohne diese Schranke lief jeder Klick hier hinein: Number("") ist 0, und
+    // damit sprang die Vorschau bei jeder Antwort auf die erste Benchmark.
+    if (!bench) return null;
+    const nr = Number(String(bench.getAttribute("data-bench") || "").split("-")[0]);
     if (Number.isInteger(nr) && nr >= 0 && nr <= 2) {
       return { seite: 3, sel: `.em-case:nth-of-type(${nr + 1})`, key: `bench-${nr}` };
     }
