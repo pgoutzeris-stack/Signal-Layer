@@ -1030,17 +1030,6 @@ const CHROME_CSS = `
   #as-overlay [data-livepreview] [data-field].as-mf-ziel{animation:none; background:rgba(32,110,251,.12);}
 }
 
-#as-overlay .as-benches{display:flex; flex-direction:column; gap:10px; margin-top:4px;}
-#as-overlay .as-bench{
-  display:grid; grid-template-columns:1fr; gap:6px;
-  border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:10px 12px; background:var(--surface,#f8fafc);
-}
-#as-overlay .as-bench b{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted,#475569);}
-#as-overlay .as-bench input, #as-overlay .as-bench textarea{
-  width:100%; border:1px solid var(--line,#e2e8f0); border-radius:9px; padding:8px 10px;
-  font:inherit; font-size:13px; background:#fff; color:inherit;
-}
-#as-overlay .as-bench textarea{min-height:52px; resize:vertical;}
 #as-overlay .as-pill{
   align-self:flex-start; display:inline-flex; align-items:center; justify-content:center;
   border:1px solid var(--line,#e2e8f0); background:#fff; color:var(--ink,#0f172a);
@@ -1518,12 +1507,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-7";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-9";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-7";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-9";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-7";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-9";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1577,6 +1566,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     postText: "",
     prevHtml: "",
     memoFokus: "",
+    /** Stelle im Dokument, die das gerade fokussierte Bedienelement betrifft. */
+    fokusZiel: null,
     toneOfVoice: "",
     toneGeladen: false,
     designs: [],
@@ -2685,15 +2676,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return out;
   }
 
+  /** Dieselbe flache Form wie die Abschnitte: Beschriftung, Feld, Haarlinie.
+   *  Der Hinweis liegt hinter dem Fragezeichen, nicht als Platzhalter im Feld. */
   function benchesHtml() {
-    const zeilen = [0, 1, 2].map((i) => `
-      <div class="as-bench">
-        <b>Benchmark ${i + 1}</b>
-        <input data-bench="${i}-name" placeholder="Name der Marke oder Firma" value="${esc(state.answers[`bench_${i}_name`] || "")}" aria-label="Benchmark ${i + 1} Name">
-        <textarea data-bench="${i}-text" rows="2" placeholder="Was sie konkret getan haben (eine Handlung, kein Slogan)" aria-label="Benchmark ${i + 1} Handlung">${esc(state.answers[`bench_${i}_text`] || "")}</textarea>
-        <input data-bench="${i}-tag" placeholder="Lehre in wenigen Worten, z. B. Marke vor Fläche" value="${esc(state.answers[`bench_${i}_tag`] || "")}" aria-label="Benchmark ${i + 1} Lehre">
-      </div>`).join("");
-    return `<div class="as-benches">
+    const zeilen = [0, 1, 2].map((i) => {
+      const feld = (teil, label, hinweis, mehrzeilig) => {
+        const wert = esc(state.answers[`bench_${i}_${teil}`] || "");
+        const id = `as-bench-${i}-${teil}`;
+        const eingabe = mehrzeilig
+          ? `<textarea id="${id}" rows="3" data-bench="${i}-${teil}">${wert}</textarea>`
+          : `<input id="${id}" data-bench="${i}-${teil}" value="${wert}">`;
+        return `<div class="as-mf-feld">
+          <label for="${id}">${esc(label)}${tipHtml(`<p class="as-tip-text">${esc(hinweis)}</p>`, `Hinweis zu ${label}`)}</label>
+          ${eingabe}
+        </div>`;
+      };
+      return `<div class="as-mf-block">
+        <h5>Benchmark ${i + 1}</h5>
+        ${feld("name", "Marke", "Die Marke, bei Handelsmarken „Händler · Marke“. Beispiel: Lidl · Parkside", false)}
+        ${feld("text", "Beleg", "Was sie konkret getan haben und warum es gewirkt hat. Eine Handlung, kein Slogan.", true)}
+        ${feld("tag", "Lehre", "Was davon auf den Adressaten übertragbar ist, ein Satz.", false)}
+      </div>`;
+    }).join("");
+    return `<div class="as-mf">
       ${zeilen}
       <button type="button" class="as-pill" data-act="bench-example">Beispielform einsetzen</button>
     </div>`;
@@ -3034,6 +3039,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     if (isMemo) {
       state.memoFokus = "";
+      state.fokusZiel = null;
       const seite = memoSeiteZurFrage();
       if (seite) state.prevIndex = seite - 1;
     }
@@ -4491,20 +4497,69 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function memoHervorhebung(stage) {
     if (!isMemo || state.step !== "form" || !stage) return null;
+    const suche = (sel) => {
+      const treffer = stage.querySelector(`.em-page:not(.is-off) ${sel}`);
+      return treffer?.offsetWidth && treffer.offsetHeight ? treffer : null;
+    };
+    // Was gerade den Fokus hat, gewinnt: das Feld, der Bildplatz, die
+    // Benchmark-Zeile. Erst danach das Ziel der ganzen Frage.
+    if (state.fokusZiel?.sel) {
+      const treffer = suche(state.fokusZiel.sel);
+      if (treffer) return treffer;
+    }
     const fragen = aktiveFragen();
     const offen = fragen[schrittIndex(fragen)];
     if (!offen) return null;
-    const suche = (sel) => stage.querySelector(`.em-page:not(.is-off) ${sel}`);
-    if (offen.art === "memo-section") {
-      if (offen.section.fields.some((f) => f.key === state.memoFokus)) {
-        const pfad = memoFieldPath(state.memoFokus);
-        const feld = pfad && suche(`[data-field="${CSS.escape(pfad)}"]`);
-        if (feld?.offsetWidth && feld.offsetHeight) return feld;
-      }
-      return suche(offen.section.ziel);
-    }
+    if (offen.art === "memo-section") return suche(offen.section.ziel);
     const ziel = FRAGE_ZIEL[offen.key];
     return ziel ? suche(ziel.sel) : null;
+  }
+
+  /**
+   * Die Vorschau auf die Stelle stellen, die zum angefassten Bedienelement
+   * gehoert. Haengt an Fokus und Klick: ein Klick kommt auch dann an, wenn das
+   * Fenster keinen Fokus hat, und "draufgegangen" heisst fuer einen Bildplatz
+   * ohnehin klicken.
+   */
+  function zeigeStelleZu(el) {
+    if (!isMemo || state.step !== "form") return;
+    const ziel = fokusZielFuer(el);
+    if (!ziel || ziel.key === state.fokusZiel?.key) return;
+    state.fokusZiel = ziel;
+    state.memoFokus = ziel.key;
+    if (ziel.seite && state.prevIndex !== ziel.seite - 1) {
+      state.prevIndex = ziel.seite - 1;
+      const nav = shell.querySelector("[data-prevnav]");
+      if (nav) nav.innerHTML = blaetterNavHtml();
+    }
+    fitPreview();
+  }
+
+  /**
+   * Die Stelle im Dokument, die ein Bedienelement betrifft: ein Feld des
+   * Selbstschreibens, ein Bildplatz oder eine Benchmark-Zeile. Ohne das sprang
+   * die Vorschau beim Anklicken eines Bildplatzes nicht mit.
+   */
+  function fokusZielFuer(el) {
+    const memofeld = el.closest?.("[data-memofeld]");
+    if (memofeld) {
+      const key = memofeld.getAttribute("data-memofeld") || "";
+      const feld = memoFeld(key);
+      const pfad = memoFieldPath(key);
+      if (!feld || !pfad) return null;
+      return { seite: feld.seite, sel: `[data-field="${CSS.escape(pfad)}"]`, key };
+    }
+    const slot = el.closest?.("[data-imgkey]");
+    const bildkey = slot?.getAttribute("data-imgkey") || "";
+    if (/^(benchmarks|potentials)\.[0-2]$/.test(bildkey)) {
+      return { seite: bildkey.startsWith("benchmarks") ? 3 : 4, sel: `[data-imgkey="${CSS.escape(bildkey)}"]`, key: bildkey };
+    }
+    const bench = el.closest?.("[data-bench]");
+    const nr = Number(String(bench?.getAttribute("data-bench") || "").split("-")[0]);
+    if (Number.isInteger(nr) && nr >= 0 && nr <= 2) {
+      return { seite: 3, sel: `.em-case:nth-of-type(${nr + 1})`, key: `bench-${nr}` };
+    }
+    return null;
   }
 
   /** Die Seite, auf der die offene Frage sichtbar wird. */
@@ -5473,6 +5528,7 @@ ${stages}${post}
   /* ── Ereignisse ── */
 
   function onClick(event) {
+    zeigeStelleZu(event.target);
     const stageEl = event.target.closest("[data-stage]");
     const modeBtn = event.target.closest("[data-crop-mode]");
     if (modeBtn) {
@@ -5889,16 +5945,7 @@ ${stages}${post}
   on(overlay, "focusin", (event) => {
     const field = event.target.closest?.("[data-field]");
     if (field && field.getAttribute("contenteditable") === "true") lastField = field;
-    // Die Vorschau folgt dem Feld, in dem geschrieben wird. Den ganzen
-    // Abschnitt zu umranden, waehrend man im Titel steht, sagt nichts.
-    const memofeld = event.target.closest?.("[data-memofeld]");
-    if (memofeld) {
-      const key = memofeld.getAttribute("data-memofeld") || "";
-      if (key !== state.memoFokus) {
-        state.memoFokus = key;
-        fitPreview();
-      }
-    }
+    zeigeStelleZu(event.target);
   });
   on(document, "keydown", onKeyDown, true);
   on(document, "selectionchange", onSelectionChange);

@@ -2173,6 +2173,17 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   // Die Vorschau bleibt auf der ganzen Seite; hervorgehoben wird die Stelle.
   assert.doesNotMatch(studio, /zoomeAufAbschnitt/);
   assert.match(studio, /function memoHervorhebung/);
+  // Bildplatz und Benchmark-Zeile zeigen auf ihre eigene Stelle im Dokument.
+  // Vorher blieb die Vorschau auf der Kartenreihe stehen, egal welchen Platz
+  // man angefasst hat.
+  assert.match(studio, /function fokusZielFuer/);
+  assert.match(studio, /sel: `\[data-imgkey="\$\{CSS\.escape\(bildkey\)\}"\]`/);
+  assert.match(studio, /sel: `\.em-case:nth-of-type\(\$\{nr \+ 1\}\)`/);
+  // Ein Klick kommt auch dann an, wenn das Fenster keinen Fokus hat.
+  assert.match(studio, /function onClick\(event\) \{\n    zeigeStelleZu\(event\.target\);/);
+  // Die eigenen Benchmarks tragen dieselbe flache Form wie die Abschnitte.
+  assert.doesNotMatch(studio, /class="as-bench"/);
+  assert.match(studio, /feld\("name", "Marke"/);
   assert.match(studio, /as-mf-ziel/);
   assert.match(studio, /function mitEigenenFeldern/);
   // Das Beispiel aus dem Referenzmemo steht an jedem Feld.
@@ -2573,8 +2584,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260916-7");
-  assert.match(indexHtml, /app\.js\?v=20260916-7/);
+  assert.equal(studioVersion, "20260916-9");
+  assert.match(indexHtml, /app\.js\?v=20260916-9/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
