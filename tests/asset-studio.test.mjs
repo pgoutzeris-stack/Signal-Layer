@@ -2163,7 +2163,16 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   assert.match(studio, /data-memoguide/);
   // Die Vorschau blättert auf die Seite des offenen Abschnitts und zeigt beim
   // Tippen sofort, wohin der Text läuft.
-  assert.match(studio, /if \(isMemo && abschnitt\) state\.prevIndex = abschnitt\.seite - 1;/);
+  // Jede Frage zeigt auf die Stelle, an der ihre Antwort im Dokument sichtbar
+  // wird, auch Bilder, Benchmarking und CTA.
+  assert.match(studio, /const FRAGE_ZIEL = \{/);
+  assert.match(studio, /images: \{ seite: 3, sel: "\.em-cases" \}/);
+  assert.match(studio, /cta: \{ seite: 4, sel: "\.em-cta" \}/);
+  assert.match(studio, /function memoSeiteZurFrage/);
+  assert.match(studio, /if \(seite\) state\.prevIndex = seite - 1;/);
+  // Die Vorschau bleibt auf der ganzen Seite; hervorgehoben wird die Stelle.
+  assert.doesNotMatch(studio, /zoomeAufAbschnitt/);
+  assert.match(studio, /function memoHervorhebung/);
   assert.match(studio, /as-mf-ziel/);
   assert.match(studio, /function mitEigenenFeldern/);
   // Das Beispiel aus dem Referenzmemo steht an jedem Feld.
@@ -2564,8 +2573,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260916-6");
-  assert.match(indexHtml, /app\.js\?v=20260916-6/);
+  assert.equal(studioVersion, "20260916-7");
+  assert.match(indexHtml, /app\.js\?v=20260916-7/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

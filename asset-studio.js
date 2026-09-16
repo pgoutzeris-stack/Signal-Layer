@@ -973,10 +973,14 @@ const CHROME_CSS = `
 #as-overlay .as-zoomring{
   position:absolute; pointer-events:none; z-index:6;
   border-style:solid; border-color:var(--brand,#206efb);
-  box-shadow:0 0 0 9999px rgba(15,23,42,.07);
-  animation:as-ring-in .36s cubic-bezier(.22,1,.36,1);
+  /* Der weite Schatten legt alles ausser der bearbeiteten Stelle zurueck.
+     Die Seite bleibt ganz sichtbar, nur eben leiser. */
+  box-shadow:0 0 0 9999px rgba(241,245,251,.74);
+  transition:left .3s cubic-bezier(.22,1,.36,1), top .3s cubic-bezier(.22,1,.36,1),
+    width .3s cubic-bezier(.22,1,.36,1), height .3s cubic-bezier(.22,1,.36,1);
+  animation:as-ring-in .32s cubic-bezier(.22,1,.36,1);
 }
-@keyframes as-ring-in{from{opacity:0;} to{opacity:1;}}
+@keyframes as-ring-in{from{opacity:0; box-shadow:0 0 0 9999px rgba(241,245,251,0);} to{opacity:1;}}
 /* Der Zoom auf den Abschnitt faehrt weich, damit man den Weg sieht. */
 #as-overlay [data-livepreview] .as-prev-scale{transition:transform .34s cubic-bezier(.22,1,.36,1);}
 @media (prefers-reduced-motion:reduce){
@@ -1514,12 +1518,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-6";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-7";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-6";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-7";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-6";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-7";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -3028,9 +3032,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       else if (key === "slide_content") state.prevIndex = 1;
       else if (key === "slide_end") state.prevIndex = Math.max(0, fragebogenCarouselVarianten().length - 1);
     }
-    const abschnitt = MEMO_SECTIONS.find((s) => s.id === key);
-    if (isMemo && abschnitt) state.prevIndex = abschnitt.seite - 1;
-    if (isMemo) state.memoFokus = "";
+    if (isMemo) {
+      state.memoFokus = "";
+      const seite = memoSeiteZurFrage();
+      if (seite) state.prevIndex = seite - 1;
+    }
     if (key && key !== ENDE && !state.stepSeen.includes(key)) state.stepSeen.push(key);
   }
 
@@ -4466,25 +4472,55 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * die ganze Seite. Ohne den Zoom sucht man bei 12 pt Schrift in einer
    * Miniatur, wohin der eigene Text gelaufen ist.
    */
-  function memoZoomZiel(stage) {
+  /**
+   * Der Ort im Dokument, den die gerade offene Frage betrifft. Die Vorschau
+   * bleibt auf der ganzen Seite; hervorgehoben wird nur diese Stelle.
+   *
+   * Fuer die Abschnitte des Selbstschreibens ist es das Feld, in dem gerade
+   * geschrieben wird, sonst der Abschnitt. Die uebrigen Fragen zeigen dorthin,
+   * wo ihre Antwort im Dokument sichtbar wird.
+   */
+  const FRAGE_ZIEL = {
+    company_named: { seite: 1, sel: "[data-field=\"title\"]" },
+    company_mode: { seite: 1, sel: "[data-field=\"title\"]" },
+    storyline: { seite: 1, sel: ".em-cover-mid" },
+    benchmarks: { seite: 3, sel: ".em-cases" },
+    images: { seite: 3, sel: ".em-cases" },
+    cta: { seite: 4, sel: ".em-cta" },
+  };
+
+  function memoHervorhebung(stage) {
     if (!isMemo || state.step !== "form" || !stage) return null;
     const fragen = aktiveFragen();
     const offen = fragen[schrittIndex(fragen)];
-    if (offen?.art !== "memo-section" || !offen.section?.ziel) return null;
-    const imAbschnitt = offen.section.fields.some((f) => f.key === state.memoFokus);
-    if (imAbschnitt) {
-      const pfad = memoFieldPath(state.memoFokus);
-      const feld = pfad && stage.querySelector(`.em-page:not(.is-off) [data-field="${CSS.escape(pfad)}"]`);
-      if (feld?.offsetWidth && feld.offsetHeight) return feld;
+    if (!offen) return null;
+    const suche = (sel) => stage.querySelector(`.em-page:not(.is-off) ${sel}`);
+    if (offen.art === "memo-section") {
+      if (offen.section.fields.some((f) => f.key === state.memoFokus)) {
+        const pfad = memoFieldPath(state.memoFokus);
+        const feld = pfad && suche(`[data-field="${CSS.escape(pfad)}"]`);
+        if (feld?.offsetWidth && feld.offsetHeight) return feld;
+      }
+      return suche(offen.section.ziel);
     }
-    return stage.querySelector(`.em-page:not(.is-off) ${offen.section.ziel}`);
+    const ziel = FRAGE_ZIEL[offen.key];
+    return ziel ? suche(ziel.sel) : null;
+  }
+
+  /** Die Seite, auf der die offene Frage sichtbar wird. */
+  function memoSeiteZurFrage() {
+    const fragen = aktiveFragen();
+    const offen = fragen[schrittIndex(fragen)];
+    if (!offen) return null;
+    if (offen.art === "memo-section") return offen.section.seite;
+    return FRAGE_ZIEL[offen.key]?.seite || null;
   }
 
   /**
    * Lage eines Elements in der Buehne, in Layoutpixeln. Ueber die
    * getBoundingClientRect zu gehen war falsch: Buehne und Skalierungsrahmen
    * tragen beide ein transform, das Ergebnis war um den Faktor daneben und der
-   * Rahmen lag im Bild statt am Abschnitt.
+   * Rahmen lag im Bild statt an der Stelle.
    */
   function versatzInBuehne(el, buehne) {
     let x = 0;
@@ -4496,32 +4532,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       n = n.offsetParent;
     }
     return { x, y, w: el.offsetWidth, h: el.offsetHeight };
-  }
-
-  /** Zoomt den Ausschnitt in den Vorschaukasten. */
-  function zoomeAufAbschnitt(box, inner, stage, ziel, breite, hoehe) {
-    const { x, y, w, h } = versatzInBuehne(ziel, stage);
-    if (!w || !h) return;
-    // Luft nach der Groesse des Ziels: eine Titelzeile allein im Bild waere
-    // riesig und ohne Zusammenhang. Der Deckel haelt den Zoom bei gut dem
-    // Dreifachen der Seitenansicht.
-    const rand = Math.max(20, Math.round(Math.min(w, h) * 0.45));
-    const seite = Math.min(breite / (stage.offsetWidth || MEMO_SEITE_PX.w), hoehe / (stage.offsetHeight || MEMO_SEITE_PX.h));
-    const faktor = Math.min(breite / (w + rand * 2), hoehe / (h + rand * 2), seite * 3.2);
-    // Der Kasten nimmt das Format des Ausschnitts an, statt die ganze
-    // Seitenflaeche zu behalten. Sonst stand neben dem Titel eine graue
-    // Bildhaelfte oder unter ihm das Fussband, nur weil dort Platz uebrig war.
-    const zielB = w + rand * 2;
-    const zielH = h + rand * 2;
-    box.style.width = `${Math.round(zielB * faktor)}px`;
-    box.style.height = `${Math.round(zielH * faktor)}px`;
-    inner.style.transformOrigin = "0 0";
-    inner.style.transform = `scale(${faktor}) translate(${-(x - rand)}px, ${-(y - rand)}px)`;
-    inner.style.width = `${stage.offsetWidth || MEMO_SEITE_PX.w}px`;
-    inner.style.height = `${stage.offsetHeight || MEMO_SEITE_PX.h}px`;
-    inner.style.marginRight = "0px";
-    inner.style.marginBottom = "0px";
-    setzeZoomRing(stage, x, y, w, h, faktor);
   }
 
   /**
@@ -4573,13 +4583,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     zeigeAktiveMemoSeite(box);
     passeSlideTexteAn(box);
     legeMemoSeiteMass(stage);
-    const ziel = memoZoomZiel(stage);
-    if (ziel) {
-      zoomeAufAbschnitt(box, inner, stage, ziel, breite, hoehe);
-      return;
-    }
     inner.style.transformOrigin = "";
-    entferneZoomRing(stage);
     const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
     const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
     const faktor = Math.min(breite / w, hoehe / h);
@@ -4593,6 +4597,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Kachel schiebt sich rechts aus ihrem Kasten.
     inner.style.marginRight = `${-Math.round(w * (1 - faktor))}px`;
     inner.style.marginBottom = `${-Math.round(h * (1 - faktor))}px`;
+    const ziel = memoHervorhebung(stage);
+    if (ziel) {
+      const { x, y, w: zw, h: zh } = versatzInBuehne(ziel, stage);
+      if (zw && zh) setzeZoomRing(stage, x, y, zw, zh, faktor);
+      else entferneZoomRing(stage);
+    } else {
+      entferneZoomRing(stage);
+    }
   }
 
   function fitStages() {
