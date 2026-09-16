@@ -1334,7 +1334,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(memoPrompt, /Konzeptbild zum Hebel/);
   assert.match(studio, /key: "company_mode"/);
   assert.match(studio, /key: "images"/);
-  assert.match(studio, /Logos und Motive recherchieren/);
+  assert.match(studio, /KI sucht Bilder & Logos/);
 });
 
 test("Tilden und Sterne zählen nicht gegen die Zeichenschwelle", () => {
@@ -2148,7 +2148,7 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   // was in welches Feld gehört und wie lang es sein darf.
   const memoFragen = studio.slice(studio.indexOf("function memoQuestions"), studio.indexOf("const FORM_MEMO"));
   assert.doesNotMatch(memoFragen, /storyline_text/);
-  assert.match(memoFragen, /Ich schreibe die Abschnitte selbst/);
+  assert.match(memoFragen, /Ich gebe den Inhalt vor/);
   assert.match(studio, /art: "memo-section"/);
   assert.match(studio, /if \(q\.art === "memo-section"\) return memoSectionHtml\(q\);/);
   assert.match(studio, /function memoSectionHtml/);
@@ -2227,8 +2227,11 @@ test("Die Vorschautexte halten denselben Feldvertrag wie das fertige Memo", asyn
 test("Die reine Vorschau zeigt keine Bedienspuren im Bild", () => {
   // Auf dem Titelbild standen „Bild einfügen" und ein Bildsymbol, obwohl in der
   // Vorschau nichts einzufügen ist.
-  assert.match(studio, /as-stage as-stage--memo is-readonly/);
-  assert.match(studio, /\.as-stage--memo\.is-readonly \.as-picslot--tpl::after,\n#as-overlay \.as-stage--memo\.is-readonly \[data-imgslot\]::before\{content:none !important;\}/);
+  // Statt Beschriftung steht dort nur noch das Symbol, gross genug fuer eine
+  // halbe A4-Seite. "Bild einfuegen" mitten im Titelbild las sich wie Inhalt.
+  assert.doesNotMatch(memoTpl, /content:"Bild einfügen"/);
+  assert.match(studio, /\.as-stage--memo \.as-picslot--tpl:not\(:has\(img\[src\]:not\(\[src=""\]\)\)\)::after\{\n  background-size:64px 64px;/);
+  assert.match(studio, /em-cover-bg .as-picslot--tpl[^{]*\{\n  background-size:96px 96px;/);
 });
 
 test("Kein Leerzeichen-Ausgleich gegen eine Schrift, die ihn nicht braucht", () => {
@@ -2541,11 +2544,11 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260916-2");
-  assert.match(indexHtml, /app\.js\?v=20260916-2/);
+  assert.equal(studioVersion, "20260916-3");
+  assert.match(indexHtml, /app\.js\?v=20260916-3/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
-  assert.match(studio, /Logos und Motive recherchieren/);
+  assert.match(studio, /KI sucht Bilder & Logos/);
   assert.match(edge, /createMemoPhotoFinder/);
   assert.match(edge, /findMemoCompanyLogo/);
   assert.match(edge, /findMemoSlotLogo/);

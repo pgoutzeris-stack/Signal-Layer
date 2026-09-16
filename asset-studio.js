@@ -278,8 +278,7 @@ function memoQuestions(firma, cmoHundredDays = false) {
       key: "storyline",
       label: "Inhalt",
       when: nurThema,
-      hint: "Selbst schreiben öffnet die vier Seiten des Memos als eigene Schritte. Jedes Feld, das leer bleibt, schreibt das Modell.",
-      options: [["auto", "Modell schreibt aus dem Signal"], ["custom", "Ich schreibe die Abschnitte selbst"]],
+      options: [["auto", "KI schreibt aus dem Signal"], ["custom", "Ich gebe den Inhalt vor"]],
     },
     ...MEMO_SECTIONS.map((section) => ({
       key: section.id,
@@ -295,7 +294,7 @@ function memoQuestions(firma, cmoHundredDays = false) {
       label: "Benchmarking",
       when: nurThema,
       options: [
-        ["auto", "Gemini recherchiert"],
+        ["auto", "KI recherchiert"],
         ["custom", "Eigene Benchmarks"],
       ],
     },
@@ -304,15 +303,15 @@ function memoQuestions(firma, cmoHundredDays = false) {
       label: "Bilder",
       when: nurThema,
       options: [
-        ["auto", "Logos und Motive recherchieren"],
-        ["upload", "Eigene Bilder zuschneiden"],
+        ["auto", "KI sucht Bilder & Logos"],
+        ["upload", "Eigene Bilder & Logos verwenden"],
       ],
     },
     {
       key: "cta",
       label: "CTA",
       when: nurThema,
-      options: [["auto", "Modell schreibt die Gesprächsfrage"], ["custom", "Eigene Frage"]],
+      options: [["auto", "KI schreibt CTA"], ["custom", "Eigenen CTA verwenden"]],
       free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Sollen wir den Check gemeinsam durchgehen?" },
     },
   ];
@@ -642,14 +641,18 @@ const CHROME_CSS = `
 #as-overlay .em-shot:has(img[src]:not([src=""])){
   background:var(--status-bg,#f8fafc);
 }
-/* Ohne Bearbeitung bleibt die leere Flaeche ruhig: kein Symbol, keine
-   Aufforderung. Eingefuegt wird erst in der Werkbank. */
-#as-overlay .as-stage--memo.is-readonly .as-picslot--tpl::after,
-#as-overlay .as-stage--memo.is-readonly [data-imgslot]::before{content:none !important;}
 #as-overlay .em-shot:not(:has(img[src]:not([src=""])))::after,
 #as-overlay .as-picslot--tpl:not(:has(img[src]:not([src=""])))::after{
   content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
   background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'><rect x='3' y='5' width='18' height='14' rx='2' stroke='%23206efb' stroke-width='1.75'/><circle cx='8.2' cy='10' r='1.4' fill='%23206efb'/><path d='M5 17l4.2-4.2 2.6 2.6 2.4-2.4L19 17' stroke='%23206efb' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/28px 28px no-repeat;
+}
+/* Im Memo steht das Symbol allein fuer das fehlende Motiv, ohne Beschriftung.
+   Bei 28 px verschwand es in einer halben A4-Seite. */
+#as-overlay .as-stage--memo .as-picslot--tpl:not(:has(img[src]:not([src=""])))::after{
+  background-size:64px 64px;
+}
+#as-overlay .as-stage--memo .em-cover-bg .as-picslot--tpl:not(:has(img[src]:not([src=""])))::after{
+  background-size:96px 96px;
 }
 
 #as-overlay [data-field][contenteditable="true"]{
@@ -681,6 +684,9 @@ const CHROME_CSS = `
 #as-overlay .as-q{display:flex; flex-direction:column; gap:10px;}
 #as-overlay .as-q > label{font-size:14px; font-weight:700;}
 #as-overlay .as-opts{display:flex; flex-wrap:wrap; gap:8px; align-items:stretch;}
+/* Eine Entweder-oder-Frage steht nebeneinander, nicht untereinander: die Wahl
+   ist ein Vergleich, kein Durchlesen. */
+#as-overlay .as-opts:not(:has(> :nth-child(3))) > .as-opt{flex:1 1 0; min-width:0; justify-content:center; text-align:center;}
 #as-overlay .as-opt{
   position:relative; display:inline-flex; align-items:center; gap:8px; padding:9px 15px;
   border:1px solid var(--line,#e2e8f0); border-radius:999px;
@@ -1480,12 +1486,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-2";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-3";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-2";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-3";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-2";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-3";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1838,7 +1844,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return `<div class="as-split2">
         <div class="as-split2-form">${state.formTab === "drafts" ? draftsHtml() : formHtml()}</div>
         <div class="as-split2-prev">
-          <span class="as-prev-label">${isMemo ? "Executive Memo v19 · 4 Seiten" : "Vorschau"}</span>
+          ${isMemo ? "" : `<span class="as-prev-label">Vorschau</span>`}
           <div class="as-prev-host">
             <div class="as-pagehost">
               <div class="as-prev-big" data-kind="${isMemo ? "memo" : "linkedin"}" data-livepreview>${livePreviewHtml()}</div>
