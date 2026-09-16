@@ -68,27 +68,27 @@ export const MEMO_SECTIONS = [
     bilder: "Ein Motiv des Adressaten über der oberen Seitenhälfte, Laden, Produkt oder Fläche. Kein Logo, kein Porträt.",
     fields: [
       {
-        key: "title", label: "Titel", art: "these", rows: 2, min: 4, max: 12, pflicht: true,
+        key: "title", label: "Titel (H1)", art: "these", rows: 2, min: 4, max: 12, pflicht: true,
         hilfe: "Die offene Aufgabe als These. Nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht.",
         beispiel: "Vom Preisargument zur eigenständigen Marke",
       },
       {
-        key: "standfirst", label: "Standfirst", art: "satz", rows: 2, min: 5, max: 18,
+        key: "standfirst", label: "Subtitel (H2)", art: "satz", rows: 2, min: 5, max: 18,
         hilfe: "Ein Satz, der den Titel auflöst: was sich dadurch ändert.",
         beispiel: "Wie Deichmanns Eigenmarken ihr volles Wachstumspotenzial entfalten.",
       },
       {
-        key: "summary_0", label: "Schlüssel 1 · Reality Check", art: "schluessel", rows: 2, min: 5, max: 14,
+        key: "summary_0", label: "Feature 1", art: "schluessel", rows: 2, min: 5, max: 14,
         hilfe: "Die heutige Lage des Adressaten. Nimmt Seite 2 vorweg.",
         beispiel: "Wachsende Eigenmarkenanteile treffen in der Footwear-Kategorie auf höhere Kundenansprüche",
       },
       {
-        key: "summary_1", label: "Schlüssel 2 · Best Practice", art: "schluessel", rows: 2, min: 5, max: 14,
+        key: "summary_1", label: "Feature 2", art: "schluessel", rows: 2, min: 5, max: 14,
         hilfe: "Was die Benchmarks gemeinsam richtig machen. Nimmt Seite 3 vorweg.",
         beispiel: "Erfolgreiche Eigenmarken werden konsequent wie eigenständige Marken geführt",
       },
       {
-        key: "summary_2", label: "Schlüssel 3 · ROOTS Empfehlung", art: "schluessel", rows: 2, min: 5, max: 14,
+        key: "summary_2", label: "Feature 3", art: "schluessel", rows: 2, min: 5, max: 14,
         hilfe: "Der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg.",
         beispiel: "Eigenmarken mit klarem Profil und eigenen Markenwelten weiterentwickeln und erlebbar machen",
       },
@@ -109,27 +109,27 @@ export const MEMO_SECTIONS = [
     bilder: "Ein Motiv in der unteren Seitenhälfte, das die Aussage daneben zeigt. Szene aus dem Alltag des Adressaten, kein Logo.",
     fields: [
       {
-        key: "market_title", label: "Seitenüberschrift", art: "these", rows: 2, min: 5, max: 14,
+        key: "market_title", label: "Titel (H2)", art: "these", rows: 2, min: 5, max: 14,
         hilfe: "Die Kategorie oder der Markt, nicht das Unternehmen.",
         beispiel: "Eigenmarken stehen vor der nächsten Entwicklungsstufe",
       },
       {
-        key: "market_p1", label: "Absatz 1 · Marktbewegung", art: "absatz", rows: 5, min: 22, max: 48,
+        key: "market_p1", label: "Absatz 1", art: "absatz", rows: 5, min: 22, max: 48,
         hilfe: "Was sich im Markt verschoben hat und was das für den Adressaten bedeutet.",
         beispiel: "Mit steigenden Kundenerwartungen wachsen die Anforderungen an Qualität, Innovation und Markenführung. Was früher der günstige Kompromiss war, ist heute eine bewusste Kaufentscheidung. Für Deichmann trifft diese Entwicklung auf eine außergewöhnlich starke Ausgangslage im Sortiment.",
       },
       {
-        key: "market_lead2", label: "Absatz 2 · die offene Lücke", art: "absatz", rows: 4, min: 12, max: 34,
+        key: "market_lead2", label: "Absatz 2", art: "absatz", rows: 4, min: 12, max: 34,
         hilfe: "Was dem Adressaten trotz guter Ausgangslage fehlt. Der Übergang zur Empfehlung.",
         beispiel: "Was bislang fehlt, ist eine Eigenmarkenarchitektur, in der einzelne Marken Kategorien sichtbar besetzen und über den Preis hinaus ein eigenständiges Profil entwickeln.",
       },
       {
-        key: "insight_title", label: "Aussage neben dem Bild", art: "these", rows: 3, min: 5, max: 16,
+        key: "insight_title", label: "Bildaussage", art: "these", rows: 3, min: 5, max: 16,
         hilfe: "Der Befund zum Adressaten in einem Satz. Nicht die Seitenüberschrift wiederholen.",
         beispiel: "Eigenmarken funktionieren bei Deichmann aktuell überwiegend über funktionale Preiskommunikation.",
       },
       {
-        key: "market_p2", label: "Absatz unter der Aussage", art: "absatz", rows: 7, min: 42, max: 80,
+        key: "market_p2", label: "Absatz 3", art: "absatz", rows: 7, min: 42, max: 80,
         hilfe: "Der Beleg für die Aussage, konkret an Sortiment, Fläche und POS. Trägt die untere Seitenhälfte.",
         beispiel: "Ein Blick in den Store zeigt die heutige Logik: Das Sortiment ist mit Marken wie Graceland oder 5th Avenue klar nach Zielgruppen strukturiert. Am POS stehen diese jedoch im direkten Wettbewerbsumfeld etablierter Herstellermarken und werden vor allem über Sortiment, Preis und Produktleistung differenziert.",
       },
@@ -157,7 +157,7 @@ export const MEMO_SECTIONS = [
         gruppe: i,
       },
       {
-        key: `kpi${i + 1}_label`, label: "Bezug", art: "satz", rows: 2, min: 5, max: 18,
+        key: `kpi${i + 1}_label`, label: "Beschreibung", art: "satz", rows: 2, min: 5, max: 18,
         hilfe: "Worauf sich die Zahl bezieht, ein halber Satz ohne Schlusspunkt.",
         beispiel: [
           "Wachstum des Eigenmarkenanteils bei Apparel & Footwear in Deutschland",
@@ -191,7 +191,7 @@ export const MEMO_SECTIONS = [
     bilder: "Je Fall ein Motiv der Marke: Kampagnenmotiv, Kanal oder Auftritt. Ein Logo allein trägt die Karte nicht.",
     fields: [
       {
-        key: "benchmark_title", label: "Seitenüberschrift", art: "these", rows: 3, min: 8, max: 22,
+        key: "benchmark_title", label: "Titel (H2)", art: "these", rows: 3, min: 8, max: 22,
         hilfe: "Nennt die drei Marken und was sie gemeinsam richtig machen.",
         beispiel: "Parkside, Balea und Van Rysel schaffen einen Markenauftritt mit eigenem Design, Botschaftern und eigenen Kanälen",
       },
@@ -203,7 +203,7 @@ export const MEMO_SECTIONS = [
           gruppe: i,
         },
         {
-          key: `bm${i + 1}_title`, label: "Überschrift der Karte", art: "these", rows: 2, min: 3, max: 9,
+          key: `bm${i + 1}_title`, label: "Titel", art: "these", rows: 2, min: 3, max: 9,
           hilfe: "Was diese Marke getan hat, ohne Schlusspunkt.",
           beispiel: ["Eigener Auftritt und großer Botschafter", "Markenaufbau über eigene Kanäle und Creator", "Eigenes Profiteam und eigene Brand-Stores"][i],
           gruppe: i,
@@ -230,12 +230,12 @@ export const MEMO_SECTIONS = [
         },
       ]),
       {
-        key: "sources", label: "Quellenzeile", art: "liste", rows: 3, min: 5, max: 45,
+        key: "sources", label: "Quellen", art: "liste", rows: 3, min: 5, max: 45,
         hilfe: "Belege für die drei Fälle, mit Semikolon getrennt. Format „Herausgeber, Art (Zeitraum)“.",
         beispiel: "Lidl Österreich und Lidl Deutschland, Presseinformationen (2022 bis 2026); Lebensmittelzeitung, Interview Kerstin Erbe; Decathlon, Presseinformationen (2024/2025)",
       },
       {
-        key: "quote_text", label: "Zitat im blauen Band", art: "satz", rows: 3, min: 14, max: 34,
+        key: "quote_text", label: "Zitat", art: "satz", rows: 3, min: 14, max: 34,
         hilfe: "Die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person. Die Zuschreibung darunter ist fest.",
         beispiel: "Der Ausbau von Eigenmarken zu eigenständigen Marken schafft ein klares Markenprofil, das wirksam differenziert, neue Zielgruppen erschließt und bestehende enger an die Marke bindet.",
       },
@@ -257,17 +257,17 @@ export const MEMO_SECTIONS = [
     bilder: "Je Hebel ein Konzeptbild: wie es aussähe, wenn der Hebel gezogen ist. Fläche, Kanal oder Produkt, kein Logo und kein Porträt.",
     fields: [
       {
-        key: "potentials_title", label: "Seitenüberschrift", art: "these", rows: 2, min: 5, max: 16,
+        key: "potentials_title", label: "Titel (H2)", art: "these", rows: 2, min: 5, max: 16,
         hilfe: "Der Check für dieses Unternehmen.",
         beispiel: "Drei strategische Hebel zur Optimierung von Deichmanns starken Eigenmarken",
       },
       {
-        key: "potentials_lead", label: "Absatz 1 · was die Analyse zeigt", art: "absatz", rows: 5, min: 22, max: 50,
+        key: "potentials_lead", label: "Absatz 1", art: "absatz", rows: 5, min: 22, max: 50,
         hilfe: "Die Ausgangslage des Adressaten und wo das zusätzliche Potenzial liegt.",
         beispiel: "Die Analyse zeigt: Deichmann verfügt mit seinem hohen Eigenmarkenanteil und etablierten Submarken über eine starke Ausgangsbasis. Das zusätzliche Potenzial liegt darin, ausgewählte Eigenmarken über ihre heutige funktionale Rolle hinaus zu eigenständigen Marken zu entwickeln.",
       },
       {
-        key: "potentials_lead2", label: "Absatz 2 · die drei Hebel", art: "satz", rows: 2, min: 6, max: 20,
+        key: "potentials_lead2", label: "Absatz 2", art: "satz", rows: 2, min: 6, max: 20,
         hilfe: "Ein Satz, der die drei Hebel benennt. Er steht direkt über den Karten.",
         beispiel: "Drei strategische Hebel setzen hier an: Positionierung, Reichweite und Markenerlebnis.",
       },
@@ -279,7 +279,7 @@ export const MEMO_SECTIONS = [
           gruppe: i,
         },
         {
-          key: `pot${i + 1}_potential`, label: "Was ROOTS daraus macht", art: "absatz", rows: 6, min: 22, max: 48,
+          key: `pot${i + 1}_potential`, label: "Text", art: "absatz", rows: 6, min: 22, max: 48,
           hilfe: "Der Hebel in der Sprache des Falls, ohne erfundene Zahl. Die drei Karten sollten ähnlich lang sein, sonst steht eine kurz.",
           beispiel: [
             "Zielgruppen und Preissegmente entlang relevanter Kundenbedürfnisse klar voneinander abgrenzen, um Überschneidungen zwischen den Eigenmarken zu reduzieren. Für ausgewählte Kernmarken eigenständige Leistungsversprechen definieren, die über den Preis hinaus Orientierung schaffen.",
@@ -290,17 +290,17 @@ export const MEMO_SECTIONS = [
         },
       ]),
       {
-        key: "cta", label: "Frage im blauen Band", art: "these", rows: 2, min: 5, max: 16,
+        key: "cta", label: "CTA-Frage", art: "these", rows: 2, min: 5, max: 16,
         hilfe: "Eine Frage an den Adressaten, ohne Werbeton. Der Knopftext daneben ist fest.",
         beispiel: "Wollen Sie die Wachstumspotenziale Ihrer Eigenmarken heben?",
       },
       {
-        key: "about_fit", label: "Was ROOTS tut", art: "absatz", rows: 4, min: 12, max: 38,
+        key: "about_fit", label: "Über ROOTS", art: "absatz", rows: 4, min: 12, max: 38,
         hilfe: "Ein Satz über die ROOTS-Leistung allgemein.",
         beispiel: "ROOTS entwickelt KI-optimierte Markenstrategien und Marketing Operations für mehr Wirksamkeit, Effizienz und Speed im Marketing, mit Managementerfahrung bis CMO-Ebene im Handel.",
       },
       {
-        key: "about_fit2", label: "Bezug zu diesem Fall", art: "absatz", rows: 4, min: 10, max: 34,
+        key: "about_fit2", label: "Bezug zum Fall", art: "absatz", rows: 4, min: 10, max: 34,
         hilfe: "Ein Satz, der die Leistung an diesen Fall bindet. Erst hier darf sie beim Namen genannt werden.",
         beispiel: "Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu unseren Kernkompetenzen: Wir haben zahlreiche führende Handels-Eigenmarken im Food und Non-Food mitgeprägt.",
       },
@@ -373,36 +373,24 @@ export function memoFeldHinweise(key, wert) {
   const feld = memoFeld(key);
   if (!feld) return [];
   const text = String(wert || "").trim();
+  // Ein leeres Feld bleibt leer. Ob die KI es schreibt, ist eine Frage weiter
+  // oben schon beantwortet; hier waere der Hinweis nur Rauschen.
+  if (!text) return [];
   const worte = memoWorte(text);
   const zeilen = [];
-  const ton = !text ? "info" : worte < feld.min || worte > feld.max ? "warn" : "ok";
-  zeilen.push({
-    ton,
-    text: !text
-      ? `Leer lassen heisst: das Modell schreibt dieses Feld. Zielbereich ${feld.min} bis ${feld.max} Wörter.`
-      : `${worte} ${worte === 1 ? "Wort" : "Wörter"} · Zielbereich ${feld.min} bis ${feld.max}`,
-  });
-  if (!text) return zeilen;
-
-  if (feld.art === "these" || feld.art === "schluessel") {
-    if (/[.]$/.test(text)) zeilen.push({ ton: "warn", text: "Überschriften im Memo enden ohne Punkt." });
+  if (worte > feld.max) {
+    zeilen.push({ ton: "warn", text: `${worte} Wörter. Hier passen höchstens ${feld.max}, sonst läuft die Seite über.` });
+  } else if (worte < feld.min) {
+    zeilen.push({ ton: "warn", text: `${worte} Wörter. Unter ${feld.min} bleibt die Seite an dieser Stelle leer.` });
   }
-  if (feld.art === "schluessel" && memoSaetze(text) > 1) {
-    zeilen.push({ ton: "warn", text: "Der Schlüssel ist eine Zeile, kein zweiter Satz." });
+  if (feld.art === "zahl" && !ZIFFER.test(text)) {
+    zeilen.push({ ton: "warn", text: "Ohne Ziffer bleibt der Kasten leer." });
   }
-  if (feld.art === "satz" && memoSaetze(text) > 2) {
-    zeilen.push({ ton: "warn", text: `${memoSaetze(text)} Sätze. Hier tragen ein bis zwei.` });
+  if (feld.art === "quelle" && !JAHR.test(text)) {
+    zeilen.push({ ton: "warn", text: "Ohne Jahr ist die Zahl nicht nachprüfbar." });
   }
-  if (feld.art === "zahl") {
-    if (!ZIFFER.test(text)) zeilen.push({ ton: "warn", text: "Ohne Ziffer bleibt der Kasten leer." });
-    else if (text.length > 12) zeilen.push({ ton: "warn", text: "Über zwölf Zeichen schrumpft die Zahl im Kasten." });
-  }
-  if (feld.art === "quelle") {
-    if (!JAHR.test(text)) zeilen.push({ ton: "warn", text: "Ohne Jahr ist die Zahl nicht nachprüfbar." });
-    else if (!/,/.test(text)) zeilen.push({ ton: "info", text: "Format im Referenzmemo: „Herausgeber, Jahr“." });
-  }
-  if (feld.art === "absatz" && worte >= feld.min && /^[^.!?]+$/.test(text)) {
-    zeilen.push({ ton: "info", text: "Ein einziger Satz über diese Länge liest sich schwer." });
+  if ((feld.art === "these" || feld.art === "schluessel") && /[.]$/.test(text)) {
+    zeilen.push({ ton: "warn", text: "Überschriften im Memo enden ohne Punkt." });
   }
   return zeilen;
 }

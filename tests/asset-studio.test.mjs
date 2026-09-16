@@ -2072,7 +2072,7 @@ test("Feldvertrag: Fragebogen, Prompt und Prüfung lesen dieselben Zahlen", asyn
   assert.equal(guides.memoFeld("market_p1").min, 22);
   assert.equal(guides.memoFeld("bm1_text").min, 20);
 
-  assert.equal(guides.memoFeldFehler("title", ""), "Titel fehlt.");
+  assert.equal(guides.memoFeldFehler("title", ""), "Titel (H1) fehlt.");
   assert.equal(guides.memoFeldFehler("standfirst", ""), "");
   assert.match(guides.memoFeldFehler("title", "Nur drei"), /mindestens 4/);
   assert.match(guides.memoFeldFehler("summary_0", "eins zwei drei vier fünf sechs sieben acht neun zehn elf zwölf dreizehn vierzehn fünfzehn"), /höchstens 14/);
@@ -2086,9 +2086,15 @@ test("Feldvertrag: Fragebogen, Prompt und Prüfung lesen dieselben Zahlen", asyn
   assert.deepEqual(guides.memoAbschnittFehler("memo_kpis",
     { kpi1_value: "42 %", kpi1_label: "der Verbraucher greifen zur Eigenmarke", kpi1_source: "Simon-Kucher, 2026" }), []);
 
-  const hinweise = guides.memoFeldHinweise("title", "Vom Preisargument zur eigenständigen Marke.");
-  assert.match(hinweise[0].text, /5 Wörter · Zielbereich 4 bis 12/);
-  assert.ok(hinweise.some((z) => /ohne Punkt/.test(z.text)), "Überschrift mit Punkt wird gemeldet");
+  // Ein Feld im Rahmen meldet nichts. Der Dauerhinweis unter jedem Feld war
+  // Rauschen; auffallen soll nur, was gegen seine Grenze laeuft.
+  assert.deepEqual(guides.memoFeldHinweise("title", ""), []);
+  assert.deepEqual(guides.memoFeldHinweise("title", "Vom Preisargument zur eigenständigen Marke"), []);
+  const zuLang = guides.memoFeldHinweise("title", "eins zwei drei vier fünf sechs sieben acht neun zehn elf zwölf dreizehn");
+  assert.equal(zuLang[0].ton, "warn");
+  assert.match(zuLang[0].text, /höchstens 12/);
+  assert.ok(guides.memoFeldHinweise("title", "Vom Preisargument zur eigenständigen Marke.")
+    .some((z) => /ohne Punkt/.test(z.text)), "Überschrift mit Punkt wird gemeldet");
 });
 
 test("Selbst geschriebene Abschnitte stehen wortgleich im Memo", () => {
@@ -2558,8 +2564,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260916-5");
-  assert.match(indexHtml, /app\.js\?v=20260916-5/);
+  assert.equal(studioVersion, "20260916-6");
+  assert.match(indexHtml, /app\.js\?v=20260916-6/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

@@ -924,7 +924,7 @@ const CHROME_CSS = `
 #as-overlay .as-free:focus{outline:none; border-color:var(--brand,#206efb); box-shadow:var(--shadow-focus,0 0 0 3px rgba(32,110,251,.15));}
 
 /* ── Abschnitts-Editor der Ansprache ── */
-#as-overlay .as-mf{display:flex; flex-direction:column; gap:12px; margin-top:4px;}
+#as-overlay .as-mf{display:flex; flex-direction:column; gap:14px; margin-top:2px;}
 #as-overlay .as-mf-kopf{
   display:flex; align-items:baseline; justify-content:space-between; gap:10px;
   font-size:12px; color:var(--muted,#475569);
@@ -984,12 +984,10 @@ const CHROME_CSS = `
   #as-overlay .as-zoomring{animation:none;}
 }
 
-#as-overlay .as-mf-feld{
-  border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:10px 12px 11px;
-  background:var(--surface,#f8fafc); display:flex; flex-direction:column; gap:6px;
-  transition:border-color .18s ease, background .18s ease;
-}
-#as-overlay .as-mf-feld:focus-within{border-color:var(--brand,#206efb); background:#fff;}
+/* Kein Kasten um jedes Feld: die Schrittkarte ist der einzige Rahmen. Eine
+   Haarlinie trennt die Felder, mehr braucht die Reihe nicht. */
+#as-overlay .as-mf-feld{display:flex; flex-direction:column; gap:5px;}
+#as-overlay .as-mf-feld + .as-mf-feld{border-top:1px solid var(--line,#e2e8f0); padding-top:12px;}
 #as-overlay .as-mf-feld > label{
   font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:700;
   color:var(--muted,#475569); display:flex; align-items:center; gap:7px;
@@ -997,17 +995,19 @@ const CHROME_CSS = `
 #as-overlay .as-mf-kopf .as-tip{margin-right:auto;}
 #as-overlay .as-mf-feld > label .as-mf-pflicht{color:var(--brand,#206efb);}
 #as-overlay .as-mf-feld input, #as-overlay .as-mf-feld textarea{
-  width:100%; border:1px solid var(--line,#e2e8f0); border-radius:9px; padding:8px 10px;
-  font:inherit; font-size:13px; line-height:1.5; background:#fff; color:inherit; resize:vertical;
+  width:100%; border:1px solid var(--line,#e2e8f0); border-radius:9px; padding:9px 11px;
+  font:inherit; font-size:13px; line-height:1.55; background:#fff; color:inherit; resize:vertical;
+  transition:border-color .15s ease, box-shadow .15s ease;
 }
+/* Nur ein Feld, das gegen seine Grenze laeuft, faellt auf. Alles andere bleibt
+   ruhig: der Zielbereich steht im Hinweis, nicht dauerhaft unter dem Feld. */
+#as-overlay .as-mf-feld:has(.lg-guide-row--warn) input,
+#as-overlay .as-mf-feld:has(.lg-guide-row--warn) textarea{border-color:var(--danger,#dc2626);}
 #as-overlay .as-mf-feld input:focus, #as-overlay .as-mf-feld textarea:focus{
   outline:none; border-color:var(--brand,#206efb); box-shadow:var(--shadow-focus,0 0 0 3px rgba(32,110,251,.15));
 }
 #as-overlay .as-mf-reihe{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
-#as-overlay .as-mf-block{
-  display:flex; flex-direction:column; gap:10px;
-  border-radius:12px; padding:0;
-}
+#as-overlay .as-mf-block{display:flex; flex-direction:column; gap:12px;}
 #as-overlay .as-mf-block > h5{
   margin:6px 0 0; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
   color:var(--brand,#206efb);
@@ -1514,12 +1514,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-5";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260916-6";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-5";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260916-6";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-5";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260916-6";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1572,6 +1572,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     memo: null,
     postText: "",
     prevHtml: "",
+    memoFokus: "",
     toneOfVoice: "",
     toneGeladen: false,
     designs: [],
@@ -3029,6 +3030,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     const abschnitt = MEMO_SECTIONS.find((s) => s.id === key);
     if (isMemo && abschnitt) state.prevIndex = abschnitt.seite - 1;
+    if (isMemo) state.memoFokus = "";
     if (key && key !== ENDE && !state.stepSeen.includes(key)) state.stepSeen.push(key);
   }
 
@@ -4469,6 +4471,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const fragen = aktiveFragen();
     const offen = fragen[schrittIndex(fragen)];
     if (offen?.art !== "memo-section" || !offen.section?.ziel) return null;
+    const imAbschnitt = offen.section.fields.some((f) => f.key === state.memoFokus);
+    if (imAbschnitt) {
+      const pfad = memoFieldPath(state.memoFokus);
+      const feld = pfad && stage.querySelector(`.em-page:not(.is-off) [data-field="${CSS.escape(pfad)}"]`);
+      if (feld?.offsetWidth && feld.offsetHeight) return feld;
+    }
     return stage.querySelector(`.em-page:not(.is-off) ${offen.section.ziel}`);
   }
 
@@ -4494,16 +4502,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function zoomeAufAbschnitt(box, inner, stage, ziel, breite, hoehe) {
     const { x, y, w, h } = versatzInBuehne(ziel, stage);
     if (!w || !h) return;
-    const rand = 16;
-    const faktor = Math.min(breite / (w + rand * 2), hoehe / (h + rand * 2));
-    // Den Ausschnitt mittig setzen. Oben links angeschlagen sammelte sich der
-    // uebrige Platz auf einer Seite und die Seite sah unten leer aus.
-    const uebrigX = (breite / faktor - w) / 2;
-    const uebrigY = (hoehe / faktor - h) / 2;
-    box.style.width = `${Math.round(breite)}px`;
-    box.style.height = `${Math.round(hoehe)}px`;
+    // Luft nach der Groesse des Ziels: eine Titelzeile allein im Bild waere
+    // riesig und ohne Zusammenhang. Der Deckel haelt den Zoom bei gut dem
+    // Dreifachen der Seitenansicht.
+    const rand = Math.max(20, Math.round(Math.min(w, h) * 0.45));
+    const seite = Math.min(breite / (stage.offsetWidth || MEMO_SEITE_PX.w), hoehe / (stage.offsetHeight || MEMO_SEITE_PX.h));
+    const faktor = Math.min(breite / (w + rand * 2), hoehe / (h + rand * 2), seite * 3.2);
+    // Der Kasten nimmt das Format des Ausschnitts an, statt die ganze
+    // Seitenflaeche zu behalten. Sonst stand neben dem Titel eine graue
+    // Bildhaelfte oder unter ihm das Fussband, nur weil dort Platz uebrig war.
+    const zielB = w + rand * 2;
+    const zielH = h + rand * 2;
+    box.style.width = `${Math.round(zielB * faktor)}px`;
+    box.style.height = `${Math.round(zielH * faktor)}px`;
     inner.style.transformOrigin = "0 0";
-    inner.style.transform = `scale(${faktor}) translate(${-(x - uebrigX)}px, ${-(y - uebrigY)}px)`;
+    inner.style.transform = `scale(${faktor}) translate(${-(x - rand)}px, ${-(y - rand)}px)`;
     inner.style.width = `${stage.offsetWidth || MEMO_SEITE_PX.w}px`;
     inner.style.height = `${stage.offsetHeight || MEMO_SEITE_PX.h}px`;
     inner.style.marginRight = "0px";
@@ -5864,6 +5877,16 @@ ${stages}${post}
   on(overlay, "focusin", (event) => {
     const field = event.target.closest?.("[data-field]");
     if (field && field.getAttribute("contenteditable") === "true") lastField = field;
+    // Die Vorschau folgt dem Feld, in dem geschrieben wird. Den ganzen
+    // Abschnitt zu umranden, waehrend man im Titel steht, sagt nichts.
+    const memofeld = event.target.closest?.("[data-memofeld]");
+    if (memofeld) {
+      const key = memofeld.getAttribute("data-memofeld") || "";
+      if (key !== state.memoFokus) {
+        state.memoFokus = key;
+        fitPreview();
+      }
+    }
   });
   on(document, "keydown", onKeyDown, true);
   on(document, "selectionchange", onSelectionChange);
