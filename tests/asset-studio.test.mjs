@@ -2189,7 +2189,9 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   assert.match(studio, /function bildgruppeHtml/);
   assert.match(studio, /Motive der Benchmarks/);
   assert.match(studio, /Motive der Hebel/);
-  assert.match(studio, /when: \(answers\) => nurThema\(answers\) && answers\.storyline !== "custom"/);
+  // Beim Selbstschreiben steht alles zum Inhalt in den Abschnitten: Bilder,
+  // Benchmarks und CTA haben dort keine eigene Frage mehr.
+  assert.equal((studio.match(/when: \(answers\) => nurThema\(answers\) && answers\.storyline !== "custom"/g) || []).length, 3);
   // Der Bildschirmaufbau merkt sich seine Vorschau, sonst galt der erste Klick
   // danach als Aenderung und baute alles neu auf.
   assert.match(studio, /function livePreviewGemerkt/);
@@ -2611,8 +2613,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-3");
-  assert.match(indexHtml, /app\.js\?v=20260917-3/);
+  assert.equal(studioVersion, "20260917-4");
+  assert.match(indexHtml, /app\.js\?v=20260917-4/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

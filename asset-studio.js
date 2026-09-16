@@ -290,7 +290,8 @@ function memoQuestions(firma, cmoHundredDays = false) {
     {
       key: "benchmarks",
       label: "Benchmarking",
-      when: nurThema,
+      // Beim Selbstschreiben stehen die Benchmarks in Abschnitt 02.
+      when: (answers) => nurThema(answers) && answers.storyline !== "custom",
       options: [
         ["auto", "KI recherchiert"],
         ["custom", "Eigene Benchmarks"],
@@ -309,7 +310,8 @@ function memoQuestions(firma, cmoHundredDays = false) {
     {
       key: "cta",
       label: "CTA",
-      when: nurThema,
+      // Beim Selbstschreiben steht die Frage in Abschnitt 03.
+      when: (answers) => nurThema(answers) && answers.storyline !== "custom",
       options: [["auto", "KI schreibt CTA"], ["custom", "Eigenen CTA verwenden"]],
       free: { key: "cta_text", on: "custom", rows: 2, platzhalter: "z. B. Sollen wir den Check gemeinsam durchgehen?" },
     },
@@ -1507,12 +1509,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-3";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-4";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-3";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-4";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-3";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-4";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
