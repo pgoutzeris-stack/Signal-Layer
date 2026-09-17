@@ -1415,6 +1415,17 @@ function companyFrom(source) {
 export const PREVIEW_MEMO_TITLE = "Vom Sortimentslabel zur eigenständigen Marke";
 
 /** Der Firmenname für die Vorschau, leer wenn keiner genannt werden soll. */
+/**
+ * Ein Fehler der Leitung, nicht der Anwendung. Safari nennt ihn „Load failed",
+ * Chrome „Failed to fetch", Firefox „NetworkError". callApi setzt zusaetzlich
+ * die Marke netz, weil der Wortlaut je nach Browser ein anderer ist.
+ */
+export function istNetzFehler(fehler) {
+  if (fehler && fehler.netz === true) return true;
+  const text = String(fehler?.message || fehler || "");
+  return /load failed|failed to fetch|networkerror|network error|verbindung zum server/i.test(text);
+}
+
 export function previewMemoFirma(answers = {}, erkannt = "") {
   if (String(answers.company_named || "") === "no") return "";
   const custom = String(answers.company_mode || "") === "custom";
@@ -1625,12 +1636,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-15";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-16";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-15";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-16";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-15";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-16";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1660,6 +1671,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   const esc = typeof escapeHtml === "function" ? escapeHtml : DEFAULT_ESCAPE;
   const api = typeof callApi === "function" ? callApi : async () => { throw new Error("Keine Verbindung zum Server verfügbar."); };
+  /** Wie oft ein verlorener Abruf wiederholt wird, bevor das Studio aufgibt. */
+  const POLL_NETZ_VERSUCHE = 6;
   const assetKind = kind === "memo" ? "memo" : "linkedin";
   const isMemo = assetKind === "memo";
   const source = signal && typeof signal === "object" ? signal : {};
@@ -2005,12 +2018,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (state.error) {
         // Der Servertext ist die einzige belastbare Auskunft und steht deshalb
         // wortwoertlich da, nicht hinter einer Sammelmeldung.
+        // Reisst nur die Leitung, laeuft der Auftrag auf dem Server weiter.
+        // „Erneut versuchen" wuerde daneben einen zweiten starten.
+        const weiterlaeuft = state.leftRunning && state.assetId;
         return `<div class="as-error">
-          <strong>Der Entwurf konnte nicht erzeugt werden</strong>
+          <strong>${weiterlaeuft ? "Die Verbindung ist abgerissen" : "Der Entwurf konnte nicht erzeugt werden"}</strong>
           <p>${esc(state.error)}</p>
           <div class="as-actions">
             <button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Zurück zum Fragebogen</button>
-            <button type="button" class="as-btn as-btn--primary" data-act="generate"><i class="fa-solid fa-rotate-right"></i>Erneut versuchen</button>
+            ${weiterlaeuft
+              ? `<button type="button" class="as-btn as-btn--primary" data-act="show-drafts"><i class="fa-solid fa-folder-open"></i>Entwürfe öffnen</button>`
+              : `<button type="button" class="as-btn as-btn--primary" data-act="generate"><i class="fa-solid fa-rotate-right"></i>Erneut versuchen</button>`}
           </div>
         </div>`;
       }
@@ -3701,17 +3719,28 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (state.cancelRequested) return;
       state.busy = false;
       ladeTaktStop();
+      // Reisst die Leitung, laeuft der Auftrag auf dem Server weiter. Ihn als
+      // gescheitert zu zeigen und den Entwurf zu verwerfen waere falsch.
+      if (istNetzFehler(err) && state.assetId) state.leftRunning = true;
       state.error = (err && err.message) ? String(err.message) : String(err || "Unbekannter Fehler");
       state.payload = null;
       render();
     }
   }
 
-  /** Fragt den Auftrag ab, bis er fertig ist. Kein Zeitlimit: solange der
-   *  Server running meldet (Puls lebt), wartet das Studio. Abbruch nur durch
-   *  den Nutzer oder wenn der Auftrag selbst auf done/error geht. */
+  /**
+   * Fragt den Auftrag ab, bis er fertig ist. Kein Zeitlimit: solange der
+   * Server running meldet (Puls lebt), wartet das Studio. Abbruch nur durch
+   * den Nutzer oder wenn der Auftrag selbst auf done/error geht.
+   *
+   * Ein verlorener Abruf beendet nichts. Der Auftrag laeuft auf dem Server
+   * weiter; nur diese eine Frage kam nicht an. Vorher hat ein einziger
+   * Aussetzer den fast fertigen Entwurf verworfen, und im Studio stand
+   * „Load failed".
+   */
   async function warteAufAsset(id) {
     let wartezeit = 800;
+    let aussetzer = 0;
     for (;;) {
       if (state.cancelRequested) return state.leftRunning
         ? { id, status: "running" }
@@ -3721,8 +3750,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (state.cancelRequested) return state.leftRunning
         ? { id, status: "running" }
         : { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
-      const res = await api("get_asset", { asset_id: id });
-      const row = res && typeof res === "object" ? (res.asset || res) : {};
+      let row;
+      try {
+        const res = await api("get_asset", { asset_id: id });
+        row = res && typeof res === "object" ? (res.asset || res) : {};
+        aussetzer = 0;
+      } catch (fehler) {
+        if (!istNetzFehler(fehler)) throw fehler;
+        aussetzer += 1;
+        if (aussetzer >= POLL_NETZ_VERSUCHE) {
+          const abriss = new Error("Die Verbindung zum Server ist abgerissen. Der Entwurf läuft dort weiter und steht unter Entwürfe, sobald er fertig ist.");
+          abriss.netz = true;
+          throw abriss;
+        }
+        await new Promise((r) => setTimeout(r, 1_500 * aussetzer));
+        continue;
+      }
       uebernehmeLaufstand(row);
       if (row.status && row.status !== "running") return row;
     }

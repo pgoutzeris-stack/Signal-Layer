@@ -2253,6 +2253,33 @@ test("ein 429 aus der Recherche wird gelesen statt nur gezählt", () => {
   assert.match(edge, /Gleich noch einmal erzeugen, oder im Fragebogen eigene Benchmarks eintragen/);
 });
 
+test("ein verlorener Abruf verwirft den laufenden Entwurf nicht", async () => {
+  const { istNetzFehler } = await import("../asset-studio.js");
+  // Safari sagt „Load failed", Chrome „Failed to fetch". Im Studio stand
+  // genau das, und der fast fertige Entwurf war weg.
+  assert.equal(istNetzFehler(new TypeError("Load failed")), true);
+  assert.equal(istNetzFehler(new Error("Failed to fetch")), true);
+  assert.equal(istNetzFehler(new Error("NetworkError when attempting to fetch resource.")), true);
+  assert.equal(istNetzFehler(Object.assign(new Error("egal"), { netz: true })), true);
+  // Ein echter Serverfehler bleibt einer und wird nicht weggewartet.
+  assert.equal(istNetzFehler(new Error("Die Benchmark-Recherche ist fehlgeschlagen (429).")), false);
+  assert.equal(istNetzFehler(null), false);
+
+  // callApi benennt den Abbruch, statt den Wortlaut des Browsers zu zeigen.
+  assert.match(appJs, /netz\.netz = true;/);
+  assert.match(appJs, /Keine Verbindung zum Server: die Anfrage hat ihn nicht erreicht/);
+  // Die Abfrage wiederholt sich, statt beim ersten Aussetzer aufzugeben.
+  assert.match(studio, /const POLL_NETZ_VERSUCHE = 6;/);
+  assert.match(studio, /if \(!istNetzFehler\(fehler\)\) throw fehler;/);
+  assert.match(studio, /Der Entwurf läuft dort weiter und steht unter Entwürfe/);
+  // Und der Auftrag gilt danach als laufend, nicht als gescheitert.
+  assert.match(studio, /if \(istNetzFehler\(err\) && state\.assetId\) state\.leftRunning = true;/);
+  // Neben einem weiterlaufenden Auftrag fuehrt „Erneut versuchen" zu zweien.
+  assert.match(studio, /const weiterlaeuft = state\.leftRunning && state\.assetId;/);
+  assert.match(studio, /weiterlaeuft \? "Die Verbindung ist abgerissen"/);
+  assert.match(studio, /data-act="show-drafts"><i class="fa-solid fa-folder-open"><\/i>Entwürfe öffnen/);
+});
+
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
   const guides = await import("../memo-guides.mjs");
   // Der Vertrag ist am Referenzmemo gemessen. Eine Regel, die das Original
@@ -2938,8 +2965,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-15");
-  assert.match(indexHtml, /app\.js\?v=20260917-15/);
+  assert.equal(studioVersion, "20260917-16");
+  assert.match(indexHtml, /app\.js\?v=20260917-16/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

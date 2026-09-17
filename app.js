@@ -7,8 +7,8 @@ import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOr
 import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260829-2210";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260917-15";
-import { openManualSignal } from "./manual-signal.js?v=20260917-15";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260917-16";
+import { openManualSignal } from "./manual-signal.js?v=20260917-16";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260830-1330";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
@@ -288,14 +288,25 @@ function bindEvidenceHover() {
 async function callApi(action, payload = {}) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session?.access_token) throw new Error("Nicht angemeldet");
-  const res = await fetch(SIGNAL_LAYER_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({ action, ...payload }),
-  });
+  let res;
+  try {
+    res = await fetch(SIGNAL_LAYER_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ action, ...payload }),
+    });
+  } catch (fehler) {
+    // Safari sagt „Load failed", Chrome „Failed to fetch". Beides heisst
+    // dasselbe und sagt dem Nutzer nichts: die Anfrage hat den Server nicht
+    // erreicht, oder die Antwort ging unterwegs verloren.
+    const netz = new Error("Keine Verbindung zum Server: die Anfrage hat ihn nicht erreicht oder die Antwort ging verloren.");
+    netz.netz = true;
+    netz.ursache = String(fehler?.message || fehler || "");
+    throw netz;
+  }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json?.error || `Fehler bei ${action}`);
   return json;
