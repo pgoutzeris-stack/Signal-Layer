@@ -883,7 +883,12 @@ export type LinkedinPayload = {
   slides: AssetSlide[];
 };
 
-export type MemoImage = { src: string; pos: string };
+/**
+ * fit sagt, wie das Bild in seinen Rahmen kommt. Ein Foto fuellt ihn (cover),
+ * eine Wortmarke nicht: „PUMA" quer ueber 72 mm wird von cover angeschnitten,
+ * weil der Rahmen hoeher ist als das Logo breit erlaubt.
+ */
+export type MemoImage = { src: string; pos: string; fit?: "cover" | "contain" };
 /** Kennzahl des Memos. Anders als die LinkedIn-Kennzahl traegt sie die
  *  sichtbare Quellenzeile unter dem Wert, so wie im Referenzmemo. */
 export type MemoStat = { value: string; label: string; source: string };
@@ -4040,6 +4045,57 @@ export function normalizeAssetPayload(
 export const MEMO_PHOTO_USER_AGENT = "ROOTS-Signal-Layer/1.0 (memo photos; hello@roots-consultants.com)";
 /** Nur pathologische Payloads. Ein Motiv von ein paar MB darf nicht still verworfen werden. */
 export const MEMO_IMAGE_DATA_URI_MAX = 100 * 1024 * 1024;
+/**
+ * Die Motive des Referenzmemos, nachgesehen statt geraten:
+ *
+ *   Cover und Bildaussage  echte Fotos der Filiale des Adressaten
+ *   Benchmarks             echte Kampagnen- und Kanalbilder der Marken
+ *   Potenziale             erzeugte Konzeptbilder fuer die Marken des Adressaten
+ *
+ * Nur die Potenziale sind erzeugt, und das aus gutem Grund: sie zeigen einen
+ * Zustand, den es noch nicht gibt. Ein erzeugtes Kampagnenbild einer fremden
+ * Marke waere dagegen erfundenes Material im Namen dieser Marke.
+ */
+export const MEMO_SCENE_IMAGE_MODEL = "gemini-2.5-flash-image";
+export const MEMO_SCENE_IMAGE_MS = 45_000;
+
+/**
+ * Der Auftrag an das Bildmodell. Englisch, weil die Modelle darauf deutlich
+ * praeziser treffen; der Markenname bleibt stehen, wie er geschrieben wird.
+ */
+export function buildMemoScenePrompt(slot: MemoImageSlot, addressee = ""): string {
+  const marke = String(addressee || slot.company || "").trim();
+  const motiv = String(slot.hint || slot.subject || "").trim();
+  const bezug = String(slot.subject || "").trim();
+  return [
+    "Photorealistic concept mockup for a brand strategy memo, editorial product photography.",
+    marke ? `It shows how the own-brand world of ${marke} would look once this lever is pulled.` : "",
+    motiv ? `Scene: ${motiv}.` : "",
+    bezug && bezug !== motiv ? `Lever: ${bezug}.` : "",
+    "Retail floor, packaging, or a brand channel. Clean composition, soft natural light, muted neutral palette, shallow depth of field.",
+    "A brand wordmark may appear where it naturally belongs, on signage, packaging or a screen.",
+    "No logos of other companies, no headline text or captions, no watermark, no collage, no faces looking into the camera, no stock-photo look.",
+  ].filter(Boolean).join(" ");
+}
+
+/** Liest das Bild aus der Antwort des Modells: inlineData, Base64, mit Typ. */
+export function parseGeminiImage(raw: unknown): { mime: string; data: string } | null {
+  const root = record(raw);
+  const kandidaten = Array.isArray(root.candidates) ? root.candidates : [];
+  for (const kandidat of kandidaten) {
+    const teile = Array.isArray(record(record(kandidat).content).parts)
+      ? (record(record(kandidat).content).parts as unknown[])
+      : [];
+    for (const teil of teile) {
+      const inline = record(record(teil).inlineData ?? record(teil).inline_data);
+      const mime = String(inline.mimeType ?? inline.mime_type ?? "").toLowerCase();
+      const data = String(inline.data ?? "");
+      if (data && /^image\/(png|jpeg|webp)$/.test(mime)) return { mime, data };
+    }
+  }
+  return null;
+}
+
 export const MEMO_IMAGE_CONCURRENCY = 3;
 /**
  * Unter diesem Rest startet der Finder nicht. Rest gilt ab Start des Isolats,
@@ -4813,11 +4869,17 @@ export function memoImageDataUri(mime: string, data: string): string | null {
   return uri;
 }
 
-export function attachMemoSlotImage(payload: MemoPayload, key: string, src: string): MemoPayload {
+export function attachMemoSlotImage(
+  payload: MemoPayload,
+  key: string,
+  src: string,
+  fit: "cover" | "contain" = "cover",
+): MemoPayload {
   if (!src) return payload;
+  const bild: MemoImage = fit === "contain" ? { src, pos: "50% 50%", fit } : { src, pos: "50% 50%" };
   // Titelseite und Bildaussage haben je einen Platz, nicht drei.
   if (key === "cover" || key === "insight") {
-    payload[key] = { src, pos: "50% 50%" };
+    payload[key] = bild;
     return payload;
   }
   const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(key);
@@ -4825,7 +4887,7 @@ export function attachMemoSlotImage(payload: MemoPayload, key: string, src: stri
   const liste = treffer[1] === "benchmarks" ? payload.benchmarks : payload.potentials;
   const eintrag = liste[Number(treffer[2])] as (MemoBenchmark | MemoPotential | undefined);
   if (!eintrag) return payload;
-  eintrag.image = { src, pos: "50% 50%" };
+  eintrag.image = bild;
   return payload;
 }
 
@@ -4965,7 +5027,9 @@ export async function fillMemoImages(
       await opts.log?.("image_start", { key: slot.key, subject: slot.subject, kind: slot.kind });
       const src = await opts.fetchPhoto(slot);
       if (src) {
-        attachMemoSlotImage(payload, slot.key, src);
+        // Benchmarks kommen als Wortmarke aus der Logosuche. Sie darf der
+        // Rahmen nicht anschneiden; ein Foto darf er.
+        attachMemoSlotImage(payload, slot.key, src, slot.kind === "benchmark" ? "contain" : "cover");
         filled.ok += 1;
         await opts.log?.("image_ok", { key: slot.key, subject: slot.subject, kind: slot.kind });
       } else {

@@ -157,6 +157,10 @@ import {
   isAssetKind,
   isAllowedMemoPhotoUrl,
   isAllowedMemoSceneUrl,
+  MEMO_SCENE_IMAGE_MODEL,
+  MEMO_SCENE_IMAGE_MS,
+  buildMemoScenePrompt,
+  parseGeminiImage,
   memoBenchmarkCorpus,
   memoImageDataUri,
   memoImageUploadsFromBody,
@@ -4046,6 +4050,62 @@ async function findMemoSlotLogo(
   return null;
 }
 
+/**
+ * Erzeugt das Konzeptbild eines Potenzials. Die Suche auf Wikimedia Commons
+ * findet dafuer nichts: dort liegen Fotos von Dingen, die es gibt, und ein
+ * Potenzial zeigt einen Zustand, den es noch nicht gibt. Seite vier blieb
+ * deshalb verlaesslich leer.
+ */
+async function generateMemoSceneImage(
+  apiKey: string,
+  slot: MemoImageSlot,
+  addressee: string,
+  log?: (event: string, extra: Record<string, unknown>) => void,
+): Promise<string | null> {
+  if (!apiKey) return null;
+  const prompt = buildMemoScenePrompt(slot, addressee);
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MEMO_SCENE_IMAGE_MODEL)}:generateContent`;
+  // Erst mit Seitenverhaeltnis, das spart den Beschnitt. Kennt die Fassung des
+  // Modells das Feld nicht, antwortet sie mit 400; dann ohne, und der Rahmen
+  // schneidet wie bisher.
+  const varianten: Record<string, unknown>[] = [
+    { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: slot.geminiAspect } },
+    { responseModalities: ["IMAGE"] },
+  ];
+  for (const generationConfig of varianten) {
+    try {
+      const response = await fetchMitLimit(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig }),
+      }, MEMO_SCENE_IMAGE_MS);
+      if (!response.ok) {
+        const koerper = await response.text().catch(() => "");
+        const befund = geminiResearchFehler(response.status, koerper);
+        log?.("image_model_error", {
+          key: slot.key,
+          status: response.status,
+          google: String(befund.google || "").slice(0, 300),
+          quota: String(befund.quota || "").slice(0, 200),
+        });
+        if (response.status === 400) continue;
+        return null;
+      }
+      const bild = parseGeminiImage(await response.json());
+      if (!bild) {
+        log?.("image_model_empty", { key: slot.key });
+        continue;
+      }
+      log?.("image_generated", { key: slot.key, mime: bild.mime, bytes: Math.round(bild.data.length * 0.75) });
+      return memoImageDataUri(bild.mime, bild.data);
+    } catch (fehler) {
+      log?.("image_model_error", { key: slot.key, reason: String(fehler).slice(0, 200) });
+      return null;
+    }
+  }
+  return null;
+}
+
 async function findMemoSlotScene(
   slot: MemoImageSlot,
   usedUrls: Set<string>,
@@ -4080,6 +4140,7 @@ function createMemoPhotoFinder(
   apiKey: string,
   model: string,
   log?: (event: string, extra: Record<string, unknown>) => void,
+  adressat = "",
 ) {
   const byLogo = new Map<string, Promise<string | null>>();
   const usedSceneUrls = new Set<string>();
@@ -4096,6 +4157,10 @@ function createMemoPhotoFinder(
         if (!url || !isAllowedMemoPhotoUrl(url)) return null;
         return downloadMemoPhoto(url, true);
       }
+      // Erzeugen, nicht suchen: das Potenzial zeigt einen Zustand, den es noch
+      // nicht gibt. Findet das Bildmodell nichts, bleibt die alte Suche.
+      const erzeugt = await generateMemoSceneImage(apiKey, slot, adressat, log);
+      if (erzeugt) return erzeugt;
       const local = await findMemoSlotScene(slot, usedSceneUrls);
       if (local) return local;
       const url = geminiUrls[slot.key];
@@ -5984,21 +6049,23 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       await abschnitt("bilder");
       const geminiKey = await getGeminiKey().catch(() => "");
       const beat = setInterval(() => { void persist({}); }, ASSET_STREAM_KEEPALIVE_MS);
+      const adressatFuerBilder = String(
+        (assetAnswers as MemoAnswers).company
+        || assetSignal.company
+        || assetArticle.primary_company
+        || (Array.isArray(assetSignal.tier1_companies) ? assetSignal.tier1_companies[0] : "")
+        || "",
+      );
       const finder = createMemoPhotoFinder(
         geminiKey,
         MEMO_BENCHMARK_RESEARCH_MODEL,
         (event, extra) => loggen(event, extra),
+        adressatFuerBilder,
       );
       try {
           payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
             remainingMs: assetPhaseRemainingMs(isolateStartedAt),
-            addressee: String(
-              (assetAnswers as MemoAnswers).company
-              || assetSignal.company
-              || assetArticle.primary_company
-              || (Array.isArray(assetSignal.tier1_companies) ? assetSignal.tier1_companies[0] : "")
-              || "",
-            ),
+            addressee: adressatFuerBilder,
             fetchPhoto: finder.fetchPhoto,
             prepareRetry: finder.prepareRetry,
             log: async (event, extra) => {

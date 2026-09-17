@@ -2280,6 +2280,63 @@ test("ein verlorener Abruf verwirft den laufenden Entwurf nicht", async () => {
   assert.match(studio, /data-act="show-drafts"><i class="fa-solid fa-folder-open"><\/i>Entwürfe öffnen/);
 });
 
+test("Seite 4 bekommt erzeugte Konzeptbilder, nicht eine leere Suche", () => {
+  // Das Referenzmemo zeigt auf Seite 4 Mockups der eigenen Marken des
+  // Adressaten: eine Markenwelt auf der Flaeche, ein Kanal, eine Verpackung.
+  // Solche Bilder liegen nicht auf Wikimedia Commons, und genau dort hat die
+  // alte Suche gesucht. Seite 4 blieb deshalb verlaesslich leer.
+  const slot = {
+    key: "potentials.0", kind: "potential", index: 0,
+    subject: "Marke am POS erlebbar machen",
+    hint: "Eigenmarken-Markenwelt auf der Ladenfläche",
+    company: "Puma", queries: [], aspectMm: { w: 57, h: 46 }, pixels: { w: 912, h: 736 },
+    geminiAspect: "4:3",
+  };
+  const prompt = backend.buildMemoScenePrompt(slot, "Puma");
+  assert.match(prompt, /Photorealistic concept mockup/);
+  assert.match(prompt, /own-brand world of Puma/);
+  assert.match(prompt, /Eigenmarken-Markenwelt auf der Ladenfläche/);
+  // Fremde Marken haben im Konzeptbild des Adressaten nichts zu suchen.
+  assert.match(prompt, /No logos of other companies/);
+  assert.match(prompt, /no watermark/);
+
+  assert.deepEqual(
+    backend.parseGeminiImage({ candidates: [{ content: { parts: [{ text: "x" }, { inlineData: { mimeType: "image/png", data: "AAAA" } }] } }] }),
+    { mime: "image/png", data: "AAAA" },
+  );
+  assert.equal(backend.parseGeminiImage({ candidates: [] }), null);
+  assert.equal(backend.parseGeminiImage({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "text/plain", data: "AAAA" } }] } }] }), null);
+
+  // Erst erzeugen, dann suchen: die Suche bleibt als Rueckfall.
+  assert.match(edge, /const erzeugt = await generateMemoSceneImage\(apiKey, slot, adressat, log\);/);
+  assert.match(edge, /if \(erzeugt\) return erzeugt;\n      const local = await findMemoSlotScene/);
+  // Kennt die Fassung des Modells das Seitenverhaeltnis nicht, geht es ohne.
+  assert.match(edge, /if \(response\.status === 400\) continue;/);
+});
+
+test("eine Wortmarke wird eingepasst, nicht angeschnitten", () => {
+  // 72 × 44 mm mit object-fit: cover schneidet „PUMA" an beiden Seiten ab.
+  // Das Referenzmemo zeigt auf Seite 3 Kampagnenbilder; kommt aus der Suche
+  // nur das Logo, muss es wenigstens ganz zu sehen sein.
+  const payload = { benchmarks: [{}, {}], potentials: [{}], sources: [] };
+  backend.attachMemoSlotImage(payload, "benchmarks.0", "data:image/png;base64,AA", "contain");
+  backend.attachMemoSlotImage(payload, "benchmarks.1", "data:image/png;base64,BB");
+  backend.attachMemoSlotImage(payload, "potentials.0", "data:image/png;base64,CC");
+  assert.equal(payload.benchmarks[0].image.fit, "contain");
+  assert.equal(payload.benchmarks[1].image.fit, undefined);
+  assert.equal(payload.potentials[0].image.fit, undefined);
+  // Ein hochgeladenes eigenes Motiv bleibt cover: der Nutzer hat zugeschnitten.
+  backend.applyMemoImageUploads(payload, { "benchmarks.0": "data:image/png;base64,DD" });
+  assert.equal(payload.benchmarks[0].image.fit, undefined);
+
+  // Die Logosuche liefert die Wortmarke, das erzeugte Konzeptbild das Foto.
+  assert.match(backendSource, /slot\.kind === "benchmark" \? "contain" : "cover"/);
+  // Und die Vorlage setzt beides um, samt Flaeche unter der Marke.
+  assert.match(studio, /const fit = img\.fit === "contain" \? "contain" : "cover";/);
+  assert.match(studio, /background:var\(--tint,#f7f9fc\);padding:6mm/);
+  assert.match(studio, /fit: item\?\.image\?\.fit === "contain" \? "contain" : "cover",/);
+});
+
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
   const guides = await import("../memo-guides.mjs");
   // Der Vertrag ist am Referenzmemo gemessen. Eine Regel, die das Original
@@ -2965,8 +3022,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-16");
-  assert.match(indexHtml, /app\.js\?v=20260917-16/);
+  assert.equal(studioVersion, "20260917-17");
+  assert.match(indexHtml, /app\.js\?v=20260917-17/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

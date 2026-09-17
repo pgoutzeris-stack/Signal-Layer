@@ -1636,12 +1636,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-16";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-17";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-16";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-17";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-16";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-17";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -3967,6 +3967,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         image: {
           src: String(item?.image?.src || ""),
           pos: String(item?.image?.pos || "50% 50%"),
+          fit: item?.image?.fit === "contain" ? "contain" : "cover",
           zoom: Number(item?.image?.zoom) || 1,
           opacity: Number(item?.image?.opacity) || 1,
           overlay: Number(item?.image?.overlay ?? 1),
@@ -3984,6 +3985,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         image: {
           src: String(item?.image?.src || ""),
           pos: String(item?.image?.pos || "50% 50%"),
+          fit: item?.image?.fit === "contain" ? "contain" : "cover",
           zoom: Number(item?.image?.zoom) || 1,
           opacity: Number(item?.image?.opacity) || 1,
           overlay: Number(item?.image?.overlay ?? 1),
@@ -4239,7 +4241,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const img = imageAt(memo, key);
       const zoom = Math.min(2.5, Math.max(1, Number(img.zoom) || 1));
       const opacity = Math.min(1, Math.max(0.2, Number(img.opacity) || 1));
-      return tag.replace(/ style="[^"]*"/, "").replace(/>$/, ` style="object-position:${attr(img.pos || "50% 50%")};transform:scale(${zoom});opacity:${opacity}">`);
+      // Eine Wortmarke wird eingepasst, nicht beschnitten. Ohne das stand
+      // „PUMA" quer ueber der Karte und war an beiden Seiten abgesaebelt.
+      const fit = img.fit === "contain" ? "contain" : "cover";
+      // Eingepasst braucht die Marke eine Flaeche unter sich, sonst schwebt
+      // sie auf der Karte. box-sizing steht in der Vorlage auf border-box.
+      const flaeche = fit === "contain" ? ";background:var(--tint,#f7f9fc);padding:6mm" : "";
+      return tag.replace(/ style="[^"]*"/, "").replace(/>$/, ` style="object-position:${attr(img.pos || "50% 50%")};object-fit:${fit}${flaeche};transform:scale(${zoom});opacity:${opacity}">`);
     });
     html = wrapImageSlots(html, memo, editable);
     if (editable) {
