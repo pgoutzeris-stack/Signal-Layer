@@ -32,7 +32,6 @@ export const MEMO_DEFAULTS = {
   "market_p2": "",
   "benchmark_section": "02 Best Practice Eigenmarken",
   "benchmark_title": "",
-  "benchmark_lead": "",
   "bm1_name": "",
   "bm1_title": "",
   "bm1_text": "",
@@ -345,7 +344,7 @@ export const MEMO_TEMPLATE = `<div class="as-stage as-stage--memo" lang="de" dat
     <div class="em-kick2" data-field="benchmark_section">{{benchmark_section}}</div>
     <h2 class="em-at" data-field="benchmark_title">{{benchmark_title}}</h2>
 
-    <p class="em-lead" data-field="benchmark_lead">{{benchmark_lead}}</p><div class="em-cases">
+    <div class="em-cases">
       <div class="em-case"><img src="{{benchmarks_0_image}}" alt="" data-imgsrc="" data-imgkey="benchmarks.0" style="object-position: 50% 50%;">
         <div><div class="em-co" data-field="benchmarks.0.name">{{bm1_name}}</div>
           <h3 data-field="benchmarks.0.title">{{bm1_title}}</h3>

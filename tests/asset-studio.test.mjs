@@ -76,7 +76,7 @@ test("die Nutzlast des Backends passt zu den Feldern, die das Frontend liest", (
   assert.equal(linkedin.theme, "dark");
 
   const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
-  for (const feld of ["title", "standfirst", "summary_0", "summary_1", "summary_2", "market_title", "market_p1", "market_p2", "kpis", "insight_title", "benchmark_title", "benchmark_lead", "benchmarks", "quote_text", "potentials_title", "potentials_lead", "potentials", "cta", "about_fit", "sources"]) {
+  for (const feld of ["title", "standfirst", "summary_0", "summary_1", "summary_2", "market_title", "market_p1", "market_p2", "kpis", "insight_title", "benchmark_title", "benchmarks", "quote_text", "potentials_title", "potentials_lead", "potentials", "cta", "about_fit", "sources"]) {
     assert.ok(feld in memo, `Memo-Feld ${feld} fehlt`);
   }
   assert.equal(memo.benchmarks.length, 3);
@@ -2032,10 +2032,20 @@ test("das erzeugte Memo füllt dieselbe vierseitige Struktur wie die Referenz", 
   const prompt = backend.buildAssetPrompt("memo", { company: "Aeffe" }, { title: "A" },
     backend.normalizeAssetAnswers("memo", {}));
   assert.match(prompt, /vier A4-Seiten/);
-  assert.match(prompt, /summary_0, summary_1, summary_2/);
-  assert.match(prompt, /insight_title/);
-  assert.match(prompt, /quote_text/);
-  assert.match(prompt, /genau vier Kennzahlen/);
+  // Der Aufbau nennt jedes Feld mit seiner Aufgabe, aus dem Vertrag erzeugt.
+  for (const key of ["summary_0", "summary_1", "summary_2", "insight_title", "quote_text", "market_p2"]) {
+    assert.match(prompt, new RegExp(`\n${key} \\(`), `${key} fehlt im Aufbau`);
+  }
+  // Dazu die Regeln, die erst zwischen zwei Feldern gelten.
+  assert.match(prompt, /Drei Marktzahlen und eine Zahl zum Adressaten selbst/);
+  assert.match(prompt, /Keine Zahl ohne Quelle/);
+  // Und das Referenzmemo selbst: Laengen allein erzeugen Texte, die die
+  // Wortzahl treffen und trotzdem nicht klingen wie das Original.
+  assert.match(prompt, /<referenz>/);
+  assert.match(prompt, /Vom Preisargument zur eigenständigen Marke/);
+  assert.match(prompt, /Lidl · Parkside/);
+  // benchmark_lead hat im Referenzmemo kein Gegenstueck und ist raus.
+  assert.doesNotMatch(prompt, /benchmark_lead/);
 });
 
 test("die Memo-Vorschau zeigt denselben Feldsatz wie das fertige Dokument", () => {
@@ -2059,11 +2069,116 @@ test("die Memo-Vorschau zeigt denselben Feldsatz wie das fertige Dokument", () =
   assert.match(memoTpl, /"quote_name": "Richard Erbler"/);
 });
 
+test("die fertige Antwort wird am selben Vertrag gemessen wie die getippten Felder", () => {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
+  // Ein zu kurzer Absatz aus dem Modell hinterlaesst dieselbe weisse Flaeche
+  // wie ein zu kurzer aus dem Fragebogen. Bis hierher fiel nur der zweite auf.
+  const kurz = { ...memo, market_p1: "Zu kurz." };
+  assert.match(backend.memoVertragsFehler(kurz).join(" "), /market_p1: 2 statt mindestens 22/);
+  // Selbst geschriebene Felder bleiben aussen vor: sie sind wortgleich zu
+  // uebernehmen und im Fragebogen schon geprueft.
+  assert.ok(!backend.memoVertragsFehler(kurz, { market_p1: "Zu kurz." }).some((z) => z.startsWith("market_p1")));
+  // Der zweite Anlauf nennt die verletzten Felder statt eines JSON-Mangels.
+  const zweiter = backend.buildMemoVertragsRepairPrompt("PROMPT", ["market_p1: 2 statt mindestens 22 Woerter."]);
+  assert.match(zweiter, /<vertragsfehler>/);
+  assert.match(zweiter, /market_p1/);
+  assert.doesNotMatch(zweiter, /beschaedigtes JSON/);
+  // Die Edge Function prueft, repariert und behaelt den besseren Entwurf.
+  assert.match(edge, /memoVertragsFehler\(payload as MemoPayload, eigeneMemoFelder\)/);
+  assert.match(edge, /zweiteFehler\.length < vertragsFehler\.length/);
+  assert.match(edge, /if \(ersterEntwurf\) payload = ersterEntwurf;/);
+});
+
+test("ein einzelnes Memofeld lässt sich gegen den Vertrag schärfen", () => {
+  // Der Fragebogen zaehlte Woerter und faerbte den Rahmen rot, konnte aber
+  // nichts daran aendern. Derselbe Vertrag, dasselbe Referenzmemo, ein Feld.
+  const prompt = backend.buildMemoFeldPrompt("market_p1", "Zu kurz.", { company: "Aeffe" });
+  assert.match(prompt, /market_p1/);
+  assert.match(prompt, /22 bis 48 Woerter/);
+  assert.match(prompt, /Mit steigenden Kundenerwartungen/);
+  assert.match(prompt, /statt mindestens 22/);
+  assert.equal(backend.buildMemoFeldPrompt("gibt_es_nicht", "x"), "");
+  assert.match(edge, /case "sharpen_memo_field"/);
+  assert.match(edge, /"sharpen_memo_field",/);
+  assert.match(studio, /data-act="memo-schaerfen"/);
+  assert.match(studio, /data-act="memo-vorschlag-an"/);
+  assert.match(studio, /sharpen_memo_field/);
+  // Der Vorschlag ersetzt nichts von selbst.
+  assert.match(studio, /async function schaerfeMemoFeld/);
+});
+
+test("eine zu breite Kennzahl wird gemeldet statt still geschrumpft", async () => {
+  const guides = await import("../memo-guides.mjs");
+  assert.match(guides.memoFeldFehler("kpi1_value", "+ 1,6 Prozentpunkte"), /schrumpfen die Zahl/);
+  // Und im fertigen Dokument steht, welcher Kasten kleiner gesetzt wurde.
+  assert.match(studio, /if \(schritte > 4\) geschrumpft\.push\(i \+ 1\);/);
+  assert.match(studio, /treffer\.kpis = geschrumpft;/);
+  assert.match(studio, /steht kleiner als die daneben/);
+});
+
+test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
+  const guides = await import("../memo-guides.mjs");
+  // Der Vertrag ist am Referenzmemo gemessen. Eine Regel, die das Original
+  // durchfallen lässt, ist die Regel, die falsch ist: das Schema verlangte
+  // höchstens acht Wörter für summary_0, wo im Memo neun stehen.
+  for (const feld of guides.MEMO_FIELDS) {
+    assert.deepEqual(
+      guides.memoFeldPruefung(feld.key, feld.beispiel),
+      [],
+      `${feld.key}: ${guides.memoFeldPruefung(feld.key, feld.beispiel).map((b) => b.fehler).join(" ")}`,
+    );
+  }
+  assert.equal(guides.MEMO_FIELDS.length, 49);
+});
+
+test("Feldvertrag prüft Zahlensatz, Quellenform und Satzzahl", async () => {
+  const guides = await import("../memo-guides.mjs");
+  // Deutsche Zahlensetzung, wie im Referenzmemo.
+  assert.match(guides.memoFeldFehler("kpi1_value", "8.9 Mrd"), /Dezimaltrennzeichen/);
+  assert.match(guides.memoFeldFehler("kpi1_value", "40%"), /Leerzeichen/);
+  assert.equal(guides.memoFeldFehler("kpi1_value", "40 %"), "");
+  // Über zwölf Zeichen schrumpft der Kasten die Zahl, still und sichtbar.
+  assert.match(guides.memoFeldFehler("kpi1_value", "+ 1,6 Prozentpunkte"), /Zeichen/);
+  // Eine Quelle ohne Herausgeber ist keine Quelle.
+  assert.match(guides.memoFeldFehler("kpi1_source", "2026"), /Herausgeber/);
+  assert.equal(guides.memoFeldFehler("kpi1_source", "NIQ, 2025"), "");
+  assert.match(guides.memoFeldFehler("sources", "Irgendein Beleg ohne Herausgeber und Jahr"), /Herausgeber/);
+  // Überschriften enden ohne Punkt, die Bildaussage ist die Ausnahme.
+  assert.match(guides.memoFeldFehler("title", "Vom Preisargument zur eigenen Marke."), /ohne Punkt/);
+  assert.equal(guides.memoFeldFehler("insight_title", guides.memoFeld("insight_title").beispiel), "");
+  // Ein Zitat über drei Sätze reisst das blaue Band auseinander.
+  assert.match(
+    guides.memoFeldFehler("quote_text", "Erster Satz mit genug Woertern fuer den Bereich hier. Zweiter Satz mit weiteren Woertern darin. Dritter Satz steht auch noch da."),
+    /Sätze/,
+  );
+});
+
 test("Feldvertrag: Fragebogen, Prompt und Prüfung lesen dieselben Zahlen", async () => {
   const guides = await import("../memo-guides.mjs");
   // Der Prompt trägt eine Kopie des Vertrags. Läuft sie dem Modul davon, sieht
   // der Nutzer im Fragebogen andere Grenzen als das Modell im Prompt.
   assert.equal(backend.MEMO_LAENGEN, guides.memoLaengenVertrag());
+  // Aufbau, Referenzbeispiele, Schemabeschreibungen und die Pruefung der
+  // fertigen Antwort stammen aus derselben Liste. Von Hand gepflegt standen
+  // hier vier Fassungen desselben Vertrags, mit drei verschiedenen Zahlen je
+  // Feld: das Schema sagte hoechstens acht Woerter, wo die Vorlage vierzehn
+  // traegt und das Referenzmemo neun schreibt.
+  assert.equal(backend.MEMO_AUFBAU, guides.memoAufbauVertrag());
+  assert.equal(backend.MEMO_BEISPIELE, guides.memoBeispieleVertrag());
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(backend.MEMO_SCHEMA_TEXTE)),
+    guides.memoSchemaTexte(),
+  );
+  assert.deepEqual(
+    backend.MEMO_VERTRAG,
+    guides.MEMO_FIELDS.map((f) => ({
+      key: f.key, label: f.label, art: f.art, min: f.min, max: f.max,
+      saetze: f.saetze || null, punkt: Boolean(f.punkt),
+    })),
+  );
+  for (const feld of guides.MEMO_FIELDS) {
+    assert.equal(backend.MEMO_BEISPIEL[feld.key], feld.beispiel, `Referenz zu ${feld.key}`);
+  }
   assert.equal(guides.MEMO_FIELDS.length, backend.MEMO_FIELD_KEYS.length);
   for (const key of backend.MEMO_FIELD_KEYS) {
     assert.ok(guides.memoFeld(key), `Feld ${key} fehlt im Regelwerk`);
@@ -2613,8 +2728,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-4");
-  assert.match(indexHtml, /app\.js\?v=20260917-4/);
+  assert.equal(studioVersion, "20260917-5");
+  assert.match(indexHtml, /app\.js\?v=20260917-5/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

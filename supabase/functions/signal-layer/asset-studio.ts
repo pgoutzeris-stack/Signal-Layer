@@ -236,6 +236,471 @@ Kennzahlen: kpiN_value: 1 bis 4 Wörter; kpiN_label: 5 bis 18 Wörter; kpiN_sour
 02 Best Practice: benchmark_title: 8 bis 22 Wörter; sources: 5 bis 45 Wörter; quote_text: 14 bis 34 Wörter; bmN_name: 1 bis 5 Wörter; bmN_title: 3 bis 9 Wörter; bmN_text: 20 bis 44 Wörter; bmN_tag: 5 bis 16 Wörter.
 03 ROOTS Empfehlung: potentials_title: 5 bis 16 Wörter; potentials_lead: 22 bis 50 Wörter; potentials_lead2: 6 bis 20 Wörter; cta: 5 bis 16 Wörter; about_fit: 12 bis 38 Wörter; about_fit2: 10 bis 34 Wörter; potN_title: 3 bis 9 Wörter; potN_potential: 22 bis 48 Wörter.`;
 
+/**
+ * Der Aufbau, aus memo-guides.mjs erzeugt. Von Hand gepflegt stand hier eine
+ * zweite Fassung der Feldhinweise, die beim naechsten Vorlagenwechsel
+ * weggelaufen waere. Der Test in tests/asset-studio.test.mjs haelt beide gleich.
+ */
+export const MEMO_AUFBAU = `Seite 1, Cover: Die Titelseite entscheidet in zehn Sekunden, ob weitergelesen wird. Sie nennt die Aufgabe, nicht die Nachricht.
+- Ein Titel, der die offene Aufgabe benennt, kurz und mit Verb.
+- Ein Satz darunter, warum die Aufgabe jetzt anliegt.
+- Drei Schlüssel in fester Reihenfolge: Lage, Best Practice, Empfehlung. Sie nehmen die drei Innenseiten vorweg.
+title (Titel (H1)): Die offene Aufgabe als These. Nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht.
+standfirst (Subtitel (H2)): Ein Satz, der den Titel auflöst: was sich dadurch ändert.
+summary_0 (Feature 1): Die heutige Lage des Adressaten. Nimmt Seite 2 vorweg.
+summary_1 (Feature 2): Was die Benchmarks gemeinsam richtig machen. Nimmt Seite 3 vorweg.
+summary_2 (Feature 3): Der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg.
+Motive: Ein Motiv des Adressaten über der oberen Seitenhälfte, Laden, Produkt oder Fläche. Kein Logo, kein Porträt.
+
+Seite 2, 01 Reality Check: Seite 2 belegt, dass der Markt sich bewegt, und übersetzt das auf die Lage des Adressaten.
+- Eine Seitenüberschrift über die Kategorie, nicht über das Unternehmen.
+- Zwei Absätze: erst die Marktbewegung, dann die offene Lücke beim Adressaten.
+- Unten eine Aussage neben dem Bild und ein Absatz, der sie belegt.
+market_title (Titel (H2)): Die Kategorie oder der Markt, nicht das Unternehmen.
+market_p1 (Absatz 1): Was sich im Markt verschoben hat und was das für den Adressaten bedeutet.
+market_lead2 (Absatz 2): Was dem Adressaten trotz guter Ausgangslage fehlt. Der Übergang zur Empfehlung.
+insight_title (Bildaussage): Der Befund zum Adressaten in einem Satz. Nicht die Seitenüberschrift wiederholen.
+market_p2 (Absatz 3): Der Beleg für die Aussage, konkret an Sortiment, Fläche und POS. Trägt die untere Seitenhälfte.
+Motive: Ein Motiv in der unteren Seitenhälfte, das die Aussage daneben zeigt. Szene aus dem Alltag des Adressaten, kein Logo.
+
+Seite 2, Kennzahlen: Vier Kästen in einer Leiste. Sie tragen den Beleg für Seite 2 und sind die einzige Stelle im Memo, an der Zahlen stehen.
+- Drei Marktzahlen und eine Zahl zum Adressaten selbst, in dieser Reihenfolge.
+- Prozentwerte, Punktveränderungen oder Beträge, deutsch gesetzt: 40 %, + 1,6 PP, 8,9 Mrd. €.
+- Je Zahl ein halber Satz Bezug und eine Quelle im Format „Herausgeber, Jahr“.
+- Keine Zahl ohne Quelle. Ein Kasten ohne Quelle fällt aus dem Memo.
+kpiN_value (Kennzahl 1): Eine Zeile, deutsch gesetzt. Über zwölf Zeichen schrumpft die Zahl im Kasten.
+kpiN_label (Beschreibung): Worauf sich die Zahl bezieht, ein halber Satz ohne Schlusspunkt.
+kpiN_source (Quelle): Format „Herausgeber, Jahr“. Mehrere Herausgeber mit Schrägstrich, Zeiträume mit Schrägstrich.
+
+Seite 3, 02 Best Practice: Seite 3 zeigt drei Marken, die den Hebel schon gezogen haben. Sie macht die Empfehlung glaubwürdig, bevor sie ausgesprochen wird.
+- Eine Seitenüberschrift, die die drei Marken nennt und ihren gemeinsamen Hebel.
+- Je Fall: Marke, eine Kartenüberschrift, der Beleg und die übertragbare Lehre.
+- Am Seitenfuss die Quellenzeile für alle drei Fälle.
+- Darunter ein Zitat, das die Lehre als ROOTS-Haltung zusammenfasst.
+benchmark_title (Titel (H2)): Nennt die drei Marken und was sie gemeinsam richtig machen.
+bmN_name (Benchmark 1): Bei Handelsmarken „Händler · Marke“.
+bmN_title (Titel): Was diese Marke getan hat, ohne Schlusspunkt.
+bmN_text (Beleg): Die Handlung und warum sie gewirkt hat. Unter zwanzig Wörtern reisst die Karte auseinander.
+bmN_tag (Lehre): Was davon auf den Adressaten übertragbar ist, ein Satz.
+sources (Quellen): Belege für die drei Fälle, mit Semikolon getrennt. Format „Herausgeber, Art (Zeitraum)“.
+quote_text (Zitat): Die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person. Die Zuschreibung darunter ist fest.
+Motive: Je Fall ein Motiv der Marke: Kampagnenmotiv, Kanal oder Auftritt. Ein Logo allein trägt die Karte nicht.
+
+Seite 4, 03 ROOTS Empfehlung: Seite 4 übersetzt den Hebel auf den Adressaten: drei Karten, dann die Gesprächsfrage.
+- Eine Seitenüberschrift und zwei Absätze: was die Analyse zeigt, dann die drei Hebel benannt.
+- Je Hebel eine Überschrift mit Verb und ein Absatz, was ROOTS daraus macht.
+- Eine Frage im blauen Band, kein Werbesatz.
+- Zwei Sätze, die die ROOTS-Leistung an diesen Fall binden.
+potentials_title (Titel (H2)): Der Check für dieses Unternehmen.
+potentials_lead (Absatz 1): Die Ausgangslage des Adressaten und wo das zusätzliche Potenzial liegt.
+potentials_lead2 (Absatz 2): Ein Satz, der die drei Hebel benennt. Er steht direkt über den Karten.
+potN_title (Hebel 1): Verb voran, kein Schlusspunkt.
+potN_potential (Text): Der Hebel in der Sprache des Falls, ohne erfundene Zahl. Die drei Karten sollten ähnlich lang sein, sonst steht eine kurz.
+cta (CTA-Frage): Eine Frage an den Adressaten, ohne Werbeton. Der Knopftext daneben ist fest.
+about_fit (Über ROOTS): Ein Satz über die ROOTS-Leistung allgemein.
+about_fit2 (Bezug zum Fall): Ein Satz, der die Leistung an diesen Fall bindet. Erst hier darf sie beim Namen genannt werden.
+Motive: Je Hebel ein Konzeptbild: wie es aussähe, wenn der Hebel gezogen ist. Fläche, Kanal oder Produkt, kein Logo und kein Porträt.`;
+
+/**
+ * Das Referenzmemo Feld fuer Feld. Laengen allein erzeugen Texte, die die
+ * Wortzahl treffen und trotzdem anders klingen; erst diese Beispiele geben dem
+ * Modell Tonlage, Satzbau und Art des Belegs.
+ */
+export const MEMO_BEISPIELE = `Cover
+title: Vom Preisargument zur eigenständigen Marke
+standfirst: Wie Deichmanns Eigenmarken ihr volles Wachstumspotenzial entfalten.
+summary_0: Wachsende Eigenmarkenanteile treffen in der Footwear-Kategorie auf höhere Kundenansprüche
+summary_1: Erfolgreiche Eigenmarken werden konsequent wie eigenständige Marken geführt
+summary_2: Eigenmarken mit klarem Profil und eigenen Markenwelten weiterentwickeln und erlebbar machen
+
+01 Reality Check
+market_title: Eigenmarken stehen vor der nächsten Entwicklungsstufe
+market_p1: Mit steigenden Kundenerwartungen wachsen die Anforderungen an Qualität, Innovation und Markenführung. Was früher der günstige Kompromiss war, ist heute eine bewusste Kaufentscheidung. Für Deichmann trifft diese Entwicklung auf eine außergewöhnlich starke Ausgangslage im Sortiment.
+market_lead2: Was bislang fehlt, ist eine Eigenmarkenarchitektur, in der einzelne Marken Kategorien sichtbar besetzen und über den Preis hinaus ein eigenständiges Profil entwickeln.
+insight_title: Eigenmarken funktionieren bei Deichmann aktuell überwiegend über funktionale Preiskommunikation.
+market_p2: Ein Blick in den Store zeigt die heutige Logik: Das Sortiment ist mit Marken wie Graceland oder 5th Avenue klar nach Zielgruppen strukturiert. Am POS stehen diese jedoch im direkten Wettbewerbsumfeld etablierter Herstellermarken und werden vor allem über Sortiment, Preis und Produktleistung differenziert.
+
+Kennzahlen
+kpi1_value: + 1,6 PP
+kpi1_label: Wachstum des Eigenmarkenanteils bei Apparel & Footwear in Deutschland
+kpi1_source: BCG / Inverto, 2026
+kpi2_value: 40 %
+kpi2_label: der Deutschen halten die Qualität von Eigenmarken mittlerweile für besser als die etablierter Marken
+kpi2_source: NIQ, 2025
+kpi3_value: 27 %
+kpi3_label: kaufen Eigenmarken aufgrund ihres Vertrauens in die Händlermarke
+kpi3_source: BCG / Inverto, 2026
+kpi4_value: > 70 %
+kpi4_label: der bei Deichmann verkauften Schuhe sind Eigenmarken, bei 8,9 Mrd. € Umsatz 2025
+kpi4_source: Deichmann, 2023/2025
+
+02 Best Practice
+benchmark_title: Parkside, Balea und Van Rysel schaffen einen Markenauftritt mit eigenem Design, Botschaftern und eigenen Kanälen
+bm1_name: Lidl · Parkside
+bm1_title: Eigener Auftritt und großer Botschafter
+bm1_text: Lidl ordnet Non-Food in sechs Themenwelten mit je einer Ankermarke. Parkside tritt im eigenen Farbcode ohne Lidl-Logo auf, führt einen eigenen Claim und hat seit 2023 einen Markenbotschafter.
+bm1_tag: Einheitliches Markenbild plus Botschafter geben der Eigenmarke einen Charakter.
+bm2_name: dm · Balea
+bm2_title: Markenaufbau über eigene Kanäle und Creator
+bm2_text: Balea baut die Marke selbst auf: eigener Instagram-Kanal mit eigener Community und Creator-Kooperationen. Dazu das Tempo: die Marke lebt sehr stark von Innovationen.
+bm2_tag: Eigene Kanäle und Creator erzeugen Bindung, die kein Regalplatz ersetzt.
+bm3_name: Decathlon · Van Rysel
+bm3_title: Eigenes Profiteam und eigene Brand-Stores
+bm3_text: Aus über 70 Eigenmarken wurden neun Kategoriemarken und vier Expertenmarken. Van Rysel bekommt eigene Brand-Stores und rüstet ein WorldTour-Team aus, also Sponsoring im Format großer Herstellermarken.
+bm3_tag: Teamsponsoring macht aus dem Sortimentslabel eine sichtbare Marke.
+sources: Lidl Österreich und Lidl Deutschland, Presseinformationen (2022 bis 2026); Lebensmittelzeitung, Interview Kerstin Erbe; Decathlon, Presseinformationen (2024/2025)
+quote_text: Der Ausbau von Eigenmarken zu eigenständigen Marken schafft ein klares Markenprofil, das wirksam differenziert, neue Zielgruppen erschließt und bestehende enger an die Marke bindet.
+
+03 ROOTS Empfehlung
+potentials_title: Drei strategische Hebel zur Optimierung von Deichmanns starken Eigenmarken
+potentials_lead: Die Analyse zeigt: Deichmann verfügt mit seinem hohen Eigenmarkenanteil und etablierten Submarken über eine starke Ausgangsbasis. Das zusätzliche Potenzial liegt darin, ausgewählte Eigenmarken über ihre heutige funktionale Rolle hinaus zu eigenständigen Marken zu entwickeln.
+potentials_lead2: Drei strategische Hebel setzen hier an: Positionierung, Reichweite und Markenerlebnis.
+pot1_title: Positionierung und Markenarchitektur schärfen
+pot1_potential: Zielgruppen und Preissegmente entlang relevanter Kundenbedürfnisse klar voneinander abgrenzen, um Überschneidungen zwischen den Eigenmarken zu reduzieren. Für ausgewählte Kernmarken eigenständige Leistungsversprechen definieren, die über den Preis hinaus Orientierung schaffen.
+pot2_title: Kanäle und Touchpoints gezielt aufbauen
+pot2_potential: Für ausgewählte Kernmarken eigene Markenwelten über skalierbare digitale Kanäle, zielgruppenrelevanten Content und strategische Kooperationen aufbauen. So lassen sich zusätzliche Kontaktpunkte effizient schaffen und Markenbindung über den POS hinaus stärken.
+pot3_title: Marke am POS und im Produkt erlebbar machen
+pot3_potential: Eigenmarken auf der Ladenfläche visuell klar differenzieren und ihre Markenwerte konsequent bis ins Produkt übersetzen. Vom Schuhkarton mit Markenstory bis zum Unboxing-Erlebnis machen konsistente Designcodes die Marke an jedem Touchpoint erlebbar.
+cta: Wollen Sie die Wachstumspotenziale Ihrer Eigenmarken heben?
+about_fit: ROOTS entwickelt KI-optimierte Markenstrategien und Marketing Operations für mehr Wirksamkeit, Effizienz und Speed im Marketing, mit Managementerfahrung bis CMO-Ebene im Handel.
+about_fit2: Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu unseren Kernkompetenzen: Wir haben zahlreiche führende Handels-Eigenmarken im Food und Non-Food mitgeprägt.`;
+
+/**
+ * Die Feldbeschreibungen des JSON-Schemas, ebenfalls aus dem Vertrag erzeugt.
+ * Das Modell liest das Schema vor dem Prompt: eine eigene Zahl an dieser Stelle
+ * schlaegt jede Laengenangabe weiter unten.
+ */
+export const MEMO_SCHEMA_TEXTE = {
+  felder: {
+    title: "Die offene Aufgabe als These. Nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht. 4 bis 12 Wörter.",
+    standfirst: "Ein Satz, der den Titel auflöst: was sich dadurch ändert. 5 bis 18 Wörter.",
+    summary_0: "Die heutige Lage des Adressaten. Nimmt Seite 2 vorweg. 5 bis 14 Wörter.",
+    summary_1: "Was die Benchmarks gemeinsam richtig machen. Nimmt Seite 3 vorweg. 5 bis 14 Wörter.",
+    summary_2: "Der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg. 5 bis 14 Wörter.",
+    market_title: "Die Kategorie oder der Markt, nicht das Unternehmen. 5 bis 14 Wörter.",
+    market_p1: "Was sich im Markt verschoben hat und was das für den Adressaten bedeutet. 22 bis 48 Wörter.",
+    market_lead2: "Was dem Adressaten trotz guter Ausgangslage fehlt. Der Übergang zur Empfehlung. 12 bis 34 Wörter.",
+    insight_title: "Der Befund zum Adressaten in einem Satz. Nicht die Seitenüberschrift wiederholen. 5 bis 16 Wörter.",
+    market_p2: "Der Beleg für die Aussage, konkret an Sortiment, Fläche und POS. Trägt die untere Seitenhälfte. 42 bis 80 Wörter.",
+    benchmark_title: "Nennt die drei Marken und was sie gemeinsam richtig machen. 8 bis 22 Wörter.",
+    sources: "Belege für die drei Fälle, mit Semikolon getrennt. Format „Herausgeber, Art (Zeitraum)“. 5 bis 45 Wörter.",
+    quote_text: "Die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person. Die Zuschreibung darunter ist fest. 14 bis 34 Wörter.",
+    potentials_title: "Der Check für dieses Unternehmen. 5 bis 16 Wörter.",
+    potentials_lead: "Die Ausgangslage des Adressaten und wo das zusätzliche Potenzial liegt. 22 bis 50 Wörter.",
+    potentials_lead2: "Ein Satz, der die drei Hebel benennt. Er steht direkt über den Karten. 6 bis 20 Wörter.",
+    cta: "Eine Frage an den Adressaten, ohne Werbeton. Der Knopftext daneben ist fest. 5 bis 16 Wörter.",
+    about_fit: "Ein Satz über die ROOTS-Leistung allgemein. 12 bis 38 Wörter.",
+    about_fit2: "Ein Satz, der die Leistung an diesen Fall bindet. Erst hier darf sie beim Namen genannt werden. 10 bis 34 Wörter.",
+  },
+  kpi: {
+    value: "Eine Zeile, deutsch gesetzt. Über zwölf Zeichen schrumpft die Zahl im Kasten. 1 bis 4 Wörter.",
+    label: "Worauf sich die Zahl bezieht, ein halber Satz ohne Schlusspunkt. 5 bis 18 Wörter.",
+    source: "Format „Herausgeber, Jahr“. Mehrere Herausgeber mit Schrägstrich, Zeiträume mit Schrägstrich. 1 bis 6 Wörter.",
+  },
+  benchmark: {
+    name: "Bei Handelsmarken „Händler · Marke“. 1 bis 5 Wörter.",
+    title: "Was diese Marke getan hat, ohne Schlusspunkt. 3 bis 9 Wörter.",
+    text: "Die Handlung und warum sie gewirkt hat. Unter zwanzig Wörtern reisst die Karte auseinander. 20 bis 44 Wörter.",
+    tag: "Was davon auf den Adressaten übertragbar ist, ein Satz. 5 bis 16 Wörter.",
+  },
+  potential: {
+    title: "Verb voran, kein Schlusspunkt. 3 bis 9 Wörter.",
+    potential: "Der Hebel in der Sprache des Falls, ohne erfundene Zahl. Die drei Karten sollten ähnlich lang sein, sonst steht eine kurz. 22 bis 48 Wörter.",
+  },
+} as const;
+
+/**
+ * Derselbe Feldvertrag noch einmal als Tabelle, damit die fertige Antwort des
+ * Modells daran gemessen werden kann. Bis hierher stand die Pruefung nur im
+ * Fragebogen: ein selbst geschriebener Absatz wurde geprueft, ein generierter
+ * ging durch. Der Test haelt die Tabelle mit memo-guides.mjs gleich.
+ */
+export type MemoVertragFeld = {
+  key: string;
+  label: string;
+  art: string;
+  min: number;
+  max: number;
+  saetze: [number, number] | null;
+  punkt: boolean;
+};
+
+export const MEMO_VERTRAG: MemoVertragFeld[] = [
+  { key: "title", label: "Titel (H1)", art: "these", min: 4, max: 12, saetze: null, punkt: false },
+  { key: "standfirst", label: "Subtitel (H2)", art: "satz", min: 5, max: 18, saetze: [1, 2], punkt: false },
+  { key: "summary_0", label: "Feature 1", art: "schluessel", min: 5, max: 14, saetze: null, punkt: false },
+  { key: "summary_1", label: "Feature 2", art: "schluessel", min: 5, max: 14, saetze: null, punkt: false },
+  { key: "summary_2", label: "Feature 3", art: "schluessel", min: 5, max: 14, saetze: null, punkt: false },
+  { key: "market_title", label: "Titel (H2)", art: "these", min: 5, max: 14, saetze: null, punkt: false },
+  { key: "market_p1", label: "Absatz 1", art: "absatz", min: 22, max: 48, saetze: null, punkt: false },
+  { key: "market_lead2", label: "Absatz 2", art: "absatz", min: 12, max: 34, saetze: null, punkt: false },
+  { key: "insight_title", label: "Bildaussage", art: "these", min: 5, max: 16, saetze: [1, 1], punkt: true },
+  { key: "market_p2", label: "Absatz 3", art: "absatz", min: 42, max: 80, saetze: null, punkt: false },
+  { key: "kpi1_value", label: "Kennzahl 1", art: "zahl", min: 1, max: 4, saetze: null, punkt: false },
+  { key: "kpi1_label", label: "Beschreibung", art: "satz", min: 5, max: 18, saetze: null, punkt: false },
+  { key: "kpi1_source", label: "Quelle", art: "quelle", min: 1, max: 6, saetze: null, punkt: false },
+  { key: "kpi2_value", label: "Kennzahl 2", art: "zahl", min: 1, max: 4, saetze: null, punkt: false },
+  { key: "kpi2_label", label: "Beschreibung", art: "satz", min: 5, max: 18, saetze: null, punkt: false },
+  { key: "kpi2_source", label: "Quelle", art: "quelle", min: 1, max: 6, saetze: null, punkt: false },
+  { key: "kpi3_value", label: "Kennzahl 3", art: "zahl", min: 1, max: 4, saetze: null, punkt: false },
+  { key: "kpi3_label", label: "Beschreibung", art: "satz", min: 5, max: 18, saetze: null, punkt: false },
+  { key: "kpi3_source", label: "Quelle", art: "quelle", min: 1, max: 6, saetze: null, punkt: false },
+  { key: "kpi4_value", label: "Kennzahl 4", art: "zahl", min: 1, max: 4, saetze: null, punkt: false },
+  { key: "kpi4_label", label: "Beschreibung", art: "satz", min: 5, max: 18, saetze: null, punkt: false },
+  { key: "kpi4_source", label: "Quelle", art: "quelle", min: 1, max: 6, saetze: null, punkt: false },
+  { key: "benchmark_title", label: "Titel (H2)", art: "these", min: 8, max: 22, saetze: null, punkt: false },
+  { key: "bm1_name", label: "Benchmark 1", art: "name", min: 1, max: 5, saetze: null, punkt: false },
+  { key: "bm1_title", label: "Titel", art: "these", min: 3, max: 9, saetze: null, punkt: false },
+  { key: "bm1_text", label: "Beleg", art: "absatz", min: 20, max: 44, saetze: null, punkt: false },
+  { key: "bm1_tag", label: "Lehre", art: "satz", min: 5, max: 16, saetze: [1, 1], punkt: false },
+  { key: "bm2_name", label: "Benchmark 2", art: "name", min: 1, max: 5, saetze: null, punkt: false },
+  { key: "bm2_title", label: "Titel", art: "these", min: 3, max: 9, saetze: null, punkt: false },
+  { key: "bm2_text", label: "Beleg", art: "absatz", min: 20, max: 44, saetze: null, punkt: false },
+  { key: "bm2_tag", label: "Lehre", art: "satz", min: 5, max: 16, saetze: [1, 1], punkt: false },
+  { key: "bm3_name", label: "Benchmark 3", art: "name", min: 1, max: 5, saetze: null, punkt: false },
+  { key: "bm3_title", label: "Titel", art: "these", min: 3, max: 9, saetze: null, punkt: false },
+  { key: "bm3_text", label: "Beleg", art: "absatz", min: 20, max: 44, saetze: null, punkt: false },
+  { key: "bm3_tag", label: "Lehre", art: "satz", min: 5, max: 16, saetze: [1, 1], punkt: false },
+  { key: "sources", label: "Quellen", art: "liste", min: 5, max: 45, saetze: null, punkt: false },
+  { key: "quote_text", label: "Zitat", art: "satz", min: 14, max: 34, saetze: [1, 2], punkt: false },
+  { key: "potentials_title", label: "Titel (H2)", art: "these", min: 5, max: 16, saetze: null, punkt: false },
+  { key: "potentials_lead", label: "Absatz 1", art: "absatz", min: 22, max: 50, saetze: null, punkt: false },
+  { key: "potentials_lead2", label: "Absatz 2", art: "satz", min: 6, max: 20, saetze: [1, 1], punkt: false },
+  { key: "pot1_title", label: "Hebel 1", art: "these", min: 3, max: 9, saetze: null, punkt: false },
+  { key: "pot1_potential", label: "Text", art: "absatz", min: 22, max: 48, saetze: null, punkt: false },
+  { key: "pot2_title", label: "Hebel 2", art: "these", min: 3, max: 9, saetze: null, punkt: false },
+  { key: "pot2_potential", label: "Text", art: "absatz", min: 22, max: 48, saetze: null, punkt: false },
+  { key: "pot3_title", label: "Hebel 3", art: "these", min: 3, max: 9, saetze: null, punkt: false },
+  { key: "pot3_potential", label: "Text", art: "absatz", min: 22, max: 48, saetze: null, punkt: false },
+  { key: "cta", label: "CTA-Frage", art: "these", min: 5, max: 16, saetze: [1, 1], punkt: false },
+  { key: "about_fit", label: "Über ROOTS", art: "absatz", min: 12, max: 38, saetze: null, punkt: false },
+  { key: "about_fit2", label: "Bezug zum Fall", art: "absatz", min: 10, max: 34, saetze: null, punkt: false },
+];
+
+const VERTRAG_NACH_KEY = new Map(MEMO_VERTRAG.map((f) => [f.key, f]));
+
+export function memoWorte(wert: unknown): number {
+  return String(wert || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+export function memoSaetze(wert: unknown): number {
+  return String(wert || "")
+    .replace(/<[^>]+>/g, " ")
+    .split(/[.!?]+(?:\s|$)/)
+    .map((teil) => teil.trim())
+    .filter(Boolean).length;
+}
+
+/** Der Verstoss eines Feldes gegen den Vertrag, leer heisst in Ordnung. */
+export function memoVertragsVerstoss(key: string, wert: unknown): string {
+  const feld = VERTRAG_NACH_KEY.get(key);
+  if (!feld) return "";
+  const wortlaut = String(wert || "").trim();
+  if (!wortlaut) return "";
+  const worte = memoWorte(wortlaut);
+  if (worte < feld.min) return `${key}: ${worte} statt mindestens ${feld.min} Woerter.`;
+  if (worte > feld.max) return `${key}: ${worte} statt hoechstens ${feld.max} Woerter.`;
+  if (feld.saetze) {
+    const saetze = memoSaetze(wortlaut);
+    if (saetze < feld.saetze[0]) return `${key}: ${saetze} statt mindestens ${feld.saetze[0]} Saetze.`;
+    if (saetze > feld.saetze[1]) return `${key}: ${saetze} Saetze, hier stehen hoechstens ${feld.saetze[1]}.`;
+  }
+  if (feld.art === "zahl") {
+    if (!/\d/.test(wortlaut)) return `${key}: braucht eine Ziffer.`;
+    if (/\d\.\d/.test(wortlaut)) return `${key}: Dezimaltrennzeichen ist das Komma, 8,9 statt 8.9.`;
+    if (/\d[%\u20AC]/.test(wortlaut)) return `${key}: vor % und Euro steht ein Leerzeichen, 40 % statt 40%.`;
+  }
+  if (feld.art === "quelle") {
+    if (!/(19|20)\d{2}/.test(wortlaut)) return `${key}: braucht ein Jahr.`;
+    if (!wortlaut.includes(",")) return `${key}: Format "Herausgeber, Jahr".`;
+  }
+  if (feld.art === "liste") {
+    const teile = wortlaut.split(";").map((teil) => teil.trim()).filter(Boolean);
+    if (teile.some((teil) => !teil.includes(","))) return `${key}: jeder Beleg im Format "Herausgeber, Art (Zeitraum)".`;
+  }
+  if ((feld.art === "these" || feld.art === "schluessel") && !feld.punkt && /\.$/.test(wortlaut)) {
+    return `${key}: Ueberschriften im Memo enden ohne Punkt.`;
+  }
+  return "";
+}
+
+/** Die Antwort des Modells auf die Schluessel des Vertrags abbilden. */
+export function memoVertragsWerte(payload: MemoPayload): Record<string, string> {
+  const werte: Record<string, string> = {};
+  for (const feld of MEMO_VERTRAG) {
+    if (/^(kpi|bm|pot)\d/.test(feld.key)) continue;
+    if (feld.key === "sources") continue;
+    werte[feld.key] = String((payload as unknown as Record<string, unknown>)[feld.key] || "");
+  }
+  werte.sources = (payload.sources || []).join("; ");
+  (payload.kpis || []).slice(0, 4).forEach((stat, i) => {
+    werte[`kpi${i + 1}_value`] = String(stat?.value || "");
+    werte[`kpi${i + 1}_label`] = String(stat?.label || "");
+    werte[`kpi${i + 1}_source`] = String(stat?.source || "");
+  });
+  (payload.benchmarks || []).slice(0, 3).forEach((bench, i) => {
+    werte[`bm${i + 1}_name`] = String(bench?.name || "");
+    werte[`bm${i + 1}_title`] = String(bench?.title || "");
+    werte[`bm${i + 1}_text`] = String(bench?.text || "");
+    werte[`bm${i + 1}_tag`] = String(bench?.tag || "");
+  });
+  (payload.potentials || []).slice(0, 3).forEach((pot, i) => {
+    werte[`pot${i + 1}_title`] = String(pot?.title || "");
+    werte[`pot${i + 1}_potential`] = String(pot?.potential || "");
+  });
+  return werte;
+}
+
+/**
+ * Alle Verstoesse der fertigen Antwort. Selbst geschriebene Felder bleiben
+ * aussen vor: die hat der Nutzer im Fragebogen schon gegen denselben Vertrag
+ * geprueft, und sie sind wortgleich zu uebernehmen.
+ */
+export function memoVertragsFehler(payload: MemoPayload, eigene: Record<string, string> = {}): string[] {
+  const werte = memoVertragsWerte(payload);
+  const fehler: string[] = [];
+  for (const [key, wert] of Object.entries(werte)) {
+    if (eigene[key]) continue;
+    const verstoss = memoVertragsVerstoss(key, wert);
+    if (verstoss) fehler.push(verstoss);
+  }
+  return fehler;
+}
+
+/**
+ * Das Referenzmemo je Feld, fuer den Knopf im Fragebogen. Der Nutzer schreibt
+ * ein Feld selbst und laesst genau dieses eine Feld gegen denselben Vertrag
+ * schaerfen. Bis hierher hatte der manuelle Weg Wortzaehler und roten
+ * Indikator, aber nichts, was einen zu kurzen Absatz laenger macht.
+ */
+export const MEMO_BEISPIEL: Record<string, string> = {
+  "title": "Vom Preisargument zur eigenständigen Marke",
+  "standfirst": "Wie Deichmanns Eigenmarken ihr volles Wachstumspotenzial entfalten.",
+  "summary_0": "Wachsende Eigenmarkenanteile treffen in der Footwear-Kategorie auf höhere Kundenansprüche",
+  "summary_1": "Erfolgreiche Eigenmarken werden konsequent wie eigenständige Marken geführt",
+  "summary_2": "Eigenmarken mit klarem Profil und eigenen Markenwelten weiterentwickeln und erlebbar machen",
+  "market_title": "Eigenmarken stehen vor der nächsten Entwicklungsstufe",
+  "market_p1": "Mit steigenden Kundenerwartungen wachsen die Anforderungen an Qualität, Innovation und Markenführung. Was früher der günstige Kompromiss war, ist heute eine bewusste Kaufentscheidung. Für Deichmann trifft diese Entwicklung auf eine außergewöhnlich starke Ausgangslage im Sortiment.",
+  "market_lead2": "Was bislang fehlt, ist eine Eigenmarkenarchitektur, in der einzelne Marken Kategorien sichtbar besetzen und über den Preis hinaus ein eigenständiges Profil entwickeln.",
+  "insight_title": "Eigenmarken funktionieren bei Deichmann aktuell überwiegend über funktionale Preiskommunikation.",
+  "market_p2": "Ein Blick in den Store zeigt die heutige Logik: Das Sortiment ist mit Marken wie Graceland oder 5th Avenue klar nach Zielgruppen strukturiert. Am POS stehen diese jedoch im direkten Wettbewerbsumfeld etablierter Herstellermarken und werden vor allem über Sortiment, Preis und Produktleistung differenziert.",
+  "kpi1_value": "+ 1,6 PP",
+  "kpi1_label": "Wachstum des Eigenmarkenanteils bei Apparel & Footwear in Deutschland",
+  "kpi1_source": "BCG / Inverto, 2026",
+  "kpi2_value": "40 %",
+  "kpi2_label": "der Deutschen halten die Qualität von Eigenmarken mittlerweile für besser als die etablierter Marken",
+  "kpi2_source": "NIQ, 2025",
+  "kpi3_value": "27 %",
+  "kpi3_label": "kaufen Eigenmarken aufgrund ihres Vertrauens in die Händlermarke",
+  "kpi3_source": "BCG / Inverto, 2026",
+  "kpi4_value": "> 70 %",
+  "kpi4_label": "der bei Deichmann verkauften Schuhe sind Eigenmarken, bei 8,9 Mrd. € Umsatz 2025",
+  "kpi4_source": "Deichmann, 2023/2025",
+  "benchmark_title": "Parkside, Balea und Van Rysel schaffen einen Markenauftritt mit eigenem Design, Botschaftern und eigenen Kanälen",
+  "bm1_name": "Lidl · Parkside",
+  "bm1_title": "Eigener Auftritt und großer Botschafter",
+  "bm1_text": "Lidl ordnet Non-Food in sechs Themenwelten mit je einer Ankermarke. Parkside tritt im eigenen Farbcode ohne Lidl-Logo auf, führt einen eigenen Claim und hat seit 2023 einen Markenbotschafter.",
+  "bm1_tag": "Einheitliches Markenbild plus Botschafter geben der Eigenmarke einen Charakter.",
+  "bm2_name": "dm · Balea",
+  "bm2_title": "Markenaufbau über eigene Kanäle und Creator",
+  "bm2_text": "Balea baut die Marke selbst auf: eigener Instagram-Kanal mit eigener Community und Creator-Kooperationen. Dazu das Tempo: die Marke lebt sehr stark von Innovationen.",
+  "bm2_tag": "Eigene Kanäle und Creator erzeugen Bindung, die kein Regalplatz ersetzt.",
+  "bm3_name": "Decathlon · Van Rysel",
+  "bm3_title": "Eigenes Profiteam und eigene Brand-Stores",
+  "bm3_text": "Aus über 70 Eigenmarken wurden neun Kategoriemarken und vier Expertenmarken. Van Rysel bekommt eigene Brand-Stores und rüstet ein WorldTour-Team aus, also Sponsoring im Format großer Herstellermarken.",
+  "bm3_tag": "Teamsponsoring macht aus dem Sortimentslabel eine sichtbare Marke.",
+  "sources": "Lidl Österreich und Lidl Deutschland, Presseinformationen (2022 bis 2026); Lebensmittelzeitung, Interview Kerstin Erbe; Decathlon, Presseinformationen (2024/2025)",
+  "quote_text": "Der Ausbau von Eigenmarken zu eigenständigen Marken schafft ein klares Markenprofil, das wirksam differenziert, neue Zielgruppen erschließt und bestehende enger an die Marke bindet.",
+  "potentials_title": "Drei strategische Hebel zur Optimierung von Deichmanns starken Eigenmarken",
+  "potentials_lead": "Die Analyse zeigt: Deichmann verfügt mit seinem hohen Eigenmarkenanteil und etablierten Submarken über eine starke Ausgangsbasis. Das zusätzliche Potenzial liegt darin, ausgewählte Eigenmarken über ihre heutige funktionale Rolle hinaus zu eigenständigen Marken zu entwickeln.",
+  "potentials_lead2": "Drei strategische Hebel setzen hier an: Positionierung, Reichweite und Markenerlebnis.",
+  "pot1_title": "Positionierung und Markenarchitektur schärfen",
+  "pot1_potential": "Zielgruppen und Preissegmente entlang relevanter Kundenbedürfnisse klar voneinander abgrenzen, um Überschneidungen zwischen den Eigenmarken zu reduzieren. Für ausgewählte Kernmarken eigenständige Leistungsversprechen definieren, die über den Preis hinaus Orientierung schaffen.",
+  "pot2_title": "Kanäle und Touchpoints gezielt aufbauen",
+  "pot2_potential": "Für ausgewählte Kernmarken eigene Markenwelten über skalierbare digitale Kanäle, zielgruppenrelevanten Content und strategische Kooperationen aufbauen. So lassen sich zusätzliche Kontaktpunkte effizient schaffen und Markenbindung über den POS hinaus stärken.",
+  "pot3_title": "Marke am POS und im Produkt erlebbar machen",
+  "pot3_potential": "Eigenmarken auf der Ladenfläche visuell klar differenzieren und ihre Markenwerte konsequent bis ins Produkt übersetzen. Vom Schuhkarton mit Markenstory bis zum Unboxing-Erlebnis machen konsistente Designcodes die Marke an jedem Touchpoint erlebbar.",
+  "cta": "Wollen Sie die Wachstumspotenziale Ihrer Eigenmarken heben?",
+  "about_fit": "ROOTS entwickelt KI-optimierte Markenstrategien und Marketing Operations für mehr Wirksamkeit, Effizienz und Speed im Marketing, mit Managementerfahrung bis CMO-Ebene im Handel.",
+  "about_fit2": "Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu unseren Kernkompetenzen: Wir haben zahlreiche führende Handels-Eigenmarken im Food und Non-Food mitgeprägt.",
+};
+
+export const MEMO_FELD_SCHEMA = {
+  type: "OBJECT",
+  required: ["text"],
+  properties: {
+    text: { type: "STRING", description: "Das geschaerfte Feld, nur der Text, ohne Anfuehrungszeichen und ohne Erklaerung." },
+  },
+};
+
+/** Ein einzelnes Feld schaerfen, ohne den Rest des Memos anzufassen. */
+export function buildMemoFeldPrompt(
+  key: string,
+  wert: string,
+  kontext: { signal?: string; company?: string; nachbarn?: Record<string, string> } = {},
+): string {
+  const feld = MEMO_VERTRAG.find((f) => f.key === key);
+  if (!feld) return "";
+  const verstoss = memoVertragsVerstoss(key, wert);
+  const beschreibung = MEMO_SCHEMA_TEXTE.felder[key as keyof typeof MEMO_SCHEMA_TEXTE.felder]
+    || MEMO_SCHEMA_TEXTE.kpi[key.replace(/^kpi\d_/, "") as keyof typeof MEMO_SCHEMA_TEXTE.kpi]
+    || MEMO_SCHEMA_TEXTE.benchmark[key.replace(/^bm\d_/, "") as keyof typeof MEMO_SCHEMA_TEXTE.benchmark]
+    || MEMO_SCHEMA_TEXTE.potential[key.replace(/^pot\d_/, "") as keyof typeof MEMO_SCHEMA_TEXTE.potential]
+    || "";
+  const nachbarn = Object.entries(kontext.nachbarn || {})
+    .filter(([, v]) => String(v || "").trim())
+    .slice(0, 8)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\n");
+  return `Du schaerfst ein einzelnes Feld im ROOTS Executive Memo. Der Nutzer hat es selbst geschrieben und moechte es auf die Machart des Referenzmemos bringen. Alles andere im Dokument bleibt unberuehrt.
+
+<feld>
+${key} (${feld.label}) auf Seite des Memos.
+${beschreibung}
+</feld>
+<referenz>
+So steht dieses Feld im Referenzmemo. Machart uebernehmen, Inhalt nicht: ${MEMO_BEISPIEL[key] || ""}
+</referenz>
+<jetzt>
+${wert || "(leer)"}
+</jetzt>
+${verstoss ? `<befund>\n${verstoss}\n</befund>\n` : ""}${kontext.company ? `<adressat>\n${kontext.company}\n</adressat>\n` : ""}${kontext.signal ? `<anlass>\n${kontext.signal}\n</anlass>\n` : ""}${nachbarn ? `<umfeld>\nDiese Felder stehen daneben und duerfen sich nicht wiederholen:\n${nachbarn}\n</umfeld>\n` : ""}<auftrag>
+Schreibe das Feld neu. Die Aussage des Nutzers bleibt, auch seine Begriffe, soweit sie tragen. Zu kurz wird mit Substanz aus dem Fall laenger, nicht mit Fuellwoertern. Zu lang wird gekuerzt, nicht abgeschnitten. Keine Zahl, die nicht schon dasteht. Keine Anfuehrungszeichen um das Ergebnis. Ist das Feld leer, schreibe es aus dem Umfeld heraus.
+Zielbereich: ${feld.min} bis ${feld.max} Woerter.${feld.saetze ? ` ${feld.saetze[0] === feld.saetze[1] ? `Genau ${feld.saetze[0]}` : `${feld.saetze[0]} bis ${feld.saetze[1]}`} Saetze.` : ""}${feld.art === "these" && !feld.punkt ? " Ueberschrift, kein Punkt am Ende." : ""}
+</auftrag>
+
+Antworte ausschliesslich mit einem JSON-Objekt {"text": "..."}.`;
+}
+
+/**
+ * Die Quellenzeile ist im Fragebogen ein Feld mit Semikolon und im Schema eine
+ * Liste. Die Form je Eintrag und die Wortzahl fuer alle zusammen stehen im
+ * Vertrag, die Saetze drumherum passen sich der Liste an.
+ */
+export function memoQuellenBeschreibung(): string {
+  const feld = MEMO_VERTRAG.find((f) => f.key === "sources");
+  return `Ein Eintrag je Beleg, Format "Herausgeber, Art (Zeitraum)". Nur belegte Quellen. Alle Eintraege zusammen ${feld?.min ?? 5} bis ${feld?.max ?? 45} Woerter.`;
+}
+
+/** Zweiter Anlauf, der nur die verletzten Felder nennt. */
+export function buildMemoVertragsRepairPrompt(prompt: string, fehler: string[]): string {
+  const liste = fehler.slice(0, 24).map((zeile) => `- ${zeile}`).join("\n");
+  return `${prompt}
+
+<vertragsfehler>
+Die vorige Antwort war inhaltlich brauchbar, hat aber den Feldvertrag verletzt. Diese Felder passen nicht in die Vorlage:
+${liste}
+
+Schreibe die Antwort noch einmal vollstaendig, mit denselben Inhalten und derselben Argumentation. Aendere nur die genannten Felder, und zwar so, dass sie im Zielbereich liegen. Ein zu kurzes Feld wird mit Substanz aus dem Fall laenger, nicht mit Fuellwoertern; ein zu langes wird gekuerzt, nicht abgeschnitten. Die Machart bleibt die des Referenzmemos.
+</vertragsfehler>`;
+}
+
+
 /** Liest die selbst geschriebenen Felder aus den Antworten des Fragebogens. */
 export function parseMemoFields(source: unknown): Record<string, string> {
   const roh = record(source);
@@ -414,7 +879,6 @@ export type MemoPayload = {
   kpis: MemoStat[];
   insight_title: string;
   benchmark_title: string;
-  benchmark_lead: string;
   benchmarks: MemoBenchmark[];
   quote_text: string;
   potentials_title: string;
@@ -2054,41 +2518,19 @@ title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss.
 ${auftrag}
 </auftrag>
 <aufbau>
-Die Vorlage ist fest. Jedes Feld hat seinen Platz auf einer der vier Seiten und wird ausgefüllt. Ein leeres Feld hinterlässt eine sichtbare Lücke, ein doppelt verwendeter Satz eine sichtbare Wiederholung. Kein Feld wiederholt ein anderes wörtlich.
+Die Vorlage ist fest. Jedes Feld hat seinen Platz auf einer der vier Seiten und wird ausgefüllt. Ein leeres Feld hinterlässt eine sichtbare Lücke, ein doppelt verwendeter Satz eine sichtbare Wiederholung. Kein Feld wiederholt ein anderes wörtlich.${nennen ? `\ntitle nennt ${firma} im Satz, die übrigen Felder nicht als Briefkopf.` : "\ntitle nennt keinen Firmennamen."}
 
-Seite 1, Cover:
-title: die offene Aufgabe als These${nennen ? `, mit ${firma} im Satz` : ", kein Firmenname"}. Der Titel steht in grosser Schrift; mehr als zwei Zeilen passen nicht.
-standfirst: ein Satz, der den Titel auflöst: was sich dadurch ändert.
-summary_0, summary_1, summary_2: die drei Schlüssel unter dem Standfirst, in den festen Spalten „Reality Check“, „Best Practice Eigenmarken“, „ROOTS Empfehlung“. Sie nehmen die drei Innenseiten vorweg: Lage des Adressaten, was die Benchmarks gemeinsam richtig machen, der Hebel. Kein Punkt am Ende, keine Kopie einer Seitenüberschrift.
-
-Seite 2, 01 Reality Check:
-market_title: Überschrift der Seite. Die Kategorie oder der Markt, nicht das Unternehmen.
-market_p1: erster Absatz über der Kennzahlenleiste. Was sich im Markt verschoben hat und was das für den Adressaten bedeutet.
-market_lead2: zweiter Absatz über der Kennzahlenleiste. Was dem Adressaten trotz guter Ausgangslage fehlt. Der Übergang zur Empfehlung.
-kpis: genau vier Kennzahlen in der Leiste, drei zum Markt und eine zum Adressaten selbst. Jede trägt value, label und source. value steht in einer Zeile, deutsch gesetzt: 40 %, + 1,6 PP, 8,9 Mrd. €. label ist der Bezug in einem halben Satz ohne Schlusspunkt. source ist „Herausgeber, Jahr“, mehrere Herausgeber mit Schrägstrich: „BCG / Inverto, 2026“. Eine Kennzahl ohne belegte Quelle wird verworfen, also liefere nur belegte. Liegen im Artikel weniger als vier belegte Zahlen, nimm belegte Marktzahlen aus dem Datenblock und lass den Rest weg statt zu erfinden.
-insight_title: die Aussage neben dem Bild in der unteren Seitenhälfte. Der Befund zum Adressaten, nicht die Wiederholung von market_title.
-market_p2: der Absatz unter der Aussage. Der Beleg dafür, konkret an Sortiment, Fläche und POS. Er trägt die untere Seitenhälfte.
-
-Seite 3, 02 Best Practice:
-benchmark_title: Überschrift der Seite. Nennt die drei Marken und ihren gemeinsamen Hebel.
-benchmarks: genau drei. name ist die Marke, bei Handelsmarken „Händler · Marke“. title ist die Überschrift der Karte: was diese Marke getan hat, ohne Schlusspunkt. text ist der Beleg und warum er gewirkt hat. tag ist die übertragbare Lehre in einem Satz. name, text und tag kommen aus <benchmarks>, wenn der Block steht; title formulierst du dazu. Sonst qualitative Analogie aus artikel zum selben Hebel. Ziffern nur mit Beleg. Nur positive Ausgänge, keine gescheiterten Versuche.
-sources: die Quellenzeile am Seitenfuss, Belege mit Semikolon getrennt, Format „Herausgeber, Art (Zeitraum)“.
-quote_text: das Zitat im blauen Band. Es zieht die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person, kein Slogan. Die Zuschreibung darunter ist fest.
-
-Seite 4, 03 ROOTS Empfehlung:
-potentials_title: Überschrift der Seite. Der Check für DIESES Unternehmen.
-potentials_lead: erster Absatz. Was die Analyse zeigt: Ausgangslage und wo das zusätzliche Potenzial liegt.
-potentials_lead2: ein Satz, der die drei Hebel benennt. Er steht direkt über den Karten.
-potentials: genau drei Karten. title mit Verb voran, ohne Schlusspunkt. potential ist, was ROOTS daraus macht, in der Sprache des Falls und ohne erfundene Zahl. Die drei potential-Texte sollten ähnlich lang sein, sonst steht eine Karte kurz. image_hint ist ein Konzeptbild: wie es aussähe, wenn der Hebel gezogen ist. Fläche, Kanal oder Produkt, kein Logo und kein Porträt.
-cta: die Frage im blauen Band, an den Adressaten, ohne Werbeton.
-about_fit: ein Satz über die ROOTS-Leistung allgemein.
-about_fit2: ein Satz, der die Leistung an diesen Fall bindet. Erst hier darf sie beim Namen genannt werden.
+${MEMO_AUFBAU}
 </aufbau>
 <laengen>
 Die Vorlage ist auf feste Seitenhöhen gesetzt. Zu kurze Felder hinterlassen eine leere Fläche über dem Fussband, zu lange schieben die Seite über den Rand. Diese Zielbereiche sind am Referenzmemo gemessen und gelten für jedes Feld:
 ${MEMO_LAENGEN}
 Die Absätze (market_p1, market_p2, potentials_lead, bmN_text, potN_potential) tragen die Seitenhöhe. Sie unter den Mindestwert zu schreiben ist der häufigste Fehler.
 </laengen>
+<referenz>
+Das fertige Referenzmemo, Feld für Feld. Daran sind Tonlage, Satzbau, Konkretheit und Art des Belegs zu messen. Es ist ein anderer Fall: übernimm die Machart, nicht die Inhalte, und schreibe keinen dieser Sätze ab.
+${MEMO_BEISPIELE}
+</referenz>
 ${eigeneInhalte}${SPRACHREGELN}
 ${BELEGREGELN}
 ${DATENHINWEIS}
@@ -2195,9 +2637,9 @@ const MEMO_STAT_SCHEMA = {
   type: "OBJECT",
   required: ["value", "label", "source"],
   properties: {
-    value: { type: "STRING", description: "Zahl im Kasten, deutsch formatiert, eine Zeile, z. B. 42 % oder 8,9 Mrd. €." },
-    label: { type: "STRING", description: "Bezug der Zahl in einem halben Satz, z. B. „der Verbraucher greifen überwiegend zu Eigenmarken“." },
-    source: { type: "STRING", description: "Quellenzeile unter dem Kasten: „Herausgeber, Jahr“, z. B. „Simon-Kucher, 2026“. Nur belegte Quellen, nicht erfinden." },
+    value: { type: "STRING", description: MEMO_SCHEMA_TEXTE.kpi.value },
+    label: { type: "STRING", description: MEMO_SCHEMA_TEXTE.kpi.label },
+    source: { type: "STRING", description: MEMO_SCHEMA_TEXTE.kpi.source },
   },
 };
 
@@ -2205,10 +2647,10 @@ const BENCH_SCHEMA = {
   type: "OBJECT",
   required: ["name", "title", "text", "tag"],
   properties: {
-    name: { type: "STRING", description: "Firma oder Marke des Benchmarks, z. B. „Lidl · Parkside“." },
-    title: { type: "STRING", description: "Überschrift der Benchmark-Karte: was dieser Benchmark getan hat, höchstens acht Wörter, ohne Punkt." },
-    text: { type: "STRING", description: "Beleg, was der Benchmark getan hat und warum es gewirkt hat. Kein Flop. Ziffern nur mit Artikelbeleg." },
-    tag: { type: "STRING", description: "Übertragbare Lehre in einem Satz." },
+    name: { type: "STRING", description: MEMO_SCHEMA_TEXTE.benchmark.name },
+    title: { type: "STRING", description: MEMO_SCHEMA_TEXTE.benchmark.title },
+    text: { type: "STRING", description: MEMO_SCHEMA_TEXTE.benchmark.text },
+    tag: { type: "STRING", description: MEMO_SCHEMA_TEXTE.benchmark.tag },
     image_hint: { type: "STRING", description: "Bildmotiv in Worten. Die Datei kommt vom Nutzer." },
   },
 };
@@ -2217,8 +2659,8 @@ const POT_SCHEMA = {
   type: "OBJECT",
   required: ["title", "potential"],
   properties: {
-    title: { type: "STRING", description: "Hebel mit Verb voran, höchstens neun Wörter, ohne Schlusspunkt." },
-    potential: { type: "STRING", description: "Was ROOTS daraus macht, 22 bis 48 Wörter, ohne erfundene Zahl. Die drei Karten sollten ähnlich lang sein." },
+    title: { type: "STRING", description: MEMO_SCHEMA_TEXTE.potential.title },
+    potential: { type: "STRING", description: MEMO_SCHEMA_TEXTE.potential.potential },
     image_hint: { type: "STRING", description: "Konzeptbild: wie es aussähe, wenn der Hebel gezogen ist. Fläche, Kanal oder Produkt, kein Logo und kein Porträt." },
   },
 };
@@ -2233,29 +2675,28 @@ export const ASSET_SCHEMA_MEMO = {
     "cta", "about_fit", "about_fit2",
   ],
   properties: {
-    title: { type: "STRING", description: "Action Title, These mit Verb, höchstens 15 Wörter. Herausforderung für Marke oder Markt, nicht die Nachrichtenmeldung." },
-    standfirst: { type: "STRING", description: "Ein bis zwei Sätze, warum diese Herausforderung jetzt anliegt. Keine Personalie." },
-    summary_0: { type: "STRING", description: "Erster Schlüsselsatz auf dem Cover unter „Status quo“: die heutige Lage des Adressaten, höchstens acht Wörter, kein Punkt." },
-    summary_1: { type: "STRING", description: "Zweiter Schlüsselsatz auf dem Cover unter „Markt-Insight“: der Marktbefund, wenn möglich mit belegter Zahl, höchstens acht Wörter, kein Punkt." },
-    summary_2: { type: "STRING", description: "Dritter Schlüsselsatz auf dem Cover unter „Das Potenzial“: der Hebel, höchstens acht Wörter, kein Punkt." },
-    market_title: { type: "STRING", description: "Überschrift von 01 Reality Check. Kategorie oder Markt, nicht das Unternehmen." },
-    market_p1: { type: "STRING", description: "Erster Absatz über der Kennzahlenleiste: was sich im Markt verschoben hat." },
-    market_lead2: { type: "STRING", description: "Zweiter Absatz über der Kennzahlenleiste: was dem Adressaten trotz guter Ausgangslage fehlt." },
-    market_p2: { type: "STRING", description: "Absatz unter der Aussage neben dem Bild: der Beleg an Sortiment, Fläche und POS." },
+    title: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.title },
+    standfirst: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.standfirst },
+    summary_0: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.summary_0 },
+    summary_1: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.summary_1 },
+    summary_2: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.summary_2 },
+    market_title: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.market_title },
+    market_p1: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.market_p1 },
+    market_lead2: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.market_lead2 },
+    market_p2: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.market_p2 },
     kpis: { type: "ARRAY", items: MEMO_STAT_SCHEMA, description: "Genau vier belegte Kennzahlen, jede mit value, label und source. Kennzahlen ohne Quelle werden verworfen." },
-    insight_title: { type: "STRING", description: "Die Aussage neben dem Bild auf Seite 2: der Befund zum Adressaten in einem Satz. Nicht market_title wiederholen." },
-    benchmark_title: { type: "STRING", description: "Überschrift von 02 Benchmarks: was die drei Marken gemeinsam richtig machen." },
-    benchmark_lead: { type: "STRING", description: "Ein Satz, worin der Hebel der Benchmarks liegt." },
+    insight_title: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.insight_title },
+    benchmark_title: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.benchmark_title },
     benchmarks: { type: "ARRAY", items: BENCH_SCHEMA, description: "Genau drei Benchmarks mit positivem Ausgang, jeder mit eigener Kartenüberschrift." },
-    quote_text: { type: "STRING", description: "Das Zitat im blauen Band unter den Benchmarks: die Lehre der drei Fälle als ROOTS-Haltung, ein bis zwei Sätze. Kein Artikelzitat, keine fremde Person." },
-    potentials_title: { type: "STRING", description: "Überschrift von 03 ROOTS Empfehlung." },
-    potentials_lead: { type: "STRING", description: "Was die Analyse zeigt: Ausgangslage und wo das zusätzliche Potenzial liegt." },
-    potentials_lead2: { type: "STRING", description: "Ein Satz, der die drei Hebel benennt. Steht direkt über den Karten." },
+    quote_text: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.quote_text },
+    potentials_title: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.potentials_title },
+    potentials_lead: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.potentials_lead },
+    potentials_lead2: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.potentials_lead2 },
     potentials: { type: "ARRAY", items: POT_SCHEMA, description: "Genau drei Potenziale für DIESES Unternehmen." },
-    cta: { type: "STRING", description: "Gesprächsfrage im blauen Band. Der Knopftext ist fest." },
-    about_fit: { type: "STRING", description: "Ein Satz über die ROOTS-Leistung allgemein." },
-    about_fit2: { type: "STRING", description: "Ein Satz, der die Leistung an diesen Fall bindet. Erst hier darf sie beim Namen genannt werden." },
-    sources: { type: "ARRAY", items: { type: "STRING" }, description: "„Titel · Herausgeber · Jahr“, nur belegte Quellen." },
+    cta: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.cta },
+    about_fit: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.about_fit },
+    about_fit2: { type: "STRING", description: MEMO_SCHEMA_TEXTE.felder.about_fit2 },
+    sources: { type: "ARRAY", items: { type: "STRING" }, description: memoQuellenBeschreibung() },
   },
 };
 
@@ -3257,7 +3698,7 @@ function rejectMemoCmoHundredDays(memo: MemoPayload): void {
   const text = [
     memo.title, memo.standfirst, memo.summary_0, memo.summary_1, memo.summary_2,
     memo.market_title, memo.market_p1, memo.market_lead2, memo.market_p2, memo.insight_title,
-    memo.benchmark_title, memo.benchmark_lead, memo.quote_text,
+    memo.benchmark_title, memo.quote_text,
     memo.potentials_title, memo.potentials_lead, memo.potentials_lead2,
     memo.cta, memo.about_fit, memo.about_fit2,
     ...memo.benchmarks.flatMap((eintrag) => [eintrag.name, eintrag.title, eintrag.text, eintrag.tag]),
@@ -3400,7 +3841,6 @@ function normalizeMemo(
     kpis,
     insight_title: insightTitle,
     benchmark_title: text(raw.benchmark_title, 160),
-    benchmark_lead: text(raw.benchmark_lead, 320),
     benchmarks,
     quote_text: quoteText,
     potentials_title: text(raw.potentials_title, 160),
@@ -3419,7 +3859,7 @@ function normalizeMemo(
   rejectUnattested([
     memo.title, memo.standfirst, memo.summary_0, memo.summary_1, memo.summary_2,
     memo.market_title, memo.market_p1, memo.market_lead2, memo.market_p2, memo.insight_title,
-    memo.benchmark_title, memo.benchmark_lead, memo.quote_text,
+    memo.benchmark_title, memo.quote_text,
     memo.potentials_title, memo.potentials_lead, memo.potentials_lead2,
     memo.cta, memo.about_fit, memo.about_fit2,
     ...memo.kpis.flatMap((kpi) => [kpi.value, kpi.label]),
@@ -3738,7 +4178,7 @@ export function memoSectorText(payload: MemoPayload, addressee = ""): string {
   const teile = [
     addressee,
     payload.title, payload.market_title, payload.market_p1, payload.market_p2,
-    payload.benchmark_title, payload.benchmark_lead, payload.potentials_title,
+    payload.benchmark_title, payload.potentials_title,
     ...(payload.benchmarks || []).flatMap((eintrag) => [eintrag?.name, eintrag?.tag, eintrag?.text]),
     ...(payload.potentials || []).flatMap((eintrag) => [eintrag?.title, eintrag?.potential, eintrag?.image_hint]),
   ];

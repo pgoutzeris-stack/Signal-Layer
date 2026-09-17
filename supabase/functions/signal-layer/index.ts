@@ -139,6 +139,11 @@ import {
   buildAssetSubjectPrompt,
   normalizeAssetSubject,
   buildAssetRepairPrompt,
+  buildMemoFeldPrompt,
+  buildMemoVertragsRepairPrompt,
+  MEMO_FELD_SCHEMA,
+  memoVertragsFehler,
+  parseMemoFields,
   buildMemoBenchmarkResearchPrompt,
   buildMemoBenchmarkReviewPrompt,
   buildMemoPhotoResearchPrompt,
@@ -700,6 +705,8 @@ const EDITOR_ACTIONS = new Set([
   // eines bereits erzeugten Assets bleibt fuer Leser offen.
   "generate_asset",
   "cancel_asset",
+  // Ein einzelnes Memofeld schaerfen ist derselbe bezahlte Aufruf, nur klein.
+  "sharpen_memo_field",
   // Ein selbst geschriebenes Signal legt eine Artikel- und eine Signalzeile an.
   // Lesen bleibt offen, Schreiben braucht dieselbe Freigabe wie ein Lauf.
   "create_manual_signal",
@@ -5826,17 +5833,32 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       }
     }
 
-    const darfReparieren = !payload && assetMangelIsRepairable(mangel);
+    // Der Feldvertrag gilt fuer die generierte Antwort genauso wie fuer die
+    // selbst getippten Felder. Ohne diese Stelle wurde nur geprueft, was der
+    // Nutzer geschrieben hat, und ein zu kurzer Absatz aus dem Modell ging
+    // unbemerkt als weisse Flaeche ins fertige Memo.
+    const eigeneMemoFelder = assetKind === "memo" ? parseMemoFields(assetAnswers) : {};
+    let vertragsFehler = payload && assetKind === "memo"
+      ? memoVertragsFehler(payload as MemoPayload, eigeneMemoFelder)
+      : [];
+    const ersterEntwurf = payload;
+    if (vertragsFehler.length) {
+      loggen("vertrag_verletzt", { n: vertragsFehler.length, felder: vertragsFehler.slice(0, 10) });
+    }
+
+    const darfReparieren = payload ? vertragsFehler.length > 0 : assetMangelIsRepairable(mangel);
     const repairMs = darfReparieren ? assetRepairTimeoutMs(Date.now() - isolateStartedAt) : null;
     if (!payload && !darfReparieren) {
       loggen("fail_early", { mangel: mangel.slice(0, 400) });
     }
-    if (!payload && repairMs) {
-      loggen("repair", { mangel: mangel.slice(0, 400) });
-      await buchen("error", {
-        ...kostenFelder, ...tokenFelder, error_code: "invalid_response",
-        error_message: `${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`.slice(0, 3000),
-      }, 1);
+    if (darfReparieren && repairMs) {
+      loggen("repair", { mangel: (mangel || vertragsFehler.join(" ")).slice(0, 400) });
+      if (!payload) {
+        await buchen("error", {
+          ...kostenFelder, ...tokenFelder, error_code: "invalid_response",
+          error_message: `${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`.slice(0, 3000),
+        }, 1);
+      }
       await abschnitt("modell");
       const assetKey = await modelApiKey(assetModel);
       if (!assetKey) {
@@ -5858,30 +5880,50 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         onPulse,
         attempts: 1,
         timeoutMs: repairMs,
-        prompt: buildAssetRepairPrompt(prompt, mangel),
+        prompt: vertragsFehler.length
+          ? buildMemoVertragsRepairPrompt(prompt, vertragsFehler)
+          : buildAssetRepairPrompt(prompt, mangel),
       });
       if (!result.ok) {
-        await scheitern(klartextVon(result.error || "", result.status), `http_${result.status || "network"}`, zeroCostFields(assetModel), 2);
-        return;
+        // Der erste Entwurf stand schon. Ein gescheiterter zweiter Anlauf
+        // kostet Zeit, aber nicht den fertigen Text.
+        if (!ersterEntwurf) {
+          await scheitern(klartextVon(result.error || "", result.status), `http_${result.status || "network"}`, zeroCostFields(assetModel), 2);
+          return;
+        }
+        loggen("vertrag_bleibt", { grund: String(result.error || "").slice(0, 200) });
       }
-      loggen("model_ok", {
-        tokens: result.usage.total, thinking: result.usage.thinking, output: result.usage.output,
-        text: String(result.text || "").slice(0, 100_000),
-      });
-      await abschnitt("pruefen");
-      await halte(ASSET_STAGE_HOLD_MS);
-      try {
-        kostenFelder = await modelCostFields(assetModel, result.usage);
-      } catch {
-        kostenFelder = zeroCostFields(assetModel);
+      if (result.ok) {
+        loggen("model_ok", {
+          tokens: result.usage.total, thinking: result.usage.thinking, output: result.usage.output,
+          text: String(result.text || "").slice(0, 100_000),
+        });
+        await abschnitt("pruefen");
+        await halte(ASSET_STAGE_HOLD_MS);
+        try {
+          kostenFelder = await modelCostFields(assetModel, result.usage);
+        } catch {
+          kostenFelder = zeroCostFields(assetModel);
+        }
+        tokenFelder = tokenFelderVon(result.usage);
+        mangel = "";
+        try {
+          const zweiter = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
+          const zweiteFehler = assetKind === "memo"
+            ? memoVertragsFehler(zweiter as MemoPayload, eigeneMemoFelder)
+            : [];
+          if (!ersterEntwurf || zweiteFehler.length < vertragsFehler.length) {
+            payload = zweiter;
+            vertragsFehler = zweiteFehler;
+          } else {
+            payload = ersterEntwurf;
+          }
+        } catch (fehler) {
+          if (ersterEntwurf) payload = ersterEntwurf;
+          else mangel = fehler instanceof Error ? fehler.message : String(fehler);
+        }
       }
-      tokenFelder = tokenFelderVon(result.usage);
-      mangel = "";
-      try {
-        payload = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
-      } catch (fehler) {
-        mangel = fehler instanceof Error ? fehler.message : String(fehler);
-      }
+      if (vertragsFehler.length) loggen("vertrag_rest", { n: vertragsFehler.length, felder: vertragsFehler.slice(0, 10) });
     }
 
     if (!payload) {
@@ -10324,6 +10366,53 @@ Deno.serve(async (req: Request) => {
         }
         const entwurf = normalizeManualDraft(parseLooseJsonObject(antwort.text));
         return corsResponse(origin, { source: quelle, draft: entwurf });
+      }
+
+      case "sharpen_memo_field": {
+        // Ein Feld, das der Nutzer selbst geschrieben hat, auf die Machart des
+        // Referenzmemos bringen. Das Ergebnis ist ein Vorschlag: uebernommen
+        // wird er erst im Fragebogen, nichts wird still ersetzt.
+        const feldKey = String(body.key || "").trim();
+        const feldWert = String(body.value || "").slice(0, 2000);
+        const feldPrompt = buildMemoFeldPrompt(feldKey, feldWert, {
+          signal: String(body.signal || "").slice(0, 1200),
+          company: String(body.company || "").slice(0, 160),
+          nachbarn: body.neighbours && typeof body.neighbours === "object"
+            ? Object.fromEntries(Object.entries(body.neighbours as Record<string, unknown>)
+              .map(([k, v]) => [String(k).slice(0, 40), String(v || "").slice(0, 600)]))
+            : {},
+        });
+        if (!feldPrompt) return errorResponse(origin, `Das Feld ${feldKey} steht nicht im Memo-Vertrag.`);
+
+        const feldConfig = await getPipelineConfig();
+        const feldModel = feldConfig.ai.simple_model || SIMPLE_MODEL;
+        const feldKeyApi = await modelApiKey(feldModel);
+        if (!feldKeyApi) return errorResponse(origin, `Für ${feldModel} ist kein API-Schlüssel hinterlegt`, 500);
+
+        const feldStart = Date.now();
+        const feldAntwort = await callJsonModel({
+          model: feldModel, apiKey: feldKeyApi, prompt: feldPrompt, schema: MEMO_FELD_SCHEMA,
+          maxOutputTokens: 1_200, temperature: 0.2, timeoutMs: 45_000, attempts: 2,
+        });
+        const feldKosten = await modelCostFields(feldModel, feldAntwort.usage);
+        await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+          operation: "memo_field_sharpen", model: feldModel,
+          status: feldAntwort.ok ? "success" : "error",
+          prompt_version: SIMPLE_PIPELINE_VERSION,
+          input_tokens: feldAntwort.usage.input + feldAntwort.usage.cachedInput,
+          output_tokens: feldAntwort.usage.output, thinking_tokens: feldAntwort.usage.thinking,
+          total_tokens: feldAntwort.usage.total, ...feldKosten,
+          duration_ms: Date.now() - feldStart, created_by: auth?.userId || null,
+          error_code: feldAntwort.ok ? null : `http_${feldAntwort.status || "network"}`,
+          error_message: feldAntwort.ok ? null : feldAntwort.error.slice(0, 500),
+        });
+        if (!feldAntwort.ok) {
+          return errorResponse(origin, simpleProviderMessage(feldAntwort.error) || "Das Modell hat den Vorschlag abgelehnt.", 502);
+        }
+        const feldRoh = parseLooseJsonObject(feldAntwort.text) as Record<string, unknown>;
+        const vorschlag = String(feldRoh?.text || "").trim().replace(/^[„"«»"']|[„"«»"']$/g, "").trim();
+        if (!vorschlag) return errorResponse(origin, "Das Modell hat kein Feld zurückgegeben.", 502);
+        return corsResponse(origin, { key: feldKey, text: vorschlag });
       }
 
       case "check_manual_signal": {

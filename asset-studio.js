@@ -1000,6 +1000,23 @@ const CHROME_CSS = `
 }
 #as-overlay .as-mf-kopf .as-tip{margin-right:auto;}
 #as-overlay .as-mf-feld > label .as-mf-pflicht{color:var(--brand,#206efb);}
+#as-overlay .as-mf-schaerfen{
+  margin-left:auto; border:0; background:none; padding:0; cursor:pointer; line-height:1;
+  color:var(--muted,#94a3b8); font-size:12px; border-radius:6px; transition:color .15s ease, background .15s ease;
+  display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
+}
+#as-overlay .as-mf-schaerfen:hover{color:var(--brand,#206efb); background:var(--tint,#eff4ff);}
+#as-overlay .as-mf-schaerfen[disabled]{opacity:.5; cursor:default;}
+#as-overlay .as-mf-vorschlag{
+  background:var(--tint,#f1f5fb); border-radius:9px; padding:9px 11px; font-size:13px; line-height:1.55;
+  display:flex; flex-direction:column; gap:8px;
+}
+#as-overlay .as-mf-vorschlag .as-mf-vs-tasten{display:flex; gap:8px;}
+#as-overlay .as-mf-vorschlag button{
+  border:1px solid var(--line,#e2e8f0); background:#fff; border-radius:7px; padding:4px 10px;
+  font:inherit; font-size:12px; cursor:pointer;
+}
+#as-overlay .as-mf-vorschlag button[data-act="memo-vorschlag-an"]{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
 #as-overlay .as-mf-feld input, #as-overlay .as-mf-feld textarea{
   width:100%; border:1px solid var(--line,#e2e8f0); border-radius:9px; padding:9px 11px;
   font:inherit; font-size:13px; line-height:1.55; background:#fff; color:inherit; resize:vertical;
@@ -1509,12 +1526,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-4";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-5";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-4";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-5";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-4";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-5";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2307,7 +2324,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       insight_title: "Das Sortiment trägt den Umsatz, der Auftritt trägt ihn noch nicht",
       market_p2: "Ein Blick auf die Fläche zeigt die heutige Logik: Das Sortiment ist nach Zielgruppen und Preislagen sauber strukturiert, der Auftritt der einzelnen Marken unterscheidet sich davon kaum. Am Regal stehen sie im direkten Wettbewerbsumfeld etablierter Herstellermarken und werden vor allem über Sortiment, Preis und Produktleistung differenziert. Das Potenzial eines eigenständigen Markenprofils bleibt damit ungenutzt.",
       benchmark_title: "Drei Marken schaffen einen eigenen Auftritt mit Design, Botschaftern und eigenen Kanälen",
-      benchmark_lead: "",
       benchmarks: [
         { name: "Benchmark A", title: "Eigenmarke zur Leitmarke gemacht", text: "Hat das Sortiment in Themenwelten mit je einer Ankermarke geordnet. Die Leitmarke tritt im eigenen Farbcode auf, führt einen eigenen Claim und hat seit zwei Jahren ein eigenes Gesicht in der Kommunikation.", tag: "Ein einheitliches Markenbild gibt der Eigenmarke einen Charakter.", image_hint: hint("Benchmark") },
         { name: "Benchmark B", title: "Kanal und Fläche zusammengeführt", text: "Baut die Marke über eigene Kanäle auf: eine eigene Community, Kooperationen mit Creatorinnen und ein Tempo bei Neuheiten, das sonst nur Herstellermarken vorlegen. Der Regalplatz ist nur noch ein Kanal von mehreren.", tag: "Eigene Kanäle erzeugen Bindung, die kein Regalplatz ersetzt.", image_hint: hint("Benchmark") },
@@ -2629,9 +2645,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const hinweis = `<p class="as-tip-text">${esc(feld.hilfe)}</p>
       <p class="as-tip-bsp"><b>Referenzmemo</b>${esc(feld.beispiel)}</p>`;
     return `<div class="as-mf-feld">
-      <label for="${attr(id)}">${esc(feld.label)}${feld.pflicht ? `<span class="as-mf-pflicht">Pflicht</span>` : ""}${tipHtml(hinweis, `Hinweis zu ${feld.label}`)}</label>
+      <label for="${attr(id)}">${esc(feld.label)}${feld.pflicht ? `<span class="as-mf-pflicht">Pflicht</span>` : ""}${tipHtml(hinweis, `Hinweis zu ${feld.label}`)}
+        <button type="button" class="as-mf-schaerfen" data-act="memo-schaerfen" data-key="${attr(feld.key)}" aria-label="${attr(`${feld.label} auf die Machart des Referenzmemos bringen`)}"><i class="fa-solid fa-wand-magic-sparkles"></i></button>
+      </label>
       ${eingabe}
       <div data-memoguide="${attr(feld.key)}">${guideMarkup(memoFeldHinweise(feld.key, wert), esc)}</div>
+      <div data-memovorschlag="${attr(feld.key)}"></div>
     </div>`;
   }
 
@@ -3814,7 +3833,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         source: String(item?.source || ""),
       })),
       benchmark_title: String(src.benchmark_title || ""),
-      benchmark_lead: String(src.benchmark_lead || ""),
       benchmarks: benchmarks.map((item) => ({
         name: String(item?.name || ""),
         title: String(item?.title || ""),
@@ -4045,7 +4063,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       market_p1: memo.market_p1,
       market_p2: memo.market_p2,
       benchmark_title: memo.benchmark_title,
-      benchmark_lead: memo.benchmark_lead,
       potentials_title: memo.potentials_title,
       potentials_lead: memo.potentials_lead,
       market_lead2: memo.market_lead2,
@@ -4116,7 +4133,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       title: "title", standfirst: "standfirst",
       market_title: "market_title", market_p1: "market_p1", market_lead2: "market_lead2",
       market_p2: "market_p2",
-      benchmark_title: "benchmark_title", benchmark_lead: "benchmark_lead",
+      benchmark_title: "benchmark_title",
       potentials_title: "potentials_title", potentials_lead: "potentials_lead",
       potentials_lead2: "potentials_lead2",
       cta: "cta", about_fit: "about_fit", about_fit2: "about_fit2", sources: "sources",
@@ -4415,8 +4432,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * in einer Zeile bleibt. Läuft auf einer Messkopie in echter A4-Größe, nicht
    * auf der skalierten Vorschau.
    */
+  /**
+   * Gibt die Nummern der Kaesten zurueck, deren Zahl kleiner gesetzt werden
+   * musste. Stilles Schrumpfen sieht im Export aus wie Absicht: drei Zahlen in
+   * voller Groesse, eine daneben kleiner.
+   */
   function passeMemoKpisAn(wurzel) {
-    wurzel.querySelectorAll(".em-kpi .em-n").forEach((el) => {
+    const geschrumpft = [];
+    wurzel.querySelectorAll(".em-kpi .em-n").forEach((el, i) => {
       if (!String(el.textContent || "").trim()) return;
       el.style.fontSize = "";
       let px = parseFloat(getComputedStyle(el).fontSize) || 21;
@@ -4426,7 +4449,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         el.style.fontSize = `${px}px`;
         schritte += 1;
       }
+      if (schritte > 4) geschrumpft.push(i + 1);
     });
+    return geschrumpft;
   }
 
   function memoSeiteHatUeberlauf(seite) {
@@ -4468,7 +4493,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const paket = messMemoKopie();
     if (!paket) return [];
     const { live, mess } = paket;
-    passeMemoKpisAn(mess);
+    const geschrumpft = passeMemoKpisAn(mess);
     const liveKpis = live.querySelectorAll(".em-kpi .em-n");
     mess.querySelectorAll(".em-kpi .em-n").forEach((el, i) => {
       if (liveKpis[i]) liveKpis[i].style.fontSize = el.style.fontSize;
@@ -4478,6 +4503,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (memoSeiteHatUeberlauf(seite)) treffer.push(i + 1);
     });
     mess.remove();
+    treffer.kpis = geschrumpft;
     return treffer;
   }
 
@@ -5489,9 +5515,15 @@ ${stages}${post}
   function memoOutputReady() {
     if (!isMemo) return true;
     const pages = passeUndPruefeMemo();
-    if (!pages.length) return true;
-    showSaveHint(`Seite ${pages.join(", ")} läuft über den Rahmen. Text kürzen, dann exportieren.`);
-    return false;
+    if (pages.length) {
+      showSaveHint(`Seite ${pages.join(", ")} läuft über den Rahmen. Text kürzen, dann exportieren.`);
+      return false;
+    }
+    const kpis = pages.kpis || [];
+    if (kpis.length) {
+      showSaveHint(`Kennzahl ${kpis.join(", ")} ist zu breit und steht kleiner als die daneben. Kürzer schreiben, sonst fällt es im Dokument auf.`);
+    }
+    return true;
   }
 
   function download() {
@@ -5745,6 +5777,24 @@ ${stages}${post}
       zeichneForm();
       return;
     }
+    if (act === "memo-schaerfen") {
+      void schaerfeMemoFeld(hit.getAttribute("data-key") || "", hit);
+      return;
+    }
+    if (act === "memo-vorschlag-an" || act === "memo-vorschlag-weg") {
+      const kasten = hit.closest("[data-memovorschlag]");
+      const key = kasten?.getAttribute("data-memovorschlag") || "";
+      if (act === "memo-vorschlag-an") {
+        const box = shell.querySelector(`[data-memofeld="${CSS.escape(key)}"]`);
+        const text = kasten?.querySelector("[data-memovs]")?.textContent || "";
+        if (box && text) {
+          box.value = text;
+          memoFeldGetippt(box);
+        }
+      }
+      if (kasten) kasten.innerHTML = "";
+      return;
+    }
     if (act === "step-next") {
       readForm();
       const fragen = aktiveFragen();
@@ -5947,6 +5997,51 @@ ${stages}${post}
     }
     if (free.getAttribute("data-free") === "caption_text") zeichneCaption();
     aktualisiereSchreibhilfe(free.getAttribute("data-free"));
+  }
+
+  /**
+   * Ein einzelnes Feld gegen den Vertrag schaerfen lassen. Der Fragebogen
+   * zaehlt Woerter und faerbt den Rahmen rot, konnte aber bisher nichts daran
+   * aendern; dieselbe Arbeit macht das Modell auf dem anderen Weg laengst.
+   * Das Ergebnis steht als Vorschlag darunter, ersetzt wird nichts von selbst.
+   */
+  async function schaerfeMemoFeld(key, knopf) {
+    const box = shell.querySelector(`[data-memofeld="${CSS.escape(key)}"]`);
+    const kasten = shell.querySelector(`[data-memovorschlag="${CSS.escape(key)}"]`);
+    if (!box || !kasten || knopf.disabled) return;
+    knopf.disabled = true;
+    kasten.innerHTML = `<div class="as-mf-vorschlag">Einen Moment.</div>`;
+    try {
+      const abschnitt = MEMO_SECTIONS.find((s) => s.fields.some((f) => f.key === key));
+      const nachbarn = {};
+      for (const feld of abschnitt?.fields || []) {
+        if (feld.key === key) continue;
+        const wert = memoFeldWert(feld.key);
+        if (wert) nachbarn[feld.key] = wert;
+      }
+      const antwort = await api("sharpen_memo_field", {
+        key,
+        value: box.value,
+        company: state.answers.company || signal?.company || "",
+        signal: [signal?.headline_de, signal?.why_de].filter(Boolean).join(" "),
+        neighbours: nachbarn,
+      });
+      const text = String(antwort?.text || "").trim();
+      if (!text) throw new Error("Das Modell hat nichts zurückgegeben.");
+      kasten.innerHTML = `<div class="as-mf-vorschlag">
+        <span data-memovs>${esc(text)}</span>
+        <span class="as-mf-vs-tasten">
+          <button type="button" data-act="memo-vorschlag-an">Übernehmen</button>
+          <button type="button" data-act="memo-vorschlag-weg">Verwerfen</button>
+        </span>
+      </div>`;
+    } catch (fehler) {
+      kasten.innerHTML = `<div class="as-mf-vorschlag">${esc(String(fehler?.message || fehler))}
+        <span class="as-mf-vs-tasten"><button type="button" data-act="memo-vorschlag-weg">Schliessen</button></span>
+      </div>`;
+    } finally {
+      knopf.disabled = false;
+    }
   }
 
   /**

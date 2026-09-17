@@ -51,6 +51,10 @@ export function memoSaetze(wert) {
  *   quelle     Herausgeber und Jahr unter der Kennzahl
  *   name       Marke oder Firma
  *   liste      Quellenzeile, mehrere Belege
+ *
+ * Zusatzschluessel je Feld:
+ *   saetze     [min, max] Saetze, wo das Referenzmemo die Satzzahl vorgibt
+ *   punkt      true, wenn diese Ueberschrift ausnahmsweise auf einen Punkt endet
  */
 export const MEMO_SECTIONS = [
   {
@@ -73,7 +77,7 @@ export const MEMO_SECTIONS = [
         beispiel: "Vom Preisargument zur eigenständigen Marke",
       },
       {
-        key: "standfirst", label: "Subtitel (H2)", art: "satz", rows: 2, min: 5, max: 18,
+        key: "standfirst", label: "Subtitel (H2)", art: "satz", rows: 2, min: 5, max: 18, saetze: [1, 2],
         hilfe: "Ein Satz, der den Titel auflöst: was sich dadurch ändert.",
         beispiel: "Wie Deichmanns Eigenmarken ihr volles Wachstumspotenzial entfalten.",
       },
@@ -124,7 +128,7 @@ export const MEMO_SECTIONS = [
         beispiel: "Was bislang fehlt, ist eine Eigenmarkenarchitektur, in der einzelne Marken Kategorien sichtbar besetzen und über den Preis hinaus ein eigenständiges Profil entwickeln.",
       },
       {
-        key: "insight_title", label: "Bildaussage", art: "these", rows: 3, min: 5, max: 16,
+        key: "insight_title", label: "Bildaussage", art: "these", rows: 3, min: 5, max: 16, saetze: [1, 1], punkt: true,
         hilfe: "Der Befund zum Adressaten in einem Satz. Nicht die Seitenüberschrift wiederholen.",
         beispiel: "Eigenmarken funktionieren bei Deichmann aktuell überwiegend über funktionale Preiskommunikation.",
       },
@@ -220,7 +224,7 @@ export const MEMO_SECTIONS = [
           gruppe: i,
         },
         {
-          key: `bm${i + 1}_tag`, label: "Lehre", art: "satz", rows: 2, min: 5, max: 16,
+          key: `bm${i + 1}_tag`, label: "Lehre", art: "satz", rows: 2, min: 5, max: 16, saetze: [1, 1],
           hilfe: "Was davon auf den Adressaten übertragbar ist, ein Satz.",
           beispiel: [
             "Einheitliches Markenbild plus Botschafter geben der Eigenmarke einen Charakter.",
@@ -236,7 +240,7 @@ export const MEMO_SECTIONS = [
         beispiel: "Lidl Österreich und Lidl Deutschland, Presseinformationen (2022 bis 2026); Lebensmittelzeitung, Interview Kerstin Erbe; Decathlon, Presseinformationen (2024/2025)",
       },
       {
-        key: "quote_text", label: "Zitat", art: "satz", rows: 3, min: 14, max: 34,
+        key: "quote_text", label: "Zitat", art: "satz", rows: 3, min: 14, max: 34, saetze: [1, 2],
         hilfe: "Die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person. Die Zuschreibung darunter ist fest.",
         beispiel: "Der Ausbau von Eigenmarken zu eigenständigen Marken schafft ein klares Markenprofil, das wirksam differenziert, neue Zielgruppen erschließt und bestehende enger an die Marke bindet.",
       },
@@ -269,7 +273,7 @@ export const MEMO_SECTIONS = [
         beispiel: "Die Analyse zeigt: Deichmann verfügt mit seinem hohen Eigenmarkenanteil und etablierten Submarken über eine starke Ausgangsbasis. Das zusätzliche Potenzial liegt darin, ausgewählte Eigenmarken über ihre heutige funktionale Rolle hinaus zu eigenständigen Marken zu entwickeln.",
       },
       {
-        key: "potentials_lead2", label: "Absatz 2", art: "satz", rows: 2, min: 6, max: 20,
+        key: "potentials_lead2", label: "Absatz 2", art: "satz", rows: 2, min: 6, max: 20, saetze: [1, 1],
         hilfe: "Ein Satz, der die drei Hebel benennt. Er steht direkt über den Karten.",
         beispiel: "Drei strategische Hebel setzen hier an: Positionierung, Reichweite und Markenerlebnis.",
       },
@@ -292,7 +296,7 @@ export const MEMO_SECTIONS = [
         },
       ]),
       {
-        key: "cta", label: "CTA-Frage", art: "these", rows: 2, min: 5, max: 16,
+        key: "cta", label: "CTA-Frage", art: "these", rows: 2, min: 5, max: 16, saetze: [1, 1],
         hilfe: "Eine Frage an den Adressaten, ohne Werbeton. Der Knopftext daneben ist fest.",
         beispiel: "Wollen Sie die Wachstumspotenziale Ihrer Eigenmarken heben?",
       },
@@ -325,6 +329,100 @@ export function memoAbschnitt(id) {
 
 const JAHR = /(19|20)\d{2}/;
 const ZIFFER = /\d/;
+// Deutsche Zahlensetzung, wie im Referenzmemo: Komma als Dezimaltrennzeichen,
+// Leerzeichen vor der Einheit. 8.9 und 40% sind die zwei Fehler, die das Modell
+// aus englischen Quellen mitbringt.
+const PUNKT_DEZIMAL = /\d\.\d/;
+const EINHEIT_ENG = /\d[%€]/;
+const ZAHL_ZEICHEN = 12;
+
+/**
+ * Alle Verstösse eines Feldes, in der Reihenfolge, in der sie auffallen.
+ * Fragebogen und Backend hängen an dieser einen Liste, damit ein selbst
+ * geschriebenes und ein generiertes Feld am selben Mass gemessen werden.
+ *
+ * Jeder Eintrag trägt den Befund und den Satz, der unter dem Feld steht.
+ */
+export function memoFeldPruefung(key, wert) {
+  const feld = memoFeld(key);
+  if (!feld) return [];
+  const text = String(wert || "").trim();
+  if (!text) return feld.pflicht ? [{ code: "leer", fehler: `${feld.label} fehlt.`, hinweis: `${feld.label} ist Pflicht.` }] : [];
+  const befunde = [];
+  const worte = memoWorte(text);
+  if (worte < feld.min) {
+    befunde.push({
+      code: "kurz",
+      fehler: `${feld.label}: ${worte} statt mindestens ${feld.min} Wörter.`,
+      hinweis: `${worte} Wörter. Unter ${feld.min} bleibt die Seite an dieser Stelle leer.`,
+    });
+  } else if (worte > feld.max) {
+    befunde.push({
+      code: "lang",
+      fehler: `${feld.label}: ${worte} statt höchstens ${feld.max} Wörter.`,
+      hinweis: `${worte} Wörter. Hier passen höchstens ${feld.max}, sonst läuft die Seite über.`,
+    });
+  }
+  if (feld.saetze) {
+    const saetze = memoSaetze(text);
+    const [smin, smax] = feld.saetze;
+    if (saetze < smin) {
+      befunde.push({
+        code: "saetze_kurz",
+        fehler: `${feld.label}: ${saetze} statt mindestens ${smin} Sätze.`,
+        hinweis: `${saetze} Sätze. Hier stehen mindestens ${smin}.`,
+      });
+    } else if (saetze > smax) {
+      befunde.push({
+        code: "saetze_lang",
+        fehler: `${feld.label}: ${saetze} Sätze, hier stehen höchstens ${smax}.`,
+        hinweis: `${saetze} Sätze. Hier stehen höchstens ${smax}, sonst bricht die Stelle um.`,
+      });
+    }
+  }
+  if (feld.art === "zahl") {
+    if (!ZIFFER.test(text)) {
+      befunde.push({ code: "ziffer", fehler: `${feld.label} braucht eine Ziffer.`, hinweis: "Ohne Ziffer bleibt der Kasten leer." });
+    }
+    if (PUNKT_DEZIMAL.test(text)) {
+      befunde.push({ code: "dezimal", fehler: `${feld.label}: Dezimaltrennzeichen ist das Komma.`, hinweis: "Deutsch gesetzt: 8,9 Mrd. €, nicht 8.9." });
+    }
+    if (EINHEIT_ENG.test(text)) {
+      befunde.push({ code: "einheit", fehler: `${feld.label}: vor % und € steht ein Leerzeichen.`, hinweis: "Deutsch gesetzt: 40 %, nicht 40%." });
+    }
+    // Der Kasten schrumpft die Schrift, bis die Zahl passt. Das faellt beim
+    // Export niemandem auf, steht aber neben drei Zahlen in voller Groesse.
+    if (text.length > ZAHL_ZEICHEN) {
+      befunde.push({
+        code: "breit",
+        fehler: `${feld.label}: ${text.length} Zeichen, mehr als ${ZAHL_ZEICHEN} schrumpfen die Zahl im Kasten.`,
+        hinweis: `${text.length} Zeichen. Über ${ZAHL_ZEICHEN} wird die Zahl kleiner gesetzt als die daneben.`,
+      });
+    }
+  }
+  if (feld.art === "quelle") {
+    if (!JAHR.test(text)) {
+      befunde.push({ code: "jahr", fehler: `${feld.label} braucht ein Jahr.`, hinweis: "Ohne Jahr ist die Zahl nicht nachprüfbar." });
+    }
+    if (!text.includes(",")) {
+      befunde.push({ code: "quellform", fehler: `${feld.label}: Format „Herausgeber, Jahr“.`, hinweis: "Format „Herausgeber, Jahr“, mehrere Herausgeber mit Schrägstrich." });
+    }
+  }
+  if (feld.art === "liste") {
+    const teile = text.split(";").map((teil) => teil.trim()).filter(Boolean);
+    if (teile.some((teil) => !teil.includes(","))) {
+      befunde.push({
+        code: "listenform",
+        fehler: `${feld.label}: jeder Beleg im Format „Herausgeber, Art (Zeitraum)“.`,
+        hinweis: "Je Beleg „Herausgeber, Art (Zeitraum)“, mehrere mit Semikolon.",
+      });
+    }
+  }
+  if ((feld.art === "these" || feld.art === "schluessel") && !feld.punkt && /\.$/.test(text)) {
+    befunde.push({ code: "punkt", fehler: `${feld.label}: Überschriften im Memo enden ohne Punkt.`, hinweis: "Überschriften im Memo enden ohne Punkt." });
+  }
+  return befunde;
+}
 
 /**
  * Der harte Befund zu einem Feld: leerer String heisst in Ordnung. Nur was hier
@@ -333,16 +431,7 @@ const ZIFFER = /\d/;
  * Modell.
  */
 export function memoFeldFehler(key, wert) {
-  const feld = memoFeld(key);
-  if (!feld) return "";
-  const text = String(wert || "").trim();
-  if (!text) return feld.pflicht ? `${feld.label} fehlt.` : "";
-  const worte = memoWorte(text);
-  if (worte < feld.min) return `${feld.label}: ${worte} statt mindestens ${feld.min} Wörter.`;
-  if (worte > feld.max) return `${feld.label}: ${worte} statt höchstens ${feld.max} Wörter.`;
-  if (feld.art === "zahl" && !ZIFFER.test(text)) return `${feld.label} braucht eine Ziffer.`;
-  if (feld.art === "quelle" && !JAHR.test(text)) return `${feld.label} braucht ein Jahr.`;
-  return "";
+  return memoFeldPruefung(key, wert)[0]?.fehler || "";
 }
 
 /**
@@ -372,29 +461,55 @@ export function memoAbschnittFehler(sectionId, werte) {
  * Fragebogen gleich aussehen.
  */
 export function memoFeldHinweise(key, wert) {
-  const feld = memoFeld(key);
-  if (!feld) return [];
-  const text = String(wert || "").trim();
   // Ein leeres Feld bleibt leer. Ob die KI es schreibt, ist eine Frage weiter
   // oben schon beantwortet; hier waere der Hinweis nur Rauschen.
-  if (!text) return [];
-  const worte = memoWorte(text);
-  const zeilen = [];
-  if (worte > feld.max) {
-    zeilen.push({ ton: "warn", text: `${worte} Wörter. Hier passen höchstens ${feld.max}, sonst läuft die Seite über.` });
-  } else if (worte < feld.min) {
-    zeilen.push({ ton: "warn", text: `${worte} Wörter. Unter ${feld.min} bleibt die Seite an dieser Stelle leer.` });
+  if (!String(wert || "").trim()) return [];
+  return memoFeldPruefung(key, wert).map((b) => ({ ton: "warn", text: b.hinweis }));
+}
+
+/**
+ * Das Referenzmemo Feld für Feld. Der Prompt bekommt damit nicht nur eine
+ * Wortzahl, sondern die Tonlage, den Satzbau und die Art des Belegs, die im
+ * fertigen Dokument stehen. Ohne diesen Block schreibt das Modell Texte, die
+ * die Längen treffen und trotzdem anders klingen.
+ */
+export function memoBeispieleVertrag() {
+  return MEMO_SECTIONS.map((s) => `${s.label}\n${s.fields.map((f) => `${f.key}: ${f.beispiel}`).join("\n")}`).join("\n\n");
+}
+
+/**
+ * Der Aufbau als Prompt-Block, aus denselben Feldern erzeugt. Von Hand
+ * gepflegt stand hier eine zweite Fassung der hilfe-Texte, die beim naechsten
+ * Vorlagenwechsel weggelaufen waere.
+ */
+export function memoAufbauVertrag() {
+  return MEMO_SECTIONS.map((s) => {
+    const zeilen = s.fields
+      .filter((f) => f.gruppe === undefined || f.gruppe === 0)
+      .map((f) => `${f.gruppe === 0 ? f.key.replace(/^(kpi|bm|pot)\d/, "$1N") : f.key} (${f.label}): ${f.hilfe}`);
+    const bilder = s.bilder ? `\nMotive: ${s.bilder}` : "";
+    // erwartet traegt die Regeln zwischen den Feldern: genau vier Kennzahlen,
+    // genau drei Faelle, keine Zahl ohne Quelle. Die stehen in keinem hilfe-Text.
+    const regeln = s.erwartet.map((zeile) => `- ${zeile}`).join("\n");
+    return `Seite ${s.seite}, ${s.label}: ${s.zweck}\n${regeln}\n${zeilen.join("\n")}${bilder}`;
+  }).join("\n\n");
+}
+
+/**
+ * Die Feldbeschreibungen für das JSON-Schema des Modells. Das Schema liest das
+ * Modell vor dem Prompt, eine eigene Zahl an dieser Stelle schlaegt den
+ * Vertrag. Die wiederholten Bloecke stehen unter kpi, benchmark und potential.
+ */
+export function memoSchemaTexte() {
+  const satz = (f) => `${f.hilfe} ${f.min} bis ${f.max} Wörter.`;
+  const out = { felder: {}, kpi: {}, benchmark: {}, potential: {} };
+  for (const f of MEMO_FIELDS) {
+    if (f.key.startsWith("kpi1_")) out.kpi[f.key.slice(5)] = satz(f);
+    else if (f.key.startsWith("bm1_")) out.benchmark[f.key.slice(4)] = satz(f);
+    else if (f.key.startsWith("pot1_")) out.potential[f.key.slice(5)] = satz(f);
+    else if (f.gruppe === undefined) out.felder[f.key] = satz(f);
   }
-  if (feld.art === "zahl" && !ZIFFER.test(text)) {
-    zeilen.push({ ton: "warn", text: "Ohne Ziffer bleibt der Kasten leer." });
-  }
-  if (feld.art === "quelle" && !JAHR.test(text)) {
-    zeilen.push({ ton: "warn", text: "Ohne Jahr ist die Zahl nicht nachprüfbar." });
-  }
-  if ((feld.art === "these" || feld.art === "schluessel") && /[.]$/.test(text)) {
-    zeilen.push({ ton: "warn", text: "Überschriften im Memo enden ohne Punkt." });
-  }
-  return zeilen;
+  return out;
 }
 
 /**
