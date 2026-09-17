@@ -4148,9 +4148,13 @@ async function callGeminiWithGoogleSearchOnce(
     // Tageskontingent. Ohne ihn stand im Memo nur die Zahl.
     const koerper = await response.text().catch(() => "");
     const befund = geminiResearchFehler(response.status, koerper);
-    const fehler = new Error(befund.text) as Error & { retryMs?: number; hart?: boolean };
+    const fehler = new Error(befund.text) as Error & { retryMs?: number; hart?: boolean; transport?: boolean };
     fehler.retryMs = befund.retryMs;
     fehler.hart = befund.hart;
+    // Die aeussere Schleife ist fuer inhaltliche Fehlgriffe da. Einen Fehler
+    // der Leitung hat der innere Anlauf schon dreimal versucht; ihn dort noch
+    // einmal zu wiederholen kostet nur die Wanduhr des Auftrags.
+    fehler.transport = true;
     throw fehler;
   }
   await onPulse?.({ phase: "headers", model, chars: 0 });
@@ -10829,8 +10833,10 @@ Deno.serve(async (req: Request) => {
                   } catch (inner) {
                     letzter = inner instanceof Error ? inner : new Error(String(inner));
                     // Ein aufgebrauchtes Kontingent heilt der naechste Anlauf
-                    // nicht; er kostet nur Wartezeit am offenen Fragebogen.
-                    if ((letzter as Error & { hart?: boolean }).hart === true
+                    // nicht, und eine Drosselung hat der innere Anlauf schon
+                    // dreimal mit Wartezeit versucht.
+                    const abbruch = letzter as Error & { hart?: boolean; transport?: boolean };
+                    if (abbruch.hart === true || abbruch.transport === true
                       || istHarterResearchFehler(letzter.message)) break;
                   }
                 }

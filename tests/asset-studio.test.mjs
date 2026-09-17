@@ -2222,8 +2222,10 @@ test("ein 429 aus der Recherche wird gelesen statt nur gezählt", () => {
   assert.ok(backend.MEMO_BENCHMARK_RESEARCH_MAX_WAIT_MS <= 12_000);
   assert.match(edge, /const befund = geminiResearchFehler\(response\.status, koerper\);/);
   assert.match(edge, /await new Promise\(\(fertig\) => setTimeout\(fertig, warten\)\);/);
-  // Ein hartes Kontingent bricht auch die aeussere Schleife ab.
-  assert.match(edge, /\|\| istHarterResearchFehler\(letzter\.message\)\) break;/);
+  // Die aeussere Schleife wiederholt keinen Fehler der Leitung: der innere
+  // Anlauf hat ihn schon dreimal mit Wartezeit versucht.
+  assert.match(edge, /fehler\.transport = true;/);
+  assert.match(edge, /abbruch\.hart === true \|\| abbruch\.transport === true/);
   // Und der Rat passt zum Grund.
   assert.match(edge, /Gleich noch einmal erzeugen, oder im Fragebogen eigene Benchmarks eintragen/);
 });
