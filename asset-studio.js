@@ -1636,12 +1636,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-17";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-19";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-17";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-19";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-17";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-19";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -4621,11 +4621,49 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return { live, mess };
   }
 
+  /**
+   * Gibt jedem eingepassten Logo dasselbe optische Gewicht. object-fit:
+   * contain schneidet nichts ab, laesst aber eine Wortmarke 72 Prozent der
+   * Kachelbreite fuellen und ein quadratisches Logo 28: drei Karten
+   * nebeneinander sahen aus wie drei verschiedene Dokumente.
+   *
+   * Die Flaeche ist das Mass, nicht die Breite. Dazu zwei Deckel, damit ein
+   * sehr breites oder sehr hohes Logo nicht an den Rand stoesst.
+   */
+  const LOGO_FLAECHE = 0.30;
+  const LOGO_MAX_BREIT = 0.78;
+  const LOGO_MAX_HOCH = 0.72;
+
+  function passeMemoLogosAn(wurzel) {
+    if (!wurzel) return;
+    wurzel.querySelectorAll('img[data-imgkey]').forEach((el) => {
+      if (el.style.objectFit !== "contain") return;
+      const setzen = () => {
+        const nw = el.naturalWidth;
+        const nh = el.naturalHeight;
+        const kachel = el.getBoundingClientRect();
+        if (!nw || !nh || !kachel.width || !kachel.height) return;
+        const skala = Math.sqrt((LOGO_FLAECHE * kachel.width * kachel.height) / (nw * nh));
+        const breite = Math.min(nw * skala, kachel.width * LOGO_MAX_BREIT);
+        const hoehe = Math.min(nh * skala, kachel.height * LOGO_MAX_HOCH);
+        // Das Seitenverhaeltnis bleibt: der engere der beiden Deckel gewinnt.
+        const fest = Math.min(breite / nw, hoehe / nh);
+        el.style.paddingLeft = `${Math.max(0, (kachel.width - nw * fest) / 2)}px`;
+        el.style.paddingRight = el.style.paddingLeft;
+        el.style.paddingTop = `${Math.max(0, (kachel.height - nh * fest) / 2)}px`;
+        el.style.paddingBottom = el.style.paddingTop;
+      };
+      if (el.complete && el.naturalWidth) setzen();
+      else el.addEventListener("load", setzen, { once: true });
+    });
+  }
+
   /** Alle Seiten messen, auch die gerade nicht sichtbare. Schrift zurück ins Original. */
   function passeUndPruefeMemo() {
     const paket = messMemoKopie();
     if (!paket) return [];
     const { live, mess } = paket;
+    passeMemoLogosAn(live);
     const geschrumpft = passeMemoKpisAn(mess);
     const liveKpis = live.querySelectorAll(".em-kpi .em-n");
     mess.querySelectorAll(".em-kpi .em-n").forEach((el, i) => {

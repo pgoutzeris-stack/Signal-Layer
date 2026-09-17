@@ -2292,13 +2292,32 @@ test("Seite 4 bekommt erzeugte Konzeptbilder, nicht eine leere Suche", () => {
     company: "Puma", queries: [], aspectMm: { w: 57, h: 46 }, pixels: { w: 912, h: 736 },
     geminiAspect: "4:3",
   };
-  const prompt = backend.buildMemoScenePrompt(slot, "Puma");
-  assert.match(prompt, /Photorealistic concept mockup/);
+  const prompt = backend.buildMemoScenePrompt(slot, {
+    addressee: "Puma",
+    signal: "Handel baut Eigenmarken im Sportsegment aus",
+    benchmarks: [{ name: "Lidl · Parkside", tag: "Einheitliches Markenbild gibt der Eigenmarke Charakter" }],
+    aussage: "Für die Kernmarken eigene Markenwelten aufbauen.",
+  });
+  assert.match(prompt, /Photorealistic concept visual/);
   assert.match(prompt, /own-brand world of Puma/);
   assert.match(prompt, /Eigenmarken-Markenwelt auf der Ladenfläche/);
+  // Das Bild entsteht aus dem Anlass und den recherchierten Faellen, nicht aus
+  // dem Hebeltitel allein: sonst zeigt es irgendeinen Laden.
+  assert.match(prompt, /Handel baut Eigenmarken im Sportsegment aus/);
+  assert.match(prompt, /Lidl · Parkside: Einheitliches Markenbild/);
+  assert.match(prompt, /Für die Kernmarken eigene Markenwelten aufbauen/);
+  // Und es soll die Empfehlung tragen, nicht sie illustrieren.
+  assert.match(prompt, /Bold and committed/);
+  assert.match(prompt, /no empty background/);
   // Fremde Marken haben im Konzeptbild des Adressaten nichts zu suchen.
   assert.match(prompt, /No logos of other companies/);
+  assert.match(prompt, /never their brands/);
   assert.match(prompt, /no watermark/);
+  // Der Empfehlungstext haengt am Platz, damit er auch ohne Kontext ankommt.
+  assert.match(backend.buildMemoScenePrompt({ ...slot, aussage: "Verpackung mit Markenstory" }, {}), /Verpackung mit Markenstory/);
+  // Die Edge Function reicht Anlass und Faelle durch.
+  assert.match(edge, /const szeneKontext: MemoSzeneKontext = \{/);
+  assert.match(edge, /benchmarks: \(\(payload as MemoPayload\)\.benchmarks \|\| \[\]\)/);
 
   assert.deepEqual(
     backend.parseGeminiImage({ candidates: [{ content: { parts: [{ text: "x" }, { inlineData: { mimeType: "image/png", data: "AAAA" } }] } }] }),
@@ -2308,7 +2327,7 @@ test("Seite 4 bekommt erzeugte Konzeptbilder, nicht eine leere Suche", () => {
   assert.equal(backend.parseGeminiImage({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "text/plain", data: "AAAA" } }] } }] }), null);
 
   // Erst erzeugen, dann suchen: die Suche bleibt als Rueckfall.
-  assert.match(edge, /const erzeugt = await generateMemoSceneImage\(apiKey, slot, adressat, log\);/);
+  assert.match(edge, /const erzeugt = await generateMemoSceneImage\(apiKey, slot, \{ \.\.\.szene, addressee: adressat \}, log\);/);
   assert.match(edge, /if \(erzeugt\) return erzeugt;\n      const local = await findMemoSlotScene/);
   // Kennt die Fassung des Modells das Seitenverhaeltnis nicht, geht es ohne.
   assert.match(edge, /if \(response\.status === 400\) continue;/);
@@ -2334,6 +2353,14 @@ test("eine Wortmarke wird eingepasst, nicht angeschnitten", () => {
   // Und die Vorlage setzt beides um, samt Flaeche unter der Marke.
   assert.match(studio, /const fit = img\.fit === "contain" \? "contain" : "cover";/);
   assert.match(studio, /background:var\(--tint,#f7f9fc\);padding:6mm/);
+  // Eingepasst allein genuegt nicht: eine Wortmarke fuellte 72 Prozent der
+  // Kachelbreite, ein quadratisches Logo 28. Die Flaeche ist das Mass.
+  assert.match(studio, /function passeMemoLogosAn/);
+  assert.match(studio, /const LOGO_FLAECHE = 0\.30;/);
+  assert.match(studio, /Math\.sqrt\(\(LOGO_FLAECHE \* kachel\.width \* kachel\.height\) \/ \(nw \* nh\)\)/);
+  assert.match(studio, /passeMemoLogosAn\(live\);/);
+  // Ein noch nicht geladenes Bild kennt seine Masse nicht.
+  assert.match(studio, /el\.addEventListener\("load", setzen, \{ once: true \}\);/);
   assert.match(studio, /fit: item\?\.image\?\.fit === "contain" \? "contain" : "cover",/);
 });
 
@@ -3022,8 +3049,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-17");
-  assert.match(indexHtml, /app\.js\?v=20260917-17/);
+  assert.equal(studioVersion, "20260917-19");
+  assert.match(indexHtml, /app\.js\?v=20260917-19/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

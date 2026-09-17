@@ -160,6 +160,7 @@ import {
   MEMO_SCENE_IMAGE_MODEL,
   MEMO_SCENE_IMAGE_MS,
   buildMemoScenePrompt,
+  type MemoSzeneKontext,
   parseGeminiImage,
   memoBenchmarkCorpus,
   memoImageDataUri,
@@ -4059,11 +4060,11 @@ async function findMemoSlotLogo(
 async function generateMemoSceneImage(
   apiKey: string,
   slot: MemoImageSlot,
-  addressee: string,
+  kontext: MemoSzeneKontext,
   log?: (event: string, extra: Record<string, unknown>) => void,
 ): Promise<string | null> {
   if (!apiKey) return null;
-  const prompt = buildMemoScenePrompt(slot, addressee);
+  const prompt = buildMemoScenePrompt(slot, kontext);
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MEMO_SCENE_IMAGE_MODEL)}:generateContent`;
   // Erst mit Seitenverhaeltnis, das spart den Beschnitt. Kennt die Fassung des
   // Modells das Feld nicht, antwortet sie mit 400; dann ohne, und der Rahmen
@@ -4141,6 +4142,7 @@ function createMemoPhotoFinder(
   model: string,
   log?: (event: string, extra: Record<string, unknown>) => void,
   adressat = "",
+  szene: MemoSzeneKontext = {},
 ) {
   const byLogo = new Map<string, Promise<string | null>>();
   const usedSceneUrls = new Set<string>();
@@ -4159,7 +4161,7 @@ function createMemoPhotoFinder(
       }
       // Erzeugen, nicht suchen: das Potenzial zeigt einen Zustand, den es noch
       // nicht gibt. Findet das Bildmodell nichts, bleibt die alte Suche.
-      const erzeugt = await generateMemoSceneImage(apiKey, slot, adressat, log);
+      const erzeugt = await generateMemoSceneImage(apiKey, slot, { ...szene, addressee: adressat }, log);
       if (erzeugt) return erzeugt;
       const local = await findMemoSlotScene(slot, usedSceneUrls);
       if (local) return local;
@@ -6056,11 +6058,23 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         || (Array.isArray(assetSignal.tier1_companies) ? assetSignal.tier1_companies[0] : "")
         || "",
       );
+      // Das Bild eines Potenzials steht im selben Dokument wie die Benchmarks
+      // und der Anlass. Ohne beides zeigt es irgendeinen Laden, statt genau
+      // den Zug, den die Empfehlung beschreibt.
+      const szeneKontext: MemoSzeneKontext = {
+        addressee: adressatFuerBilder,
+        signal: [assetSignal.headline_de, assetSignal.why_de].filter(Boolean).join(" ").slice(0, 300),
+        benchmarks: ((payload as MemoPayload).benchmarks || []).slice(0, 3).map((eintrag) => ({
+          name: String(eintrag?.name || ""),
+          tag: String(eintrag?.tag || ""),
+        })).filter((eintrag) => eintrag.name || eintrag.tag),
+      };
       const finder = createMemoPhotoFinder(
         geminiKey,
         MEMO_BENCHMARK_RESEARCH_MODEL,
         (event, extra) => loggen(event, extra),
         adressatFuerBilder,
+        szeneKontext,
       );
       try {
           payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {

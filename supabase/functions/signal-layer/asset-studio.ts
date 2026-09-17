@@ -4063,16 +4063,44 @@ export const MEMO_SCENE_IMAGE_MS = 45_000;
  * Der Auftrag an das Bildmodell. Englisch, weil die Modelle darauf deutlich
  * praeziser treffen; der Markenname bleibt stehen, wie er geschrieben wird.
  */
-export function buildMemoScenePrompt(slot: MemoImageSlot, addressee = ""): string {
-  const marke = String(addressee || slot.company || "").trim();
+export type MemoSzeneKontext = {
+  addressee?: string;
+  /** Anlass des Memos: woraus die Empfehlung ueberhaupt entsteht. */
+  signal?: string;
+  /** Die recherchierten Faelle und was sie bewiesen haben. */
+  benchmarks?: { name: string; tag: string }[];
+  /** Der Empfehlungstext selbst. Das Bild soll ihn unterstreichen. */
+  aussage?: string;
+};
+
+export function buildMemoScenePrompt(slot: MemoImageSlot, kontext: MemoSzeneKontext | string = {}): string {
+  const ctx: MemoSzeneKontext = typeof kontext === "string" ? { addressee: kontext } : (kontext || {});
+  const marke = String(ctx.addressee || slot.company || "").trim();
   const motiv = String(slot.hint || slot.subject || "").trim();
-  const bezug = String(slot.subject || "").trim();
+  const hebel = String(slot.subject || "").trim();
+  const aussage = String(ctx.aussage || slot.aussage || "").trim();
+  const anlass = String(ctx.signal || "").trim().slice(0, 300);
+  // Die Benchmarks stehen im selben Dokument und haben den Mechanismus schon
+  // bewiesen. Das Bild zeigt denselben Zug beim Adressaten, nicht deren Marke.
+  const faelle = (ctx.benchmarks || [])
+    .map((eintrag) => [eintrag?.name, eintrag?.tag].filter(Boolean).join(": "))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" | ");
+
   return [
-    "Photorealistic concept mockup for a brand strategy memo, editorial product photography.",
+    "Photorealistic concept visual for a brand strategy memo. One dominant subject, filling the frame edge to edge.",
     marke ? `It shows how the own-brand world of ${marke} would look once this lever is pulled.` : "",
-    motiv ? `Scene: ${motiv}.` : "",
-    bezug && bezug !== motiv ? `Lever: ${bezug}.` : "",
-    "Retail floor, packaging, or a brand channel. Clean composition, soft natural light, muted neutral palette, shallow depth of field.",
+    hebel ? `The lever: ${hebel}.` : "",
+    aussage ? `What it should make visible: ${aussage}` : "",
+    motiv && motiv !== hebel ? `Scene: ${motiv}.` : "",
+    anlass ? `Context of the case: ${anlass}` : "",
+    faelle ? `Other retailers already proved this mechanism works — ${faelle}. Show the same confident move, in the world of ${marke || "the addressee"}, never their brands.` : "",
+    // „Bold" heisst hier: ein Motiv, nah, klar, ohne Restflaeche. Das
+    // Referenzmemo zeigt eine ganze Markenwand, ein volles Kanalraster, ein
+    // komplettes Verpackungsset, nicht ein Produkt auf weissem Grund.
+    "Bold and committed: strong shapes, confident brand presence, rich contrast, close crop, no empty background, no clutter.",
+    "Retail floor, brand channel, or packaging set. Sharp focus on the subject, natural light, the palette of the addressee's brand.",
     "A brand wordmark may appear where it naturally belongs, on signage, packaging or a screen.",
     "No logos of other companies, no headline text or captions, no watermark, no collage, no faces looking into the camera, no stock-photo look.",
   ].filter(Boolean).join(" ");
@@ -4130,6 +4158,8 @@ export type MemoImageSlot = {
   hint: string;
   company: string;
   queries: string[];
+  /** Der Empfehlungstext. Das erzeugte Bild soll ihn unterstreichen. */
+  aussage?: string;
   aspectMm: { w: number; h: number };
   pixels: { w: number; h: number };
   geminiAspect: "16:9" | "3:2" | "4:3";
@@ -4415,6 +4445,7 @@ export function memoImageSlots(payload: MemoPayload, addressee = ""): MemoImageS
       index,
       subject,
       hint,
+      aussage: String(eintrag.potential || "").trim(),
       company: adressat,
       queries: memoSceneQueries({
         title: subject,
