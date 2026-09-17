@@ -4148,9 +4148,14 @@ async function callGeminiWithGoogleSearchOnce(
     // Tageskontingent. Ohne ihn stand im Memo nur die Zahl.
     const koerper = await response.text().catch(() => "");
     const befund = geminiResearchFehler(response.status, koerper);
-    const fehler = new Error(befund.text) as Error & { retryMs?: number; hart?: boolean; transport?: boolean };
+    const fehler = new Error(befund.text) as Error & {
+      retryMs?: number; hart?: boolean; transport?: boolean; google?: string; quota?: string; status?: number;
+    };
     fehler.retryMs = befund.retryMs;
     fehler.hart = befund.hart;
+    fehler.google = befund.google;
+    fehler.quota = befund.quota;
+    fehler.status = response.status;
     // Die aeussere Schleife ist fuer inhaltliche Fehlgriffe da. Einen Fehler
     // der Leitung hat der innere Anlauf schon dreimal versucht; ihn dort noch
     // einmal zu wiederholen kostet nur die Wanduhr des Auftrags.
@@ -10855,6 +10860,17 @@ Deno.serve(async (req: Request) => {
                 memoAnswers.benchmarks = okBriefs;
               } catch (fehler) {
                 const grund = fehler instanceof Error ? fehler.message : String(fehler);
+                // Googles Wortlaut ins Protokoll, nicht nur in die Meldung: wer
+                // zahlt und trotzdem 429 bekommt, muss nachsehen koennen, welches
+                // Kontingent gemeint war.
+                const roh = fehler as Error & { google?: string; quota?: string; status?: number };
+                if (roh?.google || roh?.quota) {
+                  loggen("benchmarks_http", {
+                    status: roh.status || 0,
+                    google: String(roh.google || "").slice(0, 400),
+                    quota: String(roh.quota || "").slice(0, 300),
+                  });
+                }
                 // „Eigene Benchmarks eintragen" ist der falsche Rat, wenn Google
                 // nur gedrosselt hat: dann hilft eine Minute warten.
                 const gedrosselt = /drosselt die Benchmark-Recherche/i.test(grund);

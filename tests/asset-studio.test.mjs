@@ -2208,6 +2208,29 @@ test("ein 429 aus der Recherche wird gelesen statt nur gezählt", () => {
       details: [{ quotaMetric: "generativelanguage.googleapis.com/generate_requests_per_model_per_day" }],
     },
   }));
+
+  // Der haeufigste Fall bei aufgeladenem Guthaben: der Schluessel haengt an
+  // einem Projekt ohne aktive Abrechnung und laeuft weiter auf der Gratisstufe.
+  const gratisstufe = backend.geminiResearchFehler(429, JSON.stringify({
+    error: {
+      code: 429,
+      message: "You exceeded your current quota, please check your plan and billing details.",
+      details: [{
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }],
+      }],
+    },
+  }));
+  assert.match(gratisstufe.text, /Gratisstufe/);
+  assert.match(gratisstufe.text, /Abrechnung muss in genau dem Google-Cloud-Projekt/);
+  assert.equal(gratisstufe.hart, true);
+  assert.equal(backend.istHarterResearchFehler(gratisstufe.text), true);
+  // Googles eigener Satz und das gerissene Kontingent stehen in der Meldung.
+  assert.match(gratisstufe.text, /Google sagt: You exceeded your current quota/);
+  assert.match(gratisstufe.text, /GenerateRequestsPerDayPerProjectPerModel-FreeTier/);
+  assert.equal(gratisstufe.quota, "GenerateRequestsPerDayPerProjectPerModel-FreeTier");
+  // Und im Protokoll des Auftrags.
+  assert.match(edge, /loggen\("benchmarks_http", \{/);
   assert.match(tageslimit.text, /Tageskontingent/);
   assert.equal(tageslimit.hart, true);
   assert.equal(tageslimit.retryMs, 0);
@@ -2915,8 +2938,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-14");
-  assert.match(indexHtml, /app\.js\?v=20260917-14/);
+  assert.equal(studioVersion, "20260917-15");
+  assert.match(indexHtml, /app\.js\?v=20260917-15/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

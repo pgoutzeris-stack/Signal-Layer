@@ -1410,6 +1410,8 @@ export function geminiResearchFehler(status: number, koerper: string): {
   text: string;
   retryMs: number;
   hart: boolean;
+  google: string;
+  quota: string;
 } {
   let meldung = "";
   let details: unknown[] = [];
@@ -1418,7 +1420,7 @@ export function geminiResearchFehler(status: number, koerper: string): {
     meldung = String(roh?.error?.message || "").trim();
     details = Array.isArray(roh?.error?.details) ? roh.error.details : [];
   } catch {
-    meldung = String(koerper || "").slice(0, 300).trim();
+    meldung = String(koerper || "").slice(0, 400).trim();
   }
   // Google haengt die Wartezeit als RetryInfo an: { "@type": "...RetryInfo", "retryDelay": "21s" }
   let retryMs = 0;
@@ -1427,38 +1429,70 @@ export function geminiResearchFehler(status: number, koerper: string): {
     const treffer = /^(\d+(?:\.\d+)?)s$/.exec(wert);
     if (treffer) retryMs = Math.round(Number(treffer[1]) * 1000);
   }
-  const tageslimit = /per\s*day|perday|daily|pro\s*tag/i.test(meldung)
-    || details.some((eintrag) => /PerDay/i.test(String((eintrag as { quotaMetric?: unknown; violations?: unknown })?.quotaMetric || JSON.stringify(eintrag || ""))));
+  // Welches Kontingent gerissen wurde, steht in der QuotaFailure als quotaId,
+  // etwa GenerateRequestsPerDayPerProjectPerModel-FreeTier. Das ist die einzige
+  // Stelle, die Tageslimit, Minutenlimit und Gratisstufe auseinanderhaelt.
+  const quotaIds: string[] = [];
+  const sammle = (wert: unknown) => {
+    if (!wert || typeof wert !== "object") return;
+    for (const [name, inhalt] of Object.entries(wert as Record<string, unknown>)) {
+      if ((name === "quotaId" || name === "quotaMetric") && inhalt) quotaIds.push(String(inhalt));
+      else if (inhalt && typeof inhalt === "object") sammle(inhalt);
+    }
+  };
+  for (const eintrag of details) sammle(eintrag);
+  const quota = quotaIds.join(", ");
+  const rohtext = `${meldung} ${quota}`;
+  // Googles eigener Satz gehoert in die Fehlermeldung. Ohne ihn stand dort nur
+  // eine Uebersetzung, und wer zahlt und trotzdem 429 bekommt, sieht nicht,
+  // welches Kontingent gemeint ist.
+  const dazu = [meldung, quota ? `Kontingent: ${quota}` : ""].filter(Boolean).join(" · ");
+  const mitGoogle = (text: string) => (dazu ? `${text}\n\nGoogle sagt: ${dazu}` : text);
 
   if (status === 401 || status === 403) {
-    return { text: "Der Gemini-Schlüssel wird für die Benchmark-Recherche abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.", retryMs: 0, hart: true };
+    return { text: mitGoogle("Der Gemini-Schlüssel wird für die Benchmark-Recherche abgelehnt. Er liegt im Supabase Vault und muss erneuert werden."), retryMs: 0, hart: true, google: meldung, quota };
   }
   if (status === 400) {
-    return { text: `Google hat die Anfrage zur Benchmark-Recherche abgelehnt: ${meldung || "ungültige Anfrage"}.`, retryMs: 0, hart: true };
-  }
-  if (status === 429 && tageslimit) {
-    return {
-      text: "Das Tageskontingent der Google-Suche für die Benchmark-Recherche ist aufgebraucht. Es füllt sich in der Nacht wieder auf; bis dahin eigene Benchmarks eintragen oder das Kontingent im Google-Projekt erhöhen.",
-      retryMs: 0,
-      hart: true,
-    };
+    return { text: mitGoogle("Google hat die Anfrage zur Benchmark-Recherche abgelehnt."), retryMs: 0, hart: true, google: meldung, quota };
   }
   if (status === 429) {
+    const gratis = /FreeTier|free[_\s-]?tier/i.test(rohtext);
+    const proTag = /PerDay|per\s*day|daily|pro\s*tag/i.test(rohtext);
+    if (gratis) {
+      return {
+        text: mitGoogle("Der Schlüssel läuft noch auf Googles Gratisstufe, nicht auf dem bezahlten Kontingent. Guthaben allein reicht nicht: die Abrechnung muss in genau dem Google-Cloud-Projekt aktiv sein, zu dem dieser API-Schlüssel gehört."),
+        retryMs: 0,
+        hart: true,
+        google: meldung,
+        quota,
+      };
+    }
+    if (proTag) {
+      return {
+        text: mitGoogle("Das Tageskontingent der Google-Suche für die Benchmark-Recherche ist aufgebraucht. Es füllt sich in der Nacht wieder auf."),
+        retryMs: 0,
+        hart: true,
+        google: meldung,
+        quota,
+      };
+    }
     return {
-      text: "Google drosselt die Benchmark-Recherche: zu viele Anfragen in kurzer Zeit. In einer Minute erneut versuchen.",
+      text: mitGoogle("Google drosselt die Benchmark-Recherche: zu viele Anfragen in kurzer Zeit."),
       retryMs: retryMs || 6_000,
       hart: false,
+      google: meldung,
+      quota,
     };
   }
   if (status >= 500) {
-    return { text: `Google hat die Benchmark-Recherche mit ${status} abgewiesen.`, retryMs: retryMs || 3_000, hart: false };
+    return { text: mitGoogle(`Google hat die Benchmark-Recherche mit ${status} abgewiesen.`), retryMs: retryMs || 3_000, hart: false, google: meldung, quota };
   }
-  return { text: `Die Benchmark-Recherche ist fehlgeschlagen (${status}).`, retryMs: retryMs || 2_000, hart: false };
+  return { text: mitGoogle(`Die Benchmark-Recherche ist fehlgeschlagen (${status}).`), retryMs: retryMs || 2_000, hart: false, google: meldung, quota };
 }
 
 /** Ein Fehler, den der zweite Anlauf nicht heilt. */
 export function istHarterResearchFehler(nachricht: string): boolean {
-  return /Schlüssel wird für die Benchmark-Recherche abgelehnt|Tageskontingent der Google-Suche|Google hat die Anfrage zur Benchmark-Recherche abgelehnt|kein Gemini-Schlüssel/i.test(String(nachricht || ""));
+  return /Schlüssel wird für die Benchmark-Recherche abgelehnt|Tageskontingent der Google-Suche|Gratisstufe, nicht auf dem bezahlten Kontingent|Google hat die Anfrage zur Benchmark-Recherche abgelehnt|kein Gemini-Schlüssel/i.test(String(nachricht || ""));
 }
 
 export const MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS = 90_000;
