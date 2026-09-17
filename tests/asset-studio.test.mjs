@@ -322,15 +322,18 @@ test("Entwurf erzeugen ist verdrahtet und der Vorschautitel nimmt die Firma auf"
   assert.match(studio, /previewMemoTitle\(state\.answers, company\)/);
   assert.match(studio, /getAttribute\("data-free"\) === "company_text"/);
   assert.equal(previewMemoTitle({ company_named: "no" }, "Roblox"), PREVIEW_MEMO_TITLE);
-  assert.equal(PREVIEW_MEMO_TITLE, "KI im Jahr 2026: Chancen und Herausforderungen");
+  // Gegenstand, Doppelpunkt, vage Floskel: der Leser erfuhr daraus nichts. Der
+  // Titel des Referenzmemos nennt die Bewegung, die das Memo begruendet.
+  assert.equal(PREVIEW_MEMO_TITLE, "Vom Sortimentslabel zur eigenständigen Marke");
   assert.doesNotMatch(PREVIEW_MEMO_TITLE, /Hebel/);
+  assert.doesNotMatch(PREVIEW_MEMO_TITLE, /: (Chancen|Was|Ein|Überblick)/);
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Roblox"),
-    "Roblox: Chancen in der Markenpositionierung",
+    "Roblox: vom Sortimentslabel zur eigenständigen Marke",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "Pille" }, "Roblox"),
-    "Pille: Chancen in der Markenpositionierung",
+    "Pille: vom Sortimentslabel zur eigenständigen Marke",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "  " }, "Roblox"),
@@ -2048,17 +2051,25 @@ test("das erzeugte Memo füllt dieselbe vierseitige Struktur wie die Referenz", 
   assert.doesNotMatch(prompt, /benchmark_lead/);
 });
 
-test("die Memo-Vorschau zeigt denselben Feldsatz wie das fertige Dokument", () => {
+test("die Memo-Vorschau zeigt denselben Feldsatz wie das fertige Dokument", async () => {
   // Vorher fehlten der Vorschau die Kennzahlenquellen, die Karten-Überschriften,
   // die Bildaussage und das Zitat: der Nutzer sah eine ärmere Seite als die,
   // die er am Ende bekam.
-  const demo = studio.slice(studio.indexOf("function demoMemo()"), studio.indexOf("function demoSlide("));
-  for (const feld of ["summary_0:", "summary_1:", "summary_2:", "insight_title:", "quote_text:", "source: quelle", "title: \"Eigenmarke zur Leitmarke gemacht\""]) {
-    assert.ok(demo.includes(feld), `Vorschau ohne ${feld}`);
+  const demo = studio.slice(studio.indexOf("export function previewMemoFelder("), studio.indexOf("function demoSlide("));
+  const { previewMemoFelder } = await import("../asset-studio.js");
+  const felder = previewMemoFelder({}, "");
+  for (const key of ["summary_0", "summary_1", "summary_2", "insight_title", "quote_text"]) {
+    assert.ok(String(felder[key] || "").trim(), `Vorschau ohne ${key}`);
   }
-  assert.equal((demo.match(/\{ value:/g) || []).length, 4, "vier Kennzahlenkästen");
+  assert.equal(felder.kpis.length, 4, "vier Kennzahlenkästen");
+  for (const stat of felder.kpis) assert.ok(stat.source, "Kennzahl ohne Quellenzeile");
+  // Jede Karte hat eine eigene Überschrift, sonst steht die Marke allein da.
+  for (const bench of felder.benchmarks) assert.ok(bench.title, "Benchmark ohne Kartenüberschrift");
   // Erfundene Prozentwerte wären von belegten nicht zu unterscheiden.
-  assert.match(demo, /const quelle = "Platzhalter, Quelle aus dem Artikel";/);
+  assert.match(demo, /const quelle = "Platzhalter, Quelle 2026";/);
+  // Kein Feld erklaert sich selbst. Vier Kaesten mit „Beispielwert: …“ sagten
+  // nichts ueber den Fall und standen trotzdem im fertigen Layout.
+  assert.doesNotMatch(demo, /Beispielwert/);
 
   // Das Referenzmemo ist kein Schaltknopf mehr; nur die beiden Porträts bleiben.
   assert.doesNotMatch(studio, /memo-example"/);
@@ -2372,41 +2383,66 @@ test("Kurze Inhalte hinterlassen keine weisse Wanne mehr", () => {
 test("Die Vorschautexte halten denselben Feldvertrag wie das fertige Memo", async () => {
   // Die Vorschau stand mit vierzehn Wörtern dort, wo der Vertrag fünfundvierzig
   // verlangt: Seite 2 bis 4 sahen halb leer aus, obwohl das Ergebnis voll wird.
+  // Geprüft wird das fertige Objekt, nicht der Quelltext: so fällt auch eine
+  // Quellenzeile ohne Jahr auf und nicht nur eine falsche Wortzahl.
   const guides = await import("../memo-guides.mjs");
-  const demo = studio.slice(studio.indexOf("function demoMemo()"), studio.indexOf("function mitEigenenFeldern"));
-  const worte = (text) => text.split(/\s+/).filter(Boolean).length;
-  const pruefe = (key, text) => {
-    const feld = guides.memoFeld(key);
-    assert.ok(feld, `Feld ${key} fehlt im Regelwerk`);
-    const n = worte(text);
-    assert.ok(n >= feld.min && n <= feld.max, `${key}: ${n} Wörter, Vertrag ${feld.min} bis ${feld.max}`);
+  const { previewMemoFelder } = await import("../asset-studio.js");
+  const flach = (felder) => {
+    const werte = {};
+    for (const [key, wert] of Object.entries(felder)) {
+      if (key === "kpis") {
+        wert.forEach((stat, i) => {
+          werte[`kpi${i + 1}_value`] = stat.value;
+          werte[`kpi${i + 1}_label`] = stat.label;
+          werte[`kpi${i + 1}_source`] = stat.source;
+        });
+      } else if (key === "benchmarks") {
+        wert.forEach((bench, i) => {
+          werte[`bm${i + 1}_name`] = bench.name;
+          werte[`bm${i + 1}_title`] = bench.title;
+          werte[`bm${i + 1}_text`] = bench.text;
+          werte[`bm${i + 1}_tag`] = bench.tag;
+        });
+      } else if (key === "potentials") {
+        wert.forEach((pot, i) => {
+          werte[`pot${i + 1}_title`] = pot.title;
+          werte[`pot${i + 1}_potential`] = pot.potential;
+        });
+      } else if (key === "sources") {
+        werte.sources = wert.join("; ");
+      } else {
+        werte[key] = wert;
+      }
+    }
+    return werte;
   };
-  const flach = /(standfirst|market_title|market_p1|market_lead2|market_p2|insight_title|benchmark_title|quote_text|potentials_title|potentials_lead|potentials_lead2|cta|about_fit|about_fit2): "([^"]+)"/g;
-  const gesehen = new Set();
-  for (const treffer of demo.matchAll(flach)) { pruefe(treffer[1], treffer[2]); gesehen.add(treffer[1]); }
-  assert.equal(gesehen.size, 14, "jedes Textfeld der Vorschau wird geprüft");
-
-  const liste = (muster, keyFuer) => {
-    let i = 0;
-    for (const treffer of demo.matchAll(muster)) { i += 1; pruefe(keyFuer(i), treffer[1]); }
-    assert.equal(i, 3, `drei Einträge für ${keyFuer(1)}`);
-  };
-  liste(/\{ name: "[^"]*", title: "[^"]*", text: "([^"]+)"/g, (i) => `bm${i}_text`);
-  liste(/\{ title: "([^"]+)", potential: "/g, (i) => `pot${i}_title`);
-  liste(/\{ title: "[^"]*", potential: "([^"]+)"/g, (i) => `pot${i}_potential`);
+  for (const [wie, felder] of [
+    ["ohne Firma", previewMemoFelder({}, "")],
+    ["mit Firma", previewMemoFelder({ company_named: "yes", company_mode: "auto" }, "Testfirma AG")],
+  ]) {
+    const werte = flach(felder);
+    for (const feld of guides.MEMO_FIELDS) {
+      assert.ok(werte[feld.key], `${wie}: ${feld.key} fehlt in der Vorschau`);
+      assert.deepEqual(
+        guides.memoFeldPruefung(feld.key, werte[feld.key]),
+        [],
+        `${wie}: ${guides.memoFeldPruefung(feld.key, werte[feld.key]).map((b) => b.fehler).join(" ")}`,
+      );
+    }
+  }
 
   // „Thema XY" war ein nackter Platzhalter und steht im Prompt selbst als
   // Beispiel für einen schwachen Titel.
   const { previewMemoTitle } = await import("../asset-studio.js");
-  const titel = previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Testfirma AG");
-  assert.doesNotMatch(titel, /Thema XY/);
-  pruefe("title", titel);
+  assert.doesNotMatch(previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Testfirma AG"), /Thema XY/);
   // Die Vorlage v19 kennt keinen Befund und keine Spaltenlabels mehr.
-  assert.doesNotMatch(demo, /finding:/);
-  assert.match(demo, /market_lead2:/);
-  assert.match(demo, /potentials_lead2:/);
-  assert.match(demo, /about_fit2:/);
+  const quelle = studio.slice(studio.indexOf("export function previewMemoFelder("), studio.indexOf("function demoSlide("));
+  assert.doesNotMatch(quelle, /finding:/);
+  assert.match(quelle, /market_lead2:/);
+  assert.match(quelle, /potentials_lead2:/);
+  assert.match(quelle, /about_fit2:/);
 });
+
 
 test("Die reine Vorschau zeigt keine Bedienspuren im Bild", () => {
   // Auf dem Titelbild standen „Bild einfügen" und ein Bildsymbol, obwohl in der
@@ -2728,8 +2764,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-5");
-  assert.match(indexHtml, /app\.js\?v=20260917-5/);
+  assert.equal(studioVersion, "20260917-7");
+  assert.match(indexHtml, /app\.js\?v=20260917-7/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

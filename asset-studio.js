@@ -1403,14 +1403,99 @@ function companyFrom(source) {
 }
 
 /** Platzhalter-Titel der Fragebogen-Vorschau. Kein Modellaufruf. */
-export const PREVIEW_MEMO_TITLE = "KI im Jahr 2026: Chancen und Herausforderungen";
+export const PREVIEW_MEMO_TITLE = "Vom Sortimentslabel zur eigenständigen Marke";
+
+/** Der Firmenname für die Vorschau, leer wenn keiner genannt werden soll. */
+export function previewMemoFirma(answers = {}, erkannt = "") {
+  if (String(answers.company_named || "") === "no") return "";
+  const custom = String(answers.company_mode || "") === "custom";
+  return String((custom ? answers.company_text : erkannt) || "").trim();
+}
 
 export function previewMemoTitle(answers = {}, erkannt = "") {
-  if (String(answers.company_named || "") === "no") return PREVIEW_MEMO_TITLE;
-  const custom = String(answers.company_mode || "") === "custom";
-  const firma = String((custom ? answers.company_text : erkannt) || "").trim();
+  const firma = previewMemoFirma(answers, erkannt);
   if (!firma) return PREVIEW_MEMO_TITLE;
-  return `${firma}: Chancen in der Markenpositionierung`;
+  // Nicht „Wie …“: der Untertitel faengt schon so an, und zwei gleiche
+  // Satzanfaenge uebereinander lesen sich wie eine Vorlage.
+  return `${firma}: vom Sortimentslabel zur eigenständigen Marke`;
+}
+
+/**
+ * Die Texte der Vorschau. Sie stehen im fertigen Layout, bevor eine Zeile
+ * geschrieben ist, und sind deshalb am Referenzmemo gebaut: Aussage im Titel,
+ * Absätze, die die Seite tragen, Kennzahlen mit Bezug und Quellenzeile.
+ *
+ * Kein Feld erklärt sich selbst. „Beispielwert: Marktbewegung aus dem Artikel“
+ * stand in vier Kästen nebeneinander und sagte nichts über den Fall. Dass hier
+ * nichts belegt ist, steht an der einen Stelle, an der es hingehört: in der
+ * Quellenzeile unter der Zahl.
+ */
+export function previewMemoFelder(answers = {}, erkannt = "") {
+  const firma = previewMemoFirma(answers, erkannt);
+  const vonFirma = firma ? `von ${firma}` : "des Unternehmens";
+  const dieFirma = firma || "das Unternehmen";
+  const quelle = "Platzhalter, Quelle 2026";
+  return {
+    title: previewMemoTitle(answers, erkannt),
+    standfirst: `Wie die Eigenmarken ${vonFirma} ihr volles Wachstumspotenzial entfalten.`,
+    summary_0: "Wachsende Eigenmarkenanteile treffen auf steigende Ansprüche der Kundschaft",
+    summary_1: "Erfolgreiche Eigenmarken werden wie eigenständige Marken geführt",
+    summary_2: "Eigenmarken mit klarem Profil und eigener Markenwelt weiterentwickeln",
+    market_title: "Eigenmarken erreichen die nächste Entwicklungsstufe",
+    market_p1: `Mit steigenden Kundenerwartungen wachsen die Anforderungen an Qualität, Innovation und Markenführung. Kundinnen und Kunden entscheiden sich heute bewusst für die Eigenmarke und nehmen sie als eigene Marke wahr. Für ${dieFirma} trifft diese Entwicklung auf eine starke Ausgangslage im Sortiment.`,
+    market_lead2: "Was bislang fehlt, ist eine Markenarchitektur, in der einzelne Marken ihre Kategorie sichtbar besetzen und über den Preis hinaus ein eigenständiges Profil entwickeln.",
+    kpis: [
+      { value: "42 %", label: "Anteil der Eigenmarken am Umsatz im deutschen Handel", source: quelle },
+      { value: "81 %", label: "halten die Qualität von Eigenmarken für gleichwertig zu Herstellermarken", source: quelle },
+      { value: "76 %", label: "greifen zur Eigenmarke, wenn sie dem Händler vertrauen", source: quelle },
+      { value: "8,9 Mrd. €", label: `Umsatz ${vonFirma} im vergangenen Geschäftsjahr`, source: quelle },
+    ],
+    insight_title: `Die Eigenmarken ${vonFirma} funktionieren heute überwiegend über Preis und Sortiment.`,
+    market_p2: "Ein Blick auf die Fläche zeigt die heutige Logik: Das Sortiment ist nach Zielgruppen und Preislagen sauber strukturiert, der Auftritt der einzelnen Marken folgt dieser Struktur nicht. Am Regal stehen sie im direkten Wettbewerbsumfeld etablierter Herstellermarken und werden über Sortiment, Preis und Produktleistung differenziert. Ein eigenständiges Markenprofil darüber hinaus ist bisher nicht angelegt.",
+    benchmark_title: "Drei Handelsmarken führen ihre Eigenmarken mit eigenem Design, Botschaftern und eigenen Kanälen",
+    benchmarks: [
+      {
+        name: "Benchmark 1",
+        title: "Ankermarke je Themenwelt aufgebaut",
+        text: "Hat das Non-Food-Sortiment in Themenwelten geordnet und je Welt eine Ankermarke gesetzt. Die Marke tritt im eigenen Farbcode ohne Händlerlogo auf, führt einen eigenen Claim und seit zwei Jahren ein Gesicht in der Kommunikation.",
+        tag: "Ein einheitliches Markenbild und ein Gesicht geben der Eigenmarke Charakter.",
+      },
+      {
+        name: "Benchmark 2",
+        title: "Marke über eigene Kanäle aufgebaut",
+        text: "Baut die Marke selbst auf: eigener Social-Kanal mit eigener Community, Kooperationen mit Creatorinnen und ein Innovationstempo, wie es sonst Herstellermarken vorlegen. Der Regalplatz ist einer von mehreren Kontaktpunkten.",
+        tag: "Eigene Kanäle schaffen eine Bindung, die der Regalplatz nicht leistet.",
+      },
+      {
+        name: "Benchmark 3",
+        title: "Siebzig Labels zu neun Marken",
+        text: "Hat über siebzig Sortimentslabels zu neun Kategoriemarken zusammengeführt und die stärksten mit eigenen Stores und eigenem Sponsoring ausgestattet. Die Marke ist seitdem auch außerhalb der Verkaufsfläche sichtbar.",
+        tag: "Sichtbarkeit außerhalb der Fläche macht aus dem Label eine Marke.",
+      },
+    ],
+    quote_text: "Wer eine Eigenmarke zur eigenständigen Marke ausbaut, gewinnt ein klares Profil, erschließt neue Zielgruppen und bindet bestehende enger an das Sortiment.",
+    potentials_title: `Drei strategische Hebel für die Eigenmarken ${vonFirma}`,
+    potentials_lead: "Die Analyse zeigt: Die Ausgangslage im Sortiment ist stark, die Marken sind eingeführt und im Markt bekannt. Das zusätzliche Potenzial liegt darin, ausgewählte Eigenmarken über ihre heutige funktionale Rolle hinaus zu eigenständigen Marken zu entwickeln.",
+    potentials_lead2: "Drei strategische Hebel setzen hier an: Positionierung, Reichweite und Markenerlebnis.",
+    potentials: [
+      {
+        title: "Positionierung und Markenarchitektur schärfen",
+        potential: "Zielgruppen und Preissegmente entlang der Kundenbedürfnisse klar voneinander abgrenzen, um Überschneidungen zwischen den Eigenmarken zu reduzieren. Für die Kernmarken eigenständige Leistungsversprechen definieren, die über den Preis hinaus Orientierung schaffen.",
+      },
+      {
+        title: "Kanäle und Touchpoints gezielt aufbauen",
+        potential: "Für die Kernmarken eigene Markenwelten über skalierbare digitale Kanäle, zielgruppenrelevanten Content und strategische Kooperationen aufbauen. So entstehen Kontaktpunkte jenseits der Fläche und eine Bindung, die über den POS hinaus trägt.",
+      },
+      {
+        title: "Marke am POS und im Produkt erlebbar machen",
+        potential: "Eigenmarken auf der Ladenfläche visuell klar differenzieren und ihre Markenwerte konsequent bis ins Produkt übersetzen. Vom Karton mit Markenstory bis zum Auspacken machen konsistente Designcodes die Marke an jedem Touchpoint erlebbar.",
+      },
+    ],
+    cta: "Wollen Sie die Potenziale Ihrer Eigenmarken gemeinsam durchgehen?",
+    about_fit: "ROOTS entwickelt KI-optimierte Markenstrategien und Marketing Operations für mehr Wirksamkeit, Effizienz und Speed im Marketing, mit Managementerfahrung bis CMO-Ebene im Handel.",
+    about_fit2: "Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu unseren Kernkompetenzen: Wir haben zahlreiche führende Handelsmarken im Food und Non-Food mitgeprägt.",
+    sources: ["Herausgeber, Presseinformationen (2022 bis 2026); Fachzeitschrift, Interview; Herausgeber, Geschäftsbericht (2025)"],
+  };
 }
 
 function themeKicker(source = {}) {
@@ -1526,12 +1611,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-5";
+import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-7";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-5";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-7";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-5";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-7";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2305,45 +2390,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const hint = (kind) => gemini
       ? `Unternehmenslogo für ${kind} (Worldvectorlogo, Website, Wikimedia).`
       : `Eigenes Bild hier zuschneiden, genau in den ${kind}-Platzhalter.`;
-    const quelle = "Platzhalter, Quelle aus dem Artikel";
+    const felder = previewMemoFelder(state.answers, company);
     return normalizeMemo(mitEigenenFeldern({
-      title: previewMemoTitle(state.answers, company),
-      standfirst: "Wie die Eigenmarken des Adressaten ihr Wachstumspotenzial entfalten.",
-      summary_0: "Wachsende Eigenmarkenanteile treffen auf höhere Kundenansprüche",
-      summary_1: "Erfolgreiche Eigenmarken werden wie eigenständige Marken geführt",
-      summary_2: "Eigenmarken mit klarem Profil und eigenen Markenwelten entwickeln",
-      market_title: "Eigenmarken stehen vor der nächsten Entwicklungsstufe",
-      market_p1: "Mit steigenden Kundenerwartungen wachsen die Anforderungen an Qualität, Innovation und Markenführung. Was früher der günstige Kompromiss war, ist heute eine bewusste Kaufentscheidung. Für den Adressaten trifft diese Entwicklung auf eine starke Ausgangslage im Sortiment.",
-      market_lead2: "Was bislang fehlt, ist eine Architektur, in der einzelne Marken Kategorien sichtbar besetzen und über den Preis hinaus ein eigenständiges Profil entwickeln.",
-      kpis: [
-        { value: "42 %", label: "Beispielwert: Marktbewegung aus dem Artikel", source: quelle },
-        { value: "81 %", label: "Beispielwert: Verhalten der Kundenseite", source: quelle },
-        { value: "76 %", label: "Beispielwert: Vergleich zum Wettbewerb", source: quelle },
-        { value: "8,9 Mrd. €", label: "Beispielwert: Größe des Adressaten", source: quelle },
-      ],
-      insight_title: "Das Sortiment trägt den Umsatz, der Auftritt trägt ihn noch nicht",
-      market_p2: "Ein Blick auf die Fläche zeigt die heutige Logik: Das Sortiment ist nach Zielgruppen und Preislagen sauber strukturiert, der Auftritt der einzelnen Marken unterscheidet sich davon kaum. Am Regal stehen sie im direkten Wettbewerbsumfeld etablierter Herstellermarken und werden vor allem über Sortiment, Preis und Produktleistung differenziert. Das Potenzial eines eigenständigen Markenprofils bleibt damit ungenutzt.",
-      benchmark_title: "Drei Marken schaffen einen eigenen Auftritt mit Design, Botschaftern und eigenen Kanälen",
-      benchmarks: [
-        { name: "Benchmark A", title: "Eigenmarke zur Leitmarke gemacht", text: "Hat das Sortiment in Themenwelten mit je einer Ankermarke geordnet. Die Leitmarke tritt im eigenen Farbcode auf, führt einen eigenen Claim und hat seit zwei Jahren ein eigenes Gesicht in der Kommunikation.", tag: "Ein einheitliches Markenbild gibt der Eigenmarke einen Charakter.", image_hint: hint("Benchmark") },
-        { name: "Benchmark B", title: "Kanal und Fläche zusammengeführt", text: "Baut die Marke über eigene Kanäle auf: eine eigene Community, Kooperationen mit Creatorinnen und ein Tempo bei Neuheiten, das sonst nur Herstellermarken vorlegen. Der Regalplatz ist nur noch ein Kanal von mehreren.", tag: "Eigene Kanäle erzeugen Bindung, die kein Regalplatz ersetzt.", image_hint: hint("Benchmark") },
-        { name: "Benchmark C", title: "Kampagne durch eine Linie ersetzt", text: "Hat aus siebzig Sortimentslabels neun Kategoriemarken gemacht und die stärksten mit eigenen Stores und eigenem Sponsoring ausgestattet. Aus dem Label wurde eine Marke, die auch ausserhalb der Fläche sichtbar ist.", tag: "Sichtbarkeit ausserhalb der Fläche macht aus dem Label eine Marke.", image_hint: hint("Benchmark") },
-      ],
-      quote_text: "Eine Eigenmarke wird nicht stärker, weil sie günstiger ist, sondern weil sie eine eigene Handschrift bekommt.",
-      potentials_title: "Drei strategische Hebel für die Eigenmarken des Adressaten",
-      potentials_lead: "Die Analyse zeigt: Die Ausgangslage im Sortiment ist stark und die Marken sind eingeführt. Das zusätzliche Potenzial liegt darin, sie über ihre funktionale Rolle hinaus zu eigenständigen Marken zu entwickeln.",
-      potentials_lead2: "Drei strategische Hebel setzen hier an: Positionierung, Reichweite und Markenerlebnis.",
-      potentials: [
-        { title: "Positionierung und Markenarchitektur schärfen", potential: "Zielgruppen und Preissegmente klar voneinander abgrenzen, um Überschneidungen zwischen den Eigenmarken zu reduzieren. Für die Kernmarken eigenständige Leistungsversprechen definieren, die über den Preis hinaus Orientierung schaffen.", image_hint: hint("Potenzial") },
-        { title: "Kanäle und Touchpoints gezielt aufbauen", potential: "Für die Kernmarken eigene Markenwelten über digitale Kanäle, zielgruppenrelevanten Content und Kooperationen aufbauen. So entstehen Kontaktpunkte jenseits der Fläche und Bindung über den POS hinaus.", image_hint: hint("Potenzial") },
-        { title: "Marke am POS und im Produkt erlebbar machen", potential: "Eigenmarken auf der Ladenfläche visuell klar differenzieren und ihre Markenwerte bis ins Produkt übersetzen. Konsistente Designcodes machen die Marke an jedem Touchpoint erlebbar.", image_hint: hint("Potenzial") },
-      ],
-      cta: "Sollen wir den Check gemeinsam durchgehen?",
-      about_fit: "ROOTS entwickelt KI-optimierte Markenstrategien und Marketing Operations für mehr Wirksamkeit, Effizienz und Speed im Marketing, mit Managementerfahrung bis CMO-Ebene im Handel.",
-      about_fit2: "Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu unseren Kernkompetenzen: Wir haben zahlreiche führende Handelsmarken im Food und Non-Food mitgeprägt.",
-      sources: ["Herausgeber, Presseinformationen (2022 bis 2026); Fachzeitschrift, Interview; Herausgeber, Geschäftsbericht (2025)"],
+      ...felder,
+      benchmarks: felder.benchmarks.map((eintrag) => ({ ...eintrag, image_hint: hint("Benchmark") })),
+      potentials: felder.potentials.map((eintrag) => ({ ...eintrag, image_hint: hint("Potenzial") })),
     }));
   }
+
 
   /**
    * Legt die selbst geschriebenen Felder ueber den Platzhalterinhalt. Die
