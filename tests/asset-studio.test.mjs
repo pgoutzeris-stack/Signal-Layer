@@ -2578,8 +2578,11 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   const memoFragen = studio.slice(studio.indexOf("function memoQuestions"), studio.indexOf("const FORM_MEMO"));
   assert.doesNotMatch(memoFragen, /storyline_text/);
   assert.match(memoFragen, /Ich gebe den Inhalt vor/);
-  assert.match(studio, /art: "memo-section"/);
-  assert.match(studio, /if \(q\.art === "memo-section"\) return memoSectionHtml\(q\);/);
+  // Ein Schritt fuer das ganze Dokument: vier Weiter-Klicks, bevor man das
+  // Memo ueberhaupt gesehen hatte, waren kein Fragebogen, sondern ein Flur.
+  assert.match(studio, /art: "memo-pages"/);
+  assert.match(studio, /if \(q\.art === "memo-pages"\) return q\.sections\.map\(\(abschnitt\) => memoSectionHtml\(abschnitt\)\)\.join\(""\);/);
+  assert.doesNotMatch(studio, /"memo-section"/);
   assert.match(studio, /function memoSectionHtml/);
   assert.match(studio, /function memoFeldGetippt/);
   assert.match(studio, /data-memofeld/);
@@ -3097,8 +3100,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-20");
-  assert.match(indexHtml, /app\.js\?v=20260917-20/);
+  assert.equal(studioVersion, "20260917-21");
+  assert.match(indexHtml, /app\.js\?v=20260917-21/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

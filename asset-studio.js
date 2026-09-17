@@ -279,14 +279,17 @@ function memoQuestions(firma, cmoHundredDays = false) {
       when: nurThema,
       options: [["auto", "KI schreibt aus dem Signal"], ["custom", "Ich gebe den Inhalt vor"]],
     },
-    ...MEMO_SECTIONS.map((section) => ({
-      key: section.id,
-      art: "memo-section",
-      section,
-      label: section.label,
+    {
+      // Fuenf Schritte fuer fuenf Abschnitte hiessen: viermal Weiter, bevor man
+      // das Dokument ueberhaupt gesehen hat. Wer den Inhalt selbst vorgibt,
+      // will die vier Seiten vor sich haben, nicht eine nach der anderen.
+      key: "memo_seiten",
+      art: "memo-pages",
+      sections: MEMO_SECTIONS,
+      label: "Seiten",
       when: (answers) => answers.storyline === "custom" && nurThema(answers),
       options: [],
-    })),
+    },
     {
       key: "benchmarks",
       label: "Benchmarking",
@@ -1638,12 +1641,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-20";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-21";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-20";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-21";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-20";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-21";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1911,7 +1914,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const out = {};
     // Mehrfachauswahl startet leer: eine vorausgewaehlte Slide-Art waere eine
     // Entscheidung, die niemand getroffen hat.
-    for (const q of list) out[q.key] = ["multi", "multi-content", "frame", "memo-section"].includes(q.art) ? "" : q.options[0][0];
+    for (const q of list) out[q.key] = ["multi", "multi-content", "frame", "memo-pages"].includes(q.art) ? "" : q.options[0][0];
     for (const q of list) if (q.free) out[q.free.key] = "";
     if (isMemo) {
       for (const section of MEMO_SECTIONS) {
@@ -2798,8 +2801,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
 
 
-  function memoSectionHtml(q) {
-    const section = q.section;
+  function memoSectionHtml(section) {
     const bloecke = [];
     let offeneGruppe = null;
     for (const feld of section.fields) {
@@ -2832,7 +2834,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ${section.bildgruppe ? bildgruppeHtml(section.bildgruppe) : ""}
       <div class="as-mf-block">${bloecke.join("")}</div>
       <div data-memovorschlag="${attr(section.id)}"></div>
-      <div data-memosectionfehler>${hinweis}</div>
+      <div data-memosectionfehler="${attr(section.id)}">${hinweis}</div>
     </div>`;
   }
 
@@ -3242,10 +3244,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Was in der zusammengeklappten Zeile als Antwort steht. */
   function antwortLabel(q) {
-    if (q.art === "memo-section") {
-      const gefuellt = q.section.fields.filter((f) => memoFeldWert(f.key).trim()).length;
+    if (q.art === "memo-pages") {
+      const felder = q.sections.flatMap((abschnitt) => abschnitt.fields);
+      const gefuellt = felder.filter((f) => memoFeldWert(f.key).trim()).length;
       if (!gefuellt) return "das Modell schreibt";
-      return `${gefuellt} von ${q.section.fields.length} Feldern selbst`;
+      return `${gefuellt} von ${felder.length} Feldern selbst`;
     }
     if (q.art === "multi-content") {
       const gewaehlt = inhaltsArten();
@@ -3279,7 +3282,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       toneLoaded: state.toneGeladen,
       toneOfVoice: state.toneOfVoice,
     })) return false;
-    if (q.art === "memo-section") return memoAbschnittFehler(q.key, memoFelderRoh()).length === 0;
+    if (q.art === "memo-pages") {
+      const werte = memoFelderRoh();
+      return q.sections.every((abschnitt) => memoAbschnittFehler(abschnitt.id, werte).length === 0);
+    }
     if (q.art === "multi-content") {
       return inhaltsArten().length > 0 && inhaltsArten().every((key) => LOOK[key] === state.answers.look);
     }
@@ -3306,7 +3312,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!q) return false;
     if (!frageErledigt(q)) return false;
     if (q.art === "multi-content") return false;
-    if (q.art === "memo-section") return false;
+    if (q.art === "memo-pages") return false;
     // Bei der Formatwahl bleibt die Frage offen, damit Einzelbild und Carousel
     // vor dem Weitergehen sichtbar verglichen werden koennen.
     if (q.key === "asset_type") return false;
@@ -3373,7 +3379,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (q.art === "frame") return frameDropdownHtml(q);
     if (q.art === "multi-content") return contentMultiHtml(q);
     if (q.art === "design") return designHtml(q);
-    if (q.art === "memo-section") return memoSectionHtml(q);
+    if (q.art === "memo-pages") return q.sections.map((abschnitt) => memoSectionHtml(abschnitt)).join("");
     const opts = q.options.map(([value, label]) => {
       // Der Look steht am Layout statt in einer eigenen Frage, und die
       // Infografiken tragen den Hinweis, dass ihre Zahlen zu setzen sind.
@@ -4793,7 +4799,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const fragen = aktiveFragen();
     const offen = fragen[schrittIndex(fragen)];
     if (!offen) return null;
-    if (offen.art === "memo-section") return suche(offen.section.ziel);
     const ziel = FRAGE_ZIEL[offen.key];
     return ziel ? suche(ziel.sel) : null;
   }
@@ -4865,7 +4870,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const fragen = aktiveFragen();
     const offen = fragen[schrittIndex(fragen)];
     if (!offen) return null;
-    if (offen.art === "memo-section") return offen.section.seite;
     return FRAGE_ZIEL[offen.key]?.seite || null;
   }
 
@@ -6277,10 +6281,12 @@ ${stages}${post}
     const offen = fragen[schrittIndex(fragen)];
     const weiter = shell.querySelector('[data-act="step-next"]');
     if (weiter && offen) weiter.disabled = !frageErledigt(offen);
-    if (offen?.art === "memo-section") {
-      const host = shell.querySelector("[data-memosectionfehler]");
-      const fehler = memoAbschnittFehler(offen.key, memoFelderRoh());
-      if (host) {
+    if (offen?.art === "memo-pages") {
+      const werte = memoFelderRoh();
+      for (const abschnitt of offen.sections) {
+        const host = shell.querySelector(`[data-memosectionfehler="${CSS.escape(abschnitt.id)}"]`);
+        if (!host) continue;
+        const fehler = memoAbschnittFehler(abschnitt.id, werte);
         host.innerHTML = fehler.length
           ? `<ul class="lg-guide">${fehler.map((zeile) => `<li class="lg-guide-row lg-guide-row--warn"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(zeile)}</span></li>`).join("")}</ul>`
           : "";
