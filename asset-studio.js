@@ -936,13 +936,8 @@ const CHROME_CSS = `
    Formular. Bei fuenf Abschnitten und fuenfzig Feldern war der Kasten eine
    Wand, die nach dem ersten Lesen nur noch Platz kostete. */
 #as-overlay .as-tip{position:relative; display:inline-flex; vertical-align:middle;}
-#as-overlay .as-tip-btn{
-  display:inline-flex; align-items:center; justify-content:center;
-  width:17px; height:17px; padding:0; border:0; border-radius:50%;
-  background:transparent; color:var(--xmut,#94a3b8); font-size:12px; cursor:help;
-  transition:color .15s ease;
-}
-#as-overlay .as-tip-btn:hover, #as-overlay .as-tip:focus-within .as-tip-btn{color:var(--brand,#206efb);}
+#as-overlay .as-tip{cursor:help;}
+#as-overlay .as-tip:hover, #as-overlay .as-tip:focus-within{color:var(--brand,#206efb);}
 #as-overlay .as-tip-box{
   position:absolute; left:0; top:calc(100% + 8px); z-index:40; width:290px; max-width:60vw;
   padding:11px 13px 12px; border-radius:12px;
@@ -999,9 +994,11 @@ const CHROME_CSS = `
   color:var(--muted,#475569); display:flex; align-items:center; gap:7px;
 }
 #as-overlay .as-mf-kopf .as-tip{margin-right:auto;}
-#as-overlay .as-mf-feld > label .as-mf-pflicht{color:var(--brand,#206efb);}
+#as-overlay .as-mf-rest{margin-left:auto; font-weight:500; letter-spacing:0; text-transform:none;}
+#as-overlay .as-mf-rest-n{color:var(--xmut,#94a3b8); font-size:11px;}
+#as-overlay .as-mf-rest-n.is-voll{color:var(--danger,#dc2626);}
 #as-overlay .as-mf-schaerfen{
-  margin-left:auto; border:0; background:none; padding:0; cursor:pointer; line-height:1;
+  border:0; background:none; padding:0; cursor:pointer; line-height:1;
   color:var(--muted,#94a3b8); font-size:12px; border-radius:6px; transition:color .15s ease, background .15s ease;
   display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
 }
@@ -1017,6 +1014,18 @@ const CHROME_CSS = `
   font:inherit; font-size:12px; cursor:pointer;
 }
 #as-overlay .as-mf-vorschlag button[data-act="memo-vorschlag-an"]{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
+#as-overlay .as-mf-vorschlag.is-laedt{padding:0; background:none;}
+#as-overlay .as-mf-vs-balken{
+  display:block; height:3px; border-radius:2px; overflow:hidden;
+  background:var(--line,#e2e8f0); position:relative;
+}
+#as-overlay .as-mf-vs-balken::after{
+  content:""; position:absolute; inset:0 auto 0 0; width:40%; border-radius:2px;
+  background:var(--brand,#206efb); animation:as-mf-lauf 1.1s cubic-bezier(.45,0,.55,1) infinite;
+}
+@keyframes as-mf-lauf{0%{left:-40%;}100%{left:100%;}}
+#as-overlay .as-mf-schaerfen[disabled] i{animation:as-mf-puls 1.1s ease-in-out infinite;}
+@keyframes as-mf-puls{0%,100%{opacity:.35;}50%{opacity:1;}}
 #as-overlay .as-mf-feld input, #as-overlay .as-mf-feld textarea{
   width:100%; border:1px solid var(--line,#e2e8f0); border-radius:9px; padding:9px 11px;
   font:inherit; font-size:13px; line-height:1.55; background:#fff; color:inherit; resize:vertical;
@@ -1416,8 +1425,10 @@ export function previewMemoTitle(answers = {}, erkannt = "") {
   const firma = previewMemoFirma(answers, erkannt);
   if (!firma) return PREVIEW_MEMO_TITLE;
   // Nicht „Wie …“: der Untertitel faengt schon so an, und zwei gleiche
-  // Satzanfaenge uebereinander lesen sich wie eine Vorlage.
-  return `${firma}: vom Sortimentslabel zur eigenständigen Marke`;
+  // Satzanfaenge uebereinander lesen sich wie eine Vorlage. Ein langer Name
+  // sprengt die zwei Zeilen, die der Titel in 44 px hat: dann ohne Namen.
+  const mitFirma = `${firma}: vom Label zur eigenständigen Marke`;
+  return mitFirma.length <= memoFeld("title").zeichen ? mitFirma : PREVIEW_MEMO_TITLE;
 }
 
 /**
@@ -1435,9 +1446,12 @@ export function previewMemoFelder(answers = {}, erkannt = "") {
   const vonFirma = firma ? `von ${firma}` : "des Unternehmens";
   const dieFirma = firma || "das Unternehmen";
   const quelle = "Platzhalter, Quelle 2026";
+  // Der Firmenname steht mitten im Satz. Ist er lang, reisst er die
+  // Zeichengrenze des Feldes, und die Vorschau zeigte, was keiner tippen kann.
+  const kuerzt = (mitNamen, ohneNamen, key) => (mitNamen.length <= memoFeld(key).zeichen ? mitNamen : ohneNamen);
   return {
     title: previewMemoTitle(answers, erkannt),
-    standfirst: `Wie die Eigenmarken ${vonFirma} ihr volles Wachstumspotenzial entfalten.`,
+    standfirst: kuerzt(`Wie die Eigenmarken ${vonFirma} ihr Wachstumspotenzial entfalten.`, `Wie die Eigenmarken des Unternehmens ihr Wachstumspotenzial entfalten.`, "standfirst"),
     summary_0: "Wachsende Eigenmarkenanteile treffen auf steigende Ansprüche der Kundschaft",
     summary_1: "Erfolgreiche Eigenmarken werden wie eigenständige Marken geführt",
     summary_2: "Eigenmarken mit klarem Profil und eigener Markenwelt weiterentwickeln",
@@ -1450,8 +1464,8 @@ export function previewMemoFelder(answers = {}, erkannt = "") {
       { value: "76 %", label: "greifen zur Eigenmarke, wenn sie dem Händler vertrauen", source: quelle },
       { value: "8,9 Mrd. €", label: `Umsatz ${vonFirma} im vergangenen Geschäftsjahr`, source: quelle },
     ],
-    insight_title: `Die Eigenmarken ${vonFirma} funktionieren heute überwiegend über Preis und Sortiment.`,
-    market_p2: "Ein Blick auf die Fläche zeigt die heutige Logik: Das Sortiment ist nach Zielgruppen und Preislagen sauber strukturiert, der Auftritt der einzelnen Marken folgt dieser Struktur nicht. Am Regal stehen sie im direkten Wettbewerbsumfeld etablierter Herstellermarken und werden über Sortiment, Preis und Produktleistung differenziert. Ein eigenständiges Markenprofil darüber hinaus ist bisher nicht angelegt.",
+    insight_title: `Die Eigenmarken ${vonFirma} laufen heute über Preis und Sortiment.`,
+    market_p2: "Ein Blick auf die Fläche zeigt die heutige Logik: Das Sortiment ist nach Zielgruppen und Preislagen sauber strukturiert, der Auftritt der Marken folgt dieser Struktur nicht. Am Regal stehen sie neben etablierten Herstellermarken und unterscheiden sich über Sortiment und Preis. Ein eigenständiges Markenprofil ist bisher nicht angelegt.",
     benchmark_title: "Drei Handelsmarken führen ihre Eigenmarken mit eigenem Design, Botschaftern und eigenen Kanälen",
     benchmarks: [
       {
@@ -1611,12 +1625,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-9";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-13";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-9";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-13";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-9";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-13";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2682,30 +2696,49 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Hinweis hinter einem Symbol. Fuenfzig Felder mit dauerhaftem Erklaertext
    *  waren eine Wand; gelesen wird er genau einmal, beim ersten Feld. */
+  /**
+   * Der Hinweis haengt am Text, den er erklaert. Ein Fragezeichen neben jedem
+   * der neunundvierzig Felder war eine Reihe Symbole ohne eigene Aussage.
+   */
   function tipHtml(inhalt, beschriftung = "Hinweis") {
     if (!inhalt) return "";
-    return `<span class="as-tip">
-      <button type="button" class="as-tip-btn" aria-label="${attr(beschriftung)}"><i class="fa-regular fa-circle-question"></i></button>
-      <span class="as-tip-box" role="tooltip">${inhalt}</span>
-    </span>`;
+    return `<span class="as-tip-box" role="tooltip" aria-label="${attr(beschriftung)}">${inhalt}</span>`;
   }
 
+  /**
+   * Ein Feld. Die Zeichengrenze steht im Eingabefeld selbst: was nicht mehr
+   * hineinpasst, verschiebt sonst die Seite, und das faellt erst im fertigen
+   * Dokument auf. Der Zauberstab kuerzt, was schon dasteht.
+   */
   function memoFeldHtml(feld) {
     const wert = memoFeldWert(feld.key);
     const id = `as-mf-${feld.key}`;
+    const grenze = ` maxlength="${Number(feld.zeichen)}"`;
     const eingabe = Number(feld.rows) <= 1
-      ? `<input id="${attr(id)}" data-memofeld="${attr(feld.key)}" value="${esc(wert)}" placeholder="${attr(feld.beispiel.slice(0, 60))}">`
-      : `<textarea id="${attr(id)}" rows="${Number(feld.rows) || 3}" data-memofeld="${attr(feld.key)}" placeholder="${attr(feld.beispiel.slice(0, 90))}">${esc(wert)}</textarea>`;
+      ? `<input id="${attr(id)}" data-memofeld="${attr(feld.key)}"${grenze} value="${esc(wert)}" placeholder="${attr(feld.beispiel.slice(0, 60))}">`
+      : `<textarea id="${attr(id)}" rows="${Number(feld.rows) || 3}" data-memofeld="${attr(feld.key)}"${grenze} placeholder="${attr(feld.beispiel.slice(0, 90))}">${esc(wert)}</textarea>`;
     const hinweis = `<p class="as-tip-text">${esc(feld.hilfe)}</p>
       <p class="as-tip-bsp"><b>Referenzmemo</b>${esc(feld.beispiel)}</p>`;
     return `<div class="as-mf-feld">
-      <label for="${attr(id)}">${esc(feld.label)}${feld.pflicht ? `<span class="as-mf-pflicht">Pflicht</span>` : ""}${tipHtml(hinweis, `Hinweis zu ${feld.label}`)}
-        <button type="button" class="as-mf-schaerfen" data-act="memo-schaerfen" data-key="${attr(feld.key)}" aria-label="${attr(`${feld.label} auf die Machart des Referenzmemos bringen`)}"><i class="fa-solid fa-wand-magic-sparkles"></i></button>
+      <label for="${attr(id)}">
+        <span class="as-tip">${esc(feld.label)}${tipHtml(hinweis, `Hinweis zu ${feld.label}`)}</span>
+        <span class="as-mf-rest" data-memorest="${attr(feld.key)}">${restMarkup(feld, wert)}</span>
+        <button type="button" class="as-mf-schaerfen" data-act="memo-schaerfen" data-key="${attr(feld.key)}" aria-label="${attr(`${feld.label} kürzen und schärfen lassen`)}"><i class="fa-solid fa-wand-magic-sparkles"></i></button>
       </label>
       ${eingabe}
       <div data-memoguide="${attr(feld.key)}">${guideMarkup(memoFeldHinweise(feld.key, wert), esc)}</div>
       <div data-memovorschlag="${attr(feld.key)}"></div>
     </div>`;
+  }
+
+  /** Der Rest bis zur Grenze, sichtbar erst wenn es eng wird. */
+  function restMarkup(feld, wert) {
+    const rest = Number(feld.zeichen) - String(wert || "").length;
+    if (rest > Number(feld.zeichen) * 0.15) return "";
+    // Unter null kommt nur, was nicht getippt wurde: ein Entwurf des Modells
+    // oder ein eingefuegter Text. Dann sagt die Zeile, wie viel weg muss.
+    if (rest < 0) return `<span class="as-mf-rest-n is-voll">${-rest} Zeichen zu viel</span>`;
+    return `<span class="as-mf-rest-n${rest === 0 ? " is-voll" : ""}">${rest} Zeichen frei</span>`;
   }
 
   /**
@@ -2754,7 +2787,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function memoSectionHtml(q) {
     const section = q.section;
-    const gefuellt = section.fields.filter((f) => memoFeldWert(f.key).trim()).length;
     const bloecke = [];
     let offeneGruppe = null;
     for (const feld of section.fields) {
@@ -2781,8 +2813,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ${erwartet ? `<ul class="as-tip-liste">${erwartet}</ul>` : ""}${bilder}`;
     return `<div class="as-mf" data-memosection="${attr(section.id)}">
       <div class="as-mf-kopf">
-        <b>Seite ${section.seite}</b>${tipHtml(erklaerung, `Was auf Seite ${section.seite} gehört`)}
-        <span data-memostand>${gefuellt} von ${section.fields.length} Feldern selbst geschrieben</span>
+        <span class="as-tip"><b>Seite ${section.seite}</b>${tipHtml(erklaerung, `Was auf Seite ${section.seite} gehört`)}</span>
       </div>
       <div class="as-mf-block">${bloecke.join("")}</div>
       ${section.bildgruppe ? bildgruppeHtml(section.bildgruppe) : ""}
@@ -6062,7 +6093,7 @@ ${stages}${post}
     const kasten = shell.querySelector(`[data-memovorschlag="${CSS.escape(key)}"]`);
     if (!box || !kasten || knopf.disabled) return;
     knopf.disabled = true;
-    kasten.innerHTML = `<div class="as-mf-vorschlag">Einen Moment.</div>`;
+    kasten.innerHTML = `<div class="as-mf-vorschlag is-laedt"><span class="as-mf-vs-balken"></span></div>`;
     try {
       const abschnitt = MEMO_SECTIONS.find((s) => s.fields.some((f) => f.key === key));
       const nachbarn = {};
@@ -6116,6 +6147,8 @@ ${stages}${post}
     }
     const hilfe = shell.querySelector(`[data-memoguide="${CSS.escape(key)}"]`);
     if (hilfe) hilfe.innerHTML = guideMarkup(memoFeldHinweise(key, box.value), esc);
+    const rest = shell.querySelector(`[data-memorest="${CSS.escape(key)}"]`);
+    if (rest) rest.innerHTML = restMarkup(memoFeld(key) || {}, box.value);
     const fragen = aktiveFragen();
     const offen = fragen[schrittIndex(fragen)];
     const weiter = shell.querySelector('[data-act="step-next"]');
@@ -6127,11 +6160,6 @@ ${stages}${post}
         host.innerHTML = fehler.length
           ? `<ul class="lg-guide">${fehler.map((zeile) => `<li class="lg-guide-row lg-guide-row--warn"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(zeile)}</span></li>`).join("")}</ul>`
           : "";
-      }
-      const stand = shell.querySelector("[data-memostand]");
-      if (stand) {
-        const gefuellt = offen.section.fields.filter((f) => memoFeldWert(f.key).trim()).length;
-        stand.textContent = `${gefuellt} von ${offen.section.fields.length} Feldern selbst geschrieben`;
       }
     }
     // Ein geleertes Feld faellt auf den Platzhaltertext zurueck. Das sieht man

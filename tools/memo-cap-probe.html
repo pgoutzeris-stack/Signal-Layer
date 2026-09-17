@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>Memo Zeichengrenzen</title></head>
+<body>
+<script type="module">
+// Fuellt jedes Feld bis an seine Zeichengrenze und misst, ob die vier Seiten
+// noch auf 1123 px stehen. Ohne diese Messung waeren die Grenzen geraten.
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS } from "../memo-template.js?v=20260917-13";
+import { MEMO_FIELDS } from "../memo-guides.mjs?v=20260917-13";
+
+const WOERTER = ["Markenprofil", "Sortiment", "Eigenmarke", "Fläche", "Kundschaft", "Positionierung",
+  "Kanal", "Wachstum", "Handel", "Marke", "Produkt", "Auftritt"];
+
+function fuellText(zeichen) {
+  let text = "";
+  let i = 0;
+  while (text.length < zeichen) {
+    const wort = WOERTER[i++ % WOERTER.length];
+    text += (text ? " " : "") + wort;
+  }
+  return text.slice(0, zeichen).replace(/\s+$/, "");
+}
+
+const werte = {};
+for (const feld of MEMO_FIELDS) {
+  if (feld.art === "zahl") werte[feld.key] = "8,9 Mrd. €".slice(0, feld.zeichen);
+  else if (feld.art === "quelle") werte[feld.key] = fuellText(Math.max(0, feld.zeichen - 6)) + ", 2026";
+  else werte[feld.key] = fuellText(feld.zeichen);
+}
+
+const platz = { ...MEMO_DEFAULTS };
+for (const [key, wert] of Object.entries(werte)) {
+  const treffer = /^(kpi|bm|pot)(\d)_(.+)$/.exec(key);
+  if (!treffer) { platz[key] = wert; continue; }
+  platz[key] = wert;
+}
+platz.sources = werte.sources;
+
+const style = document.createElement("style");
+style.textContent = MEMO_TEMPLATE_CSS;
+document.head.appendChild(style);
+
+const buehne = document.createElement("div");
+buehne.className = "as-stage as-stage--memo";
+buehne.innerHTML = MEMO_TEMPLATE.replace(/\{\{(\w+)\}\}/g, (_, name) => {
+  if (name.endsWith("_image") || name.endsWith("_pos") || name === "uid" || name === "logo" || name === "contact_href") return "";
+  return platz[name] ?? MEMO_DEFAULTS[name] ?? "";
+});
+document.body.appendChild(buehne);
+
+window.messung = () => {
+  const seiten = [...buehne.querySelectorAll(".em-page")].map((seite, i) => ({
+    seite: i + 1,
+    hoehe: Math.round(seite.getBoundingClientRect().height),
+    inhalt: seite.scrollHeight,
+    ueberlauf: seite.scrollHeight > 1124,
+  }));
+  const h1 = buehne.querySelector(".em-cover h1");
+  const zeilen = h1 ? Math.round(h1.getBoundingClientRect().height / parseFloat(getComputedStyle(h1).lineHeight)) : 0;
+  return { seiten, titelZeilen: zeilen, titelZeichen: (h1?.textContent || "").length };
+};
+window.setzeTitel = (text) => {
+  const h1 = buehne.querySelector(".em-cover h1");
+  h1.textContent = text;
+  return Math.round(h1.getBoundingClientRect().height / parseFloat(getComputedStyle(h1).lineHeight));
+};
+window.bereit = true;
+</script>
+</body></html>

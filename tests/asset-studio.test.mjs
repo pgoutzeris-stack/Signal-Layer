@@ -329,11 +329,11 @@ test("Entwurf erzeugen ist verdrahtet und der Vorschautitel nimmt die Firma auf"
   assert.doesNotMatch(PREVIEW_MEMO_TITLE, /: (Chancen|Was|Ein|Überblick)/);
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "auto" }, "Roblox"),
-    "Roblox: vom Sortimentslabel zur eigenständigen Marke",
+    "Roblox: vom Label zur eigenständigen Marke",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "Pille" }, "Roblox"),
-    "Pille: vom Sortimentslabel zur eigenständigen Marke",
+    "Pille: vom Label zur eigenständigen Marke",
   );
   assert.equal(
     previewMemoTitle({ company_named: "yes", company_mode: "custom", company_text: "  " }, "Roblox"),
@@ -2120,11 +2120,71 @@ test("ein einzelnes Memofeld lässt sich gegen den Vertrag schärfen", () => {
 
 test("eine zu breite Kennzahl wird gemeldet statt still geschrumpft", async () => {
   const guides = await import("../memo-guides.mjs");
-  assert.match(guides.memoFeldFehler("kpi1_value", "+ 1,6 Prozentpunkte"), /schrumpfen die Zahl/);
+  assert.match(guides.memoFeldFehler("kpi1_value", "+ 1,6 Prozentpunkte"), /höchstens 10 Zeichen/);
   // Und im fertigen Dokument steht, welcher Kasten kleiner gesetzt wurde.
   assert.match(studio, /if \(schritte > 4\) geschrumpft\.push\(i \+ 1\);/);
   assert.match(studio, /treffer\.kpis = geschrumpft;/);
   assert.match(studio, /steht kleiner als die daneben/);
+});
+
+test("kein Feld nimmt mehr an, als in die Vorlage passt", async () => {
+  const guides = await import("../memo-guides.mjs");
+  // Woerter allein sagen nichts ueber den Platz: „Markenpositionierungsstrategie"
+  // ist ein Wort und eine halbe Zeile. Die harte Grenze steht im Eingabefeld.
+  // Die Zahlen sind gemessen, nicht geschaetzt: tools/memo-cap-probe.html fuellt
+  // jedes Feld bis an seine Grenze und prueft, dass alle vier Seiten auf
+  // 1123 px stehen. Der Titel traegt bei 50 Zeichen zwei Zeilen, bei 54 drei.
+  for (const feld of guides.MEMO_FIELDS) {
+    assert.ok(feld.zeichen > 0, `${feld.key} ohne Zeichengrenze`);
+    assert.ok(feld.beispiel.length <= feld.zeichen, `${feld.key}: Referenz ${feld.beispiel.length} über ${feld.zeichen}`);
+  }
+  // Gleiche Plaetze, gleiche Grenze.
+  const gruppe = (key) => key.replace(/^(kpi|bm|pot)\d/, "$1N");
+  const proGruppe = {};
+  for (const feld of guides.MEMO_FIELDS) {
+    const name = gruppe(feld.key);
+    if (proGruppe[name] !== undefined) assert.equal(feld.zeichen, proGruppe[name], `${name} mit zwei Grenzen`);
+    proGruppe[name] = feld.zeichen;
+  }
+  assert.match(guides.memoFeldFehler("title", "y".repeat(60)), /60 statt höchstens 50 Zeichen/);
+  assert.match(backend.memoVertragsVerstoss("title", "y".repeat(60)), /50 Zeichen/);
+  // Das Eingabefeld laesst gar nicht erst mehr zu.
+  assert.match(studio, /const grenze = ` maxlength="\$\{Number\(feld\.zeichen\)\}"`;/);
+  // Jedes Feld ist Pflicht: das Abzeichen am einzelnen Feld sagte nichts mehr.
+  assert.doesNotMatch(studio, /as-mf-pflicht/);
+  assert.equal(guides.MEMO_FIELDS.filter((f) => f.pflicht).length, 0);
+  assert.equal(guides.memoFeldFehler("standfirst", ""), "Subtitel (H2) fehlt.");
+  // Der Zaehler ueber dem Abschnitt ist weg.
+  assert.doesNotMatch(studio, /Feldern selbst geschrieben/);
+  assert.doesNotMatch(studio, /data-memostand/);
+  // Der Hinweis haengt am Namen, nicht an einem Fragezeichen.
+  assert.doesNotMatch(studio, /fa-circle-question/);
+  assert.doesNotMatch(studio, /as-tip-btn/);
+  // Der Zauberstab zeigt, dass er arbeitet.
+  assert.match(studio, /as-mf-vs-balken/);
+  assert.match(studio, /@keyframes as-mf-lauf/);
+  // Die Sonde misst gegen dieselbe Vorlage und denselben Vertrag.
+  const sonde = readFileSync(new URL("../tools/memo-cap-probe.html", import.meta.url), "utf8");
+  assert.match(sonde, /import \{ MEMO_FIELDS \} from "\.\.\/memo-guides\.mjs/);
+  assert.match(sonde, /ueberlauf: seite\.scrollHeight > 1124/);
+});
+
+test("der Zauberstab liest dieselben Regeln wie der ganze Entwurf", () => {
+  // Kurzer Prompt am Feld und langer Prompt am Dokument hiessen: derselbe Satz
+  // klingt anders, je nachdem auf welchem Weg er entstanden ist.
+  const prompt = backend.buildMemoFeldPrompt("bm2_text", "Zu kurz.", { company: "Rossmann", signal: "Handel baut Eigenmarken aus" });
+  assert.match(prompt, /<abschnitt>/);
+  assert.match(prompt, /02 Best Practice/);
+  assert.match(prompt, /<referenz>/);
+  assert.match(prompt, /Lidl · Parkside/);
+  assert.match(prompt, /<sprachregeln>/);
+  assert.match(prompt, /230 Zeichen/);
+  assert.match(prompt, /20 bis 44 Woerter/);
+  // Zu lang heisst kuerzen, sonst schaerfen. Laenger wird nie.
+  assert.match(backend.buildMemoFeldPrompt("bm2_text", "x".repeat(300), {}), /zu lang fuer den Platz/);
+  assert.match(backend.buildMemoFeldPrompt("bm2_text", "Ein kurzer Satz.", {}), /Schaerfe das Wording/);
+  assert.equal(backend.memoAufbauBlock("kpi3_label").includes("Kennzahlen"), true);
+  assert.equal(backend.memoBeispielBlock("pot2_potential").includes("03 ROOTS Empfehlung"), true);
 });
 
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
@@ -2149,7 +2209,7 @@ test("Feldvertrag prüft Zahlensatz, Quellenform und Satzzahl", async () => {
   assert.match(guides.memoFeldFehler("kpi1_value", "40%"), /Leerzeichen/);
   assert.equal(guides.memoFeldFehler("kpi1_value", "40 %"), "");
   // Über zwölf Zeichen schrumpft der Kasten die Zahl, still und sichtbar.
-  assert.match(guides.memoFeldFehler("kpi1_value", "+ 1,6 Prozentpunkte"), /Zeichen/);
+  assert.match(guides.memoFeldFehler("kpi1_value", "+ 1,6 Prozentpunkte"), /höchstens 10 Zeichen/);
   // Eine Quelle ohne Herausgeber ist keine Quelle.
   assert.match(guides.memoFeldFehler("kpi1_source", "2026"), /Herausgeber/);
   assert.equal(guides.memoFeldFehler("kpi1_source", "NIQ, 2025"), "");
@@ -2183,7 +2243,7 @@ test("Feldvertrag: Fragebogen, Prompt und Prüfung lesen dieselben Zahlen", asyn
   assert.deepEqual(
     backend.MEMO_VERTRAG,
     guides.MEMO_FIELDS.map((f) => ({
-      key: f.key, label: f.label, art: f.art, min: f.min, max: f.max,
+      key: f.key, label: f.label, art: f.art, min: f.min, max: f.max, zeichen: f.zeichen,
       saetze: f.saetze || null, punkt: Boolean(f.punkt),
     })),
   );
@@ -2198,8 +2258,10 @@ test("Feldvertrag: Fragebogen, Prompt und Prüfung lesen dieselben Zahlen", asyn
   assert.equal(guides.memoFeld("market_p1").min, 22);
   assert.equal(guides.memoFeld("bm1_text").min, 20);
 
+  // Wer den Inhalt selbst vorgibt, gibt ihn ganz vor: ein leeres Feld ist eine
+  // Luecke im Dokument, kein Auftrag ans Modell.
   assert.equal(guides.memoFeldFehler("title", ""), "Titel (H1) fehlt.");
-  assert.equal(guides.memoFeldFehler("standfirst", ""), "");
+  assert.equal(guides.memoFeldFehler("standfirst", ""), "Subtitel (H2) fehlt.");
   assert.match(guides.memoFeldFehler("title", "Nur drei"), /mindestens 4/);
   assert.match(guides.memoFeldFehler("summary_0", "eins zwei drei vier fünf sechs sieben acht neun zehn elf zwölf dreizehn vierzehn fünfzehn"), /höchstens 14/);
   assert.match(guides.memoFeldFehler("kpi1_value", "keine Zahl"), /Ziffer/);
@@ -2209,16 +2271,26 @@ test("Feldvertrag: Fragebogen, Prompt und Prüfung lesen dieselben Zahlen", asyn
   // meldet das, solange der Text noch im Feld steht.
   assert.deepEqual(guides.memoAbschnittFehler("memo_kpis", { kpi1_value: "42 %" }).slice(-1),
     ["Kennzahl 1 braucht Zahl, Bezug und Quelle. Ohne alle drei fällt der Kasten weg."]);
-  assert.deepEqual(guides.memoAbschnittFehler("memo_kpis",
-    { kpi1_value: "42 %", kpi1_label: "der Verbraucher greifen zur Eigenmarke", kpi1_source: "Simon-Kucher, 2026" }), []);
+  // Alle vier Kaesten sind Pflicht, sonst steht eine Luecke in der Leiste.
+  const vierKpis = {};
+  for (const i of [1, 2, 3, 4]) {
+    vierKpis[`kpi${i}_value`] = "42 %";
+    vierKpis[`kpi${i}_label`] = "der Verbraucher greifen zur Eigenmarke";
+    vierKpis[`kpi${i}_source`] = "Simon-Kucher, 2026";
+  }
+  assert.deepEqual(guides.memoAbschnittFehler("memo_kpis", vierKpis), []);
 
   // Ein Feld im Rahmen meldet nichts. Der Dauerhinweis unter jedem Feld war
   // Rauschen; auffallen soll nur, was gegen seine Grenze laeuft.
   assert.deepEqual(guides.memoFeldHinweise("title", ""), []);
   assert.deepEqual(guides.memoFeldHinweise("title", "Vom Preisargument zur eigenständigen Marke"), []);
-  const zuLang = guides.memoFeldHinweise("title", "eins zwei drei vier fünf sechs sieben acht neun zehn elf zwölf dreizehn");
+  // Dreizehn kurze Woerter passen in fuenfzig Zeichen und sind trotzdem eines
+  // zu viel: Zeichengrenze und Wortbereich messen zwei verschiedene Dinge.
+  const zuLang = guides.memoFeldHinweise("title", "ab cd ef gh ij kl mn op qr st uv wx yz");
   assert.equal(zuLang[0].ton, "warn");
   assert.match(zuLang[0].text, /höchstens 12/);
+  // Zu viele Zeichen meldet dasselbe Feld eigenstaendig.
+  assert.match(guides.memoFeldHinweise("title", "y".repeat(60))[0].text, /60 von 50 Zeichen/);
   assert.ok(guides.memoFeldHinweise("title", "Vom Preisargument zur eigenständigen Marke.")
     .some((z) => /ohne Punkt/.test(z.text)), "Überschrift mit Punkt wird gemeldet");
 });
@@ -2800,8 +2872,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-9");
-  assert.match(indexHtml, /app\.js\?v=20260917-9/);
+  assert.equal(studioVersion, "20260917-13");
+  assert.match(indexHtml, /app\.js\?v=20260917-13/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

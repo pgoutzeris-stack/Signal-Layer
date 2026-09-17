@@ -230,11 +230,11 @@ export const MEMO_FIELD_KEYS = [
  * vergleicht beide Zeichen fuer Zeichen, damit Prompt und Oberflaeche nicht
  * auseinanderlaufen.
  */
-export const MEMO_LAENGEN = `Cover: title: 4 bis 12 Wörter; standfirst: 5 bis 18 Wörter; summary_0: 5 bis 14 Wörter; summary_1: 5 bis 14 Wörter; summary_2: 5 bis 14 Wörter.
-01 Reality Check: market_title: 5 bis 14 Wörter; market_p1: 22 bis 48 Wörter; market_lead2: 12 bis 34 Wörter; insight_title: 5 bis 16 Wörter; market_p2: 42 bis 80 Wörter.
-Kennzahlen: kpiN_value: 1 bis 4 Wörter; kpiN_label: 5 bis 18 Wörter; kpiN_source: 1 bis 6 Wörter.
-02 Best Practice: benchmark_title: 8 bis 22 Wörter; sources: 5 bis 45 Wörter; quote_text: 14 bis 34 Wörter; bmN_name: 1 bis 5 Wörter; bmN_title: 3 bis 9 Wörter; bmN_text: 20 bis 44 Wörter; bmN_tag: 5 bis 16 Wörter.
-03 ROOTS Empfehlung: potentials_title: 5 bis 16 Wörter; potentials_lead: 22 bis 50 Wörter; potentials_lead2: 6 bis 20 Wörter; cta: 5 bis 16 Wörter; about_fit: 12 bis 38 Wörter; about_fit2: 10 bis 34 Wörter; potN_title: 3 bis 9 Wörter; potN_potential: 22 bis 48 Wörter.`;
+export const MEMO_LAENGEN = `Cover: title: 4 bis 12 Wörter, höchstens 50 Zeichen; standfirst: 5 bis 18 Wörter, höchstens 90 Zeichen; summary_0: 5 bis 14 Wörter, höchstens 105 Zeichen; summary_1: 5 bis 14 Wörter, höchstens 105 Zeichen; summary_2: 5 bis 14 Wörter, höchstens 105 Zeichen.
+01 Reality Check: market_title: 5 bis 14 Wörter, höchstens 60 Zeichen; market_p1: 22 bis 48 Wörter, höchstens 325 Zeichen; market_lead2: 12 bis 34 Wörter, höchstens 190 Zeichen; insight_title: 5 bis 16 Wörter, höchstens 110 Zeichen; market_p2: 42 bis 80 Wörter, höchstens 350 Zeichen.
+Kennzahlen: kpiN_value: 1 bis 4 Wörter, höchstens 10 Zeichen; kpiN_label: 5 bis 18 Wörter, höchstens 115 Zeichen; kpiN_source: 1 bis 6 Wörter, höchstens 25 Zeichen.
+02 Best Practice: benchmark_title: 8 bis 22 Wörter, höchstens 130 Zeichen; sources: 5 bis 45 Wörter, höchstens 185 Zeichen; quote_text: 14 bis 34 Wörter, höchstens 210 Zeichen; bmN_name: 1 bis 5 Wörter, höchstens 25 Zeichen; bmN_title: 3 bis 9 Wörter, höchstens 50 Zeichen; bmN_text: 20 bis 44 Wörter, höchstens 230 Zeichen; bmN_tag: 5 bis 16 Wörter, höchstens 90 Zeichen.
+03 ROOTS Empfehlung: potentials_title: 5 bis 16 Wörter, höchstens 85 Zeichen; potentials_lead: 22 bis 50 Wörter, höchstens 285 Zeichen; potentials_lead2: 6 bis 20 Wörter, höchstens 100 Zeichen; cta: 5 bis 16 Wörter, höchstens 70 Zeichen; about_fit: 12 bis 38 Wörter, höchstens 185 Zeichen; about_fit2: 10 bis 34 Wörter, höchstens 180 Zeichen; potN_title: 3 bis 9 Wörter, höchstens 50 Zeichen; potN_potential: 22 bis 48 Wörter, höchstens 300 Zeichen.`;
 
 /**
  * Der Aufbau, aus memo-guides.mjs erzeugt. Von Hand gepflegt stand hier eine
@@ -372,40 +372,40 @@ about_fit2: Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu un
  */
 export const MEMO_SCHEMA_TEXTE = {
   felder: {
-    title: "Die offene Aufgabe als These. Nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht. 4 bis 12 Wörter.",
-    standfirst: "Ein Satz, der den Titel auflöst: was sich dadurch ändert. 5 bis 18 Wörter.",
-    summary_0: "Die heutige Lage des Adressaten. Nimmt Seite 2 vorweg. 5 bis 14 Wörter.",
-    summary_1: "Was die Benchmarks gemeinsam richtig machen. Nimmt Seite 3 vorweg. 5 bis 14 Wörter.",
-    summary_2: "Der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg. 5 bis 14 Wörter.",
-    market_title: "Die Kategorie oder der Markt, nicht das Unternehmen. 5 bis 14 Wörter.",
-    market_p1: "Was sich im Markt verschoben hat und was das für den Adressaten bedeutet. 22 bis 48 Wörter.",
-    market_lead2: "Was dem Adressaten trotz guter Ausgangslage fehlt. Der Übergang zur Empfehlung. 12 bis 34 Wörter.",
-    insight_title: "Der Befund zum Adressaten in einem Satz. Nicht die Seitenüberschrift wiederholen. 5 bis 16 Wörter.",
-    market_p2: "Der Beleg für die Aussage, konkret an Sortiment, Fläche und POS. Trägt die untere Seitenhälfte. 42 bis 80 Wörter.",
-    benchmark_title: "Nennt die drei Marken und was sie gemeinsam richtig machen. 8 bis 22 Wörter.",
-    sources: "Belege für die drei Fälle, mit Semikolon getrennt. Format „Herausgeber, Art (Zeitraum)“. 5 bis 45 Wörter.",
-    quote_text: "Die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person. Die Zuschreibung darunter ist fest. 14 bis 34 Wörter.",
-    potentials_title: "Der Check für dieses Unternehmen. 5 bis 16 Wörter.",
-    potentials_lead: "Die Ausgangslage des Adressaten und wo das zusätzliche Potenzial liegt. 22 bis 50 Wörter.",
-    potentials_lead2: "Ein Satz, der die drei Hebel benennt. Er steht direkt über den Karten. 6 bis 20 Wörter.",
-    cta: "Eine Frage an den Adressaten, ohne Werbeton. Der Knopftext daneben ist fest. 5 bis 16 Wörter.",
-    about_fit: "Ein Satz über die ROOTS-Leistung allgemein. 12 bis 38 Wörter.",
-    about_fit2: "Ein Satz, der die Leistung an diesen Fall bindet. Erst hier darf sie beim Namen genannt werden. 10 bis 34 Wörter.",
+    title: "Die offene Aufgabe als These. Nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht. 4 bis 12 Wörter, höchstens 50 Zeichen.",
+    standfirst: "Ein Satz, der den Titel auflöst: was sich dadurch ändert. 5 bis 18 Wörter, höchstens 90 Zeichen.",
+    summary_0: "Die heutige Lage des Adressaten. Nimmt Seite 2 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
+    summary_1: "Was die Benchmarks gemeinsam richtig machen. Nimmt Seite 3 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
+    summary_2: "Der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
+    market_title: "Die Kategorie oder der Markt, nicht das Unternehmen. 5 bis 14 Wörter, höchstens 60 Zeichen.",
+    market_p1: "Was sich im Markt verschoben hat und was das für den Adressaten bedeutet. 22 bis 48 Wörter, höchstens 325 Zeichen.",
+    market_lead2: "Was dem Adressaten trotz guter Ausgangslage fehlt. Der Übergang zur Empfehlung. 12 bis 34 Wörter, höchstens 190 Zeichen.",
+    insight_title: "Der Befund zum Adressaten in einem Satz. Nicht die Seitenüberschrift wiederholen. 5 bis 16 Wörter, höchstens 110 Zeichen.",
+    market_p2: "Der Beleg für die Aussage, konkret an Sortiment, Fläche und POS. Trägt die untere Seitenhälfte. 42 bis 80 Wörter, höchstens 350 Zeichen.",
+    benchmark_title: "Nennt die drei Marken und was sie gemeinsam richtig machen. 8 bis 22 Wörter, höchstens 130 Zeichen.",
+    sources: "Belege für die drei Fälle, mit Semikolon getrennt. Format „Herausgeber, Art (Zeitraum)“. 5 bis 45 Wörter, höchstens 185 Zeichen.",
+    quote_text: "Die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person. Die Zuschreibung darunter ist fest. 14 bis 34 Wörter, höchstens 210 Zeichen.",
+    potentials_title: "Der Check für dieses Unternehmen. 5 bis 16 Wörter, höchstens 85 Zeichen.",
+    potentials_lead: "Die Ausgangslage des Adressaten und wo das zusätzliche Potenzial liegt. 22 bis 50 Wörter, höchstens 285 Zeichen.",
+    potentials_lead2: "Ein Satz, der die drei Hebel benennt. Er steht direkt über den Karten. 6 bis 20 Wörter, höchstens 100 Zeichen.",
+    cta: "Eine Frage an den Adressaten, ohne Werbeton. Der Knopftext daneben ist fest. 5 bis 16 Wörter, höchstens 70 Zeichen.",
+    about_fit: "Ein Satz über die ROOTS-Leistung allgemein. 12 bis 38 Wörter, höchstens 185 Zeichen.",
+    about_fit2: "Ein Satz, der die Leistung an diesen Fall bindet. Erst hier darf sie beim Namen genannt werden. 10 bis 34 Wörter, höchstens 180 Zeichen.",
   },
   kpi: {
-    value: "Eine Zeile, deutsch gesetzt. Über zwölf Zeichen schrumpft die Zahl im Kasten. 1 bis 4 Wörter.",
-    label: "Worauf sich die Zahl bezieht, ein halber Satz ohne Schlusspunkt. 5 bis 18 Wörter.",
-    source: "Format „Herausgeber, Jahr“. Mehrere Herausgeber mit Schrägstrich, Zeiträume mit Schrägstrich. 1 bis 6 Wörter.",
+    value: "Eine Zeile, deutsch gesetzt. Über zwölf Zeichen schrumpft die Zahl im Kasten. 1 bis 4 Wörter, höchstens 10 Zeichen.",
+    label: "Worauf sich die Zahl bezieht, ein halber Satz ohne Schlusspunkt. 5 bis 18 Wörter, höchstens 115 Zeichen.",
+    source: "Format „Herausgeber, Jahr“. Mehrere Herausgeber mit Schrägstrich, Zeiträume mit Schrägstrich. 1 bis 6 Wörter, höchstens 25 Zeichen.",
   },
   benchmark: {
-    name: "Bei Handelsmarken „Händler · Marke“. 1 bis 5 Wörter.",
-    title: "Was diese Marke getan hat, ohne Schlusspunkt. 3 bis 9 Wörter.",
-    text: "Die Handlung und warum sie gewirkt hat. Unter zwanzig Wörtern reisst die Karte auseinander. 20 bis 44 Wörter.",
-    tag: "Was davon auf den Adressaten übertragbar ist, ein Satz. 5 bis 16 Wörter.",
+    name: "Bei Handelsmarken „Händler · Marke“. 1 bis 5 Wörter, höchstens 25 Zeichen.",
+    title: "Was diese Marke getan hat, ohne Schlusspunkt. 3 bis 9 Wörter, höchstens 50 Zeichen.",
+    text: "Die Handlung und warum sie gewirkt hat. Unter zwanzig Wörtern reisst die Karte auseinander. 20 bis 44 Wörter, höchstens 230 Zeichen.",
+    tag: "Was davon auf den Adressaten übertragbar ist, ein Satz. 5 bis 16 Wörter, höchstens 90 Zeichen.",
   },
   potential: {
-    title: "Verb voran, kein Schlusspunkt. 3 bis 9 Wörter.",
-    potential: "Der Hebel in der Sprache des Falls, ohne erfundene Zahl. Die drei Karten sollten ähnlich lang sein, sonst steht eine kurz. 22 bis 48 Wörter.",
+    title: "Verb voran, kein Schlusspunkt. 3 bis 9 Wörter, höchstens 50 Zeichen.",
+    potential: "Der Hebel in der Sprache des Falls, ohne erfundene Zahl. Die drei Karten sollten ähnlich lang sein, sonst steht eine kurz. 22 bis 48 Wörter, höchstens 300 Zeichen.",
   },
 } as const;
 
@@ -421,60 +421,61 @@ export type MemoVertragFeld = {
   art: string;
   min: number;
   max: number;
+  zeichen: number;
   saetze: [number, number] | null;
   punkt: boolean;
 };
 
 export const MEMO_VERTRAG: MemoVertragFeld[] = [
-  { key: "title", label: "Titel (H1)", art: "these", min: 4, max: 12, saetze: null, punkt: false },
-  { key: "standfirst", label: "Subtitel (H2)", art: "satz", min: 5, max: 18, saetze: [1, 2], punkt: false },
-  { key: "summary_0", label: "Feature 1", art: "schluessel", min: 5, max: 14, saetze: null, punkt: false },
-  { key: "summary_1", label: "Feature 2", art: "schluessel", min: 5, max: 14, saetze: null, punkt: false },
-  { key: "summary_2", label: "Feature 3", art: "schluessel", min: 5, max: 14, saetze: null, punkt: false },
-  { key: "market_title", label: "Titel (H2)", art: "these", min: 5, max: 14, saetze: null, punkt: false },
-  { key: "market_p1", label: "Absatz 1", art: "absatz", min: 22, max: 48, saetze: null, punkt: false },
-  { key: "market_lead2", label: "Absatz 2", art: "absatz", min: 12, max: 34, saetze: null, punkt: false },
-  { key: "insight_title", label: "Bildaussage", art: "these", min: 5, max: 16, saetze: [1, 1], punkt: true },
-  { key: "market_p2", label: "Absatz 3", art: "absatz", min: 42, max: 80, saetze: null, punkt: false },
-  { key: "kpi1_value", label: "Kennzahl 1", art: "zahl", min: 1, max: 4, saetze: null, punkt: false },
-  { key: "kpi1_label", label: "Beschreibung", art: "satz", min: 5, max: 18, saetze: null, punkt: false },
-  { key: "kpi1_source", label: "Quelle", art: "quelle", min: 1, max: 6, saetze: null, punkt: false },
-  { key: "kpi2_value", label: "Kennzahl 2", art: "zahl", min: 1, max: 4, saetze: null, punkt: false },
-  { key: "kpi2_label", label: "Beschreibung", art: "satz", min: 5, max: 18, saetze: null, punkt: false },
-  { key: "kpi2_source", label: "Quelle", art: "quelle", min: 1, max: 6, saetze: null, punkt: false },
-  { key: "kpi3_value", label: "Kennzahl 3", art: "zahl", min: 1, max: 4, saetze: null, punkt: false },
-  { key: "kpi3_label", label: "Beschreibung", art: "satz", min: 5, max: 18, saetze: null, punkt: false },
-  { key: "kpi3_source", label: "Quelle", art: "quelle", min: 1, max: 6, saetze: null, punkt: false },
-  { key: "kpi4_value", label: "Kennzahl 4", art: "zahl", min: 1, max: 4, saetze: null, punkt: false },
-  { key: "kpi4_label", label: "Beschreibung", art: "satz", min: 5, max: 18, saetze: null, punkt: false },
-  { key: "kpi4_source", label: "Quelle", art: "quelle", min: 1, max: 6, saetze: null, punkt: false },
-  { key: "benchmark_title", label: "Titel (H2)", art: "these", min: 8, max: 22, saetze: null, punkt: false },
-  { key: "bm1_name", label: "Benchmark 1", art: "name", min: 1, max: 5, saetze: null, punkt: false },
-  { key: "bm1_title", label: "Titel", art: "these", min: 3, max: 9, saetze: null, punkt: false },
-  { key: "bm1_text", label: "Beleg", art: "absatz", min: 20, max: 44, saetze: null, punkt: false },
-  { key: "bm1_tag", label: "Lehre", art: "satz", min: 5, max: 16, saetze: [1, 1], punkt: false },
-  { key: "bm2_name", label: "Benchmark 2", art: "name", min: 1, max: 5, saetze: null, punkt: false },
-  { key: "bm2_title", label: "Titel", art: "these", min: 3, max: 9, saetze: null, punkt: false },
-  { key: "bm2_text", label: "Beleg", art: "absatz", min: 20, max: 44, saetze: null, punkt: false },
-  { key: "bm2_tag", label: "Lehre", art: "satz", min: 5, max: 16, saetze: [1, 1], punkt: false },
-  { key: "bm3_name", label: "Benchmark 3", art: "name", min: 1, max: 5, saetze: null, punkt: false },
-  { key: "bm3_title", label: "Titel", art: "these", min: 3, max: 9, saetze: null, punkt: false },
-  { key: "bm3_text", label: "Beleg", art: "absatz", min: 20, max: 44, saetze: null, punkt: false },
-  { key: "bm3_tag", label: "Lehre", art: "satz", min: 5, max: 16, saetze: [1, 1], punkt: false },
-  { key: "sources", label: "Quellen", art: "liste", min: 5, max: 45, saetze: null, punkt: false },
-  { key: "quote_text", label: "Zitat", art: "satz", min: 14, max: 34, saetze: [1, 2], punkt: false },
-  { key: "potentials_title", label: "Titel (H2)", art: "these", min: 5, max: 16, saetze: null, punkt: false },
-  { key: "potentials_lead", label: "Absatz 1", art: "absatz", min: 22, max: 50, saetze: null, punkt: false },
-  { key: "potentials_lead2", label: "Absatz 2", art: "satz", min: 6, max: 20, saetze: [1, 1], punkt: false },
-  { key: "pot1_title", label: "Hebel 1", art: "these", min: 3, max: 9, saetze: null, punkt: false },
-  { key: "pot1_potential", label: "Text", art: "absatz", min: 22, max: 48, saetze: null, punkt: false },
-  { key: "pot2_title", label: "Hebel 2", art: "these", min: 3, max: 9, saetze: null, punkt: false },
-  { key: "pot2_potential", label: "Text", art: "absatz", min: 22, max: 48, saetze: null, punkt: false },
-  { key: "pot3_title", label: "Hebel 3", art: "these", min: 3, max: 9, saetze: null, punkt: false },
-  { key: "pot3_potential", label: "Text", art: "absatz", min: 22, max: 48, saetze: null, punkt: false },
-  { key: "cta", label: "CTA-Frage", art: "these", min: 5, max: 16, saetze: [1, 1], punkt: false },
-  { key: "about_fit", label: "Über ROOTS", art: "absatz", min: 12, max: 38, saetze: null, punkt: false },
-  { key: "about_fit2", label: "Bezug zum Fall", art: "absatz", min: 10, max: 34, saetze: null, punkt: false },
+  { key: "title", label: "Titel (H1)", art: "these", min: 4, max: 12, zeichen: 50, saetze: null, punkt: false },
+  { key: "standfirst", label: "Subtitel (H2)", art: "satz", min: 5, max: 18, zeichen: 90, saetze: [1, 2], punkt: false },
+  { key: "summary_0", label: "Feature 1", art: "schluessel", min: 5, max: 14, zeichen: 105, saetze: null, punkt: false },
+  { key: "summary_1", label: "Feature 2", art: "schluessel", min: 5, max: 14, zeichen: 105, saetze: null, punkt: false },
+  { key: "summary_2", label: "Feature 3", art: "schluessel", min: 5, max: 14, zeichen: 105, saetze: null, punkt: false },
+  { key: "market_title", label: "Titel (H2)", art: "these", min: 5, max: 14, zeichen: 60, saetze: null, punkt: false },
+  { key: "market_p1", label: "Absatz 1", art: "absatz", min: 22, max: 48, zeichen: 325, saetze: null, punkt: false },
+  { key: "market_lead2", label: "Absatz 2", art: "absatz", min: 12, max: 34, zeichen: 190, saetze: null, punkt: false },
+  { key: "insight_title", label: "Bildaussage", art: "these", min: 5, max: 16, zeichen: 110, saetze: [1, 1], punkt: true },
+  { key: "market_p2", label: "Absatz 3", art: "absatz", min: 42, max: 80, zeichen: 350, saetze: null, punkt: false },
+  { key: "kpi1_value", label: "Kennzahl 1", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
+  { key: "kpi1_label", label: "Beschreibung", art: "satz", min: 5, max: 18, zeichen: 115, saetze: null, punkt: false },
+  { key: "kpi1_source", label: "Quelle", art: "quelle", min: 1, max: 6, zeichen: 25, saetze: null, punkt: false },
+  { key: "kpi2_value", label: "Kennzahl 2", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
+  { key: "kpi2_label", label: "Beschreibung", art: "satz", min: 5, max: 18, zeichen: 115, saetze: null, punkt: false },
+  { key: "kpi2_source", label: "Quelle", art: "quelle", min: 1, max: 6, zeichen: 25, saetze: null, punkt: false },
+  { key: "kpi3_value", label: "Kennzahl 3", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
+  { key: "kpi3_label", label: "Beschreibung", art: "satz", min: 5, max: 18, zeichen: 115, saetze: null, punkt: false },
+  { key: "kpi3_source", label: "Quelle", art: "quelle", min: 1, max: 6, zeichen: 25, saetze: null, punkt: false },
+  { key: "kpi4_value", label: "Kennzahl 4", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
+  { key: "kpi4_label", label: "Beschreibung", art: "satz", min: 5, max: 18, zeichen: 115, saetze: null, punkt: false },
+  { key: "kpi4_source", label: "Quelle", art: "quelle", min: 1, max: 6, zeichen: 25, saetze: null, punkt: false },
+  { key: "benchmark_title", label: "Titel (H2)", art: "these", min: 8, max: 22, zeichen: 130, saetze: null, punkt: false },
+  { key: "bm1_name", label: "Benchmark 1", art: "name", min: 1, max: 5, zeichen: 25, saetze: null, punkt: false },
+  { key: "bm1_title", label: "Titel", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
+  { key: "bm1_text", label: "Beleg", art: "absatz", min: 20, max: 44, zeichen: 230, saetze: null, punkt: false },
+  { key: "bm1_tag", label: "Lehre", art: "satz", min: 5, max: 16, zeichen: 90, saetze: [1, 1], punkt: false },
+  { key: "bm2_name", label: "Benchmark 2", art: "name", min: 1, max: 5, zeichen: 25, saetze: null, punkt: false },
+  { key: "bm2_title", label: "Titel", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
+  { key: "bm2_text", label: "Beleg", art: "absatz", min: 20, max: 44, zeichen: 230, saetze: null, punkt: false },
+  { key: "bm2_tag", label: "Lehre", art: "satz", min: 5, max: 16, zeichen: 90, saetze: [1, 1], punkt: false },
+  { key: "bm3_name", label: "Benchmark 3", art: "name", min: 1, max: 5, zeichen: 25, saetze: null, punkt: false },
+  { key: "bm3_title", label: "Titel", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
+  { key: "bm3_text", label: "Beleg", art: "absatz", min: 20, max: 44, zeichen: 230, saetze: null, punkt: false },
+  { key: "bm3_tag", label: "Lehre", art: "satz", min: 5, max: 16, zeichen: 90, saetze: [1, 1], punkt: false },
+  { key: "sources", label: "Quellen", art: "liste", min: 5, max: 45, zeichen: 185, saetze: null, punkt: false },
+  { key: "quote_text", label: "Zitat", art: "satz", min: 14, max: 34, zeichen: 210, saetze: [1, 2], punkt: false },
+  { key: "potentials_title", label: "Titel (H2)", art: "these", min: 5, max: 16, zeichen: 85, saetze: null, punkt: false },
+  { key: "potentials_lead", label: "Absatz 1", art: "absatz", min: 22, max: 50, zeichen: 285, saetze: null, punkt: false },
+  { key: "potentials_lead2", label: "Absatz 2", art: "satz", min: 6, max: 20, zeichen: 100, saetze: [1, 1], punkt: false },
+  { key: "pot1_title", label: "Hebel 1", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
+  { key: "pot1_potential", label: "Text", art: "absatz", min: 22, max: 48, zeichen: 300, saetze: null, punkt: false },
+  { key: "pot2_title", label: "Hebel 2", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
+  { key: "pot2_potential", label: "Text", art: "absatz", min: 22, max: 48, zeichen: 300, saetze: null, punkt: false },
+  { key: "pot3_title", label: "Hebel 3", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
+  { key: "pot3_potential", label: "Text", art: "absatz", min: 22, max: 48, zeichen: 300, saetze: null, punkt: false },
+  { key: "cta", label: "CTA-Frage", art: "these", min: 5, max: 16, zeichen: 70, saetze: [1, 1], punkt: false },
+  { key: "about_fit", label: "Über ROOTS", art: "absatz", min: 12, max: 38, zeichen: 185, saetze: null, punkt: false },
+  { key: "about_fit2", label: "Bezug zum Fall", art: "absatz", min: 10, max: 34, zeichen: 180, saetze: null, punkt: false },
 ];
 
 const VERTRAG_NACH_KEY = new Map(MEMO_VERTRAG.map((f) => [f.key, f]));
@@ -502,6 +503,9 @@ export function memoVertragsVerstoss(key: string, wert: unknown): string {
   if (!feld) return "";
   const wortlaut = String(wert || "").trim();
   if (!wortlaut) return "";
+  if (wortlaut.length > feld.zeichen) {
+    return `${key}: ${wortlaut.length} statt hoechstens ${feld.zeichen} Zeichen, das verschiebt die Seite.`;
+  }
   const worte = memoWorte(wortlaut);
   if (worte < feld.min) return `${key}: ${worte} statt mindestens ${feld.min} Woerter.`;
   if (worte > feld.max) return `${key}: ${worte} statt hoechstens ${feld.max} Woerter.`;
@@ -638,7 +642,24 @@ export const MEMO_FELD_SCHEMA = {
   },
 };
 
-/** Ein einzelnes Feld schaerfen, ohne den Rest des Memos anzufassen. */
+/** Der Abschnitt aus dem Aufbau, in dem dieses Feld steht. */
+export function memoAufbauBlock(key: string): string {
+  const muster = key.replace(/^(kpi|bm|pot)\d/, "$1N");
+  return MEMO_AUFBAU.split("\n\n").find((block) => block.includes(`\n${muster} (`)) || "";
+}
+
+/** Dasselbe fuer die Referenz: der ganze Abschnitt, nicht nur die eine Zeile. */
+export function memoBeispielBlock(key: string): string {
+  return MEMO_BEISPIELE.split("\n\n").find((block) => block.includes(`\n${key}: `)) || "";
+}
+
+/**
+ * Ein einzelnes Feld schaerfen, ohne den Rest des Memos anzufassen.
+ *
+ * Der Knopf am Feld und der ganze Entwurf lesen dieselben Regeln: Aufgabe des
+ * Abschnitts, Referenzmemo, Laengen und Sprachregeln. Ein kurzer Prompt hier
+ * hiesse, dass derselbe Satz je nach Weg anders klingt.
+ */
 export function buildMemoFeldPrompt(
   key: string,
   wert: string,
@@ -647,31 +668,46 @@ export function buildMemoFeldPrompt(
   const feld = MEMO_VERTRAG.find((f) => f.key === key);
   if (!feld) return "";
   const verstoss = memoVertragsVerstoss(key, wert);
-  const beschreibung = MEMO_SCHEMA_TEXTE.felder[key as keyof typeof MEMO_SCHEMA_TEXTE.felder]
-    || MEMO_SCHEMA_TEXTE.kpi[key.replace(/^kpi\d_/, "") as keyof typeof MEMO_SCHEMA_TEXTE.kpi]
-    || MEMO_SCHEMA_TEXTE.benchmark[key.replace(/^bm\d_/, "") as keyof typeof MEMO_SCHEMA_TEXTE.benchmark]
-    || MEMO_SCHEMA_TEXTE.potential[key.replace(/^pot\d_/, "") as keyof typeof MEMO_SCHEMA_TEXTE.potential]
-    || "";
+  const zuLang = wert.length > feld.zeichen;
   const nachbarn = Object.entries(kontext.nachbarn || {})
     .filter(([, v]) => String(v || "").trim())
-    .slice(0, 8)
+    .slice(0, 12)
     .map(([k, v]) => `${k}: ${v}`)
     .join("\n");
-  return `Du schaerfst ein einzelnes Feld im ROOTS Executive Memo. Der Nutzer hat es selbst geschrieben und moechte es auf die Machart des Referenzmemos bringen. Alles andere im Dokument bleibt unberuehrt.
+  const regeln = [
+    `Zielbereich ${feld.min} bis ${feld.max} Woerter.`,
+    `Hoechstens ${feld.zeichen} Zeichen, das ist die harte Grenze der Vorlage.`,
+    feld.saetze
+      ? (feld.saetze[0] === feld.saetze[1] ? `Genau ${feld.saetze[0]} Satz.` : `${feld.saetze[0]} bis ${feld.saetze[1]} Saetze.`)
+      : "",
+    feld.art === "these" && !feld.punkt ? "Ueberschrift, kein Punkt am Ende." : "",
+    feld.art === "zahl" ? "Deutsch gesetzt: 40 %, + 1,6 PP, 8,9 Mrd. €." : "",
+    feld.art === "quelle" ? "Format „Herausgeber, Jahr“." : "",
+  ].filter(Boolean).join(" ");
 
-<feld>
-${key} (${feld.label}) auf Seite des Memos.
-${beschreibung}
-</feld>
+  return `Du schaerfst ein einzelnes Feld im ROOTS Executive Memo. Das Memo ist immer dasselbe Dokument aus vier A4-Seiten: Cover, 01 Reality Check, 02 Best Practice, 03 ROOTS Empfehlung. Es ueberzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu sprechen. Der Nutzer hat dieses eine Feld selbst geschrieben; alles andere im Dokument bleibt unberuehrt.
+
+<abschnitt>
+${memoAufbauBlock(key)}
+</abschnitt>
 <referenz>
-So steht dieses Feld im Referenzmemo. Machart uebernehmen, Inhalt nicht: ${MEMO_BEISPIEL[key] || ""}
+So steht dieser Abschnitt im Referenzmemo. Daran sind Tonlage, Satzbau und Art des Belegs zu messen. Es ist ein anderer Fall: uebernimm die Machart, nicht die Inhalte.
+${memoBeispielBlock(key)}
 </referenz>
+<feld>
+${key} (${feld.label})
+${regeln}
+</feld>
 <jetzt>
 ${wert || "(leer)"}
 </jetzt>
-${verstoss ? `<befund>\n${verstoss}\n</befund>\n` : ""}${kontext.company ? `<adressat>\n${kontext.company}\n</adressat>\n` : ""}${kontext.signal ? `<anlass>\n${kontext.signal}\n</anlass>\n` : ""}${nachbarn ? `<umfeld>\nDiese Felder stehen daneben und duerfen sich nicht wiederholen:\n${nachbarn}\n</umfeld>\n` : ""}<auftrag>
-Schreibe das Feld neu. Die Aussage des Nutzers bleibt, auch seine Begriffe, soweit sie tragen. Zu kurz wird mit Substanz aus dem Fall laenger, nicht mit Fuellwoertern. Zu lang wird gekuerzt, nicht abgeschnitten. Keine Zahl, die nicht schon dasteht. Keine Anfuehrungszeichen um das Ergebnis. Ist das Feld leer, schreibe es aus dem Umfeld heraus.
-Zielbereich: ${feld.min} bis ${feld.max} Woerter.${feld.saetze ? ` ${feld.saetze[0] === feld.saetze[1] ? `Genau ${feld.saetze[0]}` : `${feld.saetze[0]} bis ${feld.saetze[1]}`} Saetze.` : ""}${feld.art === "these" && !feld.punkt ? " Ueberschrift, kein Punkt am Ende." : ""}
+${verstoss ? `<befund>\n${verstoss}\n</befund>\n` : ""}${kontext.company ? `<adressat>\n${kontext.company}\n</adressat>\n` : ""}${kontext.signal ? `<anlass>\n${kontext.signal}\n</anlass>\n` : ""}${nachbarn ? `<umfeld>\nDiese Felder stehen daneben und duerfen sich nicht wiederholen:\n${nachbarn}\n</umfeld>\n` : ""}${SPRACHREGELN}
+<auftrag>
+${zuLang
+    ? "Der Text ist zu lang fuer den Platz. Kuerze ihn auf die Grenze, ohne die Aussage zu verlieren: streiche Fuellwoerter, Doppelungen und Nebensaetze, die nichts tragen. Nicht mitten im Satz abschneiden."
+    : "Der Text passt. Schaerfe das Wording: konkreter, aktiver, naeher an der Machart des Referenzmemos. Kuerzer ist besser, laenger nie."}
+Die Aussage des Nutzers bleibt, auch seine Begriffe, soweit sie tragen. Keine Zahl, die nicht schon dasteht. Keine Anfuehrungszeichen um das Ergebnis. Ist das Feld leer, schreibe es aus Abschnitt, Anlass und Umfeld heraus.
+${regeln}
 </auftrag>
 
 Antworte ausschliesslich mit einem JSON-Objekt {"text": "..."}.`;
