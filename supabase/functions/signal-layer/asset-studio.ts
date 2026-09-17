@@ -1398,10 +1398,78 @@ export const MEMO_BENCHMARK_EXAMPLE: MemoBenchmarkBrief[] = [
   },
 ];
 
+/**
+ * Was Google mit einem Fehlercode wirklich sagt. Bis hierher stand im Memo nur
+ * die Zahl: „Die Benchmark-Recherche ist fehlgeschlagen (429)." Ein 429 heisst
+ * aber zweierlei, und die beiden Faelle brauchen verschiedene Antworten.
+ * Zu viele Anfragen in kurzer Zeit loest sich nach Sekunden; ein aufgebrauchtes
+ * Tageskontingent erst am naechsten Tag. Der Koerper der Antwort sagt welches,
+ * und oft auch, wie lange zu warten ist.
+ */
+export function geminiResearchFehler(status: number, koerper: string): {
+  text: string;
+  retryMs: number;
+  hart: boolean;
+} {
+  let meldung = "";
+  let details: unknown[] = [];
+  try {
+    const roh = JSON.parse(koerper) as { error?: { message?: unknown; details?: unknown[] } };
+    meldung = String(roh?.error?.message || "").trim();
+    details = Array.isArray(roh?.error?.details) ? roh.error.details : [];
+  } catch {
+    meldung = String(koerper || "").slice(0, 300).trim();
+  }
+  // Google haengt die Wartezeit als RetryInfo an: { "@type": "...RetryInfo", "retryDelay": "21s" }
+  let retryMs = 0;
+  for (const eintrag of details) {
+    const wert = String((eintrag as { retryDelay?: unknown })?.retryDelay || "");
+    const treffer = /^(\d+(?:\.\d+)?)s$/.exec(wert);
+    if (treffer) retryMs = Math.round(Number(treffer[1]) * 1000);
+  }
+  const tageslimit = /per\s*day|perday|daily|pro\s*tag/i.test(meldung)
+    || details.some((eintrag) => /PerDay/i.test(String((eintrag as { quotaMetric?: unknown; violations?: unknown })?.quotaMetric || JSON.stringify(eintrag || ""))));
+
+  if (status === 401 || status === 403) {
+    return { text: "Der Gemini-Schlüssel wird für die Benchmark-Recherche abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.", retryMs: 0, hart: true };
+  }
+  if (status === 400) {
+    return { text: `Google hat die Anfrage zur Benchmark-Recherche abgelehnt: ${meldung || "ungültige Anfrage"}.`, retryMs: 0, hart: true };
+  }
+  if (status === 429 && tageslimit) {
+    return {
+      text: "Das Tageskontingent der Google-Suche für die Benchmark-Recherche ist aufgebraucht. Es füllt sich in der Nacht wieder auf; bis dahin eigene Benchmarks eintragen oder das Kontingent im Google-Projekt erhöhen.",
+      retryMs: 0,
+      hart: true,
+    };
+  }
+  if (status === 429) {
+    return {
+      text: "Google drosselt die Benchmark-Recherche: zu viele Anfragen in kurzer Zeit. In einer Minute erneut versuchen.",
+      retryMs: retryMs || 6_000,
+      hart: false,
+    };
+  }
+  if (status >= 500) {
+    return { text: `Google hat die Benchmark-Recherche mit ${status} abgewiesen.`, retryMs: retryMs || 3_000, hart: false };
+  }
+  return { text: `Die Benchmark-Recherche ist fehlgeschlagen (${status}).`, retryMs: retryMs || 2_000, hart: false };
+}
+
+/** Ein Fehler, den der zweite Anlauf nicht heilt. */
+export function istHarterResearchFehler(nachricht: string): boolean {
+  return /Schlüssel wird für die Benchmark-Recherche abgelehnt|Tageskontingent der Google-Suche|Google hat die Anfrage zur Benchmark-Recherche abgelehnt|kein Gemini-Schlüssel/i.test(String(nachricht || ""));
+}
+
 export const MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS = 90_000;
 export const MEMO_BENCHMARK_RESEARCH_MODEL = "gemini-2.5-flash";
-/** Ein Versuch reicht oft nicht: Suche plus JSON endet bei Flash gern mit MAX_TOKENS. */
-export const MEMO_BENCHMARK_RESEARCH_ATTEMPTS = 2;
+/**
+ * Ein Versuch reicht oft nicht: Suche plus JSON endet bei Flash gern mit
+ * MAX_TOKENS, und ein 429 aus der Drosselung loest sich nach Sekunden.
+ */
+export const MEMO_BENCHMARK_RESEARCH_ATTEMPTS = 3;
+/** Laenger warten frisst die Wanduhr des Auftrags, bevor das Modell schreibt. */
+export const MEMO_BENCHMARK_RESEARCH_MAX_WAIT_MS = 12_000;
 /** Antwortbudget ohne Thinking. 2400 plus Default-Thinking hat am 14.8.2026 leere Streams geliefert. */
 export const MEMO_BENCHMARK_RESEARCH_MAX_TOKENS = 4_096;
 

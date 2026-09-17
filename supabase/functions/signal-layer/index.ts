@@ -107,6 +107,9 @@ import {
   MEMO_BENCHMARK_RESEARCH_MODEL,
   MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS,
   MEMO_BENCHMARK_RESEARCH_ATTEMPTS,
+  MEMO_BENCHMARK_RESEARCH_MAX_WAIT_MS,
+  geminiResearchFehler,
+  istHarterResearchFehler,
   MEMO_BENCHMARK_RESEARCH_MAX_TOKENS,
   MEMO_IMAGE_FETCH_MS,
   MEMO_SCENE_QUERY_MAX,
@@ -4141,7 +4144,14 @@ async function callGeminiWithGoogleSearchOnce(
     }),
   }, MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS);
   if (!response.ok) {
-    throw new Error(`Die Benchmark-Recherche ist fehlgeschlagen (${response.status}).`);
+    // Der Koerper sagt, ob es eine Drosselung von Sekunden ist oder das
+    // Tageskontingent. Ohne ihn stand im Memo nur die Zahl.
+    const koerper = await response.text().catch(() => "");
+    const befund = geminiResearchFehler(response.status, koerper);
+    const fehler = new Error(befund.text) as Error & { retryMs?: number; hart?: boolean };
+    fehler.retryMs = befund.retryMs;
+    fehler.hart = befund.hart;
+    throw fehler;
   }
   await onPulse?.({ phase: "headers", model, chars: 0 });
   let text = "";
@@ -4176,9 +4186,20 @@ async function callGeminiWithGoogleSearch(
       return await callGeminiWithGoogleSearchOnce(apiKey, model, prompt, onPulse);
     } catch (fehler) {
       letzter = fehler instanceof Error ? fehler : new Error(String(fehler));
-      const hart = /fehlgeschlagen \(40[13]\)|kein Gemini-Schlüssel/i.test(letzter.message);
+      const hart = (letzter as Error & { hart?: boolean }).hart === true
+        || istHarterResearchFehler(letzter.message);
       if (hart || attempt === MEMO_BENCHMARK_RESEARCH_ATTEMPTS) throw letzter;
       await onPulse?.({ phase: "search", model, chars: 0 });
+      // Sofort noch einmal fragen heisst bei einer Drosselung: noch ein 429.
+      // Google nennt die Wartezeit meist selbst, sonst steigt sie an.
+      const warten = Math.min(
+        (letzter as Error & { retryMs?: number }).retryMs || attempt * 4_000,
+        MEMO_BENCHMARK_RESEARCH_MAX_WAIT_MS,
+      );
+      if (warten > 0) {
+        await new Promise((fertig) => setTimeout(fertig, warten));
+        await onPulse?.({ phase: "search", model, chars: 0 });
+      }
     }
   }
   throw letzter || new Error("Die Benchmark-Recherche ist unvollständig abgebrochen.");
@@ -10807,6 +10828,10 @@ Deno.serve(async (req: Request) => {
                     break;
                   } catch (inner) {
                     letzter = inner instanceof Error ? inner : new Error(String(inner));
+                    // Ein aufgebrauchtes Kontingent heilt der naechste Anlauf
+                    // nicht; er kostet nur Wartezeit am offenen Fragebogen.
+                    if ((letzter as Error & { hart?: boolean }).hart === true
+                      || istHarterResearchFehler(letzter.message)) break;
                   }
                 }
                 // Recherche hat drei gültige Fälle. Die Zweitprüfung darf das Memo
@@ -10824,7 +10849,13 @@ Deno.serve(async (req: Request) => {
                 memoAnswers.benchmarks = okBriefs;
               } catch (fehler) {
                 const grund = fehler instanceof Error ? fehler.message : String(fehler);
-                throw new Error(`${grund}\n\nOhne drei belastbare Benchmarks kann das Memo nicht gebaut werden. Im Fragebogen eigene Benchmarks eintragen.`);
+                // „Eigene Benchmarks eintragen" ist der falsche Rat, wenn Google
+                // nur gedrosselt hat: dann hilft eine Minute warten.
+                const gedrosselt = /drosselt die Benchmark-Recherche/i.test(grund);
+                const rat = gedrosselt
+                  ? "Ohne drei belastbare Benchmarks kann das Memo nicht gebaut werden. Gleich noch einmal erzeugen, oder im Fragebogen eigene Benchmarks eintragen."
+                  : "Ohne drei belastbare Benchmarks kann das Memo nicht gebaut werden. Im Fragebogen eigene Benchmarks eintragen.";
+                throw new Error(`${grund}\n\n${rat}`);
               }
             }
             await persist({ answers: assetAnswers });

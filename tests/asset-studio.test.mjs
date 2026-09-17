@@ -2187,6 +2187,47 @@ test("der Zauberstab liest dieselben Regeln wie der ganze Entwurf", () => {
   assert.equal(backend.memoBeispielBlock("pot2_potential").includes("03 ROOTS Empfehlung"), true);
 });
 
+test("ein 429 aus der Recherche wird gelesen statt nur gezählt", () => {
+  // „Die Benchmark-Recherche ist fehlgeschlagen (429)" sagte nicht, ob eine
+  // Minute warten hilft oder das Tageskontingent weg ist. Beides ist 429.
+  const gedrosselt = backend.geminiResearchFehler(429, JSON.stringify({
+    error: {
+      code: 429,
+      message: "Resource has been exhausted (e.g. check quota).",
+      details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "21s" }],
+    },
+  }));
+  assert.match(gedrosselt.text, /zu viele Anfragen in kurzer Zeit/);
+  assert.equal(gedrosselt.retryMs, 21_000);
+  assert.equal(gedrosselt.hart, false);
+
+  const tageslimit = backend.geminiResearchFehler(429, JSON.stringify({
+    error: {
+      code: 429,
+      message: "You exceeded your current quota. Limit: 500 requests per day",
+      details: [{ quotaMetric: "generativelanguage.googleapis.com/generate_requests_per_model_per_day" }],
+    },
+  }));
+  assert.match(tageslimit.text, /Tageskontingent/);
+  assert.equal(tageslimit.hart, true);
+  assert.equal(tageslimit.retryMs, 0);
+
+  assert.equal(backend.geminiResearchFehler(403, "{}").hart, true);
+  assert.equal(backend.geminiResearchFehler(503, "{}").hart, false);
+  assert.equal(backend.istHarterResearchFehler(tageslimit.text), true);
+  assert.equal(backend.istHarterResearchFehler(gedrosselt.text), false);
+
+  // Der zweite Anlauf wartet, statt sofort denselben 429 zu holen.
+  assert.equal(backend.MEMO_BENCHMARK_RESEARCH_ATTEMPTS, 3);
+  assert.ok(backend.MEMO_BENCHMARK_RESEARCH_MAX_WAIT_MS <= 12_000);
+  assert.match(edge, /const befund = geminiResearchFehler\(response\.status, koerper\);/);
+  assert.match(edge, /await new Promise\(\(fertig\) => setTimeout\(fertig, warten\)\);/);
+  // Ein hartes Kontingent bricht auch die aeussere Schleife ab.
+  assert.match(edge, /\|\| istHarterResearchFehler\(letzter\.message\)\) break;/);
+  // Und der Rat passt zum Grund.
+  assert.match(edge, /Gleich noch einmal erzeugen, oder im Fragebogen eigene Benchmarks eintragen/);
+});
+
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
   const guides = await import("../memo-guides.mjs");
   // Der Vertrag ist am Referenzmemo gemessen. Eine Regel, die das Original
@@ -2872,8 +2913,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-13");
-  assert.match(indexHtml, /app\.js\?v=20260917-13/);
+  assert.equal(studioVersion, "20260917-14");
+  assert.match(indexHtml, /app\.js\?v=20260917-14/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3102,7 +3143,7 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.match(edge, /MEMO_BENCHMARK_RESEARCH_ATTEMPTS/);
   assert.match(edge, /ASSET_STREAM_KEEPALIVE_MS/);
   assert.match(edge, /setInterval\(\(\) => \{ void onByte\(\); \}, ASSET_STREAM_KEEPALIVE_MS\)/);
-  assert.equal(backend.MEMO_BENCHMARK_RESEARCH_ATTEMPTS, 2);
+  assert.equal(backend.MEMO_BENCHMARK_RESEARCH_ATTEMPTS, 3);
   assert.equal(backend.MEMO_BENCHMARK_RESEARCH_MAX_TOKENS, 4096);
   assert.equal(backend.ASSET_STREAM_KEEPALIVE_MS, 8_000);
   assert.equal(backend.ASSET_FIRST_BYTE_STALE_MS, 180_000);
