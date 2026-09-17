@@ -889,6 +889,8 @@ export type MemoPayload = {
   about_fit: string;
   about_fit2: string;
   sources: string[];
+  cover?: MemoImage;
+  insight?: MemoImage;
 };
 
 export type AssetPayload = LinkedinPayload | MemoPayload;
@@ -3911,14 +3913,19 @@ export const MEMO_IMAGE_MIN_REMAINING_MS = 40_000;
 export const MEMO_IMAGE_FETCH_MS = 20_000;
 export const MEMO_PHOTO_BYTES_MAX = 8 * 1024 * 1024;
 
+/**
+ * Die Motivmasse, an der Vorlage gemessen statt geschaetzt. Das Benchmarkbild
+ * steht auf 72 × 44,4 mm und das Potenzialbild auf 56,7 × 46 mm; die alten
+ * Werte schnitten an den Seiten ab, was object-fit danach noch einmal tat.
+ */
 export const MEMO_SHOT_ASPECT = {
-  benchmark: { w: 46, h: 28 },
-  potential: { w: 52, h: 36 },
+  benchmark: { w: 72, h: 44 },
+  potential: { w: 57, h: 46 },
 } as const;
 
 export const MEMO_SHOT_PIXELS = {
-  benchmark: { w: 920, h: 560 },
-  potential: { w: 936, h: 648 },
+  benchmark: { w: 936, h: 572 },
+  potential: { w: 912, h: 736 },
 } as const;
 
 export type MemoImageSlot = {
@@ -3941,7 +3948,8 @@ export type MemoPhotoHit = {
 };
 
 export function geminiAspectForShot(kind: "benchmark" | "potential"): "16:9" | "3:2" | "4:3" {
-  return kind === "benchmark" ? "16:9" : "3:2";
+  // 72:44 liegt bei 1,64 und 57:46 bei 1,24: das naechste angebotene Format.
+  return kind === "benchmark" ? "3:2" : "4:3";
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
@@ -4668,8 +4676,14 @@ export function memoImageDataUri(mime: string, data: string): string | null {
 }
 
 export function attachMemoSlotImage(payload: MemoPayload, key: string, src: string): MemoPayload {
+  if (!src) return payload;
+  // Titelseite und Bildaussage haben je einen Platz, nicht drei.
+  if (key === "cover" || key === "insight") {
+    payload[key] = { src, pos: "50% 50%" };
+    return payload;
+  }
   const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(key);
-  if (!treffer || !src) return payload;
+  if (!treffer) return payload;
   const liste = treffer[1] === "benchmarks" ? payload.benchmarks : payload.potentials;
   const eintrag = liste[Number(treffer[2])] as (MemoBenchmark | MemoPotential | undefined);
   if (!eintrag) return payload;
@@ -4730,11 +4744,13 @@ export function memoImageUploadsFromBody(body: unknown): Record<string, MemoImag
 }
 
 export function memoSlotImageSrc(payload: unknown, key: string): string {
-  const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(key);
   const p = payload && typeof payload === "object" && !Array.isArray(payload)
     ? payload as MemoPayload
     : null;
-  if (!treffer || !p) return "";
+  if (!p) return "";
+  if (key === "cover" || key === "insight") return String(p[key]?.src || "");
+  const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(key);
+  if (!treffer) return "";
   const liste = treffer[1] === "benchmarks" ? p.benchmarks : p.potentials;
   const eintrag = liste?.[Number(treffer[2])] as (MemoBenchmark | MemoPotential | undefined);
   return String(eintrag?.image?.src || "");

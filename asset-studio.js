@@ -15,7 +15,7 @@ const LEER_BILD = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAA
 const SAVE_LIMIT = 900000;
 // Platzhalter-Geometrie des Executive Memo. Uploads werden auf dieses
 // Seitenverhältnis gezwungen, bevor sie in den Slot kommen.
-const MEMO_SHOT_ASPECT = { benchmark: { w: 72, h: 40 }, potential: { w: 52, h: 36 } };
+const MEMO_SHOT_ASPECT = { benchmark: { w: 72, h: 44 }, potential: { w: 57, h: 46 } };
 const MEMO_SHOT_PIXELS = { benchmark: { w: 864, h: 480 }, potential: { w: 936, h: 648 } };
 const LINKEDIN_SHOT_PIXELS = { w: 1080, h: 1350 };
 const BENCH_EXAMPLE = [
@@ -1079,7 +1079,7 @@ const CHROME_CSS = `
   width:100%; aspect-ratio:46/28; border-radius:8px; overflow:hidden;
   background:#f1f5f9; display:grid; place-items:center; color:#94a3b8; font-size:18px;
 }
-#as-overlay .as-slot-frame.is-pot{aspect-ratio:52/36;}
+
 #as-overlay .as-slot-frame img{width:100%; height:100%; object-fit:cover; display:block;}
 #as-overlay .as-drafts{display:flex; flex-direction:column; gap:12px; min-height:0;}
 #as-overlay .as-drafts-head{
@@ -1512,7 +1512,7 @@ function themeKicker(source = {}) {
 function cropSpecFor(key) {
   const name = String(key || "");
   if (name === "cover") return { w: 1100, h: 933, mm: { w: 210, h: 178.2 }, label: "Titelmotiv" };
-  if (name === "insight") return { w: 630, h: 900, mm: { w: 105, h: 150 }, label: "Marktbild" };
+  if (name === "insight") return { w: 630, h: 982, mm: { w: 105, h: 163.6 }, label: "Marktbild" };
   if (name.endsWith("_portrait")) return { w: 180, h: 180, mm: { w: 14, h: 14 }, label: "Porträt" };
   if (name.startsWith("benchmarks.")) {
     return { ...MEMO_SHOT_PIXELS.benchmark, mm: MEMO_SHOT_ASPECT.benchmark, label: "Benchmark" };
@@ -1611,12 +1611,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, memoFeld, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-7";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-9";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-7";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-9";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-7";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-9";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2715,36 +2715,42 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    */
   /** Die Motive eines Abschnitts: Wahl und, bei eigener Wahl, die Plaetze.
    *  Sie stehen dort, wo der Text dazu steht, nicht in einer eigenen Frage. */
+  /**
+   * Die Motive eines Abschnitts, direkt unter seinen Feldern. Titelbild und
+   * Marktbild kann das Modell nicht recherchieren, deshalb steht dort nur der
+   * Platz zum Hochladen und keine Wahl, die niemand einloest.
+   */
   function bildgruppeHtml(gruppe) {
+    const spec = MEMO_BILDGRUPPEN[gruppe];
+    if (!spec) return "";
     const key = `${gruppe}_images`;
-    const eigen = state.answers[key] === "upload";
-    const titel = gruppe === "benchmarks" ? "Motive der Benchmarks" : "Motive der Hebel";
-    const hinweis = gruppe === "benchmarks"
-      ? "Je Fall ein Motiv der Marke: Kampagnenmotiv, Kanal oder Auftritt. Ein Logo allein trägt die Karte nicht."
-      : "Je Hebel ein Konzeptbild: wie es aussähe, wenn der Hebel gezogen ist. Kein Logo, kein Porträt.";
-    const masse = gruppe === "benchmarks" ? "46 × 28 mm" : "52 × 36 mm";
-    const namen = gruppe === "benchmarks" ? ["Benchmark 1", "Benchmark 2", "Benchmark 3"] : ["Hebel 1", "Hebel 2", "Hebel 3"];
-    const wahl = [["auto", "KI sucht die Motive"], ["upload", "Eigene Motive"]].map(([wert, text]) => `
+    const eigen = !spec.ki || state.answers[key] === "upload";
+    const hinweis = memoAbschnitt(MEMO_SECTIONS.find((s) => s.bildgruppe === gruppe)?.id)?.bilder || "";
+    const wahl = spec.ki
+      ? `<div class="as-opts">${[["auto", "KI sucht die Motive"], ["upload", "Eigene Motive"]].map(([wert, text]) => `
       <label class="as-opt">
         <input type="radio" name="as-${attr(key)}" value="${attr(wert)}"${eigen === (wert === "upload") ? " checked" : ""}>
         <span>${esc(text)}</span>
-      </label>`).join("");
+      </label>`).join("")}</div>`
+      : "";
     const plaetze = eigen
-      ? `<div class="as-slots">${[0, 1, 2].map((i) => {
-        const bild = state.formImages[`${gruppe}.${i}`];
-        return `<button type="button" class="as-slot" data-act="form-img-pick" data-imgkey="${attr(`${gruppe}.${i}`)}">
-          <b>${esc(namen[i])}</b>
-          <span class="as-slot-frame${gruppe === "potentials" ? " is-pot" : ""}">${bild?.src ? `<img src="${attr(bild.src)}" alt="">` : `<i class="fa-solid fa-crop"></i>`}</span>
-          <small>${bild?.src ? "Ausschnitt ersetzen" : `Zuschneiden auf ${masse}`}</small>
+      ? `<div class="as-slots">${spec.keys.map((platz, i) => {
+        const bild = state.formImages[platz];
+        const mass = cropSpecFor(platz).mm;
+        return `<button type="button" class="as-slot" data-act="form-img-pick" data-imgkey="${attr(platz)}">
+          <b>${esc(spec.namen[i])}</b>
+          <span class="as-slot-frame" style="aspect-ratio:${attr(`${mass.w}/${mass.h}`)}">${bild?.src ? `<img src="${attr(bild.src)}" alt="">` : `<i class="fa-solid fa-crop"></i>`}</span>
+          <small>${bild?.src ? "Ausschnitt ersetzen" : `Zuschneiden auf ${Math.round(mass.w)} × ${Math.round(mass.h)} mm`}</small>
         </button>`;
       }).join("")}</div>`
       : "";
     return `<div class="as-mf-block">
-      <h5>${esc(titel)}${tipHtml(`<p class="as-tip-text">${esc(hinweis)}</p>`, titel)}</h5>
-      <div class="as-opts">${wahl}</div>
+      <h5>${esc(spec.titel)}${tipHtml(`<p class="as-tip-text">${esc(hinweis)}</p>`, spec.titel)}</h5>
+      ${wahl}
       ${plaetze}
     </div>`;
   }
+
 
   function memoSectionHtml(q) {
     const section = q.section;
@@ -2826,34 +2832,25 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     </div>`;
   }
 
+  /** Alle Motive auf einer Seite, wenn der Inhalt vom Modell kommt. */
   function slotsHtml() {
-    const platz = ([key, label, mass, pot]) => {
-      const bild = state.formImages[key];
-      return `<button type="button" class="as-slot" data-act="form-img-pick" data-imgkey="${attr(key)}">
-        <b>${esc(label)}</b>
-        <span class="as-slot-frame${pot ? " is-pot" : ""}">${bild?.src ? `<img src="${attr(bild.src)}" alt="">` : `<i class="fa-solid fa-crop"></i>`}</span>
-        <small>${bild?.src ? "Ausschnitt ersetzen" : `Zuschneiden auf ${mass}`}</small>
-      </button>`;
-    };
-    // Zwei Bloecke: die Motive stehen im Dokument auf zwei verschiedenen
-    // Seiten und meinen zwei verschiedene Dinge.
-    const gruppe = (titel, zeilen) => `<div class="as-mf-block">
-      <h5>${esc(titel)}</h5>
-      <div class="as-slots">${zeilen.map(platz).join("")}</div>
-    </div>`;
-    return `<div class="as-mf">
-      ${gruppe("Benchmarks · Seite 3", [
-        ["benchmarks.0", "Benchmark 1", "46 × 28 mm", false],
-        ["benchmarks.1", "Benchmark 2", "46 × 28 mm", false],
-        ["benchmarks.2", "Benchmark 3", "46 × 28 mm", false],
-      ])}
-      ${gruppe("Potenziale · Seite 4", [
-        ["potentials.0", "Potenzial 1", "52 × 36 mm", true],
-        ["potentials.1", "Potenzial 2", "52 × 36 mm", true],
-        ["potentials.2", "Potenzial 3", "52 × 36 mm", true],
-      ])}
-    </div>`;
+    return `<div class="as-mf">${Object.keys(MEMO_BILDGRUPPEN).map((gruppe) => {
+      const spec = MEMO_BILDGRUPPEN[gruppe];
+      return `<div class="as-mf-block">
+        <h5>${esc(spec.titel)} · Seite ${spec.seite}</h5>
+        <div class="as-slots">${spec.keys.map((platz, i) => {
+        const bild = state.formImages[platz];
+        const mass = cropSpecFor(platz).mm;
+        return `<button type="button" class="as-slot" data-act="form-img-pick" data-imgkey="${attr(platz)}">
+            <b>${esc(spec.namen[i])}</b>
+            <span class="as-slot-frame" style="aspect-ratio:${attr(`${mass.w}/${mass.h}`)}">${bild?.src ? `<img src="${attr(bild.src)}" alt="">` : `<i class="fa-solid fa-crop"></i>`}</span>
+            <small>${bild?.src ? "Ausschnitt ersetzen" : `Zuschneiden auf ${Math.round(mass.w)} × ${Math.round(mass.h)} mm`}</small>
+          </button>`;
+      }).join("")}</div>
+      </div>`;
+    }).join("")}</div>`;
   }
+
 
   function draftsHtml() {
     const liste = Array.isArray(state.drafts) ? state.drafts : [];
@@ -4738,8 +4735,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     const slot = el.closest?.("[data-imgkey]");
     const bildkey = slot?.getAttribute("data-imgkey") || "";
-    if (/^(benchmarks|potentials)\.[0-2]$/.test(bildkey)) {
-      return { seite: bildkey.startsWith("benchmarks") ? 3 : 4, sel: `[data-imgkey="${CSS.escape(bildkey)}"]`, key: bildkey };
+    const gruppe = MEMO_BILDGRUPPEN[memoBildgruppe(bildkey)];
+    if (gruppe) {
+      return { seite: gruppe.seite, sel: `[data-imgkey="${CSS.escape(bildkey)}"]`, key: bildkey };
     }
     const bench = el.closest?.("[data-bench]");
     // Ohne diese Schranke lief jeder Klick hier hinein: Number("") ist 0, und

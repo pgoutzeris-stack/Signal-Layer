@@ -61,6 +61,7 @@ export const MEMO_SECTIONS = [
     id: "memo_cover",
     seite: 1,
     ziel: ".em-cover-mid",
+    bildgruppe: "cover",
     label: "Cover",
     zweck: "Die Titelseite entscheidet in zehn Sekunden, ob weitergelesen wird. Sie nennt die Aufgabe, nicht die Nachricht.",
     hinweis: "Die These des Memos und die drei Schlüssel darunter.",
@@ -102,6 +103,7 @@ export const MEMO_SECTIONS = [
     id: "memo_markt",
     seite: 2,
     ziel: ".em-sec",
+    bildgruppe: "insight",
     label: "01 Reality Check",
     zweck: "Seite 2 belegt, dass der Markt sich bewegt, und übersetzt das auf die Lage des Adressaten.",
     hinweis: "Zwei Absätze über der Kennzahlenleiste, dann die Aussage neben dem Bild.",
@@ -313,6 +315,43 @@ export const MEMO_SECTIONS = [
     ],
   },
 ];
+
+/**
+ * Die Motive des Memos, nach Abschnitt. Der Zuschneider kannte Titelbild und
+ * Marktbild laengst, der Fragebogen bot sie nie an: zwei Platzhalter blieben
+ * leer, obwohl der Abschnitt im Hinweis ein Motiv verlangte.
+ *
+ *   keys     Bildplaetze der Vorlage, in der Reihenfolge der Seite
+ *   namen    Beschriftung je Platz im Fragebogen
+ *   seite    Seite, auf die die Vorschau blaettert
+ *   ki       true, wenn das Modell dieses Motiv selbst recherchieren kann
+ */
+export const MEMO_BILDGRUPPEN = {
+  cover: {
+    titel: "Motiv der Titelseite", seite: 1, ki: false,
+    keys: ["cover"], namen: ["Titelbild"],
+  },
+  insight: {
+    titel: "Motiv zur Bildaussage", seite: 2, ki: false,
+    keys: ["insight"], namen: ["Marktbild"],
+  },
+  benchmarks: {
+    titel: "Motive der Benchmarks", seite: 3, ki: true,
+    keys: ["benchmarks.0", "benchmarks.1", "benchmarks.2"],
+    namen: ["Benchmark 1", "Benchmark 2", "Benchmark 3"],
+  },
+  potentials: {
+    titel: "Motive der Hebel", seite: 4, ki: true,
+    keys: ["potentials.0", "potentials.1", "potentials.2"],
+    namen: ["Hebel 1", "Hebel 2", "Hebel 3"],
+  },
+};
+
+/** Die Gruppe, zu der ein Bildplatz gehoert. */
+export function memoBildgruppe(key) {
+  const name = String(key || "");
+  return Object.entries(MEMO_BILDGRUPPEN).find(([, gruppe]) => gruppe.keys.includes(name))?.[0] || "";
+}
 
 /** Alle Felder flach, in Dokumentreihenfolge. */
 export const MEMO_FIELDS = MEMO_SECTIONS.flatMap((s) => s.fields.map((f) => ({ ...f, section: s.id, seite: s.seite })));

@@ -2313,8 +2313,7 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   assert.match(studio, /if \(seite && state\.prevIndex !== seite - 1\) return null;/);
   // Die Motive stehen im Abschnitt, zu dem sie gehoeren.
   assert.match(studio, /function bildgruppeHtml/);
-  assert.match(studio, /Motive der Benchmarks/);
-  assert.match(studio, /Motive der Hebel/);
+  assert.match(studio, /bildgruppeHtml\(section\.bildgruppe\)/);
   // Beim Selbstschreiben steht alles zum Inhalt in den Abschnitten: Bilder,
   // Benchmarks und CTA haben dort keine eigene Frage mehr.
   assert.equal((studio.match(/when: \(answers\) => nurThema\(answers\) && answers\.storyline !== "custom"/g) || []).length, 3);
@@ -2332,8 +2331,8 @@ test("Der Fragebogen führt durch die Abschnitte statt durch eine Textbox", () =
   // v19 traegt keine Kundenlogos mehr am Fuss der letzten Seite.
   assert.doesNotMatch(memoTpl, /class="em-clients"/);
   // Bildplaetze stehen nach Seiten getrennt, eigene Benchmarks wirken sofort.
-  assert.match(studio, /Benchmarks · Seite 3/);
-  assert.match(studio, /Potenziale · Seite 4/);
+  assert.match(studio, /\$\{esc\(spec\.titel\)\} · Seite \$\{spec\.seite\}/);
+  assert.match(studio, /Object\.keys\(MEMO_BILDGRUPPEN\)\.map/);
   assert.match(studio, /if \(state\.answers\.benchmarks === "custom"\) \{\n      eigeneBenchmarks\(\)/);
   // Zeigen genuegt fuer die Markierung.
   assert.match(studio, /on\(overlay, "pointerover"/);
@@ -2467,11 +2466,47 @@ test("Kein Leerzeichen-Ausgleich gegen eine Schrift, die ihn nicht braucht", () 
   assert.match(memoTpl, /\.em-kpi \.em-n\{font-variant-numeric: tabular-nums;\}/);
 });
 
+test("jeder Bildplatz der Vorlage hängt an seinem Abschnitt", async () => {
+  const guides = await import("../memo-guides.mjs");
+  const memoTplQuelle = memoTpl;
+  // Titelbild und Marktbild standen in der Vorlage und in keiner Frage: zwei
+  // Platzhalter blieben leer, obwohl der Abschnitt im Hinweis ein Motiv verlangt.
+  const inVorlage = [...memoTplQuelle.matchAll(/data-imgkey="([^"]+)"/g)]
+    .map((treffer) => treffer[1])
+    .filter((key) => !key.endsWith("_portrait"));
+  const inGruppen = Object.values(guides.MEMO_BILDGRUPPEN).flatMap((gruppe) => gruppe.keys);
+  assert.deepEqual([...inVorlage].sort(), [...inGruppen].sort());
+  for (const key of inVorlage) assert.ok(guides.memoBildgruppe(key), `${key} ohne Gruppe`);
+  // Jede Gruppe hängt an genau einem Abschnitt.
+  for (const [name, gruppe] of Object.entries(guides.MEMO_BILDGRUPPEN)) {
+    const abschnitte = guides.MEMO_SECTIONS.filter((s) => s.bildgruppe === name);
+    assert.equal(abschnitte.length, 1, `${name} gehört zu ${abschnitte.length} Abschnitten`);
+    assert.equal(abschnitte[0].seite, gruppe.seite);
+    assert.ok(abschnitte[0].bilder, `${name}: Abschnitt ohne Motivhinweis`);
+    assert.equal(gruppe.keys.length, gruppe.namen.length);
+  }
+  // Das Modell recherchiert Benchmarks und Hebel, nicht Titel- und Marktbild.
+  assert.equal(guides.MEMO_BILDGRUPPEN.cover.ki, false);
+  assert.equal(guides.MEMO_BILDGRUPPEN.insight.ki, false);
+  assert.equal(guides.MEMO_BILDGRUPPEN.benchmarks.ki, true);
+  // Ein hochgeladenes Titelmotiv darf der Server nicht verwerfen.
+  const payload = { benchmarks: [{}], potentials: [{}], sources: [] };
+  backend.attachMemoSlotImage(payload, "cover", "data:image/png;base64,AA");
+  backend.attachMemoSlotImage(payload, "insight", "data:image/png;base64,BB");
+  assert.equal(backend.memoSlotImageSrc(payload, "cover"), "data:image/png;base64,AA");
+  assert.equal(backend.memoSlotImageSrc(payload, "insight"), "data:image/png;base64,BB");
+  assert.equal(backend.memoSlotImageSrc(payload, "gibt_es_nicht"), "");
+});
+
 test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Fotos", async () => {
-  assert.equal(backend.MEMO_SHOT_ASPECT.benchmark.w / backend.MEMO_SHOT_ASPECT.benchmark.h, 46 / 28);
-  assert.equal(backend.MEMO_SHOT_ASPECT.potential.w / backend.MEMO_SHOT_ASPECT.potential.h, 52 / 36);
-  assert.equal(backend.MEMO_SHOT_PIXELS.benchmark.w / backend.MEMO_SHOT_PIXELS.benchmark.h, 46 / 28);
-  assert.equal(backend.MEMO_SHOT_PIXELS.potential.w / backend.MEMO_SHOT_PIXELS.potential.h, 52 / 36);
+  // An der Vorlage gemessen: 72 × 44,4 mm und 56,7 × 46 mm. Zuschneider und
+  // Recherche holen dasselbe Format, sonst schneidet object-fit noch einmal.
+  const nah = (a, b) => assert.ok(Math.abs(a - b) < 0.02, `${a} statt ${b}`);
+  nah(backend.MEMO_SHOT_ASPECT.benchmark.w / backend.MEMO_SHOT_ASPECT.benchmark.h, 72 / 44.4);
+  nah(backend.MEMO_SHOT_ASPECT.potential.w / backend.MEMO_SHOT_ASPECT.potential.h, 56.7 / 46);
+  nah(backend.MEMO_SHOT_PIXELS.benchmark.w / backend.MEMO_SHOT_PIXELS.benchmark.h, 72 / 44.4);
+  nah(backend.MEMO_SHOT_PIXELS.potential.w / backend.MEMO_SHOT_PIXELS.potential.h, 56.7 / 46);
+  assert.match(studio, /const MEMO_SHOT_ASPECT = \{ benchmark: \{ w: 72, h: 44 \}, potential: \{ w: 57, h: 46 \} \};/);
   const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
   const slots = backend.memoImageSlots(memo, "Puma");
   assert.equal(slots.length, 6);
@@ -2594,8 +2629,9 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
     ["Datei:Cosnova Logo.svg"],
   );
   assert.match(backend.wikipediaPageImagesApiUrl("de", "Cosnova"), /prop=images/);
-  assert.equal(slots[0].geminiAspect, "16:9");
-  assert.equal(slots[3].geminiAspect, "3:2");
+  // 72:44 ist 1,64 und 57:46 ist 1,24: das jeweils naechste angebotene Format.
+  assert.equal(slots[0].geminiAspect, "3:2");
+  assert.equal(slots[3].geminiAspect, "4:3");
   assert.equal(backend.isAllowedMemoPhotoUrl("https://cdn.worldvectorlogo.com/logos/puma-logo.svg"), true);
   assert.equal(backend.isAllowedMemoPhotoUrl("https://upload.wikimedia.org/wikipedia/commons/a/ab/Nike_logo.svg"), true);
   assert.equal(backend.isAllowedMemoPhotoUrl("https://commons.wikimedia.org/wiki/Special:FilePath/Bahlsen_logo.svg?width=1200"), true);
@@ -2764,8 +2800,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-7");
-  assert.match(indexHtml, /app\.js\?v=20260917-7/);
+  assert.equal(studioVersion, "20260917-9");
+  assert.match(indexHtml, /app\.js\?v=20260917-9/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
