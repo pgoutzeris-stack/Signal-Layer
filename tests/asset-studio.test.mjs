@@ -2364,6 +2364,54 @@ test("eine Wortmarke wird eingepasst, nicht angeschnitten", () => {
   assert.match(studio, /fit: item\?\.image\?\.fit === "contain" \? "contain" : "cover",/);
 });
 
+test("beim Selbstschreiben geht es Abschnitt für Abschnitt, Bild zuerst", async () => {
+  const guides = await import("../memo-guides.mjs");
+  // Das Motiv steht im Abschnitt, vor seinen Feldern: das Titelbild ist das
+  // Erste am Cover, nicht ein Block darunter.
+  const kopfVorBild = studio.indexOf('<div class="as-mf-kopf">');
+  const bildBlock = studio.indexOf("${section.bildgruppe ? bildgruppeHtml(section.bildgruppe) : \"\"}");
+  const felderBlock = studio.indexOf('<div class="as-mf-block">${bloecke.join("")}</div>');
+  assert.ok(kopfVorBild < bildBlock && bildBlock < felderBlock, "Bild steht zwischen Kopf und Feldern");
+  // Keine eigene Wahl mehr im Abschnitt: sie hat nie etwas an den Server
+  // geschickt und den Abschnitt in zwei Teile zerlegt.
+  assert.doesNotMatch(studio, /name="as-\$\{attr\(key\)\}"/);
+  assert.doesNotMatch(studio, /_images/);
+  assert.match(studio, /if \(state\.answers\.storyline === "custom"\) state\.answers\.images = "auto";/);
+
+  // Der Knopf am Abschnittskopf schreibt den ganzen Abschnitt.
+  assert.match(studio, /data-act="memo-abschnitt"/);
+  assert.match(studio, /async function schreibeMemoAbschnitt/);
+  assert.match(studio, /api\("draft_memo_section"/);
+  assert.match(edge, /case "draft_memo_section"/);
+  assert.match(edge, /"draft_memo_section",/);
+
+  // Der Abschnittsauftrag liest dieselben Regeln wie der ganze Entwurf.
+  const prompt = backend.buildMemoAbschnittPrompt("memo_benchmarks", {
+    company: "Puma", signal: "Handel baut Eigenmarken aus", umfeld: { title: "Vom Sortimentslabel zur eigenen Marke" },
+  });
+  assert.match(prompt, /<abschnitt>/);
+  assert.match(prompt, /02 Best Practice/);
+  assert.match(prompt, /Lidl · Parkside/);
+  assert.match(prompt, /bm1_text: 20 bis 44 Woerter, hoechstens 230 Zeichen/);
+  assert.match(prompt, /title: Vom Sortimentslabel zur eigenen Marke/);
+  assert.match(prompt, /<sprachregeln>/);
+  assert.equal(backend.buildMemoAbschnittPrompt("gibt_es_nicht"), "");
+
+  // Das Schema verlangt genau die Felder des Abschnitts.
+  const schema = backend.memoAbschnittSchema("memo_cover");
+  assert.deepEqual(schema.required, ["title", "standfirst", "summary_0", "summary_1", "summary_2"]);
+  assert.match(schema.properties.title.description, /4 bis 12 Woerter, hoechstens 50 Zeichen/);
+  assert.equal(backend.memoAbschnittSchema("x"), null);
+  // Und die Abschnittstabelle bleibt mit dem Vertrag gleich.
+  assert.deepEqual(
+    backend.MEMO_ABSCHNITTE,
+    guides.MEMO_SECTIONS.map((abschnitt) => ({
+      id: abschnitt.id, label: abschnitt.label, seite: abschnitt.seite,
+      keys: abschnitt.fields.map((feld) => feld.key),
+    })),
+  );
+});
+
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
   const guides = await import("../memo-guides.mjs");
   // Der Vertrag ist am Referenzmemo gemessen. Eine Regel, die das Original
@@ -3049,8 +3097,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-19");
-  assert.match(indexHtml, /app\.js\?v=20260917-19/);
+  assert.equal(studioVersion, "20260917-20");
+  assert.match(indexHtml, /app\.js\?v=20260917-20/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

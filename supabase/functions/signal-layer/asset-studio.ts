@@ -478,6 +478,21 @@ export const MEMO_VERTRAG: MemoVertragFeld[] = [
   { key: "about_fit2", label: "Bezug zum Fall", art: "absatz", min: 10, max: 34, zeichen: 180, saetze: null, punkt: false },
 ];
 
+/**
+ * Die Abschnitte mit ihren Feldern. Der Knopf am Abschnittskopf schreibt sie
+ * in einem Zug, so wie der ganze Entwurf es taete. Ohne diese Liste muesste
+ * die Edge Function raten, was zu einem Abschnitt gehoert.
+ */
+export type MemoAbschnitt = { id: string; label: string; seite: number; keys: string[] };
+
+export const MEMO_ABSCHNITTE: MemoAbschnitt[] = [
+  { id: "memo_cover", label: "Cover", seite: 1, keys: ["title", "standfirst", "summary_0", "summary_1", "summary_2"] },
+  { id: "memo_markt", label: "01 Reality Check", seite: 2, keys: ["market_title", "market_p1", "market_lead2", "insight_title", "market_p2"] },
+  { id: "memo_kpis", label: "Kennzahlen", seite: 2, keys: ["kpi1_value", "kpi1_label", "kpi1_source", "kpi2_value", "kpi2_label", "kpi2_source", "kpi3_value", "kpi3_label", "kpi3_source", "kpi4_value", "kpi4_label", "kpi4_source"] },
+  { id: "memo_benchmarks", label: "02 Best Practice", seite: 3, keys: ["benchmark_title", "bm1_name", "bm1_title", "bm1_text", "bm1_tag", "bm2_name", "bm2_title", "bm2_text", "bm2_tag", "bm3_name", "bm3_title", "bm3_text", "bm3_tag", "sources", "quote_text"] },
+  { id: "memo_empfehlung", label: "03 ROOTS Empfehlung", seite: 4, keys: ["potentials_title", "potentials_lead", "potentials_lead2", "pot1_title", "pot1_potential", "pot2_title", "pot2_potential", "pot3_title", "pot3_potential", "cta", "about_fit", "about_fit2"] },
+];
+
 const VERTRAG_NACH_KEY = new Map(MEMO_VERTRAG.map((f) => [f.key, f]));
 
 export function memoWorte(wert: unknown): number {
@@ -721,6 +736,74 @@ Antworte ausschliesslich mit einem JSON-Objekt {"text": "..."}.`;
 export function memoQuellenBeschreibung(): string {
   const feld = MEMO_VERTRAG.find((f) => f.key === "sources");
   return `Ein Eintrag je Beleg, Format "Herausgeber, Art (Zeitraum)". Nur belegte Quellen. Alle Eintraege zusammen ${feld?.min ?? 5} bis ${feld?.max ?? 45} Woerter.`;
+}
+
+/** Das Antwortschema fuer einen Abschnitt: seine Felder, alle als Text. */
+export function memoAbschnittSchema(id: string): Record<string, unknown> | null {
+  const abschnitt = MEMO_ABSCHNITTE.find((a) => a.id === id);
+  if (!abschnitt) return null;
+  const properties: Record<string, unknown> = {};
+  for (const key of abschnitt.keys) {
+    const feld = MEMO_VERTRAG.find((f) => f.key === key);
+    properties[key] = {
+      type: "STRING",
+      description: `${feld?.label || key}. ${feld ? `${feld.min} bis ${feld.max} Woerter, hoechstens ${feld.zeichen} Zeichen.` : ""}`.trim(),
+    };
+  }
+  return { type: "OBJECT", required: abschnitt.keys, properties };
+}
+
+/**
+ * Einen ganzen Abschnitt schreiben lassen, so wie der volle Entwurf ihn
+ * schriebe. Der Knopf am Abschnittskopf ist fuer den Fall gedacht, dass jemand
+ * den Inhalt selbst vorgibt und eine Seite trotzdem vom Modell will.
+ */
+export function buildMemoAbschnittPrompt(
+  id: string,
+  kontext: {
+    signal?: string;
+    company?: string;
+    /** Was in den anderen Abschnitten schon steht. */
+    umfeld?: Record<string, string>;
+  } = {},
+): string {
+  const abschnitt = MEMO_ABSCHNITTE.find((a) => a.id === id);
+  if (!abschnitt) return "";
+  const aufbau = MEMO_AUFBAU.split("\n\n").find((block) => block.startsWith(`Seite ${abschnitt.seite}, ${abschnitt.label}:`)) || "";
+  const referenz = MEMO_BEISPIELE.split("\n\n").find((block) => block.startsWith(`${abschnitt.label}\n`)) || "";
+  const regeln = abschnitt.keys.map((key) => {
+    const feld = MEMO_VERTRAG.find((f) => f.key === key);
+    if (!feld) return "";
+    const saetze = feld.saetze
+      ? (feld.saetze[0] === feld.saetze[1] ? ` Genau ${feld.saetze[0]} Satz.` : ` ${feld.saetze[0]} bis ${feld.saetze[1]} Saetze.`)
+      : "";
+    const punkt = feld.art === "these" && !feld.punkt ? " Kein Punkt am Ende." : "";
+    return `${key}: ${feld.min} bis ${feld.max} Woerter, hoechstens ${feld.zeichen} Zeichen.${saetze}${punkt}`;
+  }).filter(Boolean).join("\n");
+  const umfeld = Object.entries(kontext.umfeld || {})
+    .filter(([key, wert]) => String(wert || "").trim() && !abschnitt.keys.includes(key))
+    .slice(0, 30)
+    .map(([key, wert]) => `${key}: ${wert}`)
+    .join("\n");
+
+  return `Du schreibst einen Abschnitt des ROOTS Executive Memos. Es ist immer dasselbe Dokument aus vier A4-Seiten: Cover, 01 Reality Check, 02 Best Practice, 03 ROOTS Empfehlung. Es ueberzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu sprechen. Der Nutzer gibt den Inhalt sonst selbst vor und moechte genau diesen Abschnitt vom Modell.
+
+<abschnitt>
+${aufbau}
+</abschnitt>
+<referenz>
+So steht dieser Abschnitt im Referenzmemo. Daran sind Tonlage, Satzbau, Konkretheit und Art des Belegs zu messen. Es ist ein anderer Fall: uebernimm die Machart, nicht die Inhalte, und schreibe keinen dieser Saetze ab.
+${referenz}
+</referenz>
+<laengen>
+${regeln}
+</laengen>
+${kontext.company ? `<adressat>\n${kontext.company}\n</adressat>\n` : ""}${kontext.signal ? `<anlass>\n${kontext.signal}\n</anlass>\n` : ""}${umfeld ? `<umfeld>\nDas steht schon im Dokument. Baue darauf auf und wiederhole keinen Satz woertlich:\n${umfeld}\n</umfeld>\n` : ""}${SPRACHREGELN}
+<auftrag>
+Fuelle jedes Feld dieses Abschnitts. Keine Zahl, die nicht im Anlass oder im Umfeld steht. Keine Anfuehrungszeichen um die Werte. Halte jede Laengenangabe ein: ein zu langes Feld verschiebt die Seite, ein zu kurzes hinterlaesst eine weisse Flaeche.
+</auftrag>
+
+Antworte ausschliesslich mit einem JSON-Objekt, dessen Schluessel genau die Feldnamen oben sind.`;
 }
 
 /** Zweiter Anlauf, der nur die verletzten Felder nennt. */

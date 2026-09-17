@@ -3,7 +3,7 @@
 // als erzeugte Konstante. Der Test in tests/asset-studio.test.mjs haelt beide gleich.
 import { readFileSync, writeFileSync } from "node:fs";
 import {
-  MEMO_FIELDS, memoLaengenVertrag, memoAufbauVertrag, memoBeispieleVertrag, memoSchemaTexte,
+  MEMO_FIELDS, MEMO_SECTIONS, memoLaengenVertrag, memoAufbauVertrag, memoBeispieleVertrag, memoSchemaTexte,
 } from "../memo-guides.mjs";
 
 const pfad = new URL("../supabase/functions/signal-layer/asset-studio.ts", import.meta.url);
@@ -42,6 +42,12 @@ setzeBlock(
   "export const MEMO_VERTRAG: MemoVertragFeld[] = [\n",
   "\n];",
   MEMO_FIELDS.map((f) => `  { key: ${q(f.key)}, label: ${q(f.label)}, art: ${q(f.art)}, min: ${f.min}, max: ${f.max}, zeichen: ${f.zeichen}, saetze: ${f.saetze ? `[${f.saetze.join(", ")}]` : "null"}, punkt: ${Boolean(f.punkt)} },`).join("\n"),
+);
+
+setzeBlock(
+  "export const MEMO_ABSCHNITTE: MemoAbschnitt[] = [\n",
+  "\n];",
+  MEMO_SECTIONS.map((s) => `  { id: ${q(s.id)}, label: ${q(s.label)}, seite: ${s.seite}, keys: [${s.fields.map((f) => q(f.key)).join(", ")}] },`).join("\n"),
 );
 
 setzeBlock(

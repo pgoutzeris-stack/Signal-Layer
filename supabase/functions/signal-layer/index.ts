@@ -143,6 +143,10 @@ import {
   normalizeAssetSubject,
   buildAssetRepairPrompt,
   buildMemoFeldPrompt,
+  buildMemoAbschnittPrompt,
+  memoAbschnittSchema,
+  MEMO_ABSCHNITTE,
+  MEMO_VERTRAG,
   buildMemoVertragsRepairPrompt,
   MEMO_FELD_SCHEMA,
   memoVertragsFehler,
@@ -715,6 +719,7 @@ const EDITOR_ACTIONS = new Set([
   "cancel_asset",
   // Ein einzelnes Memofeld schaerfen ist derselbe bezahlte Aufruf, nur klein.
   "sharpen_memo_field",
+  "draft_memo_section",
   // Ein selbst geschriebenes Signal legt eine Artikel- und eine Signalzeile an.
   // Lesen bleibt offen, Schreiben braucht dieselbe Freigabe wie ein Lauf.
   "create_manual_signal",
@@ -10477,6 +10482,61 @@ Deno.serve(async (req: Request) => {
         }
         const entwurf = normalizeManualDraft(parseLooseJsonObject(antwort.text));
         return corsResponse(origin, { source: quelle, draft: entwurf });
+      }
+
+      case "draft_memo_section": {
+        // Einen ganzen Abschnitt schreiben lassen, obwohl der Nutzer den Inhalt
+        // sonst selbst vorgibt. Das Ergebnis landet in den Feldern des
+        // Fragebogens, nicht im Dokument: uebernommen wird dort.
+        const abschnittId = String(body.section || "").trim();
+        const schema = memoAbschnittSchema(abschnittId);
+        const abschnittPrompt = buildMemoAbschnittPrompt(abschnittId, {
+          signal: String(body.signal || "").slice(0, 1200),
+          company: String(body.company || "").slice(0, 160),
+          umfeld: body.fields && typeof body.fields === "object"
+            ? Object.fromEntries(Object.entries(body.fields as Record<string, unknown>)
+              .map(([k, v]) => [String(k).slice(0, 40), String(v || "").slice(0, 600)]))
+            : {},
+        });
+        if (!schema || !abschnittPrompt) return errorResponse(origin, `Der Abschnitt ${abschnittId} steht nicht im Memo-Vertrag.`);
+
+        const abschnittConfig = await getPipelineConfig();
+        const abschnittModel = abschnittConfig.ai.simple_model || SIMPLE_MODEL;
+        const abschnittKey = await modelApiKey(abschnittModel);
+        if (!abschnittKey) return errorResponse(origin, `Für ${abschnittModel} ist kein API-Schlüssel hinterlegt`, 500);
+
+        const abschnittStart = Date.now();
+        const abschnittAntwort = await callJsonModel({
+          model: abschnittModel, apiKey: abschnittKey, prompt: abschnittPrompt, schema,
+          maxOutputTokens: 3_000, temperature: 0.3, timeoutMs: 90_000, attempts: 2,
+        });
+        const abschnittKosten = await modelCostFields(abschnittModel, abschnittAntwort.usage);
+        await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+          operation: "memo_section_draft", model: abschnittModel,
+          status: abschnittAntwort.ok ? "success" : "error",
+          prompt_version: SIMPLE_PIPELINE_VERSION,
+          input_tokens: abschnittAntwort.usage.input + abschnittAntwort.usage.cachedInput,
+          output_tokens: abschnittAntwort.usage.output, thinking_tokens: abschnittAntwort.usage.thinking,
+          total_tokens: abschnittAntwort.usage.total, ...abschnittKosten,
+          duration_ms: Date.now() - abschnittStart, created_by: auth?.userId || null,
+          error_code: abschnittAntwort.ok ? null : `http_${abschnittAntwort.status || "network"}`,
+          error_message: abschnittAntwort.ok ? null : abschnittAntwort.error.slice(0, 500),
+        });
+        if (!abschnittAntwort.ok) {
+          return errorResponse(origin, simpleProviderMessage(abschnittAntwort.error) || "Das Modell hat den Abschnitt abgelehnt.", 502);
+        }
+        const roh = parseLooseJsonObject(abschnittAntwort.text) as Record<string, unknown>;
+        const abschnitt = MEMO_ABSCHNITTE.find((a) => a.id === abschnittId);
+        const felder: Record<string, string> = {};
+        for (const key of abschnitt?.keys || []) {
+          const feld = MEMO_VERTRAG.find((f) => f.key === key);
+          const wert = String(roh?.[key] || "").trim().replace(/^[„"«»"']|[„"«»"']$/g, "").trim();
+          // Die harte Grenze gilt auch hier: ein zu langes Feld verschiebt die
+          // Seite, und im Fragebogen liesse es sich gar nicht erst tippen.
+          if (wert) felder[key] = feld ? wert.slice(0, feld.zeichen) : wert;
+        }
+        if (!Object.keys(felder).length) return errorResponse(origin, "Das Modell hat keine Felder zurückgegeben.", 502);
+        return corsResponse(origin, { section: abschnittId, fields: felder });
       }
 
       case "sharpen_memo_field": {

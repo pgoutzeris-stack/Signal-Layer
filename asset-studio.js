@@ -1003,6 +1003,8 @@ const CHROME_CSS = `
   display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
 }
 #as-overlay .as-mf-schaerfen:hover{color:var(--brand,#206efb); background:var(--tint,#eff4ff);}
+#as-overlay .as-mf-abschnitt{width:26px; height:26px; font-size:13px; color:var(--brand,#206efb);}
+#as-overlay .as-mf-abschnitt:hover{background:var(--tint,#eff4ff);}
 #as-overlay .as-mf-schaerfen[disabled]{opacity:.5; cursor:default;}
 #as-overlay .as-mf-vorschlag{
   background:var(--tint,#f1f5fb); border-radius:9px; padding:9px 11px; font-size:13px; line-height:1.55;
@@ -1636,12 +1638,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-19";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260917-20";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-19";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260917-20";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-19";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260917-20";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1915,8 +1917,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       for (const section of MEMO_SECTIONS) {
         for (const feld of section.fields) out[`memo_${feld.key}`] = "";
       }
-      out.benchmarks_images = "auto";
-      out.potentials_images = "auto";
       for (let i = 0; i < 3; i += 1) {
         out[`bench_${i}_name`] = "";
         out[`bench_${i}_text`] = "";
@@ -2771,36 +2771,31 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * Marktbild kann das Modell nicht recherchieren, deshalb steht dort nur der
    * Platz zum Hochladen und keine Wahl, die niemand einloest.
    */
+  /**
+   * Die Motive eines Abschnitts, als erster Block darin. Vorher stand hier
+   * eine eigene Wahl „KI sucht die Motive / Eigene Motive"; sie hat nie etwas
+   * an den Server geschickt und den Abschnitt in zwei Teile zerlegt. Ein leer
+   * gelassener Platz wird beim Erzeugen vom Modell gefuellt.
+   */
   function bildgruppeHtml(gruppe) {
     const spec = MEMO_BILDGRUPPEN[gruppe];
     if (!spec) return "";
-    const key = `${gruppe}_images`;
-    const eigen = !spec.ki || state.answers[key] === "upload";
-    const hinweis = memoAbschnitt(MEMO_SECTIONS.find((s) => s.bildgruppe === gruppe)?.id)?.bilder || "";
-    const wahl = spec.ki
-      ? `<div class="as-opts">${[["auto", "KI sucht die Motive"], ["upload", "Eigene Motive"]].map(([wert, text]) => `
-      <label class="as-opt">
-        <input type="radio" name="as-${attr(key)}" value="${attr(wert)}"${eigen === (wert === "upload") ? " checked" : ""}>
-        <span>${esc(text)}</span>
-      </label>`).join("")}</div>`
-      : "";
-    const plaetze = eigen
-      ? `<div class="as-slots">${spec.keys.map((platz, i) => {
-        const bild = state.formImages[platz];
-        const mass = cropSpecFor(platz).mm;
-        return `<button type="button" class="as-slot" data-act="form-img-pick" data-imgkey="${attr(platz)}">
-          <b>${esc(spec.namen[i])}</b>
-          <span class="as-slot-frame" style="aspect-ratio:${attr(`${mass.w}/${mass.h}`)}">${bild?.src ? `<img src="${attr(bild.src)}" alt="">` : `<i class="fa-solid fa-crop"></i>`}</span>
-          <small>${bild?.src ? "Ausschnitt ersetzen" : `Zuschneiden auf ${Math.round(mass.w)} × ${Math.round(mass.h)} mm`}</small>
-        </button>`;
-      }).join("")}</div>`
-      : "";
+    const hinweis = MEMO_SECTIONS.find((abschnitt) => abschnitt.bildgruppe === gruppe)?.bilder || "";
+    const plaetze = spec.keys.map((platz, i) => {
+      const bild = state.formImages[platz];
+      const mass = cropSpecFor(platz).mm;
+      return `<button type="button" class="as-slot" data-act="form-img-pick" data-imgkey="${attr(platz)}">
+        <b>${esc(spec.namen[i])}</b>
+        <span class="as-slot-frame" style="aspect-ratio:${attr(`${mass.w}/${mass.h}`)}">${bild?.src ? `<img src="${attr(bild.src)}" alt="">` : `<i class="fa-solid fa-crop"></i>`}</span>
+        <small>${bild?.src ? "Ausschnitt ersetzen" : `Zuschneiden auf ${Math.round(mass.w)} × ${Math.round(mass.h)} mm`}</small>
+      </button>`;
+    }).join("");
     return `<div class="as-mf-block">
-      <h5>${esc(spec.titel)}${tipHtml(`<p class="as-tip-text">${esc(hinweis)}</p>`, spec.titel)}</h5>
-      ${wahl}
-      ${plaetze}
+      <h5><span class="as-tip">${esc(spec.titel)}${tipHtml(`<p class="as-tip-text">${esc(hinweis)}</p>`, spec.titel)}</span></h5>
+      <div class="as-slots">${plaetze}</div>
     </div>`;
   }
+
 
 
   function memoSectionHtml(q) {
@@ -2832,9 +2827,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return `<div class="as-mf" data-memosection="${attr(section.id)}">
       <div class="as-mf-kopf">
         <span class="as-tip"><b>Seite ${section.seite}</b>${tipHtml(erklaerung, `Was auf Seite ${section.seite} gehört`)}</span>
+        <button type="button" class="as-mf-schaerfen as-mf-abschnitt" data-act="memo-abschnitt" data-key="${attr(section.id)}" aria-label="${attr(`${section.label} von der KI schreiben lassen`)}"><i class="fa-solid fa-wand-magic-sparkles"></i></button>
       </div>
-      <div class="as-mf-block">${bloecke.join("")}</div>
       ${section.bildgruppe ? bildgruppeHtml(section.bildgruppe) : ""}
+      <div class="as-mf-block">${bloecke.join("")}</div>
+      <div data-memovorschlag="${attr(section.id)}"></div>
       <div data-memosectionfehler>${hinweis}</div>
     </div>`;
   }
@@ -3566,17 +3563,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function readForm() {
     const form = shell.querySelector("[data-form]");
     if (!form) return;
-    for (const gruppe of ["benchmarks", "potentials"]) {
-      const gewaehlt = form.querySelector(`input[name="as-${gruppe}_images"]:checked`);
-      if (gewaehlt) state.answers[`${gruppe}_images`] = gewaehlt.value;
-    }
-    // Der Lauf kennt nur eine Antwort zu den Bildern. Sobald eine der beiden
-    // Gruppen eigene Motive traegt, gilt sie als eigene Wahl.
-    if (state.answers.storyline === "custom") {
-      state.answers.images = state.answers.benchmarks_images === "upload" || state.answers.potentials_images === "upload"
-        ? "upload"
-        : "auto";
-    }
+    // Beim Selbstschreiben steht jeder Bildplatz im Abschnitt. Was leer bleibt,
+    // fuellt das Modell beim Erzeugen; was hochgeladen ist, bleibt stehen, weil
+    // die eigenen Motive vor der Suche in die Nutzlast gehen.
+    if (state.answers.storyline === "custom") state.answers.images = "auto";
     // Waehlt die KI das Layout, darf keine alte eigene Wahl stehen bleiben.
     if (state.answers.variant_mode !== "custom") state.answers.variant = "auto";
     for (const q of questions) {
@@ -5953,6 +5943,10 @@ ${stages}${post}
       void schaerfeMemoFeld(hit.getAttribute("data-key") || "", hit);
       return;
     }
+    if (act === "memo-abschnitt") {
+      void schreibeMemoAbschnitt(hit.getAttribute("data-key") || "", hit);
+      return;
+    }
     if (act === "memo-vorschlag-an" || act === "memo-vorschlag-weg") {
       const kasten = hit.closest("[data-memovorschlag]");
       const key = kasten?.getAttribute("data-memovorschlag") || "";
@@ -6169,6 +6163,47 @@ ${stages}${post}
     }
     if (free.getAttribute("data-free") === "caption_text") zeichneCaption();
     aktualisiereSchreibhilfe(free.getAttribute("data-free"));
+  }
+
+  /**
+   * Einen ganzen Abschnitt vom Modell schreiben lassen. Fuer den Fall, dass
+   * jemand den Inhalt selbst vorgibt und eine Seite trotzdem von der KI will:
+   * dasselbe Ergebnis wie beim vollen Entwurf, nur fuer diese eine Seite.
+   * Was schon dasteht, wird nicht heimlich ersetzt, sondern erst auf Zuruf.
+   */
+  async function schreibeMemoAbschnitt(id, knopf) {
+    const abschnitt = memoAbschnitt(id);
+    const kasten = shell.querySelector(`[data-memovorschlag="${CSS.escape(id)}"]`);
+    if (!abschnitt || !kasten || knopf.disabled) return;
+    knopf.disabled = true;
+    kasten.innerHTML = `<div class="as-mf-vorschlag is-laedt"><span class="as-mf-vs-balken"></span></div>`;
+    try {
+      const antwort = await api("draft_memo_section", {
+        section: id,
+        company: state.answers.company || signal?.company || "",
+        signal: [signal?.headline_de, signal?.why_de].filter(Boolean).join(" "),
+        fields: memoFelderRoh(),
+      });
+      const felder = antwort && typeof antwort.fields === "object" ? antwort.fields : {};
+      const geschrieben = [];
+      for (const feld of abschnitt.fields) {
+        const wert = String(felder[feld.key] || "").trim();
+        if (!wert) continue;
+        const box = shell.querySelector(`[data-memofeld="${CSS.escape(feld.key)}"]`);
+        if (!box) continue;
+        box.value = wert;
+        memoFeldGetippt(box);
+        geschrieben.push(feld.key);
+      }
+      if (!geschrieben.length) throw new Error("Das Modell hat nichts zurückgegeben.");
+      kasten.innerHTML = "";
+    } catch (fehler) {
+      kasten.innerHTML = `<div class="as-mf-vorschlag">${esc(String(fehler?.message || fehler))}
+        <span class="as-mf-vs-tasten"><button type="button" data-act="memo-vorschlag-weg">Schliessen</button></span>
+      </div>`;
+    } finally {
+      knopf.disabled = false;
+    }
   }
 
   /**
