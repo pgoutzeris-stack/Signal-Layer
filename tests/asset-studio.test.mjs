@@ -1087,8 +1087,16 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
     updated_at: iso(now - 185_000),
     run_log: [{ event: "model_start" }, { event: "pulse", phase: "thinking", thinking_chars: 33093 }],
   };
-  assert.equal(backend.assetModelRetryDue(totModell, now), true);
+  // 185 Sekunden Stille reichen hier nicht mehr: der Aufruf hat 33.093 Zeichen
+  // Begründung geliefert und ist damit am Leben. Erst nach fünf Minuten.
+  assert.equal(backend.assetModelRetryDue(totModell, now), false);
+  assert.equal(backend.assetModelRetryDue({ ...totModell, updated_at: iso(now - 301_000) }, now), true);
   assert.equal(backend.assetModelRetryDue({ ...totModell, updated_at: iso(now - 5_000) }, now), false);
+  // Ohne ein einziges Zeichen bleibt es bei drei Minuten.
+  assert.equal(backend.assetModelRetryDue({
+    ...totModell,
+    run_log: [{ event: "model_start" }, { event: "pulse", phase: "headers", thinking_chars: 0 }],
+  }, now), true);
   assert.equal(backend.assetModelRetryDue({
     ...totModell,
     run_log: [...totModell.run_log, { event: "retry_model" }, { event: "retry_model" }],
@@ -2444,20 +2452,27 @@ test("nach dem ersten geschriebenen Zeichen wartet der Wachhund länger", () => 
   assert.equal(backend.ASSET_WRITING_STALE_MS, 300_000);
 
   const schreibend = [{ event: "model_start" }, { event: "pulse", phase: "writing", chars: 3296 }];
-  const stumm = [{ event: "model_start" }, { event: "pulse", phase: "thinking", chars: 0 }];
-  assert.equal(backend.assetHasWrittenChars(schreibend), true);
-  assert.equal(backend.assetHasWrittenChars(stumm), false);
+  // Begründung zählt mit: am 18.9. stand ein Lauf bei 34.646 Zeichen Begründung
+  // und wurde abgebrochen. Ein Modell, das gerade 34.000 Zeichen gedacht hat,
+  // hängt nicht.
+  const denkend = [{ event: "model_start" }, { event: "pulse", phase: "thinking", chars: 0, thinking_chars: 34646 }];
+  const stumm = [{ event: "model_start" }, { event: "pulse", phase: "headers", chars: 0, thinking_chars: 0 }];
+  assert.equal(backend.assetHasStreamedChars(schreibend), true);
+  assert.equal(backend.assetHasStreamedChars(denkend), true);
+  assert.equal(backend.assetHasStreamedChars(stumm), false);
   // Ein Neustart setzt die Rechnung zurück: die Zeichen gehören zum alten Aufruf.
-  assert.equal(backend.assetHasWrittenChars([...schreibend, { event: "retry_model" }, { event: "model_start" }]), false);
+  assert.equal(backend.assetHasStreamedChars([...schreibend, { event: "retry_model" }, { event: "model_start" }]), false);
 
   const jetzt = Date.parse("2026-09-18T15:00:00Z");
   const vor = (ms) => new Date(jetzt - ms).toISOString();
   const zeile = (log, alter) => ({ status: "running", stage: "modell", updated_at: vor(alter), run_log: log });
   // Ohne ein einziges Zeichen bleibt es bei drei Minuten.
   assert.equal(backend.assetModelRetryDue(zeile(stumm, 181_000), jetzt), true);
-  // Mit geschriebenen Zeichen nicht: dort laufen fünf Minuten.
+  // Mit Zeichen nicht, gleich ob Antwort oder Begründung: dort laufen fünf Minuten.
   assert.equal(backend.assetModelRetryDue(zeile(schreibend, 181_000), jetzt), false);
   assert.equal(backend.assetModelRetryDue(zeile(schreibend, 301_000), jetzt), true);
+  assert.equal(backend.assetModelRetryDue(zeile(denkend, 182_000), jetzt), false);
+  assert.equal(backend.assetModelRetryDue(zeile(denkend, 301_000), jetzt), true);
 });
 
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
@@ -3148,8 +3163,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260918-2");
-  assert.match(indexHtml, /app\.js\?v=20260918-2/);
+  assert.equal(studioVersion, "20260918-3");
+  assert.match(indexHtml, /app\.js\?v=20260918-3/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

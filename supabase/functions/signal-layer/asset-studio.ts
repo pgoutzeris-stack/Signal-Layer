@@ -5217,6 +5217,10 @@ export const ASSET_FIRST_BYTE_STALE_MS = 180_000;
  * Sobald Zeichen ankommen, ist der Aufruf am Leben. Ihn nach denselben drei
  * Minuten abzubrechen wirft die ganze Begruendung weg, und der neue Anlauf
  * denkt sie noch einmal: am 18.9.2026 zweimal, 795 Sekunden fuer nichts.
+ *
+ * DeepSeek streamt in Schueben. Gemessene Luecken bei laufender Begruendung:
+ * 182 Sekunden. Fuenf Minuten decken das ab, ohne einen echt toten Aufruf
+ * unbegrenzt haengen zu lassen.
  */
 export const ASSET_WRITING_STALE_MS = 300_000;
 
@@ -5391,19 +5395,26 @@ export function assetModelRetryDue(
   if (assetDraftTextFromLog(row.run_log)) return false;
   if (String(row.stage || "") !== "modell") return false;
   if (assetModelRetryCount(row.run_log) >= ASSET_MODEL_RETRY_MAX) return false;
-  const grenze = assetHasWrittenChars(row.run_log) ? ASSET_WRITING_STALE_MS : ASSET_FIRST_BYTE_STALE_MS;
+  const grenze = assetHasStreamedChars(row.run_log) ? ASSET_WRITING_STALE_MS : ASSET_FIRST_BYTE_STALE_MS;
   return assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs) >= grenze;
 }
 
-/** Hat der laufende Aufruf schon Zeichen der Antwort geliefert? */
-export function assetHasWrittenChars(log: unknown): boolean {
+/**
+ * Hat der laufende Aufruf schon Zeichen geliefert, gleich welcher Art?
+ *
+ * Begruendung zaehlt mit. Am 18.9.2026 stand ein Lauf bei 34.646 Zeichen
+ * Begruendung und wurde abgebrochen, weil danach 182 Sekunden Stille kamen:
+ * ein Modell, das gerade 34.000 Zeichen gedacht hat, haengt nicht.
+ */
+export function assetHasStreamedChars(log: unknown): boolean {
   const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
   for (let i = rows.length - 1; i >= 0; i -= 1) {
     const eintrag = rows[i];
-    // Ein Neustart setzt die Rechnung zurueck: was davor geschrieben wurde,
-    // gehoert zu einem Aufruf, den es nicht mehr gibt.
+    // Ein Neustart setzt die Rechnung zurueck: was davor kam, gehoert zu einem
+    // Aufruf, den es nicht mehr gibt.
     if (eintrag?.event === "model_start" || eintrag?.event === "retry_model") return false;
-    if (eintrag?.event === "pulse" && eintrag?.phase === "writing" && Number(eintrag?.chars || 0) > 0) return true;
+    if (eintrag?.event !== "pulse") continue;
+    if (Number(eintrag?.chars || 0) > 0 || Number(eintrag?.thinking_chars || 0) > 0) return true;
   }
   return false;
 }

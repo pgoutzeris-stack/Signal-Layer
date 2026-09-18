@@ -185,7 +185,7 @@ import {
   parseDeepseekSseData,
   istUnvollstaendigesJson,
   ASSET_WRITING_STALE_MS,
-  assetHasWrittenChars,
+  assetHasStreamedChars,
   parseGeminiSseData,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
