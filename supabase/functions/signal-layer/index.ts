@@ -183,6 +183,9 @@ import {
   normalizeMemoBenchmarkResearch,
   parseCommonsSceneHits,
   parseDeepseekSseData,
+  istUnvollstaendigesJson,
+  ASSET_WRITING_STALE_MS,
+  assetHasWrittenChars,
   parseGeminiSseData,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
@@ -4373,11 +4376,13 @@ async function callJsonModelStreaming(options: ModelCallOptions): Promise<ModelC
         await pulse({ phase: "headers", model: options.model, chars: 0, thinking_chars: 0 });
         let content = "";
         let reasoning = "";
+        let abschluss = "";
         let usage = EMPTY_MODEL_USAGE;
         await leseSse(response, async (data) => {
           if (provider === "deepseek") {
             const chunk = parseDeepseekSseData(data);
             if (!chunk || chunk.done) return;
+            if (chunk.finish) abschluss = chunk.finish;
             if (chunk.reasoning) reasoning += chunk.reasoning;
             if (chunk.content) content += chunk.content;
             if (chunk.usage) {
@@ -4417,6 +4422,22 @@ async function callJsonModelStreaming(options: ModelCallOptions): Promise<ModelC
             error: `empty completion, reasoning used ${usage.thinking} of ${usage.output + usage.thinking} tokens`,
             text: "", attempts: attemptsUsed, usage,
           };
+        }
+        // Ein abgerissener Strom sieht aus wie eine fertige Antwort: Zeichen
+        // sind da, der Aufruf endet ohne Fehler. Erst der Test auf lesbares
+        // JSON trennt beides. Ohne ihn flickt parseLooseJsonObject die halbe
+        // Antwort zu einem Teilobjekt, und die Pruefung meldet hinterher
+        // fehlende Felder, statt den Abriss zu nennen.
+        const abgeschnitten = wantsJson && istUnvollstaendigesJson(content);
+        if (abgeschnitten || abschluss === "length") {
+          lastError = abschluss === "length"
+            ? `Die Antwort hat das Tokenlimit erreicht und bricht mitten im Satz ab (${content.length} Zeichen, ${usage.thinking} davon Begründung).`
+            : `Die Verbindung ist mitten in der Antwort abgerissen (${content.length} Zeichen geschrieben).`;
+          if (attempt === attemptsAllowed) {
+            return { ok: false, status: response.status, error: lastError, text: "", usage, attempts: attemptsUsed };
+          }
+          await pulse({ phase: "writing", model: options.model, chars: 0, thinking_chars: 0 });
+          continue;
         }
         return { ok: true, status: response.status, error: "", text: content, usage, attempts: attemptsUsed };
       }
@@ -5914,7 +5935,12 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       });
     };
     const klartextVon = (roh: string, status: number) =>
-      /insufficient balance|spending cap/i.test(roh)
+      // Der Abriss ist kein Netzwerkfehler und kein Guthabenproblem. Er hat
+      // seinen eigenen Satz, sonst steht dort "hat mit einem Netzwerkfehler
+      // geantwortet" ueber einer Antwort, die es zur Haelfte gab.
+      /mitten in der Antwort abgerissen|bricht mitten im Satz ab/i.test(roh)
+        ? `${roh} Das Modell hat zweimal angesetzt. Noch einmal erzeugen.`
+        : /insufficient balance|spending cap/i.test(roh)
         ? `Beim Anbieter ${assetModel} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`
         : /invalid api key|unauthorized|401/i.test(roh)
           ? `Der API-Schlüssel für ${assetModel} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`

@@ -2412,6 +2412,54 @@ test("beim Selbstschreiben geht es Abschnitt für Abschnitt, Bild zuerst", async
   );
 });
 
+test("eine abgerissene Antwort läuft nicht als fertige durch", () => {
+  // Am 18.9.2026 endete ein Lauf nach 795 Sekunden mit „Benchmarks geliefert:
+  // 0". Die Nutzlast brach mitten im Wort ab: "insight_title": "Müllers
+  // Eigenmarken differenzie. Der Strom war tot, der Code hielt das für eine
+  // fertige Antwort, und parseLooseJsonObject flickte ein Teilobjekt daraus.
+  assert.equal(backend.istUnvollstaendigesJson('{"title":"Müller","kpis":[]}'), false);
+  assert.equal(backend.istUnvollstaendigesJson('{"title":"Müller","insight_title":"Müllers Eigenmarken differenzie'), true);
+  assert.equal(backend.istUnvollstaendigesJson('```json\n{"a":1}\n```'), false);
+  // Freitext ist kein halbes JSON.
+  assert.equal(backend.istUnvollstaendigesJson("Ein Satz ohne Klammern"), false);
+  assert.equal(backend.istUnvollstaendigesJson(""), false);
+
+  // finish_reason wurde im Strom gar nicht gelesen.
+  assert.deepEqual(
+    backend.parseDeepseekSseData(JSON.stringify({ choices: [{ delta: { content: "x" }, finish_reason: "length" }] })),
+    { content: "x", reasoning: undefined, finish: "length", usage: null },
+  );
+  assert.match(edge, /if \(chunk\.finish\) abschluss = chunk\.finish;/);
+  assert.match(edge, /const abgeschnitten = wantsJson && istUnvollstaendigesJson\(content\);/);
+  // Ein Anlauf bleibt: der Abriss ist ein Fehlversuch, kein Ergebnis.
+  assert.match(edge, /if \(attempt === attemptsAllowed\) \{\n            return \{ ok: false, status: response\.status, error: lastError/);
+  assert.match(edge, /mitten in der Antwort abgerissen\|bricht mitten im Satz ab/);
+});
+
+test("nach dem ersten geschriebenen Zeichen wartet der Wachhund länger", () => {
+  // Der Aufruf schrieb 3.296 Zeichen und schwieg dann 181 Sekunden. Eine
+  // Sekunde über der Schwelle, und die ganze Begründung war weg: zweimal,
+  // 795 Sekunden für nichts.
+  assert.equal(backend.ASSET_FIRST_BYTE_STALE_MS, 180_000);
+  assert.equal(backend.ASSET_WRITING_STALE_MS, 300_000);
+
+  const schreibend = [{ event: "model_start" }, { event: "pulse", phase: "writing", chars: 3296 }];
+  const stumm = [{ event: "model_start" }, { event: "pulse", phase: "thinking", chars: 0 }];
+  assert.equal(backend.assetHasWrittenChars(schreibend), true);
+  assert.equal(backend.assetHasWrittenChars(stumm), false);
+  // Ein Neustart setzt die Rechnung zurück: die Zeichen gehören zum alten Aufruf.
+  assert.equal(backend.assetHasWrittenChars([...schreibend, { event: "retry_model" }, { event: "model_start" }]), false);
+
+  const jetzt = Date.parse("2026-09-18T15:00:00Z");
+  const vor = (ms) => new Date(jetzt - ms).toISOString();
+  const zeile = (log, alter) => ({ status: "running", stage: "modell", updated_at: vor(alter), run_log: log });
+  // Ohne ein einziges Zeichen bleibt es bei drei Minuten.
+  assert.equal(backend.assetModelRetryDue(zeile(stumm, 181_000), jetzt), true);
+  // Mit geschriebenen Zeichen nicht: dort laufen fünf Minuten.
+  assert.equal(backend.assetModelRetryDue(zeile(schreibend, 181_000), jetzt), false);
+  assert.equal(backend.assetModelRetryDue(zeile(schreibend, 301_000), jetzt), true);
+});
+
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
   const guides = await import("../memo-guides.mjs");
   // Der Vertrag ist am Referenzmemo gemessen. Eine Regel, die das Original
@@ -3100,8 +3148,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260917-21");
-  assert.match(indexHtml, /app\.js\?v=20260917-21/);
+  assert.equal(studioVersion, "20260918-1");
+  assert.match(indexHtml, /app\.js\?v=20260918-1/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

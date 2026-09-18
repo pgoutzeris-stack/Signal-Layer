@@ -5213,6 +5213,12 @@ export const ASSET_HEARTBEAT_STALE_MS = 180_000;
  * 90 s hat am 14.8.2026 Coca-Cola/Aeffe getötet: Thinking-Burst bei 147 s,
  * danach >90 s Pause bevor JSON kam. */
 export const ASSET_FIRST_BYTE_STALE_MS = 180_000;
+/**
+ * Sobald Zeichen ankommen, ist der Aufruf am Leben. Ihn nach denselben drei
+ * Minuten abzubrechen wirft die ganze Begruendung weg, und der neue Anlauf
+ * denkt sie noch einmal: am 18.9.2026 zweimal, 795 Sekunden fuer nichts.
+ */
+export const ASSET_WRITING_STALE_MS = 300_000;
 
 /** So oft darf ein Pulse die Zeile anfassen, ohne die Datenbank zu flutten. */
 export const ASSET_HEARTBEAT_PULSE_MS = 2_500;
@@ -5385,7 +5391,21 @@ export function assetModelRetryDue(
   if (assetDraftTextFromLog(row.run_log)) return false;
   if (String(row.stage || "") !== "modell") return false;
   if (assetModelRetryCount(row.run_log) >= ASSET_MODEL_RETRY_MAX) return false;
-  return assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs) >= ASSET_FIRST_BYTE_STALE_MS;
+  const grenze = assetHasWrittenChars(row.run_log) ? ASSET_WRITING_STALE_MS : ASSET_FIRST_BYTE_STALE_MS;
+  return assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs) >= grenze;
+}
+
+/** Hat der laufende Aufruf schon Zeichen der Antwort geliefert? */
+export function assetHasWrittenChars(log: unknown): boolean {
+  const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const eintrag = rows[i];
+    // Ein Neustart setzt die Rechnung zurueck: was davor geschrieben wurde,
+    // gehoert zu einem Aufruf, den es nicht mehr gibt.
+    if (eintrag?.event === "model_start" || eintrag?.event === "retry_model") return false;
+    if (eintrag?.event === "pulse" && eintrag?.phase === "writing" && Number(eintrag?.chars || 0) > 0) return true;
+  }
+  return false;
 }
 
 export function assetStageLabel(stage: string): string {
@@ -5534,6 +5554,7 @@ export function parseDeepseekSseData(data: string): {
   done?: boolean;
   content?: string;
   reasoning?: string;
+  finish?: string;
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -5559,6 +5580,7 @@ export function parseDeepseekSseData(data: string): {
     return {
       content: typeof delta.content === "string" ? delta.content : undefined,
       reasoning: typeof delta.reasoning_content === "string" ? delta.reasoning_content : undefined,
+      finish: typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined,
       usage: usageRaw ? {
         prompt_tokens: Number(usageRaw.prompt_tokens || 0),
         completion_tokens: Number(usageRaw.completion_tokens || 0),
@@ -5570,6 +5592,26 @@ export function parseDeepseekSseData(data: string): {
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Ist die Antwort mitten im Satz abgerissen? Ein abgeschnittenes JSON-Objekt
+ * laesst sich nicht streng lesen; parseLooseJsonObject flickt es zwar zu einem
+ * Teilobjekt, und genau das war der Fehler: eine halbe Antwort lief als ganze
+ * durch und scheiterte erst an der Pruefung, mit „Benchmarks geliefert: 0".
+ */
+export function istUnvollstaendigesJson(text: string): boolean {
+  const roh = String(text || "")
+    .replace(/^\s*```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+  if (!roh.startsWith("{") && !roh.startsWith("[")) return false;
+  try {
+    JSON.parse(roh);
+    return false;
+  } catch {
+    return true;
   }
 }
 
