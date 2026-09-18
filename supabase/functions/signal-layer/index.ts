@@ -726,6 +726,10 @@ const EDITOR_ACTIONS = new Set([
   // Ein selbst geschriebenes Signal legt eine Artikel- und eine Signalzeile an.
   // Lesen bleibt offen, Schreiben braucht dieselbe Freigabe wie ein Lauf.
   "create_manual_signal",
+  // Ein halb getipptes Signal gehoert dem, der es tippt.
+  "save_manual_signal_draft",
+  "list_manual_signal_drafts",
+  "delete_manual_signal_draft",
   "draft_manual_signal_from_url",
   "check_manual_signal",
   "schedule_simple_run",
@@ -10447,6 +10451,56 @@ Deno.serve(async (req: Request) => {
         if (!retryId) return errorResponse(origin, "asset_id fehlt");
         EdgeRuntime.waitUntil(retryGeneratedAssetModel(retryId));
         return corsResponse(origin, { ok: true, asset_id: retryId });
+      }
+
+      case "save_manual_signal_draft": {
+        // Jeder Stand, nicht nur der fertige. Der Entwurf traegt die Antworten
+        // so, wie der Fragebogen sie fuehrt; ausgewertet werden sie erst beim
+        // Anlegen des Signals.
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const entwurfAntworten = body.answers && typeof body.answers === "object" && !Array.isArray(body.answers)
+          ? body.answers as Record<string, unknown>
+          : {};
+        const zeile = {
+          created_by: auth.userId,
+          answers: entwurfAntworten,
+          step_key: String(body.step_key || "weg").slice(0, 40),
+          headline: String((entwurfAntworten.headline ?? "") as string).slice(0, 200),
+          lane: String(body.lane || "marketing") === "sales" ? "sales" : "marketing",
+          updated_at: new Date().toISOString(),
+        };
+        const entwurfId = String(body.draft_id || "").trim();
+        const admin = getAdminClient();
+        if (entwurfId) {
+          const { data, error } = await admin.schema("signal_layer").from("manual_signal_drafts")
+            .update(zeile).eq("id", entwurfId).eq("created_by", auth.userId)
+            .select("id").maybeSingle();
+          if (error) return errorResponse(origin, error.message, 500);
+          if (data?.id) return corsResponse(origin, { draft_id: data.id });
+        }
+        const { data, error } = await admin.schema("signal_layer").from("manual_signal_drafts")
+          .insert(zeile).select("id").single();
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { draft_id: data.id });
+      }
+
+      case "list_manual_signal_drafts": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const { data, error } = await getAdminClient().schema("signal_layer").from("manual_signal_drafts")
+          .select("id,answers,step_key,headline,lane,updated_at")
+          .eq("created_by", auth.userId)
+          .order("updated_at", { ascending: false })
+          .limit(20);
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { drafts: data || [] });
+      }
+
+      case "delete_manual_signal_draft": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const { error } = await getAdminClient().schema("signal_layer").from("manual_signal_drafts")
+          .delete().eq("id", String(body.draft_id || "")).eq("created_by", auth.userId);
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { ok: true });
       }
 
       case "draft_manual_signal_from_url": {

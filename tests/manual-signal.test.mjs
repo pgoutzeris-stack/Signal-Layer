@@ -284,3 +284,32 @@ test("Tier-1-Unternehmen werden erkannt und als Pille angeboten", () => {
   assert.doesNotMatch(studio, /lg-guide-row--ok i\{color:var\(--success/);
   assert.match(studio, /@keyframes lg-guide-in/);
 });
+
+test("ein halb getipptes Signal überlebt das Schließen", () => {
+  const quelle = readFileSync(new URL("../manual-signal.js", import.meta.url), "utf8");
+  const edge = readFileSync(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
+  // Der Stand lag nur im Arbeitsspeicher des Fensters. Wer es schloss, fing
+  // von vorn an, auch nach zehn ausgefüllten Feldern.
+  assert.match(quelle, /save_manual_signal_draft/);
+  assert.match(quelle, /list_manual_signal_drafts/);
+  assert.match(quelle, /delete_manual_signal_draft/);
+  // Gespeichert wird bei jeder Änderung, aber nur wenn sich etwas geändert hat.
+  assert.match(quelle, /function entwurfStand\(\)/);
+  assert.match(quelle, /if \(stand === state\.entwurfStand\) return;/);
+  assert.match(quelle, /setTimeout\(\(\) => \{ void sichereEntwurf\(\); \}, 1_500\)/);
+  // Ein leeres Formular ist kein Entwurf.
+  assert.match(quelle, /Ein leeres Formular ist kein Entwurf/);
+  // Der Reiter sitzt unten links, wie die Entwürfe des Asset Studios.
+  assert.match(quelle, /class="as-rail-tab/);
+  assert.match(quelle, /data-act="entwuerfe"/);
+  assert.match(quelle, /data-act="entwurf-oeffnen"/);
+  assert.match(quelle, /data-act="entwurf-loeschen"/);
+  // Steht das Signal, ist der Entwurf erledigt.
+  assert.match(quelle, /if \(state\.draftId\) await loescheEntwurf\(state\.draftId\);/);
+  // Die drei Routen sind freigegeben und prüfen die Anmeldung.
+  assert.match(edge, /"save_manual_signal_draft",/);
+  assert.match(edge, /case "save_manual_signal_draft"/);
+  assert.match(edge, /if \(!auth\?\.userId\) return errorResponse\(origin, "Nicht angemeldet", 401\);/);
+  // Ein Entwurf gehört dem, der ihn tippt.
+  assert.match(edge, /\.eq\("created_by", auth\.userId\)/);
+});

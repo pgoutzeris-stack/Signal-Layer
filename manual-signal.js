@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260918-1";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260918-2";
 import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260824-0305";
 
 const OVERLAY_ID = "ms-overlay";
@@ -150,6 +150,23 @@ const BEISPIEL = {
 };
 
 const EIGENES_CSS = `
+#${OVERLAY_ID} .ms-entwuerfe{display:flex; flex-direction:column; gap:10px; max-width:720px;}
+#${OVERLAY_ID} .ms-entwurf{
+  display:flex; align-items:stretch; gap:0;
+  border:1px solid var(--line,#e2e8f0); border-radius:12px; background:#fff; overflow:hidden;
+}
+#${OVERLAY_ID} .ms-entwurf-oeffnen{
+  flex:1 1 auto; display:flex; flex-direction:column; gap:3px; align-items:flex-start;
+  padding:12px 14px; border:0; background:none; font:inherit; text-align:left; cursor:pointer;
+}
+#${OVERLAY_ID} .ms-entwurf-oeffnen:hover{background:var(--tint,#f7f9fc);}
+#${OVERLAY_ID} .ms-entwurf-oeffnen b{font-size:14px; font-weight:700; color:var(--ink,#0f172a);}
+#${OVERLAY_ID} .ms-entwurf-oeffnen small{font-size:12px; color:var(--muted,#64748b);}
+#${OVERLAY_ID} .ms-entwurf-weg{
+  flex:0 0 auto; width:40px; border:0; border-left:1px solid var(--line,#e2e8f0);
+  background:none; color:var(--muted,#94a3b8); cursor:pointer;
+}
+#${OVERLAY_ID} .ms-entwurf-weg:hover{color:var(--danger,#dc2626); background:#fef2f2;}
 #${OVERLAY_ID} .ms-split{
   display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr);
   grid-template-rows:auto 1fr; gap:0 20px; align-items:stretch; width:100%;
@@ -253,6 +270,9 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     pruefTarif: null,
     freigabe: false,
     stepKey: "weg", busy: false, error: "", formError: "",
+    // Der Stand liegt auf dem Server, nicht nur im Fenster. Wer schliesst,
+    // findet ihn unter Entwuerfen wieder.
+    draftId: "", drafts: [], draftsGeladen: false, zeigeEntwuerfe: false, entwurfStand: "",
     // Leistungskatalog aus Supabase. Bis er da ist, bleibt nur das Freitextfeld.
     offerings: [], offeringsGeladen: false, offeringFrei: false,
   };
@@ -617,7 +637,108 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     </div>`;
   }
 
+  /**
+   * Der Stand des Fragebogens, so wie er gespeichert wird. Nur wenn sich diese
+   * Zeichenkette aendert, geht eine Anfrage raus: sonst schriebe jedes
+   * Neuzeichnen eine Zeile.
+   */
+  function entwurfStand() {
+    return JSON.stringify({ a: state.answers, s: state.stepKey });
+  }
+
+  /** Speichert den Stand, hoechstens einmal je anderthalb Sekunden. */
+  let entwurfTimer = null;
+  function sichereEntwurfSpaeter() {
+    if (state.busy) return;
+    const stand = entwurfStand();
+    if (stand === state.entwurfStand) return;
+    clearTimeout(entwurfTimer);
+    entwurfTimer = setTimeout(() => { void sichereEntwurf(); }, 1_500);
+  }
+
+  async function sichereEntwurf() {
+    const stand = entwurfStand();
+    if (stand === state.entwurfStand) return;
+    // Ein leeres Formular ist kein Entwurf.
+    const inhalt = ["headline", "core", "evidence", "source", "company", "occasion", "competitor"]
+      .some((key) => String(state.answers[key] || "").trim());
+    if (!inhalt) return;
+    state.entwurfStand = stand;
+    try {
+      const res = await api("save_manual_signal_draft", {
+        draft_id: state.draftId || undefined,
+        answers: state.answers,
+        step_key: state.stepKey,
+        lane: state.answers.lane,
+      });
+      if (res?.draft_id) state.draftId = res.draft_id;
+    } catch {
+      // Der Entwurf ist eine Bequemlichkeit. Scheitert er, laeuft das
+      // Formular weiter; der naechste Tastendruck versucht es erneut.
+      state.entwurfStand = "";
+    }
+  }
+
+  async function ladeEntwuerfe() {
+    try {
+      const res = await api("list_manual_signal_drafts", {});
+      state.drafts = Array.isArray(res?.drafts) ? res.drafts : [];
+    } catch {
+      state.drafts = [];
+    }
+    state.draftsGeladen = true;
+  }
+
+  function uebernehmeEntwurf(eintrag) {
+    if (!eintrag) return;
+    state.answers = { ...STANDARD, ...(eintrag.answers && typeof eintrag.answers === "object" ? eintrag.answers : {}) };
+    state.draftId = eintrag.id;
+    state.stepKey = String(eintrag.step_key || "weg");
+    state.entwurfStand = entwurfStand();
+    state.beruehrt = new Set(Object.keys(eintrag.answers || {}));
+    state.pruefung = null;
+    state.pruefungFrisch = false;
+    state.freigabe = false;
+    state.zeigeEntwuerfe = false;
+    zeichne();
+  }
+
+  async function loescheEntwurf(id) {
+    if (!id) return;
+    state.drafts = state.drafts.filter((eintrag) => eintrag.id !== id);
+    if (state.draftId === id) state.draftId = "";
+    try {
+      await api("delete_manual_signal_draft", { draft_id: id });
+    } catch { /* der Eintrag ist aus der Liste, der Rest ist Aufraeumen */ }
+  }
+
+  function entwurfTabHtml() {
+    const n = Array.isArray(state.drafts) ? state.drafts.length : 0;
+    const an = state.zeigeEntwuerfe;
+    return `<button type="button" class="as-rail-tab${an ? " is-on" : ""}" data-act="entwuerfe"${an ? ` aria-current="page"` : ""}>
+      <b><i class="fa-regular fa-folder-open"></i></b>
+      Entwürfe${n ? ` (${n})` : ""}
+    </button>`;
+  }
+
+  function entwuerfeHtml() {
+    if (!state.draftsGeladen) return `<div class="ms-karte"><p>Einen Moment.</p></div>`;
+    if (!state.drafts.length) return `<div class="ms-karte"><p class="ms-leer">Noch kein Entwurf.</p></div>`;
+    return `<div class="ms-entwuerfe">${state.drafts.map((eintrag) => {
+      const wann = eintrag.updated_at ? new Date(eintrag.updated_at).toLocaleString("de-DE") : "";
+      const titel = String(eintrag.headline || "").trim() || "Ohne Überschrift";
+      return `<div class="ms-entwurf">
+        <button type="button" class="ms-entwurf-oeffnen" data-act="entwurf-oeffnen" data-key="${esc(eintrag.id)}">
+          <b>${esc(titel)}</b>
+          <small>${esc(eintrag.lane === "sales" ? "Sales" : "Marketing")}${wann ? ` · ${esc(wann)}` : ""}</small>
+        </button>
+        <button type="button" class="ms-entwurf-weg" data-act="entwurf-loeschen" data-key="${esc(eintrag.id)}" aria-label="Entwurf löschen"><i class="fa-solid fa-xmark"></i></button>
+      </div>`;
+    }).join("")}</div>`;
+  }
+
   function zeichne() {
+    sichereEntwurfSpaeter();
     const fragen = aktiveFragen();
     const index = schrittIndex(fragen);
     shell.innerHTML = `
@@ -628,18 +749,19 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
           <li data-state="active"><b>1</b>Signal beschreiben</li>
           <li><b>2</b>Asset erzeugen</li>
         </ol>
+        ${entwurfTabHtml()}
       </nav>
       <div class="as-main">
         <header class="as-topbar">
           <h2>Manuelles Signal</h2>
         </header>
         <div class="as-content">
-          <div class="ms-split">
+          ${state.zeigeEntwuerfe ? entwuerfeHtml() : `<div class="ms-split">
             <div class="ms-kopf">${fortschrittHtml(fragen, index)}</div>
             <div class="ms-kopf"><span class="as-prev-label">Signal</span></div>
             <div class="ms-links">${formHtml()}</div>
             <div class="ms-rechts">${karteHtml()}</div>
-          </div>
+          </div>`}
         </div>
       </div>`;
     // Nach dem Sprung steht die offene Karte weit unten. Ohne Nachziehen
@@ -827,6 +949,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       const res = await api("create_manual_signal", { signal: signalFelder() });
       const articleId = res && (res.article_id || res.articleId);
       if (!articleId) throw new Error("Der Server hat kein Signal zurückgegeben.");
+      // Das Signal steht. Der Entwurf hat seinen Zweck erfüllt.
+      if (state.draftId) await loescheEntwurf(state.draftId);
       instanz.close();
       openAssetStudio({
         kind: a.lane === "sales" ? "memo" : "linkedin",
@@ -910,6 +1034,21 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     if (act === "next") { if (pruefeOffen()) setzeSchritt(naechsterSchritt()); return; }
     if (act === "skip") { setzeSchritt(naechsterSchritt()); return; }
     if (act === "back") { setzeSchritt(vorigerSchritt()); return; }
+    if (act === "entwuerfe") {
+      state.zeigeEntwuerfe = !state.zeigeEntwuerfe;
+      zeichne();
+      if (state.zeigeEntwuerfe) { void ladeEntwuerfe().then(() => { if (state.zeigeEntwuerfe) zeichne(); }); }
+      return;
+    }
+    if (act === "entwurf-oeffnen") {
+      uebernehmeEntwurf(state.drafts.find((eintrag) => eintrag.id === hit.getAttribute("data-key")));
+      return;
+    }
+    if (act === "entwurf-loeschen") {
+      void loescheEntwurf(hit.getAttribute("data-key"));
+      zeichne();
+      return;
+    }
     if (act === "goto") { setzeSchritt(hit.getAttribute("data-key")); return; }
     if (act === "submit") { void uebernehmen(); return; }
   });
@@ -1006,6 +1145,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   zeichne();
   void ladeLeistungen();
   void ladeFirmen();
+  // Die Zahl am Reiter steht sofort da, nicht erst nach dem ersten Klick.
+  void ladeEntwuerfe().then(() => { if (instanz.lebt()) zeichne(); });
   closeAssetStudio();
   return instanz;
 }

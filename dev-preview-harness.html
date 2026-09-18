@@ -2,8 +2,8 @@
 <html lang="de"><head><meta charset="utf-8"><title>Fragebogen Harness</title></head>
 <body><button id="li">LinkedIn</button> <button id="me">Ansprache</button> <button id="ms">Manuelles Signal</button>
 <script type="module">
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260918-1";
-import { openManualSignal } from "./manual-signal.js?v=20260918-1";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260918-2";
+import { openManualSignal } from "./manual-signal.js?v=20260918-2";
 const signal = { headline_de:"Handel baut Eigenmarken aus", why_de:"Anteil steigt.", company:"Testfirma AG",
   signal_label:"Markenstrategie", signal_id:"marken_strategie", roots_offering:"Markenstrategie", topics:["marken_strategie"],
   article:{ title_de:"Handel baut Eigenmarken aus", id:"00000000-0000-0000-0000-000000000001" } };
@@ -28,6 +28,13 @@ const callApi = async (a, payload) => {
   if (a === "get_asset_tone") return { tone_of_voice: window.tone };
   if (a === "get_asset_design_templates") return { design_templates: window.vorlagen };
   if (a === "create_manual_signal") { window.letztesSignal = payload; return { article_id: "00000000-0000-0000-0000-000000000001", signal }; }
+  if (a === "save_manual_signal_draft") { window.entwuerfe = window.entwuerfe || []; const id = payload.draft_id || ("e" + (window.entwuerfe.length + 1));
+    const i = window.entwuerfe.findIndex(x => x.id === id);
+    const zeile = { id, answers: payload.answers, step_key: payload.step_key, lane: payload.lane, headline: payload.answers?.headline || "", updated_at: new Date().toISOString() };
+    if (i >= 0) window.entwuerfe[i] = zeile; else window.entwuerfe.push(zeile);
+    window.letzterEntwurf = zeile; return { draft_id: id }; }
+  if (a === "list_manual_signal_drafts") return { drafts: window.entwuerfe || [] };
+  if (a === "delete_manual_signal_draft") { window.entwuerfe = (window.entwuerfe || []).filter(x => x.id !== payload.draft_id); return { ok: true }; }
   if (a === "draft_manual_signal_from_url") {
     window.letzteQuelle = payload;
     if (window.quelleLeer) return { source: { ok:false, grund:"Kein Weg hat ein Transkript hergegeben: kein Untertitel über den Player, keinen über die Seite, kein Spiegel erreichbar, kein Ergebnis über Apify." }, draft: null };
