@@ -1641,12 +1641,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260921-2";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260921-3";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260921-2";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260921-3";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260921-2";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260921-3";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */

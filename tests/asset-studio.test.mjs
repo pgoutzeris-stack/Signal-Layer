@@ -2441,7 +2441,15 @@ test("eine abgerissene Antwort läuft nicht als fertige durch", () => {
   assert.match(edge, /const abgeschnitten = wantsJson && istUnvollstaendigesJson\(content\);/);
   // Ein Anlauf bleibt: der Abriss ist ein Fehlversuch, kein Ergebnis.
   assert.match(edge, /if \(attempt === attemptsAllowed\) \{\n            return \{ ok: false, status: response\.status, error: lastError/);
-  assert.match(edge, /mitten in der Antwort abgerissen\|bricht mitten im Satz ab/);
+  assert.match(edge, /Antwort mitten im Satz abgebrochen\|bricht mitten im Satz ab/);
+  // Wem die Schuld gehört, gehört in die Meldung: sonst sucht der Nutzer den
+  // Fehler bei seinem Signal oder beim Werkzeug, und beide sind in Ordnung.
+  assert.match(edge, /Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen/);
+  assert.match(backend.ASSET_HANG_ERROR, /Das liegt beim Anbieter des Modells/);
+  assert.match(
+    backend.assetHeartbeatErrorText("deepseek-v4-pro", "modell", 302_000, "silent"),
+    /Das liegt beim Anbieter des Modells/,
+  );
 });
 
 test("nach dem ersten geschriebenen Zeichen wartet der Wachhund länger", () => {
@@ -3192,8 +3200,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260921-2");
-  assert.match(indexHtml, /app\.js\?v=20260921-2/);
+  assert.equal(studioVersion, "20260921-3");
+  assert.match(indexHtml, /app\.js\?v=20260921-3/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

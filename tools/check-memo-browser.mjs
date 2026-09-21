@@ -28,9 +28,9 @@ try {
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/dev-preview-harness.html`);
   await page.evaluate(async () => {
-    const { openAssetStudio, closeAssetStudio } = await import('./asset-studio.js?v=20260921-2');
-    const { MEMO_TEMPLATE } = await import('./memo-template.js?v=20260921-2');
-    const { MEMO_EXAMPLE } = await import('./memo-example.js?v=20260921-2');
+    const { openAssetStudio, closeAssetStudio } = await import('./asset-studio.js?v=20260921-3');
+    const { MEMO_TEMPLATE } = await import('./memo-template.js?v=20260921-3');
+    const { MEMO_EXAMPLE } = await import('./memo-example.js?v=20260921-3');
     window.saved = MEMO_TEMPLATE.replace(/\{\{([a-z0-9_]+)\}\}/g, (_, key) => {
       if (key.endsWith('_image')) return MEMO_EXAMPLE.images[key.replace(/_image$/, '').replace(/^(benchmarks|potentials)_/, '$1.')]?.src || '';
       return MEMO_EXAMPLE.html[key] || '';

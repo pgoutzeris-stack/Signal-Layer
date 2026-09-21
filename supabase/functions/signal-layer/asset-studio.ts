@@ -5251,7 +5251,7 @@ export const ASSET_HEARTBEAT_PULSE_MS = 2_500;
 export const ASSET_STREAM_KEEPALIVE_MS = 8_000;
 
 export const ASSET_HANG_ERROR =
-  "Der Auftrag hat das technische Zeitfenster der Funktion (knapp sieben Minuten) ausgeschöpft. Bitte denselben Auftrag noch einmal starten.";
+  "Der Auftrag hat das technische Zeitfenster der Funktion (knapp sieben Minuten) ausgeschöpft, weil das Modell zu lange gebraucht hat. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen. Bitte denselben Auftrag noch einmal starten.";
 
 export type AssetHangReason = "silent" | "isolate";
 
@@ -5455,7 +5455,9 @@ export function assetHeartbeatErrorText(
 ): string {
   if (reason === "isolate") return ASSET_HANG_ERROR;
   const sek = Math.max(1, Math.round(Number(silentMs) / 1000));
-  return `${model || "Das Modell"} hat ${assetStageLabel(stage)} seit ${sek} Sekunden nichts mehr gesendet. Der Auftrag wurde wegen der stillen Verbindung beendet, nicht weil er zu lange gedauert hat. Bitte denselben Auftrag noch einmal starten.`;
+  // Wem die Schuld gehoert, gehoert in die Meldung. Sonst sucht der Nutzer den
+  // Fehler bei seinem Text oder beim Werkzeug, und beide sind in Ordnung.
+  return `${model || "Das Modell"} hat ${assetStageLabel(stage)} seit ${sek} Sekunden nichts mehr gesendet. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen: die Verbindung stand, es kamen nur keine Daten mehr. Der Auftrag wurde deshalb beendet, nicht weil er zu lange gedauert hat. Bitte denselben Auftrag noch einmal starten.`;
 }
 
 /**

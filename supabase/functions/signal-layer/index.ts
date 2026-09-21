@@ -4444,8 +4444,8 @@ async function callJsonModelStreaming(options: ModelCallOptions): Promise<ModelC
         const abgeschnitten = wantsJson && istUnvollstaendigesJson(content);
         if (abgeschnitten || abschluss === "length") {
           lastError = abschluss === "length"
-            ? `Die Antwort hat das Tokenlimit erreicht und bricht mitten im Satz ab (${content.length} Zeichen, ${usage.thinking} davon Begründung).`
-            : `Die Verbindung ist mitten in der Antwort abgerissen (${content.length} Zeichen geschrieben).`;
+            ? `${options.model} hat das Tokenlimit erreicht und bricht mitten im Satz ab (${content.length} Zeichen, ${usage.thinking} davon Begründung).`
+            : `${options.model} hat die Antwort mitten im Satz abgebrochen (${content.length} Zeichen geschrieben). Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen.`;
           if (attempt === attemptsAllowed) {
             return { ok: false, status: response.status, error: lastError, text: "", usage, attempts: attemptsUsed };
           }
@@ -5952,8 +5952,8 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       // Der Abriss ist kein Netzwerkfehler und kein Guthabenproblem. Er hat
       // seinen eigenen Satz, sonst steht dort "hat mit einem Netzwerkfehler
       // geantwortet" ueber einer Antwort, die es zur Haelfte gab.
-      /mitten in der Antwort abgerissen|bricht mitten im Satz ab/i.test(roh)
-        ? `${roh} Das Modell hat zweimal angesetzt. Noch einmal erzeugen.`
+      /Antwort mitten im Satz abgebrochen|bricht mitten im Satz ab/i.test(roh)
+        ? `${roh} Zwei Anläufe sind gelaufen, beide abgebrochen. Noch einmal erzeugen.`
         : /insufficient balance|spending cap/i.test(roh)
         ? `Beim Anbieter ${assetModel} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`
         : /invalid api key|unauthorized|401/i.test(roh)
