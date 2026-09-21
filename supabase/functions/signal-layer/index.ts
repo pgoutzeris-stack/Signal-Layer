@@ -187,6 +187,7 @@ import {
   ASSET_WRITING_STALE_MS,
   assetHasStreamedChars,
   ASSET_ZOMBIE_MS,
+  ASSET_REASONING_EFFORT,
   parseGeminiSseData,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
@@ -3581,6 +3582,12 @@ type ModelCallOptions = {
   maxTotalTokens?: number;
   temperature?: number;
   thinkingLevel?: string;
+  /**
+   * DeepSeek: none | low | high | max. Ohne Angabe gilt deren Standard "high",
+   * und der hat am 18.9.2026 zwischen 34.000 und 64.000 Zeichen Begruendung
+   * erzeugt, bevor das erste Wort der Antwort kam.
+   */
+  reasoningEffort?: "none" | "low" | "high" | "max";
   timeoutMs?: number;
   attempts?: number;
   /** "text" für Freitextantworten wie die Übersetzung. */
@@ -4339,6 +4346,7 @@ async function callJsonModelStreaming(options: ModelCallOptions): Promise<ModelC
         { role: "user", content: options.prompt + schemaHint },
       ],
       ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
+      ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
       max_tokens: options.maxTotalTokens
         ?? Math.min(Math.max(options.maxOutputTokens, 3_000) + 2_500, 8_192),
       temperature: options.temperature ?? 0,
@@ -4482,6 +4490,7 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
         { role: "user", content: options.prompt + schemaHint },
       ],
       ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
+      ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
       // Reasoning tokens share this budget with the answer, so the schema needs
       // extra headroom on top of the configured answer size. Wer ein hartes
       // Limit kennt, setzt es: bei einem Asset hat das Denken am 13.8.2026 die
@@ -6009,6 +6018,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         ].filter(Boolean).join("\n")),
         maxOutputTokens: assetOutputTokenBudget(assetKind, assetAnswers),
         maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
+        reasoningEffort: ASSET_REASONING_EFFORT,
         temperature: 0.35,
         onPulse,
         attempts: 1,
@@ -6278,6 +6288,7 @@ async function retryGeneratedAssetModel(assetId: string): Promise<void> {
       ].filter(Boolean).join("\n")),
       maxOutputTokens: assetOutputTokenBudget(assetKind, assetAnswers),
       maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
+      reasoningEffort: ASSET_REASONING_EFFORT,
       temperature: 0.35,
       onPulse,
       attempts: 2,

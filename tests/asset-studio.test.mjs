@@ -2491,6 +2491,19 @@ test("ein verwaister Auftrag wird geschlossen, auch wenn niemand hinsieht", () =
   assert.doesNotMatch(sweep, /retry_asset_model|triggerSelf/);
 });
 
+test("DeepSeek denkt für ein Asset kürzer nach", () => {
+  // Ohne Angabe gilt DeepSeeks Standard "high". Der hat am 18.9.2026 zwischen
+  // 34.000 und 64.000 Zeichen Begründung erzeugt, bevor das erste Wort der
+  // Antwort kam, und genau in diesen Minuten riss der Strom.
+  assert.equal(backend.ASSET_REASONING_EFFORT, "low");
+  // Der Parameter geht nur mit, wenn er gesetzt ist: andere Aufrufe behalten
+  // den Standard des Anbieters.
+  assert.match(edge, /\.\.\.\(options\.reasoningEffort \? \{ reasoning_effort: options\.reasoningEffort \} : \{\}\)/);
+  assert.equal((edge.match(/reasoning_effort: options\.reasoningEffort/g) || []).length, 2, "streamend und nicht streamend");
+  // Beide Asset-Aufrufe setzen ihn, der erste wie der Reparaturlauf.
+  assert.equal((edge.match(/reasoningEffort: ASSET_REASONING_EFFORT,/g) || []).length, 2);
+});
+
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
   const guides = await import("../memo-guides.mjs");
   // Der Vertrag ist am Referenzmemo gemessen. Eine Regel, die das Original
@@ -3179,8 +3192,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260921-1");
-  assert.match(indexHtml, /app\.js\?v=20260921-1/);
+  assert.equal(studioVersion, "20260921-2");
+  assert.match(indexHtml, /app\.js\?v=20260921-2/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

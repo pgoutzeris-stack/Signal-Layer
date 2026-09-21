@@ -5207,6 +5207,14 @@ export const ASSET_STALE_MS = 400_000;
 export const ASSET_ZOMBIE_MS = 900_000;
 
 /**
+ * Wie scharf DeepSeek fuer ein Asset nachdenken soll. Der Standard "high" hat
+ * am 18.9.2026 zwischen 34.000 und 64.000 Zeichen Begruendung erzeugt, bevor
+ * das erste Wort der Antwort kam; genau in diesen Minuten riss der Strom.
+ * Gelungene Laeufe brauchten 70 bis 145 Sekunden, gescheiterte 480 bis 795.
+ */
+export const ASSET_REASONING_EFFORT = "low" as const;
+
+/**
  * Ohne neues Lebenszeichen so lange: die Verbindung steht. Denken und
  * Schreiben teilen dasselbe Fenster. 45 s nach dem ersten JSON-Byte hat
  * Live-Läufe getötet (16.8.2026, „seit 46 Sekunden nichts mehr gesendet“):
