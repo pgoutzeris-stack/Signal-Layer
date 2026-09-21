@@ -186,6 +186,7 @@ import {
   istUnvollstaendigesJson,
   ASSET_WRITING_STALE_MS,
   assetHasStreamedChars,
+  ASSET_ZOMBIE_MS,
   parseGeminiSseData,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
@@ -8522,7 +8523,29 @@ Deno.serve(async (req: Request) => {
           triggerSelf({ action: "process_analysis_batches" });
         }
 
-        return corsResponse(origin, { resumed: (stalled || []).map((r: { id: string }) => r.id) });
+        // Ein Auftrag, den niemand mehr abfragt, blieb fuer immer auf "laeuft".
+        // Der Wachhund lief nur mit, wenn das Studio nachfragte; nach dem
+        // Schliessen des Fensters fragte niemand mehr. Zwei Zeilen standen so
+        // 67 und 888 Stunden da, obwohl ihr Isolat nach acht Minuten tot war.
+        //
+        // Hier wird nur geschlossen, nie neu gestartet: wer das Fenster zu hat,
+        // will keinen zweiten bezahlten Modellaufruf.
+        const verwaisteGrenze = new Date(Date.now() - ASSET_ZOMBIE_MS).toISOString();
+        const { data: verwaiste } = await admin.schema("signal_layer").from("generated_assets")
+          .select("id, kind, status, stage, model, article_id, created_by, created_at, updated_at, run_log")
+          .eq("status", "running")
+          .lt("updated_at", verwaisteGrenze)
+          .limit(25);
+        const geschlossen: string[] = [];
+        for (const zeile of verwaiste || []) {
+          const zu = await schliesseHangingAsset(admin, zeile as Record<string, unknown>);
+          if (zu) geschlossen.push(String(zeile.id));
+        }
+
+        return corsResponse(origin, {
+          resumed: (stalled || []).map((r: { id: string }) => r.id),
+          closed_assets: geschlossen,
+        });
       }
 
       // ---------------------------------------------------------------------

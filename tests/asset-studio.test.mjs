@@ -2475,6 +2475,22 @@ test("nach dem ersten geschriebenen Zeichen wartet der Wachhund länger", () => 
   assert.equal(backend.assetModelRetryDue(zeile(denkend, 301_000), jetzt), true);
 });
 
+test("ein verwaister Auftrag wird geschlossen, auch wenn niemand hinsieht", () => {
+  // Der Wachhund lief nur mit, wenn das Studio nachfragte. Nach dem Schließen
+  // des Fensters fragte niemand mehr: zwei Zeilen standen 67 und 888 Stunden
+  // auf „läuft", obwohl ihr Isolat nach acht Minuten tot war.
+  assert.equal(backend.ASSET_ZOMBIE_MS, 900_000);
+  assert.ok(backend.ASSET_ZOMBIE_MS > backend.ASSET_WALL_CLOCK_MS, "erst nach der Wanduhr des Isolats");
+  // Der Lauf alle fünf Minuten räumt sie weg.
+  assert.match(edge, /\.eq\("status", "running"\)\n          \.lt\("updated_at", verwaisteGrenze\)/);
+  assert.match(edge, /const zu = await schliesseHangingAsset\(admin, zeile as Record<string, unknown>\);/);
+  assert.match(edge, /closed_assets: geschlossen,/);
+  // Geschlossen, nicht neu gestartet: ein zweiter bezahlter Aufruf für ein
+  // Fenster, das zu ist, nützt niemandem.
+  const sweep = edge.slice(edge.indexOf("const verwaisteGrenze"), edge.indexOf("closed_assets: geschlossen"));
+  assert.doesNotMatch(sweep, /retry_asset_model|triggerSelf/);
+});
+
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
   const guides = await import("../memo-guides.mjs");
   // Der Vertrag ist am Referenzmemo gemessen. Eine Regel, die das Original
@@ -3163,8 +3179,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260918-3");
-  assert.match(indexHtml, /app\.js\?v=20260918-3/);
+  assert.equal(studioVersion, "20260921-1");
+  assert.match(indexHtml, /app\.js\?v=20260921-1/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

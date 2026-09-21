@@ -5199,6 +5199,14 @@ export function assetPhaseRemainingMs(phaseStartedAtMs: number, nowMs = Date.now
 export const ASSET_STALE_MS = 400_000;
 
 /**
+ * Ab wann ein laufender Auftrag verwaist ist. Das Isolat lebt hoechstens acht
+ * Minuten; wer danach noch still ist, kommt nicht mehr zurueck. Eine
+ * Viertelstunde laesst jeder Uebergabe Zeit und schliesst trotzdem am selben
+ * Tag, statt monatelang auf "laeuft" zu stehen.
+ */
+export const ASSET_ZOMBIE_MS = 900_000;
+
+/**
  * Ohne neues Lebenszeichen so lange: die Verbindung steht. Denken und
  * Schreiben teilen dasselbe Fenster. 45 s nach dem ersten JSON-Byte hat
  * Live-Läufe getötet (16.8.2026, „seit 46 Sekunden nichts mehr gesendet“):
