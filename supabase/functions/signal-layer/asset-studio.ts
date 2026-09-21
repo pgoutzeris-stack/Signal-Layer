@@ -5649,13 +5649,22 @@ export function parseGeminiSseData(data: string): {
   finish?: string;
   titles?: string[];
   searchQueries?: number;
+  usage?: { input: number; cachedInput: number; output: number; thinking: number };
 } | null {
   const raw = String(data || "").trim();
   if (!raw) return null;
   try {
     const json = JSON.parse(raw) as Record<string, unknown>;
+    const usageMeta = (json.usageMetadata || {}) as Record<string, unknown>;
+    const cachedInput = Number(usageMeta.cachedContentTokenCount || 0);
+    const usage = usageMeta.totalTokenCount ? {
+      input: Math.max(0, Number(usageMeta.promptTokenCount || 0) - cachedInput),
+      cachedInput,
+      output: Number(usageMeta.candidatesTokenCount || 0),
+      thinking: Number(usageMeta.thoughtsTokenCount || 0),
+    } : undefined;
     const candidate = (Array.isArray(json.candidates) ? json.candidates[0] : null) as Record<string, unknown> | null;
-    if (!candidate) return {};
+    if (!candidate) return { usage };
     const parts = (((candidate.content as Record<string, unknown> | undefined)?.parts) ?? []) as Array<Record<string, unknown>>;
     const text = parts
       .filter((part) => part.thought !== true)
@@ -5675,6 +5684,7 @@ export function parseGeminiSseData(data: string): {
       finish: candidate.finishReason ? String(candidate.finishReason) : undefined,
       titles,
       searchQueries: queries || (titles.length ? 1 : 0),
+      usage,
     };
   } catch {
     return null;

@@ -3406,6 +3406,7 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
   "deepseek-v4-flash": { currency: "USD", standard: { input: 0.22, cachedInput: 0.007, output: 0.66 }, peak: { input: 0.44, cachedInput: 0.014, output: 1.32 } },
   "gemini-2.5-flash-lite": { currency: "USD", standard: { input: 0.1, cachedInput: 0.025, output: 0.4 }, batch: { input: 0.05, cachedInput: 0.025, output: 0.2 } },
   "gemini-2.5-flash": { currency: "USD", standard: { input: 0.3, cachedInput: 0.075, output: 2.5 }, batch: { input: 0.15, cachedInput: 0.075, output: 1.25 } },
+  "gemini-2.5-flash-image": { currency: "USD", standard: { input: 0.3, cachedInput: 0.075, output: 30 } },
   "gemini-2.5-pro": { currency: "USD", standard: { input: 1.25, cachedInput: 0.125, output: 10 }, standardLarge: { input: 2.5, cachedInput: 0.25, output: 15 }, batch: { input: 0.625, cachedInput: 0.125, output: 5 }, batchLarge: { input: 1.25, cachedInput: 0.25, output: 7.5 } },
   "gemini-3.1-flash-lite": { currency: "USD", standard: { input: 0.25, cachedInput: 0.025, output: 1.5 }, batch: { input: 0.125, cachedInput: 0.0125, output: 0.75 } },
   "gemini-3.1-pro-preview": { currency: "USD", standard: { input: 2, cachedInput: 0.2, output: 12 }, standardLarge: { input: 4, cachedInput: 0.4, output: 18 }, batch: { input: 1, cachedInput: 0.2, output: 6 }, batchLarge: { input: 2, cachedInput: 0.4, output: 9 } },
@@ -3480,6 +3481,24 @@ async function modelCostFields(
     pricing_version: AI_PRICING_VERSION,
     search_query_count: Math.max(0, Math.round(searchQueries)),
   };
+}
+
+async function recordStandaloneAiUsage(
+  operation: string,
+  model: string,
+  status: "success" | "error",
+  usage: ModelUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 },
+  searchQueries = 0,
+  errorCode?: string,
+) {
+  const costs = status === "success" ? await modelCostFields(model, usage, "standard", searchQueries) : zeroCostFields(model);
+  const { error } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+    operation, model, status, attempt: 1, prompt_version: ASSET_PROMPT_VERSION,
+    input_tokens: usage.input + usage.cachedInput, cached_input_tokens: usage.cachedInput,
+    output_tokens: usage.output, thinking_tokens: usage.thinking, total_tokens: usage.total,
+    ...costs, error_code: errorCode || null,
+  });
+  if (error) throw new Error(`Usage tracking failed: ${error.message}`);
 }
 
 async function pricedSimpleModelCatalog() {
@@ -4109,10 +4128,22 @@ async function generateMemoSceneImage(
           google: String(befund.google || "").slice(0, 300),
           quota: String(befund.quota || "").slice(0, 200),
         });
+        await recordStandaloneAiUsage("memo_scene_image", MEMO_SCENE_IMAGE_MODEL, "error", undefined, 0, `http_${response.status}`);
         if (response.status === 400) continue;
         return null;
       }
-      const bild = parseGeminiImage(await response.json());
+      const imagePayload = await response.json();
+      const imageMeta = imagePayload?.usageMetadata || {};
+      const imageCached = Number(imageMeta.cachedContentTokenCount || 0);
+      const imageUsage: ModelUsage = {
+        input: Math.max(0, Number(imageMeta.promptTokenCount || 0) - imageCached),
+        cachedInput: imageCached,
+        output: Number(imageMeta.candidatesTokenCount || 0),
+        thinking: Number(imageMeta.thoughtsTokenCount || 0),
+        total: Number(imageMeta.totalTokenCount || 0),
+      };
+      await recordStandaloneAiUsage("memo_scene_image", MEMO_SCENE_IMAGE_MODEL, "success", imageUsage);
+      const bild = parseGeminiImage(imagePayload);
       if (!bild) {
         log?.("image_model_empty", { key: slot.key });
         continue;
@@ -4247,6 +4278,7 @@ async function callGeminiWithGoogleSearchOnce(
     // der Leitung hat der innere Anlauf schon dreimal versucht; ihn dort noch
     // einmal zu wiederholen kostet nur die Wanduhr des Auftrags.
     fehler.transport = true;
+    await recordStandaloneAiUsage("memo_benchmark_research", model, "error", undefined, 0, `http_${response.status}`);
     throw fehler;
   }
   await onPulse?.({ phase: "headers", model, chars: 0 });
@@ -4254,6 +4286,7 @@ async function callGeminiWithGoogleSearchOnce(
   let titles: string[] = [];
   let searchQueries = 0;
   let finish = "";
+  let geminiUsage: ModelUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
   await leseSse(response, async (data) => {
     const chunk = parseGeminiSseData(data);
     if (!chunk) return;
@@ -4261,13 +4294,16 @@ async function callGeminiWithGoogleSearchOnce(
     if (chunk.titles?.length) titles = chunk.titles;
     if (chunk.searchQueries) searchQueries = chunk.searchQueries;
     if (chunk.finish) finish = chunk.finish;
+    if (chunk.usage) geminiUsage = { ...chunk.usage, total: chunk.usage.input + chunk.usage.cachedInput + chunk.usage.output + chunk.usage.thinking };
     await onPulse?.({ phase: "search", model, chars: text.length });
   }, () => onPulse?.({ phase: "search", model, chars: text.length }));
   if (!text.trim()) throw new Error("Die Benchmark-Recherche hat keine Antwort geliefert.");
   if (!geminiFinishAllowsParse(finish)) {
     throw new Error("Die Benchmark-Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Benchmarks eintragen.");
   }
-  return { text, titles, searchQueries: searchQueries || (titles.length ? 1 : 0) };
+  const billedSearchQueries = searchQueries || (titles.length ? 1 : 0);
+  await recordStandaloneAiUsage("memo_benchmark_research", model, "success", geminiUsage, billedSearchQueries);
+  return { text, titles, searchQueries: billedSearchQueries };
 }
 
 async function callGeminiWithGoogleSearch(
@@ -6000,6 +6036,11 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
           ...kostenFelder, ...tokenFelder, error_code: "invalid_response",
           error_message: `${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`.slice(0, 3000),
         }, 1);
+      } else {
+        // Der erste Entwurf war technisch erfolgreich und kostenpflichtig.
+        // Die Reparatur ist ein zweiter Anbieteraufruf und darf ihn im Ledger
+        // nicht überschreiben.
+        await buchen("success", { ...kostenFelder, ...tokenFelder }, 1);
       }
       await abschnitt("modell");
       const assetKey = await modelApiKey(assetModel);
