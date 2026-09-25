@@ -10,7 +10,7 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260921-3";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260925-1";
 import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260824-0305";
 
 const OVERLAY_ID = "ms-overlay";
@@ -610,7 +610,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
             ${state.freigabe ? '<i class="as-tag ms-tag-quelle">auf eigene Verantwortung</i>' : ""}
           </div>
           ${pruefBefundHtml()}
-          ${state.error ? `<p class="as-form-error">${esc(state.error)}</p>` : ""}
+          ${state.error ? `<p class="as-form-error">${esc(fehlerKlartext(state.error))}</p>` : ""}
           <div class="as-step-fuss">
             <button type="button" class="as-btn" data-act="back"><i class="fa-solid fa-arrow-left"></i>Zurück</button>
             ${endeKnoepfe()}

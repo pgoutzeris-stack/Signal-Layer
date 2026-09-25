@@ -3491,14 +3491,20 @@ async function recordStandaloneAiUsage(
   searchQueries = 0,
   errorCode?: string,
 ) {
-  const costs = status === "success" ? await modelCostFields(model, usage, "standard", searchQueries) : zeroCostFields(model);
-  const { error } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
-    operation, model, status, attempt: 1, prompt_version: ASSET_PROMPT_VERSION,
-    input_tokens: usage.input + usage.cachedInput, cached_input_tokens: usage.cachedInput,
-    output_tokens: usage.output, thinking_tokens: usage.thinking, total_tokens: usage.total,
-    ...costs, error_code: errorCode || null,
-  });
-  if (error) throw new Error(`Usage tracking failed: ${error.message}`);
+  // Die Kostenbuchung darf den bezahlten Aufruf nie nachträglich scheitern
+  // lassen: ein Memo bricht sonst wegen einer Protokollzeile ab.
+  try {
+    const costs = status === "success" ? await modelCostFields(model, usage, "standard", searchQueries) : zeroCostFields(model);
+    const { error } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
+      operation, model, status, attempt: 1, prompt_version: ASSET_PROMPT_VERSION,
+      input_tokens: usage.input + usage.cachedInput, cached_input_tokens: usage.cachedInput,
+      output_tokens: usage.output, thinking_tokens: usage.thinking, total_tokens: usage.total,
+      ...costs, error_code: errorCode || null,
+    });
+    if (error) console.error(`Kosten für ${operation} (${model}) nicht gebucht:`, error.message);
+  } catch (fehler) {
+    console.error(`Kosten für ${operation} (${model}) nicht gebucht:`, fehler instanceof Error ? fehler.message : String(fehler));
+  }
 }
 
 async function pricedSimpleModelCatalog() {
@@ -11170,6 +11176,11 @@ Deno.serve(async (req: Request) => {
                 // „Eigene Benchmarks eintragen" ist der falsche Rat, wenn Google
                 // nur gedrosselt hat: dann hilft eine Minute warten.
                 const gedrosselt = /drosselt die Benchmark-Recherche/i.test(grund);
+                // Ein interner Fehler (englischer Text aus Postgres oder Deno)
+                // hat mit den Benchmarks nichts zu tun. Eigene eintragen hilft
+                // dann nicht, erneut erzeugen schon.
+                const intern = !/[äöüß]|\b(die|der|nicht|keine?)\b/i.test(grund);
+                if (intern) throw fehler;
                 const rat = gedrosselt
                   ? "Ohne drei belastbare Benchmarks kann das Memo nicht gebaut werden. Gleich noch einmal erzeugen, oder im Fragebogen eigene Benchmarks eintragen."
                   : "Ohne drei belastbare Benchmarks kann das Memo nicht gebaut werden. Im Fragebogen eigene Benchmarks eintragen.";

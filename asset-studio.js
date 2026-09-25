@@ -1641,12 +1641,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260921-3";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260925-1";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260921-3";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260925-1";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260921-3";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260925-1";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2026,7 +2026,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         const weiterlaeuft = state.leftRunning && state.assetId;
         return `<div class="as-error">
           <strong>${weiterlaeuft ? "Die Verbindung ist abgerissen" : "Der Entwurf konnte nicht erzeugt werden"}</strong>
-          <p>${esc(state.error)}</p>
+          <p>${esc(fehlerKlartext(state.error))}</p>
           <div class="as-actions">
             <button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Zurück zum Fragebogen</button>
             ${weiterlaeuft
