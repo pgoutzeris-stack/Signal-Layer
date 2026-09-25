@@ -4158,3 +4158,8 @@ test("pg_net: DeepSeek läuft in der Datenbank, das Isolat wartet nur", () => {
   assert.match(sql, /shared\.get_api_key\('signal_layer_deepseek_api_key'\)/);
   assert.match(sql, /revoke all on table signal_layer\.asset_model_calls from public, anon, authenticated;/);
 });
+
+test("pg_net-Wachhund fragt nur Spalten ab, die es gibt", () => {
+  const teil = edge.slice(edge.indexOf("async function pflegeAssetModellWarteschlange"), edge.indexOf("async function finishGeneratedAsset"));
+  assert.doesNotMatch(teil, /slide_title|, title,/);
+});

@@ -6223,17 +6223,19 @@ async function pflegeAssetModellWarteschlange(admin: ReturnType<typeof getAdminC
       .limit(10);
     const ids = [...new Set((offen || []).map((z: { asset_id: string }) => String(z.asset_id)))];
     const nachStufe = await admin.schema("signal_layer").from("generated_assets")
-      .select("id, kind, status, stage, model, article_id, created_by, created_at, updated_at, run_log, payload, title, slide_title, answers")
+      .select("id, kind, status, stage, model, article_id, created_by, created_at, updated_at, run_log, payload, answers, prompt_version")
       .eq("status", "running")
       .in("stage", ["pruefen", "bilder", "fuellen"])
       .lt("updated_at", new Date(Date.now() - 20_000).toISOString())
       .gt("updated_at", new Date(Date.now() - 15 * 60_000).toISOString())
       .limit(10);
+    if (nachStufe.error) console.error("Wachhund pg_net:", nachStufe.error.message);
     const zeilen: Record<string, unknown>[] = [...(nachStufe.data || []) as Record<string, unknown>[]];
     if (ids.length) {
       const { data } = await admin.schema("signal_layer").from("generated_assets")
-        .select("id, kind, status, stage, model, article_id, created_by, created_at, updated_at, run_log, payload, title, slide_title, answers")
+        .select("id, kind, status, stage, model, article_id, created_by, created_at, updated_at, run_log, payload, answers, prompt_version")
         .eq("status", "running").in("id", ids);
+      if (!data) console.error("Wachhund pg_net: offene Aufrufe nicht geladen");
       for (const z of (data || []) as Record<string, unknown>[]) {
         if (!zeilen.some((x) => x.id === z.id)) zeilen.push(z);
       }
