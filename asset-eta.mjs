@@ -58,7 +58,8 @@ function letzte(log, test) {
 
 function stufeStartMs(log, name, elapsedMs) {
   const rows = Array.isArray(log) ? log : [];
-  const neu = letzte(rows, (row) => row?.event === "retry_model" || row?.event === "repair");
+  const neu = letzte(rows, (row) => row?.event === "retry_model" || row?.event === "repair"
+    || row?.event === "model_call");
   const ok = letzte(rows, (row) => row?.event === "model_ok");
   if (name === "modell" && neu && (!ok || Number(neu.t || 0) >= Number(ok.t || 0))) {
     return Number(neu.t || 0);

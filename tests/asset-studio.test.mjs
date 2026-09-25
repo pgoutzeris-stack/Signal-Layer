@@ -592,7 +592,7 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
   assert.equal(backend.assetOutputTokenBudget("linkedin", carousel4), 8_000);
   assert.equal(backend.assetOutputTokenBudget("linkedin", carousel6), 8_000);
   assert.equal(backend.assetOutputTokenBudget("memo", memo), 6_000);
-  assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 20_000);
+  assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 40_000);
 
   // Gekappt wird nie mitten im Wort: "Markenkommunikation" wurde auf der
   // fertigen Folie zu "Markenkommuni" (17.8.2026). Fließtext bekommt zehn
@@ -633,7 +633,8 @@ test("der Umfang bestimmt das Tokenbudget, und eine bezahlte Antwort wird repari
   // Ein gezielter zweiter Versuch, solange Isolat und Kill-Grenze Platz lassen.
   // Beide Aufrufe landen im Kostenledger. Timeout wird nicht wiederholt.
   assert.equal(backend.assetRepairTimeoutMs(50_000), 90_000);
-  assert.equal(backend.assetRepairTimeoutMs(101_000), 90_000);
+  assert.equal(backend.assetRepairTimeoutMs(95_000), 45_000);
+  assert.equal(backend.assetRepairTimeoutMs(101_000), null);
   assert.equal(backend.assetRepairTimeoutMs(190_000), null);
   assert.equal(backend.assetRepairTimeoutMs(350_000), null);
   assert.match(edge, /assetRepairTimeoutMs/);
@@ -729,7 +730,7 @@ test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", 
   assert.doesNotMatch(studio, /Date\.now\(\) \+ 420_000/);
   assert.doesNotMatch(studio, /sieben Minuten nicht fertig/);
   assert.match(studio, /for \(;;\) \{/);
-  assert.equal(backend.ASSET_WALL_CLOCK_MS, 380_000);
+  assert.equal(backend.ASSET_WALL_CLOCK_MS, 140_000);
   assert.equal(backend.ASSET_STALE_MS, 400_000);
   assert.match(edge, /ASSET_WALL_CLOCK_MS/);
   assert.match(edge, /ASSET_STALE_MS/);
@@ -1021,7 +1022,7 @@ test("ein haengender Auftrag wird an der Stille erkannt, nicht an der Dauer", ()
   assert.equal(backend.assetFinishHandoffDue({ ...xpengTot, updated_at: iso(now - 5_000) }, now), false);
   assert.equal(backend.assetFinishHandoffDue({
     ...xpengTot,
-    run_log: [...draftLog, { event: "finish_start" }, { event: "finish_start" }, { event: "finish_start" }, { event: "finish_start" }],
+    run_log: [...draftLog, { event: "finish_start" }, { event: "finish_start" }, { event: "finish_start" }, { event: "finish_start" }, { event: "finish_start" }],
   }, now), false);
   // handoff und finish_start sind ein Zyklus, nicht zwei Kicks.
   const aeffeZyklus = {
@@ -1122,7 +1123,7 @@ test("die vier Live-Faelle haben je ein Fenster unter der Isolate-Grenze", () =>
   // Nach ~101 s (Aeffe) bleibt Repair. Nach ~190 s nicht: First+Repair
   // sollen unter der historischen Kill-Grenze (~235 s) bleiben.
   assert.equal(backend.assetRepairTimeoutMs(50_000), 90_000);
-  assert.ok(backend.assetRepairTimeoutMs(101_000) >= 40_000);
+  assert.equal(backend.assetRepairTimeoutMs(101_000), null);
   assert.equal(backend.assetRepairTimeoutMs(190_000), null);
   assert.equal(backend.assetRepairTimeoutMs(280_000), null);
   assert.equal(backend.assetRepairTimeoutMs(370_000), null);
@@ -1152,7 +1153,7 @@ test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   assert.match(edge, /max_tokens: options\.maxTotalTokens/);
   // Auf das Gemessene plus Reserve gesetzt; die Messwerte stehen im Kommentar.
   assert.match(edge, /maxTotalTokens: ASSET_MAX_TOTAL_TOKENS/);
-  assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 20_000);
+  assert.equal(backend.ASSET_MAX_TOTAL_TOKENS, 40_000);
   assert.match(edge, /Carousel 6   6\.084 \+ 1\.069 = 7\.153/);
   // Eine leere Antwort trotz HTTP 200 ist ein Fehler, kein Erfolg.
   assert.match(edge, /if \(!inhalt\.trim\(\)\)/);
@@ -2499,17 +2500,18 @@ test("ein verwaister Auftrag wird geschlossen, auch wenn niemand hinsieht", () =
   assert.doesNotMatch(sweep, /retry_asset_model|triggerSelf/);
 });
 
-test("DeepSeek denkt für ein Asset kürzer nach", () => {
+test("DeepSeek denkt für ein Asset auf high, der Aufruf läuft über pg_net", () => {
   // Ohne Angabe gilt DeepSeeks Standard "high". Der hat am 18.9.2026 zwischen
   // 34.000 und 64.000 Zeichen Begründung erzeugt, bevor das erste Wort der
   // Antwort kam, und genau in diesen Minuten riss der Strom.
-  assert.equal(backend.ASSET_REASONING_EFFORT, "low");
+  assert.equal(backend.ASSET_REASONING_EFFORT, "high");
   // Der Parameter geht nur mit, wenn er gesetzt ist: andere Aufrufe behalten
   // den Standard des Anbieters.
   assert.match(edge, /\.\.\.\(options\.reasoningEffort \? \{ reasoning_effort: options\.reasoningEffort \} : \{\}\)/);
-  assert.equal((edge.match(/reasoning_effort: options\.reasoningEffort/g) || []).length, 2, "streamend und nicht streamend");
-  // Beide Asset-Aufrufe setzen ihn, der erste wie der Reparaturlauf.
-  assert.equal((edge.match(/reasoningEffort: ASSET_REASONING_EFFORT,/g) || []).length, 2);
+  assert.equal((edge.match(/reasoning_effort: options\.reasoningEffort/g) || []).length, 1, "ein Body für Isolat und pg_net");
+  assert.match(edge, /function deepseekRequestBody\(options: ModelCallOptions, stream: boolean\)/);
+  // Entwurf, neuer Schreibversuch und Reparatur setzen ihn.
+  assert.equal((edge.match(/reasoningEffort: ASSET_REASONING_EFFORT,/g) || []).length, 3);
 });
 
 test("Referenzmemo: jedes Beispiel erfüllt seinen eigenen Vertrag", async () => {
@@ -3200,8 +3202,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260925-1");
-  assert.match(indexHtml, /app\.js\?v=20260925-1/);
+  assert.equal(studioVersion, "20260925-2");
+  assert.match(indexHtml, /app\.js\?v=20260925-2/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3439,7 +3441,8 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.match(edge, /triggerSelf\(\{ action: "finish_asset"/);
   assert.match(edge, /handoff.*finish_asset/);
   assert.match(edge, /async function finishGeneratedAsset/);
-  assert.match(edge, /const isolateStartedAt = Date.now\(\)/);
+  assert.match(edge, /const isolateStartedAt = ASSET_WORKER_BOOT_MS;/);
+  assert.match(edge, /const ASSET_WORKER_BOOT_MS = Date\.now\(\);/);
   assert.match(edge, /assetRepairTimeoutMs\(Date.now\(\) - isolateStartedAt\)/);
   assert.match(edge, /remainingMs: assetPhaseRemainingMs\(isolateStartedAt\)/);
   assert.doesNotMatch(edge, /ASSET_WALL_CLOCK_MS - \(Date.now\(\) - startedAt\)/);
@@ -3447,7 +3450,7 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.equal(backend.assetPhaseRemainingMs(createdAt), 0);
   const isolateNow = Date.now();
   assert.ok(backend.assetPhaseRemainingMs(isolateNow) >= backend.MEMO_IMAGE_MIN_REMAINING_MS);
-  assert.ok(backend.assetPhaseRemainingMs(isolateNow) > 300_000);
+  assert.ok(backend.assetPhaseRemainingMs(isolateNow) > 100_000);
   assert.ok(backend.assetPhaseRemainingMs(isolateNow - 20_000) > backend.MEMO_IMAGE_MIN_REMAINING_MS);
   assert.match(edge, /async function retryGeneratedAssetModel/);
   assert.match(edge, /assetModelRetryDue/);
@@ -4054,4 +4057,104 @@ test("der LinkedIn-Fragebogen benennt die KI-Wahl überall gleich", () => {
   // Quellen kommen immer aus dem Signal, also gibt es dazu keine Frage mehr.
   assert.doesNotMatch(form, /key: "sources"/);
   assert.doesNotMatch(form, /Eigene Quellen angeben/);
+});
+
+test("pg_net: offener Aufruf, Fristen und Auswertung der Antwort", () => {
+  const log = [
+    { t: 1000, event: "model_call", call: "entwurf", request_id: 41, attempt: 1, timeout_ms: 600_000 },
+  ];
+  assert.deepEqual(backend.assetPendingModelCall(log), {
+    request_id: "41", call: "entwurf", attempt: 1, timeout_ms: 600_000, t: 1000,
+  });
+  assert.equal(backend.assetPendingModelCall([...log, { event: "model_ok", request_id: 41 }]), null);
+  // Neuer Anlauf: der alte endet, der neue ist offen.
+  const neu = [...log, { event: "model_fail", request_id: 41, retry: true },
+    { t: 9000, event: "model_call", call: "entwurf", request_id: 42, attempt: 2, timeout_ms: 600_000 }];
+  assert.equal(backend.assetPendingModelCall(neu).request_id, "42");
+
+  // Lange denken ist erlaubt, wirklich zu lange nicht.
+  assert.equal(backend.assetModelCallOverdue({ in_flight: true, age_ms: 300_000, flight_ms: 290_000, timeout_ms: 600_000 }), false);
+  assert.equal(backend.assetModelCallOverdue({ in_flight: true, age_ms: 800_000, flight_ms: 730_000, timeout_ms: 600_000 }), true);
+  assert.equal(backend.assetModelCallOverdue({ in_flight: false, age_ms: 700_000, timeout_ms: 600_000 }), false);
+  assert.equal(backend.assetModelCallOverdue({ in_flight: false, age_ms: 800_000, timeout_ms: 600_000 }), true);
+
+  const created = new Date(Date.now() - 10 * 60_000).toISOString();
+  const row = { status: "running", created_at: created, updated_at: created, run_log: log };
+  // Stille in der Zeile allein beendet keinen offenen Aufruf.
+  assert.equal(backend.assetHangReason(row), null);
+  assert.equal(backend.assetModelRetryDue({ ...row, stage: "modell" }), false);
+  const alt = new Date(Date.now() - 40 * 60_000).toISOString();
+  assert.equal(backend.assetHangReason({ ...row, created_at: alt, updated_at: alt }), "abandoned");
+
+  const sse = [
+    ": keep-alive",
+    'data: {"choices":[{"delta":{"reasoning_content":"denke"}}]}',
+    'data: {"choices":[{"delta":{"content":"{\\"a\\":"}}]}',
+    'data: {"choices":[{"delta":{"content":"1}"},"finish_reason":"stop"}]}',
+    'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150,"prompt_cache_hit_tokens":40,"prompt_cache_miss_tokens":60,"completion_tokens_details":{"reasoning_tokens":20}}}',
+    "data: [DONE]",
+  ].join("\n");
+  const ok = backend.assetModelCallOutcome({ status_code: 200, content: sse }, "deepseek-v4-pro");
+  assert.equal(ok.ok, true);
+  assert.equal(ok.text, '{"a":1}');
+  assert.equal(ok.usage.cachedInput, 40);
+  assert.equal(ok.usage.input, 60);
+
+  const zeit = backend.assetModelCallOutcome({ timed_out: true, timeout_ms: 600_000 }, "deepseek-v4-pro");
+  assert.equal(zeit.ok, false);
+  assert.equal(zeit.retryable, false);
+  assert.match(zeit.message, /nach 10 Minuten/);
+  const netz = backend.assetModelCallOutcome({ status_code: 0, error_msg: "Couldn't connect" }, "deepseek-v4-pro");
+  assert.equal(netz.retryable, true);
+  const geld = backend.assetModelCallOutcome({ status_code: 402, content: '{"error":{"message":"Insufficient Balance"}}' }, "deepseek-v4-pro");
+  assert.equal(geld.kind, "balance");
+  assert.equal(geld.retryable, false);
+  const last = backend.assetModelCallOutcome({ status_code: 503, content: "busy" }, "deepseek-v4-pro");
+  assert.equal(last.kind, "server");
+  assert.equal(last.retryable, true);
+});
+
+test("pg_net: Reparatur wird aus dem Protokoll gelesen, nicht zweimal gestartet", () => {
+  const log = [
+    { event: "model_ok", text: "{}" },
+    { event: "repair", mangel: "kurz", usage_event_id: "e1" },
+    { event: "model_call", call: "reparatur", request_id: 7 },
+    { event: "repair_fail", request_id: 7, retry: true },
+    { event: "model_call", call: "reparatur", request_id: 8 },
+  ];
+  const offen = backend.assetRepairFromLog(log);
+  assert.equal(offen.started, true);
+  assert.equal(offen.usageEventId, "e1");
+  assert.equal(offen.result, null);
+  const fertig = backend.assetRepairFromLog([...log, { event: "repair_ok", request_id: 8, text: "{}" }]);
+  assert.equal(fertig.result.event, "repair_ok");
+  // Waehrend die Reparatur laeuft, stoesst niemand die Pruefung an.
+  assert.equal(backend.assetFinishHandoffDue({
+    status: "running", stage: "modell", updated_at: new Date(Date.now() - 60_000).toISOString(), run_log: log,
+  }), false);
+  // Zu wenig Zeit fuer Motive: aufgeschoben zaehlt als unvollstaendig.
+  assert.equal(backend.assetMemoImagesIncomplete({
+    kind: "memo", payload: { title: "x" }, answers: {}, run_log: [{ event: "images_defer" }],
+  }), true);
+});
+
+test("pg_net: DeepSeek läuft in der Datenbank, das Isolat wartet nur", () => {
+  assert.match(edge, /rpc\("start_asset_model_call"/);
+  assert.match(edge, /rpc\("poll_asset_model_call"/);
+  assert.match(edge, /rpc\("settle_asset_model_call"/);
+  assert.match(edge, /rpc\("retry_asset_model_call"/);
+  assert.match(edge, /case "await_asset_model"/);
+  assert.match(edge, /"finish_asset", "retry_asset_model", "await_asset_model"\]\.includes\(action\)/);
+  assert.match(edge, /ASSET_WORKER_BOOT_MS \+ ASSET_WALL_CLOCK_MS - 10_000/);
+  assert.match(edge, /starteAssetModellAufruf\(admin, String\(assetRow\.id\), "entwurf"/);
+  assert.match(edge, /starteAssetModellAufruf\(admin, assetId, "reparatur"/);
+  assert.match(edge, /starteAssetModellAufruf\(admin, assetId, "entwurf", retryOpts\)/);
+  assert.match(edge, /loggen\("images_defer"/);
+  assert.match(edge, /model_waits: modellWarten/);
+  // Der Schluessel steht nie im Body, pg_net liest ihn aus dem Vault.
+  const body = edge.slice(edge.indexOf("function deepseekRequestBody"), edge.indexOf("async function callJsonModelStreaming"));
+  assert.doesNotMatch(body, /apiKey|Authorization/);
+  const sql = readFileSync(new URL("../supabase/migrations/20260925120000_asset_model_pgnet.sql", import.meta.url), "utf8");
+  assert.match(sql, /shared\.get_api_key\('signal_layer_deepseek_api_key'\)/);
+  assert.match(sql, /revoke all on table signal_layer\.asset_model_calls from public, anon, authenticated;/);
 });

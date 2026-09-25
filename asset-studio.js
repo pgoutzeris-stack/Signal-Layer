@@ -1641,12 +1641,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260925-1";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260925-2";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260925-1";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260925-2";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260925-1";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260925-2";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2291,6 +2291,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "retry_model") return "Schreiben wird in einem neuen Schritt wiederholt";
     if (event === "finish_start") return "Belege und Längen werden geprüft";
     if (event === "payload_ok") return "Entwurf ist geprüft";
+    if (event === "model_call") {
+      const anlauf = Number(entry.attempt || 1);
+      const was = entry.call === "reparatur" ? "überarbeitet den Entwurf" : "denkt";
+      return `${model || "DeepSeek"} ${was}${anlauf > 1 ? ` (Anlauf ${anlauf})` : ""}`;
+    }
+    if (event === "repair") return "Entwurf wird überarbeitet";
+    if (event === "repair_ok") return "Überarbeitung angekommen";
+    if (event === "repair_fail") return entry.retry ? "Überarbeitung wird wiederholt" : "Überarbeitung fehlgeschlagen, erster Entwurf bleibt";
+    if (event === "model_fail") return entry.retry ? "Verbindung abgerissen, neuer Anlauf" : "";
+    if (event === "wait_kick") return "Abfrage läuft in einem neuen Schritt weiter";
+    if (event === "model_abandoned") return "Keine Antwort, Auftrag beendet";
+    if (event === "images_defer") return "Logos folgen in einem neuen Schritt";
     if (event === "benchmarks_ok") {
       const names = Array.isArray(entry.names) ? entry.names.filter(Boolean).join(", ") : "";
       return names ? `Benchmarks: ${names}` : "Benchmarks gefunden";
@@ -2302,11 +2314,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return "";
   }
 
+  // Der offene pg_net-Aufruf: weder Ende noch neuer Anlauf danach.
+  function offenerModellAufruf(rows) {
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      if (rows[i]?.event !== "model_call") continue;
+      const id = String(rows[i].request_id ?? "");
+      const zu = rows.slice(i + 1).some((row) => ["model_ok", "model_fail", "repair_ok", "repair_fail", "model_abandoned"]
+        .includes(String(row?.event || "")) && String(row?.request_id ?? "") === id);
+      return zu ? null : rows[i];
+    }
+    return null;
+  }
+
   function laufLogZeilen() {
     const rows = Array.isArray(state.laufLog) ? state.laufLog : [];
+    const offen = offenerModellAufruf(rows);
     const visible = [];
     for (let i = rows.length - 1; i >= 0 && visible.length < 8; i -= 1) {
-      const text = laufEreignisText(rows[i]);
+      let text = laufEreignisText(rows[i]);
+      if (text && rows[i] === offen && Number(state.ladeStart) > 0) {
+        const seit = Math.max(0, Date.now() - Number(state.ladeStart) - Number(offen.t || 0));
+        text += ` · seit ${Math.round(seit / 1000)} s`;
+        if (seit >= 300_000) text += " · dauert länger als üblich";
+      }
       if (!text) continue;
       const sek = Math.max(0, Math.round(Number(rows[i]?.t || 0) / 1000));
       visible.push({ sek, text });

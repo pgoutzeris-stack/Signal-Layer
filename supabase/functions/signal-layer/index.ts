@@ -188,6 +188,25 @@ import {
   assetHasStreamedChars,
   ASSET_ZOMBIE_MS,
   ASSET_REASONING_EFFORT,
+  ASSET_MODEL_CALL_TIMEOUT_MS,
+  ASSET_MODEL_CALL_ATTEMPTS,
+  ASSET_MODEL_POLL_MS,
+  ASSET_MODEL_WAIT_SLICE_MS,
+  ASSET_MODEL_WAITER_STALE_MS,
+  ASSET_MODEL_WAIT_HOPS_MAX,
+  ASSET_MODEL_GIVE_UP_GRACE_MS,
+  ASSET_MODEL_CLAIMS_MAX,
+  assetPendingModelCall,
+  assetModelCallOverdue,
+  assetModelCallPastCeiling,
+  assetModelCallOutcome,
+  assetModelCallLostText,
+  assetModelCallAbandonedText,
+  assetRepairFromLog,
+  type AssetModelCallKind,
+  type AssetModelCallOutcome,
+  type AssetModelUsage,
+  MEMO_IMAGE_MIN_REMAINING_MS,
   parseGeminiSseData,
   parseLooseJsonObject,
   parseMemoBenchmarkReview,
@@ -355,6 +374,10 @@ function rejectBlockedResponse(origin: string | null): Response {
 // ---------------------------------------------------------------------------
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// Ein Isolat lebt ab seinem Start 150 s, gleich wie viele Anfragen es danach
+// bedient. Wer ein Isolat wiederverwendet, erbt dessen verbrauchte Zeit.
+const ASSET_WORKER_BOOT_MS = Date.now();
 
 function getAdminClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -3700,6 +3723,15 @@ async function schliesseHangingAsset(
 ): Promise<Record<string, unknown> | null> {
   const grund = assetHangReason(row);
   if (!grund) return null;
+  const offen = assetPendingModelCall(row.run_log);
+  if (grund === "abandoned" && offen) {
+    // Der Aufruf liegt in der Datenbank. Abschliessen ueber dieselbe Stelle,
+    // die sonst die Antwort verbucht, damit er genau einmal endet.
+    await pflegeOffenenModellAufruf(admin, row);
+    const { data } = await admin.schema("signal_layer").from("generated_assets")
+      .select("id, created_by, kind, article_id, status, error_message, stage").eq("id", row.id).maybeSingle();
+    return data ? { ...row, ...data } : row;
+  }
   const created = Date.parse(String(row.created_at || ""));
   const jetzt = Date.now();
   const wall = Number.isFinite(created) ? jetzt - created : 0;
@@ -3730,6 +3762,14 @@ async function pflegeLaufendesAsset(
   const runLog = Array.isArray(row.run_log)
     ? [...row.run_log as Record<string, unknown>[]]
     : [];
+  // Offener pg_net-Aufruf: nicht anfassen, nur den Wartenden am Leben halten.
+  if (Array.isArray(row.run_log) && assetPendingModelCall(row.run_log)) {
+    if (assetModelCallPastCeiling(row, Date.now(), ASSET_MODEL_GIVE_UP_GRACE_MS)) {
+      return schliesseHangingAsset(admin, row);
+    }
+    await pflegeOffenenModellAufruf(admin, row);
+    return row;
+  }
   if (assetFinishSettleDue(row)) {
     const fields: Record<string, unknown> = {
       status: "done",
@@ -4367,13 +4407,39 @@ async function reviewMemoBenchmarksWithGemini(
   return { ...verdict, searchQueries: gefunden.searchQueries };
 }
 
+/**
+ * Anfrage an DeepSeek, gleich ob aus dem Isolat oder ueber pg_net aus der
+ * Datenbank. Der Schluessel steht nicht darin: pg_net liest ihn selbst aus
+ * dem Vault.
+ */
+function deepseekRequestBody(options: ModelCallOptions, stream: boolean): Record<string, unknown> {
+  const wantsJson = (options.format ?? "json") === "json";
+  const schemaHint = wantsJson && options.schema
+    ? `\n\n<answer_format>Antworte ausschliesslich mit einem JSON-Objekt in genau dieser Struktur, ohne Text davor oder danach:\n${describeSchema(options.schema)}</answer_format>`
+    : "";
+  return {
+    model: options.model,
+    messages: [
+      ...(options.systemText ? [{ role: "system", content: options.systemText }] : []),
+      { role: "user", content: options.prompt + schemaHint },
+    ],
+    ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
+    ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
+    // Reasoning tokens share this budget with the answer, so the schema needs
+    // extra headroom on top of the configured answer size. Wer ein hartes
+    // Limit kennt, setzt es: bei einem Asset hat das Denken am 13.8.2026 die
+    // vollen 5.500 Tokens verbraucht und null fuer die Antwort gelassen.
+    max_tokens: options.maxTotalTokens
+      ?? Math.min(Math.max(options.maxOutputTokens, 3_000) + 2_500, 8_192),
+    temperature: options.temperature ?? 0,
+    ...(stream ? { stream: true, stream_options: { include_usage: true } } : { stream: false }),
+  };
+}
+
 async function callJsonModelStreaming(options: ModelCallOptions): Promise<ModelCallResult> {
   const provider = modelProvider(options.model);
   const wantsJson = (options.format ?? "json") === "json";
   const attemptsAllowed = options.attempts ?? 3;
-  const schemaHint = provider === "deepseek" && wantsJson && options.schema
-    ? `\n\n<answer_format>Antworte ausschliesslich mit einem JSON-Objekt in genau dieser Struktur, ohne Text davor oder danach:\n${describeSchema(options.schema)}</answer_format>`
-    : "";
   const endpoint = provider === "deepseek"
     ? "https://api.deepseek.com/chat/completions"
     : `https://generativelanguage.googleapis.com/v1beta/models/${options.model}:streamGenerateContent?alt=sse`;
@@ -4381,20 +4447,7 @@ async function callJsonModelStreaming(options: ModelCallOptions): Promise<ModelC
     ? { "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` }
     : { "Content-Type": "application/json", "x-goog-api-key": options.apiKey };
   const body = provider === "deepseek"
-    ? JSON.stringify({
-      model: options.model,
-      messages: [
-        ...(options.systemText ? [{ role: "system", content: options.systemText }] : []),
-        { role: "user", content: options.prompt + schemaHint },
-      ],
-      ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
-      ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
-      max_tokens: options.maxTotalTokens
-        ?? Math.min(Math.max(options.maxOutputTokens, 3_000) + 2_500, 8_192),
-      temperature: options.temperature ?? 0,
-      stream: true,
-      stream_options: { include_usage: true },
-    })
+    ? JSON.stringify(deepseekRequestBody(options, true))
     : JSON.stringify({
       ...(options.systemText ? { systemInstruction: { parts: [{ text: options.systemText }] } } : {}),
       contents: [{ role: "user", parts: [{ text: options.prompt }] }],
@@ -4515,9 +4568,6 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
   const wantsJson = (options.format ?? "json") === "json";
   const attemptsAllowed = options.attempts ?? 3;
   const timeoutMs = options.timeoutMs ?? 75_000;
-  const schemaHint = provider === "deepseek" && wantsJson && options.schema
-    ? `\n\n<answer_format>Antworte ausschliesslich mit einem JSON-Objekt in genau dieser Struktur, ohne Text davor oder danach:\n${describeSchema(options.schema)}</answer_format>`
-    : "";
   const endpoint = provider === "deepseek"
     ? "https://api.deepseek.com/chat/completions"
     : `https://generativelanguage.googleapis.com/v1beta/models/${options.model}:generateContent`;
@@ -4525,23 +4575,7 @@ async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult
     ? { "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` }
     : { "Content-Type": "application/json", "x-goog-api-key": options.apiKey };
   const body = provider === "deepseek"
-    ? JSON.stringify({
-      model: options.model,
-      messages: [
-        ...(options.systemText ? [{ role: "system", content: options.systemText }] : []),
-        { role: "user", content: options.prompt + schemaHint },
-      ],
-      ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
-      ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
-      // Reasoning tokens share this budget with the answer, so the schema needs
-      // extra headroom on top of the configured answer size. Wer ein hartes
-      // Limit kennt, setzt es: bei einem Asset hat das Denken am 13.8.2026 die
-      // vollen 5.500 Tokens verbraucht und null fuer die Antwort gelassen.
-      max_tokens: options.maxTotalTokens
-        ?? Math.min(Math.max(options.maxOutputTokens, 3_000) + 2_500, 8_192),
-      temperature: options.temperature ?? 0,
-      stream: false,
-    })
+    ? JSON.stringify(deepseekRequestBody(options, false))
     : JSON.stringify({
       ...(options.systemText ? { systemInstruction: { parts: [{ text: options.systemText }] } } : {}),
       contents: [{ role: "user", parts: [{ text: options.prompt }] }],
@@ -5815,6 +5849,410 @@ async function tagArticle(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Modellaufruf ueber pg_net: warten, auswerten, abschliessen
+// ---------------------------------------------------------------------------
+
+/** Kosten zweier Aufrufe fuer die Zeile addieren. Das Ledger bucht beide einzeln. */
+function summiereKostenFelder(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
+  const plus = (feld: string) => (Number(a[feld] ?? 0) || 0) + (Number(b[feld] ?? 0) || 0);
+  return {
+    ...b,
+    ...a,
+    cached_input_tokens: plus("cached_input_tokens"),
+    estimated_cost_usd: plus("estimated_cost_usd"),
+    estimated_cost_eur: plus("estimated_cost_eur"),
+    native_cost: plus("native_cost"),
+    search_query_count: plus("search_query_count"),
+  };
+}
+
+function summiereUsage(a: ModelUsage, b: ModelUsage): ModelUsage {
+  return {
+    input: a.input + b.input,
+    cachedInput: a.cachedInput + b.cachedInput,
+    output: a.output + b.output,
+    thinking: a.thinking + b.thinking,
+    total: a.total + b.total,
+  };
+}
+
+function usageAusEreignis(eintrag: Record<string, unknown> | null | undefined): ModelUsage {
+  const u = eintrag?.usage && typeof eintrag.usage === "object"
+    ? eintrag.usage as Record<string, unknown>
+    : {};
+  return {
+    input: Number(u.input || 0),
+    cachedInput: Number(u.cachedInput || 0),
+    output: Number(u.output || 0),
+    thinking: Number(u.thinking || 0),
+    total: Number(u.total || 0),
+  };
+}
+
+async function kostenFuer(model: string, usage: ModelUsage): Promise<Record<string, unknown>> {
+  if (usage.total <= 0 && usage.input + usage.cachedInput + usage.output + usage.thinking <= 0) {
+    return zeroCostFields(model);
+  }
+  try {
+    return await modelCostFields(model, usage);
+  } catch {
+    return zeroCostFields(model);
+  }
+}
+
+/** Bucht einen Aufruf im Kostenledger. Wirft nie. */
+async function bucheAssetModellAufruf(
+  admin: ReturnType<typeof getAdminClient>,
+  row: Record<string, unknown>,
+  status: "success" | "error",
+  usage: ModelUsage,
+  attempt: number,
+  extra: Record<string, unknown> = {},
+): Promise<string | null> {
+  const model = String(row.model || "");
+  try {
+    const kosten = await kostenFuer(model, usage);
+    const created = Date.parse(String(row.created_at || ""));
+    const { data, error } = await admin.schema("signal_layer").from("ai_usage_events").insert({
+      article_id: row.article_id,
+      operation: "asset_generation",
+      model,
+      prompt_version: String(row.prompt_version || ASSET_PROMPT_VERSION),
+      status,
+      attempt,
+      duration_ms: Number.isFinite(created) ? Date.now() - created : null,
+      ...kosten,
+      input_tokens: usage.input + usage.cachedInput,
+      cached_input_tokens: usage.cachedInput,
+      output_tokens: usage.output,
+      thinking_tokens: usage.thinking,
+      total_tokens: usage.total,
+      ...extra,
+    }).select("id").maybeSingle();
+    if (error) console.error(`Kosten für ${model} nicht gebucht:`, error.message);
+    return data?.id ? String(data.id) : null;
+  } catch (fehler) {
+    console.error(`Kosten für ${model} nicht gebucht:`, fehler instanceof Error ? fehler.message : String(fehler));
+    return null;
+  }
+}
+
+async function settleAssetModellAufruf(
+  admin: ReturnType<typeof getAdminClient>,
+  requestId: string,
+  outcome: string,
+  events: Record<string, unknown>[],
+  fields: Record<string, unknown> = {},
+): Promise<Record<string, unknown> | null> {
+  const { data, error } = await admin.schema("signal_layer").rpc("settle_asset_model_call", {
+    p_request_id: Number(requestId),
+    p_outcome: outcome,
+    p_events: events,
+    p_fields: fields,
+  });
+  if (error) {
+    console.error("settle_asset_model_call:", error.message);
+    return null;
+  }
+  return data && typeof data === "object" ? data as Record<string, unknown> : null;
+}
+
+/** Startet einen DeepSeek-Aufruf in der Datenbank. Liefert die request_id. */
+async function starteAssetModellAufruf(
+  admin: ReturnType<typeof getAdminClient>,
+  assetId: string,
+  call: AssetModelCallKind,
+  options: ModelCallOptions,
+  events: Record<string, unknown>[] = [],
+): Promise<{ requestId: string | null; error: string }> {
+  const { data, error } = await admin.schema("signal_layer").rpc("start_asset_model_call", {
+    p_asset_id: assetId,
+    p_call: call,
+    p_attempt: 1,
+    p_model: options.model,
+    p_body: deepseekRequestBody(options, true),
+    p_timeout_ms: ASSET_MODEL_CALL_TIMEOUT_MS,
+    p_events: events,
+  });
+  if (error) return { requestId: null, error: String(error.message || error) };
+  return { requestId: data === null || data === undefined ? null : String(data), error: "" };
+}
+
+function modellEreignisUsage(u: AssetModelUsage) {
+  return {
+    tokens: u.total, thinking: u.thinking, output: u.output,
+    usage: { input: u.input, cachedInput: u.cachedInput, output: u.output, thinking: u.thinking, total: u.total },
+  };
+}
+
+/** Aufruf hat jede Frist gerissen: Entwurf beendet den Auftrag, Reparatur behaelt den Entwurf. */
+async function gibAssetModellAufrufAuf(
+  admin: ReturnType<typeof getAdminClient>,
+  row: Record<string, unknown>,
+  requestId: string,
+  stand: { call?: unknown; attempt?: unknown; age_ms?: unknown },
+  grund: string,
+): Promise<void> {
+  const model = String(row.model || "");
+  const call = stand.call === "reparatur" ? "reparatur" : "entwurf";
+  const ageMs = Number(stand.age_ms || 0);
+  const ereignis = {
+    event: "model_abandoned", request_id: Number(requestId), call,
+    attempt: Number(stand.attempt || 1), age_ms: ageMs, grund,
+  };
+  if (call === "reparatur") {
+    const settled = await settleAssetModellAufruf(admin, requestId, "abandoned", [ereignis], { stage: "pruefen" });
+    if (settled) triggerSelf({ action: "finish_asset", asset_id: String(row.id) }, 15_000);
+    return;
+  }
+  const nachricht = grund === "claims"
+    ? assetModelCallLostText(model)
+    : assetModelCallAbandonedText(model, ageMs);
+  const settled = await settleAssetModellAufruf(admin, requestId, "abandoned", [ereignis], {
+    status: "error", error_message: nachricht,
+  });
+  if (settled) void notifyGeneratedAssetSettled({ ...row, ...settled });
+}
+
+/**
+ * Wertet eine abgelegte Antwort aus. Liefert die request_id des neuen
+ * Anlaufs, wenn weiter gewartet werden muss, sonst null.
+ */
+async function verarbeiteAssetModellAntwort(
+  admin: ReturnType<typeof getAdminClient>,
+  row: Record<string, unknown>,
+  requestId: string,
+  stand: Record<string, unknown>,
+  ergebnis: AssetModelCallOutcome,
+): Promise<string | null> {
+  const model = String(row.model || "");
+  const call: AssetModelCallKind = stand.call === "reparatur" ? "reparatur" : "entwurf";
+  const attempt = Math.max(1, Number(stand.attempt || 1));
+  const basis = { request_id: Number(requestId), attempt, via: "pg_net" };
+
+  if (ergebnis.ok) {
+    const u = ergebnis.usage;
+    const text = ergebnis.text.slice(0, 100_000);
+    if (call === "entwurf") {
+      const settled = await settleAssetModellAufruf(admin, requestId, "ok", [
+        { event: "model_ok", ...basis, ...modellEreignisUsage(u), text },
+        { event: "handoff", to: "finish_asset", via: "pg_net" },
+      ], {
+        stage: "pruefen",
+        input_tokens: u.input + u.cachedInput, cached_input_tokens: u.cachedInput,
+        output_tokens: u.output, thinking_tokens: u.thinking, total_tokens: u.total,
+      });
+      if (settled) triggerSelf({ action: "finish_asset", asset_id: String(row.id) }, 15_000);
+      return null;
+    }
+    // Gebucht wird in finish_asset, zusammen mit dem Entwurf.
+    const settled = await settleAssetModellAufruf(admin, requestId, "ok", [
+      { event: "repair_ok", ...basis, ...modellEreignisUsage(u), text },
+    ], { stage: "pruefen" });
+    if (settled) triggerSelf({ action: "finish_asset", asset_id: String(row.id) }, 15_000);
+    return null;
+  }
+
+  const fehl = ergebnis as Extract<AssetModelCallOutcome, { ok: false }>;
+  const fehlEreignis = {
+    ...basis, kind: fehl.kind, status: fehl.status,
+    message: fehl.message.slice(0, 600), error: fehl.error.slice(0, 300),
+    ...modellEreignisUsage(fehl.usage),
+  };
+  const failEvent = call === "reparatur" ? "repair_fail" : "model_fail";
+
+  if (fehl.retryable && attempt < ASSET_MODEL_CALL_ATTEMPTS) {
+    // Nur was Tokens verbraucht hat, kostet. Leere Fehlversuche bucht auch
+    // der alte Weg nicht einzeln.
+    const eventId = fehl.usage.total > 0
+      ? await bucheAssetModellAufruf(admin, row, "error", fehl.usage, attempt, {
+        error_code: `pgnet_${fehl.kind}`, error_message: fehl.message.slice(0, 3000),
+      })
+      : null;
+    const { data, error } = await admin.schema("signal_layer").rpc("retry_asset_model_call", {
+      p_request_id: Number(requestId),
+      p_events: [{ event: failEvent, ...fehlEreignis, retry: true, usage_event_id: eventId }],
+    });
+    if (!error && data !== null && data !== undefined) return String(data);
+    // Kein neuer Anlauf moeglich: wie ein endgueltiger Fehler behandeln.
+  }
+
+  if (call === "reparatur") {
+    const settled = await settleAssetModellAufruf(admin, requestId, "error", [
+      { event: "repair_fail", ...fehlEreignis },
+    ], { stage: "pruefen" });
+    if (settled) triggerSelf({ action: "finish_asset", asset_id: String(row.id) }, 15_000);
+    return null;
+  }
+
+  await bucheAssetModellAufruf(admin, row, "error", fehl.usage, attempt, {
+    error_code: `pgnet_${fehl.kind}`, error_message: `${fehl.message}\n---\n${fehl.error}`.slice(0, 3000),
+  });
+  const created = Date.parse(String(row.created_at || ""));
+  const dauer = Number.isFinite(created) ? Math.round((Date.now() - created) / 1000) : 0;
+  const details = [model, String(row.prompt_version || ASSET_PROMPT_VERSION), String(row.kind || ""),
+    `${dauer} s`, `${fehl.usage.total} Tokens`].filter(Boolean).join(" · ");
+  const settled = await settleAssetModellAufruf(admin, requestId, "error", [
+    { event: "model_fail", ...fehlEreignis },
+  ], { status: "error", error_message: `${fehl.message}\n\n${details}`.slice(0, 2000) });
+  if (settled) void notifyGeneratedAssetSettled({ ...row, ...settled });
+  return null;
+}
+
+/**
+ * Wartet auf einen pg_net-Aufruf bis kurz vor dem Ende dieses Isolats und
+ * uebergibt dann an ein frisches. Wirft nie.
+ */
+async function awaitAssetModel(assetId: string, requestId: string, waiter: string, hop = 0): Promise<void> {
+  const admin = getAdminClient();
+  const halte = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const beginn = Date.now();
+  let aktuell = requestId;
+  try {
+    const { data: row } = await admin.schema("signal_layer").from("generated_assets")
+      .select("id, kind, status, stage, model, article_id, created_by, created_at, prompt_version")
+      .eq("id", assetId).maybeSingle();
+    if (!row || String(row.status) !== "running") return;
+    const zeile = row as Record<string, unknown>;
+    const model = String(zeile.model || "");
+    const ende = Math.min(beginn + ASSET_MODEL_WAIT_SLICE_MS, ASSET_WORKER_BOOT_MS + ASSET_WALL_CLOCK_MS - 10_000);
+    let verloren = 0;
+    let rpcFehler = 0;
+    while (true) {
+      const { data, error } = await admin.schema("signal_layer").rpc("poll_asset_model_call", {
+        p_request_id: Number(aktuell), p_waiter: waiter,
+      });
+      const stand = data && typeof data === "object" ? data as Record<string, unknown> : null;
+      if (error || !stand) {
+        rpcFehler += 1;
+        if (rpcFehler > 5) break;
+      } else {
+        rpcFehler = 0;
+        const state = String(stand.state || "");
+        if (state === "ready") {
+          if (Number(stand.claims || 0) > ASSET_MODEL_CLAIMS_MAX) {
+            await gibAssetModellAufrufAuf(admin, zeile, aktuell, stand, "claims");
+            return;
+          }
+          const weiter = await verarbeiteAssetModellAntwort(
+            admin, zeile, aktuell, stand, assetModelCallOutcome(stand, model),
+          );
+          if (!weiter) return;
+          aktuell = weiter;
+          verloren = 0;
+        } else if (state === "pending") {
+          verloren = 0;
+          if (assetModelCallOverdue(stand)) {
+            await gibAssetModellAufrufAuf(admin, zeile, aktuell, stand, "overdue");
+            return;
+          }
+        } else if (state === "lost") {
+          verloren += 1;
+          if (verloren >= 3) {
+            const weiter = await verarbeiteAssetModellAntwort(admin, zeile, aktuell, stand, {
+              ok: false, kind: "lost", retryable: true, status: 0,
+              error: "weder in der Warteschlange noch als Antwort", message: assetModelCallLostText(model),
+              usage: { ...EMPTY_MODEL_USAGE },
+            });
+            if (!weiter) return;
+            aktuell = weiter;
+            verloren = 0;
+          }
+        } else {
+          // busy, claimed, done, gone, unknown: ein anderer kuemmert sich.
+          return;
+        }
+      }
+      if (Date.now() + ASSET_MODEL_POLL_MS >= ende) break;
+      await halte(ASSET_MODEL_POLL_MS);
+    }
+  } catch (fehler) {
+    console.error("Warten auf pg_net:", fehler instanceof Error ? fehler.message : String(fehler));
+  }
+  // Nur ein Isolat, das wirklich gewartet hat, zaehlt als Hop. Ein fast
+  // verbrauchtes Isolat gibt sofort weiter, ohne die Notbremse aufzubrauchen.
+  const naechster = Date.now() - beginn >= 10_000 ? hop + 1 : hop;
+  if (naechster <= ASSET_MODEL_WAIT_HOPS_MAX) {
+    triggerSelf({ action: "await_asset_model", asset_id: assetId, request_id: aktuell, waiter, hop: naechster }, 15_000);
+  }
+}
+
+/** Wartender des offenen Aufrufs tot? Dann einen neuen anstossen, oder aufgeben. */
+async function pflegeOffenenModellAufruf(
+  admin: ReturnType<typeof getAdminClient>,
+  row: Record<string, unknown>,
+): Promise<boolean> {
+  const offen = assetPendingModelCall(row.run_log);
+  if (!offen) return false;
+  if (assetModelCallPastCeiling(row, Date.now(), ASSET_MODEL_GIVE_UP_GRACE_MS)) {
+    const created = Date.parse(String(row.created_at || ""));
+    await gibAssetModellAufrufAuf(admin, row, offen.request_id, {
+      call: offen.call, attempt: offen.attempt,
+      age_ms: Number.isFinite(created) ? Date.now() - created - offen.t : 0,
+    }, "ceiling");
+    return true;
+  }
+  const { data: aufruf } = await admin.schema("signal_layer").from("asset_model_calls")
+    .select("waiter_seen_at, created_at, done_at").eq("request_id", Number(offen.request_id)).maybeSingle();
+  if (!aufruf || aufruf.done_at) return true;
+  const gesehen = Date.parse(String(aufruf.waiter_seen_at || aufruf.created_at || ""));
+  if (Number.isFinite(gesehen) && Date.now() - gesehen < ASSET_MODEL_WAITER_STALE_MS) return true;
+  await admin.schema("signal_layer").rpc("append_asset_log", {
+    p_asset_id: String(row.id),
+    p_events: [{ event: "wait_kick", request_id: Number(offen.request_id) }],
+  });
+  triggerSelf({
+    action: "await_asset_model", asset_id: String(row.id), request_id: offen.request_id,
+    waiter: crypto.randomUUID(), hop: 0,
+  }, 15_000);
+  return true;
+}
+
+/**
+ * Wachhund, alle fuenf Minuten: offene pg_net-Aufrufe ohne Wartenden und
+ * fertige Antworten, deren Pruefung nie anlief. Kostet keinen neuen Aufruf.
+ */
+async function pflegeAssetModellWarteschlange(admin: ReturnType<typeof getAdminClient>): Promise<string[]> {
+  const angestossen: string[] = [];
+  try {
+    const { data: offen } = await admin.schema("signal_layer").from("asset_model_calls")
+      .select("asset_id, request_id, waiter_seen_at")
+      .is("done_at", null)
+      .gt("created_at", new Date(Date.now() - 3_600_000).toISOString())
+      .limit(10);
+    const ids = [...new Set((offen || []).map((z: { asset_id: string }) => String(z.asset_id)))];
+    const nachStufe = await admin.schema("signal_layer").from("generated_assets")
+      .select("id, kind, status, stage, model, article_id, created_by, created_at, updated_at, run_log, payload, title, slide_title, answers")
+      .eq("status", "running")
+      .in("stage", ["pruefen", "bilder", "fuellen"])
+      .lt("updated_at", new Date(Date.now() - 20_000).toISOString())
+      .gt("updated_at", new Date(Date.now() - 15 * 60_000).toISOString())
+      .limit(10);
+    const zeilen: Record<string, unknown>[] = [...(nachStufe.data || []) as Record<string, unknown>[]];
+    if (ids.length) {
+      const { data } = await admin.schema("signal_layer").from("generated_assets")
+        .select("id, kind, status, stage, model, article_id, created_by, created_at, updated_at, run_log, payload, title, slide_title, answers")
+        .eq("status", "running").in("id", ids);
+      for (const z of (data || []) as Record<string, unknown>[]) {
+        if (!zeilen.some((x) => x.id === z.id)) zeilen.push(z);
+      }
+    }
+    for (const zeile of zeilen) {
+      const offenerAufruf = assetPendingModelCall(zeile.run_log);
+      if (!offenerAufruf && !assetFinishSettleDue(zeile) && !assetFinishHandoffDue(zeile)) continue;
+      const vorher = JSON.stringify(zeile.run_log ?? null).length;
+      const nach = await pflegeLaufendesAsset(admin, zeile);
+      if (nach && (offenerAufruf || JSON.stringify(nach.run_log ?? null).length !== vorher || nach.status !== "running")) {
+        angestossen.push(String(zeile.id));
+      }
+    }
+  } catch (fehler) {
+    console.error("Wachhund pg_net:", fehler instanceof Error ? fehler.message : String(fehler));
+  }
+  return angestossen;
+}
+
 /**
  * Nach einem langen Stream ist das Schreib-Isolat oft tot. Prüfung, Reparatur
  * und Motive laufen deshalb in einem neuen Isolat, mit dem gespeicherten Text.
@@ -5824,13 +6262,15 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
   const { data: row } = await admin.schema("signal_layer").from("generated_assets")
     .select("*").eq("id", assetId).maybeSingle();
   if (!row || String(row.status) !== "running") return;
+  // Die Reparatur laeuft noch in der Datenbank; ihr Wartender ruft uns wieder.
+  if (assetPendingModelCall(row.run_log)) return;
   const draft = assetDraftTextFromLog(row.run_log);
   if (!draft) return;
+  const reparaturStand = assetRepairFromLog(row.run_log);
 
-  // Isolat ist frisch. created_at darf Laufprotokoll-t weiterzählen, aber
-  // Repair und Motive brauchen das Budget dieses Isolats — sonst bleibt nach
-  // 13 min Schreiben remaining_ms 0 und beide Memoseiten ohne Bilder.
-  const isolateStartedAt = Date.now();
+  // Budget ist das dieses Isolats, nicht das des Auftrags. Ein wieder
+  // verwendetes Isolat hat seit seinem Start schon Zeit verbraucht.
+  const isolateStartedAt = ASSET_WORKER_BOOT_MS;
   const startedAt = Date.parse(String(row.created_at || "")) || isolateStartedAt;
   const runLog: Record<string, unknown>[] = Array.isArray(row.run_log)
     ? [...row.run_log as Record<string, unknown>[]]
@@ -5873,6 +6313,9 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     let payload: AssetPayload | null = existing && (existing.slides || existing.title || existing.benchmarks)
       ? existing as AssetPayload
       : null;
+    // Gespeicherte Nutzlast ist schon geprueft. Kein zweites Reparieren, kein
+    // zweites Buchen.
+    const gespeichert = Boolean(payload);
 
     const assetKind = String(row.kind || "");
     if (!isAssetKind(assetKind)) {
@@ -6026,108 +6469,189 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       ? memoVertragsFehler(payload as MemoPayload, eigeneMemoFelder)
       : [];
     const ersterEntwurf = payload;
-    if (vertragsFehler.length) {
+    if (vertragsFehler.length && !reparaturStand.started && !gespeichert) {
       loggen("vertrag_verletzt", { n: vertragsFehler.length, felder: vertragsFehler.slice(0, 10) });
     }
 
-    const darfReparieren = payload ? vertragsFehler.length > 0 : assetMangelIsRepairable(mangel);
-    const repairMs = darfReparieren ? assetRepairTimeoutMs(Date.now() - isolateStartedAt) : null;
-    if (!payload && !darfReparieren) {
-      loggen("fail_early", { mangel: mangel.slice(0, 400) });
-    }
-    if (darfReparieren && repairMs) {
-      loggen("repair", { mangel: (mangel || vertragsFehler.join(" ")).slice(0, 400) });
-      if (!payload) {
-        await buchen("error", {
-          ...kostenFelder, ...tokenFelder, error_code: "invalid_response",
-          error_message: `${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`.slice(0, 3000),
-        }, 1);
-      } else {
+    // Kosten des Entwurfs und, falls gelaufen, der Reparatur. Die Zeile zeigt
+    // die Summe, das Ledger jeden Aufruf einzeln.
+    const entwurfUsage = result.usage;
+    const entwurfKosten = kostenFelder;
+    let ersteBuchungId = reparaturStand.usageEventId || "";
+    let reparaturBuchungId = "";
+    let reparaturLief = false;
+    const reparaturZaehlen = async (usage: ModelUsage) => {
+      const repKosten = await kostenFuer(assetModel, usage);
+      kostenFelder = summiereKostenFelder(entwurfKosten, repKosten);
+      const summe = summiereUsage(entwurfUsage, usage);
+      tokenFelder = tokenFelderVon(summe);
+      result = { ...result, usage: summe };
+      return repKosten;
+    };
+    const waehleBessere = (text: string) => {
+      mangel = "";
+      try {
+        const zweiter = normalizeAssetPayload(assetKind, text, assetAnswers, assetContext);
+        const zweiteFehler = assetKind === "memo"
+          ? memoVertragsFehler(zweiter as MemoPayload, eigeneMemoFelder)
+          : [];
+        if (!ersterEntwurf || zweiteFehler.length < vertragsFehler.length) {
+          payload = zweiter;
+          vertragsFehler = zweiteFehler;
+        } else {
+          payload = ersterEntwurf;
+        }
+      } catch (fehler) {
+        if (ersterEntwurf) payload = ersterEntwurf;
+        else mangel = fehler instanceof Error ? fehler.message : String(fehler);
+      }
+    };
+    const pgNet = modelProvider(assetModel) === "deepseek";
+
+    const darfReparieren = !gespeichert && (payload ? vertragsFehler.length > 0 : assetMangelIsRepairable(mangel));
+    const repairMs = darfReparieren && !pgNet ? assetRepairTimeoutMs(Date.now() - isolateStartedAt) : null;
+    const reparaturPrompt = () => {
+      const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers, gegenstand);
+      return vertragsFehler.length
+        ? buildMemoVertragsRepairPrompt(prompt, vertragsFehler)
+        : buildAssetRepairPrompt(prompt, mangel || reparaturStand.mangel);
+    };
+    const reparaturOptionen = (apiKey: string): ModelCallOptions => ({
+      model: assetModel, apiKey, systemText: ASSET_SYSTEM_TEXT,
+      schema: assetResponseSchema(assetKind, assetAnswers, [
+        assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
+      ].filter(Boolean).join("\n"), [
+        signalForAsset.headline_de, signalForAsset.summary_de, signalForAsset.evidence,
+        signalForAsset.why_de, signalForAsset.roots_link_de, signalForAsset.roots_offering,
+      ].filter(Boolean).join("\n")),
+      maxOutputTokens: assetOutputTokenBudget(assetKind, assetAnswers),
+      maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
+      reasoningEffort: ASSET_REASONING_EFFORT,
+      temperature: 0.35,
+      prompt: reparaturPrompt(),
+    });
+    const bucheEntwurf = async () => {
+      if (ersteBuchungId) return;
+      const data = payload
         // Der erste Entwurf war technisch erfolgreich und kostenpflichtig.
         // Die Reparatur ist ein zweiter Anbieteraufruf und darf ihn im Ledger
         // nicht überschreiben.
-        await buchen("success", { ...kostenFelder, ...tokenFelder }, 1);
+        ? await buchen("success", { ...kostenFelder, ...tokenFelder }, 1)
+        : await buchen("error", {
+          ...kostenFelder, ...tokenFelder, error_code: "invalid_response",
+          error_message: `${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`.slice(0, 3000),
+        }, 1);
+      ersteBuchungId = String(data?.id || "");
+    };
+
+    if (reparaturStand.started && !gespeichert) {
+      // Zweiter Eintritt: die Reparatur lief ueber pg_net und ist fertig.
+      reparaturLief = true;
+      const ende = reparaturStand.result;
+      const repUsage = usageAusEreignis(ende);
+      const repKosten = await reparaturZaehlen(repUsage);
+      if (ende?.event === "repair_ok" && String(ende.text || "").trim()) {
+        waehleBessere(String(ende.text));
+        result = { ...result, text: String(ende.text) };
+        const id = await buchen("success", { ...repKosten, ...tokenFelderVon(repUsage) }, 2);
+        reparaturBuchungId = String(id?.id || "");
+      } else {
+        const grund = String(ende?.message || ende?.grund || "Reparatur ohne Ergebnis");
+        const id = await buchen("error", {
+          ...repKosten, ...tokenFelderVon(repUsage),
+          error_code: `repair_${String(ende?.kind || ende?.event || "missing")}`, error_message: grund.slice(0, 3000),
+        }, 2);
+        reparaturBuchungId = String(id?.id || "");
+        if (!ersterEntwurf) {
+          const nachricht = ende?.event === "model_abandoned"
+            ? assetModelCallAbandonedText(assetModel, Number(ende.age_ms || 0))
+            : grund;
+          loggen("error", { code: "repair", message: nachricht.slice(0, 500) });
+          await persist({ status: "error", error_message: nachricht.slice(0, 2000), ...tokenFelder });
+          return;
+        }
+        loggen("vertrag_bleibt", { grund: grund.slice(0, 200) });
       }
+      if (vertragsFehler.length) loggen("vertrag_rest", { n: vertragsFehler.length, felder: vertragsFehler.slice(0, 10) });
+    } else if (darfReparieren && pgNet) {
+      // DeepSeek denkt fuer die Reparatur bis zu fuenf Minuten. Der Aufruf
+      // laeuft in der Datenbank, dieses Isolat gibt ab.
+      await bucheEntwurf();
+      loggen("repair", {
+        mangel: (mangel || vertragsFehler.join(" ")).slice(0, 400),
+        usage_event_id: ersteBuchungId || null, via: "pg_net",
+      });
+      await abschnitt("modell");
+      const start = await starteAssetModellAufruf(admin, assetId, "reparatur", reparaturOptionen(""));
+      if (start.requestId) {
+        await awaitAssetModel(assetId, start.requestId, crypto.randomUUID(), 0);
+        return;
+      }
+      if (!start.error) return;
+      loggen("repair_fail", { start: true, message: start.error.slice(0, 300) });
+      if (!ersterEntwurf) {
+        await scheitern(`${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`,
+          "invalid_response", zeroCostFields(assetModel), 2, tokenFelder);
+        return;
+      }
+      loggen("vertrag_bleibt", { grund: start.error.slice(0, 200) });
+      await abschnitt("pruefen");
+    } else if (darfReparieren && repairMs) {
+      reparaturLief = true;
+      loggen("repair", { mangel: (mangel || vertragsFehler.join(" ")).slice(0, 400) });
+      await bucheEntwurf();
       await abschnitt("modell");
       const assetKey = await modelApiKey(assetModel);
       if (!assetKey) {
         await persist({ status: "error", error_message: `Für ${assetModel} ist kein API-Schlüssel hinterlegt` });
         return;
       }
-      const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers, gegenstand);
-      result = await callJsonModel({
-        model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
-        schema: assetResponseSchema(assetKind, assetAnswers, [
-          assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
-        ].filter(Boolean).join("\n"), [
-          signalForAsset.headline_de, signalForAsset.summary_de, signalForAsset.evidence,
-          signalForAsset.why_de, signalForAsset.roots_link_de, signalForAsset.roots_offering,
-        ].filter(Boolean).join("\n")),
-        maxOutputTokens: assetOutputTokenBudget(assetKind, assetAnswers),
-        maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
-        reasoningEffort: ASSET_REASONING_EFFORT,
-        temperature: 0.35,
-        onPulse,
-        attempts: 1,
-        timeoutMs: repairMs,
-        prompt: vertragsFehler.length
-          ? buildMemoVertragsRepairPrompt(prompt, vertragsFehler)
-          : buildAssetRepairPrompt(prompt, mangel),
-      });
-      if (!result.ok) {
+      const zweiter = await callJsonModel({ ...reparaturOptionen(assetKey), onPulse, attempts: 1, timeoutMs: repairMs });
+      const repKosten = await reparaturZaehlen(zweiter.usage);
+      const id = await buchen(zweiter.ok ? "success" : "error", {
+        ...repKosten, ...tokenFelderVon(zweiter.usage),
+        ...(zweiter.ok ? {} : { error_code: `http_${zweiter.status || "network"}`, error_message: String(zweiter.error || "").slice(0, 3000) }),
+      }, 2);
+      reparaturBuchungId = String(id?.id || "");
+      if (!zweiter.ok) {
         // Der erste Entwurf stand schon. Ein gescheiterter zweiter Anlauf
         // kostet Zeit, aber nicht den fertigen Text.
         if (!ersterEntwurf) {
-          await scheitern(klartextVon(result.error || "", result.status), `http_${result.status || "network"}`, zeroCostFields(assetModel), 2);
+          loggen("error", { code: `http_${zweiter.status || "network"}` });
+          await persist({ status: "error", error_message: klartextVon(zweiter.error || "", zweiter.status).slice(0, 2000), ...tokenFelder });
           return;
         }
-        loggen("vertrag_bleibt", { grund: String(result.error || "").slice(0, 200) });
-      }
-      if (result.ok) {
-        loggen("model_ok", {
-          tokens: result.usage.total, thinking: result.usage.thinking, output: result.usage.output,
-          text: String(result.text || "").slice(0, 100_000),
+        loggen("vertrag_bleibt", { grund: String(zweiter.error || "").slice(0, 200) });
+      } else {
+        loggen("repair_ok", {
+          tokens: zweiter.usage.total, thinking: zweiter.usage.thinking, output: zweiter.usage.output,
+          text: String(zweiter.text || "").slice(0, 100_000),
         });
         await abschnitt("pruefen");
         await halte(ASSET_STAGE_HOLD_MS);
-        try {
-          kostenFelder = await modelCostFields(assetModel, result.usage);
-        } catch {
-          kostenFelder = zeroCostFields(assetModel);
-        }
-        tokenFelder = tokenFelderVon(result.usage);
-        mangel = "";
-        try {
-          const zweiter = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
-          const zweiteFehler = assetKind === "memo"
-            ? memoVertragsFehler(zweiter as MemoPayload, eigeneMemoFelder)
-            : [];
-          if (!ersterEntwurf || zweiteFehler.length < vertragsFehler.length) {
-            payload = zweiter;
-            vertragsFehler = zweiteFehler;
-          } else {
-            payload = ersterEntwurf;
-          }
-        } catch (fehler) {
-          if (ersterEntwurf) payload = ersterEntwurf;
-          else mangel = fehler instanceof Error ? fehler.message : String(fehler);
-        }
+        waehleBessere(zweiter.text);
+        result = { ...result, text: zweiter.text };
       }
       if (vertragsFehler.length) loggen("vertrag_rest", { n: vertragsFehler.length, felder: vertragsFehler.slice(0, 10) });
+    } else if (!payload && !darfReparieren) {
+      loggen("fail_early", { mangel: mangel.slice(0, 400) });
     }
 
     if (!payload) {
       await scheitern(`${mangel}\n---\n${String(result.text || "").slice(0, 1500)}`,
-        "invalid_response", { ...kostenFelder, ...tokenFelder }, repairMs ? 2 : 1, tokenFelder);
+        "invalid_response", reparaturLief ? zeroCostFields(assetModel) : { ...kostenFelder, ...tokenFelder },
+        reparaturLief ? 2 : 1, tokenFelder);
       return;
     }
 
-    // Entwurf steht. Ab hier darf nichts mehr den Text verwerfen — auch nicht
-    // ein fehlgeschlagenes Motiv.
+    // Entwurf steht. Ab hier darf nichts mehr den Text verwerfen, auch nicht
+    // ein fehlgeschlagenes Motiv. Jeder Aufruf ist genau einmal gebucht.
     loggen("payload_ok");
     const usageEvent = row.usage_event_id
       ? { id: row.usage_event_id }
-      : await buchen("success", { ...kostenFelder, ...tokenFelder }, repairMs ? 2 : 1);
+      : reparaturBuchungId || ersteBuchungId
+        ? { id: reparaturBuchungId || ersteBuchungId }
+        : await buchen("success", { ...kostenFelder, ...tokenFelder }, 1);
     await persist({
       payload, ...tokenFelder, cached_input_tokens: result.usage.cachedInput,
       usage_event_id: usageEvent?.id || null,
@@ -6138,6 +6662,18 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
 
     if (assetKind === "memo" && payload) {
       payload = applyMemoImageUploads(payload as MemoPayload, storedUploads);
+    }
+
+    if (
+      assetKind === "memo"
+      && (assetAnswers as MemoAnswers).images !== "upload"
+      && assetPhaseRemainingMs(isolateStartedAt) < MEMO_IMAGE_MIN_REMAINING_MS
+    ) {
+      // Zu wenig Zeit in diesem Isolat. Text liegt; der Wachhund stoesst die
+      // Motive in einem frischen Isolat an.
+      loggen("images_defer", { remaining_ms: assetPhaseRemainingMs(isolateStartedAt) });
+      await persist({ stage: "bilder", payload });
+      return;
     }
 
     if (assetKind === "memo" && (assetAnswers as MemoAnswers).images !== "upload") {
@@ -6325,7 +6861,7 @@ async function retryGeneratedAssetModel(assetId: string): Promise<void> {
     const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers, gegenstand);
     loggen("model_start", { stream: true, retry: true });
     await persist({ stage: "modell" });
-    const result = await callJsonModel({
+    const retryOpts: ModelCallOptions = {
       model: assetModel, apiKey: assetKey, systemText: ASSET_SYSTEM_TEXT,
       schema: assetResponseSchema(assetKind, assetAnswers, [
         assetArticle.content_de, assetArticle.cleaned_content, assetArticle.content,
@@ -6337,10 +6873,25 @@ async function retryGeneratedAssetModel(assetId: string): Promise<void> {
       maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
       reasoningEffort: ASSET_REASONING_EFFORT,
       temperature: 0.35,
+      prompt,
+    };
+    if (modelProvider(assetModel) === "deepseek") {
+      // Ab hier schreibt nur noch die Datenbank ins Protokoll.
+      const start = await starteAssetModellAufruf(admin, assetId, "entwurf", retryOpts);
+      if (start.requestId) {
+        await awaitAssetModel(assetId, start.requestId, crypto.randomUUID(), 0);
+        return;
+      }
+      if (!start.error) return;
+      loggen("model_fail", { error: start.error.slice(0, 300), retry: true, start: true });
+      await persist({ status: "error", error_message: start.error.slice(0, 2000) });
+      return;
+    }
+    const result = await callJsonModel({
+      ...retryOpts,
       onPulse,
       attempts: 2,
       timeoutMs: assetModelTimeoutMs(assetKind, assetAnswers),
-      prompt,
     });
     if (!result.ok) {
       loggen("model_fail", { status: result.status, error: String(result.error || "").slice(0, 300), retry: true });
@@ -6411,7 +6962,7 @@ Deno.serve(async (req: Request) => {
     const workerSecret = await getBrowserBatchSecret();
     const authorization = req.headers.get("authorization") || "";
     if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return unauthorizedResponse(req, origin);
-  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs", "finish_asset", "retry_asset_model"].includes(action)) {
+  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs", "finish_asset", "retry_asset_model", "await_asset_model"].includes(action)) {
     if (!isInternalCall(req)) return unauthorizedResponse(req, origin);
   } else if (["process_analysis_worker", "process_analysis_batches"].includes(action)) {
     // Queue recovery may be started by the protected pg_cron/watchdog path;
@@ -8587,7 +9138,9 @@ Deno.serve(async (req: Request) => {
         // 67 und 888 Stunden da, obwohl ihr Isolat nach acht Minuten tot war.
         //
         // Hier wird nur geschlossen, nie neu gestartet: wer das Fenster zu hat,
-        // will keinen zweiten bezahlten Modellaufruf.
+        // will keinen zweiten bezahlten Modellaufruf. Bezahlte Aufrufe, die in
+        // der Datenbank schon laufen, bekommen vorher ihren Wartenden zurueck.
+        const modellWarten = await pflegeAssetModellWarteschlange(admin);
         const verwaisteGrenze = new Date(Date.now() - ASSET_ZOMBIE_MS).toISOString();
         const { data: verwaiste } = await admin.schema("signal_layer").from("generated_assets")
           .select("id, kind, status, stage, model, article_id, created_by, created_at, updated_at, run_log")
@@ -8603,6 +9156,7 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, {
           resumed: (stalled || []).map((r: { id: string }) => r.id),
           closed_assets: geschlossen,
+          model_waits: modellWarten,
         });
       }
 
@@ -10527,6 +11081,18 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { ok: true, asset_id: finishId });
       }
 
+      case "await_asset_model": {
+        const waitId = String(body.asset_id || "");
+        const requestId = String(body.request_id ?? "");
+        const waiter = String(body.waiter || "");
+        const hop = Number(body.hop ?? 0);
+        if (!waitId || !/^\d{1,18}$/.test(requestId) || !waiter || waiter.length > 64 || !Number.isInteger(hop) || hop < 0) {
+          return errorResponse(origin, "asset_id, request_id, waiter oder hop fehlt");
+        }
+        EdgeRuntime.waitUntil(awaitAssetModel(waitId, requestId, waiter, hop));
+        return corsResponse(origin, { ok: true, asset_id: waitId });
+      }
+
       case "retry_asset_model": {
         const retryId = String(body.asset_id || "");
         if (!retryId) return errorResponse(origin, "asset_id fehlt");
@@ -11220,9 +11786,26 @@ Deno.serve(async (req: Request) => {
             //   Ansprache    5.696 + 641   = 6.337
             //   Carousel 6   6.084 + 1.069 = 7.153
             maxTotalTokens: ASSET_MAX_TOTAL_TOKENS,
+            reasoningEffort: ASSET_REASONING_EFFORT,
             temperature: 0.35,
             onPulse,
           };
+          if (modelProvider(assetModel) === "deepseek") {
+            // DeepSeek denkt bis zu fuenf Minuten, dieses Isolat lebt 150 s.
+            // Der Aufruf laeuft in der Datenbank; ab hier schreibt nur sie
+            // ins Protokoll.
+            const start = await starteAssetModellAufruf(admin, String(assetRow.id), "entwurf", { ...callOpts, prompt });
+            if (!start.requestId) {
+              if (!start.error) return;
+              clearTimeout(waechter);
+              loggen("model_fail", { error: start.error.slice(0, 300), start: true });
+              await persist({ status: "error", error_message: start.error.slice(0, 2000) });
+              return;
+            }
+            clearTimeout(waechter);
+            await awaitAssetModel(String(assetRow.id), start.requestId, crypto.randomUUID(), 0);
+            return;
+          }
           let result = await callJsonModel({
             ...callOpts, prompt, attempts: 2, timeoutMs,
           });

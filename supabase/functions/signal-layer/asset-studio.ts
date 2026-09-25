@@ -5102,7 +5102,8 @@ export function assetMemoImagesIncomplete(row: {
   return rows.some((eintrag) => {
     const event = String(eintrag.event || "");
     return event === "image_ok" || event === "image_fail" || event === "image_start"
-      || event === "images_done" || event === "images_retry" || event === "images_incomplete";
+      || event === "images_done" || event === "images_retry" || event === "images_incomplete"
+      || event === "images_defer";
   });
 }
 
@@ -5172,8 +5173,11 @@ export async function fillMemoImages(
 // Zeit und Budget des Modellaufrufs
 // ---------------------------------------------------------------------------
 
-/** Denken plus Antwort. Gemessenes Maximum lag bei 7.153 Tokens. */
-export const ASSET_MAX_TOTAL_TOKENS = 20_000;
+/**
+ * Denken plus Antwort. Bei "high" kamen bis zu 64.000 Zeichen Begruendung,
+ * rund 20.000 Tokens, dazu die Antwort mit gemessen hoechstens 7.153 Tokens.
+ */
+export const ASSET_MAX_TOTAL_TOKENS = 40_000;
 
 /**
  * Pruefen und Fuellen dauern sonst Millisekunden. Das Studio fragt hoechstens
@@ -5181,8 +5185,8 @@ export const ASSET_MAX_TOTAL_TOKENS = 20_000;
  */
 export const ASSET_STAGE_HOLD_MS = 2_000;
 
-/** Paid-Plan-Isolate (400 s) minus Schreibpuffer. */
-export const ASSET_WALL_CLOCK_MS = 380_000;
+/** Free-Plan-Isolat (150 s) minus Schreibpuffer. */
+export const ASSET_WALL_CLOCK_MS = 140_000;
 
 /**
  * Restzeit eines Isolats. Finish_asset misst ab Isolat-Start, nicht ab
@@ -5207,12 +5211,14 @@ export const ASSET_STALE_MS = 400_000;
 export const ASSET_ZOMBIE_MS = 900_000;
 
 /**
- * Wie scharf DeepSeek fuer ein Asset nachdenken soll. Der Standard "high" hat
- * am 18.9.2026 zwischen 34.000 und 64.000 Zeichen Begruendung erzeugt, bevor
- * das erste Wort der Antwort kam; genau in diesen Minuten riss der Strom.
- * Gelungene Laeufe brauchten 70 bis 145 Sekunden, gescheiterte 480 bis 795.
+ * Wie scharf DeepSeek fuer ein Asset nachdenken soll. "high" hat am 18.9.2026
+ * zwischen 34.000 und 64.000 Zeichen Begruendung erzeugt und brauchte 60 bis
+ * 270 Sekunden. Im Isolat riss der Strom, weil das Isolat nach 150 Sekunden
+ * stirbt. Der Aufruf laeuft deshalb ueber pg_net in der Datenbank; Isolate
+ * fragen nur noch ab. Was wirklich zu lange dauert, erkennt
+ * assetModelCallOverdue.
  */
-export const ASSET_REASONING_EFFORT = "low" as const;
+export const ASSET_REASONING_EFFORT = "high" as const;
 
 /**
  * Ohne neues Lebenszeichen so lange: die Verbindung steht. Denken und
@@ -5251,9 +5257,9 @@ export const ASSET_HEARTBEAT_PULSE_MS = 2_500;
 export const ASSET_STREAM_KEEPALIVE_MS = 8_000;
 
 export const ASSET_HANG_ERROR =
-  "Der Auftrag hat das technische Zeitfenster der Funktion (knapp sieben Minuten) ausgeschöpft, weil das Modell zu lange gebraucht hat. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen. Bitte denselben Auftrag noch einmal starten.";
+  "Der Auftrag hat das technische Zeitfenster der Funktion ausgeschöpft, weil das Modell zu lange gebraucht hat. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen. Bitte denselben Auftrag noch einmal starten.";
 
-export type AssetHangReason = "silent" | "isolate";
+export type AssetHangReason = "silent" | "isolate" | "abandoned";
 
 export type AssetPulse = {
   phase?: string;
@@ -5293,13 +5299,395 @@ export function assetHangReason(
   nowMs = Date.now(),
 ): AssetHangReason | null {
   if (String(row.status || "") !== "running") return null;
+  // Ein offener pg_net-Aufruf lebt in der Datenbank, nicht im Isolat. Stille
+  // in der Zeile heisst dort nur: gerade fragt niemand ab. Aufgegeben wird er
+  // erst, wenn er jede Frist gerissen hat.
+  if (assetPendingModelCall(row.run_log)) {
+    return assetModelCallPastCeiling(row, nowMs, ASSET_MODEL_GIVE_UP_GRACE_MS) ? "abandoned" : null;
+  }
   const age = assetHeartbeatAgeMs(row.updated_at || row.created_at, nowMs);
   if (age >= ASSET_FIRST_BYTE_STALE_MS) return "silent";
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Modellaufruf ueber pg_net
+//
+// DeepSeek "high" braucht fuer ein Memo 60 bis 270 Sekunden, ein Isolat lebt
+// 150. Der Aufruf laeuft deshalb in der Datenbank; eine Kette kurzer Isolate
+// fragt ab, bis die Antwort liegt. Stirbt ein Isolat, stoesst get_asset oder
+// der Wachhund das naechste an. Der Aufruf selbst laeuft davon unberuehrt.
+// ---------------------------------------------------------------------------
+
+/**
+ * Curl-Timeout in pg_net. Gemessen: Entwurf 60 bis 170 s, Reparatur 90 bis
+ * 270 s. Zehn Minuten sind nicht mehr langsam, sondern kaputt.
+ */
+export const ASSET_MODEL_CALL_TIMEOUT_MS = 600_000;
+/** Erster Anlauf plus einer nach Netz-, Rate-Limit- oder Serverfehler. */
+export const ASSET_MODEL_CALL_ATTEMPTS = 2;
+export const ASSET_MODEL_POLL_MS = 3_000;
+/** So lange wartet ein Isolat, dann uebergibt es an das naechste. */
+export const ASSET_MODEL_WAIT_SLICE_MS = 50_000;
+/** Seit so langer Zeit kein Wartender: get_asset stoesst einen neuen an. */
+export const ASSET_MODEL_WAITER_STALE_MS = 30_000;
+/** Ab hier zeigt das Studio, dass es laenger dauert als ueblich. */
+export const ASSET_MODEL_SLOW_MS = 300_000;
+/** Notbremse der Wartekette. Die Fristen unten greifen lange vorher. */
+export const ASSET_MODEL_WAIT_HOPS_MAX = 120;
+/** Luft fuer den Wachhund, bevor er einen offenen Aufruf aufgibt. */
+export const ASSET_MODEL_GIVE_UP_GRACE_MS = 300_000;
+/** So oft darf dieselbe Antwort beansprucht werden, ohne je fertig zu werden. */
+export const ASSET_MODEL_CLAIMS_MAX = 3;
+
+export type AssetModelCallKind = "entwurf" | "reparatur";
+
+export type AssetPendingModelCall = {
+  request_id: string;
+  call: AssetModelCallKind;
+  attempt: number;
+  timeout_ms: number;
+  t: number;
+};
+
+const ASSET_MODEL_CALL_END_EVENTS = new Set([
+  "model_ok", "model_fail", "repair_ok", "repair_fail", "model_abandoned",
+]);
+
+/** Der letzte gestartete pg_net-Aufruf, solange ihn nichts abgeschlossen hat. */
+export function assetPendingModelCall(log: unknown): AssetPendingModelCall | null {
+  const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const row = rows[i];
+    if (row?.event !== "model_call") continue;
+    const id = String(row.request_id ?? "").trim();
+    if (!id) return null;
+    for (let j = i + 1; j < rows.length; j += 1) {
+      const later = rows[j];
+      if (ASSET_MODEL_CALL_END_EVENTS.has(String(later?.event || "")) && String(later?.request_id ?? "") === id) {
+        return null;
+      }
+    }
+    return {
+      request_id: id,
+      call: row.call === "reparatur" ? "reparatur" : "entwurf",
+      attempt: Math.max(1, Number(row.attempt || 1)),
+      timeout_ms: Number(row.timeout_ms || 0) || ASSET_MODEL_CALL_TIMEOUT_MS,
+      t: Number(row.t || 0),
+    };
+  }
+  return null;
+}
+
+/**
+ * Laeuft der Aufruf laenger, als er ueberhaupt laufen kann? pg_net bricht
+ * selbst nach timeout_ms ab. Wer in der Warteschlange steht, wartet
+ * hoechstens einen Stapel, und ein Stapel dauert hoechstens so lange wie sein
+ * laengster Aufruf.
+ */
+export function assetModelCallOverdue(stand: {
+  in_flight?: unknown;
+  age_ms?: unknown;
+  flight_ms?: unknown;
+  timeout_ms?: unknown;
+}): boolean {
+  const timeout = Number(stand.timeout_ms || 0) || ASSET_MODEL_CALL_TIMEOUT_MS;
+  const age = Number(stand.age_ms || 0);
+  const flight = Number(stand.flight_ms || 0);
+  if (stand.in_flight === true) return flight > timeout + 120_000 || age > 2 * timeout + 180_000;
+  return age > timeout + 180_000;
+}
+
+/** Spaetester Zeitpunkt, zu dem der offene Aufruf fertig sein muss. */
+export function assetModelCallPastCeiling(
+  row: { created_at?: unknown; run_log?: unknown },
+  nowMs = Date.now(),
+  graceMs = 0,
+): boolean {
+  const pending = assetPendingModelCall(row.run_log);
+  if (!pending) return false;
+  const created = Date.parse(String(row.created_at || ""));
+  if (!Number.isFinite(created)) return false;
+  return created + pending.t + 2 * pending.timeout_ms + 180_000 + graceMs < nowMs;
+}
+
+export type AssetModelUsage = {
+  input: number;
+  cachedInput: number;
+  output: number;
+  thinking: number;
+  total: number;
+};
+
+type DeepseekUsageRaw = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  prompt_cache_hit_tokens: number;
+  prompt_cache_miss_tokens: number;
+  reasoning_tokens: number;
+};
+
+/** DeepSeek-Zaehlung in die Felder, die Kosten und Zeile erwarten. */
+export function deepseekUsage(raw: DeepseekUsageRaw | null | undefined): AssetModelUsage {
+  if (!raw) return { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
+  const prompt = Math.max(0, Number(raw.prompt_tokens || 0));
+  const completion = Math.max(0, Number(raw.completion_tokens || 0));
+  const cached = Math.max(0, Number(raw.prompt_cache_hit_tokens || 0));
+  const miss = Math.max(0, Number(raw.prompt_cache_miss_tokens || 0));
+  const thinking = Math.max(0, Number(raw.reasoning_tokens || 0));
+  return {
+    input: miss || Math.max(prompt - cached, 0),
+    cachedInput: cached,
+    output: Math.max(completion - thinking, 0),
+    thinking,
+    total: Number(raw.total_tokens || 0) || prompt + completion,
+  };
+}
+
+/**
+ * Die ganze Antwort, wie pg_net sie ablegt: ein SSE-Strom oder, ohne Strom
+ * und bei Fehlern, ein einzelnes JSON-Objekt. DeepSeek schickt vor einem
+ * JSON-Objekt Leerzeilen und im Strom ": keep-alive", solange es denkt.
+ */
+export function parseDeepseekSseText(body: unknown): {
+  content: string;
+  reasoningChars: number;
+  finish: string;
+  usage: DeepseekUsageRaw | null;
+  done: boolean;
+  sse: boolean;
+  error: string;
+} {
+  const text = String(body ?? "");
+  const out = {
+    content: "",
+    reasoningChars: 0,
+    finish: "",
+    usage: null as DeepseekUsageRaw | null,
+    done: false,
+    sse: false,
+    error: "",
+  };
+  const kurz = text.trim();
+  if (!kurz) return out;
+  if (kurz.startsWith("{")) {
+    const chunk = parseDeepseekSseData(kurz);
+    if (!chunk) {
+      out.error = `unlesbare Antwort: ${kurz.slice(0, 160)}`;
+      return out;
+    }
+    out.content = chunk.content || "";
+    out.reasoningChars = (chunk.reasoning || "").length;
+    out.finish = chunk.finish || "";
+    out.usage = chunk.usage ?? null;
+    out.error = chunk.error || "";
+    out.done = Boolean(out.finish);
+    return out;
+  }
+  out.sse = true;
+  const teile: string[] = [];
+  for (const line of text.split("\n")) {
+    const zeile = line.trim();
+    if (!zeile.startsWith("data:")) continue;
+    const chunk = parseDeepseekSseData(zeile.slice(5));
+    if (!chunk) continue;
+    if (chunk.done) {
+      out.done = true;
+      continue;
+    }
+    if (chunk.content) teile.push(chunk.content);
+    if (chunk.reasoning) out.reasoningChars += chunk.reasoning.length;
+    if (chunk.finish) out.finish = chunk.finish;
+    if (chunk.usage) out.usage = chunk.usage;
+    if (chunk.error) out.error = chunk.error;
+  }
+  out.content = teile.join("");
+  return out;
+}
+
+export type AssetModelCallFailKind =
+  | "timeout" | "network" | "balance" | "auth" | "rate_limit" | "server"
+  | "http" | "stream" | "empty" | "truncated" | "lost" | "abandoned";
+
+export type AssetModelCallOutcome =
+  | { ok: true; text: string; usage: AssetModelUsage; reasoningChars: number; finish: string }
+  | {
+    ok: false;
+    kind: AssetModelCallFailKind;
+    retryable: boolean;
+    status: number;
+    error: string;
+    message: string;
+    usage: AssetModelUsage;
+  };
+
+function assetModelMinuten(ms: number): string {
+  const min = Math.max(1, Math.round(Number(ms || 0) / 60_000));
+  return min === 1 ? "einer Minute" : `${min} Minuten`;
+}
+
+/**
+ * Was die abgelegte Antwort bedeutet, fuer Wartende und Nutzer. Die Meldung
+ * nennt, wer schuld ist und was jetzt zu tun ist. Der Rohtext von pg_net
+ * oder DeepSeek steht nur in `error`, fuer das Protokoll.
+ */
+export function assetModelCallOutcome(
+  stand: {
+    status_code?: unknown;
+    timed_out?: unknown;
+    error_msg?: unknown;
+    content?: unknown;
+    timeout_ms?: unknown;
+  },
+  model: string,
+): AssetModelCallOutcome {
+  const name = model || "Das Modell";
+  const status = Number(stand.status_code || 0);
+  const leer: AssetModelUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
+  const fail = (
+    kind: AssetModelCallFailKind,
+    retryable: boolean,
+    error: string,
+    message: string,
+    usage: AssetModelUsage = leer,
+  ): AssetModelCallOutcome => ({ ok: false, kind, retryable, status, error: error.slice(0, 500), message, usage });
+
+  if (stand.timed_out === true) {
+    const timeout = Number(stand.timeout_ms || 0) || ASSET_MODEL_CALL_TIMEOUT_MS;
+    return fail(
+      "timeout",
+      false,
+      String(stand.error_msg || "timeout"),
+      `${name} hat nach ${assetModelMinuten(timeout)} noch keine Antwort geliefert. Üblich sind 1 bis 5 Minuten. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen. Bitte in einigen Minuten denselben Auftrag noch einmal starten.`,
+    );
+  }
+  if (!status) {
+    return fail(
+      "network",
+      true,
+      String(stand.error_msg || "keine Verbindung"),
+      `Die Verbindung zu ${name} ist abgerissen, bevor eine Antwort kam. Das liegt am Netz zwischen Datenbank und Anbieter, nicht am Signal und nicht am Fragebogen. Bitte denselben Auftrag noch einmal starten.`,
+    );
+  }
+
+  const antwort = parseDeepseekSseText(stand.content);
+  const usage = deepseekUsage(antwort.usage);
+  const roh = antwort.error || (status >= 400 ? String(stand.content || "").trim().slice(0, 300) : "");
+
+  if (status >= 400 || (antwort.error && !antwort.content)) {
+    if (status === 402 || /insufficient balance|spending cap/i.test(roh)) {
+      return fail("balance", false, roh, `Beim Anbieter ${name} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`, usage);
+    }
+    if (status === 401 || /invalid api key|unauthorized|authentication/i.test(roh)) {
+      return fail("auth", false, roh, `Der API-Schlüssel für ${name} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`, usage);
+    }
+    if (status === 429 || /rate limit/i.test(roh)) {
+      return fail("rate_limit", true, roh, `${name} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`, usage);
+    }
+    if (status >= 500) {
+      return fail(
+        "server",
+        true,
+        roh,
+        `${name} hat mit einem Serverfehler (${status}) geantwortet. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen. Bitte in einigen Minuten denselben Auftrag noch einmal starten.`,
+        usage,
+      );
+    }
+    if (status < 400) {
+      return fail(
+        "stream",
+        true,
+        roh,
+        `${name} hat den Text mittendrin mit einem Fehler abgebrochen. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen. Bitte denselben Auftrag noch einmal starten.`,
+        usage,
+      );
+    }
+    return fail("http", false, roh, `${name} hat mit ${status} geantwortet: ${roh.slice(0, 200)}`, usage);
+  }
+
+  const inhalt = antwort.content;
+  if (!inhalt.trim()) {
+    const verbraucht = antwort.finish === "length";
+    return fail(
+      "empty",
+      !verbraucht,
+      `empty completion, reasoning used (${antwort.reasoningChars} chars, finish ${antwort.finish || "none"})`,
+      verbraucht
+        ? `${name} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben. Ein kürzerer Fragebogen oder weniger Slides hilft.`
+        : `${name} hat nachgedacht, aber keinen Text geliefert. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen. Bitte denselben Auftrag noch einmal starten.`,
+      usage,
+    );
+  }
+  if (antwort.finish === "length" || istUnvollstaendigesJson(inhalt)) {
+    // Die Meldung zaehlt erst nach dem zweiten Anlauf: der erste wird
+    // wiederholt, ohne dass jemand sie sieht.
+    const grund = antwort.finish === "length"
+      ? `${name} hat das Tokenlimit erreicht und bricht mitten im Satz ab (${inhalt.length} Zeichen, ${usage.thinking} davon Begründung).`
+      : `${name} hat die Antwort mitten im Satz abgebrochen (${inhalt.length} Zeichen geschrieben). Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen.`;
+    return fail(
+      "truncated",
+      true,
+      `truncated (${inhalt.length} chars, finish ${antwort.finish || "none"})`,
+      `${grund} Zwei Anläufe sind gelaufen, beide abgebrochen. Noch einmal erzeugen.`,
+      usage,
+    );
+  }
+  return { ok: true, text: inhalt, usage, reasoningChars: antwort.reasoningChars, finish: antwort.finish };
+}
+
+/** Weder in der Warteschlange noch als Antwort: pg_net hat den Aufruf verloren. */
+export function assetModelCallLostText(model: string): string {
+  return `Die Antwort von ${model || "dem Modell"} ist in der Datenbank verloren gegangen. Das liegt bei uns, nicht beim Anbieter, nicht am Signal und nicht am Fragebogen. Bitte denselben Auftrag noch einmal starten.`;
+}
+
+/** Der Aufruf hat jede Frist gerissen, ohne dass eine Antwort ankam. */
+export function assetModelCallAbandonedText(model: string, ageMs: number): string {
+  return `${model || "Das Modell"} hat nach ${assetModelMinuten(ageMs)} noch immer keine Antwort geliefert. Üblich sind 1 bis 5 Minuten, der Auftrag wurde deshalb beendet. Das liegt nicht am Signal und nicht am Fragebogen. Bitte in einigen Minuten denselben Auftrag noch einmal starten.`;
+}
+
+/**
+ * Stand der Reparatur nach dem letzten Entwurf: ob sie lief und womit sie
+ * endete. finish_asset laeuft mehrmals; ohne diesen Blick wuerde es jedes Mal
+ * neu reparieren und jedes Mal neu buchen.
+ */
+export function assetRepairFromLog(log: unknown): {
+  started: boolean;
+  mangel: string;
+  usageEventId: string;
+  result: Record<string, unknown> | null;
+} {
+  const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
+  let vonHier = 0;
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    if (rows[i]?.event === "model_ok") {
+      vonHier = i + 1;
+      break;
+    }
+  }
+  let started = false;
+  let mangel = "";
+  let usageEventId = "";
+  let result: Record<string, unknown> | null = null;
+  for (let i = vonHier; i < rows.length; i += 1) {
+    const row = rows[i];
+    const event = String(row?.event || "");
+    if (event === "repair" && !started) {
+      started = true;
+      mangel = String(row.mangel || "");
+      usageEventId = String(row.usage_event_id || "");
+      continue;
+    }
+    if (!started || result) continue;
+    if (event === "repair_ok") result = row;
+    else if (event === "repair_fail" && row.retry !== true) result = row;
+    else if (event === "model_abandoned" && row.call === "reparatur") result = row;
+  }
+  return { started, mangel, usageEventId, result };
+}
+
 const ASSET_DRAFT_TEXT_MAX = 100_000;
-const ASSET_FINISH_KICK_MAX = 4;
+const ASSET_FINISH_KICK_MAX = 5;
 const ASSET_FINISH_HANDOFF_AFTER_MS = 20_000;
 const ASSET_BILDER_SETTLE_MS = 90_000;
 export const ASSET_MODEL_RETRY_MAX = 2;
@@ -5330,6 +5718,9 @@ export function assetFinishHandoffDue(
   nowMs = Date.now(),
 ): boolean {
   if (String(row.status || "") !== "running") return false;
+  // Die Reparatur laeuft noch in der Datenbank. Ihr Wartender stoesst die
+  // Pruefung selbst an, sobald die Antwort liegt.
+  if (assetPendingModelCall(row.run_log)) return false;
   if (!assetDraftTextFromLog(row.run_log)) return false;
   if (assetFinishKickCount(row.run_log) >= ASSET_FINISH_KICK_MAX) return false;
   const stage = String(row.stage || "");
@@ -5395,7 +5786,8 @@ export function assetModelRetryCount(log: unknown): number {
 /** Ein neuer Schreiber oder die Prüfung hat den Auftrag übernommen. */
 export function assetWriterLostLock(log: unknown): boolean {
   const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
-  return rows.some((row) => row?.event === "retry_model" || row?.event === "handoff" || row?.event === "finish_start");
+  return rows.some((row) => row?.event === "retry_model" || row?.event === "handoff" || row?.event === "finish_start"
+    || row?.event === "model_call");
 }
 
 /**
@@ -5408,6 +5800,9 @@ export function assetModelRetryDue(
   nowMs = Date.now(),
 ): boolean {
   if (String(row.status || "") !== "running") return false;
+  // pg_net wiederholt selbst; ein zweiter Schreiber waere ein zweiter
+  // bezahlter Aufruf fuer dieselbe Antwort.
+  if (assetPendingModelCall(row.run_log)) return false;
   if (assetDraftTextFromLog(row.run_log)) return false;
   if (String(row.stage || "") !== "modell") return false;
   if (assetModelRetryCount(row.run_log) >= ASSET_MODEL_RETRY_MAX) return false;
@@ -5428,7 +5823,7 @@ export function assetHasStreamedChars(log: unknown): boolean {
     const eintrag = rows[i];
     // Ein Neustart setzt die Rechnung zurueck: was davor kam, gehoert zu einem
     // Aufruf, den es nicht mehr gibt.
-    if (eintrag?.event === "model_start" || eintrag?.event === "retry_model") return false;
+    if (eintrag?.event === "model_start" || eintrag?.event === "retry_model" || eintrag?.event === "model_call") return false;
     if (eintrag?.event !== "pulse") continue;
     if (Number(eintrag?.chars || 0) > 0 || Number(eintrag?.thinking_chars || 0) > 0) return true;
   }
@@ -5454,6 +5849,7 @@ export function assetHeartbeatErrorText(
   reason: AssetHangReason = "silent",
 ): string {
   if (reason === "isolate") return ASSET_HANG_ERROR;
+  if (reason === "abandoned") return assetModelCallAbandonedText(model, silentMs);
   const sek = Math.max(1, Math.round(Number(silentMs) / 1000));
   // Wem die Schuld gehoert, gehoert in die Meldung. Sonst sucht der Nutzer den
   // Fehler bei seinem Text oder beim Werkzeug, und beide sind in Ordnung.
@@ -5531,7 +5927,7 @@ export function assetRunPaceFromLog(log: unknown): {
   for (const row of rows) {
     const event = String(row?.event || "");
     if (event === "stage" && row?.stage === "modell") modelStart = Number(row.t || 0);
-    if (event === "model_start" || event === "retry_model") modelStart = Number(row.t || 0);
+    if (event === "model_start" || event === "retry_model" || event === "model_call") modelStart = Number(row.t || 0);
     if (event !== "pulse") continue;
     const tc = Number(row.thinking_chars || 0);
     const c = Number(row.chars || 0);
@@ -5592,6 +5988,7 @@ export function parseDeepseekSseData(data: string): {
     prompt_cache_miss_tokens: number;
     reasoning_tokens: number;
   } | null;
+  error?: string;
 } | null {
   const raw = String(data || "").trim();
   if (!raw) return null;
@@ -5606,6 +6003,13 @@ export function parseDeepseekSseData(data: string): {
     const details = usageRaw?.completion_tokens_details && typeof usageRaw.completion_tokens_details === "object"
       ? usageRaw.completion_tokens_details as Record<string, unknown>
       : {};
+    // Fehler kommen als {"error": {...}}, bei pg_net auch mitten im Strom.
+    const fehler = json.error && typeof json.error === "object"
+      ? json.error as Record<string, unknown>
+      : null;
+    const err = fehler
+      ? String(fehler.message || fehler.code || fehler.type || JSON.stringify(fehler)).slice(0, 300)
+      : typeof json.error === "string" ? json.error.slice(0, 300) : "";
     return {
       content: typeof delta.content === "string" ? delta.content : undefined,
       reasoning: typeof delta.reasoning_content === "string" ? delta.reasoning_content : undefined,
@@ -5618,6 +6022,7 @@ export function parseDeepseekSseData(data: string): {
         prompt_cache_miss_tokens: Number(usageRaw.prompt_cache_miss_tokens || 0),
         reasoning_tokens: Number(details.reasoning_tokens || 0),
       } : null,
+      ...(err ? { error: err } : {}),
     };
   } catch {
     return null;
