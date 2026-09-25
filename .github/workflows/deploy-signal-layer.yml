@@ -41,4 +41,5 @@ jobs:
           fi
           supabase functions deploy signal-layer \
             --project-ref csmguwcvzreefluhahyu \
+            --use-api \
             --no-verify-jwt
