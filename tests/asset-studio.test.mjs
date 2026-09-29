@@ -255,8 +255,8 @@ test("die Werkbank bearbeitet in Echtzeit", () => {
   for (const befehl of ["bold", "italic", "underline", "smaller", "larger", "left", "center", "right", "color", "list", "undo", "redo"]) {
     assert.ok(studio.includes(`data-fmt="${befehl}"`), `Formatbefehl ${befehl} fehlt`);
   }
-  assert.match(studio, /data-act="img-pick"/);
-  assert.match(studio, /class="as-img-btn"/);
+  assert.match(studio, /data-act="img-edit"/);
+  assert.match(studio, /class="as-img-edit"/);
   assert.match(studio, /data-act="variant"/);
   assert.match(studio, /function harvest\(\)/);
 });
@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-11");
-  assert.match(indexHtml, /app\.js\?v=20260929-11/);
+  assert.equal(studioVersion, "20260929-12");
+  assert.match(indexHtml, /app\.js\?v=20260929-12/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3538,7 +3538,7 @@ test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
 
 test("Bearbeiten: Platzhalter, Crop-Popup, Zoom, Rundung und leise Auswahl", () => {
   assert.doesNotMatch(studio, /Bild zuschneiden/);
-  assert.match(studio, /class="as-img-btn"/);
+  assert.match(studio, /class="as-img-edit"/);
   assert.match(studio, /as-crop-drop/);
   assert.match(studio, /function openCropSheet/);
   assert.match(studio, /data-crop-mode="fill"/);
@@ -3934,14 +3934,19 @@ test("Marketing fragt nicht mehr nach automatisch erzeugten Motiven", () => {
 });
 
 test("das Bild laesst sich in der Werkbank nachstellen", () => {
-  // Zuschneiden, Groesse, Transparenz, Overlay, ersetzen, entfernen.
-  assert.match(studio, /data-act="img-crop"/);
-  assert.match(studio, /data-act="img-zoom"/);
-  assert.match(studio, /data-imgrange="opacity"/);
-  assert.match(studio, /data-imgrange="overlay"/);
+  // Alles im Bildfenster: zuschneiden, zoomen, Deckkraft, Overlay, einpassen, ersetzen, entfernen.
+  assert.match(studio, /data-crop-zoom min="100" max="250"/);
+  assert.match(studio, /data-crop-deckung/);
+  assert.match(studio, /data-crop-overlay/);
+  assert.match(studio, /data-crop-mode="contain"/);
+  assert.match(studio, /data-act="crop-remove"/);
+  assert.match(studio, /data-act="crop-browse" data-crop-neu/);
   assert.match(studio, /background-size:\$\{Math\.round\(zoom \* 100\)\}% auto;opacity:\$\{deckung\}/);
-  // Ohne Bild keine Regler.
-  assert.match(studio, /\$\{hat \? `<div class="as-img-panel"><div class="as-img-tools">/);
+  // Im Memo verlustfrei: Ausschnitt und Zoom sind Werte am Bild, gezoomt wird um den Fokuspunkt.
+  assert.match(studio, /transform:scale\(\$\{zoom\}\);transform-origin:\$\{pos\}/);
+  assert.match(studio, /const src = cropState\.neu \? bereiteBildVor\(cropState\.img, spec\) : vorher\.src;/);
+  // Keine Leiste mehr auf dem Motiv.
+  assert.doesNotMatch(studio, /as-img-panel/);
   // Ein Hintergrundmotiv ueberlebt den Schrittwechsel.
   assert.match(studio, /if \(slot\.classList\.contains\("as-picslot--bg"\)\) return;/);
 });
@@ -4555,7 +4560,7 @@ test("Protokoll, Rueckfall fuer Titelbild und Befund, bekannte Benchmarks, Titel
   assert.match(edge, /finder\.fetchPhoto\(memoRahmenSlot\(brief, bildFirma\)\)/);
   assert.match(edge, /if \(bildNachzug && payload\)/);
   // Studio startet ein fertiges Memo auf Seite 1.
-  assert.match(studio, /function adoptPayload\(raw\) \{\n    const data = raw && typeof raw === "object" \? raw : \{\};\n    state\.payload = data;[\s\S]{0,300}state\.prevIndex = 0;/);
+  assert.match(studio, /function adoptPayload\(raw\) \{\n    const data = raw && typeof raw === "object" \? raw : \{\};\n    state\.payload = data;[\s\S]{0,700}state\.prevIndex = 0;/);
   // Kompaktes Protokoll je Memo in Supabase.
   const sql = readFileSync(new URL("../supabase/migrations/20260929210000_memo_protokoll.sql", import.meta.url), "utf8");
   assert.match(sql, /add column if not exists protokoll jsonb/);
@@ -4569,10 +4574,10 @@ test("Themen, Bildsymbol und Luecken im Fragebogen", async () => {
   assert.match(simple, /eigenmarken_launch: \{ id: "eigenmarken_strategie", label: "Eigenmarkenstrategie" \}/);
   assert.match(simple, /marken_relaunch: \{ id: "marken_strategie", label: "Markenstrategie" \}/);
   assert.match(simple, /state\.topics\.includes\(signalThema\(signal\)\.id\)/);
-  // Bildsymbol steht immer da, Werkzeuge per Klick.
-  assert.match(studio, /data-act="img-menu"/);
-  assert.match(studio, /@keyframes as-bild-wink/);
-  assert.match(studio, /state\.bildMenuOffen === key/);
+  // Ein kleiner Stift steht immer da, der Klick oeffnet das Bildfenster.
+  assert.match(studio, /data-act="img-edit"/);
+  assert.match(studio, /<i class="fa-solid fa-pen"><\/i><\/button>/);
+  assert.match(studio, /@keyframes as-stift/);
   assert.doesNotMatch(studio, /as-img-pick-label/);
   assert.doesNotMatch(studio, /\[data-imgslot\]:hover \.as-img-ui\.is-filled/);
   // Beschriftungen und Luecken.

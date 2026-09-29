@@ -243,7 +243,7 @@ export const MEMO_TEMPLATE_CSS = `@font-face { font-family: "ROOTS Memo"; font-s
 .as-stage--memo .em-cover-bg:has(img[src=""]){background:linear-gradient(135deg,#00163e,#206efb);}
 .as-stage--memo .em-cover-bg::after{z-index:1;}
 .as-stage--memo .em-cover-bg .as-img-ui{z-index:4;}
-.as-stage--memo [data-as-chrome],.as-stage--memo [data-as-chrome] *{word-spacing:normal;white-space:normal;font-family:system-ui,sans-serif;}
+.as-stage--memo [data-as-chrome],.as-stage--memo [data-as-chrome] *:not(i){word-spacing:normal;white-space:normal;font-family:system-ui,sans-serif;}
 .as-stage--memo .em-cl span{min-width:0;}
 .as-stage--memo .em-cl a{color:inherit;text-decoration:none;}
 @media print{.as-stage.as-stage--memo{height:auto!important;overflow:visible;print-color-adjust:exact;-webkit-print-color-adjust:exact;}.as-stage--memo .em-page{border-radius:0!important;break-after:page;page-break-after:always;}.as-stage--memo .em-page:last-child{break-after:auto;page-break-after:auto;}}

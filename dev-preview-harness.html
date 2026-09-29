@@ -1,9 +1,23 @@
 <!doctype html>
-<html lang="de"><head><meta charset="utf-8"><title>Fragebogen Harness</title></head>
+<html lang="de"><head><meta charset="utf-8"><title>Fragebogen Harness</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></head>
 <body><button id="li">LinkedIn</button> <button id="me">Ansprache</button> <button id="ms">Manuelles Signal</button>
 <script type="module">
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-11";
-import { openManualSignal } from "./manual-signal.js?v=20260929-11";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-12";
+import { openManualSignal } from "./manual-signal.js?v=20260929-12";
+import { MEMO_EXAMPLE } from "./memo-example.js";
+// Ein fertiges Memo fuer den Bearbeiten-Schritt, gebaut aus dem Referenzmemo.
+const beispielMemo = () => {
+  const h = MEMO_EXAMPLE.html;
+  const b = MEMO_EXAMPLE.images;
+  return {
+    ...Object.fromEntries(Object.entries(h).filter(([k]) => !/^(kpi|bm|pot)\d/.test(k) && k !== "sources")),
+    kpis: [1, 2, 3, 4].map((i) => ({ value: h[`kpi${i}_value`], label: h[`kpi${i}_label`], source: h[`kpi${i}_source`] })),
+    benchmarks: [1, 2, 3].map((i) => ({ name: h[`bm${i}_name`], title: h[`bm${i}_title`], text: h[`bm${i}_text`], tag: h[`bm${i}_tag`], image: { ...b[`benchmarks.${i - 1}`], fit: "contain" } })),
+    potentials: [1, 2, 3].map((i) => ({ label: h[`pot${i}_label`], title: h[`pot${i}_title`], finding: h[`pot${i}_finding`], potential: h[`pot${i}_potential`], image: b[`potentials.${i - 1}`] })),
+    cover: b.cover, insight: b.insight, quote_portrait: b.quote_portrait, contact_portrait: b.contact_portrait,
+    sources: String(h.sources || "").split(" · "),
+  };
+};
 const signal = { headline_de:"Handel baut Eigenmarken aus", why_de:"Anteil steigt.", company:"Testfirma AG",
   signal_label:"Markenstrategie", signal_id:"marken_strategie", roots_offering:"Markenstrategie", topics:["marken_strategie"],
   article:{ title_de:"Handel baut Eigenmarken aus", id:"00000000-0000-0000-0000-000000000001" } };
@@ -11,6 +25,8 @@ window.tone = "Kurze Sätze.";
 window.vorlagen = [];
 const callApi = async (a, payload) => {
   if (a === "list_assets") return { assets: [] };
+  if (a === "get_asset") return { asset: { id: payload.asset_id, status: "done", answers: {}, payload: beispielMemo(), edited_html: window.gespeichert || "" } };
+  if (a === "save_asset") { window.gespeichert = payload.edited_html; return { ok: true, asset: { id: payload.asset_id } }; }
   if (a === "list_known_companies") return { companies: [
     { name: "Penny", aliases: ["Penny"], tier1: true, has_profile: true },
     { name: "Danone", aliases: ["Danone", "Alpro", "Volvic"], tier1: true, has_profile: true },
@@ -66,6 +82,7 @@ const callApi = async (a, payload) => {
   throw new Error("stub " + a);
 };
 window.oeffne = (kind="linkedin") => { closeAssetStudio(); openAssetStudio({ kind, articleId:"00000000-0000-0000-0000-000000000001", signal, callApi, openSettingsPanel:(p)=>{window.panel=p;} }); };
+window.oeffneMemo = () => { closeAssetStudio(); openAssetStudio({ kind: "memo", assetId: "demo-memo", signal, callApi, openSettingsPanel:(p)=>{window.panel=p;} }); };
 document.getElementById("li").onclick = () => window.oeffne("linkedin");
 document.getElementById("me").onclick = () => window.oeffne("memo");
 document.getElementById("ms").onclick = () => openManualSignal({ callApi, openSettingsPanel:(p)=>{window.panel=p;} });

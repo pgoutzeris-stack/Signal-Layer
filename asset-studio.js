@@ -516,6 +516,166 @@ const STAGE_CSS = `
 
 // Alles unter #as-overlay, damit die Regeln nicht in die App streuen. Die
 // Farben kommen aus den App-Variablen, damit der dunkle Modus mitgeht.
+const FREI_CSS = `
+/* Bildfenster */
+#as-overlay .as-crop:not([hidden]) .as-crop-card{animation:as-dialog-rein .24s cubic-bezier(.2,.8,.2,1);}
+@keyframes as-dialog-rein{from{opacity:0; transform:translateY(10px) scale(.98);} to{opacity:1; transform:none;}}
+#as-overlay .as-bild-card{width:min(720px,100%); gap:16px;}
+#as-overlay .as-bild-kopf{display:flex; align-items:flex-start; justify-content:space-between; gap:12px;}
+#as-overlay .as-bild-meta{margin:3px 0 0; font-size:12px; color:#94a3b8; font-variant-numeric:tabular-nums;}
+#as-overlay .as-bild-x{
+  width:34px; height:34px; flex:0 0 auto; border:0; border-radius:10px; background:#f1f5f9; color:#475569;
+  display:grid; place-items:center; transition:background .15s ease, color .15s ease, transform .2s cubic-bezier(.2,.8,.2,1);
+}
+#as-overlay .as-bild-x:hover{background:#e2e8f0; color:#0f172a; transform:rotate(90deg);}
+#as-overlay .as-crop-drop-ico{
+  width:52px; height:52px; border-radius:999px; display:grid; place-items:center; background:#fff; color:#206efb;
+  box-shadow:0 0 0 1px rgba(32,110,251,.16), 0 8px 20px rgba(32,110,251,.16);
+  transition:transform .25s cubic-bezier(.2,.8,.2,1);
+}
+#as-overlay .as-crop-drop .as-crop-drop-ico i{font-size:18px; color:#206efb;}
+#as-overlay .as-crop-drop.is-over .as-crop-drop-ico{transform:translateY(-3px) scale(1.06);}
+#as-overlay .as-crop-frame{margin:0 auto;}
+#as-overlay .as-crop-frame.is-contain{background:#f7f9fc; cursor:default;}
+#as-overlay .as-crop-raster{
+  position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity .2s ease;
+  background:
+    linear-gradient(90deg, transparent calc(33.33% - .5px), rgba(255,255,255,.55) calc(33.33% - .5px), rgba(255,255,255,.55) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255,255,255,.55) calc(66.66% - .5px), rgba(255,255,255,.55) calc(66.66% + .5px), transparent calc(66.66% + .5px)),
+    linear-gradient(180deg, transparent calc(33.33% - .5px), rgba(255,255,255,.55) calc(33.33% - .5px), rgba(255,255,255,.55) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255,255,255,.55) calc(66.66% - .5px), rgba(255,255,255,.55) calc(66.66% + .5px), transparent calc(66.66% + .5px));
+}
+#as-overlay .as-crop-frame:not(.is-contain):active .as-crop-raster{opacity:1;}
+#as-overlay .as-crop-modes button{display:inline-flex; align-items:center; gap:6px; transition:border-color .15s ease, background .15s ease, color .15s ease;}
+#as-overlay .as-crop-modes button i{font-size:11px; opacity:.8;}
+#as-overlay .as-crop-modes button:hover{border-color:#206efb; color:#165fd9;}
+#as-overlay .as-crop-modes button[hidden]{display:none;}
+#as-overlay .as-crop-regler{display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:10px 18px;}
+#as-overlay .as-crop-zoom i{width:16px; color:#64748b; font-size:13px; text-align:center;}
+#as-overlay .as-crop-zoom output{min-width:44px; text-align:right; font-size:12px; font-weight:600; color:#475569; font-variant-numeric:tabular-nums;}
+#as-overlay .as-crop-zoom input[disabled]{opacity:.35;}
+#as-overlay .as-crop-zoom[hidden]{display:none;}
+#as-overlay .as-crop-actions{align-items:center; flex-wrap:wrap;}
+#as-overlay .as-crop-actions [hidden]{display:none;}
+#as-overlay .as-crop-luft{flex:1 1 auto;}
+#as-overlay .as-btn--weg:hover{border-color:#dc2626; color:#dc2626;}
+
+/* CI-Freigabe und Download-Bestaetigung */
+#as-overlay .as-ci-card{width:min(470px,100%);}
+#as-overlay .as-ci-zeichen{width:44px; height:44px; border-radius:14px; display:grid; place-items:center; background:#fff7ed; color:#c2410c; font-size:18px;}
+#as-overlay .as-ci-card p{margin:0; font-size:13.5px; line-height:1.55; color:#475569;}
+#as-overlay .as-ci-check{display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:12px; background:#f8fafc; font-size:13px; font-weight:600; color:#0f172a; cursor:pointer;}
+#as-overlay .as-ci-check input{width:16px; height:16px; margin:0; accent-color:#c2410c; cursor:pointer;}
+#as-overlay .as-btn--warn{background:#c2410c; border-color:#c2410c; color:#fff;}
+#as-overlay .as-btn--warn:hover{background:#9a3412; border-color:#9a3412; color:#fff;}
+#as-overlay .as-ci-badge{
+  position:absolute; left:14px; top:14px; z-index:9; display:inline-flex; align-items:center; gap:6px;
+  padding:5px 11px; border-radius:999px; background:#fff7ed; color:#9a3412;
+  font-size:11.5px; font-weight:700; letter-spacing:.01em; white-space:nowrap;
+  box-shadow:0 0 0 1px rgba(154,52,18,.18), 0 6px 16px rgba(15,23,42,.12);
+  animation:as-badge-rein .3s cubic-bezier(.2,.8,.2,1);
+}
+#as-overlay .as-ci-badge i{font-size:11px;}
+@keyframes as-badge-rein{from{opacity:0; transform:translateY(-4px) scale(.96);} to{opacity:1; transform:none;}}
+
+/* Freie Bearbeitung: Auswahl, Griffe, Hilfslinien */
+#as-overlay .as-frei-lage{position:absolute; inset:0; z-index:7; pointer-events:none;}
+#as-overlay .as-frei-hover{position:absolute; box-shadow:0 0 0 1px rgba(32,110,251,.5); border-radius:2px; pointer-events:none;}
+#as-overlay .as-frei-rahmen{position:absolute; box-shadow:0 0 0 1px #206efb; pointer-events:none;}
+#as-overlay .as-frei-rahmen.is-mehrere{box-shadow:0 0 0 1px rgba(32,110,251,.75);}
+#as-overlay .as-frei-einzel{position:absolute; box-shadow:0 0 0 1px rgba(32,110,251,.45); pointer-events:none;}
+#as-overlay .as-frei-griff{
+  position:absolute; width:9px; height:9px; margin:-4.5px 0 0 -4.5px; border-radius:2px; background:#fff;
+  box-shadow:0 0 0 1px #206efb, 0 1px 3px rgba(15,23,42,.25); pointer-events:auto;
+  transition:transform .12s ease;
+}
+#as-overlay .as-frei-griff:hover{transform:scale(1.35);}
+#as-overlay .as-frei-griff[data-griff="nw"]{left:0; top:0; cursor:nwse-resize;}
+#as-overlay .as-frei-griff[data-griff="n"]{left:50%; top:0; cursor:ns-resize;}
+#as-overlay .as-frei-griff[data-griff="ne"]{left:100%; top:0; cursor:nesw-resize;}
+#as-overlay .as-frei-griff[data-griff="e"]{left:100%; top:50%; cursor:ew-resize;}
+#as-overlay .as-frei-griff[data-griff="se"]{left:100%; top:100%; cursor:nwse-resize;}
+#as-overlay .as-frei-griff[data-griff="s"]{left:50%; top:100%; cursor:ns-resize;}
+#as-overlay .as-frei-griff[data-griff="sw"]{left:0; top:100%; cursor:nesw-resize;}
+#as-overlay .as-frei-griff[data-griff="w"]{left:0; top:50%; cursor:ew-resize;}
+#as-overlay .as-frei-rahmen.is-mehrere .as-frei-griff{display:none;}
+#as-overlay .as-frei-zug{
+  position:absolute; left:50%; top:-36px; width:28px; height:28px; margin-left:-14px; border:0; border-radius:999px;
+  background:#206efb; color:#fff; font-size:11px; display:grid; place-items:center; pointer-events:auto; cursor:move;
+  box-shadow:0 6px 16px rgba(32,110,251,.35); transition:transform .15s cubic-bezier(.2,.8,.2,1);
+}
+#as-overlay .as-frei-rahmen.is-unten .as-frei-zug{top:auto; bottom:-36px;}
+#as-overlay .as-frei-zug:hover{transform:scale(1.1);}
+#as-overlay .as-frei-linie{position:absolute; background:#f43f5e; pointer-events:none;}
+#as-overlay .as-frei-linie.is-v{width:1px;}
+#as-overlay .as-frei-linie.is-h{height:1px;}
+#as-overlay .as-frei-mass{
+  position:absolute; transform:translateX(-50%); padding:3px 8px; border-radius:999px; background:#0f172a; color:#fff;
+  font-size:11px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; pointer-events:none;
+}
+#as-overlay .as-frei-mass[hidden], #as-overlay .as-frei-rahmen[hidden], #as-overlay .as-frei-hover[hidden]{display:none;}
+#as-overlay .as-stagearea.is-frei [data-stage] *{cursor:move;}
+#as-overlay .as-stagearea.is-frei [data-stage] [data-field],
+#as-overlay .as-stagearea.is-frei [data-stage] [data-field] *,
+#as-overlay .as-stagearea.is-frei [data-stage] .as-frei-tippt,
+#as-overlay .as-stagearea.is-frei [data-stage] .as-frei-tippt *{cursor:text;}
+#as-overlay .as-stagearea.is-frei [data-stage] [data-as-chrome] button{cursor:pointer;}
+#as-overlay .as-frei-tippt{outline:1px solid #206efb; outline-offset:2px;}
+
+/* Kontextmenue */
+#as-overlay .as-km{
+  position:absolute; z-index:120; min-width:236px; max-width:300px; padding:6px; border-radius:14px;
+  background:rgba(255,255,255,.96); color:#0f172a; font-size:13px;
+  -webkit-backdrop-filter:blur(18px) saturate(1.6); backdrop-filter:blur(18px) saturate(1.6);
+  box-shadow:0 0 0 1px rgba(15,23,42,.08), 0 18px 48px rgba(15,23,42,.22), 0 2px 6px rgba(15,23,42,.08);
+  opacity:0; transform:scale(.96); transition:opacity .14s ease, transform .2s cubic-bezier(.2,.9,.25,1.15);
+}
+#as-overlay .as-km.is-in{opacity:1; transform:none;}
+#as-overlay .as-km-item{
+  display:flex; align-items:center; gap:10px; width:100%; border:0; margin:0; background:transparent;
+  padding:7px 10px; border-radius:9px; text-align:left; font:inherit; color:inherit; cursor:pointer;
+  transition:background .12s ease, color .12s ease, transform .12s ease;
+}
+#as-overlay .as-km-item:hover, #as-overlay .as-km-item:focus-visible, #as-overlay .as-km-item.is-offen{background:#eef4ff; color:#165fd9; outline:none;}
+#as-overlay .as-km-item:active{transform:scale(.985);}
+#as-overlay .as-km-item[disabled]{opacity:.42; cursor:default; background:transparent; color:inherit; transform:none;}
+#as-overlay .as-km-ico{width:18px; flex:0 0 18px; display:grid; place-items:center; color:#64748b; font-size:13px; transition:color .12s ease, transform .18s cubic-bezier(.2,.8,.2,1);}
+#as-overlay .as-km-item:hover .as-km-ico, #as-overlay .as-km-item.is-offen .as-km-ico{color:#206efb; transform:scale(1.1);}
+#as-overlay .as-km-ico svg{width:15px; height:15px; display:block;}
+#as-overlay .as-km-label{flex:1 1 auto; white-space:nowrap;}
+#as-overlay .as-km-kurz{font:600 11px/1 'Circular Std', system-ui, sans-serif; color:#94a3b8; letter-spacing:.02em;}
+#as-overlay .as-km-pfeil{font-size:10px; color:#94a3b8;}
+#as-overlay .as-km-item.is-gefahr{color:#b91c1c;}
+#as-overlay .as-km-item.is-gefahr .as-km-ico{color:#dc2626;}
+#as-overlay .as-km-item.is-gefahr:hover{background:#fef2f2; color:#991b1b;}
+#as-overlay .as-km-trenner{height:1px; margin:5px 8px; background:rgba(15,23,42,.08);}
+#as-overlay .as-km-titel{padding:8px 10px 4px; font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#94a3b8;}
+#as-overlay .as-km-farben{display:grid; grid-template-columns:repeat(7, 24px); gap:6px; padding:4px 10px 8px;}
+#as-overlay .as-km-farbe{
+  width:24px; height:24px; padding:0; border:0; border-radius:999px; background:var(--f); cursor:pointer;
+  box-shadow:inset 0 0 0 1px rgba(15,23,42,.14); transition:transform .15s cubic-bezier(.2,.8,.2,1);
+}
+#as-overlay .as-km-farbe:hover{transform:scale(1.15);}
+#as-overlay .as-km-farbe.is-on{box-shadow:inset 0 0 0 1px rgba(15,23,42,.14), 0 0 0 2px #fff, 0 0 0 3px #206efb;}
+#as-overlay .as-km-eigene{
+  position:relative; width:24px; height:24px; border-radius:999px; display:grid; place-items:center; overflow:hidden; cursor:pointer;
+  background:conic-gradient(#ef4444, #f59e0b, #22c55e, #06b6d4, #6366f1, #ec4899, #ef4444); color:#fff; font-size:10px;
+  transition:transform .15s cubic-bezier(.2,.8,.2,1);
+}
+#as-overlay .as-km-eigene:hover{transform:scale(1.15);}
+#as-overlay .as-km-eigene input{position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; border:0; padding:0;}
+
+/* Ribbon: Anordnen und CI */
+#as-overlay .as-ribbon-frei{display:inline-flex; align-items:center; gap:2px; flex-wrap:wrap;}
+#as-overlay .as-ribbon button svg{width:16px; height:16px; display:block;}
+#as-overlay .as-ribbon button[disabled]{opacity:.35; cursor:default; background:transparent; box-shadow:none; color:#0f172a;}
+#as-overlay .as-ribbon .as-ribbon-ci{width:auto; padding:0 11px; display:inline-flex; gap:7px; font-size:12px; font-weight:700; color:#475569;}
+#as-overlay .as-ribbon .as-ribbon-ci.is-frei{background:#fff7ed; color:#c2410c;}
+#as-overlay .as-ribbon .as-ribbon-ci.is-frei:hover{background:#ffedd5; color:#9a3412; box-shadow:none;}
+@media (prefers-reduced-motion:reduce){
+  #as-overlay .as-km, #as-overlay .as-km-item, #as-overlay .as-km-ico, #as-overlay .as-frei-griff, #as-overlay .as-frei-zug{transition:none;}
+  #as-overlay .as-crop:not([hidden]) .as-crop-card, #as-overlay .as-ci-badge{animation:none;}
+}
+`;
+
 const CHROME_CSS = `
 #as-overlay{
   position:fixed; inset:0; z-index:12000;
@@ -1326,79 +1486,34 @@ const CHROME_CSS = `
 #as-overlay .as-fmt hr{width:1px; height:20px; border:0; background:var(--line,#e2e8f0); margin:0 3px;}
 #as-overlay .as-swatch{width:16px; height:16px; border-radius:999px; border:1px solid rgba(15,23,42,.18); display:block;}
 
-/* Bildslots: ein Bildsymbol steht immer da. Ueberfahren bewegt das Symbol,
-   ein Klick oeffnet die Werkzeuge. Nichts erscheint nur beim Ueberfahren. */
-#as-overlay [data-imgslot]:has(.as-img-ui.is-empty)::after{display:none;}
+/* Bildplaetze: ein kleiner Stift oben rechts, immer sichtbar. Er oeffnet das
+   Bildfenster. Die Groesse haelt er in jeder Zoomstufe (--as-inv). */
 #as-overlay .as-img-ui{
-  position:absolute; top:10px; right:10px; z-index:6;
-  display:flex; align-items:center; gap:6px;
+  position:absolute; top:calc(10px * var(--as-inv, 1)); right:calc(10px * var(--as-inv, 1)); z-index:6;
+  display:flex; pointer-events:auto;
 }
-#as-overlay .as-img-menu{
-  width:34px; height:34px; border:0; border-radius:999px; padding:0; cursor:pointer;
-  display:grid; place-items:center; font-size:14px; color:#0f172a;
-  background:rgba(255,255,255,.9);
+/* Oben rechts steht auf dem Titelbild das ROOTS-Logo; dort sitzt der Stift unten. */
+#as-overlay .as-stage--memo .em-cover-bg .as-img-ui{top:auto; bottom:calc(14px * var(--as-inv, 1)); right:calc(14px * var(--as-inv, 1));}
+#as-overlay .as-stage--memo .em-cover-bg .as-img-edit{transform-origin:bottom right;}
+#as-overlay .as-img-edit{
+  width:30px; height:30px; border:0; border-radius:999px; padding:0; cursor:pointer;
+  display:grid; place-items:center; font-size:12px; color:#0f172a;
+  background:rgba(255,255,255,.92);
   -webkit-backdrop-filter:blur(12px) saturate(1.4); backdrop-filter:blur(12px) saturate(1.4);
-  box-shadow:0 0 0 1px rgba(15,23,42,.08), 0 6px 18px rgba(15,23,42,.16);
-  transition:transform .22s cubic-bezier(.2,.8,.2,1), background .2s ease, color .2s ease, box-shadow .22s ease;
+  box-shadow:0 0 0 1px rgba(15,23,42,.08), 0 6px 16px rgba(15,23,42,.16);
+  transform:scale(var(--as-inv, 1)); transform-origin:top right;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1), background .18s ease, color .18s ease, box-shadow .22s ease;
 }
-#as-overlay .as-img-menu:hover{transform:scale(1.1); color:#206efb; box-shadow:0 0 0 1px rgba(32,110,251,.24), 0 10px 24px rgba(32,110,251,.26);}
-#as-overlay .as-img-menu:hover i,
-#as-overlay .as-img-ui.is-empty .as-img-pick:hover .as-img-pick-icon i{animation:as-bild-wink .55s cubic-bezier(.2,.8,.2,1);}
-#as-overlay .as-img-menu:active{transform:scale(.92);}
-#as-overlay .as-img-menu:focus-visible{outline:2px solid #206efb; outline-offset:2px;}
-#as-overlay .as-img-ui.is-open .as-img-menu{background:#206efb; color:#fff;}
-@keyframes as-bild-wink{0%{transform:rotate(0) scale(1);} 35%{transform:rotate(-12deg) scale(1.12);} 70%{transform:rotate(8deg) scale(1.04);} 100%{transform:rotate(0) scale(1);}}
-#as-overlay .as-img-panel{
-  display:flex; align-items:center; gap:4px; padding:4px;
-  border-radius:12px; background:rgba(255,255,255,.92);
-  -webkit-backdrop-filter:blur(12px) saturate(1.4); backdrop-filter:blur(12px) saturate(1.4);
-  box-shadow:0 0 0 1px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.14);
-  opacity:0; transform:translateX(8px) scale(.96); transform-origin:right center; pointer-events:none;
-  transition:opacity .18s ease, transform .22s cubic-bezier(.2,.8,.2,1);
-}
-#as-overlay .as-img-ui.is-open .as-img-panel{opacity:1; transform:none; pointer-events:auto;}
-#as-overlay .as-img-tools{display:contents;}
-#as-overlay .as-img-btn{
-  width:30px; height:30px; border:0; border-radius:8px; padding:0;
-  background:transparent; color:#0f172a; cursor:pointer;
-  display:grid; place-items:center; font-size:13px;
-  transition:background .15s ease, color .15s ease, transform .15s ease;
-}
-#as-overlay .as-img-btn:hover{background:rgba(32,110,251,.1); color:#206efb;}
-#as-overlay .as-img-btn:active{transform:scale(.92);}
-#as-overlay .as-img-btn:focus-visible{outline:2px solid #206efb; outline-offset:1px;}
-#as-overlay .as-img-btn.is-clear:hover{background:#fef2f2; color:#dc2626;}
-#as-overlay .as-img-value{min-width:36px; font-size:11px; font-weight:600; color:#475569; text-align:center; font-variant-numeric:tabular-nums;}
-#as-overlay .as-img-range{display:flex; align-items:center; gap:6px; padding:0 6px; font-size:12px; color:#475569;}
-#as-overlay .as-img-range input{width:64px; accent-color:#206efb;}
-#as-overlay .as-img-ui.is-filled .as-img-pick-icon{display:contents;}
-#as-overlay .as-img-ui.is-filled .as-img-pick{order:0;}
-
-/* Leer: keine Leiste, der Slot selbst nimmt den Klick. */
-#as-overlay .as-img-ui.is-empty{
-  inset:0; top:0; right:0; padding:0; border-radius:inherit; gap:0;
-  background:transparent; box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none;
-  opacity:1; transform:none; pointer-events:auto;
-}
-#as-overlay .as-img-ui.is-empty .as-img-pick{
-  width:100%; height:100%; border-radius:inherit;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
-  color:#206efb; background:transparent;
-}
-#as-overlay .as-img-ui.is-empty .as-img-pick:hover{background:rgba(32,110,251,.06);}
-#as-overlay .as-img-pick-icon{
-  width:48px; height:48px; border-radius:999px; display:grid; place-items:center;
-  background:#fff; font-size:18px;
-  box-shadow:0 0 0 1px rgba(32,110,251,.14), 0 6px 18px rgba(32,110,251,.14);
-  transition:transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease, background .2s ease, color .2s ease;
-}
-#as-overlay .as-img-ui.is-empty .as-img-pick:hover .as-img-pick-icon{
-  transform:translateY(-2px) scale(1.06); background:#206efb; color:#fff;
-  box-shadow:0 10px 26px rgba(32,110,251,.32);
-}
+#as-overlay .as-img-edit:hover{transform:scale(calc(var(--as-inv, 1) * 1.12)); background:#206efb; color:#fff; box-shadow:0 10px 24px rgba(32,110,251,.34);}
+#as-overlay .as-img-edit:hover i{animation:as-stift .5s cubic-bezier(.2,.8,.2,1);}
+#as-overlay .as-img-edit:active{transform:scale(calc(var(--as-inv, 1) * .92));}
+#as-overlay .as-img-edit:focus-visible{outline:2px solid #206efb; outline-offset:2px;}
+@keyframes as-stift{0%{transform:rotate(0);} 30%{transform:rotate(-18deg) translateY(-1px);} 65%{transform:rotate(9deg);} 100%{transform:rotate(0);}}
+#as-overlay .as-stagearea:not(.is-frei) [data-imgslot]:has(.as-img-ui.is-empty){cursor:pointer;}
+#as-overlay .as-stagearea:not(.is-frei) .as-picslot--tpl:has(.as-img-ui.is-empty):hover{background:#e3edff;}
 @media (prefers-reduced-motion:reduce){
-  #as-overlay .as-img-panel, #as-overlay .as-img-menu, #as-overlay .as-img-pick-icon{transition:none;}
-  #as-overlay .as-img-menu:hover i, #as-overlay .as-img-ui.is-empty .as-img-pick:hover .as-img-pick-icon i{animation:none;}
+  #as-overlay .as-img-edit{transition:none;}
+  #as-overlay .as-img-edit:hover i{animation:none;}
 }
 
 #as-overlay .as-hint{font-size:12px; line-height:1.5; color:var(--muted,#475569); margin:0;}
@@ -1732,12 +1847,16 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-11";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-12";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-11";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-12";
+import {
+  createFreiform, createKontextmenue, wendeAenderungenAn, bereinigeAenderungen, serialisiereAenderungen,
+  zaehleAenderungen, elementAmPfad, pfadVon, bildAus, istTextElement, FREI_FARBEN,
+} from "./asset-freiform.js?v=20260929-12";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-11";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-12";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1828,8 +1947,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ladeAbschnitt: "lesen",
     // Modell des laufenden Auftrags, fuer Ereignisse ohne eigenes Modellfeld.
     laufModell: "",
-    // Bildslot, dessen Werkzeuge gerade offen sind.
-    bildMenuOffen: "",
+    // Nach ausdruecklicher Bestaetigung: CI-Elemente sind frei bearbeitbar,
+    // das Dokument gilt als nicht CI-konform.
+    ciFrei: false,
     // Der Nutzer hat bestaetigt, mit leeren Memo-Feldern weiterzugehen.
     memoLueckenOk: false,
     ladeStart: 0,
@@ -1848,7 +1968,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   overlay.setAttribute("aria-label", isMemo ? "Ansprache" : "LinkedIn-Asset");
 
   const styleIsland = document.createElement("style");
-  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}\n${printCss(isMemo)}`;
+  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}\n${FREI_CSS}\n${printCss(isMemo)}`;
   overlay.appendChild(styleIsland);
 
   const shell = document.createElement("div");
@@ -1865,32 +1985,45 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   cropOverlay.className = "as-crop";
   cropOverlay.hidden = true;
   cropOverlay.innerHTML = `
-    <div class="as-crop-card">
-      <h3>Bild in den Platzhalter legen</h3>
-      <p class="as-hint" data-crop-hint>Zuerst Datei wählen, dann den Ausschnitt auf das exakte Format der Vorlage bringen.</p>
+    <div class="as-crop-card as-bild-card" role="dialog" aria-modal="true" aria-labelledby="as-bild-titel">
+      <header class="as-bild-kopf">
+        <div class="as-bild-kopftext">
+          <h3 id="as-bild-titel" data-crop-title>Bild bearbeiten</h3>
+          <p class="as-bild-meta" data-crop-hint></p>
+        </div>
+        <button type="button" class="as-bild-x" data-act="crop-cancel" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
+      </header>
       <div class="as-crop-drop" data-crop-drop>
-        <i class="fa-regular fa-image"></i>
+        <span class="as-crop-drop-ico"><i class="fa-solid fa-arrow-up-from-bracket"></i></span>
         <b>Bild hierher ziehen</b>
-        <span>oder</span>
         <button type="button" class="as-btn as-btn--primary" data-act="crop-browse">Datei auswählen</button>
       </div>
       <div class="as-crop-editor" data-crop-editor hidden>
-        <div class="as-crop-modes" data-crop-modes>
-          <button type="button" data-crop-mode="fill">Füllen</button>
-          <button type="button" data-crop-mode="top">Oben</button>
-          <button type="button" data-crop-mode="center" class="is-on">Mitte</button>
-          <button type="button" data-crop-mode="bottom">Unten</button>
-          <button type="button" data-crop-mode="smart">Intelligent</button>
-        </div>
         <div class="as-crop-frame" data-crop-frame>
           <img class="as-crop-img" data-crop-img alt="">
+          <span class="as-crop-raster" aria-hidden="true"></span>
         </div>
-        <label class="as-crop-zoom">Zoom <input type="range" data-crop-zoom min="100" max="280" step="1" value="100"></label>
+        <div class="as-crop-modes" data-crop-modes role="group" aria-label="Ausschnitt">
+          <button type="button" data-crop-mode="fill"><i class="fa-solid fa-expand"></i>Füllen</button>
+          <button type="button" data-crop-mode="contain" data-crop-einpassen><i class="fa-solid fa-compress"></i>Einpassen</button>
+          <button type="button" data-crop-mode="top"><i class="fa-solid fa-arrow-up"></i>Oben</button>
+          <button type="button" data-crop-mode="center" class="is-on"><i class="fa-solid fa-crosshairs"></i>Mitte</button>
+          <button type="button" data-crop-mode="bottom"><i class="fa-solid fa-arrow-down"></i>Unten</button>
+          <button type="button" data-crop-mode="smart"><i class="fa-solid fa-wand-magic-sparkles"></i>Intelligent</button>
+        </div>
+        <div class="as-crop-regler">
+          <label class="as-crop-zoom" title="Zoom"><i class="fa-solid fa-magnifying-glass-plus"></i><input type="range" data-crop-zoom min="100" max="250" step="1" value="100" aria-label="Zoom"><output data-crop-wert="zoom">100 %</output></label>
+          <label class="as-crop-zoom" title="Deckkraft"><i class="fa-solid fa-circle-half-stroke"></i><input type="range" data-crop-deckung min="20" max="100" step="5" value="100" aria-label="Deckkraft"><output data-crop-wert="deckung">100 %</output></label>
+          <label class="as-crop-zoom" title="Overlay" data-crop-overlayzeile hidden><i class="fa-solid fa-layer-group"></i><input type="range" data-crop-overlay min="0" max="100" step="5" value="100" aria-label="Overlay"><output data-crop-wert="overlay">100 %</output></label>
+        </div>
       </div>
-      <div class="as-crop-actions">
+      <footer class="as-crop-actions">
+        <button type="button" class="as-btn" data-act="crop-browse" data-crop-neu hidden><i class="fa-solid fa-arrow-up-from-bracket"></i>Neues Bild</button>
+        <button type="button" class="as-btn as-btn--weg" data-act="crop-remove" data-crop-weg hidden><i class="fa-regular fa-trash-can"></i>Entfernen</button>
+        <span class="as-crop-luft"></span>
         <button type="button" class="as-btn" data-act="crop-cancel">Abbrechen</button>
-        <button type="button" class="as-btn as-btn--primary" data-act="crop-ok" data-crop-ok disabled>Zuschneiden</button>
-      </div>
+        <button type="button" class="as-btn as-btn--primary" data-act="crop-ok" data-crop-ok disabled>Übernehmen</button>
+      </footer>
     </div>`;
   overlay.appendChild(cropOverlay);
 
@@ -1907,6 +2040,66 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </div>
     </div>`;
   overlay.appendChild(ownOverlay);
+
+  // Wer ein CI-Element anfasst, bestaetigt ausdruecklich. Danach ist alles frei,
+  // und das Dokument traegt sichtbar den Vermerk.
+  const ciOverlay = document.createElement("div");
+  ciOverlay.className = "as-crop as-ci";
+  ciOverlay.hidden = true;
+  ciOverlay.innerHTML = `
+    <div class="as-crop-card as-ci-card" role="alertdialog" aria-modal="true" aria-labelledby="as-ci-titel">
+      <span class="as-ci-zeichen" aria-hidden="true"><i class="fa-solid fa-lock"></i></span>
+      <h3 id="as-ci-titel">CI-Element bearbeiten?</h3>
+      <p>Logo, Farben, Linien und Layout sind durch die ROOTS CI festgelegt. Nach der Freigabe lässt sich jedes Element verschieben, skalieren, umfärben und ersetzen. Das Dokument ist dann als nicht CI-konform markiert.</p>
+      <label class="as-ci-check"><input type="checkbox" data-ci-check><span>Ich weiche bewusst von der CI ab</span></label>
+      <div class="as-own-actions">
+        <button type="button" class="as-btn" data-act="ci-abbrechen">Abbrechen</button>
+        <button type="button" class="as-btn as-btn--warn" data-act="ci-freigeben" data-ci-ok disabled><i class="fa-solid fa-lock-open"></i>Bearbeitung freigeben</button>
+      </div>
+    </div>`;
+  overlay.appendChild(ciOverlay);
+
+  const ciDlOverlay = document.createElement("div");
+  ciDlOverlay.className = "as-crop as-ci";
+  ciDlOverlay.hidden = true;
+  ciDlOverlay.innerHTML = `
+    <div class="as-crop-card as-ci-card" role="alertdialog" aria-modal="true" aria-labelledby="as-cidl-titel">
+      <span class="as-ci-zeichen" aria-hidden="true"><i class="fa-solid fa-triangle-exclamation"></i></span>
+      <h3 id="as-cidl-titel" data-cidl-titel>Nicht CI-konform herunterladen?</h3>
+      <p data-cidl-text></p>
+      <label class="as-ci-check"><input type="checkbox" data-cidl-check><span>Abweichungen geprüft</span></label>
+      <div class="as-own-actions">
+        <button type="button" class="as-btn" data-act="cidl-abbrechen">Abbrechen</button>
+        <button type="button" class="as-btn as-btn--warn" data-act="cidl-ok" data-cidl-ok disabled><i class="fa-solid fa-download"></i><span data-cidl-label>Trotzdem herunterladen</span></button>
+      </div>
+    </div>`;
+  overlay.appendChild(ciDlOverlay);
+
+  // Eigene Dateiauswahl fuer ersetzte Logos und Grafiken im freien Modus.
+  const freiDatei = document.createElement("input");
+  freiDatei.type = "file";
+  freiDatei.accept = "image/*";
+  freiDatei.className = "as-file";
+  overlay.appendChild(freiDatei);
+
+  const kontextmenue = createKontextmenue(overlay);
+  /** Was nach der Download-Bestaetigung laeuft: Herunterladen oder Drucken. */
+  let ciDlNach = null;
+  /** Was nach der CI-Freigabe laeuft, etwa das angeklickte Element waehlen. */
+  let ciNachFreigabe = null;
+  const freiVerlauf = [];
+  const freiZukunft = [];
+  const freiform = createFreiform({
+    modell: (stage) => modelByUid(stage.getAttribute("data-uid")),
+    merke: merkeFrei,
+    geaendert: freiGeaendert,
+    kontext: (event, el, stage) => zeigeKontextmenue(event, el, stage),
+    // A4 hat 794 Pixel Breite; im Memo zaehlen Millimeter.
+    massText: (w, h) => (isMemo
+      ? `${Math.round((w * 210) / MEMO_SEITE_PX.w)} × ${Math.round((h * 297) / MEMO_SEITE_PX.h)} mm`
+      : `${Math.round(w)} × ${Math.round(h)} px`),
+    saeubern: sanitizeFragment,
+  });
 
   const fsExit = document.createElement("button");
   fsExit.type = "button";
@@ -4050,6 +4243,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function adoptPayload(raw) {
     const data = raw && typeof raw === "object" ? raw : {};
     state.payload = data;
+    // Ein neuer Stand beginnt CI-konform; ein gespeicherter bringt seine
+    // Freigabe selbst mit (restoreMemoEdits).
+    state.ciFrei = false;
+    freiVerlauf.length = 0;
+    freiZukunft.length = 0;
     // Ein fertiger Entwurf beginnt auf Seite 1. Der Fragebogen blaettert die
     // Vorschau zur gerade bearbeiteten Seite; danach stand das neue Memo auf
     // der letzten Seite, weil die letzte Frage dort lag.
@@ -4156,28 +4354,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return String(model.imageHint || model.image_hint || "");
   }
 
-  /** Grenzen des Groessenreglers. Kleiner als der Ausschnitt liesse Raender. */
-  const BILD_ZOOM = { min: 1, max: 2.5, schritt: 0.1 };
-
   function bildWert(bild, feld, standard) {
     const wert = Number(bild?.[feld]);
     return Number.isFinite(wert) ? wert : standard;
-  }
-
-  /** Das Modell, an dem der Slot haengt: Memo oder die sichtbare Folie. */
-  function aktuellesModelFuer(key) {
-    if (isMemo || /^(benchmarks|potentials)\./.test(String(key || ""))) return state.memo;
-    return state.slides[state.prevIndex] || null;
-  }
-
-  function setzeBildWert(key, feld, wert) {
-    harvest();
-    const model = aktuellesModelFuer(key);
-    if (!model) return;
-    const bild = imageAt(model, key);
-    if (!bild.src) return;
-    setImageAt(model, key, { ...bild, [feld]: wert });
-    mountStages(state.step === "edit");
   }
 
   function setImageAt(model, key, image) {
@@ -4405,25 +4584,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function wrapImageSlots(html, model, editable = true) {
     const uiFor = (key) => {
       if (!editable) return "";
-      const bild = imageAt(model, key);
-      const hat = Boolean(bild.src);
-      const zoom = bildWert(bild, "zoom", 1);
-      const deckung = Math.round(bildWert(bild, "opacity", 1) * 100);
-      const overlay = Math.round(bildWert(bild, "overlay", 1) * 100);
-      // Ohne Bild bleibt es beim einen Knopf: Regler auf nichts sind Attrappen.
-      const offen = hat && state.bildMenuOffen === key;
-      return `<div class="as-img-ui${hat ? " is-filled" : " is-empty"}${offen ? " is-open" : ""}" data-as-chrome>
-      ${hat ? `<div class="as-img-panel"><div class="as-img-tools">
-        <button type="button" class="as-img-btn" data-act="img-crop" data-imgkey="${attr(key)}" aria-label="Zuschneiden" title="Zuschneiden"><i class="fa-solid fa-crop-simple"></i></button>
-        <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="-1" data-imgkey="${attr(key)}" aria-label="Kleiner" title="Kleiner"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
-        <span class="as-img-value">${Math.round(zoom * 100)}%</span>
-        <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="1" data-imgkey="${attr(key)}" aria-label="Größer" title="Größer"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
-        <label class="as-img-range" title="Transparenz"><i class="fa-solid fa-circle-half-stroke"></i><input type="range" min="20" max="100" step="5" value="${deckung}" data-imgrange="opacity" data-imgkey="${attr(key)}" aria-label="Transparenz"></label>
-        ${isMemo ? "" : `<label class="as-img-range" title="Overlay"><i class="fa-solid fa-layer-group"></i><input type="range" min="0" max="100" step="5" value="${overlay}" data-imgrange="overlay" data-imgkey="${attr(key)}" aria-label="Overlay"></label>`}
-      </div>` : ""}
-      <button type="button" class="as-img-btn as-img-pick" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><span class="as-img-pick-icon"><i class="fa-regular ${hat ? "fa-images" : "fa-image"}"></i></span></button>
-      ${hat ? `<button type="button" class="as-img-btn is-clear" data-act="img-clear" data-imgkey="${attr(key)}" aria-label="Bild entfernen" title="Bild entfernen"><i class="fa-solid fa-xmark"></i></button></div>
-      <button type="button" class="as-img-menu" data-act="img-menu" data-imgkey="${attr(key)}" aria-expanded="${offen ? "true" : "false"}" aria-label="Bild bearbeiten" title="Bild bearbeiten"><i class="fa-regular fa-image"></i></button>` : ""}
+      const hat = Boolean(imageAt(model, key).src);
+      // Ein Stift, ein Klick, ein Fenster: hochladen, zuschneiden, verschieben.
+      // Werkzeuge stehen im Fenster, nicht als Leiste auf dem Motiv.
+      return `<div class="as-img-ui${hat ? " is-filled" : " is-empty"}" data-as-chrome>
+      <button type="button" class="as-img-edit" data-act="img-edit" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild bearbeiten" : "Bild einfügen"}" title="${hat ? "Bild bearbeiten" : "Bild einfügen"}"><i class="fa-solid fa-pen"></i></button>
     </div>`;
     };
     if (html.includes("data-imgsrc")) {
@@ -4532,7 +4697,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // sie auf der Karte. box-sizing steht in der Vorlage auf border-box.
       const grund = /^(#[0-9a-f]{3,8}|rgb\([\d\s,]+\))$/i.test(String(img.bg || "")) ? img.bg : "var(--tint,#f7f9fc)";
       const flaeche = fit === "contain" ? `;background:${grund};padding:6mm` : "";
-      return tag.replace(/ style="[^"]*"/, "").replace(/>$/, ` style="object-position:${attr(img.pos || "50% 50%")};object-fit:${fit}${flaeche};transform:scale(${zoom});opacity:${opacity}">`);
+      // Gezoomt wird um den Fokuspunkt, nicht um die Mitte. So zeigt das
+      // Dokument denselben Ausschnitt wie das Bildfenster.
+      const pos = attr(img.pos || "50% 50%");
+      return tag.replace(/ style="[^"]*"/, "").replace(/>$/, ` style="object-position:${pos};object-fit:${fit}${flaeche};transform:scale(${zoom});transform-origin:${pos};opacity:${opacity}">`);
     });
     html = wrapImageSlots(html, memo, editable);
     if (editable) {
@@ -4607,6 +4775,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         node.removeAttribute("spellcheck");
       });
     }
+    // Freie Aenderungen stehen vor jeder Messung: die Pruefung auf Ueberlauf
+    // sieht das Dokument so, wie es herauskommt.
+    wendeFreiAenderungenAn(area);
     if (isMemo) {
       area.querySelectorAll("[data-field]").forEach((node) => {
         const style = state.memo?.fieldStyles?.[node.dataset.field];
@@ -4620,6 +4791,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     passeSlideTexteAn(area);
     fitStages();
+    zeigeCiBadge(area);
+    if (editable && state.ciFrei) freiform.aktiviere(area);
+    else freiform.deaktiviere();
     requestAnimationFrame(meldeUeberlauf);
   }
 
@@ -5278,6 +5452,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       stage.style.setProperty("--as-inv", String(1 / scale));
     });
     area.classList.toggle("is-zoom", (Number(state.viewZoom) || 1) > 1.01);
+    if (freiform.aktiv()) freiform.zeichne();
   }
 
   /* ── Bearbeiteten Zustand aus dem DOM zurücklesen ── */
@@ -5340,8 +5515,26 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (src && !/^(data:image\/(?:png|jpeg|webp|gif|svg\+xml)[;,]|https?:\/\/)/i.test(src)) return;
       setImageAt(state.memo, node.dataset.imgkey, { src, pos: node.style.objectPosition || "50% 50%",
         zoom: Number(/scale\(([\d.]+)\)/.exec(node.style.transform)?.[1]) || 1,
-        opacity: Number(node.style.opacity) || 1 });
+        opacity: Number(node.style.opacity) || 1,
+        ...(node.style.objectFit === "contain" ? { fit: "contain" } : {}) });
     });
+    // Freie Aenderungen: die Liste steht an der Buehne, ersetzte Bilder im
+    // Dokument selbst. Eine kaputte Liste laesst das Memo CI-konform.
+    const buehne = saved.querySelector(".as-stage--memo[data-as-frei]");
+    if (buehne) {
+      try {
+        const daten = JSON.parse(buehne.getAttribute("data-as-frei") || "{}");
+        const liste = bereinigeAenderungen(daten?.el);
+        for (const [pfad, a] of Object.entries(liste)) {
+          if (a.bild !== true) continue;
+          const bild = bildAus(elementAmPfad(buehne, pfad));
+          if (/^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,/i.test(bild)) a.bild = bild;
+          else delete a.bild;
+        }
+        state.memo.frei = liste;
+        state.ciFrei = Boolean(daten?.an) || Object.keys(liste).length > 0;
+      } catch (_) { /* ohne gueltige Liste keine freien Aenderungen */ }
+    }
   }
 
   function syncMemoLinks(root) {
@@ -5434,9 +5627,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <button type="button" data-fmt="list" title="Aufzählung" aria-label="Aufzählung"><i class="fa-solid fa-list-ul"></i></button>
       <hr>
       <button type="button" data-fmt="undo" title="Rückgängig" aria-label="Rückgängig"><i class="fa-solid fa-rotate-left"></i></button>
-      <button type="button" data-fmt="redo" title="Wiederholen" aria-label="Wiederholen"><i class="fa-solid fa-rotate-right"></i></button>`;
+      <button type="button" data-fmt="redo" title="Wiederholen" aria-label="Wiederholen"><i class="fa-solid fa-rotate-right"></i></button>
+      <hr>
+      <span class="as-ribbon-frei" data-ribbon-frei role="group" aria-label="Anordnen"></span>`;
       ribbon.setAttribute("data-open", "1");
       bindFmtHost(ribbon);
+      aktualisiereRibbonFrei();
     }
     if (!fmtBar) {
       fmtBar = document.createElement("div");
@@ -5491,10 +5687,23 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function onFormat(event) {
+    const frei = event.target.closest("[data-frei-akt]");
+    if (frei) {
+      event.preventDefault();
+      if (!frei.disabled) ribbonFrei(frei);
+      return;
+    }
     const btn = event.target.closest("[data-fmt]");
     if (!btn || btn.tagName === "SELECT") return;
     event.preventDefault();
     const cmd = btn.getAttribute("data-fmt");
+    // Ohne Schreibmarke im Text gilt Rueckgaengig den freien Aenderungen.
+    if ((cmd === "undo" || cmd === "redo") && !document.activeElement?.isContentEditable
+      && (cmd === "undo" ? freiVerlauf.length : freiZukunft.length)) {
+      if (cmd === "undo") freiRueckgaengig();
+      else freiWiederholen();
+      return;
+    }
     const target = currentField();
     if (!target) return;
     try { document.execCommand("styleWithCSS", false, true); } catch (_) { /* alte Browser kennen den Schalter nicht */ }
@@ -5538,30 +5747,75 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   const cropState = {
     uid: "", key: "", img: null, panX: 0.5, panY: 0.5, zoom: 1, mode: "center",
     dragging: false, lastX: 0, lastY: 0,
+    // Einpassung, Deckkraft und Overlay des Bildes; neu heisst: frisch hochgeladen.
+    fit: "cover", opacity: 1, overlay: 1, neu: false, geaendert: false, vorher: null,
   };
 
   function cropDropEl() { return cropOverlay.querySelector("[data-crop-drop]"); }
   function cropEditorEl() { return cropOverlay.querySelector("[data-crop-editor]"); }
   function cropOkEl() { return cropOverlay.querySelector("[data-crop-ok]"); }
 
+  function cropTitel(key) {
+    const name = bildName(key);
+    if (name === "image") return "Folienbild";
+    if (/_portrait$/.test(String(key || ""))) return "Porträt";
+    return name;
+  }
+
   function setCropHint(key) {
     const spec = cropSpecFor(key);
+    const titel = cropOverlay.querySelector("[data-crop-title]");
+    if (titel) titel.textContent = cropTitel(key);
     const hint = cropOverlay.querySelector("[data-crop-hint]");
     if (!hint) return spec;
-    hint.textContent = spec.mm && spec.mm.w < 200
-      ? `${spec.label}: ${spec.mm.w} × ${spec.mm.h} mm. Der Ausschnitt muss genau in diesen Platz.`
-      : `${spec.label}: ${spec.w} × ${spec.h} Pixel. Der Ausschnitt muss genau in diesen Platz.`;
+    hint.textContent = isMemo && spec.mm
+      ? `${String(spec.mm.w).replace(".", ",")} × ${String(spec.mm.h).replace(".", ",")} mm`
+      : `${spec.w} × ${spec.h} Pixel`;
     return spec;
   }
 
   function setCropModeButtons(mode) {
     cropOverlay.querySelectorAll("[data-crop-mode]").forEach((btn) => {
-      btn.classList.toggle("is-on", btn.getAttribute("data-crop-mode") === mode);
+      const name = btn.getAttribute("data-crop-mode");
+      btn.classList.toggle("is-on", name === "contain" ? cropState.fit === "contain" : name === mode && cropState.fit !== "contain");
     });
+    const einpassen = cropOverlay.querySelector("[data-crop-einpassen]");
+    if (einpassen) einpassen.hidden = !isMemo || cropState.uid === "form";
+    cropOverlay.querySelector("[data-crop-frame]")?.classList.toggle("is-contain", cropState.fit === "contain");
+    const zoom = cropOverlay.querySelector("[data-crop-zoom]");
+    if (zoom) zoom.disabled = cropState.fit === "contain";
+  }
+
+  function zeigeCropWerte() {
+    const setze = (name, wert) => {
+      const out = cropOverlay.querySelector(`[data-crop-wert="${name}"]`);
+      if (out) out.textContent = `${Math.round(wert * 100)} %`;
+    };
+    const zoom = cropOverlay.querySelector("[data-crop-zoom]");
+    if (zoom) zoom.value = String(Math.round(cropState.zoom * 100));
+    const deckung = cropOverlay.querySelector("[data-crop-deckung]");
+    if (deckung) deckung.value = String(Math.round(cropState.opacity * 100));
+    const overlayRegler = cropOverlay.querySelector("[data-crop-overlay]");
+    if (overlayRegler) overlayRegler.value = String(Math.round(cropState.overlay * 100));
+    setze("zoom", cropState.zoom);
+    setze("deckung", cropState.opacity);
+    setze("overlay", cropState.overlay);
   }
 
   function applyCropMode(mode) {
     const name = String(mode || "center");
+    cropState.geaendert = true;
+    if (name === "contain") {
+      cropState.fit = "contain";
+      cropState.zoom = 1;
+      cropState.panX = 0.5;
+      cropState.panY = 0.5;
+      setCropModeButtons(cropState.mode);
+      zeigeCropWerte();
+      layoutCropPreview();
+      return;
+    }
+    cropState.fit = "cover";
     cropState.mode = name;
     setCropModeButtons(name);
     if (!cropState.img) return;
@@ -5581,8 +5835,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       cropState.panY = 0.5;
     }
     if (name === "fill") cropState.zoom = 1;
-    const zoom = cropOverlay.querySelector("[data-crop-zoom]");
-    if (zoom && name === "fill") zoom.value = "100";
+    zeigeCropWerte();
     layoutCropPreview();
   }
 
@@ -5593,6 +5846,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (drop) drop.hidden = Boolean(on);
     if (editor) editor.hidden = !on;
     if (ok) ok.disabled = !on;
+    const vorhanden = Boolean(cropState.vorher?.src) && cropState.uid !== "form";
+    const neu = cropOverlay.querySelector("[data-crop-neu]");
+    if (neu) neu.hidden = !on;
+    const weg = cropOverlay.querySelector("[data-crop-weg]");
+    if (weg) weg.hidden = !vorhanden;
+    const overlayZeile = cropOverlay.querySelector("[data-crop-overlayzeile]");
+    if (overlayZeile) overlayZeile.hidden = isMemo || cropState.uid === "form" || cropState.key !== "image";
+  }
+
+  /** "37% 60%" in Anteile; alles andere gilt als Mitte. */
+  function posAnteile(pos) {
+    const [x, y] = String(pos || "").split(/\s+/).map((teil) => Number.parseFloat(teil));
+    const anteil = (wert) => (Number.isFinite(wert) ? Math.min(1, Math.max(0, wert / 100)) : 0.5);
+    return { panX: anteil(x), panY: anteil(y) };
+  }
+
+  /** Rahmen im Format des Platzes; ein Hochformat wird schmaler statt hoeher als das Fenster. */
+  function setzeCropRahmen(spec) {
+    const frame = cropFrameEl();
+    if (!frame) return;
+    const hoehe = Math.min(460, Math.round((window.innerHeight || 900) * 0.52));
+    frame.style.aspectRatio = `${spec.w} / ${spec.h}`;
+    frame.style.maxWidth = `${Math.round((hoehe * spec.w) / spec.h)}px`;
   }
 
   function openCropSheet(uid, key) {
@@ -5603,15 +5879,31 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     cropState.panY = 0.5;
     cropState.zoom = 1;
     cropState.mode = "center";
+    cropState.fit = "cover";
+    cropState.opacity = 1;
+    cropState.overlay = 1;
+    cropState.neu = false;
+    cropState.geaendert = false;
     state.pendingImage = `${uid}::${cropState.key}`;
     const spec = setCropHint(cropState.key);
-    const frame = cropFrameEl();
-    if (frame) frame.style.aspectRatio = `${spec.w} / ${spec.h}`;
-    setCropModeButtons("center");
+    setzeCropRahmen(spec);
+    const model = uid === "form" ? null : modelByUid(uid);
+    const current = model ? imageAt(model, cropState.key) : null;
+    cropState.vorher = current?.src ? { ...current } : null;
+    if (current?.src) {
+      // Das Fenster zeigt, was im Dokument steht: Ausschnitt, Zoom, Deckkraft.
+      Object.assign(cropState, posAnteile(current.pos));
+      cropState.zoom = Math.min(2.5, Math.max(1, bildWert(current, "zoom", 1)));
+      cropState.opacity = Math.min(1, Math.max(0.2, bildWert(current, "opacity", 1)));
+      cropState.overlay = Math.min(1, Math.max(0, bildWert(current, "overlay", 1)));
+      cropState.fit = current.fit === "contain" ? "contain" : "cover";
+      cropState.mode = "";
+    }
+    setCropModeButtons(cropState.mode);
+    zeigeCropWerte();
     showCropEditor(false);
     cropOverlay.hidden = false;
     if (fmtBar) fmtBar.setAttribute("data-open", "0");
-    const current = isMemo && uid !== "form" ? imageAt(state.memo, cropState.key) : null;
     if (current?.src) {
       const openedKey = cropState.key;
       void loadHtmlImage(current.src).then((img) => {
@@ -5620,7 +5912,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         cropImgEl().src = img.src;
         showCropEditor(true);
         requestAnimationFrame(layoutCropPreview);
-      }).catch(() => { /* A replacement can still be uploaded. */ });
+      }).catch(() => { /* Ersetzen geht trotzdem. */ });
     }
   }
 
@@ -5793,6 +6085,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!frame || !el || !img) return;
     const fw = frame.clientWidth || 1;
     const fh = frame.clientHeight || 1;
+    el.style.opacity = String(cropState.opacity);
+    if (cropState.fit === "contain") {
+      const passt = Math.min(fw / img.naturalWidth, fh / img.naturalHeight) * 0.86;
+      el.style.width = `${img.naturalWidth * passt}px`;
+      el.style.height = `${img.naturalHeight * passt}px`;
+      el.style.transform = "translate(-50%, -50%)";
+      return;
+    }
     const cover = Math.max(fw / img.naturalWidth, fh / img.naturalHeight) * cropState.zoom;
     const dw = img.naturalWidth * cover;
     const dh = img.naturalHeight * cover;
@@ -5806,7 +6106,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function openCropper(file, uid, key) {
-    if (uid) cropState.uid = uid;
+    if (uid && uid !== cropState.uid) {
+      cropState.uid = uid;
+      const model = uid === "form" ? null : modelByUid(uid);
+      const current = model ? imageAt(model, key || cropState.key) : null;
+      cropState.vorher = current?.src ? { ...current } : null;
+    }
     if (key) cropState.key = key;
     state.pendingImage = `${cropState.uid}::${cropState.key}`;
     const spec = setCropHint(cropState.key);
@@ -5821,13 +6126,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         cropState.panY = 0.5;
         cropState.zoom = 1;
         cropState.mode = "center";
-        const frame = cropFrameEl();
-        if (frame) frame.style.aspectRatio = `${spec.w} / ${spec.h}`;
-        const zoom = cropOverlay.querySelector("[data-crop-zoom]");
-        if (zoom) zoom.value = "100";
+        cropState.neu = true;
+        cropState.geaendert = true;
+        // Ein Logo gehoert eingepasst, ein Foto gefuellt.
+        cropState.fit = isMemo && cropState.uid !== "form" && /^benchmarks\./.test(cropState.key) ? "contain" : "cover";
+        setzeCropRahmen(spec);
         const el = cropImgEl();
         if (el) el.src = img.src;
         setCropModeButtons("center");
+        zeigeCropWerte();
         showCropEditor(true);
         cropOverlay.hidden = false;
         requestAnimationFrame(layoutCropPreview);
@@ -5837,19 +6144,54 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     reader.readAsDataURL(file);
   }
 
+  /**
+   * Ein hochgeladenes Bild fuers Memo: so gross, dass es den Platz mit
+   * Reserve zum Zoomen deckt, nicht beschnitten. Ausschnitt und Zoom stehen
+   * am Bild; spaeter verschieben verliert nichts.
+   */
+  function bereiteBildVor(img, spec) {
+    if (isSvgDataUri(img.src)) return img.src;
+    const nw = img.naturalWidth || img.width;
+    const nh = img.naturalHeight || img.height;
+    if (!nw || !nh) return "";
+    const f = Math.min(1, Math.max(spec.w / nw, spec.h / nh) * 1.25);
+    const w = Math.max(1, Math.round(nw * f));
+    const h = Math.max(1, Math.round(nh * f));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+    ctx.drawImage(img, 0, 0, w, h);
+    let durchsichtig = false;
+    try {
+      const probe = ctx.getImageData(0, 0, w, h).data;
+      const schritt = Math.max(4, Math.floor(probe.length / 4 / 4000) * 4);
+      for (let i = 3; i < probe.length; i += schritt) {
+        if (probe[i] < 250) { durchsichtig = true; break; }
+      }
+    } catch (_) { /* fremde Quelle: dann als JPEG */ }
+    try {
+      return durchsichtig ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.8);
+    } catch (_) {
+      return "";
+    }
+  }
+
   function confirmCrop() {
     if (!cropState.img || !cropState.uid) {
       cropOverlay.hidden = true;
       return;
     }
     const spec = cropSpecFor(cropState.key);
-    const src = coverCrop(cropState.img, spec.w, spec.h, cropState.panX, cropState.panY, cropState.zoom);
-    cropOverlay.hidden = true;
-    if (!src) {
-      showSaveHint("Der Ausschnitt konnte nicht erzeugt werden.");
-      return;
-    }
+    const pos = `${Math.round(cropState.panX * 1000) / 10}% ${Math.round(cropState.panY * 1000) / 10}%`;
     if (cropState.uid === "form") {
+      const src = coverCrop(cropState.img, spec.w, spec.h, cropState.panX, cropState.panY, cropState.zoom);
+      cropOverlay.hidden = true;
+      if (!src) {
+        showSaveHint("Der Ausschnitt konnte nicht erzeugt werden.");
+        return;
+      }
       state.formImages[cropState.key] = { src, pos: "50% 50%" };
       if (state.memo) setImageAt(state.memo, cropState.key, state.formImages[cropState.key]);
       if (state.step === "form") zeichneForm();
@@ -5858,7 +6200,55 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     harvest();
     const model = modelByUid(cropState.uid);
-    setImageAt(model, cropState.key, { src, pos: "50% 50%" });
+    const vorher = cropState.vorher || {};
+    if (isMemo) {
+      // Im Memo bleibt das Bild ganz; Ausschnitt, Zoom und Einpassung sind
+      // Werte am Bild. Nur ein neues Bild wird aufbereitet.
+      const src = cropState.neu ? bereiteBildVor(cropState.img, spec) : vorher.src;
+      cropOverlay.hidden = true;
+      if (!src) {
+        showSaveHint("Das Bild konnte nicht übernommen werden.");
+        return;
+      }
+      const bild = {
+        ...(cropState.neu ? {} : vorher),
+        src,
+        pos: cropState.fit === "contain" ? "50% 50%" : pos,
+        zoom: cropState.fit === "contain" ? 1 : Math.round(cropState.zoom * 100) / 100,
+        opacity: cropState.opacity,
+        fit: cropState.fit,
+      };
+      if (cropState.fit !== "contain") delete bild.bg;
+      setImageAt(model, cropState.key, bild);
+      mountStages(state.step === "edit");
+      return;
+    }
+    // Folien: das Bild wird auf den Platz zugeschnitten, sobald sich Ausschnitt
+    // oder Datei aendern. Deckkraft und Overlay bleiben Werte am Bild.
+    const src = cropState.geaendert || !vorher.src
+      ? coverCrop(cropState.img, spec.w, spec.h, cropState.panX, cropState.panY, cropState.zoom)
+      : vorher.src;
+    cropOverlay.hidden = true;
+    if (!src) {
+      showSaveHint("Der Ausschnitt konnte nicht erzeugt werden.");
+      return;
+    }
+    setImageAt(model, cropState.key, {
+      ...(cropState.neu ? {} : vorher),
+      src,
+      pos: "50% 50%",
+      opacity: cropState.opacity,
+      overlay: cropState.overlay,
+    });
+    mountStages(state.step === "edit");
+  }
+
+  function entferneCropBild() {
+    if (!cropState.uid || cropState.uid === "form") return;
+    harvest();
+    setImageAt(modelByUid(cropState.uid), cropState.key, { src: "", pos: "50% 50%" });
+    cropOverlay.hidden = true;
+    showCropEditor(false);
     mountStages(state.step === "edit");
   }
 
@@ -5910,7 +6300,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     event.target.setPointerCapture?.(event.pointerId);
   });
   cropOverlay.addEventListener("pointermove", (event) => {
-    if (!cropState.dragging || !cropState.img) return;
+    if (!cropState.dragging || !cropState.img || cropState.fit === "contain") return;
     const frame = cropFrameEl();
     if (!frame) return;
     const dx = event.clientX - cropState.lastX;
@@ -5924,13 +6314,25 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const maxY = Math.max(1, cropState.img.naturalHeight * cover - fh);
     cropState.panX = Math.min(1, Math.max(0, cropState.panX - dx / maxX));
     cropState.panY = Math.min(1, Math.max(0, cropState.panY - dy / maxY));
+    cropState.geaendert = true;
+    if (cropState.mode) { cropState.mode = ""; setCropModeButtons(""); }
     layoutCropPreview();
   });
   cropOverlay.addEventListener("pointerup", () => { cropState.dragging = false; });
   cropOverlay.addEventListener("pointercancel", () => { cropState.dragging = false; });
   cropOverlay.addEventListener("input", (event) => {
-    if (event.target?.getAttribute("data-crop-zoom") == null) return;
-    cropState.zoom = Math.max(1, Number(event.target.value || 100) / 100);
+    const ziel = event.target;
+    if (ziel?.hasAttribute?.("data-crop-zoom")) {
+      cropState.zoom = Math.max(1, Number(ziel.value || 100) / 100);
+      cropState.geaendert = true;
+    } else if (ziel?.hasAttribute?.("data-crop-deckung")) {
+      cropState.opacity = Math.min(1, Math.max(0.2, Number(ziel.value || 100) / 100));
+    } else if (ziel?.hasAttribute?.("data-crop-overlay")) {
+      cropState.overlay = Math.min(1, Math.max(0, Number(ziel.value || 100) / 100));
+    } else {
+      return;
+    }
+    zeigeCropWerte();
     layoutCropPreview();
   });
   cropOverlay.addEventListener("dragover", (event) => {
@@ -5949,6 +6351,415 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!file || !cropState.uid) return;
     openCropper(file, cropState.uid, cropState.key);
   });
+
+  /* ── CI-Sperre und freie Bearbeitung ── */
+
+  const MAC = /Mac|iPhone|iPad/.test(String(navigator.platform || navigator.userAgent || ""));
+  const kurz = (taste, shift = false) => `${shift ? "⇧" : ""}${MAC ? "⌘" : "Strg+"}${taste}`;
+
+  /** Kleine Zeichen im Stil der Ausrichten-Knoepfe aus PowerPoint. */
+  const AUSRICHT_SVG = {
+    links: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="1.6" height="14" rx=".8"/><rect x="4" y="3" width="10" height="3.6" rx="1"/><rect x="4" y="9.4" width="6.5" height="3.6" rx="1"/></svg>',
+    "mitte-h": '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="7.2" y="1" width="1.6" height="14" rx=".8"/><rect x="2" y="3" width="12" height="3.6" rx="1"/><rect x="4.25" y="9.4" width="7.5" height="3.6" rx="1"/></svg>',
+    rechts: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="13.4" y="1" width="1.6" height="14" rx=".8"/><rect x="2" y="3" width="10" height="3.6" rx="1"/><rect x="5.5" y="9.4" width="6.5" height="3.6" rx="1"/></svg>',
+    oben: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="14" height="1.6" rx=".8"/><rect x="3" y="4" width="3.6" height="10" rx="1"/><rect x="9.4" y="4" width="3.6" height="6.5" rx="1"/></svg>',
+    "mitte-v": '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="7.2" width="14" height="1.6" rx=".8"/><rect x="3" y="2" width="3.6" height="12" rx="1"/><rect x="9.4" y="4.25" width="3.6" height="7.5" rx="1"/></svg>',
+    unten: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="13.4" width="14" height="1.6" rx=".8"/><rect x="3" y="2" width="3.6" height="10" rx="1"/><rect x="9.4" y="5.5" width="3.6" height="6.5" rx="1"/></svg>',
+    "verteilen-x": '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="1.4" height="14" rx=".7"/><rect x="13.6" y="1" width="1.4" height="14" rx=".7"/><rect x="6" y="4" width="4" height="8" rx="1"/></svg>',
+    "verteilen-y": '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="14" height="1.4" rx=".7"/><rect x="1" y="13.6" width="14" height="1.4" rx=".7"/><rect x="4" y="6" width="8" height="4" rx="1"/></svg>',
+  };
+
+  function freiModelle() {
+    return isMemo ? (state.memo ? [state.memo] : []) : state.slides;
+  }
+
+  function freiAnzahl() {
+    return zaehleAenderungen(freiModelle().map((model) => model.frei));
+  }
+
+  function freiStand() {
+    return JSON.stringify({
+      an: state.ciFrei,
+      listen: Object.fromEntries(freiModelle().map((model) => [model.uid, model.frei || {}])),
+    });
+  }
+
+  function merkeFrei() {
+    freiVerlauf.push(freiStand());
+    if (freiVerlauf.length > 80) freiVerlauf.shift();
+    freiZukunft.length = 0;
+  }
+
+  function setzeFreiStand(json) {
+    let stand;
+    try { stand = JSON.parse(json); } catch (_) { return; }
+    const gemerkt = freiform.merkeAuswahl();
+    harvest();
+    state.ciFrei = Boolean(stand?.an);
+    freiModelle().forEach((model) => { model.frei = stand?.listen?.[model.uid] || {}; });
+    mountStages(state.step === "edit");
+    freiform.stelleAuswahlHer(gemerkt);
+    aktualisiereRibbonFrei();
+  }
+
+  function freiRueckgaengig() {
+    if (!freiVerlauf.length) return false;
+    freiZukunft.push(freiStand());
+    setzeFreiStand(freiVerlauf.pop());
+    return true;
+  }
+
+  function freiWiederholen() {
+    if (!freiZukunft.length) return false;
+    freiVerlauf.push(freiStand());
+    setzeFreiStand(freiZukunft.pop());
+    return true;
+  }
+
+  function freiGeaendert(art) {
+    if (art === "neu") {
+      const gemerkt = freiform.merkeAuswahl();
+      harvest();
+      mountStages(state.step === "edit");
+      freiform.stelleAuswahlHer(gemerkt);
+    }
+    if (art !== "auswahl") zeigeCiBadge(shell.querySelector("[data-stagearea]"));
+    aktualisiereRibbonFrei();
+  }
+
+  /** Aenderungen auf die frisch gezeichneten Buehnen legen. */
+  function wendeFreiAenderungenAn(area) {
+    area?.querySelectorAll("[data-stage]").forEach((stage) => {
+      const model = modelByUid(stage.getAttribute("data-uid"));
+      if (model?.frei && Object.keys(model.frei).length) wendeAenderungenAn(stage, model.frei, { saeubern: sanitizeFragment });
+    });
+  }
+
+  function zeigeCiBadge(area) {
+    if (!area) return;
+    let badge = area.querySelector(":scope > .as-ci-badge");
+    if (!state.ciFrei) { badge?.remove(); return; }
+    const n = freiAnzahl();
+    // Neben der Seite, nicht auf ihr: oben links lag es auf dem Kicker.
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "as-ci-badge";
+      badge.setAttribute("data-as-chrome", "");
+      badge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i>Nicht CI-konform`;
+      area.appendChild(badge);
+    }
+    badge.title = n ? `${n} ${n === 1 ? "Abweichung" : "Abweichungen"} von der ROOTS CI` : "Freie Bearbeitung freigegeben";
+  }
+
+  /** Ein CI-Element: gesperrt markiert, Bild, Grafik, fester Text, Flaeche oder Linie. */
+  function istCiElement(el) {
+    if (!el || el.closest("[data-field], [data-imgslot], [data-as-chrome]")) return false;
+    if (el.closest('[data-ci="locked"]')) return true;
+    if (/^(img|svg|hr)$/i.test(el.tagName)) return true;
+    if ([...el.childNodes].some((knoten) => knoten.nodeType === 3 && knoten.textContent.trim())) return true;
+    const stil = getComputedStyle(el);
+    const flaeche = !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(stil.backgroundColor);
+    const bild = Boolean(stil.backgroundImage) && stil.backgroundImage !== "none";
+    const rand = ["Top", "Right", "Bottom", "Left"].some((seite) =>
+      Number.parseFloat(stil[`border${seite}Width`]) > 0 && stil[`border${seite}Style`] !== "none");
+    return flaeche || bild || rand;
+  }
+
+  function oeffneCiDialog(nachher) {
+    ciNachFreigabe = typeof nachher === "function" ? nachher : null;
+    const haken = ciOverlay.querySelector("[data-ci-check]");
+    if (haken) haken.checked = false;
+    const knopf = ciOverlay.querySelector("[data-ci-ok]");
+    if (knopf) knopf.disabled = true;
+    kontextmenue.schliesse();
+    if (fmtBar) fmtBar.setAttribute("data-open", "0");
+    ciOverlay.hidden = false;
+    haken?.focus();
+  }
+
+  function schliesseCiDialog(freigeben) {
+    const nach = ciNachFreigabe;
+    ciNachFreigabe = null;
+    ciOverlay.hidden = true;
+    if (!freigeben || !ciOverlay.querySelector("[data-ci-check]")?.checked) return;
+    harvest();
+    state.ciFrei = true;
+    mountStages(state.step === "edit");
+    aktualisiereRibbonFrei();
+    nach?.();
+  }
+
+  /** Alle Aenderungen zurueck, Sperre wieder an. Rueckgaengig bleibt moeglich. */
+  function ciWiederherstellen() {
+    merkeFrei();
+    harvest();
+    freiModelle().forEach((model) => { model.frei = {}; });
+    state.ciFrei = false;
+    freiform.deaktiviere();
+    mountStages(state.step === "edit");
+    aktualisiereRibbonFrei();
+  }
+
+  function versteckteDa() {
+    return freiModelle().some((model) => Object.values(model.frei || {}).some((a) => a.aus));
+  }
+
+  function alleEinblenden() {
+    merkeFrei();
+    freiModelle().forEach((model) => {
+      for (const [pfad, a] of Object.entries(model.frei || {})) {
+        delete a.aus;
+        if (!Object.keys(a).some((feld) => feld !== "t")) delete model.frei[pfad];
+      }
+    });
+    freiGeaendert("neu");
+  }
+
+  /** Vor Download und Druck: ausdruecklich bestaetigen, dass das Dokument von der CI abweicht. */
+  function mitCiBestaetigung(art, weiter) {
+    if (!state.ciFrei) { weiter(); return; }
+    const n = freiAnzahl();
+    const drucken = art === "print";
+    const titel = ciDlOverlay.querySelector("[data-cidl-titel]");
+    if (titel) titel.textContent = drucken ? "Nicht CI-konform drucken?" : "Nicht CI-konform herunterladen?";
+    const text = ciDlOverlay.querySelector("[data-cidl-text]");
+    if (text) {
+      text.textContent = n
+        ? `Das Dokument weicht an ${n} ${n === 1 ? "Stelle" : "Stellen"} von der ROOTS CI ab.`
+        : "Die Bearbeitung außerhalb der CI ist freigegeben, bisher ohne Änderung.";
+    }
+    const label = ciDlOverlay.querySelector("[data-cidl-label]");
+    if (label) label.textContent = drucken ? "Trotzdem drucken" : "Trotzdem herunterladen";
+    const icon = ciDlOverlay.querySelector("[data-cidl-ok] i");
+    if (icon) icon.className = drucken ? "fa-solid fa-print" : "fa-solid fa-download";
+    const haken = ciDlOverlay.querySelector("[data-cidl-check]");
+    if (haken) haken.checked = false;
+    const knopf = ciDlOverlay.querySelector("[data-cidl-ok]");
+    if (knopf) knopf.disabled = true;
+    ciDlNach = weiter;
+    kontextmenue.schliesse();
+    ciDlOverlay.hidden = false;
+    haken?.focus();
+  }
+
+  function waehleFreiBild() {
+    freiDatei.value = "";
+    freiDatei.click();
+  }
+
+  freiDatei.addEventListener("change", () => {
+    const datei = freiDatei.files && freiDatei.files[0];
+    if (!datei) return;
+    const leser = new FileReader();
+    leser.onload = async () => {
+      let src = String(leser.result || "");
+      if (!/^data:image\//.test(src)) return;
+      // Ein Logo braucht keine 4000 Pixel; grosse Fotos werden verkleinert.
+      if (!isSvgDataUri(src)) {
+        try { src = bereiteBildVor(await loadHtmlImage(src), { w: 900, h: 900 }) || src; } catch (_) { /* dann das Original */ }
+      }
+      freiform.bildErsetzen(src);
+    };
+    leser.readAsDataURL(datei);
+  });
+
+  function freiWert(feld) {
+    const el = freiform.auswahl()[0];
+    const stage = el?.closest("[data-stage]");
+    const model = stage ? modelByUid(stage.getAttribute("data-uid")) : null;
+    return model?.frei?.[pfadVon(el, stage)]?.[feld] || "";
+  }
+
+  function farbMenue() {
+    return [
+      { titel: "Text" },
+      { label: "Textfarbe", farben: { werte: FREI_FARBEN, aktuell: freiWert("farbe"), aktion: (farbe) => freiform.setze("farbe", farbe) } },
+      { titel: "Fläche" },
+      { label: "Flächenfarbe", farben: { werte: FREI_FARBEN, aktuell: freiWert("flaeche"), aktion: (farbe) => freiform.setze("flaeche", farbe) } },
+      { titel: "Linie" },
+      { label: "Linienfarbe", farben: { werte: FREI_FARBEN, aktuell: freiWert("linie"), aktion: (farbe) => freiform.setze("linie", farbe) } },
+    ];
+  }
+
+  function ausrichtMenue(anzahl) {
+    const richte = (art, label) => ({ label, svg: AUSRICHT_SVG[art], aktion: () => freiform.ausrichten(art) });
+    return [
+      { titel: anzahl > 1 ? "An der Auswahl" : "An der Seite" },
+      richte("links", "Links"),
+      richte("mitte-h", "Horizontal zentriert"),
+      richte("rechts", "Rechts"),
+      "-",
+      richte("oben", "Oben"),
+      richte("mitte-v", "Vertikal zentriert"),
+      richte("unten", "Unten"),
+      "-",
+      { label: "Horizontal verteilen", svg: AUSRICHT_SVG["verteilen-x"], deaktiviert: anzahl < 3, aktion: () => freiform.verteilen("x") },
+      { label: "Vertikal verteilen", svg: AUSRICHT_SVG["verteilen-y"], deaktiviert: anzahl < 3, aktion: () => freiform.verteilen("y") },
+    ];
+  }
+
+  function fuegeTextEin(feld) {
+    feld.focus();
+    if (!navigator.clipboard?.readText) {
+      showSaveHint(`Einfügen mit ${kurz("V")}.`);
+      return;
+    }
+    navigator.clipboard.readText()
+      .then((text) => { feld.focus(); document.execCommand("insertText", false, text); })
+      .catch(() => showSaveHint(`Einfügen mit ${kurz("V")}.`));
+  }
+
+  function gesperrtMenue(ziel, stage) {
+    const uid = stage.getAttribute("data-uid") || "";
+    const feld = ziel.closest?.("[data-field]");
+    const slot = ziel.closest?.("[data-imgslot]");
+    const liste = [];
+    if (feld && feld.isContentEditable) {
+      const befehl = (name) => () => { feld.focus(); document.execCommand(name); };
+      liste.push(
+        { label: "Ausschneiden", icon: "fa-solid fa-scissors", kurz: kurz("X"), aktion: befehl("cut") },
+        { label: "Kopieren", icon: "fa-regular fa-copy", kurz: kurz("C"), aktion: befehl("copy") },
+        { label: "Einfügen", icon: "fa-regular fa-paste", kurz: kurz("V"), aktion: () => fuegeTextEin(feld) },
+        "-",
+        { label: "Fett", icon: "fa-solid fa-bold", kurz: kurz("B"), aktion: befehl("bold") },
+        { label: "Kursiv", icon: "fa-solid fa-italic", kurz: kurz("I"), aktion: befehl("italic") },
+        { label: "Unterstrichen", icon: "fa-solid fa-underline", kurz: kurz("U"), aktion: befehl("underline") },
+      );
+    } else if (slot) {
+      const key = slot.getAttribute("data-imgkey") || "image";
+      const hat = Boolean(imageAt(modelByUid(uid), key).src);
+      liste.push({ label: hat ? "Bild bearbeiten" : "Bild einfügen", icon: "fa-solid fa-pen", aktion: () => pickImage(stage, key) });
+      if (hat) {
+        liste.push({
+          label: "Bild entfernen", icon: "fa-regular fa-trash-can", gefahr: true,
+          aktion: () => { harvest(); setImageAt(modelByUid(uid), key, { src: "", pos: "50% 50%" }); mountStages(true); },
+        });
+      }
+    } else {
+      const el = freiform.waehlbar(ziel, stage);
+      if (istCiElement(el)) {
+        const merkePfad = { uid, pfad: pfadVon(el, stage) };
+        liste.push({ label: "CI-Element bearbeiten", icon: "fa-solid fa-lock-open", aktion: () => oeffneCiDialog(() => freiform.stelleAuswahlHer([merkePfad])) });
+      }
+    }
+    if (liste.length) liste.push("-");
+    liste.push(
+      { label: "Rückgängig", icon: "fa-solid fa-rotate-left", kurz: kurz("Z"), aktion: () => document.execCommand("undo") },
+      { label: "Wiederholen", icon: "fa-solid fa-rotate-right", kurz: kurz("Z", true), aktion: () => document.execCommand("redo") },
+      "-",
+      { label: "Freie Bearbeitung freigeben", icon: "fa-solid fa-unlock", aktion: () => oeffneCiDialog() },
+    );
+    return liste;
+  }
+
+  function freiMenue(el, stage) {
+    const auswahl = freiform.auswahl();
+    const eins = auswahl.length === 1 ? auswahl[0] : null;
+    const liste = [];
+    if (eins?.hasAttribute("data-imgslot")) {
+      const key = eins.getAttribute("data-imgkey") || "image";
+      liste.push({ label: "Bild bearbeiten", icon: "fa-solid fa-pen", aktion: () => pickImage(stage, key) });
+    } else if (eins && /^(img|svg)$/i.test(eins.tagName)) {
+      liste.push({ label: "Bild ersetzen", icon: "fa-regular fa-image", aktion: waehleFreiBild });
+    } else if (eins && istTextElement(eins)) {
+      liste.push({ label: "Text bearbeiten", icon: "fa-solid fa-i-cursor", aktion: () => freiform.textBearbeiten(eins) });
+    }
+    if (auswahl.length) {
+      liste.push(
+        { label: "Farbe", icon: "fa-solid fa-palette", unter: farbMenue() },
+        { label: "Ausrichten", icon: "fa-solid fa-ruler-combined", unter: ausrichtMenue(auswahl.length) },
+        {
+          label: "Anordnen", icon: "fa-solid fa-layer-group", unter: [
+            { label: "In den Vordergrund", icon: "fa-solid fa-angles-up", aktion: () => freiform.nachVorne() },
+            { label: "Ebene zurücksetzen", icon: "fa-solid fa-angles-down", aktion: () => freiform.entferne(["z"]) },
+          ],
+        },
+      );
+      if (eins) liste.push({ label: "Übergeordnetes Element", icon: "fa-solid fa-arrow-turn-up", aktion: () => freiform.elternWaehlen() });
+      liste.push(
+        "-",
+        {
+          label: "Zurücksetzen", icon: "fa-solid fa-clock-rotate-left", unter: [
+            { label: "Position", icon: "fa-solid fa-up-down-left-right", aktion: () => freiform.entferne(["dx", "dy"]) },
+            { label: "Größe", icon: "fa-solid fa-up-right-and-down-left-from-center", aktion: () => freiform.entferne(["sx", "sy", "w", "h"]) },
+            { label: "Farben", icon: "fa-solid fa-droplet", aktion: () => freiform.entferne(["farbe", "flaeche", "linie"]) },
+            "-",
+            { label: "Ganzes Element", icon: "fa-solid fa-rotate", aktion: () => freiform.entferne(["dx", "dy", "sx", "sy", "w", "h", "farbe", "flaeche", "linie", "z", "aus", "text", "bild"]) },
+          ],
+        },
+        { label: "Ausblenden", icon: "fa-regular fa-eye-slash", kurz: "Entf", aktion: () => freiform.ausblenden() },
+        "-",
+      );
+    }
+    liste.push(
+      { label: "Rückgängig", icon: "fa-solid fa-rotate-left", kurz: kurz("Z"), deaktiviert: !freiVerlauf.length, aktion: freiRueckgaengig },
+      { label: "Wiederholen", icon: "fa-solid fa-rotate-right", kurz: kurz("Z", true), deaktiviert: !freiZukunft.length, aktion: freiWiederholen },
+    );
+    if (versteckteDa()) liste.push({ label: "Ausgeblendete zeigen", icon: "fa-regular fa-eye", aktion: alleEinblenden });
+    liste.push("-", { label: "CI wiederherstellen", icon: "fa-solid fa-lock", gefahr: true, aktion: ciWiederherstellen });
+    return liste;
+  }
+
+  function zeigeKontextmenue(event, el, stage) {
+    const eintraege = state.ciFrei ? freiMenue(el, stage) : gesperrtMenue(event.target, stage);
+    kontextmenue.zeige({ x: event.clientX, y: event.clientY, eintraege });
+  }
+
+  function aktualisiereRibbonFrei() {
+    const platz = shell.querySelector("[data-ribbon-frei]");
+    if (!platz) return;
+    if (!state.ciFrei) {
+      platz.innerHTML = `<button type="button" class="as-ribbon-ci" data-frei-akt="freigeben" title="CI-Elemente freigeben" aria-label="CI-Elemente freigeben"><i class="fa-solid fa-lock"></i><span>CI-Sperre</span></button>`;
+      return;
+    }
+    const n = freiform.auswahl().length;
+    const knopf = (akt, titel, inhalt, aus) =>
+      `<button type="button" data-frei-akt="${akt}" title="${titel}" aria-label="${titel}"${aus ? " disabled" : ""}>${inhalt}</button>`;
+    platz.innerHTML = [
+      knopf("richte-links", "Links ausrichten", AUSRICHT_SVG.links, !n),
+      knopf("richte-mitte-h", "Horizontal zentrieren", AUSRICHT_SVG["mitte-h"], !n),
+      knopf("richte-rechts", "Rechts ausrichten", AUSRICHT_SVG.rechts, !n),
+      knopf("richte-oben", "Oben ausrichten", AUSRICHT_SVG.oben, !n),
+      knopf("richte-mitte-v", "Vertikal zentrieren", AUSRICHT_SVG["mitte-v"], !n),
+      knopf("richte-unten", "Unten ausrichten", AUSRICHT_SVG.unten, !n),
+      knopf("verteile-x", "Horizontal verteilen", AUSRICHT_SVG["verteilen-x"], n < 3),
+      knopf("verteile-y", "Vertikal verteilen", AUSRICHT_SVG["verteilen-y"], n < 3),
+      "<hr>",
+      knopf("vorne", "In den Vordergrund", '<i class="fa-solid fa-layer-group"></i>', !n),
+      knopf("farbe", "Farbe", '<i class="fa-solid fa-palette"></i>', !n),
+      knopf("aus", "Ausblenden", '<i class="fa-regular fa-eye-slash"></i>', !n),
+      "<hr>",
+      `<button type="button" class="as-ribbon-ci is-frei" data-frei-akt="ci-menue" title="Freie Bearbeitung" aria-label="Freie Bearbeitung"><i class="fa-solid fa-lock-open"></i><span>Frei</span></button>`,
+    ].join("");
+  }
+
+  function ribbonFrei(knopf) {
+    const akt = knopf.getAttribute("data-frei-akt") || "";
+    const unter = () => {
+      const r = knopf.getBoundingClientRect();
+      return { x: r.left, y: r.bottom + 6 };
+    };
+    if (akt === "freigeben") { oeffneCiDialog(); return; }
+    if (akt === "ci-menue") {
+      kontextmenue.zeige({
+        ...unter(),
+        eintraege: [
+          { label: "Rückgängig", icon: "fa-solid fa-rotate-left", kurz: kurz("Z"), deaktiviert: !freiVerlauf.length, aktion: freiRueckgaengig },
+          { label: "Wiederholen", icon: "fa-solid fa-rotate-right", kurz: kurz("Z", true), deaktiviert: !freiZukunft.length, aktion: freiWiederholen },
+          ...(versteckteDa() ? [{ label: "Ausgeblendete zeigen", icon: "fa-regular fa-eye", aktion: alleEinblenden }] : []),
+          "-",
+          { label: "CI wiederherstellen", icon: "fa-solid fa-lock", gefahr: true, aktion: ciWiederherstellen },
+        ],
+      });
+      return;
+    }
+    if (akt === "farbe") { kontextmenue.zeige({ ...unter(), eintraege: farbMenue() }); return; }
+    if (akt.startsWith("richte-")) freiform.ausrichten(akt.slice(7));
+    else if (akt === "verteile-x") freiform.verteilen("x");
+    else if (akt === "verteile-y") freiform.verteilen("y");
+    else if (akt === "vorne") freiform.nachVorne();
+    else if (akt === "aus") freiform.ausblenden();
+  }
 
   /* ── Ausgabe ── */
 
@@ -5978,11 +6789,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   // Der Download liest den bearbeiteten Zustand aus dem DOM, nicht aus dem Modell.
-  function exportStages() {
+  function exportStages(opts = {}) {
     const area = shell.querySelector("[data-stagearea]");
     if (!area) return [];
     return [...area.querySelectorAll("[data-stage]")].map((stage) => {
       const clone = stage.cloneNode(true);
+      clone.querySelectorAll(".as-frei-tippt").forEach((node) => node.classList.remove("as-frei-tippt"));
+      // Der gespeicherte Stand traegt die freien Aenderungen als Liste mit,
+      // damit das naechste Oeffnen sie wieder anwendet. Die Datei fuer den
+      // Kunden bekommt keinen Vermerk.
+      const model = modelByUid(stage.getAttribute("data-uid"));
+      const liste = model?.frei || {};
+      if (!opts.fuerDatei && (state.ciFrei || Object.keys(liste).length)) {
+        clone.setAttribute("data-as-frei", JSON.stringify({ v: 1, an: state.ciFrei, el: serialisiereAenderungen(liste) }));
+      }
       if (isMemo) syncMemoLinks(clone);
       clone.removeAttribute("style");
       clone.removeAttribute("data-stage");
@@ -6001,8 +6821,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
   }
 
-  function exportDocument() {
-    const stages = exportStages().join("\n");
+  function exportDocument(opts = {}) {
+    const stages = exportStages(opts).join("\n");
     const title = isMemo ? "Ansprache" : "LinkedIn-Asset";
     const post = !isMemo && state.postText.trim()
       ? `\n<!-- Caption\n${state.postText.replace(/--+>/g, "-->")}\n-->`
@@ -6052,10 +6872,14 @@ ${stages}${post}
     return true;
   }
 
-  function download() {
+  function download(bestaetigt = false) {
     harvest();
     if (!memoOutputReady()) return;
-    const doc = exportDocument();
+    if (state.ciFrei && !bestaetigt) {
+      mitCiBestaetigung("download", () => download(true));
+      return;
+    }
+    const doc = exportDocument({ fuerDatei: true });
     const blob = new Blob([doc], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -6203,32 +7027,19 @@ ${stages}${post}
       applyCropMode(modeBtn.getAttribute("data-crop-mode"));
       return;
     }
-    // Ein offenes Bildmenue schliesst, sobald daneben geklickt wird.
-    if (!event.target.closest(".as-img-ui")) {
-      state.bildMenuOffen = "";
-      overlay.querySelectorAll(".as-img-ui.is-open").forEach((ui) => {
-        ui.classList.remove("is-open");
-        ui.querySelector(".as-img-menu")?.setAttribute("aria-expanded", "false");
-      });
-    }
     const hit = event.target.closest("[data-act]");
+    // Ein leerer Bildplatz nimmt den Klick selbst: dort gibt es nur eines zu tun.
+    // Im freien Modus waehlt der Klick den Platz aus, das Fenster oeffnet der Stift.
+    if (!hit && stageEl && state.step === "edit" && !state.ciFrei) {
+      const slot = event.target.closest("[data-imgslot]");
+      const key = slot?.getAttribute("data-imgkey") || "";
+      if (slot && !imageAt(modelByUid(stageEl.getAttribute("data-uid")), key).src) {
+        pickImage(stageEl, key);
+        return;
+      }
+    }
     if (!hit) return;
     const act = hit.getAttribute("data-act");
-    if (act === "img-menu") {
-      const ui = hit.closest(".as-img-ui");
-      const oeffnen = !ui?.classList.contains("is-open");
-      overlay.querySelectorAll(".as-img-ui.is-open").forEach((offen) => {
-        offen.classList.remove("is-open");
-        offen.querySelector(".as-img-menu")?.setAttribute("aria-expanded", "false");
-      });
-      // Der Zustand ueberlebt das Neuzeichnen nach Zoom oder Transparenz.
-      state.bildMenuOffen = oeffnen ? String(hit.getAttribute("data-imgkey") || "") : "";
-      if (ui && oeffnen) {
-        ui.classList.add("is-open");
-        hit.setAttribute("aria-expanded", "true");
-      }
-      return;
-    }
     const frame = hit.closest("[data-uid]");
     const id = frame ? frame.getAttribute("data-uid") : null;
 
@@ -6293,20 +7104,6 @@ ${stages}${post}
     }
     if (act === "own") {
       void uebernehmen();
-      return;
-    }
-    if (act === "img-crop") {
-      const key = hit.getAttribute("data-imgkey") || "image";
-      const uid = hit.closest("[data-stage]")?.getAttribute("data-uid") || "";
-      openCropSheet(uid || "form", key);
-      return;
-    }
-    if (act === "img-zoom") {
-      const key = hit.getAttribute("data-imgkey") || "image";
-      const jetzt = bildWert(imageAt(aktuellesModelFuer(key), key), "zoom", 1);
-      const richtung = Number(hit.getAttribute("data-imgdelta")) < 0 ? -1 : 1;
-      setzeBildWert(key, "zoom", Math.min(BILD_ZOOM.max, Math.max(BILD_ZOOM.min,
-        Number((jetzt + richtung * BILD_ZOOM.schritt).toFixed(2)))));
       return;
     }
     if (act === "form-img-pick") {
@@ -6454,7 +7251,11 @@ ${stages}${post}
       return;
     }
     if (act === "download") { download(); return; }
-    if (act === "print") { harvest(); if (memoOutputReady()) window.print(); return; }
+    if (act === "print") {
+      harvest();
+      if (memoOutputReady()) mitCiBestaetigung("print", () => { freiform.leere(); window.print(); });
+      return;
+    }
     if (act === "save") { onSaveClick(); return; }
     if (act === "own-skip") { ownOverlay.hidden = true; void save(); return; }
     if (act === "own-confirm") {
@@ -6470,15 +7271,19 @@ ${stages}${post}
     }
     if (act === "crop-ok") { confirmCrop(); return; }
     if (act === "crop-browse") { browseCropFile(); return; }
-    if (act === "img-pick" && stageEl) {
+    if (act === "crop-remove") { entferneCropBild(); return; }
+    if ((act === "img-edit" || act === "img-pick") && stageEl) {
       pickImage(stageEl, hit.getAttribute("data-imgkey") || "image");
       return;
     }
-    if (act === "img-clear" && stageEl) {
-      harvest();
-      const model = modelByUid(stageEl.getAttribute("data-uid"));
-      setImageAt(model, hit.getAttribute("data-imgkey") || "image", { src: "", pos: "50% 50%" });
-      mountStages(state.step === "edit");
+    if (act === "ci-abbrechen") { schliesseCiDialog(false); return; }
+    if (act === "ci-freigeben") { schliesseCiDialog(true); return; }
+    if (act === "cidl-abbrechen") { ciDlOverlay.hidden = true; ciDlNach = null; return; }
+    if (act === "cidl-ok") {
+      const nach = ciDlNach;
+      ciDlOverlay.hidden = true;
+      ciDlNach = null;
+      nach?.();
       return;
     }
   }
@@ -6509,13 +7314,12 @@ ${stages}${post}
   }
 
   function onInput(event) {
-    // Die Bildregler wirken in der Werkbank, nicht im Fragebogen - deshalb vor
-    // der Fragebogen-Schranke.
-    const regler = event.target.closest?.("[data-imgrange]");
-    if (regler) {
-      const feld = regler.getAttribute("data-imgrange") === "overlay" ? "overlay" : "opacity";
-      const key = regler.getAttribute("data-imgkey") || "image";
-      setzeBildWert(key, feld, Math.min(100, Math.max(0, Number(regler.value) || 0)) / 100);
+    const ciHaken = event.target.closest?.("[data-ci-check], [data-cidl-check]");
+    if (ciHaken) {
+      const knopf = ciHaken.hasAttribute("data-ci-check")
+        ? ciOverlay.querySelector("[data-ci-ok]")
+        : ciDlOverlay.querySelector("[data-cidl-ok]");
+      if (knopf) knopf.disabled = !ciHaken.checked;
       return;
     }
     const edited = event.target.closest?.('[data-field][contenteditable="true"]');
@@ -6696,10 +7500,39 @@ ${stages}${post}
   let memoVorschauTimer = 0;
 
   function onKeyDown(event) {
-    if (event.key !== "Escape") return;
+    if (event.key !== "Escape") {
+      if (state.step !== "edit" || kontextmenue.offen()) return;
+      if (!cropOverlay.hidden || !ownOverlay.hidden || !ciOverlay.hidden || !ciDlOverlay.hidden) return;
+      const tippt = event.target?.isContentEditable || /^(input|textarea|select)$/i.test(event.target?.tagName || "");
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && !tippt && /^[zy]$/i.test(event.key)) {
+        const wieder = event.key.toLowerCase() === "y" || event.shiftKey;
+        if (wieder ? freiWiederholen() : freiRueckgaengig()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
+      if (state.ciFrei && !mod && freiform.taste(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     // Ohne Stopp würde der Backdrop-Zweig der App das Artikel-Popup mitschließen.
     event.stopPropagation();
     event.preventDefault();
+    // Das Menue schliesst sich selbst.
+    if (kontextmenue.offen()) return;
+    if (!ciDlOverlay.hidden) {
+      ciDlOverlay.hidden = true;
+      ciDlNach = null;
+      return;
+    }
+    if (!ciOverlay.hidden) {
+      schliesseCiDialog(false);
+      return;
+    }
     if (!ownOverlay.hidden) {
       ownOverlay.hidden = true;
       return;
@@ -6708,6 +7541,7 @@ ${stages}${post}
       cropOverlay.hidden = true;
       return;
     }
+    if (state.step === "edit" && state.ciFrei && freiform.taste(event)) return;
     if (overlay.classList.contains("as-fs-open")) {
       toggleFullscreen();
       return;
@@ -6751,6 +7585,25 @@ ${stages}${post}
   // Nach der eigenen Auswertung darf das Ereignis die App nicht mehr erreichen.
   on(overlay, "click", (event) => event.stopPropagation());
   on(overlay, "change", onChange);
+  // Wer ein gesperrtes CI-Element anfasst, bekommt den Hinweis und kann die
+  // Bearbeitung freigeben. Felder und Bildplaetze bleiben wie sie sind.
+  on(overlay, "pointerdown", (event) => {
+    if (state.step !== "edit" || state.ciFrei || event.button !== 0) return;
+    const stage = event.target.closest?.("[data-stage]");
+    if (!stage || event.target.closest("[data-as-chrome], [data-field], [data-imgslot]")) return;
+    const el = freiform.waehlbar(event.target, stage);
+    if (!istCiElement(el)) return;
+    event.preventDefault();
+    const ziel = { uid: stage.getAttribute("data-uid") || "", pfad: pfadVon(el, stage) };
+    oeffneCiDialog(() => freiform.stelleAuswahlHer([ziel]));
+  }, true);
+  on(overlay, "contextmenu", (event) => {
+    if (state.step !== "edit" || state.ciFrei) return;
+    const stage = event.target.closest?.("[data-stage]");
+    if (!stage || event.target.closest("[data-as-chrome]")) return;
+    event.preventDefault();
+    zeigeKontextmenue(event, null, stage);
+  });
   on(overlay, "input", onInput);
   // Zeigen genuegt: wer mit der Maus ueber einen Bildplatz faehrt, sieht in der
   // Vorschau sofort, welche Stelle gemeint ist.
@@ -6813,6 +7666,8 @@ ${stages}${post}
     }
     ladeTaktStop();
     draftsTaktStop();
+    kontextmenue.schliesse();
+    freiform.deaktiviere();
     if (selectionFrame) window.cancelAnimationFrame(selectionFrame);
     if (fmtBar) fmtBar.remove();
     fmtBar = null;
