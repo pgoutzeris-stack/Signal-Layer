@@ -208,6 +208,17 @@ export type MemoAnswers = {
   memo_fields: Record<string, string>;
   /** theme = Executive Memo. cmo100 = eigener Sonderfall, derzeit Platzhalter. */
   memo_track: "theme" | "cmo100";
+  /** Recherchierte Marktzahlen und heutige Lage des Adressaten, null ohne Recherche. */
+  market_research: MemoMarktLage | null;
+};
+
+/** Eine recherchierte Kennzahl fuer Seite 2, mit Herausgeber und Jahr. */
+export type MemoMarktKpi = { value: string; label: string; source: string; url: string; ebene: "markt" | "adressat" };
+/** Marktzahlen plus die heutige Aufstellung des Adressaten, beides mit Beleg. */
+export type MemoMarktLage = {
+  kpis: MemoMarktKpi[];
+  befund: string;
+  belege: { text: string; source: string }[];
 };
 
 /** Die Feldnamen, die der Abschnitts-Fragebogen schreiben darf. Muss zu
@@ -589,6 +600,96 @@ export function memoVertragsFehler(payload: MemoPayload, eigene: Record<string, 
     if (verstoss) fehler.push(verstoss);
   }
   return fehler;
+}
+
+/**
+ * Was ein Memo vom Deichmann-Memo trennt, obwohl jedes Feld im Laengenvertrag
+ * liegt. Am 29.9.2026 an den sechs neuesten Memos abgelesen: Titel nach der
+ * Schablone „X muss …“, Etiketten statt Befund, Quartalszahlen aus einer
+ * einzigen Quelle und Satzgerueste aus dem Referenzmemo.
+ */
+export function memoQualitaetsBefunde(
+  payload: MemoPayload,
+  opts: { firma?: string; eigene?: Record<string, string>; markt?: MemoMarktLage | null } = {},
+): string[] {
+  const werte = memoVertragsWerte(payload);
+  const eigene = opts.eigene || {};
+  const firma = String(opts.firma || "").trim();
+  const befunde: string[] = [];
+  const frei = (key: string) => !eigene[key] && Boolean(String(werte[key] || "").trim());
+  const klein = (wert: string) => String(wert || "").replace(/<[^>]+>/g, " ").toLowerCase();
+
+  if (frei("title") && /\b(muss|müssen|braucht|brauchen)\b/i.test(werte.title)) {
+    befunde.push(`title folgt der Schablone „… muss/braucht …“ („${werte.title}“). Formuliere die Bewegung oder die offene Frage, nicht einen Auftrag.`);
+  }
+  if (frei("market_title")) {
+    const mt = werte.market_title;
+    if (/:/.test(mt) || /\b(im|in der) (umbruch|wandel)\b|überblick|auf einen blick/i.test(mt)) {
+      befunde.push(`market_title ist ein Etikett („${mt}“). Schreibe einen Befund mit Verb, wie „Eigenmarken stehen vor der nächsten Entwicklungsstufe“.`);
+    }
+  }
+  const gegenstueck: Record<string, string> = {
+    title: "title", market_title: "market_title", insight_title: "insight_title",
+    benchmark_title: "benchmark_title", potentials_title: "potentials_title",
+    potentials_lead2: "potentials_lead2", quote_text: "quote_text",
+  };
+  const anfang = (wert: string) => klein(wert).replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 3).join(" ");
+  for (const key of Object.keys(gegenstueck)) {
+    const referenz = MEMO_BEISPIEL[gegenstueck[key]];
+    if (!frei(key) || !referenz) continue;
+    const a = anfang(werte[key]);
+    if (a.split(" ").length === 3 && a === anfang(referenz)) {
+      befunde.push(`${key} übernimmt das Satzgerüst des Referenzmemos („${referenz.split(/\s+/).slice(0, 3).join(" ")} …“). Eigene Formulierung aus dem Fall.`);
+    }
+  }
+  const quellen = [1, 2, 3, 4].map((i) => String(werte[`kpi${i}_source`] || "")).filter(Boolean);
+  const herausgeber = new Set(quellen.map((q) => kpiHerausgeber(q)).filter(Boolean));
+  if (quellen.length >= 3 && herausgeber.size < 3 && memoMarktHerausgeber(opts.markt || null) >= 3
+    && ![1, 2, 3, 4].some((i) => eigene[`kpi${i}_value`])) {
+    befunde.push(`Die Kennzahlen stammen aus ${herausgeber.size === 1 ? "einer einzigen Quelle" : "nur zwei Quellen"} (${[...herausgeber].join(", ")}). Nimm die Zahlen aus <marktzahlen>, mindestens drei Herausgeber.`);
+  }
+  if (firma) {
+    const f = firma.toLowerCase();
+    if (frei("insight_title") && !klein(werte.insight_title).includes(f)) {
+      befunde.push(`insight_title nennt ${firma} nicht. Der Befund beschreibt die heutige Aufstellung von ${firma}, wie „Eigenmarken funktionieren bei Deichmann aktuell …“.`);
+    }
+    const empfehlung = [werte.potentials_lead, werte.pot1_potential, werte.pot2_potential, werte.pot3_potential].map(klein).join(" ");
+    if (frei("potentials_lead") && !empfehlung.includes(f)) {
+      befunde.push(`Die Empfehlung auf Seite 4 nennt ${firma} nirgends. Sie muss erkennbar für ${firma} geschrieben sein, nicht für jedes Unternehmen der Branche.`);
+    }
+  }
+  return befunde;
+}
+
+/** Die Maßstäbe des Kritiker-Durchlaufs, am Deichmann-Memo abgelesen. */
+export const MEMO_KRITIK_MASSSTAB = `1. title: Bewegung oder offene Frage zur Aufgabe, keine Pflicht-Schablone („X muss …“), keine Leistung als Subjekt.
+2. market_title: Befund mit Verb, kein Etikett.
+3. Kennzahlen: Markt- oder Verbraucherzahlen aus mindestens drei Herausgebern, höchstens eine Zahl zum Adressaten, keine Quartalszahlen.
+4. insight_title und market_p2: ein konkreter Befund zur heutigen Aufstellung des Adressaten mit Eigennamen (Marken, Formate, Kanäle), nichts, was auf jedes Unternehmen passt.
+5. Benchmarks: jede zeigt eine konkrete Handlung und warum sie gewirkt hat, am selben Mechanismus wie der Hebel.
+6. Potenziale: jeder Hebel ist erkennbar für diesen Adressaten geschrieben und schließt an seine heutige Aufstellung an.
+7. Sprache: aktive Verben, keine Beratungsfloskeln, kein Satzgerüst aus dem Referenzmemo, kein Gedankenstrich.
+8. Zusammenhang: Cover, Seite 2, Seite 3 und Seite 4 bauen aufeinander auf, kein Feld wiederholt ein anderes.`;
+
+/**
+ * Kritiker-Durchlauf: dasselbe Modell liest seinen Entwurf gegen die
+ * Massstaebe des Referenzmemos und schreibt die schwachen Felder neu. Der
+ * Laengenvertrag gilt weiter; Vertragsfehler und Befunde stehen mit drin.
+ */
+export function buildMemoKritikPrompt(prompt: string, entwurf: string, befunde: string[]): string {
+  const liste = befunde.slice(0, 24).map((zeile) => `- ${zeile}`).join("\n");
+  return `${prompt}
+
+<entwurf>
+${String(entwurf || "").slice(0, 30_000)}
+</entwurf>
+
+<kritik>
+Oben steht dein erster Entwurf. Lies ihn als Partnerin oder Partner von ROOTS, die das Deichmann-Memo kennt, gegen diese Maßstäbe:
+${MEMO_KRITIK_MASSSTAB}
+${liste ? `\nDiese Punkte hat die Prüfung schon gefunden, sie sind in jedem Fall zu beheben:\n${liste}\n` : ""}
+Schreibe danach das Memo vollständig neu. Felder, die alle Maßstäbe erfüllen, übernimmst du unverändert. Felder, die einen Maßstab verfehlen, schreibst du mit Substanz aus signal, artikel, <benchmarks>, <marktzahlen> und <lage_heute> neu. Der Längenvertrag gilt weiter, die Belegregeln auch: keine neue Zahl, kein neuer Name und keine neue Quelle, die dort nicht steht.
+</kritik>`;
 }
 
 /**
@@ -1444,7 +1545,9 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
     };
   }
   const images = pick(source, "images", "bilder");
-  const benchMode = pick(source, "benchmarks", "benchmarks_mode", "vorreiter");
+  // benchmarks_mode zuerst: in gespeicherten Antworten ist "benchmarks" die
+  // Liste selbst, und deren Text machte aus "custom" still "auto".
+  const benchMode = pick(source, "benchmarks_mode", "benchmarks", "vorreiter");
   const named = pick(source, "company_named", "unternehmen_nennen");
   const companyNamed = /no|nein|ohne|false/i.test(named) ? "no" as const : "yes" as const;
   return {
@@ -1454,13 +1557,17 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
       : choiceText(source, ["company_mode", "company"], ["company_text", "firma"], 160),
     images: /upload|eigen|eigene|manual|selbst/i.test(images) ? "upload" : "auto",
     benchmarks_mode: /custom|eigen|eigene|manual|selbst/i.test(benchMode) ? "custom" : "auto",
-    benchmarks: parseMemoBenchmarkBriefs(source),
+    // Gespeicherte Antworten tragen die recherchierten Benchmarks als Liste
+    // unter "benchmarks". Das ganze Objekt zu lesen fand dort nur den Modus
+    // und liess Pruefung und zweiten Anlauf ohne Benchmarks laufen.
+    benchmarks: parseMemoBenchmarkBriefs(Array.isArray(record(source).benchmarks) ? record(source).benchmarks : source),
     storyline: choiceText(source, ["storyline"], ["storyline_text", "story"], 1_500),
     cta: choiceText(source, ["cta"], ["cta_text"], 240),
     memo_fields: parseMemoFields(source),
     memo_track: /cmo100|100\s*tage|hundert\s*tage/i.test(pick(source, "memo_track", "track", "unterlage"))
       ? "cmo100"
       : "theme",
+    market_research: parseMemoMarktLage(record(source).market_research),
   };
 }
 
@@ -1584,7 +1691,20 @@ export function istHarterResearchFehler(nachricht: string): boolean {
 }
 
 export const MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS = 90_000;
-export const MEMO_BENCHMARK_RESEARCH_MODEL = "gemini-2.5-flash";
+// Recherche und Entwurf laufen ueber die Perplexity Agent API. Google hat am
+// 28.9.2026 jeden Aufruf mit 402 (Guthaben leer) beantwortet; Perplexity
+// liefert Websuche mit Quellen und meldet den Preis jedes Aufrufs selbst.
+export const MEMO_BENCHMARK_RESEARCH_MODEL = "openai/gpt-5.4";
+/** Entwurf und Kritik des Executive Memos. Gewaehlt am 29.9.2026. */
+export const MEMO_DRAFT_MODEL = "anthropic/claude-opus-5-5";
+/** Logo- und Fotosuche fuer die Bildslots bleibt bei Gemini mit Google Search. */
+export const MEMO_PHOTO_RESEARCH_MODEL = "gemini-2.5-flash";
+export const PERPLEXITY_RESPONSES_URL = "https://api.perplexity.ai/v1/responses";
+
+/** Modelle der Perplexity Agent API tragen den Anbieter im Namen: anthropic/…, openai/… */
+export function isPerplexityModel(model: string): boolean {
+  return String(model || "").includes("/");
+}
 /**
  * Ein Versuch reicht oft nicht: Suche plus JSON endet bei Flash gern mit
  * MAX_TOKENS, und ein 429 aus der Drosselung loest sich nach Sekunden.
@@ -1725,7 +1845,7 @@ export function buildMemoBenchmarkReviewPrompt(
   const rolle = opts.herkunft === "recherche"
     ? "Du prüfst drei recherchierte Benchmarks für ein ROOTS Executive Memo."
     : "Du prüfst drei vom Nutzer gelieferte Benchmarks für ein ROOTS Executive Memo.";
-  return `${rolle} Google Search ist Pflicht.
+  return `${rolle} Websuche ist Pflicht.
 
 <hebel>
 ${hebel || asData(article.title_de || article.title, 240) || "nicht benannt"}
@@ -1767,7 +1887,7 @@ export function buildMemoBenchmarkResearchPrompt(
   ].filter(Boolean).join(" · ");
   const titel = asData(article.title_de || article.title, 240);
   const exclude = (opts.exclude || []).map((name) => name.trim()).filter(Boolean);
-  return `Du recherchierst drei Benchmarks für ein ROOTS Executive Memo. Google Search ist Pflicht.
+  return `Du recherchierst drei Benchmarks für ein ROOTS Executive Memo. Websuche ist Pflicht.
 
 <hebel>
 ${hebel || titel || "nicht benannt"}
@@ -1803,6 +1923,140 @@ export function normalizeMemoBenchmarkResearch(raw: unknown, groundingTitles: st
     return briefFromParts(item.name, item.text || item.handlung, item.tag || item.lehre, source);
   });
   return assertMemoBenchmarkBriefs(briefs, "", { allowExample: true });
+}
+
+/**
+ * Recherche fuer Seite 2 und den Befund zum Adressaten. Das Deichmann-Memo
+ * traegt vier Zahlen aus drei Herausgebern (BCG/Inverto, NIQ, Deichmann) und
+ * einen Befund aus eigener Beobachtung (Graceland, 5th Avenue). Aus dem einen
+ * Signalartikel kamen dagegen Quartalszahlen des Adressaten.
+ */
+export function buildMemoMarktLagePrompt(
+  signal: AssetSignalInput,
+  article: AssetArticleInput,
+  answers: MemoAnswers,
+): string {
+  const firma = asData(answers.company, 160) || asData(signal.company, 160) || "";
+  const hebel = [
+    asData(signal.roots_link_de, 700),
+    asData(signal.roots_offering, 240),
+    asData(signal.why_de, 400),
+  ].filter(Boolean).join("\n");
+  const sektor = [
+    asData(signal.territory, 80),
+    list(signal.topics, 6, 80).join(", "),
+    asData(signal.signal_label, 120),
+  ].filter(Boolean).join(" · ");
+  const titel = asData(article.title_de || article.title, 240);
+  return `Du recherchierst das Material für Seite 2 eines ROOTS Executive Memos. Websuche ist Pflicht.
+
+<hebel>
+${hebel || titel || "nicht benannt"}
+</hebel>
+<sektor>${sektor || "unbekannt"}</sektor>
+<adressat>${firma || "nicht benannt"}</adressat>
+<anlass>${titel || "nicht benannt"}</anlass>
+
+Auftrag 1, Marktzahlen:
+Finde vier Kennzahlen, die belegen, dass sich der Markt oder das Verhalten der Kundinnen und Kunden in Richtung dieses Hebels bewegt.
+Mindestens drei davon sind Markt- oder Verbraucherzahlen (Marktanteile, Wachstum einer Kategorie, Einstellungen, Kaufgründe) aus Studien, Panels oder Verbänden wie NIQ, Circana, GfK, YouGov, BCG, McKinsey, PLMA, HDE, Statista oder Branchenmedien, die eine Studie zitieren.
+Höchstens eine Zahl beschreibt den Adressaten selbst und macht seine Ausgangslage greifbar (Anteil, Umsatz, Reichweite).
+Keine Quartalszahlen des Adressaten wie Umsatzrückgang, Marge oder Cashflow: sie zeigen seine Finanzlage, nicht die Marktbewegung.
+Deutschland oder DACH zuerst, sonst Europa. Nicht älter als drei Jahre. Mindestens drei verschiedene Herausgeber.
+value ist die Zahl selbst, deutsch formatiert („40 %“, „+ 1,6 PP“, „8,9 Mrd. €“). label ist der Satz dazu ohne die Zahl, so wie er unter einer großen Kennzahl steht.
+
+Auftrag 2, Lage heute:
+Beschreibe, wie ${firma || "der Adressat"} das Thema dieses Hebels heute sichtbar angeht: Marken und Submarken mit Namen, ihre Rolle im Sortiment, Auftritt und Kommunikation, Kanäle.
+befund ist ein Satz, der die heutige Logik benennt, so konkret wie „Eigenmarken funktionieren bei Deichmann aktuell überwiegend über funktionale Preiskommunikation.“ Keine Wertung, die der Beleg nicht trägt.
+belege sind zwei bis vier beobachtbare Fakten mit Eigennamen (Marke, Format, Kampagne, Kanal), jeweils mit Quelle.
+
+Nur was die Suche belegt. Erfinde keine Zahl, keine Marke und keine Quelle. Fehlt ein Beleg, lass den Eintrag weg.
+Antworte ausschliesslich mit JSON:
+{"kpis":[{"value":"40 %","label":"der Deutschen halten Eigenmarken für gleichwertig","publisher":"NIQ","year":"2025","url":"https://…","ebene":"markt"}],"befund":"Ein Satz.","belege":[{"text":"Beobachtbarer Fakt mit Eigennamen.","quelle":"Medium oder Herausgeber, Jahr"}]}`;
+}
+
+function kpiHerausgeber(source: string): string {
+  return String(source || "").split(/,|·|\(/)[0].trim().toLowerCase();
+}
+
+/** Liest und prueft die Antwort der Marktrecherche. Zahlen ohne Ziffer oder ohne Herausgeber fallen raus. */
+export function normalizeMemoMarktLage(raw: unknown, firma = ""): MemoMarktLage | null {
+  const root = record(raw);
+  const firmaKlein = String(firma || "").trim().toLowerCase();
+  const kpis: MemoMarktKpi[] = [];
+  for (const entry of Array.isArray(root.kpis) ? root.kpis : []) {
+    const item = record(entry);
+    const value = text(item.value, 24);
+    const label = text(item.label, 140);
+    const publisher = text(item.publisher || item.herausgeber || item.source, 60);
+    const year = text(item.year || item.jahr, 12);
+    if (!/\d/.test(value) || !label || !publisher) continue;
+    const ebene = item.ebene === "adressat" || (firmaKlein && publisher.toLowerCase().includes(firmaKlein))
+      ? "adressat" as const
+      : "markt" as const;
+    kpis.push({
+      value, label, ebene,
+      source: year ? `${publisher}, ${year}` : publisher,
+      url: /^https?:\/\//.test(String(item.url || "")) ? text(item.url, 400) : "",
+    });
+  }
+  // Marktzahlen zuerst, hoechstens eine Zahl zum Adressaten, an vierter Stelle
+  // wie im Referenzmemo.
+  const markt = kpis.filter((k) => k.ebene === "markt");
+  const adressat = kpis.filter((k) => k.ebene === "adressat").slice(0, 1);
+  const auswahl = [...markt.slice(0, 4 - Math.min(adressat.length, 1)), ...adressat].slice(0, 4);
+  const belege = (Array.isArray(root.belege) ? root.belege : [])
+    .map((entry) => {
+      const item = record(entry);
+      return { text: text(item.text, 300), source: text(item.quelle || item.source, 120) };
+    })
+    .filter((beleg) => beleg.text)
+    .slice(0, 4);
+  const befund = text(root.befund, 240);
+  if (!auswahl.length && !befund && !belege.length) return null;
+  return { kpis: auswahl, befund, belege };
+}
+
+export function parseMemoMarktLage(raw: unknown): MemoMarktLage | null {
+  if (!raw || typeof raw !== "object") return null;
+  const root = record(raw);
+  const kpis = (Array.isArray(root.kpis) ? root.kpis : []).map((entry) => {
+    const item = record(entry);
+    return {
+      value: text(item.value, 24), label: text(item.label, 140), source: text(item.source, 80),
+      url: text(item.url, 400), ebene: item.ebene === "adressat" ? "adressat" as const : "markt" as const,
+    };
+  }).filter((k) => k.value && k.label).slice(0, 4);
+  const belege = (Array.isArray(root.belege) ? root.belege : []).map((entry) => {
+    const item = record(entry);
+    return { text: text(item.text, 300), source: text(item.source, 120) };
+  }).filter((b) => b.text).slice(0, 4);
+  const befund = text(root.befund, 240);
+  if (!kpis.length && !befund && !belege.length) return null;
+  return { kpis, befund, belege };
+}
+
+/** Wie viele verschiedene Herausgeber die recherchierten Zahlen haben. */
+export function memoMarktHerausgeber(lage: MemoMarktLage | null): number {
+  return new Set((lage?.kpis || []).map((k) => kpiHerausgeber(k.source)).filter(Boolean)).size;
+}
+
+export function memoMarktCorpus(lage: MemoMarktLage): string {
+  return [
+    ...lage.kpis.map((k) => `${k.value} ${k.label} ${k.source}`),
+    lage.befund,
+    ...lage.belege.map((b) => `${b.text} ${b.source}`),
+  ].filter(Boolean).join("\n");
+}
+
+export function formatMemoMarktLageBlock(lage: MemoMarktLage): string {
+  const zahlen = lage.kpis.map((k, i) =>
+    `${i + 1}. value: ${k.value} | label: ${k.label} | source: ${k.source}${k.ebene === "adressat" ? " | über den Adressaten" : ""}`).join("\n");
+  const belege = lage.belege.map((b) => `- ${b.text}${b.source ? ` (${b.source})` : ""}`).join("\n");
+  return [
+    zahlen ? `<marktzahlen>\n${zahlen}\n</marktzahlen>` : "",
+    lage.befund || belege ? `<lage_heute>\n${lage.befund ? `befund: ${lage.befund}\n` : ""}${belege}\n</lage_heute>` : "",
+  ].filter(Boolean).join("\n");
 }
 
 export function parseLooseJsonObject(textValue: string): Record<string, unknown> {
@@ -2729,6 +2983,9 @@ ${nennen
     : "title ist ein Whitepaper-Titel zur Herausforderung: konkret, thematisch, höchstens 15 Wörter. Muster, nicht abschreiben: „KI im Handel: Chancen und Herausforderungen.“ „Die Chancen in der Markenpositionierung.“ „Zwei Traditionsmarken brauchen eigene Profile, bevor die Gruppe sie trennt.“"}
 Schwach: Beratungsjargon ohne Thema („Hebel ziehen“), Platzhalter („Thema XY“), die Leistung als Subjekt („Markenstrategie wird zum Hebel…“), die Meldung nacherzählt, ein Slogan ohne Aufgabe${nennen ? `, oder ${firma} nur als Briefkopf ohne Aufgabe` : ""}.
 Stark: die offene Aufgabe aus roots_anschluss als These, so dass jemand das Thema erkennt, ohne die Nachricht gelesen zu haben.
+Keine Pflicht-Schablone: kein „${nennen ? firma : "X"} muss …“, kein „… braucht …“, kein „… müssen …“. Das Referenzmemo sagt „Vom Preisargument zur eigenständigen Marke“: eine Bewegung, kein Auftrag.
+market_title ist ein Befund mit Verb, kein Etikett: nicht „Sportartikelmarkt im Umbruch“, nicht „Markt: Chancen und Risiken“. Muster: „Eigenmarken stehen vor der nächsten Entwicklungsstufe“.
+Übernimm kein Satzgerüst aus <referenz>: kein Titel beginnt mit denselben drei Wörtern wie sein Gegenstück dort („Drei strategische Hebel …“ ist das Gerüst des Referenzmemos, nicht deins).
 standfirst: ein bis zwei Sätze, warum diese Aufgabe JETZT anliegt. Ein Beleg aus dem Artikel als Timing, keine zweite These, keine Pressemitteilung.
 </titel>
 <anlass>
@@ -2742,7 +2999,12 @@ Eine 100-Tage-CMO-Unterlage ist ein anderes Dokument, nicht dieses Memo. Auch we
 <zusammenhang>
 title und standfirst auf dem Cover sind die Herausforderung aus roots_anschluss. Die drei summary-Schlüssel darunter nehmen die drei Innenseiten vorweg, ohne eine Überschrift zu kopieren. market_title und die vier KPIs mit ihren Quellenzeilen belegen, dass der Markt sich bewegt; insight_title zieht daraus den Befund zum Adressaten. Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben; tag ist die übertragbare Lehre, kein Slogan. Nur positive Ausgänge. quote_text zieht die Lehre der drei Fälle als ROOTS-Haltung. Die drei potentials übersetzen das auf den Adressaten: potential ist der ROOTS-Hebel in der Sprache des Falls, ohne den Leistungsnamen zu wiederholen. cta fragt nach dem Gespräch. about_fit bindet roots_leistung an den Fall. Nichts wiederholt die Cover-These wörtlich, jedes Feld trägt den nächsten Schritt der Argumentation. Nichts erzählt die Signalüberschrift noch einmal.
 </zusammenhang>
-<auftrag>
+${answers.market_research ? `<seite2>
+Die Kennzahlen kpi1 bis kpi4 kommen aus <marktzahlen>: value, label und source wie dort, label darfst du sprachlich an die Kachel anpassen, ohne den Inhalt zu ändern. Die Zahl zum Adressaten steht, wenn es sie gibt, an vierter Stelle wie im Referenzmemo.
+insight_title ist der Befund aus <lage_heute> in der Sprache des Falls, mit ${nennen ? firma : "dem Adressaten"} als Subjekt. market_p2 belegt ihn mit den Eigennamen aus <lage_heute> (Marken, Formate, Kanäle), so wie das Referenzmemo Graceland und 5th Avenue nennt.
+Die potentials sprechen diese heutige Aufstellung an: mindestens ein Hebel nennt eine Marke, ein Format oder einen Kanal aus <lage_heute>.
+</seite2>
+` : ""}<auftrag>
 ${auftrag}
 </auftrag>
 <aufbau>
@@ -2782,7 +3044,10 @@ export function buildAssetPrompt(
   const benchmarks = memo.benchmarks.length >= 3
     ? `\n${formatBenchmarkBlock(memo.benchmarks, memo.benchmarks_mode === "custom" ? "nutzer" : "recherche")}\n<belegregeln_benchmarks>\nDie drei Benchmarks in <benchmarks> gelten als belegt, inklusive ihrer Quellen. Andere Zahlen weiter nur aus kennzahlen_im_artikel.\n</belegregeln_benchmarks>`
     : "";
-  return memoPrompt(memo, signalForKind, daten + benchmarks);
+  const markt = memo.market_research
+    ? `\n${formatMemoMarktLageBlock(memo.market_research)}\n<belegregeln_markt>\nZahlen, Herausgeber und Fakten in <marktzahlen> und <lage_heute> sind per Websuche recherchiert und gelten als belegt, inklusive ihrer Quellen.\n</belegregeln_markt>`
+    : "";
+  return memoPrompt(memo, signalForKind, daten + benchmarks + markt);
 }
 
 // ---------------------------------------------------------------------------
@@ -4053,6 +4318,9 @@ function normalizeMemo(
     // Was der Nutzer selbst geschrieben hat, behauptet er selbst. Diese Zahlen
     // gegen den Artikel zu pruefen haette seine eigene Eingabe verworfen.
     ...Object.values(answers.memo_fields),
+    // Die Marktrecherche ist per Websuche belegt; ihre Zahlen gelten wie die
+    // des Artikels.
+    answers.market_research ? memoMarktCorpus(answers.market_research) : "",
   ].filter(Boolean).join("\n");
   const kpis = memoStats(raw.kpis, 4).filter((eintrag) => !corpus || !digitKey(eintrag.value) || numberIsAttested(eintrag.value, corpus));
 
@@ -5506,6 +5774,86 @@ export function parseDeepseekSseText(body: unknown): {
   return out;
 }
 
+/**
+ * Antwort der Perplexity Agent API (/v1/responses, ohne Stream). Der Text steht
+ * in output[].content[] mit type output_text, die Suchtreffer in einem
+ * eigenen output-Eintrag vom Typ search_results.
+ */
+export type PerplexityAntwort = {
+  content: string;
+  finish: string;
+  error: string;
+  usage: AssetModelUsage;
+  costUsd: number;
+  toolCostUsd: number;
+  searchQueries: number;
+  titles: string[];
+  urls: string[];
+  reasoningChars: number;
+};
+
+export function parsePerplexityAntwort(body: unknown): PerplexityAntwort {
+  const out: PerplexityAntwort = {
+    content: "", finish: "", error: "",
+    usage: { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 },
+    costUsd: 0, toolCostUsd: 0, searchQueries: 0, titles: [], urls: [], reasoningChars: 0,
+  };
+  let root: Record<string, unknown> = {};
+  try {
+    root = typeof body === "string" ? record(JSON.parse(body)) : record(body);
+  } catch {
+    out.error = `unlesbare Antwort: ${String(body ?? "").trim().slice(0, 160)}`;
+    return out;
+  }
+  const fehler = root.error;
+  if (fehler && typeof fehler === "object") out.error = text(record(fehler).message || JSON.stringify(fehler), 400);
+  else if (typeof fehler === "string" && fehler) out.error = fehler.slice(0, 400);
+  if (!out.error && root.message && !root.output) out.error = text(root.message, 400);
+  const teile: string[] = [];
+  for (const eintrag of Array.isArray(root.output) ? root.output : []) {
+    const item = record(eintrag);
+    if (item.type === "search_results") {
+      const queries = Array.isArray(item.queries) ? item.queries : [];
+      out.searchQueries += queries.length;
+      for (const treffer of Array.isArray(item.results) ? item.results : []) {
+        const hit = record(treffer);
+        if (hit.title) out.titles.push(text(hit.title, 200));
+        if (hit.url) out.urls.push(text(hit.url, 400));
+      }
+      continue;
+    }
+    for (const teil of Array.isArray(item.content) ? item.content : []) {
+      const stueck = record(teil);
+      if (stueck.type === "output_text" && typeof stueck.text === "string") teile.push(stueck.text);
+      else if (stueck.type === "reasoning_text" && typeof stueck.text === "string") out.reasoningChars += stueck.text.length;
+    }
+  }
+  out.content = teile.join("") || (typeof root.output_text === "string" ? root.output_text : "");
+  const status = String(root.status || "");
+  const grund = String(record(root.incomplete_details).reason || "");
+  out.finish = status === "completed" ? "stop" : grund === "max_output_tokens" ? "length" : status;
+  const u = record(root.usage);
+  const input = Math.max(0, Number(u.input_tokens || 0));
+  const cached = Math.max(0, Number(record(u.input_tokens_details).cached_tokens || 0));
+  const output = Math.max(0, Number(u.output_tokens || 0));
+  const reasoning = Math.max(0, Number(record(u.output_tokens_details).reasoning_tokens || 0));
+  out.usage = {
+    input: Math.max(input - cached, 0),
+    cachedInput: cached,
+    output: Math.max(output - reasoning, 0),
+    thinking: reasoning,
+    total: Number(u.total_tokens || 0) || input + output,
+  };
+  const kosten = record(u.cost);
+  out.costUsd = Math.max(0, Number(kosten.total_cost || 0));
+  out.toolCostUsd = Math.max(0, Number(kosten.tool_calls_cost || 0));
+  if (!out.searchQueries) {
+    const suche = record(record(u.tool_calls_details).search_web);
+    out.searchQueries = Math.max(0, Number(suche.invocation || 0));
+  }
+  return out;
+}
+
 export type AssetModelCallFailKind =
   | "timeout" | "network" | "balance" | "auth" | "rate_limit" | "server"
   | "http" | "stream" | "empty" | "truncated" | "lost" | "abandoned";
@@ -5571,8 +5919,11 @@ export function assetModelCallOutcome(
     );
   }
 
-  const antwort = parseDeepseekSseText(stand.content);
-  const usage = deepseekUsage(antwort.usage);
+  const perplexity = isPerplexityModel(model) ? parsePerplexityAntwort(stand.content) : null;
+  const antwort = perplexity
+    ? { content: perplexity.content, finish: perplexity.finish, error: perplexity.error, reasoningChars: perplexity.reasoningChars }
+    : parseDeepseekSseText(stand.content);
+  const usage = perplexity ? perplexity.usage : deepseekUsage((antwort as ReturnType<typeof parseDeepseekSseText>).usage);
   const roh = antwort.error || (status >= 400 ? String(stand.content || "").trim().slice(0, 300) : "");
 
   if (status >= 400 || (antwort.error && !antwort.content)) {

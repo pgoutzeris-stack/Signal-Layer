@@ -1682,12 +1682,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-1";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-2";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-1";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-2";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-1";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-2";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2258,9 +2258,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    */
   const ABSCHNITTE = [
     ["lesen", "fa-file-lines", "Signal und Artikel werden gelesen"],
-    ["recherchieren", "fa-magnifying-glass", "Gemini recherchiert aktuelle Benchmarks"],
+    ["recherchieren", "fa-magnifying-glass", "Benchmarks und Marktzahlen werden recherchiert"],
     ["modell", "fa-brain", isMemo ? "Das Modell entwickelt die Ansprache" : "Das Modell schreibt Titel und Kernaussage"],
-    ["pruefen", "fa-list-check", "Belege und Längen werden geprüft"],
+    ["pruefen", "fa-list-check", isMemo ? "Entwurf wird gegen das Referenzmemo geprüft" : "Belege und Längen werden geprüft"],
     ["bilder", "fa-image", "Logos und Motive werden gesucht"],
     ["fuellen", "fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
   ];
@@ -2310,8 +2310,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       }
       if (phase === "search") {
         return chars
-          ? `Gemini sucht und schreibt … ${zahl(chars)} Zeichen`
-          : "Gemini sucht im Web";
+          ? `Websuche liefert … ${zahl(chars)} Zeichen`
+          : "Websuche läuft";
       }
       if (phase === "headers") return `${model || "Das Modell"} hat die Verbindung geöffnet`;
       return `${model || "Das Modell"} sendet`;
@@ -2349,6 +2349,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return names ? `Benchmarks: ${names}` : "Benchmarks gefunden";
     }
     if (event === "benchmarks_user") return "Eigene Benchmarks übernommen";
+    if (event === "markt_ok") return `${Number(entry.kpis || 0)} Marktzahlen aus ${Array.isArray(entry.herausgeber) ? entry.herausgeber.length : 0} Quellen`;
+    if (event === "markt_skip") return "Marktzahlen nur aus dem Artikel";
     if (event === "image_start") return "Logo wird gesucht";
     if (event === "images_done") return "Logos gefunden";
     if (event === "done") return "Entwurf steht";
@@ -3059,7 +3061,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (a.company_named === "no") teile.push("ohne Firma");
     else if (row.company || a.company) teile.push(String(row.company || a.company));
     if (a.benchmarks_mode === "custom") teile.push("eigene Benchmarks");
-    else if (isMemo) teile.push("Gemini-Benchmarks");
+    else if (isMemo) teile.push("recherchierte Benchmarks");
     if (a.images === "upload") teile.push("eigene Bilder");
     else if (isMemo) teile.push("recherchierte Logos");
     if (a.cta) teile.push("eigener CTA");

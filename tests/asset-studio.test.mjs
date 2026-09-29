@@ -2104,7 +2104,7 @@ test("die fertige Antwort wird am selben Vertrag gemessen wie die getippten Feld
   assert.match(zweiter, /market_p1/);
   assert.doesNotMatch(zweiter, /beschaedigtes JSON/);
   // Die Edge Function prueft, repariert und behaelt den besseren Entwurf.
-  assert.match(edge, /memoVertragsFehler\(payload as MemoPayload, eigeneMemoFelder\)/);
+  assert.match(edge, /memoVertragsFehler\(p, eigeneMemoFelder\)/);
   assert.match(edge, /zweiteFehler\.length < vertragsFehler\.length/);
   assert.match(edge, /if \(ersterEntwurf\) payload = ersterEntwurf;/);
 });
@@ -3202,8 +3202,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-1");
-  assert.match(indexHtml, /app\.js\?v=20260929-1/);
+  assert.equal(studioVersion, "20260929-2");
+  assert.match(indexHtml, /app\.js\?v=20260929-2/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3264,10 +3264,12 @@ test("das erkannte Unternehmen ist überschreibbar und steht im Titel, wenn gena
   assert.match(edge, /resolveAssetCompany/);
 });
 
-test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", () => {
+test("Benchmarks: Websuche recherchiert, eigene Angaben haben Form und Prüfung", () => {
   const beispiel = backend.MEMO_BENCHMARK_EXAMPLE;
   assert.equal(beispiel.length, 3);
-  assert.equal(backend.MEMO_BENCHMARK_RESEARCH_MODEL, "gemini-2.5-flash");
+  assert.equal(backend.MEMO_BENCHMARK_RESEARCH_MODEL, "openai/gpt-5.4");
+  assert.equal(backend.MEMO_DRAFT_MODEL, "anthropic/claude-opus-5-5");
+  assert.equal(backend.MEMO_PHOTO_RESEARCH_MODEL, "gemini-2.5-flash");
   assert.equal(backend.isExampleBenchmarkSet(beispiel), true);
 
   const eigene = [
@@ -3334,7 +3336,7 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
     { title: "Handelsstudie" },
     backend.normalizeAssetAnswers("memo", { company_mode: "custom", company_text: "Hugo Boss" }),
   );
-  assert.match(research, /Google Search ist Pflicht/);
+  assert.match(research, /Websuche ist Pflicht/);
   assert.match(research, /Nicht Apple\/Nike\/Amazon/);
   assert.match(research, /Hugo Boss/);
   assert.match(research, /Markenstrategie/);
@@ -3362,7 +3364,7 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   );
   assert.match(reviewRecherche, /drei recherchierte Benchmarks/);
   assert.match(review, /vom Nutzer gelieferte Benchmarks/);
-  assert.match(review, /Google Search ist Pflicht/);
+  assert.match(review, /Websuche ist Pflicht/);
   assert.match(review, /Lidl/);
   assert.match(review, /Ausgang POSITIV/);
   assert.match(review, /{"ok":true}/);
@@ -3405,14 +3407,15 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.equal(backend.parseLooseJsonObject("```json\n{\"ok\":true}\n```").ok, true);
 
   assert.match(studio, /key: "benchmarks"/);
-  assert.match(studio, /Gemini recherchiert/);
+  assert.match(studio, /Benchmarks und Marktzahlen werden recherchiert/);
   // Der Beispielknopf ist weg: die Form steht im Hinweis am Feld.
   assert.doesNotMatch(studio, /data-act="bench-example"/);
   assert.match(studio, /feld\("tag", "Statement"/);
   assert.match(studio, /function eigeneBenchmarksPruefen/);
   assert.match(studio, /assetEtaLabel/);
-  assert.match(edge, /function researchMemoBenchmarksWithGemini/);
-  assert.match(edge, /function reviewMemoBenchmarksWithGemini/);
+  assert.match(edge, /function researchMemoBenchmarksWithSearch/);
+  assert.match(edge, /function reviewMemoBenchmarksWithSearch/);
+  assert.match(edge, /tools: \[\{ type: "web_search" \}\]/);
   assert.match(edge, /tools: \[\{ google_search: \{\} \}\]/);
   assert.match(edge, /buildMemoBenchmarkResearchPrompt/);
   assert.match(edge, /buildMemoBenchmarkReviewPrompt/);
@@ -3425,7 +3428,7 @@ test("Benchmarks: Gemini recherchiert, eigene Angaben haben Form und Prüfung", 
   assert.match(edge, /Im Fragebogen eigene Benchmarks eintragen/);
   assert.match(edge, /function callGeminiWithGoogleSearch/);
   assert.match(edge, /streamGenerateContent\?alt=sse/);
-  assert.match(edge, /simple_research_model \|\| MEMO_BENCHMARK_RESEARCH_MODEL/);
+  assert.match(edge, /const researchModel = MEMO_BENCHMARK_RESEARCH_MODEL;/);
   assert.match(edge, /MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS/);
   assert.match(edge, /thinkingBudget: 0/);
   assert.match(edge, /MEMO_BENCHMARK_RESEARCH_MAX_TOKENS/);
@@ -4162,4 +4165,122 @@ test("pg_net: DeepSeek läuft in der Datenbank, das Isolat wartet nur", () => {
 test("pg_net-Wachhund fragt nur Spalten ab, die es gibt", () => {
   const teil = edge.slice(edge.indexOf("async function pflegeAssetModellWarteschlange"), edge.indexOf("async function finishGeneratedAsset"));
   assert.doesNotMatch(teil, /slide_title|, title,/);
+});
+
+test("Memo-Recherche und Entwurf laufen ueber Perplexity, Kosten kommen aus der Antwort", () => {
+  assert.equal(backend.isPerplexityModel("anthropic/claude-opus-5-5"), true);
+  assert.equal(backend.isPerplexityModel("deepseek-v4-pro"), false);
+  const antwort = backend.parsePerplexityAntwort(JSON.stringify({
+    status: "completed",
+    output: [
+      { type: "search_results", queries: ["a", "b"], results: [{ url: "https://niq.com/x", title: "NIQ Studie" }] },
+      { type: "message", content: [{ type: "output_text", text: "{\"ok\":true}" }] },
+    ],
+    usage: {
+      input_tokens: 4157, output_tokens: 261, total_tokens: 4418,
+      input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 60 },
+      cost: { total_cost: 0.01681, tool_calls_cost: 0.0025 },
+    },
+  }));
+  assert.equal(antwort.content, '{"ok":true}');
+  assert.equal(antwort.finish, "stop");
+  assert.equal(antwort.searchQueries, 2);
+  assert.deepEqual(antwort.urls, ["https://niq.com/x"]);
+  assert.equal(antwort.usage.output, 201);
+  assert.equal(antwort.usage.thinking, 60);
+  assert.equal(antwort.costUsd, 0.01681);
+  assert.equal(antwort.toolCostUsd, 0.0025);
+  const abgebrochen = backend.parsePerplexityAntwort({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, output: [] });
+  assert.equal(abgebrochen.finish, "length");
+  // pg_net legt die Perplexity-Antwort ab, das Studio liest sie wie DeepSeek.
+  const fertig = backend.assetModelCallOutcome({ status_code: 200, content: JSON.stringify({
+    status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "{\"title\":\"x\"}" }] }],
+    usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+  }) }, "anthropic/claude-opus-5-5");
+  assert.equal(fertig.ok, true);
+  assert.equal(fertig.text, '{"title":"x"}');
+  const leer = backend.assetModelCallOutcome({ status_code: 402, content: '{"error":{"message":"credits depleted"}}' }, "anthropic/claude-opus-5-5");
+  assert.equal(leer.ok, false);
+  assert.equal(leer.kind, "balance");
+
+  assert.match(edge, /assetKind === "memo" \? MEMO_DRAFT_MODEL/);
+  assert.match(edge, /function modelViaPgNet/);
+  assert.match(edge, /isPerplexityModel\(options\.model\) \? perplexityRequestBody\(options\)/);
+  assert.match(edge, /"anthropic\/claude-opus-5-5": \{ currency: "USD"/);
+  const sql = readFileSync(new URL("../supabase/migrations/20260929140000_memo_perplexity.sql", import.meta.url), "utf8");
+  assert.match(sql, /https:\/\/api\.perplexity\.ai\/v1\/responses/);
+  assert.match(sql, /'memo_market_research'/);
+});
+
+test("Seite 2 bekommt recherchierte Marktzahlen und die heutige Lage des Adressaten", () => {
+  const lage = backend.normalizeMemoMarktLage({
+    kpis: [
+      { value: "8,9 Mrd. €", label: "Umsatz 2025", publisher: "Deichmann", year: "2025", ebene: "adressat" },
+      { value: "40 %", label: "halten Eigenmarken für besser", publisher: "NIQ", year: "2025" },
+      { value: "+ 1,6 PP", label: "Wachstum Eigenmarkenanteil", publisher: "BCG / Inverto", year: "2026" },
+      { value: "keine Zahl", label: "fällt raus", publisher: "X", year: "2025" },
+      { value: "27 %", label: "kaufen aus Vertrauen", publisher: "YouGov", year: "2025" },
+    ],
+    befund: "Eigenmarken funktionieren bei Deichmann überwiegend über den Preis.",
+    belege: [{ text: "Graceland und 5th Avenue sind nach Zielgruppen geordnet.", quelle: "Store-Besuch, 2026" }],
+  }, "Deichmann");
+  assert.equal(lage.kpis.length, 4);
+  assert.equal(lage.kpis[3].ebene, "adressat");
+  assert.equal(lage.kpis[3].source, "Deichmann, 2025");
+  assert.equal(backend.memoMarktHerausgeber(lage), 4);
+  const answers = backend.normalizeAssetAnswers("memo", { company_text: "Deichmann", market_research: lage });
+  assert.equal(answers.market_research.kpis.length, 4);
+  const prompt = backend.buildAssetPrompt("memo", { company: "Deichmann", roots_offering: "Markenstrategie" }, { title: "x", content: "Artikel ohne Zahlen." }, answers);
+  assert.match(prompt, /<marktzahlen>/);
+  assert.match(prompt, /<lage_heute>/);
+  assert.match(prompt, /<seite2>/);
+  assert.match(prompt, /Graceland und 5th Avenue sind nach Zielgruppen geordnet/);
+  // Recherchierte Zahlen stehen nicht im Artikel und bleiben trotzdem stehen.
+  const roh = memoRoh({ kpis: [
+    { value: "40 %", label: "halten Eigenmarken für besser", source: "NIQ, 2025" },
+    { value: "+ 1,6 PP", label: "Wachstum Eigenmarkenanteil", source: "BCG / Inverto, 2026" },
+    { value: "27 %", label: "kaufen aus Vertrauen", source: "YouGov, 2025" },
+    { value: "8,9 Mrd. €", label: "Umsatz 2025", source: "Deichmann, 2025" },
+  ] });
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(roh), answers, { articleText: "Artikel ohne Zahlen." });
+  assert.equal(memo.kpis.length, 4);
+  const recherche = backend.buildMemoMarktLagePrompt({ company: "Deichmann" }, { title: "x" }, answers);
+  assert.match(recherche, /Websuche ist Pflicht/);
+  assert.match(recherche, /Keine Quartalszahlen des Adressaten/);
+});
+
+test("Pruefung und Kritiker messen am Referenzmemo, nicht nur an der Laenge", () => {
+  const answers = backend.normalizeAssetAnswers("memo", { company_text: "Puma" });
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), answers);
+  const schwach = {
+    ...memo,
+    title: "Puma muss die Marke stärken",
+    market_title: "Sportartikelmarkt im Umbruch",
+    potentials_title: "Drei strategische Hebel für Pumas Wachstum",
+    insight_title: "Die Marke wird noch nicht als Wachstumstreiber geführt.",
+    kpis: [1, 2, 3, 4].map((i) => ({ value: `${i} %`, label: "Quartal", source: "Retail News, 2026" })),
+  };
+  const markt = { kpis: [
+    { value: "1 %", label: "a", source: "NIQ, 2025", url: "", ebene: "markt" },
+    { value: "2 %", label: "b", source: "YouGov, 2025", url: "", ebene: "markt" },
+    { value: "3 %", label: "c", source: "BCG, 2026", url: "", ebene: "markt" },
+  ], befund: "", belege: [] };
+  const befunde = backend.memoQualitaetsBefunde(schwach, { firma: "Puma", markt }).join("\n");
+  assert.match(befunde, /title folgt der Schablone/);
+  assert.match(befunde, /market_title ist ein Etikett/);
+  assert.match(befunde, /potentials_title übernimmt das Satzgerüst/);
+  assert.match(befunde, /einer einzigen Quelle/);
+  assert.match(befunde, /insight_title nennt Puma nicht/);
+  // Selbst geschriebene Felder bleiben unangetastet.
+  const eigene = backend.memoQualitaetsBefunde(schwach, { firma: "Puma", markt, eigene: { title: schwach.title } }).join("\n");
+  assert.doesNotMatch(eigene, /title folgt der Schablone/);
+  const kritik = backend.buildMemoKritikPrompt("PROMPT", "{\"title\":\"x\"}", ["title folgt der Schablone"]);
+  assert.match(kritik, /<entwurf>/);
+  assert.match(kritik, /<kritik>/);
+  assert.match(kritik, /Kennzahlen: Markt- oder Verbraucherzahlen/);
+  assert.match(kritik, /title folgt der Schablone/);
+  // Die Edge Function schickt jedes Memo genau einmal durch den Kritiker.
+  assert.match(edge, /\? vertragsFehler\.length > 0 \|\| assetKind === "memo"/);
+  assert.match(edge, /buildMemoKritikPrompt\(prompt, String\(result\.text \|\| ""\), vertragsFehler\)/);
+  assert.match(edge, /zweiteFehler\.length <= vertragsFehler\.length/);
 });

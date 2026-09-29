@@ -106,6 +106,15 @@ import {
   AssetPulse,
   CMO_HUNDRED_DAYS_WIP,
   MEMO_BENCHMARK_RESEARCH_MODEL,
+  MEMO_DRAFT_MODEL,
+  MEMO_PHOTO_RESEARCH_MODEL,
+  PERPLEXITY_RESPONSES_URL,
+  isPerplexityModel,
+  parsePerplexityAntwort,
+  buildMemoMarktLagePrompt,
+  normalizeMemoMarktLage,
+  memoQualitaetsBefunde,
+  buildMemoKritikPrompt,
   MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS,
   MEMO_BENCHMARK_RESEARCH_ATTEMPTS,
   MEMO_BENCHMARK_RESEARCH_MAX_WAIT_MS,
@@ -1752,6 +1761,18 @@ async function getApifyKey(): Promise<string> {
 }
 
 const _deepseekKeyCache: { value: string; at: number } = { value: "", at: 0 };
+
+const _perplexityKeyCache: { value: string; at: number } = { value: "", at: 0 };
+async function getPerplexityKey(): Promise<string> {
+  const now = Date.now();
+  if (_perplexityKeyCache.value && now - _perplexityKeyCache.at < KEY_CACHE_TTL) return _perplexityKeyCache.value;
+  const { data, error } = await getAdminClient()
+    .schema("shared").rpc("get_api_key", { p_key_name: "perplexity_api_key" });
+  if (error) throw new Error(`Could not read Perplexity key: ${error.message}`);
+  _perplexityKeyCache.value = data || "";
+  _perplexityKeyCache.at = now;
+  return _perplexityKeyCache.value;
+}
 
 async function getDeepseekKey(): Promise<string> {
   const now = Date.now();
@@ -3403,8 +3424,15 @@ type ModelUsage = { input: number; cachedInput: number; output: number; thinking
 
 const EMPTY_MODEL_USAGE: ModelUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
 
-function modelProvider(model: string): "gemini" | "deepseek" {
+function modelProvider(model: string): "gemini" | "deepseek" | "perplexity" {
+  if (isPerplexityModel(model)) return "perplexity";
   return model.startsWith("deepseek") ? "deepseek" : "gemini";
+}
+
+/** Diese Anbieter laufen fuer Assets ueber pg_net: die Datenbank wartet, nicht das Isolat. */
+function modelViaPgNet(model: string): boolean {
+  const provider = modelProvider(model);
+  return provider === "deepseek" || provider === "perplexity";
 }
 
 type ModelPriceTier = { input: number; cachedInput?: number; output: number };
@@ -3449,6 +3477,11 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
   "gemini-3.5-flash": { currency: "USD", standard: { input: 1.5, cachedInput: 0.15, output: 9 }, batch: { input: 0.75, cachedInput: 0.075, output: 4.5 } },
   "gemini-3.5-flash-lite": { currency: "USD", standard: { input: 0.3, cachedInput: 0.03, output: 2.5 }, batch: { input: 0.15, cachedInput: 0.02, output: 1.25 } },
   "gemini-3-flash-preview": { currency: "USD", standard: { input: 0.5, cachedInput: 0.05, output: 3 } },
+  // Perplexity Agent API, am 29.9.2026 aus usage.cost echter Aufrufe
+  // zurueckgerechnet. Websuche kostet extra und wird je Aufruf gemessen
+  // gebucht, nicht aus dieser Tabelle.
+  "anthropic/claude-opus-5-5": { currency: "USD", standard: { input: 4, cachedInput: 4, output: 20 } },
+  "openai/gpt-5.4": { currency: "USD", standard: { input: 2.5, cachedInput: 2.5, output: 15 } },
 };
 
 function zeroCostFields(model: string): Record<string, unknown> {
@@ -3546,15 +3579,27 @@ async function recordStandaloneAiUsage(
   usage: ModelUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 },
   searchQueries = 0,
   errorCode?: string,
+  measured?: { usd: number; toolUsd: number },
 ) {
   // Die Kostenbuchung darf den bezahlten Aufruf nie nachträglich scheitern
   // lassen: ein Memo bricht sonst wegen einer Protokollzeile ab.
   try {
     const hasTokens = usage.input + usage.cachedInput + usage.output + usage.thinking > 0;
-    const costs = status === "success" || hasTokens
-      ? await modelCostFields(model, usage, "standard", searchQueries)
+    let costs = status === "success" || hasTokens || measured?.usd
+      ? await modelCostFields(model, usage, "standard", searchQueries).catch(() => zeroCostFields(model))
       : zeroCostFields(model);
-    const grounding = searchQueries > 0 ? await groundingCostFields(costs) : {};
+    let grounding: Record<string, unknown> = {};
+    if (measured && measured.usd > 0) {
+      // Perplexity nennt den Preis selbst, inklusive Websuche. Der zaehlt.
+      const usdEur = Number(costs.usd_to_eur_rate || 0) || (await getUsdEurRate()) || 0.86812;
+      costs = {
+        ...costs, estimated_cost_usd: measured.usd, estimated_cost_eur: measured.usd * usdEur,
+        native_cost: measured.usd, pricing_currency: "USD", usd_to_eur_rate: usdEur, native_to_eur_rate: usdEur,
+      };
+      grounding = { grounding_cost_usd: measured.toolUsd };
+    } else if (searchQueries > 0 && !isPerplexityModel(model)) {
+      grounding = await groundingCostFields(costs);
+    }
     const { error } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       operation, model, status, attempt: 1, prompt_version: ASSET_PROMPT_VERSION,
       asset_id: currentUsageAssetId(), ...grounding,
@@ -3635,7 +3680,9 @@ async function ermittleAssetGegenstand(options: {
 }
 
 async function modelApiKey(model: string): Promise<string> {
-  return modelProvider(model) === "deepseek" ? await getDeepseekKey() : await getGeminiKey();
+  const provider = modelProvider(model);
+  if (provider === "perplexity") return await getPerplexityKey();
+  return provider === "deepseek" ? await getDeepseekKey() : await getGeminiKey();
 }
 
 // Renders a Gemini response schema as a compact JSON shape for providers that
@@ -4436,26 +4483,110 @@ async function callGeminiWithGoogleSearch(
   throw letzter || new Error("Die Benchmark-Recherche ist unvollständig abgebrochen.");
 }
 
-async function researchMemoBenchmarksWithGemini(
-  apiKey: string,
+/**
+ * Websuche ueber die Perplexity Agent API. Ersetzt fuer das Memo die
+ * Gemini-Suche: Google hat am 28.9.2026 jeden Aufruf mit 402 beantwortet.
+ * Gebucht wird der Preis, den Perplexity selbst meldet, inklusive Suche.
+ */
+async function callPerplexityWithSearch(
+  model: string,
+  prompt: string,
+  operation: "memo_benchmark_research" | "memo_market_research",
+  onPulse?: (info: AssetPulse) => void | Promise<void>,
+): Promise<{ text: string; titles: string[]; searchQueries: number }> {
+  const apiKey = await getPerplexityKey().catch(() => "");
+  if (!apiKey) {
+    const fehler = new Error("Für die Recherche ist kein Perplexity-Schlüssel hinterlegt.") as Error & { hart?: boolean };
+    fehler.hart = true;
+    throw fehler;
+  }
+  const body = JSON.stringify({
+    model,
+    tools: [{ type: "web_search" }],
+    instructions: "Du recherchierst für eine Strategieberatung. Nutze die Websuche für jede Angabe und antworte ausschliesslich mit dem verlangten JSON.",
+    input: prompt,
+    max_output_tokens: MEMO_BENCHMARK_RESEARCH_MAX_TOKENS,
+  });
+  let letzter: Error | null = null;
+  for (let attempt = 1; attempt <= MEMO_BENCHMARK_RESEARCH_ATTEMPTS; attempt += 1) {
+    await onPulse?.({ phase: "search", model, chars: 0 });
+    let response: Response;
+    try {
+      response = await fetchMitLimit(PERPLEXITY_RESPONSES_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body,
+      }, MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS);
+    } catch (fehler) {
+      letzter = fehler instanceof Error ? fehler : new Error(String(fehler));
+      if (attempt === MEMO_BENCHMARK_RESEARCH_ATTEMPTS) break;
+      continue;
+    }
+    const roh = await response.text().catch(() => "");
+    if (!response.ok) {
+      await recordStandaloneAiUsage(operation, model, "error", undefined, 0, `http_${response.status}`);
+      const hart = [400, 401, 402, 403].includes(response.status);
+      const fehler = new Error(response.status === 402 || /credit|balance|quota/i.test(roh)
+        ? "Bei Perplexity ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen."
+        : response.status === 429
+          ? "Perplexity drosselt die Recherche gerade (Rate Limit). In einer Minute erneut versuchen."
+          : `Die Recherche über Perplexity ist mit ${response.status} gescheitert: ${roh.slice(0, 200)}`) as Error & { hart?: boolean; transport?: boolean; status?: number };
+      fehler.hart = hart;
+      fehler.transport = true;
+      fehler.status = response.status;
+      letzter = fehler;
+      if (hart || attempt === MEMO_BENCHMARK_RESEARCH_ATTEMPTS) break;
+      await new Promise((fertig) => setTimeout(fertig, Math.min(attempt * 4_000, MEMO_BENCHMARK_RESEARCH_MAX_WAIT_MS)));
+      continue;
+    }
+    const antwort = parsePerplexityAntwort(roh);
+    const gemessen = { usd: antwort.costUsd, toolUsd: antwort.toolCostUsd };
+    const suchen = antwort.searchQueries || (antwort.urls.length ? 1 : 0);
+    if (!antwort.content.trim() || antwort.finish === "length") {
+      await recordStandaloneAiUsage(operation, model, "error", antwort.usage, suchen,
+        antwort.content.trim() ? "finish_length" : "empty_answer", gemessen);
+      letzter = new Error(antwort.content.trim()
+        ? "Die Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Benchmarks eintragen."
+        : "Die Recherche hat keine Antwort geliefert.");
+      if (attempt === MEMO_BENCHMARK_RESEARCH_ATTEMPTS) break;
+      continue;
+    }
+    await recordStandaloneAiUsage(operation, model, "success", antwort.usage, suchen, undefined, gemessen);
+    await onPulse?.({ phase: "search", model, chars: antwort.content.length });
+    return { text: antwort.content, titles: antwort.titles, searchQueries: suchen };
+  }
+  throw letzter || new Error("Die Recherche ist unvollständig abgebrochen.");
+}
+
+/** Marktzahlen und heutige Lage des Adressaten fuer Seite 2. Null, wenn nichts Belegbares kam. */
+async function researchMemoMarktLage(
+  model: string,
+  prompt: string,
+  firma: string,
+  onPulse?: (info: AssetPulse) => void | Promise<void>,
+): Promise<ReturnType<typeof normalizeMemoMarktLage>> {
+  const gefunden = await callPerplexityWithSearch(model, prompt, "memo_market_research", onPulse);
+  return normalizeMemoMarktLage(parseLooseJsonObject(gefunden.text), firma);
+}
+
+async function researchMemoBenchmarksWithSearch(
   model: string,
   prompt: string,
   onPulse?: (info: AssetPulse) => void | Promise<void>,
 ): Promise<{ briefs: ReturnType<typeof normalizeMemoBenchmarkResearch>; searchQueries: number }> {
-  const gefunden = await callGeminiWithGoogleSearch(apiKey, model, prompt, onPulse);
+  const gefunden = await callPerplexityWithSearch(model, prompt, "memo_benchmark_research", onPulse);
   return {
     briefs: normalizeMemoBenchmarkResearch(parseLooseJsonObject(gefunden.text), gefunden.titles),
     searchQueries: gefunden.searchQueries,
   };
 }
 
-async function reviewMemoBenchmarksWithGemini(
-  apiKey: string,
+async function reviewMemoBenchmarksWithSearch(
   model: string,
   prompt: string,
   onPulse?: (info: AssetPulse) => void | Promise<void>,
 ): Promise<{ ok: boolean; grund: string; searchQueries: number }> {
-  const gefunden = await callGeminiWithGoogleSearch(apiKey, model, prompt, onPulse);
+  const gefunden = await callPerplexityWithSearch(model, prompt, "memo_benchmark_research", onPulse);
   const verdict = parseMemoBenchmarkReview(parseLooseJsonObject(gefunden.text));
   return { ...verdict, searchQueries: gefunden.searchQueries };
 }
@@ -4465,6 +4596,67 @@ async function reviewMemoBenchmarksWithGemini(
  * Datenbank. Der Schluessel steht nicht darin: pg_net liest ihn selbst aus
  * dem Vault.
  */
+/**
+ * Anfrage an die Perplexity Agent API, ohne Stream: pg_net legt die ganze
+ * Antwort ab. Anthropic erlaubt mit Denken keine freie Temperatur, deshalb
+ * fehlt sie hier.
+ */
+function perplexityRequestBody(options: ModelCallOptions): Record<string, unknown> {
+  const wantsJson = (options.format ?? "json") === "json";
+  const schemaHint = wantsJson && options.schema
+    ? `\n\n<answer_format>Antworte ausschliesslich mit einem JSON-Objekt in genau dieser Struktur, ohne Text davor oder danach:\n${describeSchema(options.schema)}</answer_format>`
+    : "";
+  const effort = options.reasoningEffort === "max" ? "high"
+    : options.reasoningEffort === "none" || options.reasoningEffort === "low" ? "low"
+    : "medium";
+  return {
+    model: options.model,
+    ...(options.systemText ? { instructions: options.systemText } : {}),
+    input: options.prompt + schemaHint,
+    max_output_tokens: options.maxTotalTokens
+      ?? Math.min(Math.max(options.maxOutputTokens, 3_000) + 6_000, 32_000),
+    reasoning: { effort },
+    stream: false,
+  };
+}
+
+/** JSON-Aufruf ueber Perplexity im Isolat, fuer Wege ohne pg_net. */
+async function callPerplexityJson(options: ModelCallOptions): Promise<ModelCallResult> {
+  const attemptsAllowed = options.attempts ?? 3;
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const body = JSON.stringify(perplexityRequestBody(options));
+  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${options.apiKey}` };
+  let lastError = "";
+  let status = 0;
+  let attemptsUsed = 0;
+  await options.onPulse?.({ phase: "headers", model: options.model, chars: 0 });
+  for (let attempt = 1; attempt <= attemptsAllowed; attempt += 1) {
+    attemptsUsed = attempt;
+    try {
+      const response = await fetchMitLimit(PERPLEXITY_RESPONSES_URL, { method: "POST", headers, body }, timeoutMs);
+      status = response.status;
+      const roh = await response.text();
+      if (response.ok) {
+        const antwort = parsePerplexityAntwort(roh);
+        if (!antwort.content.trim()) {
+          return { ok: false, text: "", status, error: `empty completion (finish ${antwort.finish || "none"})`, usage: antwort.usage, attempts: attemptsUsed };
+        }
+        await options.onPulse?.({ phase: "done", model: options.model, chars: antwort.content.length });
+        return { ok: true, text: antwort.content, status, error: "", usage: antwort.usage, attempts: attemptsUsed };
+      }
+      lastError = roh.slice(0, 1000);
+      const retryable = response.status === 429 || [500, 502, 503, 504].includes(response.status);
+      if (!retryable || attempt === attemptsAllowed) break;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      const zeitAbgelaufen = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      if (zeitAbgelaufen || attempt === attemptsAllowed) break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000 * (2 ** (attempt - 1))));
+  }
+  return { ok: false, text: "", status, error: lastError, usage: EMPTY_MODEL_USAGE, attempts: attemptsUsed };
+}
+
 function deepseekRequestBody(options: ModelCallOptions, stream: boolean): Record<string, unknown> {
   const wantsJson = (options.format ?? "json") === "json";
   const schemaHint = wantsJson && options.schema
@@ -4491,6 +4683,7 @@ function deepseekRequestBody(options: ModelCallOptions, stream: boolean): Record
 
 async function callJsonModelStreaming(options: ModelCallOptions): Promise<ModelCallResult> {
   const provider = modelProvider(options.model);
+  if (provider === "perplexity") return callPerplexityJson(options);
   const wantsJson = (options.format ?? "json") === "json";
   const attemptsAllowed = options.attempts ?? 3;
   const endpoint = provider === "deepseek"
@@ -4618,6 +4811,7 @@ async function callJsonModelStreaming(options: ModelCallOptions): Promise<ModelC
 async function callJsonModel(options: ModelCallOptions): Promise<ModelCallResult> {
   if (options.onPulse) return callJsonModelStreaming(options);
   const provider = modelProvider(options.model);
+  if (provider === "perplexity") return callPerplexityJson(options);
   const wantsJson = (options.format ?? "json") === "json";
   const attemptsAllowed = options.attempts ?? 3;
   const timeoutMs = options.timeoutMs ?? 75_000;
@@ -6024,7 +6218,7 @@ async function starteAssetModellAufruf(
     p_call: call,
     p_attempt: 1,
     p_model: options.model,
-    p_body: deepseekRequestBody(options, true),
+    p_body: isPerplexityModel(options.model) ? perplexityRequestBody(options) : deepseekRequestBody(options, true),
     p_timeout_ms: ASSET_MODEL_CALL_TIMEOUT_MS,
     p_events: events,
   });
@@ -6520,8 +6714,16 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     // Nutzer geschrieben hat, und ein zu kurzer Absatz aus dem Modell ging
     // unbemerkt als weisse Flaeche ins fertige Memo.
     const eigeneMemoFelder = assetKind === "memo" ? parseMemoFields(assetAnswers) : {};
+    const memoAntworten = assetKind === "memo" ? assetAnswers as MemoAnswers : null;
+    const memoFirma = memoAntworten && memoAntworten.company_named !== "no" ? String(signalForAsset.company || "") : "";
+    // Laengenvertrag plus die Befunde, die ein Memo vom Referenzmemo trennen.
+    // Beide gehen in denselben zweiten Anlauf.
+    const memoPruefung = (p: MemoPayload) => [
+      ...memoVertragsFehler(p, eigeneMemoFelder),
+      ...memoQualitaetsBefunde(p, { firma: memoFirma, eigene: eigeneMemoFelder, markt: memoAntworten?.market_research || null }),
+    ];
     let vertragsFehler = payload && assetKind === "memo"
-      ? memoVertragsFehler(payload as MemoPayload, eigeneMemoFelder)
+      ? memoPruefung(payload as MemoPayload)
       : [];
     const ersterEntwurf = payload;
     if (vertragsFehler.length && !reparaturStand.started && !gespeichert) {
@@ -6548,9 +6750,14 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       try {
         const zweiter = normalizeAssetPayload(assetKind, text, assetAnswers, assetContext);
         const zweiteFehler = assetKind === "memo"
-          ? memoVertragsFehler(zweiter as MemoPayload, eigeneMemoFelder)
+          ? memoPruefung(zweiter as MemoPayload)
           : [];
-        if (!ersterEntwurf || zweiteFehler.length < vertragsFehler.length) {
+        // Beim Memo ist der zweite Anlauf ein Kritiker-Durchlauf: er gewinnt,
+        // solange er nicht mehr Fehler hat als der Entwurf.
+        const besser = assetKind === "memo"
+          ? zweiteFehler.length <= vertragsFehler.length
+          : zweiteFehler.length < vertragsFehler.length;
+        if (!ersterEntwurf || besser) {
           payload = zweiter;
           vertragsFehler = zweiteFehler;
         } else {
@@ -6561,12 +6768,18 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         else mangel = fehler instanceof Error ? fehler.message : String(fehler);
       }
     };
-    const pgNet = modelProvider(assetModel) === "deepseek";
+    const pgNet = modelViaPgNet(assetModel);
 
-    const darfReparieren = !gespeichert && (payload ? vertragsFehler.length > 0 : assetMangelIsRepairable(mangel));
+    // Ein Memo bekommt immer genau einen Kritiker-Durchlauf, auch ohne
+    // Vertragsfehler: der Entwurf wird gegen das Referenzmemo gelesen und die
+    // schwachen Felder neu geschrieben.
+    const darfReparieren = !gespeichert && (payload
+      ? vertragsFehler.length > 0 || assetKind === "memo"
+      : assetMangelIsRepairable(mangel));
     const repairMs = darfReparieren && !pgNet ? assetRepairTimeoutMs(Date.now() - isolateStartedAt) : null;
     const reparaturPrompt = () => {
       const prompt = buildAssetPrompt(assetKind, signalForAsset, assetArticle, assetAnswers, gegenstand);
+      if (assetKind === "memo" && payload) return buildMemoKritikPrompt(prompt, String(result.text || ""), vertragsFehler);
       return vertragsFehler.length
         ? buildMemoVertragsRepairPrompt(prompt, vertragsFehler)
         : buildAssetRepairPrompt(prompt, mangel || reparaturStand.mangel);
@@ -6755,7 +6968,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       };
       const finder = createMemoPhotoFinder(
         geminiKey,
-        MEMO_BENCHMARK_RESEARCH_MODEL,
+        MEMO_PHOTO_RESEARCH_MODEL,
         (event, extra) => loggen(event, extra),
         adressatFuerBilder,
         szeneKontext,
@@ -6930,7 +7143,7 @@ async function retryGeneratedAssetModel(assetId: string): Promise<void> {
       temperature: 0.35,
       prompt,
     };
-    if (modelProvider(assetModel) === "deepseek") {
+    if (modelViaPgNet(assetModel)) {
       // Ab hier schreibt nur noch die Datenbank ins Protokoll.
       const start = await starteAssetModellAufruf(admin, assetId, "entwurf", retryOpts);
       if (start.requestId) {
@@ -11558,7 +11771,9 @@ Deno.serve(async (req: Request) => {
         }
 
         const assetConfig = await getPipelineConfig();
-        const assetModel = assetConfig.ai.simple_model || SIMPLE_MODEL;
+        // Das Memo schreibt Claude Opus ueber Perplexity, LinkedIn bleibt beim
+        // Modell der Pipeline.
+        const assetModel = assetKind === "memo" ? MEMO_DRAFT_MODEL : (assetConfig.ai.simple_model || SIMPLE_MODEL);
         const assetKey = await modelApiKey(assetModel);
         if (!assetKey) return errorResponse(origin, `Für ${assetModel} ist kein API-Schlüssel hinterlegt`, 500);
 
@@ -11668,15 +11883,29 @@ Deno.serve(async (req: Request) => {
             const memoAnswers = assetAnswers as MemoAnswers;
             const firma = String(signalForAsset.company || "");
             await abschnitt("recherchieren");
-            const researchModel = assetConfig.ai.simple_research_model || MEMO_BENCHMARK_RESEARCH_MODEL;
-            const geminiKey = await getGeminiKey().catch(() => "");
+            // Nicht simple_research_model: das ist die Gemini-Recherche der
+            // Firmenprofile. Das Memo sucht ueber Perplexity.
+            const researchModel = MEMO_BENCHMARK_RESEARCH_MODEL;
+            const sucheKey = await getPerplexityKey().catch(() => "");
+            // Marktzahlen und Lage laufen parallel zu den Benchmarks. Ohne sie
+            // entsteht das Memo trotzdem, nur mit den Zahlen aus dem Artikel.
+            const marktLauf = sucheKey && !memoAnswers.market_research
+              ? researchMemoMarktLage(
+                researchModel,
+                buildMemoMarktLagePrompt(signalForAsset, assetArticle, memoAnswers),
+                memoAnswers.company_named !== "no" ? firma : "",
+                onPulse,
+              ).catch((fehler) => {
+                loggen("markt_skip", { reason: (fehler instanceof Error ? fehler.message : String(fehler)).slice(0, 300) });
+                return null;
+              })
+              : Promise.resolve(null);
             if (memoAnswers.benchmarks_mode === "custom") {
               memoAnswers.benchmarks = assertMemoBenchmarkBriefs(memoAnswers.benchmarks, firma);
               loggen("benchmarks_user", { names: memoAnswers.benchmarks.map((item) => item.name) });
-              if (geminiKey) {
+              if (sucheKey) {
                 try {
-                  const pruefung = await reviewMemoBenchmarksWithGemini(
-                    geminiKey,
+                  const pruefung = await reviewMemoBenchmarksWithSearch(
                     researchModel,
                     buildMemoBenchmarkReviewPrompt(signalForAsset, assetArticle, memoAnswers),
                     onPulse,
@@ -11693,14 +11922,14 @@ Deno.serve(async (req: Request) => {
                 } catch (fehler) {
                   const grund = fehler instanceof Error ? fehler.message : String(fehler);
                   if (grund.startsWith("BENCHMARK_PASSUNG:")) {
-                    throw new Error(`${grund.slice("BENCHMARK_PASSUNG:".length)}\n\nBitte Benchmarks ersetzen oder Gemini recherchieren lassen.`);
+                    throw new Error(`${grund.slice("BENCHMARK_PASSUNG:".length)}\n\nBitte Benchmarks ersetzen oder recherchieren lassen.`);
                   }
                   loggen("benchmarks_review_skip", { reason: grund.slice(0, 300) });
                 }
               }
             } else {
-              if (!geminiKey) {
-                throw new Error("Für die Benchmark-Recherche ist kein Gemini-Schlüssel hinterlegt. Im Fragebogen eigene Benchmarks eintragen.");
+              if (!sucheKey) {
+                throw new Error("Für die Benchmark-Recherche ist kein Perplexity-Schlüssel hinterlegt. Im Fragebogen eigene Benchmarks eintragen.");
               }
               try {
                 const exclude: string[] = [];
@@ -11709,8 +11938,7 @@ Deno.serve(async (req: Request) => {
                 let letzterBriefs: typeof memoAnswers.benchmarks | null = null;
                 for (let attempt = 1; attempt <= 2; attempt += 1) {
                   try {
-                    const gefunden = await researchMemoBenchmarksWithGemini(
-                      geminiKey,
+                    const gefunden = await researchMemoBenchmarksWithSearch(
                       researchModel,
                       buildMemoBenchmarkResearchPrompt(signalForAsset, assetArticle, memoAnswers, { exclude }),
                       onPulse,
@@ -11724,8 +11952,7 @@ Deno.serve(async (req: Request) => {
                     const briefs = assertMemoBenchmarkBriefs(gefunden.briefs, firma, { allowExample: true });
                     letzterBriefs = briefs;
                     try {
-                      const pruefung = await reviewMemoBenchmarksWithGemini(
-                        geminiKey,
+                      const pruefung = await reviewMemoBenchmarksWithSearch(
                         researchModel,
                         buildMemoBenchmarkReviewPrompt(
                           signalForAsset,
@@ -11796,7 +12023,7 @@ Deno.serve(async (req: Request) => {
                 }
                 // „Eigene Benchmarks eintragen" ist der falsche Rat, wenn Google
                 // nur gedrosselt hat: dann hilft eine Minute warten.
-                const gedrosselt = /drosselt die Benchmark-Recherche/i.test(grund);
+                const gedrosselt = /drosselt die (Benchmark-)?Recherche/i.test(grund);
                 // Ein interner Fehler (englischer Text aus Postgres oder Deno)
                 // hat mit den Benchmarks nichts zu tun. Eigene eintragen hilft
                 // dann nicht, erneut erzeugen schon.
@@ -11807,6 +12034,15 @@ Deno.serve(async (req: Request) => {
                   : "Ohne drei belastbare Benchmarks kann das Memo nicht gebaut werden. Im Fragebogen eigene Benchmarks eintragen.";
                 throw new Error(`${grund}\n\n${rat}`);
               }
+            }
+            const lage = await marktLauf;
+            if (lage) {
+              memoAnswers.market_research = lage;
+              loggen("markt_ok", {
+                model: researchModel, kpis: lage.kpis.length,
+                herausgeber: [...new Set(lage.kpis.map((k) => k.source))].slice(0, 4),
+                belege: lage.belege.length,
+              });
             }
             await persist({ answers: assetAnswers });
           }
@@ -11845,7 +12081,7 @@ Deno.serve(async (req: Request) => {
             temperature: 0.35,
             onPulse,
           };
-          if (modelProvider(assetModel) === "deepseek") {
+          if (modelViaPgNet(assetModel)) {
             // DeepSeek denkt bis zu fuenf Minuten, dieses Isolat lebt 150 s.
             // Der Aufruf laeuft in der Datenbank; ab hier schreibt nur sie
             // ins Protokoll.
