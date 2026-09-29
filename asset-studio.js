@@ -1288,34 +1288,75 @@ const CHROME_CSS = `
 #as-overlay .as-fmt hr{width:1px; height:20px; border:0; background:var(--line,#e2e8f0); margin:0 3px;}
 #as-overlay .as-swatch{width:16px; height:16px; border-radius:999px; border:1px solid rgba(15,23,42,.18); display:block;}
 
+/* Bildslots: leer ist der ganze Slot die Schaltflaeche, gefuellt blendet
+   beim Hover eine helle Leiste oben rechts ein. */
+#as-overlay [data-imgslot]:has(.as-img-ui.is-empty)::after{display:none;}
 #as-overlay .as-img-ui{
-  position:absolute; right:8px; bottom:8px; z-index:6;
-  display:flex; align-items:center; gap:6px;
+  position:absolute; top:10px; right:10px; z-index:6;
+  display:flex; align-items:center; gap:4px; padding:4px;
+  border-radius:12px; background:rgba(255,255,255,.86);
+  -webkit-backdrop-filter:blur(12px) saturate(1.4); backdrop-filter:blur(12px) saturate(1.4);
+  box-shadow:0 0 0 1px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.14);
+  opacity:0; transform:translateY(-4px) scale(.98); pointer-events:none;
+  transition:opacity .18s ease, transform .22s cubic-bezier(.2,.8,.2,1);
 }
+#as-overlay [data-imgslot]:hover .as-img-ui.is-filled,
+#as-overlay .em-shot:hover .as-img-ui.is-filled,
+#as-overlay .as-shot:hover .as-img-ui.is-filled,
+#as-overlay .as-img-ui.is-filled:focus-within{opacity:1; transform:none; pointer-events:auto;}
+#as-overlay [data-imgslot]:has(.as-img-ui.is-filled)::before{
+  content:""; position:absolute; inset:0; z-index:5; pointer-events:none;
+  background:linear-gradient(180deg, rgba(15,23,42,.22), rgba(15,23,42,0) 38%);
+  opacity:0; transition:opacity .2s ease;
+}
+#as-overlay [data-imgslot]:hover:has(.as-img-ui.is-filled)::before{opacity:1;}
+#as-overlay .as-img-tools{display:contents;}
 #as-overlay .as-img-btn{
-  width:32px; height:32px; border:0; border-radius:10px;
-  background:rgba(15,23,42,.72); color:#fff;
+  width:30px; height:30px; border:0; border-radius:8px; padding:0;
+  background:transparent; color:#0f172a; cursor:pointer;
   display:grid; place-items:center; font-size:13px;
-  box-shadow:0 6px 16px rgba(15,23,42,.22);
+  transition:background .15s ease, color .15s ease, transform .15s ease;
 }
-#as-overlay .as-img-btn:hover{background:rgba(15,23,42,.88);}
-#as-overlay .as-img-tools{
-  display:flex; align-items:center; gap:8px; margin-right:6px; padding:6px 10px;
-  border-radius:12px; background:rgba(15,23,42,.72); color:#fff;
-  box-shadow:0 6px 16px rgba(15,23,42,.22);
+#as-overlay .as-img-btn:hover{background:rgba(32,110,251,.1); color:#206efb;}
+#as-overlay .as-img-btn:active{transform:scale(.92);}
+#as-overlay .as-img-btn:focus-visible{outline:2px solid #206efb; outline-offset:1px;}
+#as-overlay .as-img-btn.is-clear:hover{background:#fef2f2; color:#dc2626;}
+#as-overlay .as-img-value{min-width:36px; font-size:11px; font-weight:600; color:#475569; text-align:center; font-variant-numeric:tabular-nums;}
+#as-overlay .as-img-range{display:flex; align-items:center; gap:6px; padding:0 6px; font-size:12px; color:#475569;}
+#as-overlay .as-img-range input{width:64px; accent-color:#206efb;}
+#as-overlay .as-img-ui.is-filled .as-img-pick-icon{display:contents;}
+
+/* Leer: keine Leiste, der Slot selbst nimmt den Klick. */
+#as-overlay .as-img-ui.is-empty{
+  inset:0; top:0; right:0; padding:0; border-radius:inherit; gap:0;
+  background:transparent; box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none;
+  opacity:1; transform:none; pointer-events:auto;
 }
-#as-overlay .as-img-tools .as-img-btn{width:26px; height:26px; font-size:11px; background:transparent; box-shadow:none;}
-#as-overlay .as-img-tools .as-img-btn:hover{background:rgba(255,255,255,.16);}
-#as-overlay .as-img-value{min-width:38px; font-size:11px; font-weight:750; text-align:center;}
-#as-overlay .as-img-range{display:flex; align-items:center; gap:5px; font-size:11px;}
-#as-overlay .as-img-range input{width:64px; accent-color:#6ea3ff;}
-#as-overlay .as-img-btn.is-clear{width:28px; height:28px; font-size:12px; background:rgba(255,255,255,.94); color:#0f172a;}
-#as-overlay .as-shot:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
-#as-overlay .as-picslot--tpl:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear),
-#as-overlay .em-shot:has(img[src]:not([src=""])) .as-img-btn:not(.is-clear){opacity:0;}
-#as-overlay .as-shot:hover .as-img-btn,
-#as-overlay .as-picslot--tpl:hover .as-img-btn,
-#as-overlay .em-shot:hover .as-img-btn{opacity:1;}
+#as-overlay .as-img-ui.is-empty .as-img-pick{
+  width:100%; height:100%; border-radius:inherit;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+  color:#206efb; background:transparent;
+}
+#as-overlay .as-img-ui.is-empty .as-img-pick:hover{background:rgba(32,110,251,.06);}
+#as-overlay .as-img-pick-icon{
+  width:48px; height:48px; border-radius:999px; display:grid; place-items:center;
+  background:#fff; font-size:18px;
+  box-shadow:0 0 0 1px rgba(32,110,251,.14), 0 6px 18px rgba(32,110,251,.14);
+  transition:transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease, background .2s ease, color .2s ease;
+}
+#as-overlay .as-img-ui.is-empty .as-img-pick:hover .as-img-pick-icon{
+  transform:translateY(-2px) scale(1.06); background:#206efb; color:#fff;
+  box-shadow:0 10px 26px rgba(32,110,251,.32);
+}
+#as-overlay .as-img-pick-label{
+  font-size:12px; font-weight:600; letter-spacing:.01em; color:#206efb;
+  opacity:0; transform:translateY(-4px); transition:opacity .2s ease, transform .25s cubic-bezier(.2,.8,.2,1);
+}
+#as-overlay .as-img-ui.is-empty .as-img-pick:hover .as-img-pick-label,
+#as-overlay .as-img-ui.is-empty .as-img-pick:focus-visible .as-img-pick-label{opacity:1; transform:none;}
+@media (prefers-reduced-motion:reduce){
+  #as-overlay .as-img-ui, #as-overlay .as-img-pick-icon, #as-overlay .as-img-pick-label{transition:none;}
+}
 
 #as-overlay .as-hint{font-size:12px; line-height:1.5; color:var(--muted,#475569); margin:0;}
 #as-overlay .as-q > .as-hint{margin-top:-2px;}
@@ -1641,12 +1682,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260925-2";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-1";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260925-2";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-1";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260925-2";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-1";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -4155,7 +4196,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const deckung = Math.round(bildWert(bild, "opacity", 1) * 100);
       const overlay = Math.round(bildWert(bild, "overlay", 1) * 100);
       // Ohne Bild bleibt es beim einen Knopf: Regler auf nichts sind Attrappen.
-      return `<div class="as-img-ui" data-as-chrome>
+      return `<div class="as-img-ui${hat ? " is-filled" : " is-empty"}" data-as-chrome>
       ${hat ? `<div class="as-img-tools">
         <button type="button" class="as-img-btn" data-act="img-crop" data-imgkey="${attr(key)}" aria-label="Zuschneiden" title="Zuschneiden"><i class="fa-solid fa-crop-simple"></i></button>
         <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="-1" data-imgkey="${attr(key)}" aria-label="Kleiner" title="Kleiner"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
@@ -4164,7 +4205,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <label class="as-img-range" title="Transparenz"><i class="fa-solid fa-circle-half-stroke"></i><input type="range" min="20" max="100" step="5" value="${deckung}" data-imgrange="opacity" data-imgkey="${attr(key)}" aria-label="Transparenz"></label>
         ${isMemo ? "" : `<label class="as-img-range" title="Overlay"><i class="fa-solid fa-layer-group"></i><input type="range" min="0" max="100" step="5" value="${overlay}" data-imgrange="overlay" data-imgkey="${attr(key)}" aria-label="Overlay"></label>`}
       </div>` : ""}
-      <button type="button" class="as-img-btn" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><i class="fa-regular fa-image"></i></button>
+      <button type="button" class="as-img-btn as-img-pick" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><span class="as-img-pick-icon"><i class="fa-regular ${hat ? "fa-images" : "fa-image"}"></i></span>${hat ? "" : `<span class="as-img-pick-label">Bild einfügen</span>`}</button>
       ${hat ? `<button type="button" class="as-img-btn is-clear" data-act="img-clear" data-imgkey="${attr(key)}" aria-label="Bild entfernen" title="Bild entfernen"><i class="fa-solid fa-xmark"></i></button>` : ""}
     </div>`;
     };
