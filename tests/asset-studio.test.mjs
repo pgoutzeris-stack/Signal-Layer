@@ -4594,3 +4594,25 @@ test("Ladeanzeige nennt die Bildplaetze beim Namen", () => {
   assert.match(studio, /`Bildsuche · Runde \$\{Number\(entry\.runde \|\| 1\)\}: \$\{\(Array\.isArray\(entry\.slots\) \? entry\.slots : \[\]\)\.map\(bildName\)\.join\(", "\)\}`/);
   assert.doesNotMatch(studio, /Rahmen, Runde/);
 });
+
+test("Schreibstil fuer alle Textgeneratoren und Pruefung auf KI-Bauweise", () => {
+  const answers = backend.normalizeAssetAnswers("memo", { company_text: "Intersport" });
+  const prompt = backend.buildAssetPrompt("memo", { company: "Intersport" }, { title: "x", content: "Text." }, answers);
+  assert.match(prompt, /<schreibstil>/);
+  assert.match(prompt, /Passt er unverändert in einen Text über ein anderes Unternehmen, ist er zu allgemein/);
+  assert.match(backend.MEMO_KRITIK_MASSSTAB, /Sprache nach <schreibstil>/);
+  assert.equal((backendSource.match(/\$\{SPRACHREGELN\}\n\$\{SCHREIBSTIL\}/g) || []).length, 4);
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), answers);
+  // Saetze aus dem Intersport-Memo vom 29.9.2026.
+  const slop = {
+    ...memo,
+    quote_text: "Eigenmarken wachsen dort, wo sie eine klare Rolle im Sortiment haben, nicht als billigere Kopie.",
+    potentials_lead: "Die Analyse zeigt: Intersport verbindet eine starke Position mit einem neuen Format. Mehr Potenzial entsteht, wenn die Eigenmarken nicht nur günstiger, sondern mit eigenem Profil geführt werden.",
+    market_p1: "Wird das zur Wettbewerbsfrage? Intersport testet Superstores.",
+  };
+  const befunde = backend.memoQualitaetsBefunde(slop, { firma: "Intersport" }).join("\n");
+  assert.match(befunde, /Zu viele Gegenüberstellungen/);
+  assert.match(befunde, /Doppelpunkt kündigt eine Pointe an \(potentials_lead\)/);
+  assert.match(befunde, /Rhetorische Frage in market_p1/);
+  assert.match(befunde, /potentials_lead übernimmt das Satzgerüst/);
+});

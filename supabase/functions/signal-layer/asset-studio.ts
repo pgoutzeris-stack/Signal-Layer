@@ -713,6 +713,7 @@ export function memoQualitaetsBefunde(
     title: "title", market_title: "market_title", insight_title: "insight_title",
     benchmark_title: "benchmark_title", potentials_title: "potentials_title",
     potentials_lead2: "potentials_lead2", quote_text: "quote_text",
+    potentials_lead: "potentials_lead", market_p1: "market_p1", market_p2: "market_p2",
   };
   const anfang = (wert: string) => klein(wert).replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 3).join(" ");
   for (const key of Object.keys(gegenstueck)) {
@@ -734,6 +735,23 @@ export function memoQualitaetsBefunde(
     if (betroffen.length) {
       befunde.push(`${betroffen.slice(0, 6).join(", ")} übernehmen das Eigenmarken-Thema des Referenzmemos, obwohl der Fall davon nicht handelt. Schreibe zum Thema aus <hebel> und artikel.`);
     }
+  }
+  // Bauweise der Saetze nach <schreibstil>, gezaehlt ueber alle freien Felder.
+  const fliesstext = Object.entries(werte)
+    .filter(([key]) => !eigene[key] && !["title", "cta", "sources"].includes(key) && !/_source$|_value$|_name$/.test(key))
+    .map(([key, wert]) => [key, String(wert || "").replace(/<[^>]+>/g, " ")] as const);
+  const kontraste = fliesstext.filter(([, wert]) =>
+    /\bnicht (nur |als |mehr )?[^.;!?]{1,90}?\bsondern\b|\b(an)?statt\b|\bnicht als\b|\bwas früher\b[^.]{0,80}\bist heute\b/i.test(wert));
+  if (kontraste.length > 1) {
+    befunde.push(`Zu viele Gegenüberstellungen (${kontraste.map(([key]) => key).join(", ")}). Höchstens eine im ganzen Memo, dort wo der Fall sie belegt; sonst die Aussage direkt formulieren.`);
+  }
+  const pointen = fliesstext.filter(([, wert]) => /(^|[.!?]\s+)[A-ZÄÖÜ][^.:!?]{0,45}:\s/.test(wert));
+  if (pointen.length) {
+    befunde.push(`Doppelpunkt kündigt eine Pointe an (${pointen.map(([key]) => key).join(", ")}). Als normalen Satz schreiben.`);
+  }
+  const fragen = fliesstext.filter(([, wert]) => wert.includes("?"));
+  if (fragen.length) {
+    befunde.push(`Rhetorische Frage in ${fragen.map(([key]) => key).join(", ")}. Nur die Gesprächsfrage am Schluss ist eine Frage.`);
   }
   const quellen = [1, 2, 3, 4].map((i) => String(werte[`kpi${i}_source`] || "")).filter(Boolean);
   const herausgeber = new Set(quellen.map((q) => kpiHerausgeber(q)).filter(Boolean));
@@ -761,7 +779,7 @@ export const MEMO_KRITIK_MASSSTAB = `1. title: benennt Potenzial oder Herausford
 4. insight_title und market_p2: ein konkreter Befund zur heutigen Aufstellung des Adressaten mit Eigennamen (Marken, Formate, Kanäle), nichts, was auf jedes Unternehmen passt.
 5. Benchmarks: jede zeigt eine konkrete Handlung und warum sie gewirkt hat, am selben Mechanismus wie der Hebel.
 6. Potenziale: jeder Hebel ist erkennbar für diesen Adressaten geschrieben und schließt an seine heutige Aufstellung an.
-7. Sprache: aktive Verben, keine Beratungsfloskeln, kein Satzgerüst aus dem Referenzmemo, kein Gedankenstrich.
+7. Sprache nach <schreibstil>: jeder Satz besteht die Übertragbarkeitsprobe, Handelnde vorn, höchstens ein Kontrast im ganzen Memo, kein Doppelpunkt vor einer Pointe, kein Merksatz, kein Satzgerüst aus dem Referenzmemo, kein Gedankenstrich.
 8. Zusammenhang: Cover, Seite 2, Seite 3 und Seite 4 bauen aufeinander auf, kein Feld wiederholt ein anderes. summary_0 ist die Herausforderung heute, summary_1 der Insight, summary_2 das Potenzial mit dem ROOTS-Hebel.
 9. ROOTS-Beitrag: Seite 4 und about_fit sagen konkret, was ROOTS analysiert, entwickelt oder umsetzt, so wie es roots_anschluss im zweiten Satz beschreibt. Keine allgemeine Hilfe-Formel.
 10. Kein Satz bricht ab: jedes Feld endet mit einem vollständigen Gedanken.`;
@@ -913,6 +931,7 @@ ${regeln}
 ${wert || "(leer)"}
 </jetzt>
 ${verstoss ? `<befund>\n${verstoss}\n</befund>\n` : ""}${kontext.company ? `<adressat>\n${kontext.company}\n</adressat>\n` : ""}${kontext.signal ? `<anlass>\n${kontext.signal}\n</anlass>\n` : ""}${nachbarn ? `<umfeld>\nDiese Felder stehen daneben und duerfen sich nicht wiederholen:\n${nachbarn}\n</umfeld>\n` : ""}${SPRACHREGELN}
+${SCHREIBSTIL}
 <auftrag>
 ${zuLang
     ? "Der Text ist zu lang fuer den Platz. Kuerze ihn auf die Grenze, ohne die Aussage zu verlieren: streiche Fuellwoerter, Doppelungen und Nebensaetze, die nichts tragen. Nicht mitten im Satz abschneiden."
@@ -995,6 +1014,7 @@ ${referenz}
 ${regeln}
 </laengen>
 ${kontext.company ? `<adressat>\n${kontext.company}\n</adressat>\n` : ""}${kontext.signal ? `<anlass>\n${kontext.signal}\n</anlass>\n` : ""}${umfeld ? `<umfeld>\nDas steht schon im Dokument. Baue darauf auf und wiederhole keinen Satz woertlich:\n${umfeld}\n</umfeld>\n` : ""}${SPRACHREGELN}
+${SCHREIBSTIL}
 <auftrag>
 Fuelle jedes Feld dieses Abschnitts. Keine Zahl, die nicht im Anlass oder im Umfeld steht. Keine Anfuehrungszeichen um die Werte. Halte jede Laengenangabe ein: ein zu langes Feld verschiebt die Seite, ein zu kurzes hinterlaesst eine weisse Flaeche.
 </auftrag>
@@ -2287,6 +2307,28 @@ Deutsche Zahlen (Tausenderpunkt, Dezimalkomma, geschütztes Leerzeichen vor %).
 Keine erklärenden Unterzeilen unter Überschriften.
 </sprachregeln>`;
 
+/**
+ * Wie die Texte klingen sollen, am Deichmann-Memo abgelesen und allgemein
+ * gefasst. Keine Wortliste: Wortverbote verschieben die Floskel nur auf das
+ * naechste Wort. Die Regeln beschreiben die Haltung und die Bauweise der
+ * Saetze, damit sie fuer jedes Thema gelten.
+ */
+const SCHREIBSTIL = `<schreibstil>
+So klingt das Referenzmemo, und so schreibst du zu jedem Thema:
+- Du schreibst als Beraterin, die sich den Fall genau angesehen hat: nüchtern, konkret, ohne Werbeton. Überzeugen sollen die Fakten, nicht die Adjektive.
+- Jeder Satz bringt etwas Neues: eine Beobachtung, eine Zahl mit Quelle, eine Handlung, einen Ablauf oder eine Folge. Ein Satz, der nur einordnet, betont, ankündigt oder zusammenfasst, fällt weg.
+- Prüfe jeden Satz auf Übertragbarkeit: Passt er unverändert in einen Text über ein anderes Unternehmen, ist er zu allgemein. Dann gehört ein Name, ein Ort, eine Zahl, ein Zeitpunkt oder ein konkreter Ablauf aus dem Fall hinein.
+- Wer handelt, steht vorn. Unternehmen, Marken und Menschen tun etwas, das man sehen oder nachzählen kann. Abstrakte Begriffe handeln nicht, entstehen nicht und zeigen nichts.
+- Verben statt Substantivketten, sichtbare Dinge statt Oberbegriffe.
+- Ein gewählter Begriff bleibt stehen und wird wiederholt, statt durch Synonyme ersetzt zu werden.
+- Gegenüberstellungen sind kein Stilmittel. Ein Kontrast steht nur dort, wo der Fall ihn belegt, im ganzen Text höchstens einmal.
+- Kein Doppelpunkt, der eine Pointe ankündigt. Keine rhetorische Frage, ausser der Gesprächsfrage am Schluss. Kein Merksatz als Satzende.
+- Der Rhythmus folgt dem Inhalt: Kurze und längere Sätze wechseln, nicht jeder Absatz hat dieselbe Form, und eine Aufzählung hat so viele Glieder, wie der Fall hergibt.
+- Belege stehen für sich. Quelle und Zahl reichen, ohne sie als bemerkenswert, deutlich oder entscheidend zu bewerten.
+- Empfehlungen sind Tätigkeiten mit einem Gegenstand, die an die heutige Aufstellung anschliessen, keine Zielbilder und keine Formeln, die für jedes Unternehmen gelten.
+- Ein Statement zu einem Beispiel ist die Lehre genau dieses Falls mit seinem Mechanismus, kein allgemeiner Kalenderspruch.
+</schreibstil>`;
+
 const BELEGREGELN = `<belegregeln>
 Jede Aussage muss aus signal oder artikel belegbar sein.
 Fehlt der Beleg für eine Zahl, formuliere die Aussage qualitativ, statt eine Zahl zu erfinden.
@@ -3119,6 +3161,7 @@ post_text: die Caption des Beitrags, 90 bis 180 Wörter und höchstens 1300 Zeic
 Der erste Slide setzt die These, die mittleren tragen je einen Gedanken, der letzte den Aufruf im sichtbaren Pointe-Feld der gewählten Variante.` : ""}
 </aufbau>
 ${SPRACHREGELN}
+${SCHREIBSTIL}
 ${BELEGREGELN}
 <selbstpruefung>
 Prüfe vor dem JSON zuerst die Vorlagenwahl gegen <vorlagenwahl>, dann jeden Slide gegen seine Inhaltslogik und seine sichtbaren Felder. Lies Zahlenwert plus sichtbaren Bezug als einen Satz; tausche keine Zahl gegen eine auffälligere Nebenkennzahl. Prüfe, dass title, subtitle, bullets, labels und Schritte dieselbe Aussage tragen, nicht nur dass jedes Einzelwort irgendwo im Artikel vorkommt. Lies das Carousel anschließend am Stück: Jede Folie muss einen neuen argumentativen Schritt leisten. Kürze zuletzt auf die Zeichen- und Zeilengrenzen der konkreten Variante.
@@ -3230,6 +3273,7 @@ Das fertige Referenzmemo, Feld für Feld. Daran sind Tonlage, Satzbau, Konkrethe
 ${MEMO_BEISPIELE}
 </referenz>
 ${eigeneInhalte}${SPRACHREGELN}
+${SCHREIBSTIL}
 ${BELEGREGELN}
 ${DATENHINWEIS}
 ${daten}
