@@ -405,3 +405,20 @@ test("Versionsmenue: eine Version ohne Signale gilt nicht als aktuell", async ()
   assert.equal(spaeter.current.version, "roots-simple-v2.7");
   assert.deepEqual(spaeter.historical.map((entry) => entry.version), ["roots-simple-v2.6", "roots-simple-v2.5"]);
 });
+
+test("Info-Symbol im Versionsmenue: sinnvoller Inhalt, eigener Hinweis am body, kein Fragezeichen", async () => {
+  const view = await import("../simple-view-state.mjs");
+  const info = view.simpleVersionInfo({ version: "roots-simple-v2.6", model: "deepseek-v4-pro", signals: 392, first_seen_at: "2026-08-28T10:00:00Z", last_run_at: "2026-09-20T10:00:00Z" });
+  assert.equal(info, "Erster Lauf 28.8.2026\nLetzter Lauf 20.9.2026\nModell deepseek-v4-pro\n392 Signale");
+  assert.equal(view.simpleVersionInfo({ signals: 0 }), "Noch keine Signale");
+  const { readFileSync } = await import("node:fs");
+  const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const simple = readFileSync(new URL("../simple-mode.js", import.meta.url), "utf8");
+  assert.match(app, /function rootsTipFloat\(\)/);
+  assert.match(app, /option\.dataset\.info \|\|/);
+  assert.match(simple, /data-info="\$\{esc\(info\)\}"/);
+  assert.match(html, /\.roots-select-info \{[^}]*cursor: default;/);
+  assert.doesNotMatch(html, /\.roots-select-info \{[^}]*cursor: help/);
+  assert.match(html, /\.roots-tip-float \{[^}]*white-space: pre-line;/);
+});

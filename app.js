@@ -2,14 +2,14 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260929-9";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260929-10";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260929-9";
-import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260929-9";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260929-10";
+import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260929-10";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-9";
-import { openManualSignal } from "./manual-signal.js?v=20260929-9";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-10";
+import { openManualSignal } from "./manual-signal.js?v=20260929-10";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260830-1330";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
@@ -2118,28 +2118,41 @@ function mountResultsHeader() {
   intro?.remove();
 }
 
+// Ein Hinweis fuer alle Info-Symbole, direkt am body. Im aufgeklappten Menue
+// war er unsichtbar: das Menue ist per transform verschoben, dort rechnet
+// position: fixed relativ zum Menue statt zum Fenster.
+function rootsTipFloat() {
+  let tip = document.getElementById("roots-tip-float");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "roots-tip-float";
+    tip.className = "roots-tip-float";
+    tip.setAttribute("role", "tooltip");
+    document.body.appendChild(tip);
+    // Beim Scrollen wuerde er am alten Ort stehen bleiben.
+    window.addEventListener("scroll", unpinRootsSelectInfoTip, true);
+  }
+  return tip;
+}
+
 function pinRootsSelectInfoTip(host) {
-  const tip = host.querySelector(".roots-select-info-tip");
-  if (!tip || host.hidden || !tip.textContent.trim()) return;
+  const text = host.querySelector(".roots-select-info-tip")?.textContent.trim() || "";
+  if (host.hidden || !text) return;
+  const tip = rootsTipFloat();
+  tip.textContent = text;
+  tip.classList.add("is-visible");
   const rect = host.getBoundingClientRect();
   const gap = 8;
-  tip.classList.add("is-pinned");
   const width = Math.max(tip.offsetWidth, 48);
   const height = Math.max(tip.offsetHeight, 24);
   const left = Math.min(window.innerWidth - width / 2 - 8, Math.max(width / 2 + 8, rect.left + rect.width / 2));
   const above = rect.top - gap - height >= 8;
   tip.style.left = `${left}px`;
-  tip.style.top = `${above ? rect.top - gap : rect.bottom + gap}px`;
-  tip.dataset.place = above ? "above" : "below";
+  tip.style.top = `${above ? rect.top - gap - height : rect.bottom + gap}px`;
 }
 
-function unpinRootsSelectInfoTip(host) {
-  const tip = host.querySelector(".roots-select-info-tip");
-  if (!tip) return;
-  tip.classList.remove("is-pinned");
-  tip.removeAttribute("data-place");
-  tip.style.left = "";
-  tip.style.top = "";
+function unpinRootsSelectInfoTip() {
+  document.getElementById("roots-tip-float")?.classList.remove("is-visible");
 }
 
 function bindRootsSelectInfoTip(host) {
@@ -2331,7 +2344,7 @@ function enhanceHeaderSelects() {
       node.hidden = !has;
       if (tip) tip.textContent = date || "";
       if (has) {
-        node.setAttribute("aria-label", date);
+        node.setAttribute("aria-label", String(date).replace(/\n/g, ", "));
         node.tabIndex = 0;
       } else {
         node.removeAttribute("aria-label");
@@ -2362,7 +2375,7 @@ function enhanceHeaderSelects() {
       const text = document.createElement("span");
       text.textContent = option.textContent;
       button.append(text);
-      const dateInfo = infoNode(option.dataset.date || "");
+      const dateInfo = infoNode(option.dataset.info || (option.dataset.date ? `Stand vom ${option.dataset.date}` : ""));
       if (dateInfo) button.append(dateInfo);
       button.dataset.value = option.value;
       button.setAttribute("role", "option");
@@ -2394,7 +2407,8 @@ function enhanceHeaderSelects() {
     };
     const render = () => {
       label.textContent = isGrid ? summaryLabel() : (select.selectedOptions?.[0]?.textContent || "Auswählen");
-      fillInfo(info, isGrid ? "" : (select.selectedOptions?.[0]?.dataset?.date || ""));
+      const gewaehlt = select.selectedOptions?.[0]?.dataset;
+      fillInfo(info, isGrid ? "" : (gewaehlt?.info || (gewaehlt?.date ? `Stand vom ${gewaehlt.date}` : "")));
       const options = [...select.options];
       if (!isGrid) { menu.replaceChildren(...options.map(makeOption)); return; }
       menu.replaceChildren();

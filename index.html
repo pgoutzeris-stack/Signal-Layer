@@ -591,7 +591,17 @@
   .roots-select-trigger i { color: var(--brand); font-size: .82rem; }
   .roots-select-trigger > i { transition: transform .18s ease; }
   .roots-select.open .roots-select-trigger > i { transform: rotate(180deg); }
-  .roots-select-info { position: relative; z-index: 1; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; color: var(--brand); font-size: .78rem; cursor: help; }
+  .roots-select-info { position: relative; z-index: 1; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; color: var(--brand); font-size: .78rem; cursor: default; border-radius: 999px; transition: transform .18s ease, color .18s ease, background .18s ease; }
+  .roots-select-info:hover, .roots-select-info:focus-visible { transform: scale(1.15); background: var(--brand-light, #eff6ff); outline: none; }
+  .roots-select-info-tip { display: none !important; }
+  .roots-tip-float {
+    position: fixed; z-index: 10050; transform: translateX(-50%); max-width: 240px;
+    padding: .5rem .65rem; border: 1px solid var(--pill-popover-border); border-radius: 10px;
+    background: var(--pill-popover-bg); color: var(--pill-popover-text); font-size: .68rem; font-weight: 600; line-height: 1.45;
+    white-space: pre-line; box-shadow: var(--pill-popover-shadow); opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .14s ease, visibility .14s ease;
+  }
+  .roots-tip-float.is-visible { opacity: 1; visibility: visible; }
   .roots-select-info[hidden] { display: none; }
   .roots-select-info:hover, .roots-select-info:focus-visible { z-index: 8; }
   .roots-select-info-tip {
@@ -2542,7 +2552,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260929-9';
+  import { initApp } from './app.js?v=20260929-10';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

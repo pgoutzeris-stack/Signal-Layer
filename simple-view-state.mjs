@@ -77,3 +77,24 @@ export function advancedVersionLabel(entry, currentVersion) {
     ? `${version} · aktuell · ${signals}`
     : `${version} · ${signals}`;
 }
+
+function datumDe(iso) {
+  const date = new Date(iso || "");
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("de-DE");
+}
+
+/** Inhalt des Info-Symbols im Versionsmenue: wann gelaufen, womit, wie viele Signale. */
+export function simpleVersionInfo(entry) {
+  if (!entry) return "";
+  const zeilen = [];
+  const erster = datumDe(entry.first_seen_at);
+  const letzter = datumDe(entry.last_run_at || entry.last_seen_at);
+  if (erster) zeilen.push(`Erster Lauf ${erster}`);
+  if (letzter && letzter !== erster) zeilen.push(`Letzter Lauf ${letzter}`);
+  if (entry.model) zeilen.push(`Modell ${entry.model}`);
+  const signale = Number(entry.signals || 0);
+  zeilen.push(signale > 0 ? signalCountText(signale) : "Noch keine Signale");
+  const archiviert = Number(entry.archived_signals || 0);
+  if (archiviert > 0) zeilen.push(`${archiviert.toLocaleString("de-DE")} archivierte Signale`);
+  return zeilen.join("\n");
+}

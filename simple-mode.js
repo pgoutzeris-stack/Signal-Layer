@@ -13,9 +13,9 @@
 // Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
-import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionMenu } from "./simple-view-state.mjs?v=20260929-9";
+import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20260929-10";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { articleDisplayTitle } from "./article-title.mjs?v=20260929-9";
+import { articleDisplayTitle } from "./article-title.mjs?v=20260929-10";
 
 let ctx = null;
 let els = {};
@@ -371,7 +371,8 @@ async function loadVersions() {
     const currentSelected = !selectedVersion || selectedVersion === currentVersionLabel;
     const dateAttr = (entry) => {
       const date = simpleVersionDateLabel(entry);
-      return date ? ` data-date="${esc(date)}"` : "";
+      const info = simpleVersionInfo(entry);
+      return `${date ? ` data-date="${esc(date)}"` : ""}${info ? ` data-info="${esc(info)}"` : ""}`;
     };
     els.version.innerHTML = [
       `<option value="current"${currentSelected ? " selected" : ""}${dateAttr(currentEntry)}>${esc(simpleCurrentVersionLabel(versionList, currentVersionLabel))}</option>`,
