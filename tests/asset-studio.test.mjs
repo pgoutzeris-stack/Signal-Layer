@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-7");
-  assert.match(indexHtml, /app\.js\?v=20260929-7/);
+  assert.equal(studioVersion, "20260929-8");
+  assert.match(indexHtml, /app\.js\?v=20260929-8/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3941,7 +3941,7 @@ test("das Bild laesst sich in der Werkbank nachstellen", () => {
   assert.match(studio, /data-imgrange="overlay"/);
   assert.match(studio, /background-size:\$\{Math\.round\(zoom \* 100\)\}% auto;opacity:\$\{deckung\}/);
   // Ohne Bild keine Regler.
-  assert.match(studio, /\$\{hat \? `<div class="as-img-tools">/);
+  assert.match(studio, /\$\{hat \? `<div class="as-img-panel"><div class="as-img-tools">/);
   // Ein Hintergrundmotiv ueberlebt den Schrittwechsel.
   assert.match(studio, /if \(slot\.classList\.contains\("as-picslot--bg"\)\) return;/);
 });
@@ -4561,4 +4561,30 @@ test("Protokoll, Rueckfall fuer Titelbild und Befund, bekannte Benchmarks, Titel
   assert.match(sql, /add column if not exists protokoll jsonb/);
   assert.match(sql, /create trigger generated_assets_memo_protokoll/);
   assert.match(sql, /create or replace view signal_layer\.memo_protokolle/);
+});
+
+
+test("Themen, Bildsymbol und Luecken im Fragebogen", async () => {
+  const simple = readFileSync(new URL("../simple-mode.js", import.meta.url), "utf8");
+  assert.match(simple, /eigenmarken_launch: \{ id: "eigenmarken_strategie", label: "Eigenmarkenstrategie" \}/);
+  assert.match(simple, /marken_relaunch: \{ id: "marken_strategie", label: "Markenstrategie" \}/);
+  assert.match(simple, /state\.topics\.includes\(signalThema\(signal\)\.id\)/);
+  // Bildsymbol steht immer da, Werkzeuge per Klick.
+  assert.match(studio, /data-act="img-menu"/);
+  assert.match(studio, /@keyframes as-bild-wink/);
+  assert.match(studio, /state\.bildMenuOffen === key/);
+  assert.doesNotMatch(studio, /as-img-pick-label/);
+  assert.doesNotMatch(studio, /\[data-imgslot\]:hover \.as-img-ui\.is-filled/);
+  // Beschriftungen und Luecken.
+  const guides = await import("../memo-guides.mjs");
+  assert.equal(guides.memoFeld("bm1_name").label, "Dachzeile");
+  assert.equal(guides.memoFeld("bm2_tag").label, "Statement");
+  assert.equal(guides.memoFeld("kpi1_value").label, "Wert");
+  assert.equal(guides.memoFeld("pot3_title").label, "Titel");
+  assert.equal(guides.memoFeldFehler("bm1_name", ""), "Benchmark 1 · Dachzeile fehlt.");
+  assert.match(studio, /if \(q\.art === "memo-pages"\) return true;/);
+  assert.match(studio, /function zeigeMemoLuecken\(frage\)/);
+  assert.match(studio, /data-act="memo-luecken-ok">Trotzdem weiter/);
+  assert.match(studio, /\[data-memofeld\]\.is-missing/);
+  assert.match(studio, /const hinweis = "";/);
 });

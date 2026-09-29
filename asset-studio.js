@@ -1326,28 +1326,37 @@ const CHROME_CSS = `
 #as-overlay .as-fmt hr{width:1px; height:20px; border:0; background:var(--line,#e2e8f0); margin:0 3px;}
 #as-overlay .as-swatch{width:16px; height:16px; border-radius:999px; border:1px solid rgba(15,23,42,.18); display:block;}
 
-/* Bildslots: leer ist der ganze Slot die Schaltflaeche, gefuellt blendet
-   beim Hover eine helle Leiste oben rechts ein. */
+/* Bildslots: ein Bildsymbol steht immer da. Ueberfahren bewegt das Symbol,
+   ein Klick oeffnet die Werkzeuge. Nichts erscheint nur beim Ueberfahren. */
 #as-overlay [data-imgslot]:has(.as-img-ui.is-empty)::after{display:none;}
 #as-overlay .as-img-ui{
   position:absolute; top:10px; right:10px; z-index:6;
+  display:flex; align-items:center; gap:6px;
+}
+#as-overlay .as-img-menu{
+  width:34px; height:34px; border:0; border-radius:999px; padding:0; cursor:pointer;
+  display:grid; place-items:center; font-size:14px; color:#0f172a;
+  background:rgba(255,255,255,.9);
+  -webkit-backdrop-filter:blur(12px) saturate(1.4); backdrop-filter:blur(12px) saturate(1.4);
+  box-shadow:0 0 0 1px rgba(15,23,42,.08), 0 6px 18px rgba(15,23,42,.16);
+  transition:transform .22s cubic-bezier(.2,.8,.2,1), background .2s ease, color .2s ease, box-shadow .22s ease;
+}
+#as-overlay .as-img-menu:hover{transform:scale(1.1); color:#206efb; box-shadow:0 0 0 1px rgba(32,110,251,.24), 0 10px 24px rgba(32,110,251,.26);}
+#as-overlay .as-img-menu:hover i,
+#as-overlay .as-img-ui.is-empty .as-img-pick:hover .as-img-pick-icon i{animation:as-bild-wink .55s cubic-bezier(.2,.8,.2,1);}
+#as-overlay .as-img-menu:active{transform:scale(.92);}
+#as-overlay .as-img-menu:focus-visible{outline:2px solid #206efb; outline-offset:2px;}
+#as-overlay .as-img-ui.is-open .as-img-menu{background:#206efb; color:#fff;}
+@keyframes as-bild-wink{0%{transform:rotate(0) scale(1);} 35%{transform:rotate(-12deg) scale(1.12);} 70%{transform:rotate(8deg) scale(1.04);} 100%{transform:rotate(0) scale(1);}}
+#as-overlay .as-img-panel{
   display:flex; align-items:center; gap:4px; padding:4px;
-  border-radius:12px; background:rgba(255,255,255,.86);
+  border-radius:12px; background:rgba(255,255,255,.92);
   -webkit-backdrop-filter:blur(12px) saturate(1.4); backdrop-filter:blur(12px) saturate(1.4);
   box-shadow:0 0 0 1px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.14);
-  opacity:0; transform:translateY(-4px) scale(.98); pointer-events:none;
+  opacity:0; transform:translateX(8px) scale(.96); transform-origin:right center; pointer-events:none;
   transition:opacity .18s ease, transform .22s cubic-bezier(.2,.8,.2,1);
 }
-#as-overlay [data-imgslot]:hover .as-img-ui.is-filled,
-#as-overlay .em-shot:hover .as-img-ui.is-filled,
-#as-overlay .as-shot:hover .as-img-ui.is-filled,
-#as-overlay .as-img-ui.is-filled:focus-within{opacity:1; transform:none; pointer-events:auto;}
-#as-overlay [data-imgslot]:has(.as-img-ui.is-filled)::before{
-  content:""; position:absolute; inset:0; z-index:5; pointer-events:none;
-  background:linear-gradient(180deg, rgba(15,23,42,.22), rgba(15,23,42,0) 38%);
-  opacity:0; transition:opacity .2s ease;
-}
-#as-overlay [data-imgslot]:hover:has(.as-img-ui.is-filled)::before{opacity:1;}
+#as-overlay .as-img-ui.is-open .as-img-panel{opacity:1; transform:none; pointer-events:auto;}
 #as-overlay .as-img-tools{display:contents;}
 #as-overlay .as-img-btn{
   width:30px; height:30px; border:0; border-radius:8px; padding:0;
@@ -1363,6 +1372,7 @@ const CHROME_CSS = `
 #as-overlay .as-img-range{display:flex; align-items:center; gap:6px; padding:0 6px; font-size:12px; color:#475569;}
 #as-overlay .as-img-range input{width:64px; accent-color:#206efb;}
 #as-overlay .as-img-ui.is-filled .as-img-pick-icon{display:contents;}
+#as-overlay .as-img-ui.is-filled .as-img-pick{order:0;}
 
 /* Leer: keine Leiste, der Slot selbst nimmt den Klick. */
 #as-overlay .as-img-ui.is-empty{
@@ -1386,17 +1396,19 @@ const CHROME_CSS = `
   transform:translateY(-2px) scale(1.06); background:#206efb; color:#fff;
   box-shadow:0 10px 26px rgba(32,110,251,.32);
 }
-#as-overlay .as-img-pick-label{
-  font-size:12px; font-weight:600; letter-spacing:.01em; color:#206efb;
-  opacity:0; transform:translateY(-4px); transition:opacity .2s ease, transform .25s cubic-bezier(.2,.8,.2,1);
-}
-#as-overlay .as-img-ui.is-empty .as-img-pick:hover .as-img-pick-label,
-#as-overlay .as-img-ui.is-empty .as-img-pick:focus-visible .as-img-pick-label{opacity:1; transform:none;}
 @media (prefers-reduced-motion:reduce){
-  #as-overlay .as-img-ui, #as-overlay .as-img-pick-icon, #as-overlay .as-img-pick-label{transition:none;}
+  #as-overlay .as-img-panel, #as-overlay .as-img-menu, #as-overlay .as-img-pick-icon{transition:none;}
+  #as-overlay .as-img-menu:hover i, #as-overlay .as-img-ui.is-empty .as-img-pick:hover .as-img-pick-icon i{animation:none;}
 }
 
 #as-overlay .as-hint{font-size:12px; line-height:1.5; color:var(--muted,#475569); margin:0;}
+#as-overlay [data-memofeld].is-missing{border-color:#dc2626 !important; box-shadow:0 0 0 3px #fee2e2 !important;}
+#as-overlay .as-luecken{margin:10px 0 12px; padding:12px 14px; border-radius:12px; background:#fef2f2; color:#7f1d1d; font-size:12.5px; line-height:1.5;}
+#as-overlay .as-luecken p{margin:0 0 6px;}
+#as-overlay .as-luecken ul{margin:0 0 6px; padding-left:18px;}
+#as-overlay .as-luecken-info{color:#991b1b;}
+#as-overlay .as-luecken-aktionen{display:flex; gap:8px; justify-content:flex-end; margin-top:8px;}
+#as-overlay .as-luecken .as-pill-primary{background:#206efb; border-color:#206efb; color:#fff;}
 #as-overlay .as-q > .as-hint{margin-top:-2px;}
 #as-overlay .as-wip{
   margin:4px 0 12px; padding:14px 16px; border-radius:12px;
@@ -1720,12 +1732,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-7";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-8";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-7";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-8";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-7";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-8";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1816,6 +1828,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ladeAbschnitt: "lesen",
     // Modell des laufenden Auftrags, fuer Ereignisse ohne eigenes Modellfeld.
     laufModell: "",
+    // Bildslot, dessen Werkzeuge gerade offen sind.
+    bildMenuOffen: "",
+    // Der Nutzer hat bestaetigt, mit leeren Memo-Feldern weiterzugehen.
+    memoLueckenOk: false,
     ladeStart: 0,
     ladeUhr: 0,
     forecastMs: 0,
@@ -3011,10 +3027,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       }
       bloecke.push(memoFeldHtml(feld));
     }
-    const fehler = memoAbschnittFehler(section.id, memoFelderRoh());
-    const hinweis = fehler.length
-      ? `<ul class="lg-guide">${fehler.map((zeile) => `<li class="lg-guide-row lg-guide-row--warn"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(zeile)}</span></li>`).join("")}</ul>`
-      : "";
+    // Fehlende Felder zeigt erst der Klick auf Weiter, am Feld selbst.
+    const hinweis = "";
     const erwartet = (section.erwartet || []).map((zeile) => `<li>${esc(zeile)}</li>`).join("");
     const bilder = section.bilder
       ? `<p class="as-tip-bilder"><i class="fa-regular fa-image"></i><span>${esc(section.bilder)}</span></p>`
@@ -3031,6 +3045,51 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <div data-memovorschlag="${attr(section.id)}"></div>
       <div data-memosectionfehler="${attr(section.id)}">${hinweis}</div>
     </div>`;
+  }
+
+  /** Felder des Schritts, die leer sind oder nicht in die Vorlage passen. */
+  function memoLuecken(frage) {
+    if (!frage?.sections) return [];
+    const werte = memoFelderRoh();
+    const out = [];
+    for (const abschnitt of frage.sections) {
+      for (const feld of abschnitt.fields || []) {
+        const fehler = memoFeldFehler(feld.key, werte[feld.key]);
+        if (fehler) out.push({ key: feld.key, fehler, leer: !String(werte[feld.key] || "").trim() });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Markiert die Luecken am Feld und fragt, ob trotzdem weiter. true heisst:
+   * es gibt Luecken, der Schritt wartet auf die Antwort.
+   */
+  function zeigeMemoLuecken(frage) {
+    const luecken = memoLuecken(frage);
+    shell.querySelectorAll("[data-memofeld]").forEach((box) => {
+      box.classList.toggle("is-missing", luecken.some((l) => l.key === box.getAttribute("data-memofeld")));
+    });
+    shell.querySelector("[data-memoluecken]")?.remove();
+    if (!luecken.length) return false;
+    const leer = luecken.filter((l) => l.leer);
+    const falsch = luecken.filter((l) => !l.leer);
+    const zeilen = [
+      leer.length ? `<p><b>Leer (${leer.length}):</b> ${esc(leer.map((l) => memoFeld(l.key)?.voll || memoFeld(l.key)?.label || l.key).join(", "))}</p>` : "",
+      falsch.length ? `<ul>${falsch.map((l) => `<li>${esc(l.fehler)}</li>`).join("")}</ul>` : "",
+    ].join("");
+    const html = `<div class="as-luecken" data-memoluecken role="alert">
+      ${zeilen}
+      <p class="as-luecken-info">Leere Felder schreibt die KI beim Erzeugen.</p>
+      <div class="as-luecken-aktionen">
+        <button type="button" class="as-pill" data-act="memo-luecken-zurueck">Felder ausfüllen</button>
+        <button type="button" class="as-pill as-pill-primary" data-act="memo-luecken-ok">Trotzdem weiter</button>
+      </div>
+    </div>`;
+    const fuss = shell.querySelector('[data-act="step-next"]')?.closest(".as-step-fuss") || shell.querySelector('[data-act="step-next"]')?.parentElement;
+    if (fuss) fuss.insertAdjacentHTML("beforebegin", html);
+    shell.querySelector("[data-memofeld].is-missing")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    return true;
   }
 
   function gruppenTitel(section, gruppe) {
@@ -3480,10 +3539,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       toneLoaded: state.toneGeladen,
       toneOfVoice: state.toneOfVoice,
     })) return false;
-    if (q.art === "memo-pages") {
-      const werte = memoFelderRoh();
-      return q.sections.every((abschnitt) => memoAbschnittFehler(abschnitt.id, werte).length === 0);
-    }
+    // Nicht blockieren: leere Felder schreibt die KI. Was fehlt, zeigt der
+    // Klick auf Weiter am Feld, mit Rueckfrage.
+    if (q.art === "memo-pages") return true;
     if (q.art === "multi-content") {
       return inhaltsArten().length > 0 && inhaltsArten().every((key) => LOOK[key] === state.answers.look);
     }
@@ -4329,8 +4387,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const deckung = Math.round(bildWert(bild, "opacity", 1) * 100);
       const overlay = Math.round(bildWert(bild, "overlay", 1) * 100);
       // Ohne Bild bleibt es beim einen Knopf: Regler auf nichts sind Attrappen.
-      return `<div class="as-img-ui${hat ? " is-filled" : " is-empty"}" data-as-chrome>
-      ${hat ? `<div class="as-img-tools">
+      const offen = hat && state.bildMenuOffen === key;
+      return `<div class="as-img-ui${hat ? " is-filled" : " is-empty"}${offen ? " is-open" : ""}" data-as-chrome>
+      ${hat ? `<div class="as-img-panel"><div class="as-img-tools">
         <button type="button" class="as-img-btn" data-act="img-crop" data-imgkey="${attr(key)}" aria-label="Zuschneiden" title="Zuschneiden"><i class="fa-solid fa-crop-simple"></i></button>
         <button type="button" class="as-img-btn" data-act="img-zoom" data-imgdelta="-1" data-imgkey="${attr(key)}" aria-label="Kleiner" title="Kleiner"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
         <span class="as-img-value">${Math.round(zoom * 100)}%</span>
@@ -4338,8 +4397,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <label class="as-img-range" title="Transparenz"><i class="fa-solid fa-circle-half-stroke"></i><input type="range" min="20" max="100" step="5" value="${deckung}" data-imgrange="opacity" data-imgkey="${attr(key)}" aria-label="Transparenz"></label>
         ${isMemo ? "" : `<label class="as-img-range" title="Overlay"><i class="fa-solid fa-layer-group"></i><input type="range" min="0" max="100" step="5" value="${overlay}" data-imgrange="overlay" data-imgkey="${attr(key)}" aria-label="Overlay"></label>`}
       </div>` : ""}
-      <button type="button" class="as-img-btn as-img-pick" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><span class="as-img-pick-icon"><i class="fa-regular ${hat ? "fa-images" : "fa-image"}"></i></span>${hat ? "" : `<span class="as-img-pick-label">Bild einfügen</span>`}</button>
-      ${hat ? `<button type="button" class="as-img-btn is-clear" data-act="img-clear" data-imgkey="${attr(key)}" aria-label="Bild entfernen" title="Bild entfernen"><i class="fa-solid fa-xmark"></i></button>` : ""}
+      <button type="button" class="as-img-btn as-img-pick" data-act="img-pick" data-imgkey="${attr(key)}" aria-label="${hat ? "Bild ersetzen" : "Bild einfügen"}" title="${hat ? "Bild ersetzen" : "Bild einfügen"}"><span class="as-img-pick-icon"><i class="fa-regular ${hat ? "fa-images" : "fa-image"}"></i></span></button>
+      ${hat ? `<button type="button" class="as-img-btn is-clear" data-act="img-clear" data-imgkey="${attr(key)}" aria-label="Bild entfernen" title="Bild entfernen"><i class="fa-solid fa-xmark"></i></button></div>
+      <button type="button" class="as-img-menu" data-act="img-menu" data-imgkey="${attr(key)}" aria-expanded="${offen ? "true" : "false"}" aria-label="Bild bearbeiten" title="Bild bearbeiten"><i class="fa-regular fa-image"></i></button>` : ""}
     </div>`;
     };
     if (html.includes("data-imgsrc")) {
@@ -6119,9 +6179,32 @@ ${stages}${post}
       applyCropMode(modeBtn.getAttribute("data-crop-mode"));
       return;
     }
+    // Ein offenes Bildmenue schliesst, sobald daneben geklickt wird.
+    if (!event.target.closest(".as-img-ui")) {
+      state.bildMenuOffen = "";
+      overlay.querySelectorAll(".as-img-ui.is-open").forEach((ui) => {
+        ui.classList.remove("is-open");
+        ui.querySelector(".as-img-menu")?.setAttribute("aria-expanded", "false");
+      });
+    }
     const hit = event.target.closest("[data-act]");
     if (!hit) return;
     const act = hit.getAttribute("data-act");
+    if (act === "img-menu") {
+      const ui = hit.closest(".as-img-ui");
+      const oeffnen = !ui?.classList.contains("is-open");
+      overlay.querySelectorAll(".as-img-ui.is-open").forEach((offen) => {
+        offen.classList.remove("is-open");
+        offen.querySelector(".as-img-menu")?.setAttribute("aria-expanded", "false");
+      });
+      // Der Zustand ueberlebt das Neuzeichnen nach Zoom oder Transparenz.
+      state.bildMenuOffen = oeffnen ? String(hit.getAttribute("data-imgkey") || "") : "";
+      if (ui && oeffnen) {
+        ui.classList.add("is-open");
+        hit.setAttribute("aria-expanded", "true");
+      }
+      return;
+    }
     const frame = hit.closest("[data-uid]");
     const id = frame ? frame.getAttribute("data-uid") : null;
 
@@ -6241,11 +6324,25 @@ ${stages}${post}
       if (kasten) kasten.innerHTML = "";
       return;
     }
+    if (act === "memo-luecken-ok") {
+      state.memoLueckenOk = true;
+      readForm();
+      setzeSchritt(naechsterSchritt());
+      zeichneForm();
+      return;
+    }
+    if (act === "memo-luecken-zurueck") {
+      shell.querySelector("[data-memoluecken]")?.remove();
+      shell.querySelector("[data-memofeld].is-missing")?.focus();
+      return;
+    }
     if (act === "step-next") {
       readForm();
       const fragen = aktiveFragen();
       const offen = fragen[schrittIndex(fragen)];
       if (offen && !frageErledigt(offen)) return;
+      if (offen?.art === "memo-pages" && !state.memoLueckenOk && zeigeMemoLuecken(offen)) return;
+      state.memoLueckenOk = false;
       setzeSchritt(naechsterSchritt());
       zeichneForm();
       return;
@@ -6557,16 +6654,12 @@ ${stages}${post}
     const offen = fragen[schrittIndex(fragen)];
     const weiter = shell.querySelector('[data-act="step-next"]');
     if (weiter && offen) weiter.disabled = !frageErledigt(offen);
-    if (offen?.art === "memo-pages") {
-      const werte = memoFelderRoh();
-      for (const abschnitt of offen.sections) {
-        const host = shell.querySelector(`[data-memosectionfehler="${CSS.escape(abschnitt.id)}"]`);
-        if (!host) continue;
-        const fehler = memoAbschnittFehler(abschnitt.id, werte);
-        host.innerHTML = fehler.length
-          ? `<ul class="lg-guide">${fehler.map((zeile) => `<li class="lg-guide-row lg-guide-row--warn"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(zeile)}</span></li>`).join("")}</ul>`
-          : "";
-      }
+    // Ein rot markiertes Feld wird wieder normal, sobald es passt.
+    if (box.classList.contains("is-missing") && !memoFeldFehler(key, box.value)) {
+      box.classList.remove("is-missing");
+      const rest = memoLuecken(offen);
+      const panel = shell.querySelector("[data-memoluecken]");
+      if (panel && !rest.length) panel.remove();
     }
     // Ein geleertes Feld faellt auf den Platzhaltertext zurueck. Das sieht man
     // erst nach einem vollstaendigen Aufbau, deshalb hier verzoegert.

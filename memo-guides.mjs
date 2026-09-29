@@ -158,13 +158,13 @@ export const MEMO_SECTIONS = [
     bilder: "",
     fields: [0, 1, 2, 3].flatMap((i) => [
       {
-        key: `kpi${i + 1}_value`, label: `Kennzahl ${i + 1}`, art: "zahl", rows: 1, min: 1, max: 4, zeichen: 10,
+        key: `kpi${i + 1}_value`, label: "Wert", voll: `Kennzahl ${i + 1} · Wert`, art: "zahl", rows: 1, min: 1, max: 4, zeichen: 10,
         hilfe: "Eine Zeile, deutsch gesetzt. Über zwölf Zeichen schrumpft die Zahl im Kasten.",
         beispiel: ["+ 1,6 PP", "40 %", "27 %", "> 70 %"][i],
         gruppe: i,
       },
       {
-        key: `kpi${i + 1}_label`, label: "Beschreibung", art: "satz", rows: 2, min: 5, max: 18, zeichen: 115,
+        key: `kpi${i + 1}_label`, label: "Beschreibung", voll: `Kennzahl ${i + 1} · Beschreibung`, art: "satz", rows: 2, min: 5, max: 18, zeichen: 115,
         hilfe: "Worauf sich die Zahl bezieht, ein halber Satz ohne Schlusspunkt.",
         beispiel: [
           "Wachstum des Eigenmarkenanteils bei Apparel & Footwear in Deutschland",
@@ -175,7 +175,7 @@ export const MEMO_SECTIONS = [
         gruppe: i,
       },
       {
-        key: `kpi${i + 1}_source`, label: "Quelle", art: "quelle", rows: 1, min: 1, max: 6, zeichen: 25,
+        key: `kpi${i + 1}_source`, label: "Quelle", voll: `Kennzahl ${i + 1} · Quelle`, art: "quelle", rows: 1, min: 1, max: 6, zeichen: 25,
         hilfe: "Format „Herausgeber, Jahr“. Mehrere Herausgeber mit Schrägstrich, Zeiträume mit Schrägstrich.",
         beispiel: ["BCG / Inverto, 2026", "NIQ, 2025", "BCG / Inverto, 2026", "Deichmann, 2023/2025"][i],
         gruppe: i,
@@ -205,19 +205,19 @@ export const MEMO_SECTIONS = [
       },
       ...[0, 1, 2].flatMap((i) => [
         {
-          key: `bm${i + 1}_name`, label: `Benchmark ${i + 1}`, art: "name", rows: 1, min: 1, max: 5, zeichen: 25,
+          key: `bm${i + 1}_name`, label: "Dachzeile", voll: `Benchmark ${i + 1} · Dachzeile`, art: "name", rows: 1, min: 1, max: 5, zeichen: 25,
           hilfe: "Bei Handelsmarken „Händler · Marke“.",
           beispiel: ["Lidl · Parkside", "dm · Balea", "Decathlon · Van Rysel"][i],
           gruppe: i,
         },
         {
-          key: `bm${i + 1}_title`, label: "Titel", art: "these", rows: 2, min: 3, max: 9, zeichen: 50,
+          key: `bm${i + 1}_title`, label: "Titel", voll: `Benchmark ${i + 1} · Titel`, art: "these", rows: 2, min: 3, max: 9, zeichen: 50,
           hilfe: "Was diese Marke getan hat, ohne Schlusspunkt.",
           beispiel: ["Eigener Auftritt und großer Botschafter", "Markenaufbau über eigene Kanäle und Creator", "Eigenes Profiteam und eigene Brand-Stores"][i],
           gruppe: i,
         },
         {
-          key: `bm${i + 1}_text`, label: "Beleg", art: "absatz", rows: 4, min: 20, max: 44, zeichen: 230,
+          key: `bm${i + 1}_text`, label: "Beleg", voll: `Benchmark ${i + 1} · Beleg`, art: "absatz", rows: 4, min: 20, max: 44, zeichen: 230,
           hilfe: "Die Handlung und warum sie gewirkt hat. Unter zwanzig Wörtern reisst die Karte auseinander.",
           beispiel: [
             "Lidl ordnet Non-Food in sechs Themenwelten mit je einer Ankermarke. Parkside tritt im eigenen Farbcode ohne Lidl-Logo auf, führt einen eigenen Claim und hat seit 2023 einen Markenbotschafter.",
@@ -227,7 +227,7 @@ export const MEMO_SECTIONS = [
           gruppe: i,
         },
         {
-          key: `bm${i + 1}_tag`, label: "Lehre", art: "satz", rows: 2, min: 5, max: 16, zeichen: 90, saetze: [1, 1],
+          key: `bm${i + 1}_tag`, label: "Statement", voll: `Benchmark ${i + 1} · Statement`, art: "satz", rows: 2, min: 5, max: 16, zeichen: 90, saetze: [1, 1],
           hilfe: "Was davon auf den Adressaten übertragbar ist, ein Satz.",
           beispiel: [
             "Einheitliches Markenbild plus Botschafter geben der Eigenmarke einen Charakter.",
@@ -282,13 +282,13 @@ export const MEMO_SECTIONS = [
       },
       ...[0, 1, 2].flatMap((i) => [
         {
-          key: `pot${i + 1}_title`, label: `Hebel ${i + 1}`, art: "these", rows: 2, min: 3, max: 9, zeichen: 50,
+          key: `pot${i + 1}_title`, label: "Titel", voll: `Hebel ${i + 1} · Titel`, art: "these", rows: 2, min: 3, max: 9, zeichen: 50,
           hilfe: "Verb voran, kein Schlusspunkt.",
           beispiel: ["Positionierung und Markenarchitektur schärfen", "Kanäle und Touchpoints gezielt aufbauen", "Marke am POS und im Produkt erlebbar machen"][i],
           gruppe: i,
         },
         {
-          key: `pot${i + 1}_potential`, label: "Text", art: "absatz", rows: 6, min: 22, max: 48, zeichen: 300,
+          key: `pot${i + 1}_potential`, label: "Text", voll: `Hebel ${i + 1} · Text`, art: "absatz", rows: 6, min: 22, max: 48, zeichen: 300,
           hilfe: "Der Hebel in der Sprache des Falls, ohne erfundene Zahl. Die drei Karten sollten ähnlich lang sein, sonst steht eine kurz.",
           beispiel: [
             "Zielgruppen und Preissegmente entlang relevanter Kundenbedürfnisse klar voneinander abgrenzen, um Überschneidungen zwischen den Eigenmarken zu reduzieren. Für ausgewählte Kernmarken eigenständige Leistungsversprechen definieren, die über den Preis hinaus Orientierung schaffen.",
@@ -385,15 +385,17 @@ const EINHEIT_ENG = /\d[%€]/;
 export function memoFeldPruefung(key, wert) {
   const feld = memoFeld(key);
   if (!feld) return [];
+  // Ohne Gruppe hiesse es nur „Titel fehlt“: welcher Titel, stand nicht da.
+  const name = feld.voll || feld.label;
   const text = String(wert || "").trim();
-  if (!text) return [{ code: "leer", fehler: `${feld.label} fehlt.`, hinweis: `${feld.label} fehlt noch.` }];
+  if (!text) return [{ code: "leer", fehler: `${name} fehlt.`, hinweis: `${name} fehlt noch.` }];
   const befunde = [];
   // Die harte Grenze. Das Eingabefeld laesst nicht mehr zu, ein eingefuegter
   // Text schon: mehr Zeichen verschieben die Seite, egal wie viele Woerter.
   if (text.length > feld.zeichen) {
     befunde.push({
       code: "zeichen",
-      fehler: `${feld.label}: ${text.length} statt höchstens ${feld.zeichen} Zeichen.`,
+      fehler: `${name}: ${text.length} statt höchstens ${feld.zeichen} Zeichen.`,
       hinweis: `${text.length} von ${feld.zeichen} Zeichen. Darüber verschiebt sich die Seite.`,
     });
   }
@@ -401,13 +403,13 @@ export function memoFeldPruefung(key, wert) {
   if (worte < feld.min) {
     befunde.push({
       code: "kurz",
-      fehler: `${feld.label}: ${worte} statt mindestens ${feld.min} Wörter.`,
+      fehler: `${name}: ${worte} statt mindestens ${feld.min} Wörter.`,
       hinweis: `${worte} Wörter. Unter ${feld.min} bleibt die Seite an dieser Stelle leer.`,
     });
   } else if (worte > feld.max) {
     befunde.push({
       code: "lang",
-      fehler: `${feld.label}: ${worte} statt höchstens ${feld.max} Wörter.`,
+      fehler: `${name}: ${worte} statt höchstens ${feld.max} Wörter.`,
       hinweis: `${worte} Wörter. Hier passen höchstens ${feld.max}, sonst läuft die Seite über.`,
     });
   }
@@ -417,34 +419,34 @@ export function memoFeldPruefung(key, wert) {
     if (saetze < smin) {
       befunde.push({
         code: "saetze_kurz",
-        fehler: `${feld.label}: ${saetze} statt mindestens ${smin} Sätze.`,
+        fehler: `${name}: ${saetze} statt mindestens ${smin} Sätze.`,
         hinweis: `${saetze} Sätze. Hier stehen mindestens ${smin}.`,
       });
     } else if (saetze > smax) {
       befunde.push({
         code: "saetze_lang",
-        fehler: `${feld.label}: ${saetze} Sätze, hier stehen höchstens ${smax}.`,
+        fehler: `${name}: ${saetze} Sätze, hier stehen höchstens ${smax}.`,
         hinweis: `${saetze} Sätze. Hier stehen höchstens ${smax}, sonst bricht die Stelle um.`,
       });
     }
   }
   if (feld.art === "zahl") {
     if (!ZIFFER.test(text)) {
-      befunde.push({ code: "ziffer", fehler: `${feld.label} braucht eine Ziffer.`, hinweis: "Ohne Ziffer bleibt der Kasten leer." });
+      befunde.push({ code: "ziffer", fehler: `${name} braucht eine Ziffer.`, hinweis: "Ohne Ziffer bleibt der Kasten leer." });
     }
     if (PUNKT_DEZIMAL.test(text)) {
-      befunde.push({ code: "dezimal", fehler: `${feld.label}: Dezimaltrennzeichen ist das Komma.`, hinweis: "Deutsch gesetzt: 8,9 Mrd. €, nicht 8.9." });
+      befunde.push({ code: "dezimal", fehler: `${name}: Dezimaltrennzeichen ist das Komma.`, hinweis: "Deutsch gesetzt: 8,9 Mrd. €, nicht 8.9." });
     }
     if (EINHEIT_ENG.test(text)) {
-      befunde.push({ code: "einheit", fehler: `${feld.label}: vor % und € steht ein Leerzeichen.`, hinweis: "Deutsch gesetzt: 40 %, nicht 40%." });
+      befunde.push({ code: "einheit", fehler: `${name}: vor % und € steht ein Leerzeichen.`, hinweis: "Deutsch gesetzt: 40 %, nicht 40%." });
     }
   }
   if (feld.art === "quelle") {
     if (!JAHR.test(text)) {
-      befunde.push({ code: "jahr", fehler: `${feld.label} braucht ein Jahr.`, hinweis: "Ohne Jahr ist die Zahl nicht nachprüfbar." });
+      befunde.push({ code: "jahr", fehler: `${name} braucht ein Jahr.`, hinweis: "Ohne Jahr ist die Zahl nicht nachprüfbar." });
     }
     if (!text.includes(",")) {
-      befunde.push({ code: "quellform", fehler: `${feld.label}: Format „Herausgeber, Jahr“.`, hinweis: "Format „Herausgeber, Jahr“, mehrere Herausgeber mit Schrägstrich." });
+      befunde.push({ code: "quellform", fehler: `${name}: Format „Herausgeber, Jahr“.`, hinweis: "Format „Herausgeber, Jahr“, mehrere Herausgeber mit Schrägstrich." });
     }
   }
   if (feld.art === "liste") {
@@ -452,13 +454,13 @@ export function memoFeldPruefung(key, wert) {
     if (teile.some((teil) => !teil.includes(","))) {
       befunde.push({
         code: "listenform",
-        fehler: `${feld.label}: jeder Beleg im Format „Herausgeber, Art (Zeitraum)“.`,
+        fehler: `${name}: jeder Beleg im Format „Herausgeber, Art (Zeitraum)“.`,
         hinweis: "Je Beleg „Herausgeber, Art (Zeitraum)“, mehrere mit Semikolon.",
       });
     }
   }
   if ((feld.art === "these" || feld.art === "schluessel") && !feld.punkt && /\.$/.test(text)) {
-    befunde.push({ code: "punkt", fehler: `${feld.label}: Überschriften im Memo enden ohne Punkt.`, hinweis: "Überschriften im Memo enden ohne Punkt." });
+    befunde.push({ code: "punkt", fehler: `${name}: Überschriften im Memo enden ohne Punkt.`, hinweis: "Überschriften im Memo enden ohne Punkt." });
   }
   return befunde;
 }

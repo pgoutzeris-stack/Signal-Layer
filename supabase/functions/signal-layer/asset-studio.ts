@@ -279,7 +279,7 @@ Seite 2, Kennzahlen: Vier Kästen in einer Leiste. Sie tragen den Beleg für Sei
 - Prozentwerte, Punktveränderungen oder Beträge, deutsch gesetzt: 40 %, + 1,6 PP, 8,9 Mrd. €.
 - Je Zahl ein halber Satz Bezug und eine Quelle im Format „Herausgeber, Jahr“.
 - Keine Zahl ohne Quelle. Ein Kasten ohne Quelle fällt aus dem Memo.
-kpiN_value (Kennzahl 1): Eine Zeile, deutsch gesetzt. Über zwölf Zeichen schrumpft die Zahl im Kasten.
+kpiN_value (Wert): Eine Zeile, deutsch gesetzt. Über zwölf Zeichen schrumpft die Zahl im Kasten.
 kpiN_label (Beschreibung): Worauf sich die Zahl bezieht, ein halber Satz ohne Schlusspunkt.
 kpiN_source (Quelle): Format „Herausgeber, Jahr“. Mehrere Herausgeber mit Schrägstrich, Zeiträume mit Schrägstrich.
 
@@ -289,10 +289,10 @@ Seite 3, 02 Best Practice: Seite 3 zeigt drei Marken, die den Hebel schon gezoge
 - Am Seitenfuss die Quellenzeile für alle drei Fälle.
 - Darunter ein Zitat, das die Lehre als ROOTS-Haltung zusammenfasst.
 benchmark_title (Titel (H2)): Nennt die drei Marken und was sie gemeinsam richtig machen.
-bmN_name (Benchmark 1): Bei Handelsmarken „Händler · Marke“.
+bmN_name (Dachzeile): Bei Handelsmarken „Händler · Marke“.
 bmN_title (Titel): Was diese Marke getan hat, ohne Schlusspunkt.
 bmN_text (Beleg): Die Handlung und warum sie gewirkt hat. Unter zwanzig Wörtern reisst die Karte auseinander.
-bmN_tag (Lehre): Was davon auf den Adressaten übertragbar ist, ein Satz.
+bmN_tag (Statement): Was davon auf den Adressaten übertragbar ist, ein Satz.
 sources (Quellen): Belege für die drei Fälle, mit Semikolon getrennt. Format „Herausgeber, Art (Zeitraum)“.
 quote_text (Zitat): Die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person. Die Zuschreibung darunter ist fest.
 Motive: Je Fall ein Motiv der Marke: Kampagnenmotiv, Kanal oder Auftritt. Ein Logo allein trägt die Karte nicht.
@@ -305,7 +305,7 @@ Seite 4, 03 ROOTS Empfehlung: Seite 4 übersetzt den Hebel auf den Adressaten: d
 potentials_title (Titel (H2)): Der Check für dieses Unternehmen.
 potentials_lead (Absatz 1): Die Ausgangslage des Adressaten und wo das zusätzliche Potenzial liegt.
 potentials_lead2 (Absatz 2): Ein Satz, der die drei Hebel benennt. Er steht direkt über den Karten.
-potN_title (Hebel 1): Verb voran, kein Schlusspunkt.
+potN_title (Titel): Verb voran, kein Schlusspunkt.
 potN_potential (Text): Der Hebel in der Sprache des Falls, ohne erfundene Zahl. Die drei Karten sollten ähnlich lang sein, sonst steht eine kurz.
 cta (CTA-Frage): Eine Frage an den Adressaten, ohne Werbeton. Der Knopftext daneben ist fest.
 about_fit (Über ROOTS): Ein Satz über die ROOTS-Leistung allgemein.
@@ -448,41 +448,41 @@ export const MEMO_VERTRAG: MemoVertragFeld[] = [
   { key: "market_lead2", label: "Absatz 2", art: "absatz", min: 12, max: 34, zeichen: 190, saetze: null, punkt: false },
   { key: "insight_title", label: "Bildaussage", art: "these", min: 5, max: 16, zeichen: 110, saetze: [1, 1], punkt: true },
   { key: "market_p2", label: "Absatz 3", art: "absatz", min: 42, max: 80, zeichen: 350, saetze: null, punkt: false },
-  { key: "kpi1_value", label: "Kennzahl 1", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
+  { key: "kpi1_value", label: "Wert", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
   { key: "kpi1_label", label: "Beschreibung", art: "satz", min: 5, max: 18, zeichen: 115, saetze: null, punkt: false },
   { key: "kpi1_source", label: "Quelle", art: "quelle", min: 1, max: 6, zeichen: 25, saetze: null, punkt: false },
-  { key: "kpi2_value", label: "Kennzahl 2", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
+  { key: "kpi2_value", label: "Wert", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
   { key: "kpi2_label", label: "Beschreibung", art: "satz", min: 5, max: 18, zeichen: 115, saetze: null, punkt: false },
   { key: "kpi2_source", label: "Quelle", art: "quelle", min: 1, max: 6, zeichen: 25, saetze: null, punkt: false },
-  { key: "kpi3_value", label: "Kennzahl 3", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
+  { key: "kpi3_value", label: "Wert", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
   { key: "kpi3_label", label: "Beschreibung", art: "satz", min: 5, max: 18, zeichen: 115, saetze: null, punkt: false },
   { key: "kpi3_source", label: "Quelle", art: "quelle", min: 1, max: 6, zeichen: 25, saetze: null, punkt: false },
-  { key: "kpi4_value", label: "Kennzahl 4", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
+  { key: "kpi4_value", label: "Wert", art: "zahl", min: 1, max: 4, zeichen: 10, saetze: null, punkt: false },
   { key: "kpi4_label", label: "Beschreibung", art: "satz", min: 5, max: 18, zeichen: 115, saetze: null, punkt: false },
   { key: "kpi4_source", label: "Quelle", art: "quelle", min: 1, max: 6, zeichen: 25, saetze: null, punkt: false },
   { key: "benchmark_title", label: "Titel (H2)", art: "these", min: 8, max: 22, zeichen: 130, saetze: null, punkt: false },
-  { key: "bm1_name", label: "Benchmark 1", art: "name", min: 1, max: 5, zeichen: 25, saetze: null, punkt: false },
+  { key: "bm1_name", label: "Dachzeile", art: "name", min: 1, max: 5, zeichen: 25, saetze: null, punkt: false },
   { key: "bm1_title", label: "Titel", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
   { key: "bm1_text", label: "Beleg", art: "absatz", min: 20, max: 44, zeichen: 230, saetze: null, punkt: false },
-  { key: "bm1_tag", label: "Lehre", art: "satz", min: 5, max: 16, zeichen: 90, saetze: [1, 1], punkt: false },
-  { key: "bm2_name", label: "Benchmark 2", art: "name", min: 1, max: 5, zeichen: 25, saetze: null, punkt: false },
+  { key: "bm1_tag", label: "Statement", art: "satz", min: 5, max: 16, zeichen: 90, saetze: [1, 1], punkt: false },
+  { key: "bm2_name", label: "Dachzeile", art: "name", min: 1, max: 5, zeichen: 25, saetze: null, punkt: false },
   { key: "bm2_title", label: "Titel", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
   { key: "bm2_text", label: "Beleg", art: "absatz", min: 20, max: 44, zeichen: 230, saetze: null, punkt: false },
-  { key: "bm2_tag", label: "Lehre", art: "satz", min: 5, max: 16, zeichen: 90, saetze: [1, 1], punkt: false },
-  { key: "bm3_name", label: "Benchmark 3", art: "name", min: 1, max: 5, zeichen: 25, saetze: null, punkt: false },
+  { key: "bm2_tag", label: "Statement", art: "satz", min: 5, max: 16, zeichen: 90, saetze: [1, 1], punkt: false },
+  { key: "bm3_name", label: "Dachzeile", art: "name", min: 1, max: 5, zeichen: 25, saetze: null, punkt: false },
   { key: "bm3_title", label: "Titel", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
   { key: "bm3_text", label: "Beleg", art: "absatz", min: 20, max: 44, zeichen: 230, saetze: null, punkt: false },
-  { key: "bm3_tag", label: "Lehre", art: "satz", min: 5, max: 16, zeichen: 90, saetze: [1, 1], punkt: false },
+  { key: "bm3_tag", label: "Statement", art: "satz", min: 5, max: 16, zeichen: 90, saetze: [1, 1], punkt: false },
   { key: "sources", label: "Quellen", art: "liste", min: 5, max: 45, zeichen: 185, saetze: null, punkt: false },
   { key: "quote_text", label: "Zitat", art: "satz", min: 14, max: 34, zeichen: 210, saetze: [1, 2], punkt: false },
   { key: "potentials_title", label: "Titel (H2)", art: "these", min: 5, max: 16, zeichen: 85, saetze: null, punkt: false },
   { key: "potentials_lead", label: "Absatz 1", art: "absatz", min: 22, max: 50, zeichen: 285, saetze: null, punkt: false },
   { key: "potentials_lead2", label: "Absatz 2", art: "satz", min: 6, max: 20, zeichen: 100, saetze: [1, 1], punkt: false },
-  { key: "pot1_title", label: "Hebel 1", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
+  { key: "pot1_title", label: "Titel", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
   { key: "pot1_potential", label: "Text", art: "absatz", min: 22, max: 48, zeichen: 300, saetze: null, punkt: false },
-  { key: "pot2_title", label: "Hebel 2", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
+  { key: "pot2_title", label: "Titel", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
   { key: "pot2_potential", label: "Text", art: "absatz", min: 22, max: 48, zeichen: 300, saetze: null, punkt: false },
-  { key: "pot3_title", label: "Hebel 3", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
+  { key: "pot3_title", label: "Titel", art: "these", min: 3, max: 9, zeichen: 50, saetze: null, punkt: false },
   { key: "pot3_potential", label: "Text", art: "absatz", min: 22, max: 48, zeichen: 300, saetze: null, punkt: false },
   { key: "cta", label: "CTA-Frage", art: "these", min: 5, max: 16, zeichen: 70, saetze: [1, 1], punkt: false },
   { key: "about_fit", label: "Über ROOTS", art: "absatz", min: 12, max: 38, zeichen: 185, saetze: null, punkt: false },

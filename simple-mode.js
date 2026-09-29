@@ -15,7 +15,7 @@
 
 import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionMenu } from "./simple-view-state.mjs?v=20260816-1430";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { articleDisplayTitle } from "./article-title.mjs?v=20260929-7";
+import { articleDisplayTitle } from "./article-title.mjs?v=20260929-8";
 
 let ctx = null;
 let els = {};
@@ -113,6 +113,23 @@ function sourceOf(article) {
 }
 
 // ---------------------------------------------------------------------------
+// Themen: eine Anzeige fuer Familien, die dasselbe Thema meinen. Die
+// Einordnung der Pipeline bleibt, nur Filter und Karte fassen zusammen.
+// ---------------------------------------------------------------------------
+const THEMEN_GRUPPEN = {
+  eigenmarken_launch: { id: "eigenmarken_strategie", label: "Eigenmarkenstrategie" },
+  eigenmarken_strategie: { id: "eigenmarken_strategie", label: "Eigenmarkenstrategie" },
+  marken_relaunch: { id: "marken_strategie", label: "Markenstrategie" },
+  marken_strategie: { id: "marken_strategie", label: "Markenstrategie" },
+};
+
+export function signalThema(signal) {
+  const id = String(signal?.signal_id || "");
+  const gruppe = THEMEN_GRUPPEN[id];
+  return gruppe ? { ...gruppe } : { id, label: String(signal?.signal_label || id) };
+}
+
+// ---------------------------------------------------------------------------
 // Rendern
 // ---------------------------------------------------------------------------
 function signalCard(signal) {
@@ -122,7 +139,7 @@ function signalCard(signal) {
   return `
     <article class="finding-item" data-article-id="${esc(article.id || signal.article_id || "")}" tabindex="0" role="button">
       <div class="finding-item-top">
-        <span class="finding-dimension">${esc(signal.signal_label || signal.signal_id || "Signal")}</span>
+        <span class="finding-dimension">${esc(signalThema(signal).label || "Signal")}</span>
         <div class="finding-top-tags">
           ${isToday(signal.updated_at || signal.classified_at) ? `<span class="finding-new-badge">NEU</span>` : ""}
           <span class="quality-tag quality-tag--reliable"><i class="fa-solid fa-chart-line"></i> ${esc(signal.lane === "sales" ? "Sales-Relevanz" : "Marketing-Relevanz")} · ${esc(signal.score ?? 0)} %</span>
@@ -216,7 +233,7 @@ function refreshCompanyFilter(all) {
 function visibleSignals(lane) {
   const state = ctx.viewState;
   const filtered = signalsByLane[lane].filter((signal) => {
-    const topicOk = state.topics.length === 0 || state.topics.includes(signal.signal_id);
+    const topicOk = state.topics.length === 0 || state.topics.includes(signalThema(signal).id);
     const sourceOk = state.sources.length === 0 || state.sources.includes(signalSourceName(signal));
     const companyOk = companyMatches(signal);
     return topicOk && sourceOk && companyOk;
@@ -256,9 +273,9 @@ function refreshFilterOptions() {
   // genau diesem Feld, damit Beschriftung und Filterwerte identisch sind.
   const topicLabels = new Map();
   all.forEach((signal) => {
-    const id = signal.signal_id;
+    const { id, label } = signalThema(signal);
     if (!id || topicLabels.has(id)) return;
-    topicLabels.set(id, signal.signal_label || id);
+    topicLabels.set(id, label || id);
   });
   const topics = [...topicLabels.keys()]
     .sort((a, b) => topicLabels.get(a).localeCompare(topicLabels.get(b), "de"));
