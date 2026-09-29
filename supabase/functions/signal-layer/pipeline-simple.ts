@@ -305,13 +305,25 @@ const MARKETING_FAMILIES: SimpleFamily[] = [
     // MarTech-Oekosystem, Data Analytics, Digital Maturity Assessment.
     id: "ki_marketing",
     lane: "marketing",
-    label: "KI & Marketing-Technologie",
+    label: "KI im Marketing",
     definition: "Übertragbares Wissen zum Einsatz von KI, Automatisierung, MarTech oder Analytics im Marketing - Studie, Benchmark, Vorgehen oder belegte Wirkung. Reine Produktankündigungen, Finanzierungsrunden und Aktienmeldungen von Technologieanbietern zählen nicht.",
     trigger: /\b(kunstliche intelligenz|kunstlicher intelligenz|\bki\b|generative ki|genai|generative ai|\bai\b|\bllm\b|sprachmodell\w*|large language model\w*|chatgpt|copilot|agentic|ki agent\w*|ai agent\w*|marketing automation|marketingautomation|automatisierung\w*|martech|marketing technolog\w*|customer data platform|\bcdp\b|\bcrm\b|marketing analytics|predictive analytics|attribution\w*|personalisierung\w*|hyperpersonalisier\w*|dashboard\w*|datenstrategie\w*|data governance|first party data)\b/,
     context: /\b(marketing|marke\w*|brand\w*|kampagn\w*|campaign|kommunikation|content|media|kunde\w*|customer|shopper|handel\w*|retail)\b.*\b(studie\w*|analyse\w*|benchmark\w*|best practice\w*|learning\w*|erkenntnis\w*|leitfaden|how to|vorgehen|methode\w*|framework|whitepaper|report|checkliste|erfahrung\w*|prozent|effizien\w*|produktivitat\w*|\broi\b|wirkung\w*|einsatz|eingesetzt|pilot\w*|rollout|roll out|skalier\w*|use case\w*|anwendungsfall\w*)\b/,
     // Anbieter- und Boersenmeldungen sind kein uebertragbares Prozesswissen.
     // Sie stehen genau so in der Ueberschrift.
     excludeTitle: /\b(aktie\w*|borsengang|boersengang|\bipo\b|quartal\w*|umsatzplus|dividende\w*|finanzierungsrunde\w*|series [abcd]\b|bewertung von|milliardenbewertung|nvidia|openai kundigt|ubernimmt fur|ubernahme fur)\b/,
+  },
+  {
+    // Rund 54 Signale in v2.6 handelten von Social Media, Creatorn oder
+    // Influencern, verteilt ueber sieben Familien ohne eigenes Thema. ROOTS
+    // hat dazu Social-Media-Strategie, Social Media Marketing und Content.
+    id: "social_media",
+    lane: "marketing",
+    label: "Social Media & Creator",
+    definition: "Übertragbares Wissen zu Social Media, Creatorn, Influencern oder Communitys für Marken: Plattformstrategie, Content, Creator-Kooperation, Social Commerce - mit Studie, Zahl oder belegter Wirkung. Reine Viralmeldungen ohne übertragbare Erkenntnis zählen nicht.",
+    trigger: /\b(social media|soziale medien|sozialen medien|tiktok|instagram|youtube|reels|shorts|snapchat|pinterest|linkedin|whatsapp kanal|influencer\w*|creator\w*|content creator\w*|community management|brand community|user generated content|\bugc\b|social commerce|live shopping|livestream shopping|follower\w*|reichweite in sozialen)\b/,
+    context: /\b(marke\w*|brand\w*|marketing|kampagn\w*|content|kunde\w*|zielgrupp\w*|handel\w*|retail)\b.*\b(studie\w*|umfrage\w*|analyse\w*|prozent|strateg\w*|wirkung\w*|reichweite|engagement|interaktion\w*|follower\w*|umsatz\w*|wachstum\w*|erkenntnis\w*|erfolg\w*|kooperation\w*|zusammenarbeit)\b/,
+    excludeTitle: /\b(aktie\w*|quartal\w*|dividende\w*|verbot\w*|sperre\w*|datenschutz\w*|klage\w*|prozess gegen|shitstorm um)\b/,
   },
 ];
 
@@ -514,6 +526,10 @@ const SIMPLE_FAMILY_OFFERINGS: Record<string, string[]> = {
     "performance_customer_journey_analytics", "planning_markt_wettbewerbsanalyse",
     "presence_content_strategie", "planning_ideation_workshops",
   ],
+  social_media: [
+    "presence_social_media_strategie", "people_social_media_marketing", "presence_content_strategie",
+    "presence_customer_insights", "planning_markenstrategie",
+  ],
   ki_marketing: [
     "productivity_marketing_automation", "productivity_martech_oekosystem",
     "people_data_analytics", "performance_digital_maturity_assessment",
@@ -656,7 +672,7 @@ Ein Artikel ist ein Signal, wenn er einen konkreten ROOTS-Anlass belegt. lane=ke
 Sales auch ohne das Wort Strategie: Wechsel der Marketingleitung (auch Marketingressort, Marketingvorstand, Vorstand Marketing); Umbau von Filialnetz, Sortiment oder Flaeche im Handel; Wechsel der Leadagentur oder globales Agenturmodell; Verpackungs-, Artwork-, Farbmanagement- oder Web-to-Print-Prozess; Uebernahme oder Ausbau eines Private-Label-Produzenten.
 Marketing auch ohne das Compound-Wort Marketingstrategie: Markenfuehrung, Markenkonsistenz, Funktion der Marke, Marke als Infrastruktur; Shopper- oder Consumer-Index, YouGov, Studie zur Akzeptanz von Werbung oder KI-Kennzeichnung; uebertragbare Kampagnen- oder Influencer-Modelle fuer Marken; Verpackung als Markenbotschafter.
 Sammel-Personalien sind nur dann ein Signal, wenn EINE konkrete Person eine Marketing-, Marken- oder Transformationsrolle neu uebernimmt. Die Namensliste allein reicht nicht. Waehle nie cmo_wechsel fuer einen wissenschaftlichen Markenbeitrag ohne Personalie.
-Familienwahl nach dem Anlass: CMO-/Marketingvorstand → cmo_wechsel und Leistung "Die ersten 100 Tage als CMO" oder Marketing-Audit; D2P, Farbmanagement, Web-to-Print → design_to_print und Design-to-Print & Artwork; Handelsmarken-Uebernahme → eigenmarken_launch und Handelsmarkenstrategie; Markenessay → marken_strategie und Markenpositionierung oder Brand Audit; Shopper-Index → customer_insights und Customer Insights; KI-Einsatz, Automatisierung, MarTech oder Analytics im Marketing → ki_marketing und Marketing Automation, MarTech-Oekosystem oder Data Analytics; Filial- oder Sortimentsumbau → strategiewechsel und Marketingstrategie oder Wachstumsstrategie; Leadagentur → marketing_prozess und Agenturen richtig briefen oder effiziente Agentur-Pitches.
+Familienwahl nach dem Anlass: CMO-/Marketingvorstand → cmo_wechsel und Leistung "Die ersten 100 Tage als CMO" oder Marketing-Audit; D2P, Farbmanagement, Web-to-Print → design_to_print und Design-to-Print & Artwork; Handelsmarken-Uebernahme → eigenmarken_launch und Handelsmarkenstrategie; Markenessay → marken_strategie und Markenpositionierung oder Brand Audit; Shopper-Index → customer_insights und Customer Insights; KI-Einsatz, Automatisierung, MarTech oder Analytics im Marketing → ki_marketing und Marketing Automation, MarTech-Oekosystem oder Data Analytics; Social Media, Creator, Influencer oder Community als uebertragbares Modell → social_media und Social-Media-Strategie oder Social Media Marketing; Filial- oder Sortimentsumbau → strategiewechsel und Marketingstrategie oder Wachstumsstrategie; Leadagentur → marketing_prozess und Agenturen richtig briefen oder effiziente Agentur-Pitches.
 Ein Lieferantenartikel zu Farbmanagement, Artwork oder Web-to-Print bleibt ein Sales-Signal, wenn er den Weg von Design zu Druck konkret veraendert. Ein Paywall-Hinweis oder Abo-Kasten ist kein Grund fuer lane=keine.
 </recognition_rules>${hasViralCandidate ? `
 <viral_rules>

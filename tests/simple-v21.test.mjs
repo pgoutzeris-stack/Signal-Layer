@@ -377,3 +377,31 @@ test("kein Thema traegt den Namen eines anderen", () => {
   // Verlaufsauswahl zurueck.
   assert.match(migration, /simple_signal_history/);
 });
+
+test("v2.7: KI im Marketing und Social Media & Creator als eigene Themen", async () => {
+  const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
+  const ki = pipeline.SIMPLE_FAMILIES.find((entry) => entry.id === "ki_marketing");
+  const social = pipeline.SIMPLE_FAMILIES.find((entry) => entry.id === "social_media");
+  assert.equal(ki.label, "KI im Marketing");
+  assert.equal(social.label, "Social Media & Creator");
+  assert.equal(social.lane, "marketing");
+  assert.ok(social.trigger.test("tiktok und creator kooperationen fur marken"));
+  assert.ok(social.context.test("marke setzt auf creator studie zeigt 40 prozent mehr reichweite"));
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.7");
+});
+
+test("Versionsmenue: eine Version ohne Signale gilt nicht als aktuell", async () => {
+  const view = await import("../simple-view-state.mjs");
+  const versions = [
+    { version: "roots-simple-v2.7", signals: 0 },
+    { version: "roots-simple-v2.6", signals: 392, last_run_at: "2026-09-20T10:00:00Z" },
+    { version: "roots-simple-v2.5", signals: 120, last_run_at: "2026-08-10T10:00:00Z" },
+  ];
+  const menu = view.simpleVersionMenu(versions, "roots-simple-v2.7");
+  assert.equal(menu.current.version, "roots-simple-v2.6");
+  assert.deepEqual(menu.historical.map((entry) => entry.version), ["roots-simple-v2.5"]);
+  assert.match(view.simpleCurrentVersionLabel(versions, "roots-simple-v2.7"), /^roots-simple-v2\.6 · aktuell · 392 Signale$/);
+  const spaeter = view.simpleVersionMenu([{ version: "roots-simple-v2.7", signals: 5 }, ...versions.slice(1)], "roots-simple-v2.7");
+  assert.equal(spaeter.current.version, "roots-simple-v2.7");
+  assert.deepEqual(spaeter.historical.map((entry) => entry.version), ["roots-simple-v2.6", "roots-simple-v2.5"]);
+});

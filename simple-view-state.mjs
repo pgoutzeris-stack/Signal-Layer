@@ -18,9 +18,27 @@ export function simpleVersionDateLabel(entry) {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("de-DE");
 }
 
+function versionsZeit(entry) {
+  const zeit = Date.parse(entry?.last_run_at || entry?.last_seen_at || entry?.first_seen_at || "");
+  return Number.isFinite(zeit) ? zeit : 0;
+}
+
+/**
+ * Aktuell ist der Stand, der Signale hat. Eine neu deployte Version ohne
+ * einen einzigen Lauf stand sonst als „aktuell · 0 Signale“ im Menue, und die
+ * Version mit allen Signalen darunter wie eine alte (29.9.2026: v2.7 leer,
+ * v2.6 mit 392 Signalen).
+ */
 export function simpleVersionMenu(versions, currentVersion) {
   const list = Array.isArray(versions) ? versions : [];
-  const current = list.find((entry) => entry.version === currentVersion) || {
+  const mitSignalen = (entry) => Number(entry?.signals || 0) > 0;
+  let current = list.find((entry) => entry.version === currentVersion);
+  if (!current || !mitSignalen(current)) {
+    const kandidaten = list.filter(mitSignalen).sort((a, b) => versionsZeit(b) - versionsZeit(a)
+      || String(b.version).localeCompare(String(a.version), "de", { numeric: true }));
+    if (kandidaten.length) current = kandidaten[0];
+  }
+  current = current || {
     version: currentVersion || "",
     signals: 0,
     archived_signals: 0,
@@ -28,7 +46,8 @@ export function simpleVersionMenu(versions, currentVersion) {
   };
   return {
     current,
-    historical: list.filter((entry) => entry.version !== currentVersion),
+    historical: list.filter((entry) => entry.version !== current.version
+      && !(entry.version === currentVersion && !mitSignalen(entry))),
   };
 }
 

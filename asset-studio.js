@@ -1732,12 +1732,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-8";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-9";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-8";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-9";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-8";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-9";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2450,7 +2450,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "markt_ok") return `${Number(entry.kpis || 0)} Marktzahlen aus ${Array.isArray(entry.herausgeber) ? entry.herausgeber.length : 0} Quellen${tok}`;
     if (event === "markt_skip") return "Marktzahlen nur aus dem Artikel";
     if (event === "benchmarks_fern") return `Zu weit weg vom Markt, neu gesucht: ${(Array.isArray(entry.names) ? entry.names : []).join(", ")}`;
-    if (event === "bilder_suche") return `Bildsuche für ${Array.isArray(entry.slots) ? entry.slots.length : 0} Rahmen, Runde ${Number(entry.runde || 1)}`;
+    if (event === "bilder_suche") return `Bildsuche · Runde ${Number(entry.runde || 1)}: ${(Array.isArray(entry.slots) ? entry.slots : []).map(bildName).join(", ")}`;
     if (event === "bilder_pruefung") {
       return Number(entry.kandidaten || 0)
         ? `${model || "Das Modell"} prüft ${Number(entry.kandidaten)} Bilder, ${Number(entry.angenommen || 0)} passen${tok}`
@@ -2507,13 +2507,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return visible;
   }
 
-  function bildRahmen(key) {
+  /** Name eines Bildplatzes, wie er im Fragebogen heisst: Benchmark 1, Hebel 2, Titelbild. */
+  function bildName(key) {
     const wert = String(key || "");
-    if (wert === "cover") return "das Titelbild";
-    if (wert === "insight") return "den Befund";
+    if (wert === "cover") return "Titelbild";
+    if (wert === "insight") return "Befund";
     const treffer = /^(potentials|benchmarks)\.(\d+)$/.exec(wert);
     if (treffer) return `${treffer[1] === "potentials" ? "Hebel" : "Benchmark"} ${Number(treffer[2]) + 1}`;
     return wert;
+  }
+
+  function bildRahmen(key) {
+    const name = bildName(key);
+    if (name === "Titelbild") return "das Titelbild";
+    if (name === "Befund") return "den Befund";
+    return name;
   }
 
   const LADEPUNKTE = `<span class="as-dots" aria-hidden="true"><i></i><i></i><i></i></span>`;

@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-8");
-  assert.match(indexHtml, /app\.js\?v=20260929-8/);
+  assert.equal(studioVersion, "20260929-9");
+  assert.match(indexHtml, /app\.js\?v=20260929-9/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4587,4 +4587,10 @@ test("Themen, Bildsymbol und Luecken im Fragebogen", async () => {
   assert.match(studio, /data-act="memo-luecken-ok">Trotzdem weiter/);
   assert.match(studio, /\[data-memofeld\]\.is-missing/);
   assert.match(studio, /const hinweis = "";/);
+});
+
+test("Ladeanzeige nennt die Bildplaetze beim Namen", () => {
+  assert.match(studio, /function bildName\(key\)/);
+  assert.match(studio, /`Bildsuche · Runde \$\{Number\(entry\.runde \|\| 1\)\}: \$\{\(Array\.isArray\(entry\.slots\) \? entry\.slots : \[\]\)\.map\(bildName\)\.join\(", "\)\}`/);
+  assert.doesNotMatch(studio, /Rahmen, Runde/);
 });
