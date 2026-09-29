@@ -1124,6 +1124,12 @@ export type AssetNormalizeContext = {
   benchmarkCorpus?: string | null;
   /** Vorab bestimmter Gegenstand des Signals: worum es wirklich geht. */
   subject?: AssetSubject | null;
+  /**
+   * Nachsichtig pruefen: Titel-, Beleg- und 100-Tage-Pruefungen landen hier
+   * als Befund, statt das Memo zu verwerfen. Die Kritik bekommt sie zum
+   * Beheben; was danach offen ist, steht als Pruefhinweis im Memo.
+   */
+  befunde?: string[];
 };
 
 /**
@@ -1213,6 +1219,8 @@ export type MemoPotential = {
 };
 
 export type MemoPayload = {
+  /** Was nach der Kritik noch offen ist, in Worten fuer den Nutzer. */
+  pruefhinweise?: string[];
   title: string;
   standfirst: string;
   summary_0: string;
@@ -4608,7 +4616,14 @@ function normalizeMemo(
   // Auch nach der Uebernahme gilt: eine Zahl ohne Bezug und Quelle steht im
   // Kasten ohne Deckung.
   memo.kpis = memo.kpis.filter((eintrag) => eintrag.value && eintrag.label && eintrag.source).slice(0, 4);
-  rejectUnattested([
+  // Streng wirft die erste Pruefung, nachsichtig sammelt sie den Befund. Am
+  // 29.9.2026 fiel ein fertiges Memo nach fuenf Minuten und 0,81 € an einem
+  // Titel, der der Signalueberschrift zu aehnlich war.
+  const pruefe = (pruefung: () => void) => {
+    if (!context.befunde) { pruefung(); return; }
+    try { pruefung(); } catch (fehler) { context.befunde.push(fehler instanceof Error ? fehler.message : String(fehler)); }
+  };
+  pruefe(() => rejectUnattested([
     memo.title, memo.standfirst, memo.summary_0, memo.summary_1, memo.summary_2,
     memo.market_title, memo.market_p1, memo.market_lead2, memo.market_p2, memo.insight_title,
     memo.benchmark_title, memo.quote_text,
@@ -4618,10 +4633,28 @@ function normalizeMemo(
     ...memo.benchmarks.flatMap((eintrag) => [eintrag.name, eintrag.title, eintrag.text, eintrag.tag, eintrag.image_hint]),
     ...memo.potentials.flatMap((eintrag) => [eintrag.title, eintrag.potential, eintrag.image_hint]),
     ...memo.sources,
-  ].join("\n"), corpus, "Die Ansprache");
-  rejectMemoNewsRetelling(memo, context);
-  rejectMemoCmoHundredDays(memo);
+  ].join("\n"), corpus, "Die Ansprache"));
+  pruefe(() => rejectMemoNewsRetelling(memo, context));
+  pruefe(() => rejectMemoCmoHundredDays(memo));
   return memo;
+}
+
+/**
+ * Ein Befund aus der nachsichtigen Pruefung in Worten fuer den Nutzer. Die
+ * Pruefung spricht zum Modell ("title muss ..."); im Studio steht, was zu
+ * pruefen ist.
+ */
+export function memoPruefhinweis(befund: string): string {
+  const b = String(befund || "").trim();
+  const zahlen = /unbelegte Zahlen oder Zahlwörter \(([^)]*)\)/.exec(b)?.[1];
+  if (zahlen) return `Zahlen ohne Beleg im Artikel oder in der Recherche: ${zahlen}. Bitte prüfen oder streichen.`;
+  if (/wiederholt die Signalüberschrift/.test(b)) return "Der Titel wiederholt die Signalüberschrift. Er sollte die Herausforderung nennen, nicht die Nachricht.";
+  if (/Nachrichtenslogan ohne Beratungshebel/.test(b)) return "Der Titel nennt keinen ROOTS-Hebel wie Marke, Positionierung oder Auftritt.";
+  if (/Personalie|Personennamen|Amt oder Person/.test(b)) return "Das Cover erzählt eine Personalie statt der Herausforderung.";
+  if (/ROOTS-Leistung zum Titel/.test(b)) return "Der Titel beginnt mit der ROOTS-Leistung. Sie gehört in den Abschnitt über ROOTS.";
+  if (/Nachrichtenmeldung im Titel/.test(b)) return "Der Titel erzählt die Meldung, etwa Übernahme oder Angebot, statt der offenen Aufgabe.";
+  if (/100-Tage-CMO/.test(b)) return "Das Memo enthält Sprache aus dem 100-Tage-CMO-Dokument.";
+  return b.split(/(?<=\.)\s/)[0] || b;
 }
 
 /**

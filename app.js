@@ -2,14 +2,15 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260929-12";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260929-13";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260929-12";
-import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260929-12";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260929-13";
+import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260929-13";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-12";
-import { openManualSignal } from "./manual-signal.js?v=20260929-12";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-13";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260929-13";
+import { openManualSignal } from "./manual-signal.js?v=20260929-13";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260830-1330";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
@@ -284,33 +285,6 @@ function bindEvidenceHover() {
     item.addEventListener("focus", () => setHighlight(index, true));
     item.addEventListener("blur", () => setHighlight(index, false));
   });
-}
-
-// Deutsche Servertexte sind schon Klartext. Englische kommen aus Postgres,
-// Deno oder einem Anbieter und sagen dem Nutzer weder, was los ist, noch was
-// er tun soll. Sie werden hier übersetzt, das Original bleibt als Detail.
-function fehlerKlartext(roh) {
-  const text = String(roh || "").replace(/^Error:\s*/, "").trim();
-  if (!text) return "Unbekannter Fehler. Bitte erneut versuchen.";
-  const deutsch = /[äöüß]|\b(die|der|das|nicht|kein|keine|und|ist|wurde|bitte)\b/i;
-  const [kopf, ...rest] = text.split("\n\n");
-  if (deutsch.test(kopf)) return text;
-  const detail = kopf.slice(0, 240);
-  let satz;
-  if (/check constraint|violates|duplicate key|foreign key|relation .* does not exist|column .* does not exist/i.test(kopf)) {
-    satz = "Interner Fehler in der Datenbank des Signal Layer. Das liegt nicht an deinen Eingaben. Bitte erneut versuchen. Kommt der Fehler wieder, Pano Bescheid geben.";
-  } else if (/\b(429|rate limit|quota|resource_exhausted)\b/i.test(kopf)) {
-    satz = "Der KI-Anbieter drosselt gerade die Anfragen. Eine Minute warten und erneut versuchen.";
-  } else if (/\b(5\d\d|unavailable|overloaded|bad gateway|gateway timeout)\b/i.test(kopf)) {
-    satz = "Der KI-Anbieter ist gerade nicht erreichbar. Das liegt beim Anbieter. In ein paar Minuten erneut versuchen.";
-  } else if (/timeout|timed out|aborted/i.test(kopf)) {
-    satz = "Die Anfrage hat zu lange gedauert und wurde abgebrochen. Bitte erneut versuchen.";
-  } else if (/jwt|unauthori[sz]ed|not authenticated|permission denied|forbidden/i.test(kopf)) {
-    satz = "Die Anmeldung ist abgelaufen oder die Berechtigung fehlt. Seite neu laden und erneut anmelden.";
-  } else {
-    satz = "Technischer Fehler im Signal Layer. Bitte erneut versuchen. Kommt der Fehler wieder, Pano Bescheid geben.";
-  }
-  return [`${satz}\n\nTechnisches Detail: ${detail}`, ...rest].join("\n\n");
 }
 
 async function callApi(action, payload = {}) {

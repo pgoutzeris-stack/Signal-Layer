@@ -574,6 +574,19 @@ const FREI_CSS = `
   animation:as-badge-rein .3s cubic-bezier(.2,.8,.2,1);
 }
 #as-overlay .as-ci-badge i{font-size:11px;}
+#as-overlay .as-pruef{
+  position:absolute; right:14px; top:14px; z-index:9; width:min(300px, calc(100% - 28px));
+  padding:10px 12px 12px; border-radius:14px; background:#fffbeb; color:#78350f;
+  box-shadow:0 0 0 1px rgba(180,83,9,.16), 0 10px 26px rgba(15,23,42,.12);
+  font-size:12.5px; line-height:1.45; animation:as-badge-rein .3s cubic-bezier(.2,.8,.2,1);
+}
+#as-overlay .as-pruef-kopf{display:flex; align-items:center; gap:7px; margin-bottom:4px;}
+#as-overlay .as-pruef-kopf i{color:#b45309;}
+#as-overlay .as-pruef-kopf b{flex:1; font-size:12.5px; color:#78350f;}
+#as-overlay .as-pruef-zu{width:24px; height:24px; border:0; border-radius:8px; background:transparent; color:#92400e; display:grid; place-items:center; cursor:pointer;}
+#as-overlay .as-pruef-zu:hover{background:rgba(180,83,9,.1);}
+#as-overlay .as-pruef ul{margin:0; padding-left:18px;}
+#as-overlay .as-pruef li + li{margin-top:4px;}
 @keyframes as-badge-rein{from{opacity:0; transform:translateY(-4px) scale(.96);} to{opacity:1; transform:none;}}
 
 /* Freie Bearbeitung: Auswahl, Griffe, Hilfslinien */
@@ -1847,17 +1860,18 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-12";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-13";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-12";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-13";
 import {
   createFreiform, createKontextmenue, wendeAenderungenAn, bereinigeAenderungen, serialisiereAenderungen,
   zaehleAenderungen, elementAmPfad, pfadVon, bildAus, istTextElement, FREI_FARBEN,
-} from "./asset-freiform.js?v=20260929-12";
+} from "./asset-freiform.js?v=20260929-13";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-12";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-13";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260929-13";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1888,6 +1902,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   const api = typeof callApi === "function" ? callApi : async () => { throw new Error("Keine Verbindung zum Server verfügbar."); };
   /** Wie oft ein verlorener Abruf wiederholt wird, bevor das Studio aufgibt. */
   const POLL_NETZ_VERSUCHE = 6;
+  /**
+   * Laenger wartet eine einzelne Abfrage nicht. Ohne Frist hing das Studio an
+   * einer Anfrage, die nie zurueckkam, und der Balken lief weiter.
+   */
+  const POLL_FRIST_MS = 30_000;
+  const mitFrist = (versprechen, ms) => {
+    let uhr = 0;
+    const frist = new Promise((_ja, nein) => {
+      uhr = setTimeout(() => {
+        const fehler = new Error("Die Abfrage beim Server hat nicht geantwortet.");
+        fehler.netz = true;
+        nein(fehler);
+      }, ms);
+    });
+    return Promise.race([versprechen, frist]).finally(() => clearTimeout(uhr));
+  };
   const assetKind = kind === "memo" ? "memo" : "linkedin";
   const isMemo = assetKind === "memo";
   const source = signal && typeof signal === "object" ? signal : {};
@@ -1950,6 +1980,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Nach ausdruecklicher Bestaetigung: CI-Elemente sind frei bearbeitbar,
     // das Dokument gilt als nicht CI-konform.
     ciFrei: false,
+    // Pruefhinweise fuer diese Sitzung ausgeblendet.
+    pruefZu: false,
     // Der Nutzer hat bestaetigt, mit leeren Memo-Feldern weiterzugehen.
     memoLueckenOk: false,
     ladeStart: 0,
@@ -2239,7 +2271,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           <div class="as-topactions">${topActions()}</div>
         </header>
         ${state.step === "edit" ? `<div class="as-ribbon" data-ribbon role="toolbar" aria-label="Formatierung"></div>` : ""}
-        <div class="as-content">${stepContent()}</div>
+        <div class="as-content">${sichererInhalt()}</div>
       </div>`;
     // Direkt und noch einmal nach dem Umbruch: in einem verborgenen Tab
     // laeuft requestAnimationFrame nicht, dann traegt der direkte Aufruf.
@@ -2251,6 +2283,30 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       updateFormatBar();
     } else if (fmtBar) {
       fmtBar.setAttribute("data-open", "0");
+    }
+  }
+
+  /**
+   * Wirft das Zeichnen einer Ansicht, bleibt sonst der letzte Stand stehen,
+   * oft ein Ladebalken, unter dem nichts mehr laeuft. Dann lieber eine
+   * schlichte Meldung mit dem Weg zurueck.
+   */
+  function sichererInhalt() {
+    try {
+      return stepContent();
+    } catch (fehler) {
+      console.error("Studio-Ansicht fehlgeschlagen:", fehler);
+      state.busy = false;
+      ladeTaktStop();
+      const text = fehlerKlartext(state.error || (fehler && fehler.message) || String(fehler));
+      return `<div class="as-error">
+        <strong>${state.error ? "Der Entwurf konnte nicht erzeugt werden" : "Die Ansicht konnte nicht gezeichnet werden"}</strong>
+        <p>${esc(text)}</p>
+        <div class="as-actions">
+          <button type="button" class="as-btn" data-act="to-form"><i class="fa-solid fa-sliders"></i>Zurück zum Fragebogen</button>
+          <button type="button" class="as-btn as-btn--primary" data-act="show-drafts"><i class="fa-solid fa-folder-open"></i>Entwürfe öffnen</button>
+        </div>
+      </div>`;
     }
   }
 
@@ -3656,10 +3712,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.error = "";
       render();
     } catch (err) {
-      state.formError = err && err.message ? String(err.message) : "Entwurf konnte nicht geöffnet werden.";
+      state.formError = err && err.message ? fehlerKlartext(String(err.message)) : "Entwurf konnte nicht geöffnet werden.";
       state.step = "form";
       state.formTab = "drafts";
       state.busy = false;
+      ladeTaktStop();
       render();
       draftsTaktStart();
     }
@@ -4221,7 +4278,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         : { id, status: "error", error_message: "Vom Nutzer abgebrochen." };
       let row;
       try {
-        const res = await api("get_asset", { asset_id: id });
+        const res = await mitFrist(api("get_asset", { asset_id: id }), POLL_FRIST_MS);
         row = res && typeof res === "object" ? (res.asset || res) : {};
         aussetzer = 0;
       } catch (fehler) {
@@ -4246,6 +4303,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Ein neuer Stand beginnt CI-konform; ein gespeicherter bringt seine
     // Freigabe selbst mit (restoreMemoEdits).
     state.ciFrei = false;
+    state.pruefZu = false;
     freiVerlauf.length = 0;
     freiZukunft.length = 0;
     // Ein fertiger Entwurf beginnt auf Seite 1. Der Fragebogen blaettert die
@@ -4792,6 +4850,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     passeSlideTexteAn(area);
     fitStages();
     zeigeCiBadge(area);
+    zeigePruefhinweise(area);
     if (editable && state.ciFrei) freiform.aktiviere(area);
     else freiform.deaktiviere();
     requestAnimationFrame(meldeUeberlauf);
@@ -6451,6 +6510,24 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     badge.title = n ? `${n} ${n === 1 ? "Abweichung" : "Abweichungen"} von der ROOTS CI` : "Freie Bearbeitung freigegeben";
   }
 
+  /** Was nach der Kritik offen blieb. Der Lauf ist fertig, der Nutzer entscheidet. */
+  function zeigePruefhinweise(area) {
+    if (!area) return;
+    area.querySelector(":scope > .as-pruef")?.remove();
+    const hinweise = isMemo && Array.isArray(state.payload?.pruefhinweise)
+      ? state.payload.pruefhinweise.map((h) => String(h || "").trim()).filter(Boolean).slice(0, 6)
+      : [];
+    if (!hinweise.length || state.pruefZu) return;
+    const box = document.createElement("div");
+    box.className = "as-pruef";
+    box.setAttribute("data-as-chrome", "");
+    box.setAttribute("role", "note");
+    box.innerHTML = `<div class="as-pruef-kopf"><i class="fa-solid fa-circle-exclamation"></i><b>Bitte prüfen</b>
+      <button type="button" class="as-pruef-zu" data-act="pruef-zu" aria-label="Hinweise ausblenden" title="Ausblenden"><i class="fa-solid fa-xmark"></i></button></div>
+      <ul>${hinweise.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>`;
+    area.appendChild(box);
+  }
+
   /** Ein CI-Element: gesperrt markiert, Bild, Grafik, fester Text, Flaeche oder Linie. */
   function istCiElement(el) {
     if (!el || el.closest("[data-field], [data-imgslot], [data-as-chrome]")) return false;
@@ -7272,6 +7349,11 @@ ${stages}${post}
     if (act === "crop-ok") { confirmCrop(); return; }
     if (act === "crop-browse") { browseCropFile(); return; }
     if (act === "crop-remove") { entferneCropBild(); return; }
+    if (act === "pruef-zu") {
+      state.pruefZu = true;
+      shell.querySelector("[data-stagearea] > .as-pruef")?.remove();
+      return;
+    }
     if ((act === "img-edit" || act === "img-pick") && stageEl) {
       pickImage(stageEl, hit.getAttribute("data-imgkey") || "image");
       return;
@@ -7656,7 +7738,9 @@ ${stages}${post}
     if (state.busy) {
       state.leftRunning = true;
       if (typeof notify === "function") {
-        notify("Der Entwurf läuft weiter. Sie bekommen eine Benachrichtigung, wenn er fertig ist.");
+        // Eine Benachrichtigung beim Abschluss gibt es nicht; der Entwurf steht
+        // danach unter Entwürfe am Artikel.
+        notify("Der Entwurf läuft weiter und steht danach unter Entwürfe am Artikel.");
       }
     }
     state.cancelRequested = true;

@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-12");
-  assert.match(indexHtml, /app\.js\?v=20260929-12/);
+  assert.equal(studioVersion, "20260929-13");
+  assert.match(indexHtml, /app\.js\?v=20260929-13/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4289,7 +4289,8 @@ test("Pruefung und Kritiker messen am Referenzmemo, nicht nur an der Laenge", ()
   // Die Edge Function schickt jedes Memo genau einmal durch den Kritiker.
   assert.match(edge, /\? vertragsFehler\.length > 0 \|\| assetKind === "memo"/);
   assert.match(edge, /buildMemoKritikPrompt\(prompt, String\(result\.text \|\| ""\), vertragsFehler\)/);
-  assert.match(edge, /zweiteFehler\.length <= vertragsFehler\.length/);
+  // Der Kritiker gewinnt, solange er nicht schwerer wiegt; harte Befunde zaehlen dreifach.
+  assert.match(edge, /gewicht\(befunde, zweiteFehler\) <= gewicht\(befundeErst, vertragsFehler\)/);
 });
 
 test("Fehlermeldungen nennen Anbieter und lesbaren Modellnamen", () => {
@@ -4744,4 +4745,51 @@ test("Logos: Speicher zuerst, Pruefung mit Sicht, zweite Runde mit Beschreibung"
   // Ladeanzeige nennt die Pruefung und die Herkunft.
   assert.match(studio, /event === "logo_pruefung"/);
   assert.match(studio, /speicher: "aus dem Speicher"/);
+});
+
+test("Fehler erst am Ende, nie ein stehender Ladebalken", async () => {
+  // Eine Titel-Heuristik verwirft kein fertiges Memo mehr: streng wirft sie,
+  // nachsichtig wird sie zum Befund fuer die Kritik und zum Pruefhinweis.
+  const antworten = backend.normalizeAssetAnswers("memo", {});
+  const roh = JSON.stringify(memoRoh({ title: "Wie Ankerkraut Marke und Kanalrollen neu ordnet" }));
+  const kontext = { signalHeadline: "Ankerkraut ordnet Marke und Kanalrollen neu" };
+  assert.throws(() => backend.normalizeAssetPayload("memo", roh, antworten, kontext), /wiederholt die Signalüberschrift/);
+  const befunde = [];
+  const memo = backend.normalizeAssetPayload("memo", roh, antworten, { ...kontext, befunde });
+  assert.equal(memo.title, "Wie Ankerkraut Marke und Kanalrollen neu ordnet");
+  assert.equal(befunde.length, 1);
+  assert.match(befunde[0], /wiederholt die Signalüberschrift/);
+  assert.equal(backend.memoPruefhinweis(befunde[0]), "Der Titel wiederholt die Signalüberschrift. Er sollte die Herausforderung nennen, nicht die Nachricht.");
+  assert.match(backend.memoPruefhinweis("Die Ansprache enthalten unbelegte Zahlen oder Zahlwörter (62 %, drei). Nur Ziffern ..."), /^Zahlen ohne Beleg im Artikel oder in der Recherche: 62 %, drei\./);
+  // Struktur bleibt hart: ohne drei Benchmarks gibt es kein Memo.
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({ benchmarks: [] })), antworten, { befunde: [] }), /drei Benchmarks/);
+
+  // Abschluss: nachsichtiger Rueckfall fuer Entwurf und Kritik, harte Befunde wiegen dreifach.
+  assert.match(edge, /const gerettet = nachsichtig\(String\(result\.text \|\| ""\)\);/);
+  assert.match(edge, /\? \[\.\.\.befundeErst, \.\.\.memoPruefung\(payload as MemoPayload\)\]/);
+  assert.match(edge, /const gewicht = \(befunde: string\[\], fehler: string\[\]\) => befunde\.length \* 3/);
+  assert.match(edge, /\(payload as MemoPayload\)\.pruefhinweise = hinweise;/);
+
+  // Frontend: eine Quelle fuer Fehlertexte, in jedem Modul importiert.
+  const klartext = await import("../fehler-klartext.mjs");
+  assert.equal(klartext.fehlerKlartext("Das Cover ist schwach.\n---\n{\"title\":\"x\"}"), "Das Cover ist schwach.");
+  for (const datei of ["../app.js", "../asset-studio.js", "../manual-signal.js"]) {
+    const quelle = readFileSync(new URL(datei, import.meta.url), "utf8");
+    if (!quelle.includes("fehlerKlartext(")) continue;
+    assert.match(quelle, /import \{ fehlerKlartext \} from "\.\/fehler-klartext\.mjs\?v=/, `${datei} ruft fehlerKlartext ohne Import`);
+    assert.doesNotMatch(quelle, /\nfunction fehlerKlartext\(/, `${datei} traegt eine eigene Kopie`);
+  }
+  // Wirft eine Ansicht, steht eine Meldung statt des alten Ladebalkens.
+  assert.match(studio, /<div class="as-content">\$\{sichererInhalt\(\)\}<\/div>/);
+  assert.match(studio, /function sichererInhalt\(\) \{\n    try \{\n      return stepContent\(\);/);
+  // Eine Abfrage wartet hoechstens 30 Sekunden und zaehlt dann als Aussetzer.
+  assert.match(studio, /const POLL_FRIST_MS = 30_000;/);
+  assert.match(studio, /await mitFrist\(api\("get_asset", \{ asset_id: id \}\), POLL_FRIST_MS\)/);
+  assert.match(studio, /fehler\.netz = true;/);
+  // Entwurf oeffnen: im Fehlerfall laeuft der Ladetakt nicht weiter.
+  assert.match(studio, /state\.formTab = "drafts";\n      state\.busy = false;\n      ladeTaktStop\(\);/);
+  // Pruefhinweise neben der Seite, ausblendbar, nie im Export.
+  assert.match(studio, /box\.className = "as-pruef";\n    box\.setAttribute\("data-as-chrome", ""\);/);
+  assert.match(studio, /<b>Bitte prüfen<\/b>/);
+  assert.doesNotMatch(studio, /Sie bekommen eine Benachrichtigung/);
 });

@@ -13,6 +13,7 @@ on:
       - "memo-guides.mjs"
       - "tools/check-memo-browser.mjs"
       - "app.js"
+      - "fehler-klartext.mjs"
       - "index.html"
       - "supabase/functions/signal-layer/asset-studio.ts"
       - "supabase/functions/signal-layer/index.ts"
@@ -38,6 +39,7 @@ on:
       - "memo-guides.mjs"
       - "tools/check-memo-browser.mjs"
       - "app.js"
+      - "fehler-klartext.mjs"
       - "index.html"
       - "supabase/functions/signal-layer/asset-studio.ts"
       - "supabase/functions/signal-layer/index.ts"
@@ -68,6 +70,7 @@ jobs:
         run: |
           node --check asset-studio.js
           node --check asset-freiform.js
+          node --check fehler-klartext.mjs
           node --check asset-templates.js
           node --check memo-template.js
           node --check memo-example.js

@@ -256,6 +256,7 @@ import {
   parseWikipediaPageImages,
   pickWikipediaLogoFile,
   memoLogoNameVariants,
+  memoPruefhinweis,
   logoCacheKey,
   wikimediaLogoAdressen,
   buildLogoPruefPrompt,
@@ -7275,13 +7276,32 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     const klartextVon = (roh: string, status: number) => assetFehlerKlartext(assetModel, roh, status);
 
     let mangel = "";
+    // Memo: Titel-, Beleg- und 100-Tage-Pruefung sind Befunde fuer die Kritik,
+    // kein Abbruch. Nur ein Memo ohne tragende Struktur scheitert.
+    const nachsichtig = (text: string): { payload: AssetPayload; befunde: string[] } | null => {
+      if (assetKind !== "memo") return null;
+      const befunde: string[] = [];
+      try {
+        return { payload: normalizeAssetPayload(assetKind, text, assetAnswers, { ...assetContext, befunde }), befunde };
+      } catch {
+        return null;
+      }
+    };
+    let befundeErst: string[] = [];
     if (!payload) {
       try {
         payload = normalizeAssetPayload(assetKind, result.text, assetAnswers, assetContext);
       } catch (fehler) {
         mangel = fehler instanceof Error ? fehler.message : String(fehler);
+        const gerettet = nachsichtig(String(result.text || ""));
+        if (gerettet) {
+          payload = gerettet.payload;
+          befundeErst = gerettet.befunde;
+          loggen("befunde", { n: befundeErst.length, felder: befundeErst.map((b) => b.slice(0, 160)).slice(0, 6) });
+        }
       }
     }
+    let restBefunde = befundeErst;
 
     // Der Feldvertrag gilt fuer die generierte Antwort genauso wie fuer die
     // selbst getippten Felder. Ohne diese Stelle wurde nur geprueft, was der
@@ -7306,7 +7326,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       }),
     ];
     let vertragsFehler = payload && assetKind === "memo"
-      ? memoPruefung(payload as MemoPayload)
+      ? [...befundeErst, ...memoPruefung(payload as MemoPayload)]
       : [];
     const ersterEntwurf = payload;
     if (vertragsFehler.length && !reparaturStand.started && !gespeichert) {
@@ -7328,27 +7348,41 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       result = { ...result, usage: summe };
       return repKosten;
     };
+    // Ein harter Befund (Titel, unbelegte Zahl) wiegt dreimal so schwer wie
+    // ein Laengen- oder Stilbefund.
+    const gewicht = (befunde: string[], fehler: string[]) => befunde.length * 3 + Math.max(0, fehler.length - befunde.length);
     const waehleBessere = (text: string) => {
       mangel = "";
+      let zweiter: AssetPayload | null = null;
+      let befunde: string[] = [];
       try {
-        const zweiter = normalizeAssetPayload(assetKind, text, assetAnswers, assetContext);
-        const zweiteFehler = assetKind === "memo"
-          ? memoPruefung(zweiter as MemoPayload)
-          : [];
-        // Beim Memo ist der zweite Anlauf ein Kritiker-Durchlauf: er gewinnt,
-        // solange er nicht mehr Fehler hat als der Entwurf.
-        const besser = assetKind === "memo"
-          ? zweiteFehler.length <= vertragsFehler.length
-          : zweiteFehler.length < vertragsFehler.length;
-        if (!ersterEntwurf || besser) {
-          payload = zweiter;
-          vertragsFehler = zweiteFehler;
-        } else {
-          payload = ersterEntwurf;
-        }
+        zweiter = normalizeAssetPayload(assetKind, text, assetAnswers, assetContext);
       } catch (fehler) {
-        if (ersterEntwurf) payload = ersterEntwurf;
-        else mangel = fehler instanceof Error ? fehler.message : String(fehler);
+        const gerettet = nachsichtig(text);
+        if (gerettet) {
+          zweiter = gerettet.payload;
+          befunde = gerettet.befunde;
+        } else {
+          if (ersterEntwurf) payload = ersterEntwurf;
+          else mangel = fehler instanceof Error ? fehler.message : String(fehler);
+          return;
+        }
+      }
+      const zweiteFehler = assetKind === "memo"
+        ? [...befunde, ...memoPruefung(zweiter as MemoPayload)]
+        : [];
+      // Beim Memo ist der zweite Anlauf ein Kritiker-Durchlauf: er gewinnt,
+      // solange er nicht schwerer wiegt als der Entwurf.
+      const besser = assetKind === "memo"
+        ? gewicht(befunde, zweiteFehler) <= gewicht(befundeErst, vertragsFehler)
+        : zweiteFehler.length < vertragsFehler.length;
+      if (!ersterEntwurf || besser) {
+        payload = zweiter;
+        vertragsFehler = zweiteFehler;
+        restBefunde = befunde;
+      } else {
+        payload = ersterEntwurf;
+        restBefunde = befundeErst;
       }
     };
     const pgNet = modelViaPgNet(assetModel);
@@ -7499,6 +7533,18 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       // gekuerzt statt mitten im Wort oder ueber den Seitenrand hinaus.
       const gekuerzt = memoRestKuerzen(payload as MemoPayload, eigeneMemoFelder);
       if (gekuerzt.length) loggen("vertrag_gekuerzt", { felder: gekuerzt.slice(0, 12) });
+    }
+
+    // Was nach der Kritik offen ist, steht im Memo als Pruefhinweis. Das
+    // Studio zeigt es an; der Nutzer entscheidet, statt dass der Lauf scheitert.
+    if (assetKind === "memo" && !gespeichert) {
+      const hinweise = [...new Set(restBefunde.map(memoPruefhinweis))].slice(0, 6);
+      if (hinweise.length) {
+        (payload as MemoPayload).pruefhinweise = hinweise;
+        loggen("pruefhinweise", { n: hinweise.length, hinweise });
+      } else {
+        delete (payload as MemoPayload).pruefhinweise;
+      }
     }
 
     // Entwurf steht. Ab hier darf nichts mehr den Text verwerfen, auch nicht

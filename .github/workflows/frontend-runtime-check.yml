@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "app.js"
+      - "fehler-klartext.mjs"
       - "simple-mode.js"
       - "status-state.mjs"
       - "simple-view-state.mjs"
@@ -15,6 +16,7 @@ on:
   pull_request:
     paths:
       - "app.js"
+      - "fehler-klartext.mjs"
       - "simple-mode.js"
       - "status-state.mjs"
       - "simple-view-state.mjs"
@@ -37,6 +39,7 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check app.js
+          node --check fehler-klartext.mjs
           node --check simple-mode.js
           node --check status-state.mjs
           node --check simple-view-state.mjs
