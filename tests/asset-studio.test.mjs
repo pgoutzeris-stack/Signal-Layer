@@ -3203,8 +3203,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-3");
-  assert.match(indexHtml, /app\.js\?v=20260929-3/);
+  assert.equal(studioVersion, "20260929-4");
+  assert.match(indexHtml, /app\.js\?v=20260929-4/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4333,4 +4333,53 @@ test("Jede Memo-Buchung traegt Asset, Schritt und gemessenen Preis", () => {
   assert.match(sql, /create or replace view signal_layer\.asset_cost_steps/);
   assert.match(sql, /critic_cost_eur/);
   assert.match(sql, /'memo_photo_research'/);
+});
+
+test("Ein Artikel hat in Uebersicht, Archiv und Detail denselben Titel", async () => {
+  const titel = await import("../article-title.mjs");
+  const article = { title: "Intersport: Alexander von Preen über die WM 2026" };
+  const signal = { headline_de: "Intersport will Eigenmarken stärken und Superstores testen" };
+  // Karte (Signal dabei) und Detail (Ueberschrift kommt als signal_headline) sagen dasselbe.
+  assert.equal(titel.articleDisplayTitle(article, signal), signal.headline_de);
+  assert.equal(titel.articleDisplayTitle({ ...article, signal_headline: signal.headline_de }), signal.headline_de);
+  assert.equal(titel.articleOriginalTitle({ ...article, signal_headline: signal.headline_de }), article.title);
+  assert.equal(titel.articleOriginalTitle(article), "");
+  assert.equal(titel.articleDisplayTitle({ title_de: "Deutsch", title: "English" }), "Deutsch");
+  assert.equal(titel.articleDisplayTitle({}), "Ohne Titel");
+  const simple = readFileSync(new URL("../simple-mode.js", import.meta.url), "utf8");
+  assert.doesNotMatch(simple, /signal\.headline_de \|\| article\.title_de/);
+  assert.doesNotMatch(simple, /article\.title_de \|\| article\.title/);
+  assert.doesNotMatch(appJs, /article\.title_de \|\| article\.title/);
+  assert.match(appJs, /articleDisplayTitle\(article\)/);
+  assert.match(edge, /signal_headline: signal\?\.headline_de \|\| null/);
+});
+
+test("Das Referenzmemo gibt die Machart vor, nicht das Eigenmarken-Thema", () => {
+  const answers = backend.normalizeAssetAnswers("memo", { company_named: "no" });
+  const prompt = backend.buildAssetPrompt("memo", { roots_offering: "D2P & Artwork Management", roots_link_de: "PPWR verlangt neue Datenprozesse." }, { title: "PPWR", content: "Text." }, answers);
+  assert.match(prompt, /<themenwechsel>/);
+  assert.match(prompt, /nicht die Begriffe: Eigenmarke/);
+  const recherche = backend.buildMemoMarktLagePrompt({ roots_offering: "D2P & Artwork Management" }, { title: "PPWR" }, answers);
+  assert.match(recherche, /Es ist kein Unternehmen benannt/);
+  assert.doesNotMatch(recherche, /PLMA/);
+  assert.doesNotMatch(recherche, /halten Eigenmarken für gleichwertig/);
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
+  const kopiert = { ...memo, market_p1: "Eigenmarken gewinnen an Bedeutung, auch bei Verpackungen." };
+  const fremd = backend.memoQualitaetsBefunde(kopiert, { thema: "PPWR verlangt neue Verpackungsdaten" }).join("\n");
+  assert.match(fremd, /market_p1[^\n]*übernehmen das Eigenmarken-Thema/);
+  const passend = backend.memoQualitaetsBefunde(kopiert, { thema: "Intersport will Eigenmarken stärken" }).join("\n");
+  assert.doesNotMatch(passend, /Eigenmarken-Thema/);
+  assert.match(edge, /thema: memoThema/);
+});
+
+test("Die Ladeanzeige nennt Modell und Tokens und zeigt Punkte am laufenden Schritt", () => {
+  assert.match(studio, /function abschnittText/);
+  assert.match(studio, /prüft den Entwurf und überarbeitet ihn/);
+  assert.match(studio, /class="as-dots"/);
+  assert.match(studio, /@keyframes as-dot/);
+  assert.doesNotMatch(studio, /· seit \$\{Math\.round/);
+  assert.match(studio, /state\.laufModell = String\(row\.model\)/);
+  assert.match(edge, /loggen\("research_start", \{ model: MEMO_BENCHMARK_RESEARCH_MODEL \}\)/);
+  assert.match(edge, /tokens: gefunden\.tokens/);
+  assert.match(edge, /tokens: markt\?\.tokens \|\| 0/);
 });

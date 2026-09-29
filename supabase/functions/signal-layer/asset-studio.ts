@@ -610,7 +610,7 @@ export function memoVertragsFehler(payload: MemoPayload, eigene: Record<string, 
  */
 export function memoQualitaetsBefunde(
   payload: MemoPayload,
-  opts: { firma?: string; eigene?: Record<string, string>; markt?: MemoMarktLage | null } = {},
+  opts: { firma?: string; eigene?: Record<string, string>; markt?: MemoMarktLage | null; thema?: string } = {},
 ): string[] {
   const werte = memoVertragsWerte(payload);
   const eigene = opts.eigene || {};
@@ -640,6 +640,18 @@ export function memoQualitaetsBefunde(
     const a = anfang(werte[key]);
     if (a.split(" ").length === 3 && a === anfang(referenz)) {
       befunde.push(`${key} übernimmt das Satzgerüst des Referenzmemos („${referenz.split(/\s+/).slice(0, 3).join(" ")} …“). Eigene Formulierung aus dem Fall.`);
+    }
+  }
+  // Das Referenzmemo ist ein Eigenmarken-Fall. Taucht sein Thema in einem Memo
+  // auf, dessen Hebel und Artikel davon nichts wissen, hat das Modell den Inhalt
+  // statt der Machart kopiert.
+  const themaFremd = /eigenmarke|handelsmarke|private label|submarke/i;
+  if (opts.thema !== undefined && !themaFremd.test(opts.thema)) {
+    const betroffen = Object.entries(werte)
+      .filter(([key, wert]) => !eigene[key] && themaFremd.test(String(wert || "")))
+      .map(([key]) => key);
+    if (betroffen.length) {
+      befunde.push(`${betroffen.slice(0, 6).join(", ")} übernehmen das Eigenmarken-Thema des Referenzmemos, obwohl der Fall davon nicht handelt. Schreibe zum Thema aus <hebel> und artikel.`);
     }
   }
   const quellen = [1, 2, 3, 4].map((i) => String(werte[`kpi${i}_source`] || "")).filter(Boolean);
@@ -2004,20 +2016,23 @@ ${hebel || titel || "nicht benannt"}
 
 Auftrag 1, Marktzahlen:
 Finde vier Kennzahlen, die belegen, dass sich der Markt oder das Verhalten der Kundinnen und Kunden in Richtung dieses Hebels bewegt.
-Mindestens drei davon sind Markt- oder Verbraucherzahlen (Marktanteile, Wachstum einer Kategorie, Einstellungen, Kaufgründe) aus Studien, Panels oder Verbänden wie NIQ, Circana, GfK, YouGov, BCG, McKinsey, PLMA, HDE, Statista oder Branchenmedien, die eine Studie zitieren.
+Das Thema bestimmt der Hebel, nicht das Beispiel unten: geht es um Verpackung, Daten, Social Media, Wachstum, Positionierung oder Kundenverständnis, dann suchst du Zahlen genau dazu.
+Mindestens drei davon sind Markt-, Branchen- oder Verbraucherzahlen (Marktanteile, Wachstum, Verbreitung, Einstellungen, Kaufgründe, Regulierung mit Frist und Umfang) aus Studien, Panels, Verbänden, Behörden oder Beratungen, zum Beispiel NIQ, Circana, GfK, YouGov, Kantar, Statista, IFH Köln, HDE, Bitkom, Destatis, EU-Kommission, BCG, McKinsey, Deloitte, PwC, oder aus Branchenmedien, die eine solche Studie zitieren.
 Höchstens eine Zahl beschreibt den Adressaten selbst und macht seine Ausgangslage greifbar (Anteil, Umsatz, Reichweite).
 Keine Quartalszahlen des Adressaten wie Umsatzrückgang, Marge oder Cashflow: sie zeigen seine Finanzlage, nicht die Marktbewegung.
 Deutschland oder DACH zuerst, sonst Europa. Nicht älter als drei Jahre. Mindestens drei verschiedene Herausgeber.
 value ist die Zahl selbst, deutsch formatiert („40 %“, „+ 1,6 PP“, „8,9 Mrd. €“). label ist der Satz dazu ohne die Zahl, so wie er unter einer großen Kennzahl steht.
 
 Auftrag 2, Lage heute:
-Beschreibe, wie ${firma || "der Adressat"} das Thema dieses Hebels heute sichtbar angeht: Marken und Submarken mit Namen, ihre Rolle im Sortiment, Auftritt und Kommunikation, Kanäle.
-befund ist ein Satz, der die heutige Logik benennt, so konkret wie „Eigenmarken funktionieren bei Deichmann aktuell überwiegend über funktionale Preiskommunikation.“ Keine Wertung, die der Beleg nicht trägt.
-belege sind zwei bis vier beobachtbare Fakten mit Eigennamen (Marke, Format, Kampagne, Kanal), jeweils mit Quelle.
+${firma
+    ? `Beschreibe, wie ${firma} das Thema dieses Hebels heute sichtbar angeht: Marken, Formate, Prozesse, Auftritt, Kommunikation und Kanäle mit Namen.`
+    : "Es ist kein Unternehmen benannt. Beschreibe, wie die Branche das Thema dieses Hebels heute typischerweise angeht, mit zwei bis drei benannten Unternehmen als Beispiel."}
+befund ist ein Satz, der die heutige Logik benennt. Form, nicht Thema übernehmen: „Eigenmarken funktionieren bei Deichmann aktuell überwiegend über funktionale Preiskommunikation.“ oder „Verpackungsdaten liegen bei den meisten Markenherstellern heute verteilt in Tabellen, PDFs und Agentursystemen.“ Beide Sätze sind Muster für die Form, keine Belege für deinen Fall. Keine Wertung, die der Beleg nicht trägt.
+belege sind zwei bis vier beobachtbare Fakten mit Eigennamen (Marke, Format, Kampagne, Kanal, System, Regelung), jeweils mit Quelle.
 
 Nur was die Suche belegt. Erfinde keine Zahl, keine Marke und keine Quelle. Fehlt ein Beleg, lass den Eintrag weg.
 Antworte ausschliesslich mit JSON:
-{"kpis":[{"value":"40 %","label":"der Deutschen halten Eigenmarken für gleichwertig","publisher":"NIQ","year":"2025","url":"https://…","ebene":"markt"}],"befund":"Ein Satz.","belege":[{"text":"Beobachtbarer Fakt mit Eigennamen.","quelle":"Medium oder Herausgeber, Jahr"}]}`;
+{"kpis":[{"value":"40 %","label":"der Befragten nennen das als wichtigsten Grund für ihre Entscheidung","publisher":"NIQ","year":"2025","url":"https://…","ebene":"markt"}],"befund":"Ein Satz.","belege":[{"text":"Beobachtbarer Fakt mit Eigennamen.","quelle":"Medium oder Herausgeber, Jahr"}]}`;
 }
 
 function kpiHerausgeber(source: string): string {
@@ -3028,8 +3043,8 @@ ${nennen
     : "title ist ein Whitepaper-Titel zur Herausforderung: konkret, thematisch, höchstens 15 Wörter. Muster, nicht abschreiben: „KI im Handel: Chancen und Herausforderungen.“ „Die Chancen in der Markenpositionierung.“ „Zwei Traditionsmarken brauchen eigene Profile, bevor die Gruppe sie trennt.“"}
 Schwach: Beratungsjargon ohne Thema („Hebel ziehen“), Platzhalter („Thema XY“), die Leistung als Subjekt („Markenstrategie wird zum Hebel…“), die Meldung nacherzählt, ein Slogan ohne Aufgabe${nennen ? `, oder ${firma} nur als Briefkopf ohne Aufgabe` : ""}.
 Stark: die offene Aufgabe aus roots_anschluss als These, so dass jemand das Thema erkennt, ohne die Nachricht gelesen zu haben.
-Keine Pflicht-Schablone: kein „${nennen ? firma : "X"} muss …“, kein „… braucht …“, kein „… müssen …“. Das Referenzmemo sagt „Vom Preisargument zur eigenständigen Marke“: eine Bewegung, kein Auftrag.
-market_title ist ein Befund mit Verb, kein Etikett: nicht „Sportartikelmarkt im Umbruch“, nicht „Markt: Chancen und Risiken“. Muster: „Eigenmarken stehen vor der nächsten Entwicklungsstufe“.
+Keine Pflicht-Schablone: kein „${nennen ? firma : "X"} muss …“, kein „… braucht …“, kein „… müssen …“. Das Referenzmemo sagt „Vom Preisargument zur eigenständigen Marke“: eine Bewegung, kein Auftrag. Dieselbe Form in anderen Themen: „Von der Verpackungstabelle zum steuerbaren Datenprozess“, „Vom Reichweitenkanal zur Community, die kauft“, „Vom Filialnetz zur Marke, die man sucht“.
+market_title ist ein Befund mit Verb, kein Etikett: nicht „Sportartikelmarkt im Umbruch“, nicht „Markt: Chancen und Risiken“. Muster: „Eigenmarken stehen vor der nächsten Entwicklungsstufe“, „Die PPWR macht Verpackungsdaten zur Pflichtaufgabe“.
 Übernimm kein Satzgerüst aus <referenz>: kein Titel beginnt mit denselben drei Wörtern wie sein Gegenstück dort („Drei strategische Hebel …“ ist das Gerüst des Referenzmemos, nicht deins).
 standfirst: ein bis zwei Sätze, warum diese Aufgabe JETZT anliegt. Ein Beleg aus dem Artikel als Timing, keine zweite These, keine Pressemitteilung.
 </titel>
@@ -3062,6 +3077,9 @@ Die Vorlage ist auf feste Seitenhöhen gesetzt. Zu kurze Felder hinterlassen ein
 ${MEMO_LAENGEN}
 Die Absätze (market_p1, market_p2, potentials_lead, bmN_text, potN_potential) tragen die Seitenhöhe. Sie unter den Mindestwert zu schreiben ist der häufigste Fehler.
 </laengen>
+<themenwechsel>
+Das Referenzmemo behandelt Eigenmarken im Schuhhandel. Dein Fall hat sein eigenes Thema aus <hebel>, roots_leistung und artikel. Übertrage Aufbau, Tonlage, Belegdichte und Konkretheit, nicht die Begriffe: Eigenmarke, Handelsmarke, Submarke, Markenarchitektur, Sortiment und POS nur, wenn der Fall selbst davon handelt.
+</themenwechsel>
 <referenz>
 Das fertige Referenzmemo, Feld für Feld. Daran sind Tonlage, Satzbau, Konkretheit und Art des Belegs zu messen. Es ist ein anderer Fall: übernimm die Machart, nicht die Inhalte, und schreibe keinen dieser Sätze ab.
 ${MEMO_BEISPIELE}

@@ -15,6 +15,7 @@
 
 import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionMenu } from "./simple-view-state.mjs?v=20260816-1430";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
+import { articleDisplayTitle } from "./article-title.mjs?v=20260929-4";
 
 let ctx = null;
 let els = {};
@@ -117,7 +118,7 @@ function sourceOf(article) {
 function signalCard(signal) {
   const article = signal.article || {};
   const source = sourceOf(article);
-  const title = signal.headline_de || article.title_de || article.title || article.url || "Ohne Titel";
+  const title = articleDisplayTitle(article, signal);
   return `
     <article class="finding-item" data-article-id="${esc(article.id || signal.article_id || "")}" tabindex="0" role="button">
       <div class="finding-item-top">
@@ -311,7 +312,7 @@ function renderRejected(articles, rejectLabels) {
               ${findingDateTag(article.published_at)}
             </div>
           </div>
-          <span class="finding-title">${escText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
+          <span class="finding-title">${escText(articleDisplayTitle(article, row))}</span>
           ${row.summary_de ? `<p class="finding-summary">${escText(row.summary_de)}</p>` : ""}
           <p class="finding-rationale"><i class="fa-solid fa-scale-balanced"></i><span>${escText(reason)}</span></p>
           <div class="finding-meta">
@@ -589,7 +590,7 @@ function renderArchive() {
             <span class="finding-dimension">${esc(ctx.articleTypeLabels?.[row.article_type] || row.article_type || "Sonstiger Inhalt")}</span>
             <div class="finding-top-tags">${isToday(row.updated_at || row.classified_at) ? `<span class="finding-new-badge">NEU</span>` : ""}${findingDateTag(article.published_at)}</div>
           </div>
-          <span class="finding-title">${escText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
+          <span class="finding-title">${escText(articleDisplayTitle(article, row))}</span>
           <p class="archive-reason"><i class="fa-solid fa-circle-info"></i><span>${escText(labels[row.reject_reason] || row.reject_reason || "Ohne Begründung")}</span></p>
           ${row.summary_de ? `<small class="archive-summary">${escText(row.summary_de)}</small>` : ""}
           <div class="finding-meta">

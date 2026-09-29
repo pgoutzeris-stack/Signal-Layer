@@ -4,11 +4,12 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260816-1430";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260829-2210";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260929-4";
+import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260929-4";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-3";
-import { openManualSignal } from "./manual-signal.js?v=20260929-3";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-4";
+import { openManualSignal } from "./manual-signal.js?v=20260929-4";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260830-1330";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
@@ -1258,7 +1259,7 @@ async function loadPipelineReview() {
   const { articles } = await callApi("list_review_articles", { status: "uncertain", limit: 50 });
   target.innerHTML = (articles || []).map((article) => {
     const tracks = article.manual_review_tracks || [];
-    return `<article class="review-item" data-article-id="${article.id}"><div class="review-item-main"><div class="audit-chip-row"><span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span>${reviewTrackPill(tracks)}</div><strong class="test-result-title">${escapeText(article.title_de || article.title)}</strong><p class="test-result-reason">${escapeText(article.manual_review_reason || article.ai_rationale || "Unsichere Evidenz oder Einordnung")}</p>${technicalAuditPill(article.id)}</div></article>`;
+    return `<article class="review-item" data-article-id="${article.id}"><div class="review-item-main"><div class="audit-chip-row"><span class="quality-tag quality-tag--uncertain">Manuelle Prüfung</span>${reviewTrackPill(tracks)}</div><strong class="test-result-title">${escapeText(articleDisplayTitle(article))}</strong><p class="test-result-reason">${escapeText(article.manual_review_reason || article.ai_rationale || "Unsichere Evidenz oder Einordnung")}</p>${technicalAuditPill(article.id)}</div></article>`;
   }).join("") || `<div class="keyword-empty">Aktuell sind keine echten Grenzfälle in der manuellen Prüfung.</div>`;
   bindReviewTrackPopovers(target);
 }
@@ -1679,7 +1680,7 @@ function renderFindings(track) {
               ${formatFindingDate(article.published_at)}
             </div>
           </div>
-          <span class="finding-title">${escapeText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
+          <span class="finding-title">${escapeText(articleDisplayTitle(article))}</span>
           ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
           ${track === "sales" && article.matched_offering ? `<div class="finding-offering">
             <div class="finding-offering-head"><span><i class="fa-solid fa-puzzle-piece"></i> Passende ROOTS-Leistung</span>${pillarLabel ? `<small>${escapeHtml(pillarLabel)}</small>` : ""}</div>
@@ -1986,7 +1987,7 @@ function renderArchive() {
     const isNew = isToday(article.classified_at);
     return `<article class="archive-item" data-article-id="${escapeHtml(article.id)}" tabindex="0" role="button">
       <div class="finding-item-top"><span class="finding-dimension">${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type || "Sonstiger Inhalt")}</span><div class="finding-top-tags">${isNew ? '<span class="finding-new-badge">NEU</span>' : ""}${formatFindingDate(article.published_at)}</div></div>
-      <span class="finding-title">${escapeText(article.title_de || article.title || article.url || "Ohne Titel")}</span>
+      <span class="finding-title">${escapeText(articleDisplayTitle(article))}</span>
       <p class="archive-reason"><i class="fa-solid fa-circle-info"></i><span>${escapeHtml(archiveExplanation(article))}</span></p>
       <div class="finding-meta">${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i>${escapeHtml(source.company)}</span>` : ""}<span class="tag"><i class="fa-solid fa-circle-info"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span>${technicalAuditPill(article.id)}</div>
     </article>`;
@@ -2481,7 +2482,7 @@ async function loadReviewArticles() {
               ${formatFindingDate(article.published_at)}
             </div>
           </div>
-          <span class="finding-title">${escapeText(article.title_de || article.title || "Ohne Titel")}</span>
+          <span class="finding-title">${escapeText(articleDisplayTitle(article))}</span>
           ${article.ai_summary ? `<p class="finding-summary">${escapeText(article.ai_summary)}</p>` : ""}
           <p class="finding-rationale"><i class="fa-solid fa-scale-balanced"></i><span>${escapeText(article.manual_review_reason || "Mindestens ein fachliches Pflichtkriterium ist noch offen.")}</span></p>
           <div class="finding-meta">
@@ -2578,8 +2579,8 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
       <button type="button" class="article-detail-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
       <main class="article-detail-main">
         <span class="article-detail-kicker">${escapeHtml(source?.company || "Signal Layer")}</span>
-        <h2 class="article-detail-title" id="article-detail-title">${escapeText(article.title_de || article.title || "Ohne Titel")}</h2>
-        ${article.title_de && article.title_de !== article.title ? `<p class="article-original-title"><span>Originaltitel</span> ${renderEvidenceLinkedText(article.title || "", evidence)}</p>` : ""}
+        <h2 class="article-detail-title" id="article-detail-title">${escapeText(articleDisplayTitle(article))}</h2>
+        ${articleOriginalTitle(article) ? `<p class="article-original-title"><span>Originaltitel</span> ${renderEvidenceLinkedText(articleOriginalTitle(article), evidence)}</p>` : ""}
         <div class="article-detail-meta">
           ${article.published_at ? `<span class="tag"><i class="fa-solid fa-calendar"></i> ${escapeHtml(new Date(article.published_at).toLocaleDateString("de-DE"))}</span>` : ""}
           ${article.article_type ? `<span class="tag"><i class="fa-solid fa-file-lines"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
@@ -2874,7 +2875,7 @@ async function openTechnicalAudit(articleId) {
     const actualModel = aiModelWasUsed ? actualModelRaw : "Regelbasiert";
     els.technicalAuditContent.innerHTML = `
       <button type="button" class="article-detail-close technical-audit-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
-      <header class="technical-audit-head"><span>Nachvollziehbare Klassifizierung</span><h2 id="technical-audit-title">${escapeText(article.title_de || article.title || "Technische Prüfung")}</h2><p>Gespeicherter Prüfpfad aus Extraktion, deterministischen Regeln, validierten KI-Ausgaben, Routing-Gates, Scores und Tokenkosten.</p></header>
+      <header class="technical-audit-head"><span>Nachvollziehbare Klassifizierung</span><h2 id="technical-audit-title">${escapeText(articleDisplayTitle(article))}</h2><p>Gespeicherter Prüfpfad aus Extraktion, deterministischen Regeln, validierten KI-Ausgaben, Routing-Gates, Scores und Tokenkosten.</p></header>
       <div class="technical-audit-body">
         <div class="audit-summary-grid">
           <div class="audit-summary-card"><span>Ergebnis</span><b>${escapeHtml(STATUS_LABELS[article.classification_status] || article.classification_status || "–")}</b></div>

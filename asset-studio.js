@@ -1186,7 +1186,17 @@ const CHROME_CSS = `
 #as-overlay .as-load-log li:first-child{border-top:0;}
 #as-overlay .as-load-log b{flex:0 0 3.2em; font-weight:600; color:#64748b;}
 #as-overlay .as-load-log span{min-width:0;}
+#as-overlay .as-load-log li.is-live span{color:var(--ink,#0f172a); font-weight:600;}
+#as-overlay .as-dots{display:inline-flex; align-items:center; gap:3px; margin-left:6px; vertical-align:middle;}
+#as-overlay .as-dots i{
+  display:block; width:4px; height:4px; border-radius:50%; background:#206efb; font-style:normal;
+  animation:as-dot 1.2s ease-in-out infinite;
+}
+#as-overlay .as-dots i:nth-child(2){animation-delay:.15s;}
+#as-overlay .as-dots i:nth-child(3){animation-delay:.3s;}
+@keyframes as-dot{0%,80%,100%{opacity:.25; transform:translateY(0);} 40%{opacity:1; transform:translateY(-2px);}}
 @media (prefers-reduced-motion: reduce){
+  #as-overlay .as-dots i{animation:none; opacity:.6;}
   #as-overlay .as-load-icon, #as-overlay .as-load-bar-fill, #as-overlay .as-load-bar::after{animation:none; opacity:1;}
   #as-overlay .as-load-bar-fill{background:#206efb;}
   #as-overlay .as-step--open{animation:none;}
@@ -1699,12 +1709,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-3";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-4";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-3";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-4";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-3";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-4";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -1793,6 +1803,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     draftsError: "",
     prevIndex: 0,
     ladeAbschnitt: "lesen",
+    // Modell des laufenden Auftrags, fuer Ereignisse ohne eigenes Modellfeld.
+    laufModell: "",
     ladeStart: 0,
     ladeUhr: 0,
     forecastMs: 0,
@@ -2282,6 +2294,35 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ["fuellen", "fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
   ];
 
+  /** Modell, das gerade schreibt: aus dem Auftrag, sonst aus dem letzten Ereignis mit Modell. */
+  function laufModell(event) {
+    const rows = Array.isArray(state.laufLog) ? state.laufLog : [];
+    if (event) {
+      for (let i = rows.length - 1; i >= 0; i -= 1) {
+        if (rows[i]?.event === event && rows[i]?.model) return modellName(rows[i].model);
+      }
+    }
+    return modellName(state.laufModell || "");
+  }
+
+  /** Der Hauptsatz unter dem Symbol, mit dem Modell, das diesen Schritt gerade macht. */
+  function abschnittText(key, standard) {
+    if (key === "recherchieren") {
+      const modell = laufModell("research_start");
+      return modell && modell !== laufModell() ? `${modell} recherchiert Benchmarks und Marktzahlen` : standard;
+    }
+    if (key === "modell") {
+      const modell = laufModell();
+      if (!modell) return standard;
+      const offen = offenerModellAufruf(Array.isArray(state.laufLog) ? state.laufLog : []);
+      if (offen?.call === "reparatur") {
+        return isMemo ? `${modell} prüft den Entwurf und überarbeitet ihn` : `${modell} überarbeitet den Entwurf`;
+      }
+      return isMemo ? `${modell} schreibt den Entwurf` : `${modell} schreibt Titel und Kernaussage`;
+    }
+    return standard;
+  }
+
   function laufMs() {
     if (state.ladeStart) return Math.max(0, Date.now() - state.ladeStart);
     return 0;
@@ -2310,10 +2351,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function laufEreignisText(entry) {
     const event = String(entry?.event || "");
     const phase = String(entry?.phase || "");
-    const model = modellName(String(entry?.model || ""));
+    const model = modellName(String(entry?.model || "")) || modellName(state.laufModell || "");
     const chars = Number(entry?.chars || 0);
     const thinking = Number(entry?.thinking_chars || 0);
     const zahl = (n) => n.toLocaleString("de-DE");
+    // Tokens stehen erst fest, wenn ein Schritt fertig ist: Perplexity liefert
+    // die Antwort am Stueck, ohne laufenden Zaehler.
+    const tokens = Number(entry?.tokens || 0);
+    const denken = Number(entry?.thinking || 0);
+    const tok = tokens > 0 ? ` · ${zahl(tokens)} Tokens${denken > 0 ? `, davon ${zahl(denken)} Denken` : ""}` : "";
     if (event === "pulse") {
       if (phase === "thinking") {
         return thinking
@@ -2327,8 +2373,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       }
       if (phase === "search") {
         return chars
-          ? `Websuche liefert … ${zahl(chars)} Zeichen`
-          : "Websuche läuft";
+          ? `${model || "Websuche"}: ${zahl(chars)} Zeichen gefunden`
+          : `${model || "Das Modell"} sucht im Web`;
       }
       if (phase === "headers") return `${model || "Das Modell"} hat die Verbindung geöffnet`;
       return `${model || "Das Modell"} sendet`;
@@ -2336,7 +2382,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "start") return "Auftrag gestartet";
     if (event === "stage") {
       const name = String(entry.stage || "");
-      if (name === "recherchieren") return "Benchmark-Recherche gestartet";
+      if (name === "recherchieren") return "Recherche gestartet";
       if (name === "modell") return "Schreiben gestartet";
       if (name === "pruefen") return "Belege werden geprüft";
       if (name === "bilder") return "Logos werden gesucht";
@@ -2344,18 +2390,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return "Nächster Schritt";
     }
     if (event === "model_start") return "Modellaufruf gestartet";
-    if (event === "model_ok") return "Text angekommen";
+    if (event === "model_ok") return `${model || "Das Modell"}: Entwurf angekommen${tok}`;
+    if (event === "research_start") return `${model || "Das Modell"} recherchiert per Websuche`;
     if (event === "handoff") return "Prüfung läuft in einem neuen Schritt weiter";
     if (event === "retry_model") return "Schreiben wird in einem neuen Schritt wiederholt";
     if (event === "finish_start") return "Belege und Längen werden geprüft";
     if (event === "payload_ok") return "Entwurf ist geprüft";
     if (event === "model_call") {
       const anlauf = Number(entry.attempt || 1);
-      const was = entry.call === "reparatur" ? "überarbeitet den Entwurf" : "denkt";
+      const was = entry.call === "reparatur"
+        ? (isMemo ? "prüft den Entwurf und überarbeitet ihn" : "überarbeitet den Entwurf")
+        : "schreibt den Entwurf";
       return `${model || "Das Modell"} ${was}${anlauf > 1 ? ` (Anlauf ${anlauf})` : ""}`;
     }
     if (event === "repair") return "Entwurf wird überarbeitet";
-    if (event === "repair_ok") return "Überarbeitung angekommen";
+    if (event === "repair_ok") return `${model || "Das Modell"}: ${isMemo ? "Kritik und Überarbeitung" : "Überarbeitung"} angekommen${tok}`;
     if (event === "repair_fail") return entry.retry ? "Überarbeitung wird wiederholt" : "Überarbeitung fehlgeschlagen, erster Entwurf bleibt";
     if (event === "model_fail") return entry.retry ? "Verbindung abgerissen, neuer Anlauf" : "";
     if (event === "wait_kick") return "Abfrage läuft in einem neuen Schritt weiter";
@@ -2363,10 +2412,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "images_defer") return "Logos folgen in einem neuen Schritt";
     if (event === "benchmarks_ok") {
       const names = Array.isArray(entry.names) ? entry.names.filter(Boolean).join(", ") : "";
-      return names ? `Benchmarks: ${names}` : "Benchmarks gefunden";
+      return names ? `Benchmarks: ${names}${tok}` : `Benchmarks gefunden${tok}`;
     }
+    if (event === "benchmarks_review") return `Benchmarks geprüft${entry.ok === false ? ", einer wird ersetzt" : ""}${tok}`;
     if (event === "benchmarks_user") return "Eigene Benchmarks übernommen";
-    if (event === "markt_ok") return `${Number(entry.kpis || 0)} Marktzahlen aus ${Array.isArray(entry.herausgeber) ? entry.herausgeber.length : 0} Quellen`;
+    if (event === "markt_ok") return `${Number(entry.kpis || 0)} Marktzahlen aus ${Array.isArray(entry.herausgeber) ? entry.herausgeber.length : 0} Quellen${tok}`;
     if (event === "markt_skip") return "Marktzahlen nur aus dem Artikel";
     if (event === "image_start") return "Logo wird gesucht";
     if (event === "images_done") return "Logos gefunden";
@@ -2386,6 +2436,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return null;
   }
 
+  /** Ereignisse, nach denen nichts mehr laeuft: an ihnen stehen keine Ladepunkte. */
+  const LAUF_ENDE = new Set(["done", "error", "model_abandoned", "payload_ok"]);
+
   function laufLogZeilen() {
     const rows = Array.isArray(state.laufLog) ? state.laufLog : [];
     const offen = offenerModellAufruf(rows);
@@ -2394,19 +2447,31 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       let text = laufEreignisText(rows[i]);
       if (text && rows[i] === offen && Number(state.ladeStart) > 0) {
         const seit = Math.max(0, Date.now() - Number(state.ladeStart) - Number(offen.t || 0));
-        text += ` · seit ${Math.round(seit / 1000)} s`;
         if (seit >= 300_000) text += " · dauert länger als üblich";
       }
       if (!text) continue;
       const sek = Math.max(0, Math.round(Number(rows[i]?.t || 0) / 1000));
-      visible.push({ sek, text });
+      visible.push({ sek, text, row: rows[i] });
     }
-    return visible.reverse();
+    visible.reverse();
+    // Genau ein Schritt laeuft: der offene Modellaufruf, sonst der juengste.
+    if (state.busy && visible.length) {
+      const laufend = offen ? visible.find((item) => item.row === offen) : visible[visible.length - 1];
+      if (laufend && !LAUF_ENDE.has(String(laufend.row?.event || ""))) laufend.live = true;
+    }
+    return visible;
+  }
+
+  const LADEPUNKTE = `<span class="as-dots" aria-hidden="true"><i></i><i></i><i></i></span>`;
+
+  function laufLogHtml(zeilen) {
+    return `<ul class="as-load-log">${zeilen.map((item) => `<li${item.live ? ' class="is-live"' : ""}><b>${item.sek} s</b><span>${esc(item.text)}${item.live ? LADEPUNKTE : ""}</span></li>`).join("")}</ul>`;
   }
 
   function ladeanzeigeHtml() {
     const i = Math.max(0, ABSCHNITTE.findIndex(([key]) => key === state.ladeAbschnitt));
-    const [, icon, text] = ABSCHNITTE[i];
+    const [key, icon, standard] = ABSCHNITTE[i];
+    const text = abschnittText(key, standard);
     const pct = ladeFortschritt();
     const log = laufLogZeilen();
     return `<div class="as-load" role="status" aria-live="polite">
@@ -2416,7 +2481,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <span class="as-load-bar-fill" style="width:${pct}%"></span>
       </div>
       <p class="as-load-eta"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span data-eta-text>${esc(ladeEtaText())}</span></p>
-      ${log.length ? `<ul class="as-load-log">${log.map((row) => `<li><b>${row.sek} s</b><span>${esc(row.text)}</span></li>`).join("")}</ul>` : ""}
+      ${log.length ? laufLogHtml(log) : ""}
       <div class="as-load-actions">
         <button type="button" class="as-pill" data-act="leave-generate">Im Hintergrund</button>
         <button type="button" class="as-pill as-pill-danger" data-act="cancel-generate">Abbrechen</button>
@@ -2466,6 +2531,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function uebernehmeLaufstand(row) {
     if (!row || typeof row !== "object") return;
     if (Array.isArray(row.run_log)) state.laufLog = row.run_log;
+    if (row.model) state.laufModell = String(row.model);
     if (row.updated_at) state.updatedAt = String(row.updated_at);
     if (Number(row.forecast_ms) > 0) state.forecastMs = Number(row.forecast_ms);
     const created = Date.parse(String(row.created_at || ""));
@@ -2482,11 +2548,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const pct = ladeFortschritt();
     if (fill) fill.style.width = `${pct}%`;
     if (bar) bar.setAttribute("aria-valuenow", String(pct));
+    const loadText = shell.querySelector(".as-load-text");
+    const aktuell = ABSCHNITTE.find(([key]) => key === state.ladeAbschnitt);
+    if (loadText && aktuell) loadText.textContent = abschnittText(aktuell[0], aktuell[2]);
     const logBox = shell.querySelector(".as-load-log");
     const zeilen = laufLogZeilen();
-    const html = zeilen.length
-      ? `<ul class="as-load-log">${zeilen.map((item) => `<li><b>${item.sek} s</b><span>${esc(item.text)}</span></li>`).join("")}</ul>`
-      : "";
+    const html = zeilen.length ? laufLogHtml(zeilen) : "";
     if (logBox) logBox.outerHTML = html || `<ul class="as-load-log"></ul>`;
     else if (html) {
       const etaNode = shell.querySelector(".as-load-eta");
@@ -3234,6 +3301,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         state.error = "";
         state.cancelRequested = false;
         state.leftRunning = false;
+        if (row.model) state.laufModell = String(row.model);
+        if (Array.isArray(row.run_log)) state.laufLog = row.run_log;
+        if (row.stage) state.ladeAbschnitt = String(row.stage);
         render();
         if (row.created_at) {
           const t = Date.parse(row.created_at);

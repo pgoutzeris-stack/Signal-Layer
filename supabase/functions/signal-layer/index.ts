@@ -4522,7 +4522,7 @@ async function callPerplexityWithSearch(
   operation: "memo_benchmark_research" | "memo_market_research",
   step: "benchmark_recherche" | "benchmark_pruefung" | "marktrecherche",
   onPulse?: (info: AssetPulse) => void | Promise<void>,
-): Promise<{ text: string; titles: string[]; searchQueries: number }> {
+): Promise<{ text: string; titles: string[]; searchQueries: number; tokens: number; costUsd: number }> {
   const apiKey = await getPerplexityKey().catch(() => "");
   if (!apiKey) {
     const fehler = new Error("Für die Recherche ist kein Perplexity-Schlüssel hinterlegt.") as Error & { hart?: boolean };
@@ -4582,7 +4582,7 @@ async function callPerplexityWithSearch(
     }
     await recordStandaloneAiUsage(operation, model, "success", antwort.usage, suchen, undefined, gemessen, step);
     await onPulse?.({ phase: "search", model, chars: antwort.content.length });
-    return { text: antwort.content, titles: antwort.titles, searchQueries: suchen };
+    return { text: antwort.content, titles: antwort.titles, searchQueries: suchen, tokens: antwort.usage.total, costUsd: antwort.costUsd };
   }
   throw letzter || new Error("Die Recherche ist unvollständig abgebrochen.");
 }
@@ -4593,20 +4593,25 @@ async function researchMemoMarktLage(
   prompt: string,
   firma: string,
   onPulse?: (info: AssetPulse) => void | Promise<void>,
-): Promise<ReturnType<typeof normalizeMemoMarktLage>> {
+): Promise<{ lage: ReturnType<typeof normalizeMemoMarktLage>; tokens: number; searchQueries: number }> {
   const gefunden = await callPerplexityWithSearch(model, prompt, "memo_market_research", "marktrecherche", onPulse);
-  return normalizeMemoMarktLage(parseLooseJsonObject(gefunden.text), firma);
+  return {
+    lage: normalizeMemoMarktLage(parseLooseJsonObject(gefunden.text), firma),
+    tokens: gefunden.tokens,
+    searchQueries: gefunden.searchQueries,
+  };
 }
 
 async function researchMemoBenchmarksWithSearch(
   model: string,
   prompt: string,
   onPulse?: (info: AssetPulse) => void | Promise<void>,
-): Promise<{ briefs: ReturnType<typeof normalizeMemoBenchmarkResearch>; searchQueries: number }> {
+): Promise<{ briefs: ReturnType<typeof normalizeMemoBenchmarkResearch>; searchQueries: number; tokens: number }> {
   const gefunden = await callPerplexityWithSearch(model, prompt, "memo_benchmark_research", "benchmark_recherche", onPulse);
   return {
     briefs: normalizeMemoBenchmarkResearch(parseLooseJsonObject(gefunden.text), gefunden.titles),
     searchQueries: gefunden.searchQueries,
+    tokens: gefunden.tokens,
   };
 }
 
@@ -4614,10 +4619,10 @@ async function reviewMemoBenchmarksWithSearch(
   model: string,
   prompt: string,
   onPulse?: (info: AssetPulse) => void | Promise<void>,
-): Promise<{ ok: boolean; grund: string; searchQueries: number }> {
+): Promise<{ ok: boolean; grund: string; searchQueries: number; tokens: number }> {
   const gefunden = await callPerplexityWithSearch(model, prompt, "memo_benchmark_research", "benchmark_pruefung", onPulse);
   const verdict = parseMemoBenchmarkReview(parseLooseJsonObject(gefunden.text));
-  return { ...verdict, searchQueries: gefunden.searchQueries };
+  return { ...verdict, searchQueries: gefunden.searchQueries, tokens: gefunden.tokens };
 }
 
 /**
@@ -6741,11 +6746,20 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     const eigeneMemoFelder = assetKind === "memo" ? parseMemoFields(assetAnswers) : {};
     const memoAntworten = assetKind === "memo" ? assetAnswers as MemoAnswers : null;
     const memoFirma = memoAntworten && memoAntworten.company_named !== "no" ? String(signalForAsset.company || "") : "";
+    // Worum es im Fall geht: Hebel, Leistung, Artikel. Daran misst die Pruefung,
+    // ob das Memo das Thema des Referenzmemos uebernommen hat.
+    const memoThema = [
+      assetSignal.roots_offering, assetSignal.roots_link_de, assetSignal.headline_de, assetSignal.why_de,
+      assetArticle.title_de, assetArticle.title, assetArticle.content_de || assetArticle.cleaned_content || assetArticle.content,
+    ].filter(Boolean).join("\n");
     // Laengenvertrag plus die Befunde, die ein Memo vom Referenzmemo trennen.
     // Beide gehen in denselben zweiten Anlauf.
     const memoPruefung = (p: MemoPayload) => [
       ...memoVertragsFehler(p, eigeneMemoFelder),
-      ...memoQualitaetsBefunde(p, { firma: memoFirma, eigene: eigeneMemoFelder, markt: memoAntworten?.market_research || null }),
+      ...memoQualitaetsBefunde(p, {
+        firma: memoFirma, eigene: eigeneMemoFelder, markt: memoAntworten?.market_research || null,
+        thema: memoThema,
+      }),
     ];
     let vertragsFehler = payload && assetKind === "memo"
       ? memoPruefung(payload as MemoPayload)
@@ -9531,6 +9545,8 @@ Deno.serve(async (req: Request) => {
             matched_offering: signal?.roots_offering || null,
             matched_offering_reasoning: signal?.roots_link_de || null,
             ai_summary: signal?.summary_de || null,
+            // Dieselbe Ueberschrift wie auf der Karte in der Uebersicht.
+            signal_headline: signal?.headline_de || null,
             ai_rationale: signal?.why_de || rejectLabel,
             rejection_reasons: isSignal || !rejectLabel ? [] : [rejectLabel],
             // Trennt Tier-1-Zielkunden von einem lediglich genannten Unternehmen.
@@ -11908,6 +11924,7 @@ Deno.serve(async (req: Request) => {
             const memoAnswers = assetAnswers as MemoAnswers;
             const firma = String(signalForAsset.company || "");
             await abschnitt("recherchieren");
+            loggen("research_start", { model: MEMO_BENCHMARK_RESEARCH_MODEL });
             // Nicht simple_research_model: das ist die Gemini-Recherche der
             // Firmenprofile. Das Memo sucht ueber Perplexity.
             const researchModel = MEMO_BENCHMARK_RESEARCH_MODEL;
@@ -11939,6 +11956,7 @@ Deno.serve(async (req: Request) => {
                     model: researchModel,
                     ok: pruefung.ok,
                     search_queries: pruefung.searchQueries,
+                    tokens: pruefung.tokens,
                   });
                   if (!pruefung.ok) {
                     throw new Error(`BENCHMARK_PASSUNG:${pruefung.grund
@@ -11991,6 +12009,7 @@ Deno.serve(async (req: Request) => {
                         model: researchModel,
                         ok: pruefung.ok,
                         search_queries: pruefung.searchQueries,
+                        tokens: pruefung.tokens,
                       });
                       if (!pruefung.ok) {
                         const abgelehnt = rejectedBenchmarkNames(briefs, pruefung.grund);
@@ -12006,6 +12025,7 @@ Deno.serve(async (req: Request) => {
                     loggen("benchmarks_ok", {
                       model: researchModel,
                       search_queries: gefunden.searchQueries,
+                      tokens: gefunden.tokens,
                       names: briefs.map((item) => item.name),
                     });
                     letzter = null;
@@ -12060,13 +12080,16 @@ Deno.serve(async (req: Request) => {
                 throw new Error(`${grund}\n\n${rat}`);
               }
             }
-            const lage = await marktLauf;
+            const markt = await marktLauf;
+            const lage = markt?.lage || null;
             if (lage) {
               memoAnswers.market_research = lage;
               loggen("markt_ok", {
                 model: researchModel, kpis: lage.kpis.length,
                 herausgeber: [...new Set(lage.kpis.map((k) => k.source))].slice(0, 4),
                 belege: lage.belege.length,
+                tokens: markt?.tokens || 0,
+                search_queries: markt?.searchQueries || 0,
               });
             }
             await persist({ answers: assetAnswers });
