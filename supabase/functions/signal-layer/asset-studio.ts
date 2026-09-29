@@ -1701,6 +1701,51 @@ export const MEMO_DRAFT_MODEL = "anthropic/claude-opus-5-5";
 export const MEMO_PHOTO_RESEARCH_MODEL = "gemini-2.5-flash";
 export const PERPLEXITY_RESPONSES_URL = "https://api.perplexity.ai/v1/responses";
 
+/**
+ * Lesbarer Modellname fuer Fehlermeldungen und Protokoll. „anthropic/claude-opus-5-5“
+ * in einer Meldung sagt dem Nutzer nichts; „Claude Opus 5.5 (über Perplexity)“ schon.
+ */
+export function modelAnzeigeName(model: string): string {
+  const id = String(model || "").trim();
+  if (!id) return "Das Modell";
+  const bekannt: Record<string, string> = {
+    "anthropic/claude-opus-5-5": "Claude Opus 5.5",
+    "anthropic/claude-fable-5-1": "Claude Fable 5.1",
+    "anthropic/claude-sonnet-5-5": "Claude Sonnet 5.5",
+    "openai/gpt-5.4": "GPT-5.4",
+    "deepseek-v4-pro": "DeepSeek V4 Pro",
+    "deepseek-v4-flash": "DeepSeek V4 Flash",
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
+    "gemini-2.5-flash-lite": "Gemini 2.5 Flash-Lite",
+    "gemini-2.5-flash-image": "Gemini 2.5 Flash Image",
+  };
+  const name = bekannt[id] || id.split("/").pop() || id;
+  return isPerplexityModel(id) ? `${name} (über Perplexity)` : name;
+}
+
+/** Anbieter, bei dem Guthaben, Schlüssel und Limits liegen. */
+export function modelAnbieter(model: string): string {
+  const id = String(model || "");
+  if (isPerplexityModel(id)) return "Perplexity";
+  if (id.startsWith("deepseek")) return "DeepSeek";
+  if (id.startsWith("gemini")) return "Google Gemini";
+  return "dem Anbieter";
+}
+
+/**
+ * Schritt einer Kostenbuchung im Memo-Ablauf. Die Kostensicht in Supabase
+ * gruppiert danach, damit Entwurf, Kritik, Recherche und Bilder getrennt stehen.
+ */
+export type MemoKostenSchritt =
+  | "entwurf" | "kritik" | "reparatur"
+  | "benchmark_recherche" | "benchmark_pruefung" | "marktrecherche"
+  | "szenenbild" | "fotosuche" | "feld_schaerfen" | "abschnitt_entwurf";
+
+export function assetKostenSchritt(kind: string, call: string): MemoKostenSchritt {
+  if (call === "reparatur") return kind === "memo" ? "kritik" : "reparatur";
+  return "entwurf";
+}
+
 /** Modelle der Perplexity Agent API tragen den Anbieter im Namen: anthropic/…, openai/… */
 export function isPerplexityModel(model: string): boolean {
   return String(model || "").includes("/");
@@ -5685,6 +5730,8 @@ export type AssetModelUsage = {
   output: number;
   thinking: number;
   total: number;
+  /** Vom Anbieter gemeldeter Preis in USD (Perplexity). Hat Vorrang vor der Preistabelle. */
+  costUsd?: number;
 };
 
 type DeepseekUsageRaw = {
@@ -5846,6 +5893,7 @@ export function parsePerplexityAntwort(body: unknown): PerplexityAntwort {
   };
   const kosten = record(u.cost);
   out.costUsd = Math.max(0, Number(kosten.total_cost || 0));
+  if (out.costUsd > 0) out.usage.costUsd = out.costUsd;
   out.toolCostUsd = Math.max(0, Number(kosten.tool_calls_cost || 0));
   if (!out.searchQueries) {
     const suche = record(record(u.tool_calls_details).search_web);
@@ -5890,7 +5938,8 @@ export function assetModelCallOutcome(
   },
   model: string,
 ): AssetModelCallOutcome {
-  const name = model || "Das Modell";
+  const name = modelAnzeigeName(model);
+  const anbieter = modelAnbieter(model);
   const status = Number(stand.status_code || 0);
   const leer: AssetModelUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
   const fail = (
@@ -5927,14 +5976,20 @@ export function assetModelCallOutcome(
   const roh = antwort.error || (status >= 400 ? String(stand.content || "").trim().slice(0, 300) : "");
 
   if (status >= 400 || (antwort.error && !antwort.content)) {
-    if (status === 402 || /insufficient balance|spending cap/i.test(roh)) {
-      return fail("balance", false, roh, `Beim Anbieter ${name} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`, usage);
+    if (status === 402 || /insufficient (balance|credits?|quota|funds)|spending cap|credits? (are )?(depleted|exhausted)|out of credits/i.test(roh)) {
+      return fail("balance", false, roh, `Bei ${anbieter} ist kein Guthaben mehr verfügbar (${name}). Guthaben aufladen, dann erneut versuchen.`, usage);
     }
-    if (status === 401 || /invalid api key|unauthorized|authentication/i.test(roh)) {
-      return fail("auth", false, roh, `Der API-Schlüssel für ${name} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`, usage);
+    if (status === 401 || status === 403 || /invalid api key|unauthorized|authentication|forbidden/i.test(roh)) {
+      return fail("auth", false, roh, `${anbieter} lehnt den API-Schlüssel ab (${name}). Er liegt im Supabase Vault und muss erneuert werden.`, usage);
     }
-    if (status === 429 || /rate limit/i.test(roh)) {
-      return fail("rate_limit", true, roh, `${name} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`, usage);
+    if (status === 429 || /rate.?limit/i.test(roh)) {
+      return fail("rate_limit", true, roh, `${anbieter} drosselt gerade (Rate Limit, ${name}). In einer Minute erneut versuchen.`, usage);
+    }
+    if (status === 400 && /model|not (found|supported)|unknown/i.test(roh)) {
+      return fail("http", false, roh, `${anbieter} kennt das Modell ${name} nicht oder hat es abgeschaltet: ${roh.slice(0, 160)}`, usage);
+    }
+    if (status === 400 && /context|too long|maximum.*tokens|token limit/i.test(roh)) {
+      return fail("http", false, roh, `Die Anfrage ist für ${name} zu lang: ${roh.slice(0, 160)}`, usage);
     }
     if (status >= 500) {
       return fail(
@@ -5989,12 +6044,12 @@ export function assetModelCallOutcome(
 
 /** Weder in der Warteschlange noch als Antwort: pg_net hat den Aufruf verloren. */
 export function assetModelCallLostText(model: string): string {
-  return `Die Antwort von ${model || "dem Modell"} ist in der Datenbank verloren gegangen. Das liegt bei uns, nicht beim Anbieter, nicht am Signal und nicht am Fragebogen. Bitte denselben Auftrag noch einmal starten.`;
+  return `Die Antwort von ${model ? modelAnzeigeName(model) : "dem Modell"} ist in der Datenbank verloren gegangen. Das liegt bei uns, nicht beim Anbieter, nicht am Signal und nicht am Fragebogen. Bitte denselben Auftrag noch einmal starten.`;
 }
 
 /** Der Aufruf hat jede Frist gerissen, ohne dass eine Antwort ankam. */
 export function assetModelCallAbandonedText(model: string, ageMs: number): string {
-  return `${model || "Das Modell"} hat nach ${assetModelMinuten(ageMs)} noch immer keine Antwort geliefert. Üblich sind 1 bis 5 Minuten, der Auftrag wurde deshalb beendet. Das liegt nicht am Signal und nicht am Fragebogen. Bitte in einigen Minuten denselben Auftrag noch einmal starten.`;
+  return `${modelAnzeigeName(model)} hat nach ${assetModelMinuten(ageMs)} noch immer keine Antwort geliefert. Üblich sind 1 bis 5 Minuten, der Auftrag wurde deshalb beendet. Das liegt nicht am Signal und nicht am Fragebogen. Bitte in einigen Minuten denselben Auftrag noch einmal starten.`;
 }
 
 /**
@@ -6051,6 +6106,17 @@ export function assetDraftTextFromLog(log: unknown): string {
     if (rows[i]?.event === "model_ok" && text) return text.slice(0, ASSET_DRAFT_TEXT_MAX);
   }
   return "";
+}
+
+/** Gemeldeter Preis des letzten Entwurfs (Perplexity), 0 wenn der Anbieter keinen nennt. */
+export function assetDraftCostFromLog(log: unknown): number {
+  const rows = Array.isArray(log) ? log as Array<Record<string, unknown>> : [];
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    if (rows[i]?.event !== "model_ok") continue;
+    const usage = rows[i]?.usage && typeof rows[i].usage === "object" ? rows[i].usage as Record<string, unknown> : {};
+    return Math.max(0, Number(rows[i]?.cost_usd || usage.costUsd || 0));
+  }
+  return 0;
 }
 
 export function assetFinishKickCount(log: unknown): number {
@@ -6204,7 +6270,7 @@ export function assetHeartbeatErrorText(
   const sek = Math.max(1, Math.round(Number(silentMs) / 1000));
   // Wem die Schuld gehoert, gehoert in die Meldung. Sonst sucht der Nutzer den
   // Fehler bei seinem Text oder beim Werkzeug, und beide sind in Ordnung.
-  return `${model || "Das Modell"} hat ${assetStageLabel(stage)} seit ${sek} Sekunden nichts mehr gesendet. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen: die Verbindung stand, es kamen nur keine Daten mehr. Der Auftrag wurde deshalb beendet, nicht weil er zu lange gedauert hat. Bitte denselben Auftrag noch einmal starten.`;
+  return `${modelAnzeigeName(model)} hat ${assetStageLabel(stage)} seit ${sek} Sekunden nichts mehr gesendet. Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen: die Verbindung stand, es kamen nur keine Daten mehr. Der Auftrag wurde deshalb beendet, nicht weil er zu lange gedauert hat. Bitte denselben Auftrag noch einmal starten.`;
 }
 
 /**
@@ -6470,8 +6536,37 @@ export function assetModelTimeoutMs(kind: AssetKind, answers: AssetAnswers): num
   return 160_000;
 }
 
+/**
+ * Klartext fuer einen gescheiterten Modellaufruf im Isolat. Nennt den Anbieter,
+ * bei dem Guthaben oder Schluessel liegen, und das Modell mit lesbarem Namen.
+ */
+export function assetFehlerKlartext(model: string, roh: string, status: number): string {
+  const name = modelAnzeigeName(model);
+  const anbieter = modelAnbieter(model);
+  const text = String(roh || "");
+  if (/Antwort mitten im Satz abgebrochen|bricht mitten im Satz ab/i.test(text)) {
+    return `${text} Zwei Anläufe sind gelaufen, beide abgebrochen. Noch einmal erzeugen.`;
+  }
+  if (status === 402 || /insufficient (balance|credits?|quota|funds)|spending cap|credits? (are )?(depleted|exhausted)|out of credits/i.test(text)) {
+    return `Bei ${anbieter} ist kein Guthaben mehr verfügbar (${name}). Guthaben aufladen, dann erneut versuchen.`;
+  }
+  if (status === 401 || status === 403 || /invalid api key|unauthorized|forbidden|\b401\b/i.test(text)) {
+    return `${anbieter} lehnt den API-Schlüssel ab (${name}). Er liegt im Supabase Vault und muss erneuert werden.`;
+  }
+  if (status === 429 || /rate.?limit|\b429\b/i.test(text)) {
+    return `${anbieter} drosselt gerade (Rate Limit, ${name}). In einer Minute erneut versuchen.`;
+  }
+  if (/empty completion/i.test(text)) {
+    return `${name} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${text}). Ein kürzerer Fragebogen oder weniger Slides hilft.`;
+  }
+  if (/timeout|aborted/i.test(text)) {
+    return assetHeartbeatErrorText(model, "modell", ASSET_FIRST_BYTE_STALE_MS, "silent");
+  }
+  return `${name} hat mit ${status || "einem Netzwerkfehler"} geantwortet: ${text.slice(0, 200)}`;
+}
+
 export function assetTimeoutErrorText(model: string, timeoutMs: number): string {
-  return `${model} hat nach ${Math.round(timeoutMs / 1000)} Sekunden nicht geantwortet.`;
+  return `${modelAnzeigeName(model)} hat nach ${Math.round(timeoutMs / 1000)} Sekunden nicht geantwortet.`;
 }
 
 /**

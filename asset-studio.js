@@ -6,6 +6,23 @@
 /* ─────────────────────────  Konstanten und Vorgaben  ───────────────────────── */
 
 const LOGO_PATH = "assets/roots-logo.png";
+
+/** Lesbarer Modellname, wie ihn das Backend in Meldungen nennt. */
+const MODELL_NAMEN = {
+  "anthropic/claude-opus-5-5": "Claude Opus 5.5",
+  "anthropic/claude-fable-5-1": "Claude Fable 5.1",
+  "anthropic/claude-sonnet-5-5": "Claude Sonnet 5.5",
+  "openai/gpt-5.4": "GPT-5.4",
+  "deepseek-v4-pro": "DeepSeek V4 Pro",
+  "deepseek-v4-flash": "DeepSeek V4 Flash",
+  "gemini-2.5-flash": "Gemini 2.5 Flash",
+  "gemini-2.5-flash-lite": "Gemini 2.5 Flash-Lite",
+};
+function modellName(id) {
+  const wert = String(id || "").trim();
+  if (!wert) return "";
+  return MODELL_NAMEN[wert] || wert.split("/").pop();
+}
 // Dauerhaftes, lokales Motiv fuer alle Bildvorlagen im Fragebogen. Dropdown,
 // grosse Vorschau und Carousel-Vorschau rendern dieselbe Demo-Folie und zeigen
 // dadurch immer genau dieses Bild statt einer unter dem Overlay leeren Flaeche.
@@ -1682,12 +1699,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-2";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-3";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-2";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-3";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-2";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-3";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2293,7 +2310,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function laufEreignisText(entry) {
     const event = String(entry?.event || "");
     const phase = String(entry?.phase || "");
-    const model = String(entry?.model || "");
+    const model = modellName(String(entry?.model || ""));
     const chars = Number(entry?.chars || 0);
     const thinking = Number(entry?.thinking_chars || 0);
     const zahl = (n) => n.toLocaleString("de-DE");
@@ -2335,7 +2352,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "model_call") {
       const anlauf = Number(entry.attempt || 1);
       const was = entry.call === "reparatur" ? "überarbeitet den Entwurf" : "denkt";
-      return `${model || "DeepSeek"} ${was}${anlauf > 1 ? ` (Anlauf ${anlauf})` : ""}`;
+      return `${model || "Das Modell"} ${was}${anlauf > 1 ? ` (Anlauf ${anlauf})` : ""}`;
     }
     if (event === "repair") return "Entwurf wird überarbeitet";
     if (event === "repair_ok") return "Überarbeitung angekommen";
@@ -3030,7 +3047,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <span class="as-draft-body">
         <strong>${esc(draftTitel(row))}</strong>
         <span>${esc(unter)}</span>
-        <em>${esc([row.creator_short_name || row.creator_name, meta || row.model || ""].filter(Boolean).join(" · "))}</em>
+        <em>${esc([row.creator_short_name || row.creator_name, meta || modellName(row.model) || ""].filter(Boolean).join(" · "))}</em>
       </span>
     </button>`;
   }

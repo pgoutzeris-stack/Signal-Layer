@@ -38,7 +38,7 @@ test("uses verified standard and batch model prices without a guessed fallback",
   assert.match(backend, /"deepseek-v4-pro":\s*\{ currency: "USD", standard:\s*\{ input: 0\.66, cachedInput: 0\.022, output: 1\.98 \}, peak:\s*\{ input: 1\.32, cachedInput: 0\.044, output: 3\.96 \}/);
   assert.match(backend, /"deepseek-v4-flash":\s*\{ currency: "USD", standard:\s*\{ input: 0\.22, cachedInput: 0\.007, output: 0\.66 \}, peak:\s*\{ input: 0\.44, cachedInput: 0\.014, output: 1\.32 \}/);
   assert.match(backend, /if \(price\.peak && isDeepseekPeak\(at\)\)/);
-  assert.match(backend, /if \(!verified\) throw new Error\(/);
+  assert.match(backend, /if \(!verified && !gemessen\) throw new Error\(/);
   assert.match(backend, /function zeroCostFields\(model: string\)/);
   assert.doesNotMatch(backend, /fallbackRate|defaultRate|estimatedModelRate/i);
 });

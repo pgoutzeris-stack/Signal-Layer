@@ -575,7 +575,8 @@ test("Fehler beim Entwurf nennen die Ursache, nicht nur ihr Scheitern", async ()
   for (const muster of [/kein Guthaben mehr verfügbar/, /API-Schlüssel/, /Rate Limit/]) {
     assert.match(edge, muster);
   }
-  assert.match(edge, /assetHeartbeatErrorText\(assetModel, "modell"/);
+  assert.match(edge, /assetFehlerKlartext\(assetModel, roh, status\)/);
+  assert.match(backendSource, /assetHeartbeatErrorText\(model, "modell"/);
   assert.match(backend.assetTimeoutErrorText("deepseek-v4-pro", 160_000), /nicht geantwortet/);
   // Das Studio zeigt den Servertext und laesst wiederholen.
   assert.match(studio, /class="as-error"/);
@@ -721,7 +722,7 @@ test("das Zeitfenster folgt der Arbeit, die Meldung nennt die echten Sekunden", 
   assert.doesNotMatch(edge, /hat nach 120 Sekunden nicht geantwortet/);
   assert.equal(
     backend.assetTimeoutErrorText("deepseek-v4-pro", 280_000),
-    "deepseek-v4-pro hat nach 280 Sekunden nicht geantwortet.",
+    "DeepSeek V4 Pro hat nach 280 Sekunden nicht geantwortet.",
   );
   // Ein Timeout darf keinen zweiten Versuch ausloesen: der denkt genauso lange.
   assert.match(edge, /zeitAbgelaufen \|\| attempt === attemptsAllowed/);
@@ -1158,7 +1159,7 @@ test("das Denken darf das Tokenlimit nicht allein aufbrauchen", () => {
   // Eine leere Antwort trotz HTTP 200 ist ein Fehler, kein Erfolg.
   assert.match(edge, /if \(!inhalt\.trim\(\)\)/);
   assert.match(edge, /empty completion, reasoning used/);
-  assert.match(edge, /Tokenlimit vollständig zum Nachdenken verbraucht/);
+  assert.match(backendSource, /Tokenlimit vollständig zum Nachdenken verbraucht/);
 });
 
 test("K und Infografiken bleiben die gewaehlte Variante, nicht still B", () => {
@@ -2442,7 +2443,7 @@ test("eine abgerissene Antwort läuft nicht als fertige durch", () => {
   assert.match(edge, /const abgeschnitten = wantsJson && istUnvollstaendigesJson\(content\);/);
   // Ein Anlauf bleibt: der Abriss ist ein Fehlversuch, kein Ergebnis.
   assert.match(edge, /if \(attempt === attemptsAllowed\) \{\n            return \{ ok: false, status: response\.status, error: lastError/);
-  assert.match(edge, /Antwort mitten im Satz abgebrochen\|bricht mitten im Satz ab/);
+  assert.match(backendSource, /Antwort mitten im Satz abgebrochen\|bricht mitten im Satz ab/);
   // Wem die Schuld gehört, gehört in die Meldung: sonst sucht der Nutzer den
   // Fehler bei seinem Signal oder beim Werkzeug, und beide sind in Ordnung.
   assert.match(edge, /Das liegt beim Anbieter des Modells, nicht am Signal und nicht am Fragebogen/);
@@ -3202,8 +3203,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-2");
-  assert.match(indexHtml, /app\.js\?v=20260929-2/);
+  assert.equal(studioVersion, "20260929-3");
+  assert.match(indexHtml, /app\.js\?v=20260929-3/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4283,4 +4284,53 @@ test("Pruefung und Kritiker messen am Referenzmemo, nicht nur an der Laenge", ()
   assert.match(edge, /\? vertragsFehler\.length > 0 \|\| assetKind === "memo"/);
   assert.match(edge, /buildMemoKritikPrompt\(prompt, String\(result\.text \|\| ""\), vertragsFehler\)/);
   assert.match(edge, /zweiteFehler\.length <= vertragsFehler\.length/);
+});
+
+test("Fehlermeldungen nennen Anbieter und lesbaren Modellnamen", () => {
+  assert.equal(backend.modelAnzeigeName("anthropic/claude-opus-5-5"), "Claude Opus 5.5 (über Perplexity)");
+  assert.equal(backend.modelAnzeigeName("deepseek-v4-pro"), "DeepSeek V4 Pro");
+  assert.equal(backend.modelAnbieter("anthropic/claude-opus-5-5"), "Perplexity");
+  const opus = "anthropic/claude-opus-5-5";
+  const leer = backend.assetModelCallOutcome({ status_code: 402, content: '{"error":{"message":"Your credits are depleted"}}' }, opus);
+  assert.equal(leer.kind, "balance");
+  assert.match(leer.message, /Bei Perplexity ist kein Guthaben mehr verfügbar \(Claude Opus 5\.5/);
+  const schluessel = backend.assetModelCallOutcome({ status_code: 401, content: '{"error":{"message":"invalid api key"}}' }, opus);
+  assert.equal(schluessel.kind, "auth");
+  assert.match(schluessel.message, /Perplexity lehnt den API-Schlüssel ab/);
+  const drossel = backend.assetModelCallOutcome({ status_code: 429, content: '{"code":429,"type":"request_rate_limit_exceeded","message":"Request rate limit exceeded"}' }, opus);
+  assert.equal(drossel.kind, "rate_limit");
+  assert.equal(drossel.retryable, true);
+  assert.match(drossel.message, /Perplexity drosselt gerade/);
+  const modell = backend.assetModelCallOutcome({ status_code: 400, content: '{"error":{"message":"model not found"}}' }, opus);
+  assert.match(modell.message, /kennt das Modell Claude Opus 5\.5/);
+  const abgebrochen = backend.assetModelCallOutcome({ status_code: 200, content: JSON.stringify({
+    status: "incomplete", incomplete_details: { reason: "max_output_tokens" },
+    output: [{ type: "message", content: [{ type: "output_text", text: "{\"title\":\"Halb" }] }],
+    usage: { input_tokens: 10, output_tokens: 40000, total_tokens: 40010 },
+  }) }, opus);
+  assert.equal(abgebrochen.kind, "truncated");
+  assert.match(backend.assetFehlerKlartext(opus, "credits depleted", 402), /Bei Perplexity ist kein Guthaben/);
+  assert.match(backend.assetFehlerKlartext("deepseek-v4-pro", "insufficient balance", 402), /Bei DeepSeek ist kein Guthaben/);
+  assert.match(backend.assetModelCallLostText(opus), /Die Antwort von Claude Opus 5\.5 \(über Perplexity\)/);
+  assert.doesNotMatch(studio, /model \|\| "DeepSeek"/);
+});
+
+test("Jede Memo-Buchung traegt Asset, Schritt und gemessenen Preis", () => {
+  assert.equal(backend.assetKostenSchritt("memo", "reparatur"), "kritik");
+  assert.equal(backend.assetKostenSchritt("linkedin", "reparatur"), "reparatur");
+  assert.equal(backend.assetKostenSchritt("memo", "entwurf"), "entwurf");
+  assert.equal(backend.assetDraftCostFromLog([{ event: "model_ok", cost_usd: 0.21 }]), 0.21);
+  const antwort = backend.parsePerplexityAntwort({ status: "completed", output: [], usage: { input_tokens: 1, output_tokens: 1, cost: { total_cost: 0.3 } } });
+  assert.equal(antwort.usage.costUsd, 0.3);
+  // Entwurf und Kritik, Recherche, Pruefung, Marktrecherche und Fotosuche buchen getrennt.
+  assert.match(edge, /step: assetKostenSchritt\(assetKind, attempt > 1 \? "reparatur" : "entwurf"\)/);
+  assert.match(edge, /asset_id: row\.id \? String\(row\.id\) : currentUsageAssetId\(\)/);
+  assert.match(edge, /"memo_benchmark_research", "benchmark_pruefung"/);
+  assert.match(edge, /"memo_market_research", "marktrecherche"/);
+  assert.match(edge, /"memo_photo_research", model, status, geminiUsage/);
+  assert.match(edge, /pricing_version: gemessen \? "provider-reported" : AI_PRICING_VERSION/);
+  const sql = readFileSync(new URL("../supabase/migrations/20260929170000_memo_cost_steps.sql", import.meta.url), "utf8");
+  assert.match(sql, /create or replace view signal_layer\.asset_cost_steps/);
+  assert.match(sql, /critic_cost_eur/);
+  assert.match(sql, /'memo_photo_research'/);
 });

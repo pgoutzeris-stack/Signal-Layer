@@ -105,12 +105,17 @@ import {
   AssetPayload,
   AssetPulse,
   CMO_HUNDRED_DAYS_WIP,
+  assetFehlerKlartext,
+  assetKostenSchritt,
+  modelAnzeigeName,
+  modelAnbieter,
   MEMO_BENCHMARK_RESEARCH_MODEL,
   MEMO_DRAFT_MODEL,
   MEMO_PHOTO_RESEARCH_MODEL,
   PERPLEXITY_RESPONSES_URL,
   isPerplexityModel,
   parsePerplexityAntwort,
+  assetDraftCostFromLog,
   buildMemoMarktLagePrompt,
   normalizeMemoMarktLage,
   memoQualitaetsBefunde,
@@ -3420,7 +3425,11 @@ async function getPipelineConfig(force = false): Promise<PipelineConfig> {
 // rendered into the prompt plus json_object mode. Both report tokens, both are
 // priced from a stored price list, so ai_usage_events stays comparable.
 // ---------------------------------------------------------------------------
-type ModelUsage = { input: number; cachedInput: number; output: number; thinking: number; total: number };
+type ModelUsage = {
+  input: number; cachedInput: number; output: number; thinking: number; total: number;
+  /** Vom Anbieter gemeldeter Preis in USD (Perplexity). Hat Vorrang vor der Preistabelle. */
+  costUsd?: number;
+};
 
 const EMPTY_MODEL_USAGE: ModelUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
 
@@ -3522,12 +3531,18 @@ async function modelCostFields(
   inferenceMode: "standard" | "batch" = "standard",
   searchQueries = 0,
 ): Promise<Record<string, unknown>> {
+  const gemessen = Number(usage.costUsd || 0) > 0;
   const verified = verifiedModelPrice(model, inferenceMode, usage.input + usage.cachedInput);
-  if (!verified) throw new Error(`Für ${model} (${inferenceMode}) ist kein verifizierter Anbieterpreis hinterlegt`);
-  const { price, tier } = verified;
-  const nativeCost = (usage.input * tier.input
-    + usage.cachedInput * Number(tier.cachedInput ?? tier.input)
-    + (usage.output + usage.thinking) * tier.output) / 1_000_000;
+  if (!verified && !gemessen) throw new Error(`Für ${model} (${inferenceMode}) ist kein verifizierter Anbieterpreis hinterlegt`);
+  const price = verified?.price || { currency: "USD" as const, standard: { input: 0, output: 0 } };
+  const tier = verified?.tier || price.standard;
+  // Perplexity meldet den Preis jedes Aufrufs selbst. Der gilt, nicht die
+  // zurueckgerechnete Tabelle.
+  const nativeCost = gemessen
+    ? Number(usage.costUsd)
+    : (usage.input * tier.input
+      + usage.cachedInput * Number(tier.cachedInput ?? tier.input)
+      + (usage.output + usage.thinking) * tier.output) / 1_000_000;
   const liveUsdEurRate = await getUsdEurRate();
   const liveNativeEurRate = price.currency === "USD" ? liveUsdEurRate : await getCnyEurRate();
   // A short FX outage must not create zero-cost events. These are the last
@@ -3547,7 +3562,7 @@ async function modelCostFields(
     pricing_currency: price.currency,
     native_to_eur_rate: nativeEurRate,
     usd_to_eur_rate: usdEurRate,
-    pricing_version: AI_PRICING_VERSION,
+    pricing_version: gemessen ? "provider-reported" : AI_PRICING_VERSION,
     search_query_count: Math.max(0, Math.round(searchQueries)),
   };
 }
@@ -3572,6 +3587,18 @@ async function groundingCostFields(costs: Record<string, unknown>): Promise<Reco
   };
 }
 
+/** Schritt einer Einzelbuchung, wenn der Aufrufer keinen nennt. */
+function standaloneSchritt(operation: string): string | null {
+  return ({
+    memo_benchmark_research: "benchmark_recherche",
+    memo_market_research: "marktrecherche",
+    memo_scene_image: "szenenbild",
+    memo_photo_research: "fotosuche",
+    memo_field_sharpen: "feld_schaerfen",
+    memo_section_draft: "abschnitt_entwurf",
+  } as Record<string, string>)[operation] || null;
+}
+
 async function recordStandaloneAiUsage(
   operation: string,
   model: string,
@@ -3580,6 +3607,7 @@ async function recordStandaloneAiUsage(
   searchQueries = 0,
   errorCode?: string,
   measured?: { usd: number; toolUsd: number },
+  step?: string,
 ) {
   // Die Kostenbuchung darf den bezahlten Aufruf nie nachträglich scheitern
   // lassen: ein Memo bricht sonst wegen einer Protokollzeile ab.
@@ -3602,7 +3630,7 @@ async function recordStandaloneAiUsage(
     }
     const { error } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       operation, model, status, attempt: 1, prompt_version: ASSET_PROMPT_VERSION,
-      asset_id: currentUsageAssetId(), ...grounding,
+      asset_id: currentUsageAssetId(), step: step || standaloneSchritt(operation), ...grounding,
       input_tokens: usage.input + usage.cachedInput, cached_input_tokens: usage.cachedInput,
       output_tokens: usage.output, thinking_tokens: usage.thinking, total_tokens: usage.total,
       ...costs, error_code: errorCode || null,
@@ -4409,7 +4437,7 @@ async function callGeminiWithGoogleSearchOnce(
     // der Leitung hat der innere Anlauf schon dreimal versucht; ihn dort noch
     // einmal zu wiederholen kostet nur die Wanduhr des Auftrags.
     fehler.transport = true;
-    await recordStandaloneAiUsage("memo_benchmark_research", model, "error", undefined, 0, `http_${response.status}`);
+    await recordStandaloneAiUsage("memo_photo_research", model, "error", undefined, 0, `http_${response.status}`);
     throw fehler;
   }
   await onPulse?.({ phase: "headers", model, chars: 0 });
@@ -4421,7 +4449,7 @@ async function callGeminiWithGoogleSearchOnce(
   // Google berechnet auch eine abgebrochene oder leere Antwort. Deshalb wird
   // jeder Ausgang gebucht, bevor ein Fehler den Aufruf verlaesst.
   const buchen = (status: "success" | "error", errorCode?: string) => recordStandaloneAiUsage(
-    "memo_benchmark_research", model, status, geminiUsage,
+    "memo_photo_research", model, status, geminiUsage,
     searchQueries || (titles.length ? 1 : 0), errorCode,
   );
   try {
@@ -4441,11 +4469,11 @@ async function callGeminiWithGoogleSearchOnce(
   }
   if (!text.trim()) {
     await buchen("error", "empty_answer");
-    throw new Error("Die Benchmark-Recherche hat keine Antwort geliefert.");
+    throw new Error("Die Fotosuche hat keine Antwort geliefert.");
   }
   if (!geminiFinishAllowsParse(finish)) {
     await buchen("error", `finish_${finish || "unknown"}`.slice(0, 60));
-    throw new Error("Die Benchmark-Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Benchmarks eintragen.");
+    throw new Error("Die Fotosuche ist unvollständig abgebrochen.");
   }
   const billedSearchQueries = searchQueries || (titles.length ? 1 : 0);
   await buchen("success");
@@ -4480,7 +4508,7 @@ async function callGeminiWithGoogleSearch(
       }
     }
   }
-  throw letzter || new Error("Die Benchmark-Recherche ist unvollständig abgebrochen.");
+  throw letzter || new Error("Die Fotosuche ist unvollständig abgebrochen.");
 }
 
 /**
@@ -4492,6 +4520,7 @@ async function callPerplexityWithSearch(
   model: string,
   prompt: string,
   operation: "memo_benchmark_research" | "memo_market_research",
+  step: "benchmark_recherche" | "benchmark_pruefung" | "marktrecherche",
   onPulse?: (info: AssetPulse) => void | Promise<void>,
 ): Promise<{ text: string; titles: string[]; searchQueries: number }> {
   const apiKey = await getPerplexityKey().catch(() => "");
@@ -4524,7 +4553,7 @@ async function callPerplexityWithSearch(
     }
     const roh = await response.text().catch(() => "");
     if (!response.ok) {
-      await recordStandaloneAiUsage(operation, model, "error", undefined, 0, `http_${response.status}`);
+      await recordStandaloneAiUsage(operation, model, "error", undefined, 0, `http_${response.status}`, undefined, step);
       const hart = [400, 401, 402, 403].includes(response.status);
       const fehler = new Error(response.status === 402 || /credit|balance|quota/i.test(roh)
         ? "Bei Perplexity ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen."
@@ -4544,14 +4573,14 @@ async function callPerplexityWithSearch(
     const suchen = antwort.searchQueries || (antwort.urls.length ? 1 : 0);
     if (!antwort.content.trim() || antwort.finish === "length") {
       await recordStandaloneAiUsage(operation, model, "error", antwort.usage, suchen,
-        antwort.content.trim() ? "finish_length" : "empty_answer", gemessen);
+        antwort.content.trim() ? "finish_length" : "empty_answer", gemessen, step);
       letzter = new Error(antwort.content.trim()
         ? "Die Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Benchmarks eintragen."
         : "Die Recherche hat keine Antwort geliefert.");
       if (attempt === MEMO_BENCHMARK_RESEARCH_ATTEMPTS) break;
       continue;
     }
-    await recordStandaloneAiUsage(operation, model, "success", antwort.usage, suchen, undefined, gemessen);
+    await recordStandaloneAiUsage(operation, model, "success", antwort.usage, suchen, undefined, gemessen, step);
     await onPulse?.({ phase: "search", model, chars: antwort.content.length });
     return { text: antwort.content, titles: antwort.titles, searchQueries: suchen };
   }
@@ -4565,7 +4594,7 @@ async function researchMemoMarktLage(
   firma: string,
   onPulse?: (info: AssetPulse) => void | Promise<void>,
 ): Promise<ReturnType<typeof normalizeMemoMarktLage>> {
-  const gefunden = await callPerplexityWithSearch(model, prompt, "memo_market_research", onPulse);
+  const gefunden = await callPerplexityWithSearch(model, prompt, "memo_market_research", "marktrecherche", onPulse);
   return normalizeMemoMarktLage(parseLooseJsonObject(gefunden.text), firma);
 }
 
@@ -4574,7 +4603,7 @@ async function researchMemoBenchmarksWithSearch(
   prompt: string,
   onPulse?: (info: AssetPulse) => void | Promise<void>,
 ): Promise<{ briefs: ReturnType<typeof normalizeMemoBenchmarkResearch>; searchQueries: number }> {
-  const gefunden = await callPerplexityWithSearch(model, prompt, "memo_benchmark_research", onPulse);
+  const gefunden = await callPerplexityWithSearch(model, prompt, "memo_benchmark_research", "benchmark_recherche", onPulse);
   return {
     briefs: normalizeMemoBenchmarkResearch(parseLooseJsonObject(gefunden.text), gefunden.titles),
     searchQueries: gefunden.searchQueries,
@@ -4586,7 +4615,7 @@ async function reviewMemoBenchmarksWithSearch(
   prompt: string,
   onPulse?: (info: AssetPulse) => void | Promise<void>,
 ): Promise<{ ok: boolean; grund: string; searchQueries: number }> {
-  const gefunden = await callPerplexityWithSearch(model, prompt, "memo_benchmark_research", onPulse);
+  const gefunden = await callPerplexityWithSearch(model, prompt, "memo_benchmark_research", "benchmark_pruefung", onPulse);
   const verdict = parseMemoBenchmarkReview(parseLooseJsonObject(gefunden.text));
   return { ...verdict, searchQueries: gefunden.searchQueries };
 }
@@ -6134,11 +6163,12 @@ function usageAusEreignis(eintrag: Record<string, unknown> | null | undefined): 
     output: Number(u.output || 0),
     thinking: Number(u.thinking || 0),
     total: Number(u.total || 0),
+    ...(Number(u.costUsd || eintrag?.cost_usd || 0) > 0 ? { costUsd: Number(u.costUsd || eintrag?.cost_usd) } : {}),
   };
 }
 
 async function kostenFuer(model: string, usage: ModelUsage): Promise<Record<string, unknown>> {
-  if (usage.total <= 0 && usage.input + usage.cachedInput + usage.output + usage.thinking <= 0) {
+  if (usage.total <= 0 && usage.input + usage.cachedInput + usage.output + usage.thinking <= 0 && !usage.costUsd) {
     return zeroCostFields(model);
   }
   try {
@@ -6163,7 +6193,9 @@ async function bucheAssetModellAufruf(
     const created = Date.parse(String(row.created_at || ""));
     const { data, error } = await admin.schema("signal_layer").from("ai_usage_events").insert({
       article_id: row.article_id,
+      asset_id: row.id ? String(row.id) : currentUsageAssetId(),
       operation: "asset_generation",
+      step: assetKostenSchritt(String(row.kind || ""), "entwurf"),
       model,
       prompt_version: String(row.prompt_version || ASSET_PROMPT_VERSION),
       status,
@@ -6229,7 +6261,11 @@ async function starteAssetModellAufruf(
 function modellEreignisUsage(u: AssetModelUsage) {
   return {
     tokens: u.total, thinking: u.thinking, output: u.output,
-    usage: { input: u.input, cachedInput: u.cachedInput, output: u.output, thinking: u.thinking, total: u.total },
+    ...(u.costUsd ? { cost_usd: u.costUsd } : {}),
+    usage: {
+      input: u.input, cachedInput: u.cachedInput, output: u.output, thinking: u.thinking, total: u.total,
+      ...(u.costUsd ? { costUsd: u.costUsd } : {}),
+    },
   };
 }
 
@@ -6315,6 +6351,7 @@ async function verarbeiteAssetModellAntwort(
     const eventId = fehl.usage.total > 0
       ? await bucheAssetModellAufruf(admin, row, "error", fehl.usage, attempt, {
         error_code: `pgnet_${fehl.kind}`, error_message: fehl.message.slice(0, 3000),
+        step: assetKostenSchritt(String(row.kind || ""), call),
       })
       : null;
     const { data, error } = await admin.schema("signal_layer").rpc("retry_asset_model_call", {
@@ -6335,6 +6372,7 @@ async function verarbeiteAssetModellAntwort(
 
   await bucheAssetModellAufruf(admin, row, "error", fehl.usage, attempt, {
     error_code: `pgnet_${fehl.kind}`, error_message: `${fehl.message}\n---\n${fehl.error}`.slice(0, 3000),
+    step: assetKostenSchritt(String(row.kind || ""), call),
   });
   const created = Date.parse(String(row.created_at || ""));
   const dauer = Number.isFinite(created) ? Math.round((Date.now() - created) / 1000) : 0;
@@ -6628,6 +6666,8 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         output: Number(row.output_tokens || 0),
         thinking: Number(row.thinking_tokens || 0),
         total: Number(row.total_tokens || 0),
+        // Perplexity meldet den Preis des Entwurfs im model_ok-Ereignis.
+        ...(assetDraftCostFromLog(row.run_log) > 0 ? { costUsd: assetDraftCostFromLog(row.run_log) } : {}),
       },
     };
     const assetModel = String(row.model || "");
@@ -6652,7 +6692,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       await persist({});
     };
     const usageBasis = {
-      article_id: row.article_id, asset_id: currentUsageAssetId(), operation: "asset_generation", model: assetModel,
+      article_id: row.article_id, asset_id: assetId, operation: "asset_generation", model: assetModel,
       prompt_version: String(row.prompt_version || ASSET_PROMPT_VERSION),
     };
     const buchen = async (
@@ -6662,7 +6702,8 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     ) => {
       const { data } = await admin.schema("signal_layer").from("ai_usage_events")
         .insert({
-          ...usageBasis, ...extra, status, attempt,
+          ...usageBasis, step: assetKostenSchritt(assetKind, attempt > 1 ? "reparatur" : "entwurf"),
+          ...extra, status, attempt,
           duration_ms: Date.now() - startedAt,
         }).select("id").maybeSingle();
       return data;
@@ -6682,23 +6723,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         ...tokens,
       });
     };
-    const klartextVon = (roh: string, status: number) =>
-      // Der Abriss ist kein Netzwerkfehler und kein Guthabenproblem. Er hat
-      // seinen eigenen Satz, sonst steht dort "hat mit einem Netzwerkfehler
-      // geantwortet" ueber einer Antwort, die es zur Haelfte gab.
-      /Antwort mitten im Satz abgebrochen|bricht mitten im Satz ab/i.test(roh)
-        ? `${roh} Zwei Anläufe sind gelaufen, beide abgebrochen. Noch einmal erzeugen.`
-        : /insufficient balance|spending cap/i.test(roh)
-        ? `Beim Anbieter ${assetModel} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`
-        : /invalid api key|unauthorized|401/i.test(roh)
-          ? `Der API-Schlüssel für ${assetModel} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`
-          : /rate limit|429/i.test(roh)
-            ? `${assetModel} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`
-            : /empty completion/i.test(roh)
-              ? `${assetModel} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${roh}). Ein kürzerer Fragebogen oder weniger Slides hilft.`
-              : /timeout|aborted/i.test(roh)
-                ? assetHeartbeatErrorText(assetModel, "modell", ASSET_FIRST_BYTE_STALE_MS, "silent")
-                : `${assetModel} hat mit ${status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
+    const klartextVon = (roh: string, status: number) => assetFehlerKlartext(assetModel, roh, status);
 
     let mangel = "";
     if (!payload) {
@@ -6871,7 +6896,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       await abschnitt("modell");
       const assetKey = await modelApiKey(assetModel);
       if (!assetKey) {
-        await persist({ status: "error", error_message: `Für ${assetModel} ist kein API-Schlüssel hinterlegt` });
+        await persist({ status: "error", error_message: `Für ${modelAnzeigeName(assetModel)} fehlt der API-Schlüssel von ${modelAnbieter(assetModel)} im Supabase Vault.` });
         return;
       }
       const zweiter = await callJsonModel({ ...reparaturOptionen(assetKey), onPulse, attempts: 1, timeoutMs: repairMs });
@@ -7105,7 +7130,7 @@ async function retryGeneratedAssetModel(assetId: string): Promise<void> {
     const assetModel = String(row.model || assetConfig.ai.simple_model || SIMPLE_MODEL);
     const assetKey = await modelApiKey(assetModel);
     if (!assetKey) {
-      await persist({ status: "error", error_message: `Für ${assetModel} ist kein API-Schlüssel hinterlegt` });
+      await persist({ status: "error", error_message: `Für ${modelAnzeigeName(assetModel)} fehlt der API-Schlüssel von ${modelAnbieter(assetModel)} im Supabase Vault.` });
       return;
     }
 
@@ -11507,7 +11532,7 @@ Deno.serve(async (req: Request) => {
         });
         const abschnittKosten = await modelCostFields(abschnittModel, abschnittAntwort.usage);
         await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
-          operation: "memo_section_draft", model: abschnittModel,
+          operation: "memo_section_draft", step: "abschnitt_entwurf", model: abschnittModel,
           status: abschnittAntwort.ok ? "success" : "error",
           prompt_version: SIMPLE_PIPELINE_VERSION,
           input_tokens: abschnittAntwort.usage.input + abschnittAntwort.usage.cachedInput,
@@ -11562,7 +11587,7 @@ Deno.serve(async (req: Request) => {
         });
         const feldKosten = await modelCostFields(feldModel, feldAntwort.usage);
         await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
-          operation: "memo_field_sharpen", model: feldModel,
+          operation: "memo_field_sharpen", step: "feld_schaerfen", model: feldModel,
           status: feldAntwort.ok ? "success" : "error",
           prompt_version: SIMPLE_PIPELINE_VERSION,
           input_tokens: feldAntwort.usage.input + feldAntwort.usage.cachedInput,
@@ -11775,7 +11800,7 @@ Deno.serve(async (req: Request) => {
         // Modell der Pipeline.
         const assetModel = assetKind === "memo" ? MEMO_DRAFT_MODEL : (assetConfig.ai.simple_model || SIMPLE_MODEL);
         const assetKey = await modelApiKey(assetModel);
-        if (!assetKey) return errorResponse(origin, `Für ${assetModel} ist kein API-Schlüssel hinterlegt`, 500);
+        if (!assetKey) return errorResponse(origin, `Für ${modelAnzeigeName(assetModel)} ist kein API-Schlüssel im Supabase Vault hinterlegt.`, 500);
 
         const articleTopics = Array.isArray(assetArticle.topics) ? assetArticle.topics as string[] : [];
         const signalForAsset = {
@@ -11874,7 +11899,7 @@ Deno.serve(async (req: Request) => {
             const tok = tokens?.total_tokens
               ? `${Number(tokens.total_tokens).toLocaleString("de-DE")} Tokens`
               : "keine Tokens";
-            return `${nachricht}\n\n${assetModel} · ${ASSET_PROMPT_VERSION} · ${formatLabel} · ${dauer} · ${tok}`;
+            return `${nachricht}\n\n${modelAnzeigeName(assetModel)} · ${ASSET_PROMPT_VERSION} · ${formatLabel} · ${dauer} · ${tok}`;
           };
           // Prompt bauen zaehlt noch als Lesen: das Modell startet erst danach.
           // Benchmarks: Gemini sucht (DeepSeek hat keine Websuche) oder der Nutzer
@@ -12111,7 +12136,8 @@ Deno.serve(async (req: Request) => {
           ) => {
             const { data } = await admin.schema("signal_layer").from("ai_usage_events")
               .insert({
-                ...usageBasis, ...extra, status, attempt,
+                ...usageBasis, step: assetKostenSchritt(assetKind, attempt > 1 ? "reparatur" : "entwurf"),
+                ...extra, status, attempt,
                 duration_ms: Date.now() - startedAt,
               }).select("id").maybeSingle();
             return data;
@@ -12135,18 +12161,7 @@ Deno.serve(async (req: Request) => {
               ...tokens,
             });
           };
-          const klartextVon = (roh: string, status: number) =>
-            /insufficient balance|spending cap/i.test(roh)
-              ? `Beim Anbieter ${assetModel} ist kein Guthaben mehr verfügbar. Aufladen, dann erneut versuchen.`
-              : /invalid api key|unauthorized|401/i.test(roh)
-                ? `Der API-Schlüssel für ${assetModel} wird abgelehnt. Er liegt im Supabase Vault und muss erneuert werden.`
-                : /rate limit|429/i.test(roh)
-                  ? `${assetModel} ist gerade überlastet (Rate Limit). In einer Minute erneut versuchen.`
-                  : /empty completion/i.test(roh)
-                    ? `${assetModel} hat sein Tokenlimit vollständig zum Nachdenken verbraucht und keine Antwort mehr geschrieben (${roh}). Ein kürzerer Fragebogen oder weniger Slides hilft.`
-                    : /timeout|aborted/i.test(roh)
-                      ? assetHeartbeatErrorText(assetModel, "modell", ASSET_FIRST_BYTE_STALE_MS, "silent")
-                      : `${assetModel} hat mit ${status || "einem Netzwerkfehler"} geantwortet: ${roh.slice(0, 200)}`;
+          const klartextVon = (roh: string, status: number) => assetFehlerKlartext(assetModel, roh, status);
 
           if (!result.ok) {
             loggen("model_fail", { status: result.status, error: String(result.error || "").slice(0, 300) });
