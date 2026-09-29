@@ -1342,7 +1342,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(memoPrompt, /<sonderfall>/);
   assert.match(memoPrompt, /Unternehmen nennen: Aeffe/);
   assert.match(memoPrompt, /Wie kann Aeffe/);
-  assert.match(memoPrompt, /mit Aeffe im Satz/);
+  assert.match(memoPrompt, /mit Aeffe im Titel/);
   assert.match(memoPrompt, /thematische Fotos/);
   assert.match(memoPrompt, /Konzeptbild zum Hebel/);
   assert.match(studio, /key: "company_mode"/);
@@ -1809,7 +1809,7 @@ test("Person im Signal wird Adressat, ohne Gespräch-mit-Rolle anzuhängen", () 
   assert.match(memoPrompt, /<anlass>/);
   assert.match(memoPrompt, /<hebel>/);
   assert.match(memoPrompt, /<titel>/);
-  assert.match(memoPrompt, /Whitepaper-Titel/);
+  assert.match(memoPrompt, /title benennt das Potenzial oder die Herausforderung/);
   assert.match(memoPrompt, /nicht die Geschichte/);
   assert.doesNotMatch(memoPrompt, /Adressat, verbindlich/);
   assert.doesNotMatch(memoPrompt, /keine Rolle extra/);
@@ -3203,8 +3203,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-4");
-  assert.match(indexHtml, /app\.js\?v=20260929-4/);
+  assert.equal(studioVersion, "20260929-5");
+  assert.match(indexHtml, /app\.js\?v=20260929-5/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4382,4 +4382,38 @@ test("Die Ladeanzeige nennt Modell und Tokens und zeigt Punkte am laufenden Schr
   assert.match(edge, /loggen\("research_start", \{ model: MEMO_BENCHMARK_RESEARCH_MODEL \}\)/);
   assert.match(edge, /tokens: gefunden\.tokens/);
   assert.match(edge, /tokens: markt\?\.tokens \|\| 0/);
+});
+
+test("Das Cover benennt Potenzial oder Herausforderung, nicht den Ist-Zustand", () => {
+  const answers = backend.normalizeAssetAnswers("memo", { company_text: "Intersport" });
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), answers);
+  const ist = backend.memoQualitaetsBefunde({ ...memo, title: "Intersport führt Eigenmarken über den Preis hinaus" }, { firma: "Intersport" }).join("\n");
+  assert.match(ist, /title beschreibt einen Ist-Zustand/);
+  for (const gut of ["Potenziale der Eigenmarken für Intersport", "Wie kann Intersport mit Eigenmarken wachsen?", "Intersport: Eigenmarken zwischen Preis und Profil"]) {
+    const befund = backend.memoQualitaetsBefunde({ ...memo, title: gut }, { firma: "Intersport" }).join("\n");
+    assert.doesNotMatch(befund, /^title (beschreibt einen Ist-Zustand|nennt Intersport nicht)/m, gut);
+  }
+  assert.match(backend.memoQualitaetsBefunde({ ...memo, title: "Potenziale jenseits des Preises" }, { firma: "Intersport" }).join("\n"), /^title nennt Intersport nicht/m);
+  const prompt = backend.buildAssetPrompt("memo", { company: "Intersport", roots_link_de: "Intersport will die Eigenmarken stärken. ROOTS entwickelt die Architektur.", trigger_de: "Offen ist, wie die Handelsmarken aufgestellt werden." }, { title: "x", content: "Text." }, answers);
+  assert.match(prompt, /Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann/);
+  assert.match(prompt, /aus „offen ist, wie …“ wird die Herausforderung/);
+  assert.match(prompt, /summary_0 ist die Herausforderung heute/);
+  assert.doesNotMatch(prompt, /eine Bewegung, kein Auftrag/);
+  assert.match(backend.MEMO_KRITIK_MASSSTAB, /Kein Ist-Zustand und keine Erfolgsmeldung/);
+  assert.match(backend.MEMO_KRITIK_MASSSTAB, /9\. ROOTS-Beitrag/);
+});
+
+test("Kein Cover-Schluessel wird mitten im Satz abgeschnitten", () => {
+  const lang = "Adidas, Nike und Puma tragen das Geschäft, die eigenen Marken spielen bislang eine Nebenrolle";
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({ summary_0: lang })), backend.normalizeAssetAnswers("memo", {}));
+  assert.equal(memo.summary_0, lang);
+  const gekuerzt = backend.memoSanftKuerzen(`${lang} im gesamten Sortiment der Fachhändler.`, 105);
+  assert.ok(gekuerzt.length <= 105, gekuerzt);
+  assert.doesNotMatch(gekuerzt, /\s(eine|bislang|im|der|und)\.?$/);
+  assert.match(gekuerzt, /\.$/);
+  const zuLang = { ...memo, summary_0: `${lang} im gesamten Sortiment der Fachhändler in ganz Deutschland` };
+  const felder = backend.memoRestKuerzen(zuLang);
+  assert.deepEqual(felder, ["summary_0"]);
+  assert.ok(zuLang.summary_0.length <= 105);
+  assert.match(edge, /memoRestKuerzen\(payload as MemoPayload, eigeneMemoFelder\)/);
 });

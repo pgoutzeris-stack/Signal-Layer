@@ -119,6 +119,7 @@ import {
   buildMemoMarktLagePrompt,
   normalizeMemoMarktLage,
   memoQualitaetsBefunde,
+  memoRestKuerzen,
   buildMemoKritikPrompt,
   MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS,
   MEMO_BENCHMARK_RESEARCH_ATTEMPTS,
@@ -6949,6 +6950,12 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
         "invalid_response", reparaturLief ? zeroCostFields(assetModel) : { ...kostenFelder, ...tokenFelder },
         reparaturLief ? 2 : 1, tokenFelder);
       return;
+    }
+    if (assetKind === "memo" && !gespeichert) {
+      // Was nach dem zweiten Anlauf noch zu lang ist, wird an einer Satzgrenze
+      // gekuerzt statt mitten im Wort oder ueber den Seitenrand hinaus.
+      const gekuerzt = memoRestKuerzen(payload as MemoPayload, eigeneMemoFelder);
+      if (gekuerzt.length) loggen("vertrag_gekuerzt", { felder: gekuerzt.slice(0, 12) });
     }
 
     // Entwurf steht. Ab hier darf nichts mehr den Text verwerfen, auch nicht

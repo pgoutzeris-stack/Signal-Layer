@@ -64,28 +64,28 @@ export const MEMO_SECTIONS = [
     ziel: ".em-cover-mid",
     bildgruppe: "cover",
     label: "Cover",
-    zweck: "Die Titelseite entscheidet in zehn Sekunden, ob weitergelesen wird. Sie nennt die Aufgabe, nicht die Nachricht.",
+    zweck: "Die Titelseite entscheidet in zehn Sekunden, ob weitergelesen wird. Sie nennt Chance oder Herausforderung des Adressaten und was ROOTS daran bewegt, nicht die Nachricht.",
     hinweis: "Die These des Memos und die drei Schlüssel darunter.",
     erwartet: [
-      "Ein Titel, der die offene Aufgabe benennt, kurz und mit Verb.",
-      "Ein Satz darunter, warum die Aufgabe jetzt anliegt.",
-      "Drei Schlüssel in fester Reihenfolge: Lage, Best Practice, Empfehlung. Sie nehmen die drei Innenseiten vorweg.",
+      "Ein Titel, der Potenzial oder Herausforderung des Adressaten in diesem Thema benennt, kurz.",
+      "Ein Satz darunter, wie der Adressat das Potenzial hebt.",
+      "Drei Schlüssel in fester Reihenfolge: Herausforderung heute, was Vorreiter richtig machen, Potenzial mit dem ROOTS-Hebel. Sie nehmen die drei Innenseiten vorweg.",
     ],
     bilder: "Ein Motiv des Adressaten über der oberen Seitenhälfte, Laden, Produkt oder Fläche. Kein Logo, kein Porträt.",
     fields: [
       {
         key: "title", label: "Titel (H1)", art: "these", rows: 2, min: 4, max: 12, zeichen: 50,
-        hilfe: "Die offene Aufgabe als These. Nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht.",
+        hilfe: "Potenzial oder Herausforderung des Adressaten in diesem Thema, wie im Deichmann-Memo „Optimierungspotenziale in der Eigenmarkenstrategie“. Kein Ist-Zustand, keine Erfolgsmeldung, nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht.",
         beispiel: "Vom Preisargument zur eigenständigen Marke",
       },
       {
         key: "standfirst", label: "Subtitel (H2)", art: "satz", rows: 2, min: 5, max: 18, zeichen: 90, saetze: [1, 2],
-        hilfe: "Ein Satz, der den Titel auflöst: was sich dadurch ändert.",
+        hilfe: "Ein Satz, der den Titel auflöst: wie der Adressat das Potenzial hebt.",
         beispiel: "Wie Deichmanns Eigenmarken ihr volles Wachstumspotenzial entfalten.",
       },
       {
         key: "summary_0", label: "Feature 1", art: "schluessel", rows: 2, min: 5, max: 14, zeichen: 105,
-        hilfe: "Die heutige Lage des Adressaten. Nimmt Seite 2 vorweg.",
+        hilfe: "Die Herausforderung heute: Lage des Adressaten und was im Weg steht. Nimmt Seite 2 vorweg.",
         beispiel: "Wachsende Eigenmarkenanteile treffen in der Footwear-Kategorie auf höhere Kundenansprüche",
       },
       {
@@ -95,7 +95,7 @@ export const MEMO_SECTIONS = [
       },
       {
         key: "summary_2", label: "Feature 3", art: "schluessel", rows: 2, min: 5, max: 14, zeichen: 105,
-        hilfe: "Der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg.",
+        hilfe: "Das Potenzial und der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg.",
         beispiel: "Eigenmarken mit klarem Profil und eigenen Markenwelten weiterentwickeln und erlebbar machen",
       },
     ],
@@ -137,7 +137,7 @@ export const MEMO_SECTIONS = [
       },
       {
         key: "market_p2", label: "Absatz 3", art: "absatz", rows: 7, min: 42, max: 80, zeichen: 350,
-        hilfe: "Der Beleg für die Aussage, konkret an Sortiment, Fläche und POS. Trägt die untere Seitenhälfte.",
+        hilfe: "Der Beleg für die Aussage, konkret an Marken, Formaten, Kanälen oder Prozessen des Adressaten. Trägt die untere Seitenhälfte.",
         beispiel: "Ein Blick in den Store zeigt die heutige Logik: Das Sortiment ist mit Marken wie Graceland oder 5th Avenue klar nach Zielgruppen strukturiert. Am POS stehen diese jedoch im direkten Wettbewerbsumfeld etablierter Herstellermarken und werden vor allem über Sortiment, Preis und Produktleistung differenziert.",
       },
     ],

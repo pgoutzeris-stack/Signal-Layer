@@ -252,15 +252,15 @@ Kennzahlen: kpiN_value: 1 bis 4 Wörter, höchstens 10 Zeichen; kpiN_label: 5 bi
  * zweite Fassung der Feldhinweise, die beim naechsten Vorlagenwechsel
  * weggelaufen waere. Der Test in tests/asset-studio.test.mjs haelt beide gleich.
  */
-export const MEMO_AUFBAU = `Seite 1, Cover: Die Titelseite entscheidet in zehn Sekunden, ob weitergelesen wird. Sie nennt die Aufgabe, nicht die Nachricht.
-- Ein Titel, der die offene Aufgabe benennt, kurz und mit Verb.
-- Ein Satz darunter, warum die Aufgabe jetzt anliegt.
-- Drei Schlüssel in fester Reihenfolge: Lage, Best Practice, Empfehlung. Sie nehmen die drei Innenseiten vorweg.
-title (Titel (H1)): Die offene Aufgabe als These. Nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht.
-standfirst (Subtitel (H2)): Ein Satz, der den Titel auflöst: was sich dadurch ändert.
-summary_0 (Feature 1): Die heutige Lage des Adressaten. Nimmt Seite 2 vorweg.
+export const MEMO_AUFBAU = `Seite 1, Cover: Die Titelseite entscheidet in zehn Sekunden, ob weitergelesen wird. Sie nennt Chance oder Herausforderung des Adressaten und was ROOTS daran bewegt, nicht die Nachricht.
+- Ein Titel, der Potenzial oder Herausforderung des Adressaten in diesem Thema benennt, kurz.
+- Ein Satz darunter, wie der Adressat das Potenzial hebt.
+- Drei Schlüssel in fester Reihenfolge: Herausforderung heute, was Vorreiter richtig machen, Potenzial mit dem ROOTS-Hebel. Sie nehmen die drei Innenseiten vorweg.
+title (Titel (H1)): Potenzial oder Herausforderung des Adressaten in diesem Thema, wie im Deichmann-Memo „Optimierungspotenziale in der Eigenmarkenstrategie“. Kein Ist-Zustand, keine Erfolgsmeldung, nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht.
+standfirst (Subtitel (H2)): Ein Satz, der den Titel auflöst: wie der Adressat das Potenzial hebt.
+summary_0 (Feature 1): Die Herausforderung heute: Lage des Adressaten und was im Weg steht. Nimmt Seite 2 vorweg.
 summary_1 (Feature 2): Was die Benchmarks gemeinsam richtig machen. Nimmt Seite 3 vorweg.
-summary_2 (Feature 3): Der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg.
+summary_2 (Feature 3): Das Potenzial und der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg.
 Motive: Ein Motiv des Adressaten über der oberen Seitenhälfte, Laden, Produkt oder Fläche. Kein Logo, kein Porträt.
 
 Seite 2, 01 Reality Check: Seite 2 belegt, dass der Markt sich bewegt, und übersetzt das auf die Lage des Adressaten.
@@ -271,7 +271,7 @@ market_title (Titel (H2)): Die Kategorie oder der Markt, nicht das Unternehmen.
 market_p1 (Absatz 1): Was sich im Markt verschoben hat und was das für den Adressaten bedeutet.
 market_lead2 (Absatz 2): Was dem Adressaten trotz guter Ausgangslage fehlt. Der Übergang zur Empfehlung.
 insight_title (Bildaussage): Der Befund zum Adressaten in einem Satz. Nicht die Seitenüberschrift wiederholen.
-market_p2 (Absatz 3): Der Beleg für die Aussage, konkret an Sortiment, Fläche und POS. Trägt die untere Seitenhälfte.
+market_p2 (Absatz 3): Der Beleg für die Aussage, konkret an Marken, Formaten, Kanälen oder Prozessen des Adressaten. Trägt die untere Seitenhälfte.
 Motive: Ein Motiv in der unteren Seitenhälfte, das die Aussage daneben zeigt. Szene aus dem Alltag des Adressaten, kein Logo.
 
 Seite 2, Kennzahlen: Vier Kästen in einer Leiste. Sie tragen den Beleg für Seite 2 und sind die einzige Stelle im Memo, an der Zahlen stehen.
@@ -383,16 +383,16 @@ about_fit2: Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu un
  */
 export const MEMO_SCHEMA_TEXTE = {
   felder: {
-    title: "Die offene Aufgabe als These. Nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht. 4 bis 12 Wörter, höchstens 50 Zeichen.",
-    standfirst: "Ein Satz, der den Titel auflöst: was sich dadurch ändert. 5 bis 18 Wörter, höchstens 90 Zeichen.",
-    summary_0: "Die heutige Lage des Adressaten. Nimmt Seite 2 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
+    title: "Potenzial oder Herausforderung des Adressaten in diesem Thema, wie im Deichmann-Memo „Optimierungspotenziale in der Eigenmarkenstrategie“. Kein Ist-Zustand, keine Erfolgsmeldung, nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht. 4 bis 12 Wörter, höchstens 50 Zeichen.",
+    standfirst: "Ein Satz, der den Titel auflöst: wie der Adressat das Potenzial hebt. 5 bis 18 Wörter, höchstens 90 Zeichen.",
+    summary_0: "Die Herausforderung heute: Lage des Adressaten und was im Weg steht. Nimmt Seite 2 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
     summary_1: "Was die Benchmarks gemeinsam richtig machen. Nimmt Seite 3 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
-    summary_2: "Der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
+    summary_2: "Das Potenzial und der Hebel, an dem ROOTS ansetzt. Nimmt Seite 4 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
     market_title: "Die Kategorie oder der Markt, nicht das Unternehmen. 5 bis 14 Wörter, höchstens 60 Zeichen.",
     market_p1: "Was sich im Markt verschoben hat und was das für den Adressaten bedeutet. 22 bis 48 Wörter, höchstens 325 Zeichen.",
     market_lead2: "Was dem Adressaten trotz guter Ausgangslage fehlt. Der Übergang zur Empfehlung. 12 bis 34 Wörter, höchstens 190 Zeichen.",
     insight_title: "Der Befund zum Adressaten in einem Satz. Nicht die Seitenüberschrift wiederholen. 5 bis 16 Wörter, höchstens 110 Zeichen.",
-    market_p2: "Der Beleg für die Aussage, konkret an Sortiment, Fläche und POS. Trägt die untere Seitenhälfte. 42 bis 80 Wörter, höchstens 350 Zeichen.",
+    market_p2: "Der Beleg für die Aussage, konkret an Marken, Formaten, Kanälen oder Prozessen des Adressaten. Trägt die untere Seitenhälfte. 42 bis 80 Wörter, höchstens 350 Zeichen.",
     benchmark_title: "Nennt die drei Marken und was sie gemeinsam richtig machen. 8 bis 22 Wörter, höchstens 130 Zeichen.",
     sources: "Belege für die drei Fälle, mit Semikolon getrennt. Format „Herausgeber, Art (Zeitraum)“. 5 bis 45 Wörter, höchstens 185 Zeichen.",
     quote_text: "Die Lehre der drei Fälle als ROOTS-Haltung. Kein Zitat aus dem Artikel, keine fremde Person. Die Zuschreibung darunter ist fest. 14 bis 34 Wörter, höchstens 210 Zeichen.",
@@ -602,6 +602,72 @@ export function memoVertragsFehler(payload: MemoPayload, eigene: Record<string, 
   return fehler;
 }
 
+/** Woerter, auf denen ein gekuerzter Satz nicht enden darf. */
+const MEMO_HAENGEWORT = /\s+(der|die|das|den|dem|des|ein|eine|einer|eines|einem|einen|und|oder|aber|mit|von|zu|zur|zum|im|in|am|an|auf|für|bei|aus|als|wie|bislang|noch|nicht|sich|ihre?|seine?|mehr|sowie|über|unter|vor|nach|durch|gegen|ohne|um)$/i;
+
+/** Kuerzt an einer Satz- oder Gliedgrenze, nie mitten in einem Satzteil. */
+export function memoSanftKuerzen(wert: string, max: number): string {
+  const text = String(wert || "").trim();
+  if (!max || text.length <= max) return text;
+  const punkt = /[.!?]$/.test(text);
+  const stueck = text.slice(0, max + 1);
+  let schnitt = "";
+  // Satzende, dann Semikolon oder Doppelpunkt, dann Komma, dann vor einer
+  // Praeposition oder Konjunktion: so bleibt ein ganzer Satzteil stehen.
+  const grenzen = [
+    /[.!?](?=\s)/g, /[;:](?=\s)/g, /,(?=\s)/g,
+    /\s(?=(im|in|am|an|auf|für|bei|mit|von|zu|zur|zum|über|unter|durch|gegen|ohne|nach|vor|aus|als|wie|und|oder|sowie|denn|weil|während|dass)\s)/g,
+  ];
+  for (const grenze of grenzen) {
+    let letzte = -1;
+    for (const treffer of stueck.matchAll(grenze)) {
+      if ((treffer.index ?? -1) >= max * 0.5) letzte = treffer.index ?? -1;
+    }
+    if (letzte > 0) { schnitt = stueck.slice(0, letzte); break; }
+  }
+  if (!schnitt) schnitt = stueck.slice(0, Math.max(stueck.lastIndexOf(" "), 1));
+  let vorher = "";
+  while (vorher !== schnitt) {
+    vorher = schnitt;
+    schnitt = schnitt.replace(/[\s,;:–-]+$/, "").replace(MEMO_HAENGEWORT, "");
+  }
+  return punkt && !/[.!?]$/.test(schnitt) ? `${schnitt}.` : schnitt;
+}
+
+/**
+ * Letzte Sicherung nach dem zweiten Anlauf: ein Feld, das immer noch ueber
+ * seinem Zeichenlimit liegt, wird an einer Grenze gekuerzt, damit die Seite
+ * nicht ueberlaeuft und kein Satz mitten im Wort endet. Felder mit Markup und
+ * selbst geschriebene Felder bleiben unangetastet.
+ */
+export function memoRestKuerzen(payload: MemoPayload, eigene: Record<string, string> = {}): string[] {
+  const gekuerzt: string[] = [];
+  const ziel = payload as unknown as Record<string, unknown>;
+  const setze = (key: string, lesen: () => unknown, schreiben: (wert: string) => void, max: number) => {
+    const wert = String(lesen() ?? "");
+    if (eigene[key] || !wert || wert.includes("<") || wert.length <= max) return;
+    schreiben(memoSanftKuerzen(wert, max));
+    gekuerzt.push(key);
+  };
+  for (const feld of MEMO_VERTRAG) {
+    const max = Number(feld.zeichen || 0);
+    if (!max) continue;
+    const treffer = /^(kpi|bm|pot)(\d)_(\w+)$/.exec(feld.key);
+    if (!treffer) {
+      if (feld.key === "sources") continue;
+      setze(feld.key, () => ziel[feld.key], (wert) => { ziel[feld.key] = wert; }, max);
+      continue;
+    }
+    const [, gruppe, nummer, teil] = treffer;
+    const liste = (gruppe === "kpi" ? payload.kpis : gruppe === "bm" ? payload.benchmarks : payload.potentials) as unknown as Array<Record<string, unknown>> | undefined;
+    const eintrag = liste?.[Number(nummer) - 1];
+    if (!eintrag) continue;
+    const name = gruppe === "bm" && teil === "text" ? "text" : teil;
+    setze(feld.key, () => eintrag[name], (wert) => { eintrag[name] = wert; }, max);
+  }
+  return gekuerzt;
+}
+
 /**
  * Was ein Memo vom Deichmann-Memo trennt, obwohl jedes Feld im Laengenvertrag
  * liegt. Am 29.9.2026 an den sechs neuesten Memos abgelesen: Titel nach der
@@ -620,7 +686,19 @@ export function memoQualitaetsBefunde(
   const klein = (wert: string) => String(wert || "").replace(/<[^>]+>/g, " ").toLowerCase();
 
   if (frei("title") && /\b(muss|müssen|braucht|brauchen)\b/i.test(werte.title)) {
-    befunde.push(`title folgt der Schablone „… muss/braucht …“ („${werte.title}“). Formuliere die Bewegung oder die offene Frage, nicht einen Auftrag.`);
+    befunde.push(`title folgt der Schablone „… muss/braucht …“ („${werte.title}“). Benenne Potenzial oder Herausforderung, nicht einen Auftrag.`);
+  }
+  if (frei("title") && firma) {
+    const titel = String(werte.title || "").trim();
+    const name = firma.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Firma plus kleingeschriebenes Wort ist Firma plus Verb: „Intersport führt …“.
+    // Das beschreibt, was schon passiert, nicht was offen ist.
+    if (new RegExp(`^${name}s?\\s+[a-zäöüß]`, "u").test(titel) && !titel.endsWith("?")) {
+      befunde.push(`title beschreibt einen Ist-Zustand („${titel}“). Benenne Potenzial oder Herausforderung von ${firma} in diesem Thema, wie „Optimierungspotenziale in der Eigenmarkenstrategie“ im Deichmann-Memo.`);
+    }
+    if (!klein(titel).includes(firma.toLowerCase())) {
+      befunde.push(`title nennt ${firma} nicht. Der Titel benennt das Potenzial oder die Herausforderung von ${firma}.`);
+    }
   }
   if (frei("market_title")) {
     const mt = werte.market_title;
@@ -674,14 +752,16 @@ export function memoQualitaetsBefunde(
 }
 
 /** Die Maßstäbe des Kritiker-Durchlaufs, am Deichmann-Memo abgelesen. */
-export const MEMO_KRITIK_MASSSTAB = `1. title: Bewegung oder offene Frage zur Aufgabe, keine Pflicht-Schablone („X muss …“), keine Leistung als Subjekt.
+export const MEMO_KRITIK_MASSSTAB = `1. title: benennt Potenzial oder Herausforderung des Adressaten in diesem Thema, wie „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“. Kein Ist-Zustand und keine Erfolgsmeldung („X führt …“), keine Pflicht-Schablone („X muss …“), keine Leistung als Subjekt. standfirst sagt, wie das Potenzial gehoben wird.
 2. market_title: Befund mit Verb, kein Etikett.
 3. Kennzahlen: Markt- oder Verbraucherzahlen aus mindestens drei Herausgebern, höchstens eine Zahl zum Adressaten, keine Quartalszahlen.
 4. insight_title und market_p2: ein konkreter Befund zur heutigen Aufstellung des Adressaten mit Eigennamen (Marken, Formate, Kanäle), nichts, was auf jedes Unternehmen passt.
 5. Benchmarks: jede zeigt eine konkrete Handlung und warum sie gewirkt hat, am selben Mechanismus wie der Hebel.
 6. Potenziale: jeder Hebel ist erkennbar für diesen Adressaten geschrieben und schließt an seine heutige Aufstellung an.
 7. Sprache: aktive Verben, keine Beratungsfloskeln, kein Satzgerüst aus dem Referenzmemo, kein Gedankenstrich.
-8. Zusammenhang: Cover, Seite 2, Seite 3 und Seite 4 bauen aufeinander auf, kein Feld wiederholt ein anderes.`;
+8. Zusammenhang: Cover, Seite 2, Seite 3 und Seite 4 bauen aufeinander auf, kein Feld wiederholt ein anderes. summary_0 ist die Herausforderung heute, summary_1 der Insight, summary_2 das Potenzial mit dem ROOTS-Hebel.
+9. ROOTS-Beitrag: Seite 4 und about_fit sagen konkret, was ROOTS analysiert, entwickelt oder umsetzt, so wie es roots_anschluss im zweiten Satz beschreibt. Keine allgemeine Hilfe-Formel.
+10. Kein Satz bricht ab: jedes Feld endet mit einem vollständigen Gedanken.`;
 
 /**
  * Kritiker-Durchlauf: dasselbe Modell liest seinen Entwurf gegen die
@@ -3038,18 +3118,21 @@ Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen h
 Die drei potentials übersetzen genau diese Leistung auf den Adressaten. about_fit nennt roots_leistung erst am Schluss.
 </hebel>
 <titel>
+Das Cover folgt der Logik des Deichmann-Memos, nicht seinem Thema: erst die Chance oder Herausforderung des Adressaten, dann wie sie gehoben wird, dann was ROOTS daran bewegt. Den Stoff hat die Signalprüfung schon hinterlegt: roots_anschluss nennt im ersten Satz das belegte Ziel, Problem, Risiko oder die Chance und im zweiten, was ROOTS konkret tut; anlass nennt die offene Frage oder Hürde.
 ${nennen
-    ? `title ist ein Whitepaper-Titel mit ${firma} im Satz: die Herausforderung aus roots_anschluss, konkret, thematisch, höchstens 15 Wörter. Muster, nicht abschreiben: „Wie kann ${firma} zwei Häuser mit eigener Handschrift führen?“ „${firma}: Chancen in der Markenpositionierung.“`
-    : "title ist ein Whitepaper-Titel zur Herausforderung: konkret, thematisch, höchstens 15 Wörter. Muster, nicht abschreiben: „KI im Handel: Chancen und Herausforderungen.“ „Die Chancen in der Markenpositionierung.“ „Zwei Traditionsmarken brauchen eigene Profile, bevor die Gruppe sie trennt.“"}
-Schwach: Beratungsjargon ohne Thema („Hebel ziehen“), Platzhalter („Thema XY“), die Leistung als Subjekt („Markenstrategie wird zum Hebel…“), die Meldung nacherzählt, ein Slogan ohne Aufgabe${nennen ? `, oder ${firma} nur als Briefkopf ohne Aufgabe` : ""}.
-Stark: die offene Aufgabe aus roots_anschluss als These, so dass jemand das Thema erkennt, ohne die Nachricht gelesen zu haben.
-Keine Pflicht-Schablone: kein „${nennen ? firma : "X"} muss …“, kein „… braucht …“, kein „… müssen …“. Das Referenzmemo sagt „Vom Preisargument zur eigenständigen Marke“: eine Bewegung, kein Auftrag. Dieselbe Form in anderen Themen: „Von der Verpackungstabelle zum steuerbaren Datenprozess“, „Vom Reichweitenkanal zur Community, die kauft“, „Vom Filialnetz zur Marke, die man sucht“.
+    ? `title benennt das Potenzial oder die Herausforderung von ${firma} in diesem Thema, mit ${firma} im Titel. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung, Thema, Adressat. Nur kürzer, höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema] für ${firma}“, „${firma}: [Thema] zwischen [Hürde] und [Chance]“, „Wie ${firma} [Ziel] erreicht“, „Wie kann ${firma} [Ziel]?“, „Vom [heute] zum [Ziel]“, wenn klar bleibt, dass das Ziel noch vor ${firma} liegt.`
+    : "title benennt das Potenzial oder die Herausforderung in diesem Thema. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung plus Thema. Höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema]“, „[Thema]: Chancen und Hürden für [Branche]“, „Wie [Branche] [Ziel] erreicht“, „Vom [heute] zum [Ziel]“."}
+Schwach: ein Ist-Zustand oder eine Erfolgsmeldung („${nennen ? firma : "X"} führt …“, „… setzt auf …“, „… baut … aus“). Sie sagt, was schon passiert, nicht was offen ist. Ebenso schwach: eine Pflicht-Schablone („… muss …“, „… braucht …“), die nacherzählte Meldung, die ROOTS-Leistung als Subjekt („Markenstrategie wird zum Hebel …“), Beratungsjargon ohne Thema („Hebel ziehen“), ein Slogan ohne Aufgabe${nennen ? `, ${firma} nur als Briefkopf` : ""}.
+Stark: jemand liest den Titel und weiß, welche Chance oder welche Hürde das Memo behandelt, ohne die Nachricht zu kennen.
+standfirst löst den Titel auf: wie der Adressat das Potenzial hebt, in einem Satz, wie „Wie Deichmanns Eigenmarken ihr volles Wachstumspotenzial entfalten.“ Passen die drei Hebel von Seite 4 in Stichworten dazu, gehören sie hinein.
+summary_0 ist die Herausforderung heute (Lage des Adressaten und was im Weg steht), summary_1 der Insight aus Markt und Vorreitern, summary_2 das Potenzial mit dem Hebel, an dem ROOTS ansetzt.
 market_title ist ein Befund mit Verb, kein Etikett: nicht „Sportartikelmarkt im Umbruch“, nicht „Markt: Chancen und Risiken“. Muster: „Eigenmarken stehen vor der nächsten Entwicklungsstufe“, „Die PPWR macht Verpackungsdaten zur Pflichtaufgabe“.
 Übernimm kein Satzgerüst aus <referenz>: kein Titel beginnt mit denselben drei Wörtern wie sein Gegenstück dort („Drei strategische Hebel …“ ist das Gerüst des Referenzmemos, nicht deins).
-standfirst: ein bis zwei Sätze, warum diese Aufgabe JETZT anliegt. Ein Beleg aus dem Artikel als Timing, keine zweite These, keine Pressemitteilung.
+Für title gilt dieser Block, nicht die Titelzeile in <sprachregeln>: eine Frage oder ein Titel ohne Verb ist hier erlaubt.
 </titel>
 <anlass>
-Signal und Artikel sind Auslöser und Beleg, nicht die Geschichte. überschrift, anlass und person erklären, WARUM das Memo jetzt entsteht. Sie dürfen nicht die Cover-These sein.
+Signal und Artikel sind Auslöser und Beleg, nicht die Geschichte. überschrift und person erklären, WARUM das Memo jetzt entsteht. Die Meldung selbst ist nicht die Cover-These.
+Die offene Frage oder Hürde in anlass und roots_anschluss ist dagegen genau der Stoff für title und summary_0: aus „offen ist, wie …“ wird die Herausforderung, nicht die Meldung.
 title und standfirst nennen NICHT die Personalie, NICHT den Namen aus person, NICHT eine Ernennung, NICHT die Nachrichtenüberschrift, NICHT eine Paraphrase davon und NICHT den Namen der ROOTS-Leistung als Subjekt.
 Ein Führungswechsel, eine Kampagne, eine Transaktion oder eine Zahl ist nur dann Cover-Stoff, wenn du daraus die offene Aufgabe machst, nicht die Meldung.
 </anlass>
@@ -4130,7 +4213,7 @@ function normalizeBenchmarks(raw: unknown): MemoBenchmark[] {
       name: text(item.name, 80),
       title: text(item.title, 90),
       text: text(item.text, 420),
-      tag: text(item.tag, 80),
+      tag: text(item.tag, 200),
       image_hint: text(item.image_hint, 200),
     };
   }).filter((item) => item.name || item.text);
@@ -4352,9 +4435,13 @@ function normalizeMemo(
   // Feld vor dem Lauf gefuellt, das Modell musste es nicht noch einmal
   // schreiben. Sonst haette ein selbst geschriebenes Cover den Lauf abgebrochen.
   const eigen = answers.memo_fields;
-  const summary0 = eigen.summary_0 || text(raw.summary_0, 90);
-  const summary1 = eigen.summary_1 || text(raw.summary_1, 90);
-  const summary2 = eigen.summary_2 || text(raw.summary_2, 90);
+  // Nicht unter dem Vertrag kappen (105 Zeichen): ein bei 90 abgeschnittenes
+  // Feld stand als „… spielen bislang eine“ auf dem Cover, und die Pruefung sah
+  // nur 90 Zeichen. Zu lange Felder meldet memoVertragsFehler, der zweite
+  // Anlauf kuerzt sie.
+  const summary0 = eigen.summary_0 || text(raw.summary_0, 300);
+  const summary1 = eigen.summary_1 || text(raw.summary_1, 300);
+  const summary2 = eigen.summary_2 || text(raw.summary_2, 300);
   const insightTitle = eigen.insight_title || text(raw.insight_title, 200);
   const quoteText = eigen.quote_text || text(raw.quote_text, 320);
   const fehlt = [
