@@ -1164,7 +1164,13 @@ export type LinkedinPayload = {
  * eine Wortmarke nicht: „PUMA" quer ueber 72 mm wird von cover angeschnitten,
  * weil der Rahmen hoeher ist als das Logo breit erlaubt.
  */
-export type MemoImage = { src: string; pos: string; fit?: "cover" | "contain" };
+export type MemoImage = {
+  src: string;
+  pos: string;
+  fit?: "cover" | "contain";
+  /** Seite, von der ein recherchiertes Foto stammt. Nachweis, keine Anzeige. */
+  quelle?: string;
+};
 /** Kennzahl des Memos. Anders als die LinkedIn-Kennzahl traegt sie die
  *  sichtbare Quellenzeile unter dem Wert, so wie im Referenzmemo. */
 export type MemoStat = { value: string; label: string; source: string };
@@ -1993,7 +1999,7 @@ ${liste}
 </benchmarks>
 
 ok=true wenn alle drei denselben Mechanismus wie den Hebel schon gezogen haben und der Ausgang POSITIV war. Dieselbe Marken-, Sortiments- oder Wachstumsmechanik reicht - nicht dieselbe Pressemeldung, nicht dieselbe öffentliche Begründung.
-ok=false nur wenn ein Name unbelegt ist, die Adressatenfirma vorkommt, der Fall ein Flop / eine Rücknahme / ein Sales-Drop ist, oder der Mechanismus klar ein anderer ist (z.B. Logistik oder IT statt Marke).
+ok=false nur wenn ein Name unbelegt ist, die Adressatenfirma vorkommt, der Fall ein Flop / eine Rücknahme / ein Sales-Drop ist, der Mechanismus klar ein anderer ist (z.B. Logistik oder IT statt Marke), oder der Fall aus einem fernen Markt stammt, den eine Entscheiderin beim Adressaten nicht als Vergleich akzeptiert (für einen deutschen Händler zum Beispiel ein US-Supermarkt). Bei einer globalen Marke als Adressat sind globale Fälle derselben Branche in Ordnung.
 Nicht ablehnen, weil die öffentliche Story enger klingt (Preis, Sortiment, Vereinfachung), solange die Handlung denselben Hebel bedient.
 Antworte ausschliesslich mit JSON:
 {"ok":true} oder {"ok":false,"grund":"Ein Satz auf Deutsch, welche Marke nicht passt und warum."}`;
@@ -2041,6 +2047,12 @@ Nicht Apple/Nike/Amazon als Füllsel, wenn der Hebel ein Handels-, Marken- oder 
 Aktuell: bevorzugt die letzten fünf Jahre. Qualitative Handlung, Zahlen nur wenn die Suche sie belegt.
 tag ist die übertragbare Lehre in wenigen Worten, kein Slogan.
 
+Nähe, zwingend:
+Die Benchmarks stammen aus der Nähe von ${firma || "dem Adressaten"}: zuerst derselbe Markt und dasselbe Land, dann der DACH-Raum, zur Not Europa.
+Ist ${firma || "der Adressat"} eine globale Marke wie Coca-Cola, Puma oder Nike, dürfen es globale Marken aus derselben Branche sein.
+Kein Fall aus einem fernen Markt, den eine Entscheiderin hier nicht kennt: für einen deutschen Sporthändler keine US-Supermärkte wie Kroger oder Target.
+Gleicher Markttyp: Handel zu Handel, Hersteller zu Hersteller, Dienstleister zu Dienstleister.
+
 Ausgang, zwingend positiv:
 Ein Benchmark ist nur eine Marke, deren Handlung GEWIRKT hat — Wachstum, Share, Wahrnehmung, Tempo oder eine Umsetzung, die hält.
 Kein Benchmark: Flops, Rücknahmen, Sales-Drops, Skandale, nach kurzer Zeit zurückgezogene Designs oder Kampagnen.
@@ -2048,7 +2060,7 @@ Beispiel, das NICHT zählt: ein Redesign, das am Regal verloren hat und nach ein
 Wenn die Suche einen negativen Fall findet, verwirf ihn und nimm eine andere Marke.
 ${exclude.length ? `Nimm keine der Marken aus <ausgeschlossen>.\n` : ""}
 Antworte ausschliesslich mit JSON:
-{"benchmarks":[{"name":"Marke","text":"Was sie konkret getan hat und warum es gewirkt hat.","tag":"Lehre","source":"Titel · Medium · Jahr"}]}`;
+{"adressat":{"reichweite":"national|dach|europa|global","land":"DE","markttyp":"handel|hersteller|dienstleister"},"benchmarks":[{"name":"Marke","text":"Was sie konkret getan hat und warum es gewirkt hat.","tag":"Lehre","source":"Titel · Medium · Jahr","land":"DE","region":"dach|europa|nordamerika|asien|global","markttyp":"handel|hersteller|dienstleister"}]}`;
 }
 
 export function normalizeMemoBenchmarkResearch(raw: unknown, groundingTitles: string[] = []): MemoBenchmarkBrief[] {
@@ -2197,6 +2209,40 @@ export function formatMemoMarktLageBlock(lage: MemoMarktLage): string {
     zahlen ? `<marktzahlen>\n${zahlen}\n</marktzahlen>` : "",
     lage.befund || belege ? `<lage_heute>\n${lage.befund ? `befund: ${lage.befund}\n` : ""}${belege}\n</lage_heute>` : "",
   ].filter(Boolean).join("\n");
+}
+
+/**
+ * Welche recherchierten Benchmarks zu weit weg sind. Fuer einen deutschen
+ * Sporthaendler kamen am 29.9.2026 Target, Alma und Kroger: US-Haendler, die
+ * eine Entscheiderin hier nicht als Vergleich akzeptiert.
+ */
+export function memoBenchmarkFern(raw: unknown): string[] {
+  const root = record(raw);
+  const adressat = record(root.adressat);
+  const reichweite = String(adressat.reichweite || "").toLowerCase();
+  const markttyp = String(adressat.markttyp || "").toLowerCase();
+  const nah = (region: string) => {
+    if (reichweite === "global") return true;
+    if (reichweite === "europa") return region === "dach" || region === "europa";
+    return region === "dach" || region === "europa";
+  };
+  const fern: string[] = [];
+  let europa = 0;
+  for (const eintrag of Array.isArray(root.benchmarks) ? root.benchmarks : []) {
+    const item = record(eintrag);
+    const name = text(item.name, 80);
+    const region = String(item.region || "").toLowerCase();
+    const typ = String(item.markttyp || "").toLowerCase();
+    if (!name) continue;
+    if (region && !nah(region)) { fern.push(name); continue; }
+    if (markttyp && typ && typ !== markttyp) { fern.push(name); continue; }
+    // National oder DACH: hoechstens ein Fall aus dem uebrigen Europa.
+    if ((reichweite === "national" || reichweite === "dach") && region === "europa") {
+      europa += 1;
+      if (europa > 1) fern.push(name);
+    }
+  }
+  return fern;
 }
 
 export function parseLooseJsonObject(textValue: string): Record<string, unknown> {
@@ -5406,9 +5452,12 @@ export function attachMemoSlotImage(
   key: string,
   src: string,
   fit: "cover" | "contain" = "cover",
+  extra: { pos?: string; quelle?: string } = {},
 ): MemoPayload {
   if (!src) return payload;
-  const bild: MemoImage = fit === "contain" ? { src, pos: "50% 50%", fit } : { src, pos: "50% 50%" };
+  const pos = /^\d{1,3}% \d{1,3}%$/.test(String(extra.pos || "")) ? String(extra.pos) : "50% 50%";
+  const bild: MemoImage = fit === "contain" ? { src, pos, fit } : { src, pos };
+  if (extra.quelle) bild.quelle = String(extra.quelle).slice(0, 400);
   // Titelseite und Bildaussage haben je einen Platz, nicht drei.
   if (key === "cover" || key === "insight") {
     payload[key] = bild;
@@ -5473,6 +5522,247 @@ export function memoImageUploadsFromBody(body: unknown): Record<string, MemoImag
     out[key] = { src, pos };
   }
   return Object.keys(out).length ? out : null;
+}
+
+// ---------------------------------------------------------------------------
+// Bildwahl mit Sicht: Kandidaten aus der Perplexity-Bildsuche, Entscheidung
+// durch ein Modell, das die Bilder tatsaechlich ansieht. Getestet am
+// 29.9.2026: sonar liefert je Anfrage fuenf Bilder mit Titel, Groesse und
+// Herkunftsseite (0,5 Cent), GPT-5.4 beschreibt sie ueber input_image korrekt
+// und erkennt Logos (rund 0,5 Cent je Bild).
+// ---------------------------------------------------------------------------
+export const MEMO_BILD_SUCHMODELL = "sonar";
+export const MEMO_BILD_PRUEFMODELL = "openai/gpt-5.4";
+/** Erste Suche plus hoechstens zwei Optimierungsschleifen. */
+export const MEMO_BILD_RUNDEN = 3;
+export const MEMO_BILD_MIN_SCORE = 7;
+/** So viele Bilder sieht das Pruefmodell hoechstens in einem Aufruf. */
+export const MEMO_BILD_PRUEF_MAX = 14;
+/** Groessere Fotos blaehen die Nutzlast auf; das naechstbeste Bild gewinnt. */
+export const MEMO_BILD_BYTES_MAX = 3 * 1024 * 1024;
+
+export type MemoBildSlot = "cover" | "insight" | `potentials.${number}`;
+
+export type MemoBildBrief = {
+  key: MemoBildSlot;
+  /** Was das Bild zeigen muss, in einem Satz fuer das Pruefmodell. */
+  zweck: string;
+  query: string;
+  /** Breite durch Hoehe des Rahmens. */
+  aspect: number;
+  minBreite: number;
+};
+
+export type MemoBildKandidat = {
+  nr: number;
+  slot: MemoBildSlot;
+  url: string;
+  quelle: string;
+  titel: string;
+  breite: number;
+  hoehe: number;
+};
+
+export type MemoBildEntscheidung = {
+  slot: MemoBildSlot;
+  kandidat: MemoBildKandidat;
+  ersatz: MemoBildKandidat[];
+  score: number;
+  grund: string;
+  fokus: string;
+};
+
+const MEMO_BILD_ASPEKT = { cover: 210 / 178, insight: 0.64, potential: 57 / 46 } as const;
+
+/** Bildagenturen mit Wasserzeichen, soziale Netzwerke und Suchmaschinen-Caches. */
+const MEMO_BILD_GESPERRT = /(^|\.)(shutterstock|istockphoto|gettyimages|alamy|dreamstime|123rf|depositphotos|stock\.adobe|bigstockphoto|pond5|vecteezy|freepik|pinterest|pinimg|instagram|fbcdn|facebook|tiktok|twimg|x\.com|twitter|gstatic|googleusercontent|bing)\./i;
+
+function kurz(wert: unknown, max: number): string {
+  return String(wert ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/**
+ * Welche Rahmen die Bildwahl fuellen soll und was jeder zeigen muss. Titelbild
+ * und Bild zum Befund zeigen den Adressaten selbst, wie Fassade und Laden im
+ * Deichmann-Memo. Die Potenziale zeigen, wie es aussaehe, wenn der Hebel
+ * gezogen ist. Rahmen mit Bild bleiben aussen vor.
+ */
+export function memoBildBriefs(
+  payload: MemoPayload,
+  opts: { firma?: string; headline?: string; thema?: string } = {},
+): MemoBildBrief[] {
+  const firma = kurz(opts.firma, 80);
+  const headline = kurz(opts.headline, 140);
+  const thema = kurz(opts.thema, 160);
+  const briefs: MemoBildBrief[] = [];
+  const traeger = firma || "die Branche";
+  if (!String(payload.cover?.src || "").startsWith("data:image/")) {
+    briefs.push({
+      key: "cover",
+      zweck: `Titelbild im Querformat: ein Foto von ${traeger} selbst, Filiale, Fassade, Laden innen, Produkt oder Arbeitsumfeld, passend zum Thema „${thema || headline}“. Kein Logo, keine Grafik, kein Porträt, kein eingebrannter Text.`,
+      query: [firma, headline].filter(Boolean).join(" ") || thema,
+      aspect: MEMO_BILD_ASPEKT.cover,
+      minBreite: 1000,
+    });
+  }
+  if (!String(payload.insight?.src || "").startsWith("data:image/")) {
+    briefs.push({
+      key: "insight",
+      zweck: `Bild im Hochformat zur Aussage „${kurz(payload.insight_title, 160)}“: zeigt die heutige Lage bei ${traeger} konkret, zum Beispiel Regal, Produkt, Auftritt, Kanal oder Prozess. Kein Logo, kein Porträt.`,
+      query: [firma, kurz(payload.insight_title, 120)].filter(Boolean).join(" "),
+      aspect: MEMO_BILD_ASPEKT.insight,
+      minBreite: 600,
+    });
+  }
+  (payload.potentials || []).slice(0, 3).forEach((eintrag, i) => {
+    if (String(eintrag?.image?.src || "").startsWith("data:image/")) return;
+    const titel = kurz(eintrag?.title, 90);
+    const hinweis = kurz(eintrag?.image_hint || eintrag?.title, 160);
+    briefs.push({
+      key: `potentials.${i}`,
+      zweck: `Bild zum Hebel „${titel}“: zeigt, wie es aussähe, wenn der Hebel gezogen ist (${kurz(eintrag?.potential, 180)}). Szene aus Laden, Kampagne, Produkt, Kanal oder Arbeitsumfeld, kein Logo, kein Porträt.`,
+      query: [hinweis, firma && !hinweis.includes(firma) ? firma : ""].filter(Boolean).join(" "),
+      aspect: MEMO_BILD_ASPEKT.potential,
+      minBreite: 600,
+    });
+  });
+  return briefs.filter((brief) => brief.query);
+}
+
+/** Liest die Bilder einer Sonar-Antwort und verwirft, was fuer einen Rahmen nicht taugt. */
+export function memoBildKandidatenAus(
+  raw: unknown,
+  brief: MemoBildBrief,
+  schonGesehen: Set<string> = new Set(),
+): Omit<MemoBildKandidat, "nr">[] {
+  const bilder = Array.isArray(record(raw).images) ? record(raw).images as unknown[] : [];
+  const out: Omit<MemoBildKandidat, "nr">[] = [];
+  for (const eintrag of bilder) {
+    const bild = record(eintrag);
+    const url = String(bild.image_url || bild.url || "").trim();
+    const quelle = String(bild.origin_url || "").trim();
+    const breite = Number(bild.width || 0);
+    const hoehe = Number(bild.height || 0);
+    const titel = kurz(bild.title, 160);
+    if (!/^https:\/\//.test(url) || schonGesehen.has(url)) continue;
+    let host = "";
+    try { host = new URL(url).hostname; } catch { continue; }
+    let quellHost = "";
+    try { quellHost = quelle ? new URL(quelle).hostname : ""; } catch { quellHost = ""; }
+    if (MEMO_BILD_GESPERRT.test(host) || MEMO_BILD_GESPERRT.test(quellHost)) continue;
+    if (/\.svg(\?|$)/i.test(url) || /(^|[^a-z])(logo|icon|favicon|sprite)([^a-z]|$)/i.test(`${url} ${titel}`)) continue;
+    if (breite && breite < brief.minBreite) continue;
+    if (breite && hoehe) {
+      const verhaeltnis = breite / hoehe;
+      if (verhaeltnis < 0.4 || verhaeltnis > 3) continue;
+    }
+    schonGesehen.add(url);
+    out.push({ slot: brief.key, url, quelle, titel, breite, hoehe });
+  }
+  return out;
+}
+
+/**
+ * Der Auftrag an das Pruefmodell. Es sieht alle Kandidaten und entscheidet,
+ * welches Bild in welchen Rahmen gehoert, auch ueber die Suche hinweg, fuer
+ * die es gefunden wurde.
+ */
+export function buildMemoBildPruefPrompt(briefs: MemoBildBrief[], kandidaten: MemoBildKandidat[], firma = ""): string {
+  const rahmen = briefs.map((brief) =>
+    `- ${brief.key} (${brief.aspect >= 1 ? "Querformat" : "Hochformat"}, Seitenverhältnis ${brief.aspect.toFixed(2)}): ${brief.zweck}`).join("\n");
+  const liste = kandidaten.map((k) => {
+    let domain = "";
+    try { domain = new URL(k.quelle || k.url).hostname.replace(/^www\./, ""); } catch { domain = ""; }
+    return `Bild ${k.nr}: gesucht für ${k.slot}; Titel „${k.titel}“; Quelle ${domain || "unbekannt"}; ${k.breite || "?"} × ${k.hoehe || "?"} px`;
+  }).join("\n");
+  return `Du wählst die Bilder für ein ROOTS Executive Memo${firma ? ` an ${firma}` : ""}. Die Bilder hängen in der Reihenfolge der Liste an dieser Nachricht.
+
+<rahmen>
+${rahmen}
+</rahmen>
+<bilder>
+${liste}
+</bilder>
+
+Sieh dir jedes Bild an und entscheide, ob und wohin es gehört. Ein Bild darf in einen anderen Rahmen als den, für den es gesucht wurde. Jedes Bild höchstens einmal.
+Bewerte 0 bis 10. Unter ${MEMO_BILD_MIN_SCORE} bleibt der Rahmen leer.
+Hoch bewerten: zeigt genau, was der Rahmen verlangt, ${firma ? `bei ${firma} selbst oder in seinem Umfeld` : "im Thema"}, scharf, gut beleuchtet, lässt sich auf das Seitenverhältnis zuschneiden, ohne das Wichtige zu verlieren.
+Null Punkte: Logo, Grafik, Diagramm, Screenshot, Collage, Wasserzeichen, eingebrannter Text oder Preisschild im Mittelpunkt, eine erkennbare Einzelperson im Fokus, ein Wettbewerber als Hauptmotiv, ein anderes Land oder eine andere Branche als der Fall, Symbolfoto ohne Bezug.
+fokus ist die Stelle des Wichtigsten im Bild als object-position, zum Beispiel „50% 40%“.
+Für jeden Rahmen ohne Bild ab ${MEMO_BILD_MIN_SCORE}: schlage eine bessere Suchanfrage vor, konkret und auf Deutsch oder Englisch, mit Unternehmen und Motiv.
+Antworte ausschliesslich mit JSON:
+{"zuordnung":[{"slot":"cover","bild":2,"score":8,"ersatz":[5],"grund":"Ein Satz.","fokus":"50% 40%"}],"neue_suche":[{"slot":"insight","query":"…"}]}`;
+}
+
+/** Prueft die Antwort des Pruefmodells gegen Rahmen und Kandidaten. */
+export function parseMemoBildPruefung(
+  raw: unknown,
+  briefs: MemoBildBrief[],
+  kandidaten: MemoBildKandidat[],
+): { entscheidungen: MemoBildEntscheidung[]; neueSuche: Map<MemoBildSlot, string> } {
+  const root = record(raw);
+  const slots = new Set(briefs.map((brief) => brief.key));
+  const nachNr = new Map(kandidaten.map((k) => [k.nr, k]));
+  const vergeben = new Set<number>();
+  const entscheidungen: MemoBildEntscheidung[] = [];
+  const zuordnung = (Array.isArray(root.zuordnung) ? root.zuordnung : [])
+    .map((eintrag) => record(eintrag))
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+  for (const eintrag of zuordnung) {
+    const slot = String(eintrag.slot || "") as MemoBildSlot;
+    const nr = Number(eintrag.bild);
+    const score = Number(eintrag.score || 0);
+    const kandidat = nachNr.get(nr);
+    if (!slots.has(slot) || !kandidat || vergeben.has(nr) || score < MEMO_BILD_MIN_SCORE) continue;
+    if (entscheidungen.some((e) => e.slot === slot)) continue;
+    vergeben.add(nr);
+    const ersatz = (Array.isArray(eintrag.ersatz) ? eintrag.ersatz : [])
+      .map((wert) => nachNr.get(Number(wert)))
+      .filter((k): k is MemoBildKandidat => Boolean(k) && !vergeben.has((k as MemoBildKandidat).nr))
+      .slice(0, 2);
+    const fokus = /^\d{1,3}% \d{1,3}%$/.test(String(eintrag.fokus || "")) ? String(eintrag.fokus) : "50% 50%";
+    entscheidungen.push({ slot, kandidat, ersatz, score, grund: kurz(eintrag.grund, 240), fokus });
+  }
+  const neueSuche = new Map<MemoBildSlot, string>();
+  for (const eintrag of Array.isArray(root.neue_suche) ? root.neue_suche : []) {
+    const item = record(eintrag);
+    const slot = String(item.slot || "") as MemoBildSlot;
+    const query = kurz(item.query, 160);
+    if (slots.has(slot) && query && !entscheidungen.some((e) => e.slot === slot)) neueSuche.set(slot, query);
+  }
+  return { entscheidungen, neueSuche };
+}
+
+/** Neue Suchanfrage, wenn das Pruefmodell keine vorschlaegt: erst praeziser, dann breiter. */
+export function memoBildNachbesserung(brief: MemoBildBrief, runde: number, firma = ""): string {
+  const woerter = brief.query.split(/\s+/).filter(Boolean);
+  if (runde <= 1) return `${woerter.slice(0, 8).join(" ")} Foto`.trim();
+  return [firma, ...woerter.filter((w) => w !== firma).slice(0, 3), "Fotografie"].filter(Boolean).join(" ");
+}
+
+/** Hoechstens so viele Bilder je Rahmen, damit jeder Rahmen im Pruefaufruf vorkommt. */
+export function memoBildVerteilen(kandidaten: Omit<MemoBildKandidat, "nr">[], briefs: MemoBildBrief[], max = MEMO_BILD_PRUEF_MAX): MemoBildKandidat[] {
+  const jeSlot = Math.max(2, Math.floor(max / Math.max(1, briefs.length)));
+  const zaehler = new Map<string, number>();
+  const out: MemoBildKandidat[] = [];
+  for (const kandidat of kandidaten) {
+    const n = zaehler.get(kandidat.slot) || 0;
+    if (n >= jeSlot || out.length >= max) continue;
+    zaehler.set(kandidat.slot, n + 1);
+    out.push({ ...kandidat, nr: out.length + 1 });
+  }
+  return out;
+}
+
+export function memoSlotImage(payload: unknown, key: string): MemoImage | null {
+  const p = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as MemoPayload : null;
+  if (!p) return null;
+  if (key === "cover" || key === "insight") return p[key] || null;
+  const treffer = /^(benchmarks|potentials)\.(\d+)$/.exec(key);
+  if (!treffer) return null;
+  const liste = treffer[1] === "benchmarks" ? p.benchmarks : p.potentials;
+  const eintrag = liste?.[Number(treffer[2])] as (MemoBenchmark | MemoPotential | undefined);
+  return eintrag?.image || null;
 }
 
 export function memoSlotImageSrc(payload: unknown, key: string): string {

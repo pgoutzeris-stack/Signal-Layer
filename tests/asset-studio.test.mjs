@@ -2362,7 +2362,8 @@ test("eine Wortmarke wird eingepasst, nicht angeschnitten", () => {
   assert.match(backendSource, /slot\.kind === "benchmark" \? "contain" : "cover"/);
   // Und die Vorlage setzt beides um, samt Flaeche unter der Marke.
   assert.match(studio, /const fit = img\.fit === "contain" \? "contain" : "cover";/);
-  assert.match(studio, /background:var\(--tint,#f7f9fc\);padding:6mm/);
+  assert.match(studio, /: "var\(--tint,#f7f9fc\)"/);
+  assert.match(studio, /background:\$\{grund\};padding:6mm/);
   // Eingepasst allein genuegt nicht: eine Wortmarke fuellte 72 Prozent der
   // Kachelbreite, ein quadratisches Logo 28. Die Flaeche ist das Mass.
   assert.match(studio, /function passeMemoLogosAn/);
@@ -3203,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-5");
-  assert.match(indexHtml, /app\.js\?v=20260929-5/);
+  assert.equal(studioVersion, "20260929-6");
+  assert.match(indexHtml, /app\.js\?v=20260929-6/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3343,7 +3344,7 @@ test("Benchmarks: Websuche recherchiert, eigene Angaben haben Form und Prüfung"
   assert.match(research, /Markenstrategie/);
   assert.match(research, /nicht die Nachrichtenmeldung/);
   assert.match(research, /Ausgang, zwingend positiv/);
-  assert.match(research, /{"benchmarks"/);
+  assert.match(research, /"benchmarks":\[\{"name"/);
   const researchExclude = backend.buildMemoBenchmarkResearchPrompt(
     { company: "Hugo Boss" },
     { title: "Handelsstudie" },
@@ -4416,4 +4417,90 @@ test("Kein Cover-Schluessel wird mitten im Satz abgeschnitten", () => {
   assert.deepEqual(felder, ["summary_0"]);
   assert.ok(zuLang.summary_0.length <= 105);
   assert.match(edge, /memoRestKuerzen\(payload as MemoPayload, eigeneMemoFelder\)/);
+});
+
+
+test("Bildwahl mit Sicht: Rahmen, Kandidatenfilter und Entscheidung", () => {
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), backend.normalizeAssetAnswers("memo", {}));
+  const briefs = backend.memoBildBriefs(memo, { firma: "Intersport", headline: "Intersport will Eigenmarken stärken", thema: "Handelsmarkenstrategie" });
+  assert.deepEqual(briefs.map((b) => b.key), ["cover", "insight", "potentials.0", "potentials.1", "potentials.2"]);
+  assert.ok(briefs[0].aspect > 1 && briefs[1].aspect < 1);
+  assert.match(briefs[0].query, /Intersport/);
+  const roh = { images: [
+    { image_url: "https://www.stores-shops.de/a.jpg", origin_url: "https://www.stores-shops.de/x", width: 1200, height: 530, title: "Intersport eröffnet" },
+    { image_url: "https://www.shutterstock.com/b.jpg", origin_url: "https://www.shutterstock.com/x", width: 2000, height: 1300, title: "Laden" },
+    { image_url: "https://www.intersport.es/McKinley_Logo.png", origin_url: "https://www.intersport.es/", width: 1606, height: 1535, title: "McKinley Logo" },
+    { image_url: "https://example.de/klein.jpg", origin_url: "https://example.de/", width: 300, height: 200, title: "klein" },
+    { image_url: "http://example.de/unsicher.jpg", origin_url: "", width: 1600, height: 1000, title: "http" },
+  ] };
+  const gesehen = new Set();
+  const kandidaten = backend.memoBildKandidatenAus(roh, briefs[0], gesehen);
+  assert.deepEqual(kandidaten.map((k) => k.url), ["https://www.stores-shops.de/a.jpg"]);
+  assert.equal(backend.memoBildKandidatenAus(roh, briefs[0], gesehen).length, 0, "ein Bild nur einmal");
+  const verteilt = backend.memoBildVerteilen([...kandidaten, { ...kandidaten[0], url: "https://x.de/2.jpg", slot: "insight" }], briefs);
+  assert.deepEqual(verteilt.map((k) => k.nr), [1, 2]);
+  const prompt = backend.buildMemoBildPruefPrompt(briefs, verteilt, "Intersport");
+  assert.match(prompt, /Ein Bild darf in einen anderen Rahmen/);
+  assert.match(prompt, /Null Punkte: Logo/);
+  assert.match(prompt, /neue_suche/);
+  const urteil = backend.parseMemoBildPruefung({
+    zuordnung: [
+      { slot: "insight", bild: 1, score: 8, grund: "Regal", fokus: "40% 30%" },
+      { slot: "cover", bild: 1, score: 9, grund: "Fassade", fokus: "50% 40%", ersatz: [2] },
+      { slot: "potentials.0", bild: 2, score: 5, grund: "unscharf" },
+      { slot: "erfunden", bild: 2, score: 10 },
+    ],
+    neue_suche: [{ slot: "potentials.0", query: "Intersport Eigenmarke Regal Superstore" }, { slot: "cover", query: "egal" }],
+  }, briefs, verteilt);
+  assert.deepEqual(urteil.entscheidungen.map((e) => [e.slot, e.kandidat.nr, e.fokus]), [["cover", 1, "50% 40%"]]);
+  assert.equal(urteil.neueSuche.get("potentials.0"), "Intersport Eigenmarke Regal Superstore");
+  assert.equal(urteil.neueSuche.has("cover"), false);
+  assert.match(backend.memoBildNachbesserung(briefs[2], 2, "Intersport"), /^Intersport .*Fotografie$/);
+  assert.match(edge, /async function waehleMemoBilderMitSicht/);
+  assert.match(edge, /MEMO_BILD_RUNDEN/);
+  assert.match(edge, /type: "input_image", image_url: kandidat\.url/);
+  assert.match(edge, /"memo_image_check", MEMO_BILD_PRUEFMODELL/);
+  assert.match(edge, /attachGeneratedAssetImage\(admin, assetId, key, src, "50% 50%", fit\)/);
+  const sql = readFileSync(new URL("../supabase/migrations/20260929190000_memo_bildwahl.sql", import.meta.url), "utf8");
+  assert.match(sql, /p_fit text default null/);
+  assert.match(sql, /if p_key in \('cover', 'insight'\)/);
+  assert.match(sql, /'memo_image_check'/);
+});
+
+test("Benchmarks kommen aus der Naehe des Adressaten", () => {
+  const fern = backend.memoBenchmarkFern({
+    adressat: { reichweite: "national", land: "DE", markttyp: "handel" },
+    benchmarks: [
+      { name: "Decathlon", region: "europa", markttyp: "handel" },
+      { name: "Kroger", region: "nordamerika", markttyp: "handel" },
+      { name: "dm", region: "dach", markttyp: "handel" },
+      { name: "Marks & Spencer", region: "europa", markttyp: "handel" },
+      { name: "Nike", region: "global", markttyp: "hersteller" },
+    ],
+  });
+  assert.deepEqual(fern, ["Kroger", "Marks & Spencer", "Nike"]);
+  const global = backend.memoBenchmarkFern({
+    adressat: { reichweite: "global", markttyp: "hersteller" },
+    benchmarks: [{ name: "Nike", region: "global", markttyp: "hersteller" }, { name: "Adidas", region: "europa", markttyp: "hersteller" }],
+  });
+  assert.deepEqual(global, []);
+  const answers = backend.normalizeAssetAnswers("memo", { company_text: "Intersport" });
+  const prompt = backend.buildMemoBenchmarkResearchPrompt({ company: "Intersport" }, { title: "x" }, answers);
+  assert.match(prompt, /Nähe, zwingend/);
+  assert.match(prompt, /keine US-Supermärkte wie Kroger oder Target/);
+  assert.match(prompt, /"region":"dach\|europa\|nordamerika\|asien\|global"/);
+  const review = backend.buildMemoBenchmarkReviewPrompt({ company: "Intersport" }, { title: "x" }, { ...answers, benchmarks: [] });
+  assert.match(review, /fernen Markt/);
+  assert.match(edge, /loggen\("benchmarks_fern"/);
+  assert.match(edge, /for \(let attempt = 1; attempt <= 3; attempt \+= 1\)/);
+});
+
+test("Logos werden eingepasst, beschnitten und auf die passende Flaeche gesetzt", () => {
+  assert.match(studio, /function benchmarkFit\(image\)/);
+  assert.match(studio, /svg\\\+xml\|png\|webp/);
+  assert.match(studio, /async function optimiereLogo\(src\)/);
+  assert.match(studio, /"#00163E"/);
+  assert.match(studio, /kind === "benchmark" && eintrag\.image\.fit === "contain"/);
+  const sql = readFileSync(new URL("../supabase/migrations/20260929190000_memo_bildwahl.sql", import.meta.url), "utf8");
+  assert.match(sql, /jsonb_set\(b, '\{image,fit\}', '"contain"'::jsonb\)/);
 });

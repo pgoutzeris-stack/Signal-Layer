@@ -18,6 +18,17 @@ const MODELL_NAMEN = {
   "gemini-2.5-flash": "Gemini 2.5 Flash",
   "gemini-2.5-flash-lite": "Gemini 2.5 Flash-Lite",
 };
+/**
+ * Eine Benchmark-Kachel traegt meist eine Wortmarke. Fehlte die Einpassung in
+ * der gespeicherten Nutzlast, wurde das Logo wie ein Foto randlos gefuellt und
+ * an den Seiten abgeschnitten. SVG, PNG und WebP gelten deshalb als Logo.
+ */
+function benchmarkFit(image) {
+  if (image?.fit === "contain") return "contain";
+  if (image?.fit === "cover") return "cover";
+  return /^data:image\/(svg\+xml|png|webp)/i.test(String(image?.src || "")) ? "contain" : "cover";
+}
+
 function modellName(id) {
   const wert = String(id || "").trim();
   if (!wert) return "";
@@ -1709,12 +1720,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-5";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-6";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-5";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-6";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-5";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-6";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2290,7 +2301,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ["recherchieren", "fa-magnifying-glass", "Benchmarks und Marktzahlen werden recherchiert"],
     ["modell", "fa-brain", isMemo ? "Das Modell entwickelt die Ansprache" : "Das Modell schreibt Titel und Kernaussage"],
     ["pruefen", "fa-list-check", isMemo ? "Entwurf wird gegen das Referenzmemo geprüft" : "Belege und Längen werden geprüft"],
-    ["bilder", "fa-image", "Logos und Motive werden gesucht"],
+    ["bilder", "fa-image", "Bilder werden gesucht und geprüft"],
     ["fuellen", "fa-wand-magic-sparkles", "Die Vorlage wird gefüllt"],
   ];
 
@@ -2310,6 +2321,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (key === "recherchieren") {
       const modell = laufModell("research_start");
       return modell && modell !== laufModell() ? `${modell} recherchiert Benchmarks und Marktzahlen` : standard;
+    }
+    if (key === "bilder") {
+      const modell = laufModell("bilder_pruefung") || laufModell("bilder_suche");
+      return modell ? `${modell} sucht und prüft die Bilder` : standard;
     }
     if (key === "modell") {
       const modell = laufModell();
@@ -2418,6 +2433,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "benchmarks_user") return "Eigene Benchmarks übernommen";
     if (event === "markt_ok") return `${Number(entry.kpis || 0)} Marktzahlen aus ${Array.isArray(entry.herausgeber) ? entry.herausgeber.length : 0} Quellen${tok}`;
     if (event === "markt_skip") return "Marktzahlen nur aus dem Artikel";
+    if (event === "benchmarks_fern") return `Zu weit weg vom Markt, neu gesucht: ${(Array.isArray(entry.names) ? entry.names : []).join(", ")}`;
+    if (event === "bilder_suche") return `Bildsuche für ${Array.isArray(entry.slots) ? entry.slots.length : 0} Rahmen, Runde ${Number(entry.runde || 1)}`;
+    if (event === "bilder_pruefung") {
+      return Number(entry.kandidaten || 0)
+        ? `${model || "Das Modell"} prüft ${Number(entry.kandidaten)} Bilder, ${Number(entry.angenommen || 0)} passen${tok}`
+        : `Runde ${Number(entry.runde || 1)}: keine brauchbaren Bilder gefunden`;
+    }
+    if (event === "bild_gewaehlt") return `Bild für ${bildRahmen(entry.key)} gewählt · ${Number(entry.score || 0)}/10${entry.quelle ? ` · ${entry.quelle}` : ""}`;
+    if (event === "bilder_zeit") return "Bildsuche beendet, die Zeit reicht für keine weitere Runde";
+    if (event === "bilder_sicht_fertig") return `${Number(entry.gewaehlt || 0)} Bilder geprüft und gesetzt`;
     if (event === "image_start") return "Logo wird gesucht";
     if (event === "images_done") return "Logos gefunden";
     if (event === "done") return "Entwurf steht";
@@ -2460,6 +2485,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (laufend && !LAUF_ENDE.has(String(laufend.row?.event || ""))) laufend.live = true;
     }
     return visible;
+  }
+
+  function bildRahmen(key) {
+    const wert = String(key || "");
+    if (wert === "cover") return "das Titelbild";
+    if (wert === "insight") return "den Befund";
+    const treffer = /^(potentials|benchmarks)\.(\d+)$/.exec(wert);
+    if (treffer) return `${treffer[1] === "potentials" ? "Hebel" : "Benchmark"} ${Number(treffer[2]) + 1}`;
+    return wert;
   }
 
   const LADEPUNKTE = `<span class="as-dots" aria-hidden="true"><i></i><i></i><i></i></span>`;
@@ -4123,7 +4157,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         image: {
           src: String(item?.image?.src || ""),
           pos: String(item?.image?.pos || "50% 50%"),
-          fit: item?.image?.fit === "contain" ? "contain" : "cover",
+          fit: benchmarkFit(item?.image),
+          bg: String(item?.image?.bg || ""),
+          quelle: String(item?.image?.quelle || ""),
           zoom: Number(item?.image?.zoom) || 1,
           opacity: Number(item?.image?.opacity) || 1,
           overlay: Number(item?.image?.overlay ?? 1),
@@ -4402,7 +4438,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const fit = img.fit === "contain" ? "contain" : "cover";
       // Eingepasst braucht die Marke eine Flaeche unter sich, sonst schwebt
       // sie auf der Karte. box-sizing steht in der Vorlage auf border-box.
-      const flaeche = fit === "contain" ? ";background:var(--tint,#f7f9fc);padding:6mm" : "";
+      const grund = /^(#[0-9a-f]{3,8}|rgb\([\d\s,]+\))$/i.test(String(img.bg || "")) ? img.bg : "var(--tint,#f7f9fc)";
+      const flaeche = fit === "contain" ? `;background:${grund};padding:6mm` : "";
       return tag.replace(/ style="[^"]*"/, "").replace(/>$/, ` style="object-position:${attr(img.pos || "50% 50%")};object-fit:${fit}${flaeche};transform:scale(${zoom});opacity:${opacity}">`);
     });
     html = wrapImageSlots(html, memo, editable);
@@ -5558,6 +5595,69 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
   }
 
+  /**
+   * Schneidet leere Raender aus einem Logo und merkt sich, ob es hell ist.
+   * Viele Logos kommen mit breitem Weissraum oder transparentem Rand und
+   * wirken dann winzig; eine weisse Wortmarke verschwand auf der hellen
+   * Kachel. Das Ergebnis ist ein PNG in voller Aufloesung, ohne Rand.
+   */
+  async function optimiereLogo(src) {
+    try {
+      const img = await loadHtmlImage(src);
+      const nw = img.naturalWidth || img.width;
+      const nh = img.naturalHeight || img.height;
+      if (!nw || !nh) return { src, bg: "" };
+      const skala = Math.min(4, 1200 / Math.max(nw, nh));
+      const w = Math.max(1, Math.round(nw * skala));
+      const h = Math.max(1, Math.round(nh * skala));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return { src, bg: "" };
+      ctx.drawImage(img, 0, 0, w, h);
+      const daten = ctx.getImageData(0, 0, w, h).data;
+      const px = (x, y) => { const i = (y * w + x) * 4; return [daten[i], daten[i + 1], daten[i + 2], daten[i + 3]]; };
+      const ecken = [px(0, 0), px(w - 1, 0), px(0, h - 1), px(w - 1, h - 1)];
+      const transparent = ecken.every((e) => e[3] < 16);
+      const grund = transparent ? null : ecken.reduce((s, e) => [s[0] + e[0] / 4, s[1] + e[1] / 4, s[2] + e[2] / 4], [0, 0, 0]);
+      let links = w; let rechts = -1; let oben = h; let unten = -1;
+      let hell = 0; let inhalt = 0;
+      for (let y = 0; y < h; y += 1) {
+        for (let x = 0; x < w; x += 1) {
+          const [r, g, b, a] = px(x, y);
+          if (a < 16) continue;
+          if (grund && Math.abs(r - grund[0]) + Math.abs(g - grund[1]) + Math.abs(b - grund[2]) < 36) continue;
+          inhalt += 1;
+          if ((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.82) hell += 1;
+          if (x < links) links = x;
+          if (x > rechts) rechts = x;
+          if (y < oben) oben = y;
+          if (y > unten) unten = y;
+        }
+      }
+      if (rechts < links || unten < oben || inhalt < 20) return { src, bg: "" };
+      const rand = Math.round(Math.max(rechts - links, unten - oben) * 0.04);
+      const x0 = Math.max(0, links - rand);
+      const y0 = Math.max(0, oben - rand);
+      const cw = Math.min(w, rechts + rand + 1) - x0;
+      const ch = Math.min(h, unten + rand + 1) - y0;
+      const aus = document.createElement("canvas");
+      aus.width = cw;
+      aus.height = ch;
+      aus.getContext("2d").drawImage(canvas, x0, y0, cw, ch, 0, 0, cw, ch);
+      // Eine helle Marke auf durchsichtigem Grund braucht eine dunkle Kachel;
+      // ein Logo mit eigener Flaeche bekommt deren Farbe, damit kein Kasten
+      // im Kasten entsteht.
+      const bg = transparent
+        ? (hell / inhalt > 0.6 ? "#00163E" : "")
+        : `rgb(${Math.round(grund[0])}, ${Math.round(grund[1])}, ${Math.round(grund[2])})`;
+      return { src: aus.toDataURL("image/png"), bg };
+    } catch (_) {
+      return { src, bg: "" };
+    }
+  }
+
   async function compactAdoptedImages() {
     if (isMemo && state.memo) {
       // Ein Logo darf nicht angeschnitten werden, also contain auf Weiss. Ein
@@ -5567,10 +5667,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         const spec = MEMO_SHOT_PIXELS[kind];
         const opts = kind === "benchmark" ? { fit: "contain" } : {};
         for (const eintrag of liste) {
-          if (eintrag?.image?.src) {
-            eintrag.image.src = await fitSlotImage(eintrag.image.src, spec, opts);
+          if (!eintrag?.image?.src) continue;
+          if (kind === "benchmark" && eintrag.image.fit === "contain") {
+            // Logo: Rand weg, Flaechenfarbe merken, nicht auf ein Raster pressen.
+            const logo = await optimiereLogo(eintrag.image.src);
+            eintrag.image.src = logo.src;
+            if (logo.bg) eintrag.image.bg = logo.bg;
             eintrag.image.pos = "50% 50%";
+            eintrag.image.zoom = 1;
+            continue;
           }
+          eintrag.image.src = await fitSlotImage(eintrag.image.src, spec, opts);
+          eintrag.image.pos = "50% 50%";
         }
       }
       return;

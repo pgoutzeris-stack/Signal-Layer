@@ -120,6 +120,25 @@ import {
   normalizeMemoMarktLage,
   memoQualitaetsBefunde,
   memoRestKuerzen,
+  memoBenchmarkFern,
+  attachMemoSlotImage,
+  mapLimit,
+  memoSlotHasImage,
+  memoBildBriefs,
+  memoBildKandidatenAus,
+  memoBildNachbesserung,
+  memoBildVerteilen,
+  buildMemoBildPruefPrompt,
+  parseMemoBildPruefung,
+  memoSlotImage,
+  MEMO_BILD_SUCHMODELL,
+  MEMO_BILD_PRUEFMODELL,
+  MEMO_BILD_RUNDEN,
+  MEMO_BILD_PRUEF_MAX,
+  MEMO_BILD_BYTES_MAX,
+  type MemoBildBrief,
+  type MemoBildKandidat,
+  type MemoBildEntscheidung,
   buildMemoKritikPrompt,
   MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS,
   MEMO_BENCHMARK_RESEARCH_ATTEMPTS,
@@ -4007,6 +4026,8 @@ async function attachGeneratedAssetImage(
   key: string,
   src: string,
   pos = "50% 50%",
+  fit?: "cover" | "contain",
+  quelle?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!src.startsWith("data:image/")) return { ok: false, error: "invalid src" };
   const { error } = await admin.schema("signal_layer").rpc("attach_asset_image", {
@@ -4014,6 +4035,8 @@ async function attachGeneratedAssetImage(
     p_key: key,
     p_src: src,
     p_pos: pos,
+    p_fit: fit || null,
+    p_quelle: quelle || null,
   });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
@@ -4348,6 +4371,171 @@ async function findMemoSlotScene(
   return null;
 }
 
+const warte = (ms: number) => new Promise((fertig) => setTimeout(fertig, ms));
+
+/** Eine Bildsuche ueber Perplexity sonar, gebucht mit dem gemeldeten Preis. */
+async function sucheMemoBilder(query: string): Promise<unknown> {
+  const apiKey = await getPerplexityKey().catch(() => "");
+  if (!apiKey || !query) return null;
+  for (let versuch = 1; versuch <= 2; versuch += 1) {
+    try {
+      const response = await fetchMitLimit("https://api.perplexity.ai/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: MEMO_BILD_SUCHMODELL,
+          return_images: true,
+          max_tokens: 200,
+          messages: [{ role: "user", content: query }],
+        }),
+      }, 45_000);
+      const roh = await response.text().catch(() => "");
+      if ((response.status === 429 || response.status >= 500) && versuch < 2) { await warte(3_000); continue; }
+      if (!response.ok) {
+        await recordStandaloneAiUsage("memo_photo_research", MEMO_BILD_SUCHMODELL, "error", undefined, 0, `http_${response.status}`, undefined, "bildsuche");
+        return null;
+      }
+      const json = JSON.parse(roh);
+      const u = json?.usage || {};
+      await recordStandaloneAiUsage("memo_photo_research", MEMO_BILD_SUCHMODELL, "success", {
+        input: Number(u.prompt_tokens || 0), cachedInput: 0, output: Number(u.completion_tokens || 0),
+        thinking: 0, total: Number(u.total_tokens || 0),
+      }, 1, undefined, { usd: Number(u.cost?.total_cost || 0), toolUsd: Number(u.cost?.request_cost || 0) }, "bildsuche");
+      return json;
+    } catch {
+      if (versuch === 2) return null;
+    }
+  }
+  return null;
+}
+
+/** Wirft Kandidaten raus, die der Server nicht als Bild ausliefert. Sonst scheitert der ganze Pruefaufruf. */
+async function erreichbareMemoBilder(kandidaten: Omit<MemoBildKandidat, "nr">[]): Promise<Omit<MemoBildKandidat, "nr">[]> {
+  const geprueft = await mapLimit(kandidaten, 6, async (kandidat) => {
+    try {
+      const response = await fetchMitLimit(kandidat.url, {
+        method: "HEAD", headers: { "User-Agent": MEMO_PHOTO_USER_AGENT, Accept: "image/*" },
+      }, 5_000);
+      // Manche Server kennen HEAD nicht. Das ist kein Beleg gegen das Bild.
+      if (response.status === 405 || response.status === 501) return kandidat;
+      if (!response.ok) return null;
+      const typ = String(response.headers.get("content-type") || "").toLowerCase();
+      const laenge = Number(response.headers.get("content-length") || 0);
+      if (typ && !typ.startsWith("image/")) return null;
+      if (typ.includes("svg")) return null;
+      if (laenge && laenge > MEMO_BILD_BYTES_MAX) return null;
+      return kandidat;
+    } catch {
+      return null;
+    }
+  });
+  return geprueft.filter((k): k is Omit<MemoBildKandidat, "nr"> => Boolean(k));
+}
+
+/** Das Pruefmodell sieht alle Kandidaten und ordnet sie den Rahmen zu. */
+async function pruefeMemoBilder(
+  briefs: MemoBildBrief[],
+  kandidaten: MemoBildKandidat[],
+  firma: string,
+): Promise<{ entscheidungen: MemoBildEntscheidung[]; neueSuche: Map<string, string>; tokens: number; ok: boolean }> {
+  const leer = { entscheidungen: [] as MemoBildEntscheidung[], neueSuche: new Map<string, string>(), tokens: 0, ok: false };
+  const apiKey = await getPerplexityKey().catch(() => "");
+  if (!apiKey || !kandidaten.length) return leer;
+  const body = JSON.stringify({
+    model: MEMO_BILD_PRUEFMODELL,
+    max_output_tokens: 1_800,
+    input: [{
+      role: "user",
+      content: [
+        { type: "input_text", text: buildMemoBildPruefPrompt(briefs, kandidaten, firma) },
+        ...kandidaten.map((kandidat) => ({ type: "input_image", image_url: kandidat.url })),
+      ],
+    }],
+  });
+  for (let versuch = 1; versuch <= 2; versuch += 1) {
+    try {
+      const response = await fetchMitLimit(PERPLEXITY_RESPONSES_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body,
+      }, 90_000);
+      const roh = await response.text().catch(() => "");
+      if ((response.status === 429 || response.status >= 500) && versuch < 2) { await warte(4_000); continue; }
+      const antwort = parsePerplexityAntwort(roh);
+      const gemessen = { usd: antwort.costUsd, toolUsd: 0 };
+      if (!response.ok || !antwort.content.trim()) {
+        await recordStandaloneAiUsage("memo_image_check", MEMO_BILD_PRUEFMODELL, "error", antwort.usage, 0,
+          response.ok ? "empty_answer" : `http_${response.status}`, gemessen, "bildpruefung");
+        return leer;
+      }
+      await recordStandaloneAiUsage("memo_image_check", MEMO_BILD_PRUEFMODELL, "success", antwort.usage, 0, undefined, gemessen, "bildpruefung");
+      const bewertet = parseMemoBildPruefung(parseLooseJsonObject(antwort.content), briefs, kandidaten);
+      return { ...bewertet, tokens: antwort.usage.total, ok: true };
+    } catch {
+      if (versuch === 2) return leer;
+    }
+  }
+  return leer;
+}
+
+/**
+ * Bildwahl mit Sicht: suchen, pruefen lassen, zuordnen. Rahmen ohne passendes
+ * Bild bekommen bis zu zwei weitere Runden mit besserer Suchanfrage. Was dann
+ * noch leer ist, fuellt der bisherige Weg (Logos, Motivsuche).
+ */
+async function waehleMemoBilderMitSicht(opts: {
+  payload: MemoPayload;
+  firma: string;
+  headline: string;
+  thema: string;
+  restMs: () => number;
+  log: (event: string, extra?: Record<string, unknown>) => void;
+  anhaengen: (key: string, src: string, pos: string, quelle: string) => Promise<void>;
+}): Promise<number> {
+  let briefs = memoBildBriefs(opts.payload, { firma: opts.firma, headline: opts.headline, thema: opts.thema });
+  if (!briefs.length) return 0;
+  const gesehen = new Set<string>();
+  let gewaehlt = 0;
+  for (let runde = 1; runde <= MEMO_BILD_RUNDEN && briefs.length; runde += 1) {
+    if (opts.restMs() < 45_000) {
+      opts.log("bilder_zeit", { runde, offen: briefs.map((brief) => brief.key) });
+      break;
+    }
+    opts.log("bilder_suche", { runde, model: MEMO_BILD_SUCHMODELL, slots: briefs.map((brief) => brief.key) });
+    const antworten = await mapLimit(briefs, 2, (brief) => sucheMemoBilder(brief.query));
+    const roh = briefs.flatMap((brief, i) => memoBildKandidatenAus(antworten[i], brief, gesehen));
+    const kandidaten = memoBildVerteilen(await erreichbareMemoBilder(roh), briefs);
+    let neueSuche = new Map<string, string>();
+    if (kandidaten.length) {
+      const pruefung = await pruefeMemoBilder(briefs, kandidaten, opts.firma);
+      neueSuche = pruefung.neueSuche;
+      opts.log("bilder_pruefung", {
+        runde, model: MEMO_BILD_PRUEFMODELL, kandidaten: kandidaten.length,
+        angenommen: pruefung.entscheidungen.length, tokens: pruefung.tokens, ok: pruefung.ok,
+      });
+      for (const entscheidung of pruefung.entscheidungen) {
+        for (const kandidat of [entscheidung.kandidat, ...entscheidung.ersatz]) {
+          const src = await downloadMemoPhoto(kandidat.url, true);
+          if (!src || src.length * 0.75 > MEMO_BILD_BYTES_MAX || src.startsWith("data:image/svg")) continue;
+          attachMemoSlotImage(opts.payload, entscheidung.slot, src, "cover", { pos: entscheidung.fokus, quelle: kandidat.quelle || kandidat.url });
+          await opts.anhaengen(entscheidung.slot, src, entscheidung.fokus, kandidat.quelle || kandidat.url);
+          let domain = "";
+          try { domain = new URL(kandidat.quelle || kandidat.url).hostname.replace(/^www\./, ""); } catch { domain = ""; }
+          opts.log("bild_gewaehlt", { key: entscheidung.slot, score: entscheidung.score, quelle: domain, grund: entscheidung.grund.slice(0, 160) });
+          gewaehlt += 1;
+          break;
+        }
+      }
+    } else {
+      opts.log("bilder_pruefung", { runde, kandidaten: 0, angenommen: 0 });
+    }
+    briefs = briefs
+      .filter((brief) => !memoSlotHasImage(opts.payload, brief.key))
+      .map((brief) => ({ ...brief, query: neueSuche.get(brief.key) || memoBildNachbesserung(brief, runde, opts.firma) }));
+  }
+  return gewaehlt;
+}
+
 function createMemoPhotoFinder(
   apiKey: string,
   model: string,
@@ -4607,12 +4795,14 @@ async function researchMemoBenchmarksWithSearch(
   model: string,
   prompt: string,
   onPulse?: (info: AssetPulse) => void | Promise<void>,
-): Promise<{ briefs: ReturnType<typeof normalizeMemoBenchmarkResearch>; searchQueries: number; tokens: number }> {
+): Promise<{ briefs: ReturnType<typeof normalizeMemoBenchmarkResearch>; searchQueries: number; tokens: number; fern: string[] }> {
   const gefunden = await callPerplexityWithSearch(model, prompt, "memo_benchmark_research", "benchmark_recherche", onPulse);
+  const roh = parseLooseJsonObject(gefunden.text);
   return {
-    briefs: normalizeMemoBenchmarkResearch(parseLooseJsonObject(gefunden.text), gefunden.titles),
+    briefs: normalizeMemoBenchmarkResearch(roh, gefunden.titles),
     searchQueries: gefunden.searchQueries,
     tokens: gefunden.tokens,
+    fern: memoBenchmarkFern(roh),
   };
 }
 
@@ -7012,6 +7202,30 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
           tag: String(eintrag?.tag || ""),
         })).filter((eintrag) => eintrag.name || eintrag.tag),
       };
+      // Zuerst die Bildwahl mit Sicht: Titelbild, Bild zum Befund und die
+      // Potenziale. Was sie nicht fuellt, uebernimmt der bisherige Weg.
+      try {
+        const bildFirma = (assetAnswers as MemoAnswers).company_named === "no" ? "" : adressatFuerBilder;
+        const gewaehlt = await waehleMemoBilderMitSicht({
+          payload: payload as MemoPayload,
+          firma: bildFirma,
+          headline: String(assetSignal.headline_de || assetArticle.title_de || assetArticle.title || ""),
+          thema: [assetSignal.roots_offering, assetSignal.headline_de].filter(Boolean).join(" · "),
+          restMs: () => assetPhaseRemainingMs(isolateStartedAt),
+          log: (event, extra) => { loggen(event, extra || {}); void persist({}); },
+          anhaengen: async (key, src, pos, quelle) => {
+            let attached = await attachGeneratedAssetImage(admin, assetId, key, src, pos, "cover", quelle);
+            if (!attached.ok) {
+              await halte(800);
+              attached = await attachGeneratedAssetImage(admin, assetId, key, src, pos, "cover", quelle);
+            }
+            if (!attached.ok) loggen("persist_fail", { key, message: String(attached.error || "attach").slice(0, 240) });
+          },
+        });
+        loggen("bilder_sicht_fertig", { gewaehlt });
+      } catch (fehler) {
+        loggen("bilder_sicht_fehler", { reason: String(fehler).slice(0, 300) });
+      }
       const finder = createMemoPhotoFinder(
         geminiKey,
         MEMO_PHOTO_RESEARCH_MODEL,
@@ -7030,12 +7244,15 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
               if (event === "image_ok") {
                 const key = String(extra?.key || "");
                 const src = memoSlotImageSrc(payload, key);
+                // Die Einpassung reist mit: ohne sie wurde jedes Logo wie ein
+                // Foto randlos gefuellt und abgeschnitten.
+                const fit = memoSlotImage(payload, key)?.fit;
                 if (src) {
-                  let attached = await attachGeneratedAssetImage(admin, assetId, key, src);
+                  let attached = await attachGeneratedAssetImage(admin, assetId, key, src, "50% 50%", fit);
                   if (!attached.ok) {
                     loggen("persist_fail", { key, message: String(attached.error || "attach").slice(0, 240) });
                     await halte(800);
-                    attached = await attachGeneratedAssetImage(admin, assetId, key, src);
+                    attached = await attachGeneratedAssetImage(admin, assetId, key, src, "50% 50%", fit);
                   }
                   if (!attached.ok) {
                     loggen("persist_fail", { key, message: String(attached.error || "attach").slice(0, 240), fatal: true });
@@ -11986,7 +12203,7 @@ Deno.serve(async (req: Request) => {
                 let letzter: Error | null = null;
                 let okBriefs: typeof memoAnswers.benchmarks | null = null;
                 let letzterBriefs: typeof memoAnswers.benchmarks | null = null;
-                for (let attempt = 1; attempt <= 2; attempt += 1) {
+                for (let attempt = 1; attempt <= 3; attempt += 1) {
                   try {
                     const gefunden = await researchMemoBenchmarksWithSearch(
                       researchModel,
@@ -12001,6 +12218,14 @@ Deno.serve(async (req: Request) => {
                     }
                     const briefs = assertMemoBenchmarkBriefs(gefunden.briefs, firma, { allowExample: true });
                     letzterBriefs = briefs;
+                    // Benchmarks aus einem fernen Markt oder einem anderen
+                    // Markttyp: ausschliessen und neu suchen.
+                    if (gefunden.fern.length && attempt < 3) {
+                      exclude.push(...gefunden.fern);
+                      loggen("benchmarks_fern", { names: gefunden.fern });
+                      letzter = new Error(`Zu weit weg vom Markt des Adressaten: ${gefunden.fern.join(", ")}.`);
+                      continue;
+                    }
                     try {
                       const pruefung = await reviewMemoBenchmarksWithSearch(
                         researchModel,
