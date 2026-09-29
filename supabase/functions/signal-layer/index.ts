@@ -4,6 +4,7 @@ import {
   hasQualifiedTier1EventParticipation,
   isBareEventAnnouncement,
 } from "./event-signals.ts";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { extractDateFromDateElement } from "./extraction-helpers.ts";
 import {
   CrawlPolicy,
@@ -3421,6 +3422,18 @@ type ModelPrice = {
 // uebernommene Preise je 1 Mio. Tokens. Unbekannte Modelle werden nicht
 // geschaetzt: Ohne verifizierten Eintrag darf kein kostenpflichtiger Lauf starten.
 const AI_PRICING_VERSION = "official-2026-08-21";
+// Google berechnet Grounding mit Google Search pro Anfrage, nicht pro Token:
+// 1.500 Anfragen am Tag frei (Flash und Flash-Lite gemeinsam), danach 35 USD
+// je 1.000. Die Buchung zaehlt die Anfragen des UTC-Tages im Ledger mit.
+const GEMINI_GROUNDING_FREE_PER_DAY = 1_500;
+const GEMINI_GROUNDING_USD_PER_PROMPT = 0.035;
+
+// Ordnet jede Kostenbuchung dem Asset zu, dessen Lauf sie ausgeloest hat,
+// auch wenn die Buchung tief in Recherche oder Bildsuche passiert.
+const assetUsageContext = new AsyncLocalStorage<{ assetId: string }>();
+function currentUsageAssetId(): string | null {
+  return assetUsageContext.getStore()?.assetId || null;
+}
 const MODEL_PRICES: Record<string, ModelPrice> = {
   // DeepSeek seit 16.08.2026: Preise in USD und nach Tageszeit gestaffelt.
   // `standard` ist der Nebentarif, `peak` der doppelt so teure Spitzentarif in
@@ -3506,6 +3519,26 @@ async function modelCostFields(
   };
 }
 
+// Ein Grounding-Prompt kostet erst, wenn das Tageskontingent verbraucht ist.
+// Der Betrag landet zusaetzlich in den Gesamtkosten der Buchung.
+async function groundingCostFields(costs: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const tagesbeginn = new Date();
+  tagesbeginn.setUTCHours(0, 0, 0, 0);
+  const { count, error } = await getAdminClient().schema("signal_layer").from("ai_usage_events")
+    .select("id", { count: "exact", head: true })
+    .gt("search_query_count", 0)
+    .like("model", "gemini-%")
+    .gte("created_at", tagesbeginn.toISOString());
+  if (error) throw new Error(error.message);
+  const groundingUsd = Number(count || 0) >= GEMINI_GROUNDING_FREE_PER_DAY ? GEMINI_GROUNDING_USD_PER_PROMPT : 0;
+  const usdEur = Number(costs.usd_to_eur_rate || 0) || (await getUsdEurRate()) || 0.86812;
+  return {
+    grounding_cost_usd: groundingUsd,
+    estimated_cost_usd: Number(costs.estimated_cost_usd || 0) + groundingUsd,
+    estimated_cost_eur: Number(costs.estimated_cost_eur || 0) + groundingUsd * usdEur,
+  };
+}
+
 async function recordStandaloneAiUsage(
   operation: string,
   model: string,
@@ -3517,9 +3550,14 @@ async function recordStandaloneAiUsage(
   // Die Kostenbuchung darf den bezahlten Aufruf nie nachträglich scheitern
   // lassen: ein Memo bricht sonst wegen einer Protokollzeile ab.
   try {
-    const costs = status === "success" ? await modelCostFields(model, usage, "standard", searchQueries) : zeroCostFields(model);
+    const hasTokens = usage.input + usage.cachedInput + usage.output + usage.thinking > 0;
+    const costs = status === "success" || hasTokens
+      ? await modelCostFields(model, usage, "standard", searchQueries)
+      : zeroCostFields(model);
+    const grounding = searchQueries > 0 ? await groundingCostFields(costs) : {};
     const { error } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       operation, model, status, attempt: 1, prompt_version: ASSET_PROMPT_VERSION,
+      asset_id: currentUsageAssetId(), ...grounding,
       input_tokens: usage.input + usage.cachedInput, cached_input_tokens: usage.cachedInput,
       output_tokens: usage.output, thinking_tokens: usage.thinking, total_tokens: usage.total,
       ...costs, error_code: errorCode || null,
@@ -4333,22 +4371,37 @@ async function callGeminiWithGoogleSearchOnce(
   let searchQueries = 0;
   let finish = "";
   let geminiUsage: ModelUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
-  await leseSse(response, async (data) => {
-    const chunk = parseGeminiSseData(data);
-    if (!chunk) return;
-    if (chunk.text) text += chunk.text;
-    if (chunk.titles?.length) titles = chunk.titles;
-    if (chunk.searchQueries) searchQueries = chunk.searchQueries;
-    if (chunk.finish) finish = chunk.finish;
-    if (chunk.usage) geminiUsage = { ...chunk.usage, total: chunk.usage.input + chunk.usage.cachedInput + chunk.usage.output + chunk.usage.thinking };
-    await onPulse?.({ phase: "search", model, chars: text.length });
-  }, () => onPulse?.({ phase: "search", model, chars: text.length }));
-  if (!text.trim()) throw new Error("Die Benchmark-Recherche hat keine Antwort geliefert.");
+  // Google berechnet auch eine abgebrochene oder leere Antwort. Deshalb wird
+  // jeder Ausgang gebucht, bevor ein Fehler den Aufruf verlaesst.
+  const buchen = (status: "success" | "error", errorCode?: string) => recordStandaloneAiUsage(
+    "memo_benchmark_research", model, status, geminiUsage,
+    searchQueries || (titles.length ? 1 : 0), errorCode,
+  );
+  try {
+    await leseSse(response, async (data) => {
+      const chunk = parseGeminiSseData(data);
+      if (!chunk) return;
+      if (chunk.text) text += chunk.text;
+      if (chunk.titles?.length) titles = chunk.titles;
+      if (chunk.searchQueries) searchQueries = chunk.searchQueries;
+      if (chunk.finish) finish = chunk.finish;
+      if (chunk.usage) geminiUsage = { ...chunk.usage, total: chunk.usage.input + chunk.usage.cachedInput + chunk.usage.output + chunk.usage.thinking };
+      await onPulse?.({ phase: "search", model, chars: text.length });
+    }, () => onPulse?.({ phase: "search", model, chars: text.length }));
+  } catch (fehler) {
+    await buchen("error", "stream_abort");
+    throw fehler;
+  }
+  if (!text.trim()) {
+    await buchen("error", "empty_answer");
+    throw new Error("Die Benchmark-Recherche hat keine Antwort geliefert.");
+  }
   if (!geminiFinishAllowsParse(finish)) {
+    await buchen("error", `finish_${finish || "unknown"}`.slice(0, 60));
     throw new Error("Die Benchmark-Recherche ist unvollständig abgebrochen. Bitte erneut versuchen oder eigene Benchmarks eintragen.");
   }
   const billedSearchQueries = searchQueries || (titles.length ? 1 : 0);
-  await recordStandaloneAiUsage("memo_benchmark_research", model, "success", geminiUsage, billedSearchQueries);
+  await buchen("success");
   return { text, titles, searchQueries: billedSearchQueries };
 }
 
@@ -6405,7 +6458,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       await persist({});
     };
     const usageBasis = {
-      article_id: row.article_id, operation: "asset_generation", model: assetModel,
+      article_id: row.article_id, asset_id: currentUsageAssetId(), operation: "asset_generation", model: assetModel,
       prompt_version: String(row.prompt_version || ASSET_PROMPT_VERSION),
     };
     const buchen = async (
@@ -11079,7 +11132,7 @@ Deno.serve(async (req: Request) => {
       case "finish_asset": {
         const finishId = String(body.asset_id || "");
         if (!finishId) return errorResponse(origin, "asset_id fehlt");
-        EdgeRuntime.waitUntil(finishGeneratedAsset(finishId));
+        EdgeRuntime.waitUntil(assetUsageContext.run({ assetId: finishId }, () => finishGeneratedAsset(finishId)));
         return corsResponse(origin, { ok: true, asset_id: finishId });
       }
 
@@ -11091,14 +11144,14 @@ Deno.serve(async (req: Request) => {
         if (!waitId || !/^\d{1,18}$/.test(requestId) || !waiter || waiter.length > 64 || !Number.isInteger(hop) || hop < 0) {
           return errorResponse(origin, "asset_id, request_id, waiter oder hop fehlt");
         }
-        EdgeRuntime.waitUntil(awaitAssetModel(waitId, requestId, waiter, hop));
+        EdgeRuntime.waitUntil(assetUsageContext.run({ assetId: waitId }, () => awaitAssetModel(waitId, requestId, waiter, hop)));
         return corsResponse(origin, { ok: true, asset_id: waitId });
       }
 
       case "retry_asset_model": {
         const retryId = String(body.asset_id || "");
         if (!retryId) return errorResponse(origin, "asset_id fehlt");
-        EdgeRuntime.waitUntil(retryGeneratedAssetModel(retryId));
+        EdgeRuntime.waitUntil(assetUsageContext.run({ assetId: retryId }, () => retryGeneratedAssetModel(retryId)));
         return corsResponse(origin, { ok: true, asset_id: retryId });
       }
 
@@ -11565,7 +11618,7 @@ Deno.serve(async (req: Request) => {
           })();
         }, ASSET_WALL_CLOCK_MS);
 
-        const arbeit = (async () => {
+        const arbeit = assetUsageContext.run({ assetId: String(assetRow.id) }, async () => {
           const startedAt = Date.now();
           const runLog: Record<string, unknown>[] = Array.isArray(assetRow.run_log)
             ? [...assetRow.run_log as Record<string, unknown>[]]
@@ -11812,7 +11865,7 @@ Deno.serve(async (req: Request) => {
             ...callOpts, prompt, attempts: 2, timeoutMs,
           });
           const usageBasis = {
-            article_id: assetArticleId, operation: "asset_generation", model: assetModel,
+            article_id: assetArticleId, asset_id: String(assetRow.id), operation: "asset_generation", model: assetModel,
             prompt_version: ASSET_PROMPT_VERSION,
           };
           const buchen = async (
@@ -11886,7 +11939,7 @@ Deno.serve(async (req: Request) => {
           clearTimeout(waechter);
           triggerSelf({ action: "finish_asset", asset_id: assetRow.id }, 15_000);
           return;
-        })().catch(async (fehler) => {
+        }).catch(async (fehler) => {
           const { data: live } = await getAdminClient().schema("signal_layer").from("generated_assets")
             .select("status, run_log").eq("id", assetRow.id).maybeSingle();
           if (String(live?.status || "") !== "running") return;
