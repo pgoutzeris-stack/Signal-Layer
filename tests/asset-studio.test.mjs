@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-6");
-  assert.match(indexHtml, /app\.js\?v=20260929-6/);
+  assert.equal(studioVersion, "20260929-7");
+  assert.match(indexHtml, /app\.js\?v=20260929-7/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4460,7 +4460,7 @@ test("Bildwahl mit Sicht: Rahmen, Kandidatenfilter und Entscheidung", () => {
   assert.match(edge, /MEMO_BILD_RUNDEN/);
   assert.match(edge, /type: "input_image", image_url: kandidat\.url/);
   assert.match(edge, /"memo_image_check", MEMO_BILD_PRUEFMODELL/);
-  assert.match(edge, /attachGeneratedAssetImage\(admin, assetId, key, src, "50% 50%", fit\)/);
+  assert.match(edge, /haengeBildAn\(key, src, "50% 50%", fit\)/);
   const sql = readFileSync(new URL("../supabase/migrations/20260929190000_memo_bildwahl.sql", import.meta.url), "utf8");
   assert.match(sql, /p_fit text default null/);
   assert.match(sql, /if p_key in \('cover', 'insight'\)/);
@@ -4503,4 +4503,62 @@ test("Logos werden eingepasst, beschnitten und auf die passende Flaeche gesetzt"
   assert.match(studio, /kind === "benchmark" && eintrag\.image\.fit === "contain"/);
   const sql = readFileSync(new URL("../supabase/migrations/20260929190000_memo_bildwahl.sql", import.meta.url), "utf8");
   assert.match(sql, /jsonb_set\(b, '\{image,fit\}', '"contain"'::jsonb\)/);
+});
+
+
+test("Protokoll, Rueckfall fuer Titelbild und Befund, bekannte Benchmarks, Titel ohne Doppelpunkt", () => {
+  // Logosuche: Haendler plus Eigenmarke, kein Gattungswort als Rueckfall.
+  const varianten = backend.memoLogoNameVariants("SPORT 2000 · Witeblaze");
+  assert.ok(varianten.includes("Witeblaze") && varianten.includes("SPORT 2000"), varianten.join("|"));
+  assert.ok(!varianten.includes("SPORT"), varianten.join("|"));
+  assert.ok(backend.memoLogoNameVariants("Vaude Sport GmbH").includes("Vaude"));
+  // Benchmarks: unbekannt oder fremde Branche fliegt raus.
+  const fern = backend.memoBenchmarkFern({
+    adressat: { reichweite: "national", markttyp: "handel" },
+    benchmarks: [
+      { name: "Decathlon", region: "europa", markttyp: "handel", gleiche_branche: true, bekanntheit: "hoch" },
+      { name: "SPORT 2000", region: "dach", markttyp: "handel", gleiche_branche: true, bekanntheit: "niedrig" },
+      { name: "Fressnapf", region: "dach", markttyp: "handel", gleiche_branche: false, bekanntheit: "mittel" },
+      { name: "dm", region: "dach", markttyp: "handel", gleiche_branche: false, bekanntheit: "hoch" },
+    ],
+  });
+  assert.deepEqual(fern, ["SPORT 2000", "Fressnapf"]);
+  const answers = backend.normalizeAssetAnswers("memo", { company_text: "Intersport" });
+  const recherche = backend.buildMemoBenchmarkResearchPrompt({ company: "Intersport" }, { title: "x" }, answers);
+  assert.match(recherche, /Keine Nischenmarken, keine kleinen Verbundgruppen/);
+  assert.match(recherche, /"bekanntheit":"hoch\|mittel\|niedrig"/);
+  assert.match(edge, /async function benchmarksOhneLogo/);
+  assert.match(edge, /loggen\("benchmarks_ohne_logo"/);
+  // Titel ohne Doppelpunkt.
+  const memo = backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh()), answers);
+  const befund = backend.memoQualitaetsBefunde({ ...memo, title: "Intersport: Eigenmarken zwischen Preis und Profil" }, { firma: "Intersport" }).join("\n");
+  assert.match(befund, /title enthält einen Doppelpunkt/);
+  const prompt = backend.buildAssetPrompt("memo", { company: "Intersport" }, { title: "x", content: "Text." }, answers);
+  assert.match(prompt, /Kein Doppelpunkt im Titel/);
+  assert.doesNotMatch(prompt, /„Intersport: \[Thema\]/);
+  // Bildwahl: Suchplan, knapp bewertete Bilder als Rueckfall, Rahmen fuer Commons.
+  const briefs = backend.memoBildBriefs(memo, { firma: "Intersport", headline: "Intersport will Eigenmarken stärken" });
+  const plan = backend.parseMemoBildSuchplan({ suchen: [{ slot: "cover", queries: ["Intersport Filiale außen", "Intersport store front"] }, { slot: "erfunden", queries: ["x"] }] }, briefs);
+  assert.deepEqual(plan.get("cover"), ["Intersport Filiale außen", "Intersport store front"]);
+  assert.equal(plan.has("erfunden"), false);
+  assert.match(backend.buildMemoBildSuchplanPrompt(briefs, "Intersport"), /<leitbild>/);
+  assert.match(backend.MEMO_BILD_LEITBILD, /Titelbild: der Adressat selbst/);
+  assert.doesNotMatch(backend.MEMO_BILD_LEITBILD, /Deichmann|Eigenmarke|Schuh/);
+  const kandidaten = [{ nr: 1, slot: "cover", url: "https://a.de/1.jpg", quelle: "", titel: "", breite: 1200, hoehe: 800 }];
+  const urteil = backend.parseMemoBildPruefung({ zuordnung: [{ slot: "cover", bild: 1, score: 6, fokus: "50% 30%" }] }, briefs, kandidaten);
+  assert.equal(urteil.entscheidungen.length, 0);
+  assert.equal(urteil.beinahe.get("cover")?.score, 6);
+  const rahmen = backend.memoRahmenSlot(briefs[0], "Intersport");
+  assert.equal(rahmen.key, "cover");
+  assert.ok(rahmen.queries.some((q) => /Intersport Filiale/.test(q)));
+  assert.match(edge, /"bild_rueckfall"/);
+  assert.match(edge, /finder\.fetchPhoto\(memoRahmenSlot\(brief, bildFirma\)\)/);
+  assert.match(edge, /if \(bildNachzug && payload\)/);
+  // Studio startet ein fertiges Memo auf Seite 1.
+  assert.match(studio, /function adoptPayload\(raw\) \{\n    const data = raw && typeof raw === "object" \? raw : \{\};\n    state\.payload = data;[\s\S]{0,300}state\.prevIndex = 0;/);
+  // Kompaktes Protokoll je Memo in Supabase.
+  const sql = readFileSync(new URL("../supabase/migrations/20260929210000_memo_protokoll.sql", import.meta.url), "utf8");
+  assert.match(sql, /add column if not exists protokoll jsonb/);
+  assert.match(sql, /create trigger generated_assets_memo_protokoll/);
+  assert.match(sql, /create or replace view signal_layer\.memo_protokolle/);
 });

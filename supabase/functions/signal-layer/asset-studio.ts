@@ -688,6 +688,9 @@ export function memoQualitaetsBefunde(
   if (frei("title") && /\b(muss|müssen|braucht|brauchen)\b/i.test(werte.title)) {
     befunde.push(`title folgt der Schablone „… muss/braucht …“ („${werte.title}“). Benenne Potenzial oder Herausforderung, nicht einen Auftrag.`);
   }
+  if (frei("title") && String(werte.title || "").includes(":")) {
+    befunde.push(`title enthält einen Doppelpunkt („${werte.title}“). Formuliere den Titel als einen Gedanken ohne Doppelpunkt.`);
+  }
   if (frei("title") && firma) {
     const titel = String(werte.title || "").trim();
     const name = firma.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -752,7 +755,7 @@ export function memoQualitaetsBefunde(
 }
 
 /** Die Maßstäbe des Kritiker-Durchlaufs, am Deichmann-Memo abgelesen. */
-export const MEMO_KRITIK_MASSSTAB = `1. title: benennt Potenzial oder Herausforderung des Adressaten in diesem Thema, wie „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“. Kein Ist-Zustand und keine Erfolgsmeldung („X führt …“), keine Pflicht-Schablone („X muss …“), keine Leistung als Subjekt. standfirst sagt, wie das Potenzial gehoben wird.
+export const MEMO_KRITIK_MASSSTAB = `1. title: benennt Potenzial oder Herausforderung des Adressaten in diesem Thema, wie „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“. Kein Ist-Zustand und keine Erfolgsmeldung („X führt …“), keine Pflicht-Schablone („X muss …“), keine Leistung als Subjekt, kein Doppelpunkt. standfirst sagt, wie das Potenzial gehoben wird.
 2. market_title: Befund mit Verb, kein Etikett.
 3. Kennzahlen: Markt- oder Verbraucherzahlen aus mindestens drei Herausgebern, höchstens eine Zahl zum Adressaten, keine Quartalszahlen.
 4. insight_title und market_p2: ein konkreter Befund zur heutigen Aufstellung des Adressaten mit Eigennamen (Marken, Formate, Kanäle), nichts, was auf jedes Unternehmen passt.
@@ -1999,7 +2002,7 @@ ${liste}
 </benchmarks>
 
 ok=true wenn alle drei denselben Mechanismus wie den Hebel schon gezogen haben und der Ausgang POSITIV war. Dieselbe Marken-, Sortiments- oder Wachstumsmechanik reicht - nicht dieselbe Pressemeldung, nicht dieselbe öffentliche Begründung.
-ok=false nur wenn ein Name unbelegt ist, die Adressatenfirma vorkommt, der Fall ein Flop / eine Rücknahme / ein Sales-Drop ist, der Mechanismus klar ein anderer ist (z.B. Logistik oder IT statt Marke), oder der Fall aus einem fernen Markt stammt, den eine Entscheiderin beim Adressaten nicht als Vergleich akzeptiert (für einen deutschen Händler zum Beispiel ein US-Supermarkt). Bei einer globalen Marke als Adressat sind globale Fälle derselben Branche in Ordnung.
+ok=false nur wenn ein Name unbelegt ist, eine Marke so unbekannt ist, dass eine Entscheiderin sie nicht kennt, mehr als ein Fall aus einer fremden Branche stammt, die Adressatenfirma vorkommt, der Fall ein Flop / eine Rücknahme / ein Sales-Drop ist, der Mechanismus klar ein anderer ist (z.B. Logistik oder IT statt Marke), oder der Fall aus einem fernen Markt stammt, den eine Entscheiderin beim Adressaten nicht als Vergleich akzeptiert (für einen deutschen Händler zum Beispiel ein US-Supermarkt). Bei einer globalen Marke als Adressat sind globale Fälle derselben Branche in Ordnung.
 Nicht ablehnen, weil die öffentliche Story enger klingt (Preis, Sortiment, Vereinfachung), solange die Handlung denselben Hebel bedient.
 Antworte ausschliesslich mit JSON:
 {"ok":true} oder {"ok":false,"grund":"Ein Satz auf Deutsch, welche Marke nicht passt und warum."}`;
@@ -2052,6 +2055,8 @@ Die Benchmarks stammen aus der Nähe von ${firma || "dem Adressaten"}: zuerst de
 Ist ${firma || "der Adressat"} eine globale Marke wie Coca-Cola, Puma oder Nike, dürfen es globale Marken aus derselben Branche sein.
 Kein Fall aus einem fernen Markt, den eine Entscheiderin hier nicht kennt: für einen deutschen Sporthändler keine US-Supermärkte wie Kroger oder Target.
 Gleicher Markttyp: Handel zu Handel, Hersteller zu Hersteller, Dienstleister zu Dienstleister.
+Gleiche Branche: dieselbe oder eine direkt benachbarte Branche wie ${firma || "der Adressat"}. Höchstens ein Fall aus einer anderen Branche, und nur wenn er als Vorbild für genau diesen Mechanismus landesweit bekannt ist.
+Bekannt: große Marken, die eine Entscheiderin im Markt sofort kennt und deren Logo leicht zu finden ist. Keine Nischenmarken, keine kleinen Verbundgruppen, keine Marken, die nur Fachleute kennen.
 
 Ausgang, zwingend positiv:
 Ein Benchmark ist nur eine Marke, deren Handlung GEWIRKT hat — Wachstum, Share, Wahrnehmung, Tempo oder eine Umsetzung, die hält.
@@ -2060,7 +2065,7 @@ Beispiel, das NICHT zählt: ein Redesign, das am Regal verloren hat und nach ein
 Wenn die Suche einen negativen Fall findet, verwirf ihn und nimm eine andere Marke.
 ${exclude.length ? `Nimm keine der Marken aus <ausgeschlossen>.\n` : ""}
 Antworte ausschliesslich mit JSON:
-{"adressat":{"reichweite":"national|dach|europa|global","land":"DE","markttyp":"handel|hersteller|dienstleister"},"benchmarks":[{"name":"Marke","text":"Was sie konkret getan hat und warum es gewirkt hat.","tag":"Lehre","source":"Titel · Medium · Jahr","land":"DE","region":"dach|europa|nordamerika|asien|global","markttyp":"handel|hersteller|dienstleister"}]}`;
+{"adressat":{"reichweite":"national|dach|europa|global","land":"DE","markttyp":"handel|hersteller|dienstleister"},"benchmarks":[{"name":"Marke","text":"Was sie konkret getan hat und warum es gewirkt hat.","tag":"Lehre","source":"Titel · Medium · Jahr","land":"DE","region":"dach|europa|nordamerika|asien|global","markttyp":"handel|hersteller|dienstleister","branche":"Branche in zwei Wörtern","gleiche_branche":true,"bekanntheit":"hoch|mittel|niedrig"}]}`;
 }
 
 export function normalizeMemoBenchmarkResearch(raw: unknown, groundingTitles: string[] = []): MemoBenchmarkBrief[] {
@@ -2228,6 +2233,7 @@ export function memoBenchmarkFern(raw: unknown): string[] {
   };
   const fern: string[] = [];
   let europa = 0;
+  let fremdeBranche = 0;
   for (const eintrag of Array.isArray(root.benchmarks) ? root.benchmarks : []) {
     const item = record(eintrag);
     const name = text(item.name, 80);
@@ -2236,6 +2242,16 @@ export function memoBenchmarkFern(raw: unknown): string[] {
     if (!name) continue;
     if (region && !nah(region)) { fern.push(name); continue; }
     if (markttyp && typ && typ !== markttyp) { fern.push(name); continue; }
+    // Zu unbekannt fuer eine Entscheiderin, oder eine fremde Branche ohne
+    // landesweit bekanntes Vorbild. Anlass: SPORT 2000 und Fressnapf fuer Intersport.
+    const bekanntheit = String(item.bekanntheit || "").toLowerCase();
+    if (bekanntheit === "niedrig") { fern.push(name); continue; }
+    if (item.gleiche_branche === false || item.gleiche_branche === "false") {
+      // Hoechstens ein Fall aus einer anderen Branche, und nur ein landesweit
+      // bekanntes Vorbild. Ein abgelehnter zaehlt nicht mit.
+      if (fremdeBranche >= 1 || bekanntheit !== "hoch") { fern.push(name); continue; }
+      fremdeBranche += 1;
+    }
     // National oder DACH: hoechstens ein Fall aus dem uebrigen Europa.
     if ((reichweite === "national" || reichweite === "dach") && region === "europa") {
       europa += 1;
@@ -3166,8 +3182,8 @@ Die drei potentials übersetzen genau diese Leistung auf den Adressaten. about_f
 <titel>
 Das Cover folgt der Logik des Deichmann-Memos, nicht seinem Thema: erst die Chance oder Herausforderung des Adressaten, dann wie sie gehoben wird, dann was ROOTS daran bewegt. Den Stoff hat die Signalprüfung schon hinterlegt: roots_anschluss nennt im ersten Satz das belegte Ziel, Problem, Risiko oder die Chance und im zweiten, was ROOTS konkret tut; anlass nennt die offene Frage oder Hürde.
 ${nennen
-    ? `title benennt das Potenzial oder die Herausforderung von ${firma} in diesem Thema, mit ${firma} im Titel. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung, Thema, Adressat. Nur kürzer, höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema] für ${firma}“, „${firma}: [Thema] zwischen [Hürde] und [Chance]“, „Wie ${firma} [Ziel] erreicht“, „Wie kann ${firma} [Ziel]?“, „Vom [heute] zum [Ziel]“, wenn klar bleibt, dass das Ziel noch vor ${firma} liegt.`
-    : "title benennt das Potenzial oder die Herausforderung in diesem Thema. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung plus Thema. Höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema]“, „[Thema]: Chancen und Hürden für [Branche]“, „Wie [Branche] [Ziel] erreicht“, „Vom [heute] zum [Ziel]“."}
+    ? `title benennt das Potenzial oder die Herausforderung von ${firma} in diesem Thema, mit ${firma} im Titel. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung, Thema, Adressat. Nur kürzer, höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema] für ${firma}“, „Wie ${firma} [Ziel] erreicht“, „Wie kann ${firma} [Ziel]?“, „[Thema] zwischen [Hürde] und [Chance] bei ${firma}“, „Vom [heute] zum [Ziel]“, wenn klar bleibt, dass das Ziel noch vor ${firma} liegt. Kein Doppelpunkt im Titel.`
+    : "title benennt das Potenzial oder die Herausforderung in diesem Thema. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung plus Thema. Höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema]“, „Chancen und Hürden in [Thema] für [Branche]“, „Wie [Branche] [Ziel] erreicht“, „Vom [heute] zum [Ziel]“. Kein Doppelpunkt im Titel."}
 Schwach: ein Ist-Zustand oder eine Erfolgsmeldung („${nennen ? firma : "X"} führt …“, „… setzt auf …“, „… baut … aus“). Sie sagt, was schon passiert, nicht was offen ist. Ebenso schwach: eine Pflicht-Schablone („… muss …“, „… braucht …“), die nacherzählte Meldung, die ROOTS-Leistung als Subjekt („Markenstrategie wird zum Hebel …“), Beratungsjargon ohne Thema („Hebel ziehen“), ein Slogan ohne Aufgabe${nennen ? `, ${firma} nur als Briefkopf` : ""}.
 Stark: jemand liest den Titel und weiß, welche Chance oder welche Hürde das Memo behandelt, ohne die Nachricht zu kennen.
 standfirst löst den Titel auf: wie der Adressat das Potenzial hebt, in einem Satz, wie „Wie Deichmanns Eigenmarken ihr volles Wachstumspotenzial entfalten.“ Passen die drei Hebel von Seite 4 in Stichworten dazu, gehören sie hinein.
@@ -4799,6 +4815,10 @@ export function memoLogoNameVariants(subject: string): string[] {
   const roh = String(subject || "").replace(/\s+/g, " ").trim();
   if (!roh) return [];
   const varianten = [roh];
+  // „SPORT 2000 · Witeblaze“ ist Haendler plus Eigenmarke. Beide Teile sind
+  // eigene Namen; das erste Wort allein („SPORT“) fand ein fremdes Logo.
+  const teile = roh.split(/\s+[·|]\s+/).map((teil) => teil.trim()).filter(Boolean);
+  if (teile.length > 1) varianten.push(teile[1], teile[0]);
   const klammer = /[（(]([^)）]+)[)）]/.exec(roh);
   const basis = roh.replace(/[（(][^)）]*[)）]/g, "").replace(/[\s–—-]+$/, "").trim();
   if (basis && basis !== roh) varianten.push(basis);
@@ -4814,8 +4834,12 @@ export function memoLogoNameVariants(subject: string): string[] {
   }
   // Zuletzt das erste Wort: "Vaude Sport GmbH" liegt als "vaude" vor. Es steht
   // hinten, damit der genaue Name zuerst gewinnt.
-  const erstes = (basis || roh).split(/[\s,/]+/)[0] || "";
-  if (erstes.length > 3) varianten.push(erstes);
+  const kern = teile.length > 1 ? teile[0] : (basis || roh);
+  const erstes = kern.split(/[\s,/]+/)[0] || "";
+  // Nur ein eigenstaendiger Name taugt als Rueckfall: nicht, wenn eine Zahl
+  // zum Namen gehoert („SPORT 2000“), und kein Gattungswort.
+  const gattung = /^(sport|sports|shop|store|home|food|fashion|mode|markt|market|group|gruppe|the|der|die|das|bio|eco|mega|super)$/i;
+  if (erstes.length > 3 && !/\d/.test(kern) && !gattung.test(erstes)) varianten.push(erstes);
   return uniqueStrings(varianten.filter((name) => name.length > 1)).slice(0, 5);
 }
 
@@ -5537,7 +5561,20 @@ export const MEMO_BILD_PRUEFMODELL = "openai/gpt-5.4";
 export const MEMO_BILD_RUNDEN = 3;
 export const MEMO_BILD_MIN_SCORE = 7;
 /** So viele Bilder sieht das Pruefmodell hoechstens in einem Aufruf. */
-export const MEMO_BILD_PRUEF_MAX = 14;
+export const MEMO_BILD_PRUEF_MAX = 20;
+/** Ab dieser Bewertung darf ein Bild als Rueckfall in einen sonst leeren Rahmen. */
+export const MEMO_BILD_RUECKFALL_SCORE = 5;
+
+/**
+ * Das Bildleitbild, an den Bildern des Deichmann-Memos abgelesen und allgemein
+ * gefasst: welche Rolle jeder Rahmen in der Argumentation spielt. Es nennt
+ * kein Thema und keine Marke, damit es fuer jedes Signal gilt.
+ */
+export const MEMO_BILD_LEITBILD = `Die Bilder erzählen dieselbe Kette wie der Text: wer der Adressat ist, wo er heute steht, was bei anderen schon wirkt und wie es bei ihm aussehen könnte.
+- Titelbild: der Adressat selbst in seiner eigenen Markenwelt, Standort, Fläche, Produkt oder Arbeitsumfeld, Marke erkennbar, hell und hochwertig, Querformat mit ruhiger oberer Hälfte, weil dort der Titel liegt.
+- Befund: dokumentiert die heutige Lage so, wie der Befund-Satz sie beschreibt, nüchtern und konkret beim Adressaten. Kein Wunschbild.
+- Potenzial: zeigt den Zielzustand beim Adressaten, wie es aussähe, wenn der Hebel gezogen ist. Realistisch, in derselben Bildsprache wie das Titelbild, keine Grafik.
+- Für alle: echtes Foto in guter Qualität, keine Collage, kein Wasserzeichen, kein Screenshot, keine Infografik, Text im Bild nur als Teil der Szene (Schilder, Verpackung), keine erkennbare Einzelperson im Fokus.`;
 /** Groessere Fotos blaehen die Nutzlast auf; das naechstbeste Bild gewinnt. */
 export const MEMO_BILD_BYTES_MAX = 3 * 1024 * 1024;
 
@@ -5599,16 +5636,16 @@ export function memoBildBriefs(
   if (!String(payload.cover?.src || "").startsWith("data:image/")) {
     briefs.push({
       key: "cover",
-      zweck: `Titelbild im Querformat: ein Foto von ${traeger} selbst, Filiale, Fassade, Laden innen, Produkt oder Arbeitsumfeld, passend zum Thema „${thema || headline}“. Kein Logo, keine Grafik, kein Porträt, kein eingebrannter Text.`,
+      zweck: `Titelbild im Querformat: ${traeger} selbst in der eigenen Markenwelt, Standort, Fläche, Produkt oder Arbeitsumfeld, Marke erkennbar, passend zum Thema „${thema || headline}“. Ruhige obere Hälfte. Kein Logo allein, keine Grafik, kein Porträt.`,
       query: [firma, headline].filter(Boolean).join(" ") || thema,
       aspect: MEMO_BILD_ASPEKT.cover,
-      minBreite: 1000,
+      minBreite: 900,
     });
   }
   if (!String(payload.insight?.src || "").startsWith("data:image/")) {
     briefs.push({
       key: "insight",
-      zweck: `Bild im Hochformat zur Aussage „${kurz(payload.insight_title, 160)}“: zeigt die heutige Lage bei ${traeger} konkret, zum Beispiel Regal, Produkt, Auftritt, Kanal oder Prozess. Kein Logo, kein Porträt.`,
+      zweck: `Bild im Hochformat zur Aussage „${kurz(payload.insight_title, 160)}“: dokumentiert die heutige Lage bei ${traeger} nüchtern und konkret, so wie der Satz sie beschreibt. Kein Wunschbild, kein Logo, kein Porträt.`,
       query: [firma, kurz(payload.insight_title, 120)].filter(Boolean).join(" "),
       aspect: MEMO_BILD_ASPEKT.insight,
       minBreite: 600,
@@ -5620,13 +5657,47 @@ export function memoBildBriefs(
     const hinweis = kurz(eintrag?.image_hint || eintrag?.title, 160);
     briefs.push({
       key: `potentials.${i}`,
-      zweck: `Bild zum Hebel „${titel}“: zeigt, wie es aussähe, wenn der Hebel gezogen ist (${kurz(eintrag?.potential, 180)}). Szene aus Laden, Kampagne, Produkt, Kanal oder Arbeitsumfeld, kein Logo, kein Porträt.`,
+      zweck: `Bild zum Hebel „${titel}“: zeigt den Zielzustand bei ${traeger}, wie es aussähe, wenn der Hebel gezogen ist (${kurz(eintrag?.potential, 180)}). Realistische Szene, keine Grafik, kein Logo, kein Porträt.`,
       query: [hinweis, firma && !hinweis.includes(firma) ? firma : ""].filter(Boolean).join(" "),
       aspect: MEMO_BILD_ASPEKT.potential,
       minBreite: 600,
     });
   });
   return briefs.filter((brief) => brief.query);
+}
+
+/**
+ * Zwei gezielte Suchanfragen je Rahmen, geschrieben von einem Modell, das den
+ * Zweck des Rahmens und das Leitbild kennt. Die erste Anfrage aus der
+ * Signalueberschrift fand fuer Titelbild und Befund zu selten ein Foto des
+ * Adressaten selbst.
+ */
+export function buildMemoBildSuchplanPrompt(briefs: MemoBildBrief[], firma = "", thema = ""): string {
+  const rahmen = briefs.map((brief) => `- ${brief.key}: ${brief.zweck}`).join("\n");
+  return `Du planst die Bildsuche für ein ROOTS Executive Memo${firma ? ` an ${firma}` : ""}${thema ? ` zum Thema ${thema}` : ""}.
+
+<leitbild>
+${MEMO_BILD_LEITBILD}
+</leitbild>
+<rahmen>
+${rahmen}
+</rahmen>
+
+Schreibe je Rahmen zwei Suchanfragen für eine Bildersuche im Web: kurz, konkret, mit ${firma ? `${firma} und ` : ""}dem sichtbaren Motiv (Ort, Gegenstand, Situation), nicht mit abstrakten Begriffen wie Strategie oder Potenzial. Eine Anfrage auf Deutsch, eine auf Englisch.
+Antworte ausschliesslich mit JSON: {"suchen":[{"slot":"cover","queries":["…","…"]}]}`;
+}
+
+export function parseMemoBildSuchplan(raw: unknown, briefs: MemoBildBrief[]): Map<MemoBildSlot, string[]> {
+  const slots = new Set(briefs.map((brief) => brief.key));
+  const plan = new Map<MemoBildSlot, string[]>();
+  for (const eintrag of Array.isArray(record(raw).suchen) ? record(raw).suchen as unknown[] : []) {
+    const item = record(eintrag);
+    const slot = String(item.slot || "") as MemoBildSlot;
+    const queries = (Array.isArray(item.queries) ? item.queries : [])
+      .map((query) => kurz(query, 140)).filter(Boolean).slice(0, 2);
+    if (slots.has(slot) && queries.length) plan.set(slot, queries);
+  }
+  return plan;
 }
 
 /** Liest die Bilder einer Sonar-Antwort und verwirft, was fuer einen Rahmen nicht taugt. */
@@ -5677,6 +5748,9 @@ export function buildMemoBildPruefPrompt(briefs: MemoBildBrief[], kandidaten: Me
   }).join("\n");
   return `Du wählst die Bilder für ein ROOTS Executive Memo${firma ? ` an ${firma}` : ""}. Die Bilder hängen in der Reihenfolge der Liste an dieser Nachricht.
 
+<leitbild>
+${MEMO_BILD_LEITBILD}
+</leitbild>
 <rahmen>
 ${rahmen}
 </rahmen>
@@ -5685,7 +5759,7 @@ ${liste}
 </bilder>
 
 Sieh dir jedes Bild an und entscheide, ob und wohin es gehört. Ein Bild darf in einen anderen Rahmen als den, für den es gesucht wurde. Jedes Bild höchstens einmal.
-Bewerte 0 bis 10. Unter ${MEMO_BILD_MIN_SCORE} bleibt der Rahmen leer.
+Bewerte 0 bis 10 und nenne für jeden Rahmen dein bestes Bild, auch wenn es unter ${MEMO_BILD_MIN_SCORE} liegt. Unter ${MEMO_BILD_MIN_SCORE} bleibt der Rahmen vorerst leer.
 Hoch bewerten: zeigt genau, was der Rahmen verlangt, ${firma ? `bei ${firma} selbst oder in seinem Umfeld` : "im Thema"}, scharf, gut beleuchtet, lässt sich auf das Seitenverhältnis zuschneiden, ohne das Wichtige zu verlieren.
 Null Punkte: Logo, Grafik, Diagramm, Screenshot, Collage, Wasserzeichen, eingebrannter Text oder Preisschild im Mittelpunkt, eine erkennbare Einzelperson im Fokus, ein Wettbewerber als Hauptmotiv, ein anderes Land oder eine andere Branche als der Fall, Symbolfoto ohne Bezug.
 fokus ist die Stelle des Wichtigsten im Bild als object-position, zum Beispiel „50% 40%“.
@@ -5699,12 +5773,17 @@ export function parseMemoBildPruefung(
   raw: unknown,
   briefs: MemoBildBrief[],
   kandidaten: MemoBildKandidat[],
-): { entscheidungen: MemoBildEntscheidung[]; neueSuche: Map<MemoBildSlot, string> } {
+): {
+  entscheidungen: MemoBildEntscheidung[];
+  neueSuche: Map<MemoBildSlot, string>;
+  beinahe: Map<MemoBildSlot, MemoBildEntscheidung>;
+} {
   const root = record(raw);
   const slots = new Set(briefs.map((brief) => brief.key));
   const nachNr = new Map(kandidaten.map((k) => [k.nr, k]));
   const vergeben = new Set<number>();
   const entscheidungen: MemoBildEntscheidung[] = [];
+  const beinahe = new Map<MemoBildSlot, MemoBildEntscheidung>();
   const zuordnung = (Array.isArray(root.zuordnung) ? root.zuordnung : [])
     .map((eintrag) => record(eintrag))
     .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
@@ -5713,6 +5792,11 @@ export function parseMemoBildPruefung(
     const nr = Number(eintrag.bild);
     const score = Number(eintrag.score || 0);
     const kandidat = nachNr.get(nr);
+    if (slots.has(slot) && kandidat && !vergeben.has(nr) && score >= MEMO_BILD_RUECKFALL_SCORE && score < MEMO_BILD_MIN_SCORE
+      && !beinahe.has(slot)) {
+      const fokusB = /^\d{1,3}% \d{1,3}%$/.test(String(eintrag.fokus || "")) ? String(eintrag.fokus) : "50% 50%";
+      beinahe.set(slot, { slot, kandidat, ersatz: [], score, grund: kurz(eintrag.grund, 240), fokus: fokusB });
+    }
     if (!slots.has(slot) || !kandidat || vergeben.has(nr) || score < MEMO_BILD_MIN_SCORE) continue;
     if (entscheidungen.some((e) => e.slot === slot)) continue;
     vergeben.add(nr);
@@ -5730,7 +5814,11 @@ export function parseMemoBildPruefung(
     const query = kurz(item.query, 160);
     if (slots.has(slot) && query && !entscheidungen.some((e) => e.slot === slot)) neueSuche.set(slot, query);
   }
-  return { entscheidungen, neueSuche };
+  for (const entscheidung of entscheidungen) beinahe.delete(entscheidung.slot);
+  for (const [slot, knapp] of [...beinahe]) {
+    if (entscheidungen.some((e) => e.kandidat.nr === knapp.kandidat.nr)) beinahe.delete(slot);
+  }
+  return { entscheidungen, neueSuche, beinahe };
 }
 
 /** Neue Suchanfrage, wenn das Pruefmodell keine vorschlaegt: erst praeziser, dann breiter. */
@@ -5742,7 +5830,7 @@ export function memoBildNachbesserung(brief: MemoBildBrief, runde: number, firma
 
 /** Hoechstens so viele Bilder je Rahmen, damit jeder Rahmen im Pruefaufruf vorkommt. */
 export function memoBildVerteilen(kandidaten: Omit<MemoBildKandidat, "nr">[], briefs: MemoBildBrief[], max = MEMO_BILD_PRUEF_MAX): MemoBildKandidat[] {
-  const jeSlot = Math.max(2, Math.floor(max / Math.max(1, briefs.length)));
+  const jeSlot = Math.max(3, Math.floor(max / Math.max(1, briefs.length)));
   const zaehler = new Map<string, number>();
   const out: MemoBildKandidat[] = [];
   for (const kandidat of kandidaten) {
@@ -5752,6 +5840,34 @@ export function memoBildVerteilen(kandidaten: Omit<MemoBildKandidat, "nr">[], br
     out.push({ ...kandidat, nr: out.length + 1 });
   }
   return out;
+}
+
+/**
+ * Rahmen fuer den bisherigen Rueckfallweg (Motiv erzeugen, dann Wikimedia
+ * Commons). Titelbild und Befund kannte er nicht; beide blieben leer, wenn
+ * die Bildwahl mit Sicht nichts fand.
+ */
+export function memoRahmenSlot(brief: MemoBildBrief, firma = ""): MemoImageSlot {
+  const cover = brief.key === "cover";
+  const woerter = brief.query.split(/\s+/).filter(Boolean);
+  return {
+    key: brief.key,
+    kind: "potential",
+    index: 0,
+    subject: woerter.slice(0, 6).join(" ") || firma,
+    hint: brief.query,
+    aussage: brief.zweck,
+    company: firma,
+    queries: uniqueStrings([
+      brief.query,
+      firma ? `${firma} ${cover ? "Filiale" : "Laden innen"}` : "",
+      firma ? `${firma} store` : "",
+      woerter.slice(0, 4).join(" "),
+    ]).filter(Boolean),
+    aspectMm: cover ? { w: 210, h: 178 } : { w: 105, h: 165 },
+    pixels: cover ? { w: 1240, h: 1050 } : { w: 740, h: 1160 },
+    geminiAspect: cover ? "4:3" : "3:2",
+  };
 }
 
 export function memoSlotImage(payload: unknown, key: string): MemoImage | null {
@@ -5824,6 +5940,8 @@ export async function fillMemoImages(
     log?: (event: string, extra?: Record<string, unknown>) => void | Promise<void>;
     prepareRetry?: (slots: MemoImageSlot[]) => void | Promise<void>;
     addressee?: string;
+    /** Nur diese Rahmenarten fuellen. Logos laufen zuerst, Motive nach der Bildwahl mit Sicht. */
+    nurArten?: Array<"benchmark" | "potential">;
   },
 ): Promise<MemoPayload> {
   if (answers.images === "upload") {
@@ -5836,6 +5954,7 @@ export async function fillMemoImages(
   }
   const firma = String(opts.addressee || answers.company || "").trim();
   const offen = (slot: MemoImageSlot) => {
+    if (opts.nurArten && !opts.nurArten.includes(slot.kind)) return false;
     if (memoSlotHasImage(payload, slot.key)) return false;
     return slot.kind === "benchmark" ? Boolean(slot.subject) : Boolean(slot.subject || slot.hint);
   };

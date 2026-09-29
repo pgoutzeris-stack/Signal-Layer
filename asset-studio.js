@@ -1720,12 +1720,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-6";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-7";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-6";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-7";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-6";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-7";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2442,6 +2442,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     if (event === "bild_gewaehlt") return `Bild für ${bildRahmen(entry.key)} gewählt · ${Number(entry.score || 0)}/10${entry.quelle ? ` · ${entry.quelle}` : ""}`;
     if (event === "bilder_zeit") return "Bildsuche beendet, die Zeit reicht für keine weitere Runde";
+    if (event === "bild_rueckfall") return `Bild für ${bildRahmen(entry.key)} über den Rückfallweg${entry.quelle ? ` · ${entry.quelle}` : ""}${entry.score ? ` · ${Number(entry.score)}/10` : ""}`;
+    if (event === "bild_rueckfall_leer") return `Kein passendes Bild für ${bildRahmen(entry.key)} gefunden`;
+    if (event === "benchmarks_ohne_logo") return `Zu unbekannt, kein Logo auffindbar: ${(Array.isArray(entry.names) ? entry.names : []).join(", ")}`;
+    if (event === "bilder_nachgezogen") return "Bilder gesichert";
     if (event === "bilder_sicht_fertig") return `${Number(entry.gewaehlt || 0)} Bilder geprüft und gesetzt`;
     if (event === "image_start") return "Logo wird gesucht";
     if (event === "images_done") return "Logos gefunden";
@@ -3964,6 +3968,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function adoptPayload(raw) {
     const data = raw && typeof raw === "object" ? raw : {};
     state.payload = data;
+    // Ein fertiger Entwurf beginnt auf Seite 1. Der Fragebogen blaettert die
+    // Vorschau zur gerade bearbeiteten Seite; danach stand das neue Memo auf
+    // der letzten Seite, weil die letzte Frage dort lag.
+    state.prevIndex = 0;
     // Der Server hat die Vorlage beim Erzeugen festgeschrieben. Ein spaeter
     // geoeffneter Entwurf zeigt deshalb dieselbe Fusszeile wie damals.
     if (data.chrome && typeof data.chrome === "object") {

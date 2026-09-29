@@ -126,6 +126,9 @@ import {
   memoSlotHasImage,
   memoBildBriefs,
   memoBildKandidatenAus,
+  memoRahmenSlot,
+  buildMemoBildSuchplanPrompt,
+  parseMemoBildSuchplan,
   memoBildNachbesserung,
   memoBildVerteilen,
   buildMemoBildPruefPrompt,
@@ -4377,7 +4380,9 @@ const warte = (ms: number) => new Promise((fertig) => setTimeout(fertig, ms));
 async function sucheMemoBilder(query: string): Promise<unknown> {
   const apiKey = await getPerplexityKey().catch(() => "");
   if (!apiKey || !query) return null;
-  for (let versuch = 1; versuch <= 2; versuch += 1) {
+  // Perplexity lehnt schon zwei gleichzeitige Anfragen mit 429 ab (29.9.2026).
+  // Die Suchen laufen deshalb nacheinander, bei 429 mit wachsender Pause.
+  for (let versuch = 1; versuch <= 3; versuch += 1) {
     try {
       const response = await fetchMitLimit("https://api.perplexity.ai/chat/completions", {
         method: "POST",
@@ -4390,7 +4395,7 @@ async function sucheMemoBilder(query: string): Promise<unknown> {
         }),
       }, 45_000);
       const roh = await response.text().catch(() => "");
-      if ((response.status === 429 || response.status >= 500) && versuch < 2) { await warte(3_000); continue; }
+      if ((response.status === 429 || response.status >= 500) && versuch < 3) { await warte(2_000 * versuch); continue; }
       if (!response.ok) {
         await recordStandaloneAiUsage("memo_photo_research", MEMO_BILD_SUCHMODELL, "error", undefined, 0, `http_${response.status}`, undefined, "bildsuche");
         return null;
@@ -4403,10 +4408,35 @@ async function sucheMemoBilder(query: string): Promise<unknown> {
       }, 1, undefined, { usd: Number(u.cost?.total_cost || 0), toolUsd: Number(u.cost?.request_cost || 0) }, "bildsuche");
       return json;
     } catch {
-      if (versuch === 2) return null;
+      if (versuch === 3) return null;
     }
   }
   return null;
+}
+
+/** Zwei Suchanfragen je Rahmen vom Pruefmodell, ohne Websuche. Faellt auf die Standardanfrage zurueck. */
+async function planeMemoBildsuche(briefs: MemoBildBrief[], firma: string, thema: string): Promise<Map<string, string[]>> {
+  const apiKey = await getPerplexityKey().catch(() => "");
+  if (!apiKey || !briefs.length) return new Map();
+  try {
+    const response = await fetchMitLimit(PERPLEXITY_RESPONSES_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: MEMO_BILD_PRUEFMODELL,
+        max_output_tokens: 900,
+        instructions: "Antworte ausschliesslich mit dem verlangten JSON.",
+        input: buildMemoBildSuchplanPrompt(briefs, firma, thema),
+      }),
+    }, 40_000);
+    const antwort = parsePerplexityAntwort(await response.text().catch(() => ""));
+    await recordStandaloneAiUsage("memo_image_check", MEMO_BILD_PRUEFMODELL, response.ok ? "success" : "error",
+      antwort.usage, 0, response.ok ? undefined : `http_${response.status}`, { usd: antwort.costUsd, toolUsd: 0 }, "bildsuche");
+    if (!response.ok || !antwort.content.trim()) return new Map();
+    return parseMemoBildSuchplan(parseLooseJsonObject(antwort.content), briefs);
+  } catch {
+    return new Map();
+  }
 }
 
 /** Wirft Kandidaten raus, die der Server nicht als Bild ausliefert. Sonst scheitert der ganze Pruefaufruf. */
@@ -4437,8 +4467,14 @@ async function pruefeMemoBilder(
   briefs: MemoBildBrief[],
   kandidaten: MemoBildKandidat[],
   firma: string,
-): Promise<{ entscheidungen: MemoBildEntscheidung[]; neueSuche: Map<string, string>; tokens: number; ok: boolean }> {
-  const leer = { entscheidungen: [] as MemoBildEntscheidung[], neueSuche: new Map<string, string>(), tokens: 0, ok: false };
+): Promise<{
+  entscheidungen: MemoBildEntscheidung[]; neueSuche: Map<string, string>;
+  beinahe: Map<string, MemoBildEntscheidung>; tokens: number; ok: boolean;
+}> {
+  const leer = {
+    entscheidungen: [] as MemoBildEntscheidung[], neueSuche: new Map<string, string>(),
+    beinahe: new Map<string, MemoBildEntscheidung>(), tokens: 0, ok: false,
+  };
   const apiKey = await getPerplexityKey().catch(() => "");
   if (!apiKey || !kandidaten.length) return leer;
   const body = JSON.stringify({
@@ -4495,15 +4531,41 @@ async function waehleMemoBilderMitSicht(opts: {
   let briefs = memoBildBriefs(opts.payload, { firma: opts.firma, headline: opts.headline, thema: opts.thema });
   if (!briefs.length) return 0;
   const gesehen = new Set<string>();
+  const knapp = new Map<string, MemoBildEntscheidung>();
   let gewaehlt = 0;
+  const setze = async (entscheidung: MemoBildEntscheidung, ereignis: string): Promise<boolean> => {
+    for (const kandidat of [entscheidung.kandidat, ...entscheidung.ersatz]) {
+      const src = await downloadMemoPhoto(kandidat.url, true);
+      if (!src || src.length * 0.75 > MEMO_BILD_BYTES_MAX || src.startsWith("data:image/svg")) continue;
+      attachMemoSlotImage(opts.payload, entscheidung.slot, src, "cover", { pos: entscheidung.fokus, quelle: kandidat.quelle || kandidat.url });
+      await opts.anhaengen(entscheidung.slot, src, entscheidung.fokus, kandidat.quelle || kandidat.url);
+      let domain = "";
+      try { domain = new URL(kandidat.quelle || kandidat.url).hostname.replace(/^www\./, ""); } catch { domain = ""; }
+      opts.log(ereignis, { key: entscheidung.slot, score: entscheidung.score, quelle: domain, grund: entscheidung.grund.slice(0, 160) });
+      gewaehlt += 1;
+      return true;
+    }
+    return false;
+  };
+  // Runde 1 sucht mit einem Suchplan: zwei Anfragen je Rahmen statt der
+  // Signalueberschrift, die fuer Titelbild und Befund zu selten den
+  // Adressaten selbst traf.
+  const plan = await planeMemoBildsuche(briefs, opts.firma, opts.thema);
+  let anfragen = new Map<string, string[]>(briefs.map((brief) => [brief.key, plan.get(brief.key) || [brief.query]]));
   for (let runde = 1; runde <= MEMO_BILD_RUNDEN && briefs.length; runde += 1) {
-    if (opts.restMs() < 45_000) {
+    // Genug Zeit fuer die Rueckfallwege danach lassen (Motive, Commons).
+    if (opts.restMs() < 60_000) {
       opts.log("bilder_zeit", { runde, offen: briefs.map((brief) => brief.key) });
       break;
     }
-    opts.log("bilder_suche", { runde, model: MEMO_BILD_SUCHMODELL, slots: briefs.map((brief) => brief.key) });
-    const antworten = await mapLimit(briefs, 2, (brief) => sucheMemoBilder(brief.query));
-    const roh = briefs.flatMap((brief, i) => memoBildKandidatenAus(antworten[i], brief, gesehen));
+    // Titelbild und Befund sind am schwersten zu treffen: sie bekommen beide
+    // Anfragen des Suchplans, die Potenziale die erste.
+    const auftraege = briefs.flatMap((brief) => (anfragen.get(brief.key) || [brief.query])
+      .slice(0, brief.key === "cover" || brief.key === "insight" ? 2 : 1)
+      .map((query) => ({ brief, query })));
+    opts.log("bilder_suche", { runde, model: MEMO_BILD_SUCHMODELL, slots: briefs.map((brief) => brief.key), anfragen: auftraege.length });
+    const antworten = await mapLimit(auftraege, 1, (auftrag) => sucheMemoBilder(auftrag.query));
+    const roh = auftraege.flatMap((auftrag, i) => memoBildKandidatenAus(antworten[i], auftrag.brief, gesehen));
     const kandidaten = memoBildVerteilen(await erreichbareMemoBilder(roh), briefs);
     let neueSuche = new Map<string, string>();
     if (kandidaten.length) {
@@ -4513,18 +4575,9 @@ async function waehleMemoBilderMitSicht(opts: {
         runde, model: MEMO_BILD_PRUEFMODELL, kandidaten: kandidaten.length,
         angenommen: pruefung.entscheidungen.length, tokens: pruefung.tokens, ok: pruefung.ok,
       });
-      for (const entscheidung of pruefung.entscheidungen) {
-        for (const kandidat of [entscheidung.kandidat, ...entscheidung.ersatz]) {
-          const src = await downloadMemoPhoto(kandidat.url, true);
-          if (!src || src.length * 0.75 > MEMO_BILD_BYTES_MAX || src.startsWith("data:image/svg")) continue;
-          attachMemoSlotImage(opts.payload, entscheidung.slot, src, "cover", { pos: entscheidung.fokus, quelle: kandidat.quelle || kandidat.url });
-          await opts.anhaengen(entscheidung.slot, src, entscheidung.fokus, kandidat.quelle || kandidat.url);
-          let domain = "";
-          try { domain = new URL(kandidat.quelle || kandidat.url).hostname.replace(/^www\./, ""); } catch { domain = ""; }
-          opts.log("bild_gewaehlt", { key: entscheidung.slot, score: entscheidung.score, quelle: domain, grund: entscheidung.grund.slice(0, 160) });
-          gewaehlt += 1;
-          break;
-        }
+      for (const entscheidung of pruefung.entscheidungen) await setze(entscheidung, "bild_gewaehlt");
+      for (const [slot, treffer] of pruefung.beinahe) {
+        if ((knapp.get(slot)?.score || 0) < treffer.score) knapp.set(slot, treffer);
       }
     } else {
       opts.log("bilder_pruefung", { runde, kandidaten: 0, angenommen: 0 });
@@ -4532,6 +4585,12 @@ async function waehleMemoBilderMitSicht(opts: {
     briefs = briefs
       .filter((brief) => !memoSlotHasImage(opts.payload, brief.key))
       .map((brief) => ({ ...brief, query: neueSuche.get(brief.key) || memoBildNachbesserung(brief, runde, opts.firma) }));
+    anfragen = new Map(briefs.map((brief) => [brief.key, [brief.query]]));
+  }
+  // Rahmen, die leer blieben, bekommen das beste knapp bewertete Bild (5 oder 6 von 10).
+  for (const brief of briefs) {
+    const treffer = knapp.get(brief.key);
+    if (treffer && !memoSlotHasImage(opts.payload, brief.key)) await setze(treffer, "bild_rueckfall");
   }
   return gewaehlt;
 }
@@ -4789,6 +4848,20 @@ async function researchMemoMarktLage(
     tokens: gefunden.tokens,
     searchQueries: gefunden.searchQueries,
   };
+}
+
+/**
+ * Welche Benchmarks kein auffindbares Logo haben. Eine Marke ohne Logo in
+ * Registry, Wikidata, Wikipedia, Commons und Worldvectorlogo ist fuer eine
+ * Entscheiderin meist zu unbekannt; am 29.9.2026 fehlte es bei SPORT 2000.
+ * Hoechstens zwoelf Sekunden: laeuft die Zeit ab, gilt niemand als ohne Logo.
+ */
+async function benchmarksOhneLogo(namen: string[]): Promise<string[]> {
+  const pruefung = Promise.all(namen.map(async (name) => ({ name, logo: await findMemoSlotLogo(name, "", "").catch(() => null) })));
+  const frist = new Promise<null>((fertig) => setTimeout(() => fertig(null), 12_000));
+  const ergebnis = await Promise.race([pruefung, frist]);
+  if (!ergebnis) return [];
+  return ergebnis.filter((eintrag) => !eintrag.logo).map((eintrag) => eintrag.name);
 }
 
 async function researchMemoBenchmarksWithSearch(
@@ -7180,6 +7253,19 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       return;
     }
 
+    // Ein Bild einzeln anhaengen, mit Wartezeit bei einer Sperre. Am 29.9.2026
+    // ist ein Logo an „lock timeout" gescheitert und war danach weg: das
+    // Nachschreiben der Nutzlast lief erst nach „fertig" und traf nichts mehr.
+    let bildNachzug = false;
+    const haengeBildAn = async (key: string, src: string, pos: string, fit?: "cover" | "contain", quelle?: string) => {
+      for (let versuch = 1; versuch <= 4; versuch += 1) {
+        const attached = await attachGeneratedAssetImage(admin, assetId, key, src, pos, fit, quelle);
+        if (attached.ok) return true;
+        loggen("persist_fail", { key, versuch, message: String(attached.error || "attach").slice(0, 160) });
+        await halte(600 * 2 ** (versuch - 1));
+      }
+      return false;
+    };
     if (assetKind === "memo" && (assetAnswers as MemoAnswers).images !== "upload") {
       await abschnitt("bilder");
       const geminiKey = await getGeminiKey().catch(() => "");
@@ -7202,6 +7288,40 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
           tag: String(eintrag?.tag || ""),
         })).filter((eintrag) => eintrag.name || eintrag.tag),
       };
+      const finder = createMemoPhotoFinder(
+        geminiKey,
+        MEMO_PHOTO_RESEARCH_MODEL,
+        (event, extra) => loggen(event, extra),
+        adressatFuerBilder,
+        szeneKontext,
+      );
+      // Reihenfolge: erst die Logos (schnell, sonst fehlen sie bei knapper
+      // Zeit), dann die Bildwahl mit Sicht, dann die Rueckfallwege.
+      try {
+          payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
+            remainingMs: assetPhaseRemainingMs(isolateStartedAt),
+            addressee: adressatFuerBilder,
+            fetchPhoto: finder.fetchPhoto,
+            prepareRetry: finder.prepareRetry,
+            nurArten: ["benchmark"],
+            log: async (event, extra) => {
+              loggen(event, extra || {});
+              if (event === "image_ok") {
+                const key = String(extra?.key || "");
+                const src = memoSlotImageSrc(payload, key);
+                // Die Einpassung reist mit: ohne sie wurde jedes Logo wie ein
+                // Foto randlos gefuellt und abgeschnitten.
+                const fit = memoSlotImage(payload, key)?.fit;
+                if (src && !(await haengeBildAn(key, src, "50% 50%", fit))) bildNachzug = true;
+                await persist({});
+                return;
+              }
+              await persist({});
+            },
+          });
+        } catch (fehler) {
+          loggen("images_incomplete", { reason: String(fehler).slice(0, 300) });
+        }
       // Zuerst die Bildwahl mit Sicht: Titelbild, Bild zum Befund und die
       // Potenziale. Was sie nicht fuellt, uebernimmt der bisherige Weg.
       try {
@@ -7212,33 +7332,24 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
           headline: String(assetSignal.headline_de || assetArticle.title_de || assetArticle.title || ""),
           thema: [assetSignal.roots_offering, assetSignal.headline_de].filter(Boolean).join(" · "),
           restMs: () => assetPhaseRemainingMs(isolateStartedAt),
-          log: (event, extra) => { loggen(event, extra || {}); void persist({}); },
+          log: (event, extra) => { loggen(event, extra || {}); },
           anhaengen: async (key, src, pos, quelle) => {
-            let attached = await attachGeneratedAssetImage(admin, assetId, key, src, pos, "cover", quelle);
-            if (!attached.ok) {
-              await halte(800);
-              attached = await attachGeneratedAssetImage(admin, assetId, key, src, pos, "cover", quelle);
-            }
-            if (!attached.ok) loggen("persist_fail", { key, message: String(attached.error || "attach").slice(0, 240) });
+            const ok = await haengeBildAn(key, src, pos, "cover", quelle);
+            if (!ok) bildNachzug = true;
           },
         });
         loggen("bilder_sicht_fertig", { gewaehlt });
       } catch (fehler) {
         loggen("bilder_sicht_fehler", { reason: String(fehler).slice(0, 300) });
       }
-      const finder = createMemoPhotoFinder(
-        geminiKey,
-        MEMO_PHOTO_RESEARCH_MODEL,
-        (event, extra) => loggen(event, extra),
-        adressatFuerBilder,
-        szeneKontext,
-      );
       try {
           payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
+            // Nach der Bildwahl mit Sicht nur noch die Motive, die leer blieben.
             remainingMs: assetPhaseRemainingMs(isolateStartedAt),
             addressee: adressatFuerBilder,
             fetchPhoto: finder.fetchPhoto,
             prepareRetry: finder.prepareRetry,
+            nurArten: ["potential"],
             log: async (event, extra) => {
               loggen(event, extra || {});
               if (event === "image_ok") {
@@ -7247,17 +7358,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
                 // Die Einpassung reist mit: ohne sie wurde jedes Logo wie ein
                 // Foto randlos gefuellt und abgeschnitten.
                 const fit = memoSlotImage(payload, key)?.fit;
-                if (src) {
-                  let attached = await attachGeneratedAssetImage(admin, assetId, key, src, "50% 50%", fit);
-                  if (!attached.ok) {
-                    loggen("persist_fail", { key, message: String(attached.error || "attach").slice(0, 240) });
-                    await halte(800);
-                    attached = await attachGeneratedAssetImage(admin, assetId, key, src, "50% 50%", fit);
-                  }
-                  if (!attached.ok) {
-                    loggen("persist_fail", { key, message: String(attached.error || "attach").slice(0, 240), fatal: true });
-                  }
-                }
+                if (src && !(await haengeBildAn(key, src, "50% 50%", fit))) bildNachzug = true;
                 await persist({});
                 return;
               }
@@ -7266,8 +7367,34 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
           });
         } catch (fehler) {
           loggen("images_incomplete", { reason: String(fehler).slice(0, 300) });
+        }
+        // Titelbild und Befund ohne Treffer: der bisherige Rueckfallweg
+        // (Motiv erzeugen, dann Wikimedia Commons mit freier Lizenz).
+        try {
+          const bildFirma = (assetAnswers as MemoAnswers).company_named === "no" ? "" : adressatFuerBilder;
+          const offen = memoBildBriefs(payload as MemoPayload, {
+            firma: bildFirma,
+            headline: String(assetSignal.headline_de || assetArticle.title_de || assetArticle.title || ""),
+            thema: [assetSignal.roots_offering, assetSignal.headline_de].filter(Boolean).join(" · "),
+          }).filter((brief) => brief.key === "cover" || brief.key === "insight");
+          for (const brief of offen) {
+            if (assetPhaseRemainingMs(isolateStartedAt) < 15_000) break;
+            const src = await finder.fetchPhoto(memoRahmenSlot(brief, bildFirma));
+            if (!src) { loggen("bild_rueckfall_leer", { key: brief.key }); continue; }
+            attachMemoSlotImage(payload as MemoPayload, brief.key, src, "cover");
+            if (!(await haengeBildAn(brief.key, src, "50% 50%", "cover"))) bildNachzug = true;
+            loggen("bild_rueckfall", { key: brief.key, quelle: "commons" });
+          }
+        } catch (fehler) {
+          loggen("bild_rueckfall_fehler", { reason: String(fehler).slice(0, 200) });
         } finally {
           clearInterval(beat);
+        }
+        // Ist ein Anhaengen endgueltig gescheitert, geht die ganze Nutzlast
+        // noch vor „fertig" in die Zeile. Danach schreibt persist nichts mehr.
+        if (bildNachzug && payload) {
+          const nachzug = await persist({ payload });
+          loggen(nachzug?.error ? "persist_fail" : "bilder_nachgezogen", nachzug?.error ? { phase: "nachzug", message: String(nachzug.error.message).slice(0, 160) } : {});
         }
     }
 
@@ -12225,6 +12352,15 @@ Deno.serve(async (req: Request) => {
                       loggen("benchmarks_fern", { names: gefunden.fern });
                       letzter = new Error(`Zu weit weg vom Markt des Adressaten: ${gefunden.fern.join(", ")}.`);
                       continue;
+                    }
+                    if (attempt < 3) {
+                      const ohneLogo = await benchmarksOhneLogo(briefs.map((item) => item.name));
+                      if (ohneLogo.length) {
+                        exclude.push(...ohneLogo);
+                        loggen("benchmarks_ohne_logo", { names: ohneLogo });
+                        letzter = new Error(`Zu unbekannt, kein Logo auffindbar: ${ohneLogo.join(", ")}.`);
+                        continue;
+                      }
                     }
                     try {
                       const pruefung = await reviewMemoBenchmarksWithSearch(
