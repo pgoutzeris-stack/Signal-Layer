@@ -256,6 +256,16 @@ import {
   parseWikipediaPageImages,
   pickWikipediaLogoFile,
   memoLogoNameVariants,
+  logoCacheKey,
+  wikimediaLogoAdressen,
+  buildLogoPruefPrompt,
+  parseLogoPruefung,
+  memoLogoKandidatenAus,
+  memoLogoSuchanfrage,
+  MEMO_LOGO_KANDIDATEN_JE_MARKE,
+  type LogoKandidat,
+  type LogoMarke,
+  type LogoUrteil,
   wikipediaOpenSearchApiUrl,
   wikipediaPageImagesApiUrl,
   wikipediaTitleMatchesCompany,
@@ -4058,6 +4068,7 @@ async function downloadMemoPhoto(
   url: string,
   trusted = false,
   allowUrl: (value: string) => boolean = isAllowedMemoPhotoUrl,
+  fristMs = MEMO_IMAGE_FETCH_MS,
 ): Promise<string | null> {
   if (!url.startsWith("https://")) return null;
   try {
@@ -4066,7 +4077,7 @@ async function downloadMemoPhoto(
         Accept: "image/svg+xml,image/png,image/webp,image/jpeg;q=0.9,*/*;q=0.2",
         "User-Agent": MEMO_PHOTO_USER_AGENT,
       },
-    }, MEMO_IMAGE_FETCH_MS);
+    }, fristMs);
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       return null;
@@ -4225,55 +4236,317 @@ async function findMemoCompanyLogo(company: string): Promise<{ logo_url: string 
   return null;
 }
 
+type LogoRoh = Pick<LogoKandidat, "marke" | "name" | "url" | "via" | "titel">;
+
 /**
- * Belegbare Quellen der Reihe nach, für jede Namensvariante. cosnova
- * (essence & Catrice) hat am 17.8.2026 alle Quellen verfehlt, weil nur der
- * ganze Name gesucht wurde — Wikidata führt das Logo unter "cosnova".
+ * Geprueftes Logo aus dem Speicher (signal_layer.logo_cache). Die Reihenfolge
+ * der Namen gilt: der genaue Name vor dem Teilnamen.
  */
-async function findMemoSlotLogo(
-  subject: string,
-  apiKey: string,
-  model: string,
-  log?: (event: string, extra: Record<string, unknown>) => void,
-): Promise<string | null> {
-  const varianten = memoLogoNameVariants(subject);
-  if (!varianten.length) return null;
+async function ladeGespeichertesLogo(namen: string[], zaehlen = true): Promise<{ key: string; src: string; via: string } | null> {
+  const schluessel = [...new Set(namen.map(logoCacheKey).filter(Boolean))];
+  if (!schluessel.length) return null;
+  try {
+    const admin = getAdminClient();
+    const { data, error } = await admin.schema("signal_layer").from("logo_cache")
+      .select("name_key,src,via,treffer")
+      .in("name_key", schluessel)
+      .eq("geprueft", true);
+    if (error || !data?.length) return null;
+    const zeile = schluessel.map((key) => data.find((row) => row.name_key === key)).find(Boolean);
+    if (!zeile) return null;
+    if (zaehlen) {
+      await admin.schema("signal_layer").from("logo_cache")
+        .update({ treffer: Number(zeile.treffer || 0) + 1 })
+        .eq("name_key", zeile.name_key);
+    }
+    return { key: String(zeile.name_key), src: String(zeile.src), via: String(zeile.via) };
+  } catch {
+    return null;
+  }
+}
+
+async function speichereLogo(eintrag: {
+  name: string; src: string; quelle: string; via: string; score: number; beschreibung: string;
+}): Promise<void> {
+  const nameKey = logoCacheKey(eintrag.name);
+  if (!nameKey || !eintrag.src.startsWith("data:image/")) return;
+  try {
+    const { error } = await getAdminClient().schema("signal_layer").from("logo_cache").upsert({
+      name_key: nameKey,
+      name: eintrag.name,
+      src: eintrag.src,
+      quelle: eintrag.quelle || null,
+      via: eintrag.via,
+      geprueft: true,
+      score: eintrag.score,
+      beschreibung: eintrag.beschreibung || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "name_key" });
+    if (error) console.error(`Logo für ${eintrag.name} nicht gespeichert:`, error.message);
+  } catch { /* Speichern darf die Bildstufe nicht aufhalten. */ }
+}
+
+/** Kuratierte Registry (tier1_companies, company_profiles). Gilt ohne Pruefung. */
+async function registryLogo(namen: string[]): Promise<{ name: string; src: string } | null> {
+  for (const name of namen) {
+    const url = (await findMemoCompanyLogo(name).catch(() => null))?.logo_url;
+    if (!url) continue;
+    const src = await downloadMemoPhoto(url, true);
+    if (src) return { name, src };
+  }
+  return null;
+}
+
+/**
+ * Logodateien aus Wikidata, Wikipedia und Commons. Worldvectorlogo fehlt mit
+ * Absicht: es liefert nur SVG, die das Pruefmodell nicht sieht, und rät den
+ * Namen. Für Lidl kam am 29.9.2026 so ein fremder Schriftzug.
+ */
+async function wikimediaLogoKandidaten(marke: string, namen: string[], gesehen: Set<string>): Promise<LogoRoh[]> {
   const quellen: Array<[string, (name: string) => Promise<string | null>]> = [
-    ["registry", async (name) => (await findMemoCompanyLogo(name))?.logo_url || null],
-    ["worldvectorlogo", (name) => probeWorldvectorlogo(name)],
     ["wikidata", (name) => findMemoWikidataLogo(name)],
     ["wikipedia", (name) => findMemoWikipediaLogo(name)],
     ["commons", async (name) => (await researchWikimediaLogo(name))?.logo_url || null],
   ];
-  for (const name of varianten) {
-    for (const [quelle, suche] of quellen) {
-      try {
-        const url = await suche(name);
-        if (!url) continue;
-        const uri = await downloadMemoPhoto(url, true);
-        if (uri) {
-          log?.("logo_source", { name, source: quelle });
-          return uri;
-        }
-      } catch { /* nächste Quelle */ }
+  const auftraege = namen.slice(0, 3).flatMap((name) => quellen.map(([via, suche]) => ({ name, via, suche })));
+  // Zehn Sekunden je Abfrage: ein haengender Server darf die Bildstufe nicht aufhalten.
+  const funde = await mapLimit(auftraege, 6, async (auftrag) => ({
+    ...auftrag,
+    url: await Promise.race([
+      auftrag.suche(auftrag.name).catch(() => null),
+      new Promise<null>((fertig) => setTimeout(() => fertig(null), 10_000)),
+    ]),
+  }));
+  const out: LogoRoh[] = [];
+  for (const fund of funde) {
+    if (!fund.url) continue;
+    const datei = wikimediaLogoAdressen(fund.url)?.datei || fund.url;
+    if (gesehen.has(datei)) continue;
+    gesehen.add(datei);
+    out.push({ marke, name: fund.name, url: fund.url, via: fund.via, titel: datei.replace(/_/g, " ") });
+  }
+  return out;
+}
+
+/** Die Pruefung sieht Rasterbilder als Daten; eine SVG von Wikimedia als 500er-Vorschau. */
+async function ladeLogoZurPruefung(url: string): Promise<string | null> {
+  const adressen = wikimediaLogoAdressen(url);
+  for (const adresse of adressen ? [adressen.pruef, adressen.original] : [url]) {
+    if (!adresse) continue;
+    const src = await downloadMemoPhoto(adresse, true, undefined, 8_000);
+    if (src && !src.startsWith("data:image/svg") && src.length * 0.75 <= 1_500_000) return src;
+  }
+  return null;
+}
+
+/** Was in Memo und Speicher kommt: bei Wikimedia die Original-SVG, sonst das gepruefte Bild. */
+async function logoZumSpeichern(kandidat: LogoKandidat): Promise<string> {
+  const adressen = wikimediaLogoAdressen(kandidat.url);
+  if (!adressen) return kandidat.src;
+  const original = await downloadMemoPhoto(adressen.original, true, undefined, 10_000);
+  if (original?.startsWith("data:image/svg") && original.length * 0.75 <= 400_000) return original;
+  if (adressen.gross !== adressen.pruef) {
+    const gross = await downloadMemoPhoto(adressen.gross, true, undefined, 10_000);
+    if (gross && !gross.startsWith("data:image/svg")) return gross;
+  }
+  return kandidat.src;
+}
+
+/** GPT-5.4 sieht alle Kandidaten aller Marken in einem Aufruf. */
+async function pruefeLogos(marken: LogoMarke[], kandidaten: LogoKandidat[]): Promise<{
+  urteile: Map<string, LogoUrteil>; ok: boolean; tokens: number;
+}> {
+  const leer = { urteile: new Map<string, LogoUrteil>(), ok: false, tokens: 0 };
+  const apiKey = await getPerplexityKey().catch(() => "");
+  if (!apiKey || !kandidaten.length) return leer;
+  const body = JSON.stringify({
+    model: MEMO_BILD_PRUEFMODELL,
+    max_output_tokens: 1_200,
+    input: [{
+      role: "user",
+      content: [
+        { type: "input_text", text: buildLogoPruefPrompt(marken, kandidaten) },
+        ...kandidaten.map((kandidat) => ({ type: "input_image", image_url: kandidat.src })),
+      ],
+    }],
+  });
+  for (let versuch = 1; versuch <= 2; versuch += 1) {
+    try {
+      const response = await fetchMitLimit(PERPLEXITY_RESPONSES_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body,
+      }, 60_000);
+      const roh = await response.text().catch(() => "");
+      if ((response.status === 429 || response.status >= 500) && versuch < 2) { await warte(3_000); continue; }
+      const antwort = parsePerplexityAntwort(roh);
+      const gemessen = { usd: antwort.costUsd, toolUsd: 0 };
+      if (!response.ok || !antwort.content.trim()) {
+        await recordStandaloneAiUsage("memo_image_check", MEMO_BILD_PRUEFMODELL, "error", antwort.usage, 0,
+          response.ok ? "empty_answer" : `http_${response.status}`, gemessen, "logopruefung");
+        return leer;
+      }
+      await recordStandaloneAiUsage("memo_image_check", MEMO_BILD_PRUEFMODELL, "success", antwort.usage, 0, undefined, gemessen, "logopruefung");
+      return {
+        urteile: parseLogoPruefung(parseLooseJsonObject(antwort.content), marken, kandidaten),
+        ok: true,
+        tokens: antwort.usage.total,
+      };
+    } catch {
+      if (versuch === 2) return leer;
     }
   }
-  if (!apiKey) {
-    log?.("logo_miss", { tried: varianten.join(" | "), gemini: false });
-    return null;
-  }
-  try {
-    const focused = await researchCompanyLogo({ apiKey, model }, varianten[0]);
-    if (focused.logo?.logo_url) {
-      const uri = await downloadMemoPhoto(focused.logo.logo_url, true);
-      if (uri) {
-        log?.("logo_source", { name: varianten[0], source: "gemini" });
-        return uri;
+  return leer;
+}
+
+/**
+ * Logos fuer die Benchmarks eines Memos. Zuerst Supabase: die kuratierte
+ * Registry, dann der Logo-Speicher. Was dort fehlt, wird gesucht und von
+ * GPT-5.4 mit Sicht geprueft; nur ein Logo ab 8 von 10 kommt ins Memo und in
+ * den Speicher. Lehnt die Pruefung ab, beschreibt sie das echte Logo, und eine
+ * zweite Runde sucht mit dieser Beschreibung.
+ */
+async function findeMemoLogos(
+  subjects: string[],
+  opts: { log?: (event: string, extra: Record<string, unknown>) => void; restMs?: () => number } = {},
+): Promise<Map<string, string | null>> {
+  const log = opts.log;
+  const ergebnis = new Map<string, string | null>();
+  const offen: LogoMarke[] = [];
+  await Promise.all([...new Set(subjects.map((name) => String(name || "").trim()).filter(Boolean))].map(async (marke) => {
+    const sicher = memoLogoNameVariants(marke, { erstesWort: false });
+    if (!sicher.length) return;
+    const registry = await registryLogo(sicher);
+    if (registry) {
+      log?.("logo_source", { name: registry.name, source: "registry" });
+      ergebnis.set(marke, registry.src);
+      return;
+    }
+    const gespeichert = await ladeGespeichertesLogo(sicher);
+    if (gespeichert) {
+      log?.("logo_source", { name: marke, source: "speicher", via: gespeichert.via });
+      ergebnis.set(marke, gespeichert.src);
+      return;
+    }
+    offen.push({ marke, namen: memoLogoNameVariants(marke) });
+  }));
+  if (!offen.length) return ergebnis;
+
+  const gesehen = new Set<string>();
+  const wikimedia = new Map<string, LogoRoh[]>();
+  const rueckmeldung = new Map<string, { beschreibung: string; neueSuche: string; score: number }>();
+  let marken = offen;
+  let pruefungAusgefallen = false;
+  for (let runde = 1; runde <= 2 && marken.length; runde += 1) {
+    if (runde > 1 && (opts.restMs?.() ?? Infinity) < 80_000) {
+      log?.("logo_zeit", { offen: marken.map((m) => m.marke) });
+      break;
+    }
+    const roh: LogoRoh[] = [];
+    if (runde === 1) {
+      const je = await Promise.all(marken.map((m) => wikimediaLogoKandidaten(m.marke, m.namen, gesehen)));
+      je.forEach((liste, i) => {
+        wikimedia.set(marken[i].marke, liste);
+        roh.push(...liste);
+      });
+    }
+    // Bildsuche: in Runde eins nur, wo Wikimedia weniger als zwei Dateien kennt;
+    // in Runde zwei mit der Beschreibung aus der Pruefung. Nacheinander, weil
+    // Perplexity parallele Aufrufe mit 429 ablehnt.
+    for (const m of marken) {
+      if (runde === 1 && roh.filter((k) => k.marke === m.marke).length >= 2) continue;
+      // „Händler · Eigenmarke“: gesucht wird der Händler. Unter „Lidl
+      // Metzgerfrisch Logo“ fand die Suche nur Verpackungen (29.9.2026).
+      const suchname = m.marke.split(/\s+[·|]\s+/)[0] || m.marke;
+      // Ohne Rueckmeldung braucht Runde zwei eine andere Anfrage, sonst kommt dieselbe Trefferliste.
+      const hinweis = rueckmeldung.get(m.marke) || (runde > 1 ? { neueSuche: `${suchname} offizielles Logo png` } : undefined);
+      const antwort = await sucheMemoBilder(memoLogoSuchanfrage(suchname, hinweis), "logosuche");
+      roh.push(...memoLogoKandidatenAus(antwort, m.marke, suchname, gesehen));
+    }
+    const geladen = await mapLimit(roh, 6, async (k) => {
+      const src = await ladeLogoZurPruefung(k.url);
+      return src ? { ...k, src } : null;
+    });
+    const kandidaten: LogoKandidat[] = [];
+    for (const m of marken) {
+      for (const k of geladen.filter((k): k is LogoRoh & { src: string } => Boolean(k) && k!.marke === m.marke).slice(0, MEMO_LOGO_KANDIDATEN_JE_MARKE)) {
+        kandidaten.push({ ...k, nr: kandidaten.length + 1 });
       }
     }
-  } catch { /* Grounding ist der letzte Versuch vor prepareRetry */ }
-  log?.("logo_miss", { tried: varianten.join(" | "), gemini: true });
-  return null;
+    if (!kandidaten.length) {
+      log?.("logo_pruefung", { runde, marken: marken.length, kandidaten: 0, angenommen: 0 });
+      continue;
+    }
+    const pruefung = await pruefeLogos(
+      marken.map((m) => ({ ...m, hinweis: rueckmeldung.get(m.marke)?.beschreibung })),
+      kandidaten,
+    );
+    const angenommen = [...pruefung.urteile.values()].filter((urteil) => urteil.treffer).length;
+    log?.("logo_pruefung", {
+      runde, model: MEMO_BILD_PRUEFMODELL, marken: marken.length, kandidaten: kandidaten.length,
+      angenommen, tokens: pruefung.tokens, ok: pruefung.ok,
+    });
+    if (!pruefung.ok) {
+      pruefungAusgefallen = true;
+      break;
+    }
+    for (const m of marken) {
+      const urteil = pruefung.urteile.get(m.marke);
+      if (urteil?.treffer) {
+        const src = await logoZumSpeichern(urteil.treffer);
+        ergebnis.set(m.marke, src);
+        await speichereLogo({
+          name: urteil.fuer, src, quelle: urteil.treffer.url, via: urteil.treffer.via,
+          score: urteil.score, beschreibung: urteil.beschreibung,
+        });
+        log?.("logo_source", { name: urteil.fuer, source: "sicht", via: urteil.treffer.via, score: urteil.score });
+      } else if (urteil) {
+        rueckmeldung.set(m.marke, { beschreibung: urteil.beschreibung, neueSuche: urteil.neueSuche, score: urteil.score });
+      }
+    }
+    marken = marken.filter((m) => !ergebnis.get(m.marke));
+  }
+  for (const m of marken) {
+    // Faellt die Pruefung technisch aus, gilt die Logodatei aus Wikidata oder
+    // Wikipedia: beide haengen an der Firma, nicht an einem geratenen Namen.
+    // In den Speicher kommt sie nicht.
+    if (pruefungAusgefallen) {
+      const belegt = (wikimedia.get(m.marke) || []).find((k) => k.via === "wikidata" || k.via === "wikipedia");
+      const src = belegt ? await downloadMemoPhoto(belegt.url, true) : null;
+      if (belegt && src) {
+        ergebnis.set(m.marke, src);
+        log?.("logo_source", { name: belegt.name, source: "ungeprueft", via: belegt.via });
+        continue;
+      }
+    }
+    const urteil = rueckmeldung.get(m.marke);
+    if (urteil) log?.("logo_abgelehnt", { name: m.marke, score: urteil.score, beschreibung: urteil.beschreibung.slice(0, 160) });
+    else log?.("logo_miss", { tried: m.namen.join(" | ") });
+    ergebnis.set(m.marke, null);
+  }
+  return ergebnis;
+}
+
+/**
+ * Schnelle Probe fuer die Benchmark-Recherche: laesst sich ein Logo finden?
+ * Ohne Pruefung und ohne Download, deshalb nur ein Hinweis auf Bekanntheit.
+ */
+async function memoLogoAuffindbar(name: string): Promise<boolean> {
+  const sicher = memoLogoNameVariants(name, { erstesWort: false });
+  if (!sicher.length) return false;
+  if (await ladeGespeichertesLogo(sicher, false)) return true;
+  for (const variante of sicher) {
+    if ((await findMemoCompanyLogo(variante).catch(() => null))?.logo_url) return true;
+  }
+  for (const variante of memoLogoNameVariants(name).slice(0, 3)) {
+    const proben = await Promise.all([
+      findMemoWikidataLogo(variante).catch(() => null),
+      findMemoWikipediaLogo(variante).catch(() => null),
+      probeWorldvectorlogo(variante).catch(() => null),
+    ]);
+    if (proben.some(Boolean)) return true;
+  }
+  return false;
 }
 
 /**
@@ -4377,7 +4650,7 @@ async function findMemoSlotScene(
 const warte = (ms: number) => new Promise((fertig) => setTimeout(fertig, ms));
 
 /** Eine Bildsuche ueber Perplexity sonar, gebucht mit dem gemeldeten Preis. */
-async function sucheMemoBilder(query: string): Promise<unknown> {
+async function sucheMemoBilder(query: string, schritt = "bildsuche"): Promise<unknown> {
   const apiKey = await getPerplexityKey().catch(() => "");
   if (!apiKey || !query) return null;
   // Perplexity lehnt schon zwei gleichzeitige Anfragen mit 429 ab (29.9.2026).
@@ -4397,7 +4670,7 @@ async function sucheMemoBilder(query: string): Promise<unknown> {
       const roh = await response.text().catch(() => "");
       if ((response.status === 429 || response.status >= 500) && versuch < 3) { await warte(2_000 * versuch); continue; }
       if (!response.ok) {
-        await recordStandaloneAiUsage("memo_photo_research", MEMO_BILD_SUCHMODELL, "error", undefined, 0, `http_${response.status}`, undefined, "bildsuche");
+        await recordStandaloneAiUsage("memo_photo_research", MEMO_BILD_SUCHMODELL, "error", undefined, 0, `http_${response.status}`, undefined, schritt);
         return null;
       }
       const json = JSON.parse(roh);
@@ -4405,7 +4678,7 @@ async function sucheMemoBilder(query: string): Promise<unknown> {
       await recordStandaloneAiUsage("memo_photo_research", MEMO_BILD_SUCHMODELL, "success", {
         input: Number(u.prompt_tokens || 0), cachedInput: 0, output: Number(u.completion_tokens || 0),
         thinking: 0, total: Number(u.total_tokens || 0),
-      }, 1, undefined, { usd: Number(u.cost?.total_cost || 0), toolUsd: Number(u.cost?.request_cost || 0) }, "bildsuche");
+      }, 1, undefined, { usd: Number(u.cost?.total_cost || 0), toolUsd: Number(u.cost?.request_cost || 0) }, schritt);
       return json;
     } catch {
       if (versuch === 3) return null;
@@ -4606,16 +4879,23 @@ function createMemoPhotoFinder(
   const usedSceneUrls = new Set<string>();
   const geminiUrls: Record<string, string> = {};
   return {
+    /** Alle Logos eines Memos in einem Lauf: eine Pruefung statt drei. */
+    vorabLogos: (namen: string[], restMs?: () => number) => {
+      const offen = [...new Set(namen.map((name) => String(name || "").trim()).filter((name) => name && !byLogo.has(name.toLowerCase())))];
+      if (!offen.length) return;
+      const lauf = findeMemoLogos(offen, { log, restMs }).catch(() => new Map<string, string | null>());
+      for (const name of offen) byLogo.set(name.toLowerCase(), lauf.then((logos) => logos.get(name) || null));
+    },
     fetchPhoto: async (slot: MemoImageSlot): Promise<string | null> => {
       if (slot.kind === "benchmark") {
+        // Nur gepruefte Logos. Die Gemini-Adressen von frueher kamen ohne
+        // Pruefung ins Memo.
         const key = slot.subject.toLowerCase();
-        if (!key) return null;
-        if (!byLogo.has(key)) byLogo.set(key, findMemoSlotLogo(slot.subject, apiKey, model, log));
-        const local = await byLogo.get(key);
-        if (local) return local;
-        const url = geminiUrls[slot.key];
-        if (!url || !isAllowedMemoPhotoUrl(url)) return null;
-        return downloadMemoPhoto(url, true);
+        if (!key || key === "brand") return null;
+        if (!byLogo.has(key)) {
+          byLogo.set(key, findeMemoLogos([slot.subject], { log }).then((logos) => logos.get(slot.subject) || null).catch(() => null));
+        }
+        return (await byLogo.get(key)) || null;
       }
       // Erzeugen, nicht suchen: das Potenzial zeigt einen Zustand, den es noch
       // nicht gibt. Findet das Bildmodell nichts, bleibt die alte Suche.
@@ -4857,7 +5137,7 @@ async function researchMemoMarktLage(
  * Hoechstens zwoelf Sekunden: laeuft die Zeit ab, gilt niemand als ohne Logo.
  */
 async function benchmarksOhneLogo(namen: string[]): Promise<string[]> {
-  const pruefung = Promise.all(namen.map(async (name) => ({ name, logo: await findMemoSlotLogo(name, "", "").catch(() => null) })));
+  const pruefung = Promise.all(namen.map(async (name) => ({ name, logo: await memoLogoAuffindbar(name).catch(() => false) })));
   const frist = new Promise<null>((fertig) => setTimeout(() => fertig(null), 12_000));
   const ergebnis = await Promise.race([pruefung, frist]);
   if (!ergebnis) return [];
@@ -7297,6 +7577,10 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
       );
       // Reihenfolge: erst die Logos (schnell, sonst fehlen sie bei knapper
       // Zeit), dann die Bildwahl mit Sicht, dann die Rueckfallwege.
+      finder.vorabLogos(
+        ((payload as MemoPayload).benchmarks || []).slice(0, 3).map((eintrag) => String(eintrag?.name || "")),
+        () => assetPhaseRemainingMs(isolateStartedAt),
+      );
       try {
           payload = await fillMemoImages(payload as MemoPayload, assetAnswers as MemoAnswers, {
             remainingMs: assetPhaseRemainingMs(isolateStartedAt),

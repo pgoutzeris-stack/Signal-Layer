@@ -3204,19 +3204,19 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-10");
-  assert.match(indexHtml, /app\.js\?v=20260929-10/);
+  assert.equal(studioVersion, "20260929-11");
+  assert.match(indexHtml, /app\.js\?v=20260929-11/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
   assert.match(edge, /createMemoPhotoFinder/);
   assert.match(edge, /findMemoCompanyLogo/);
-  assert.match(edge, /findMemoSlotLogo/);
+  assert.match(edge, /findeMemoLogos/);
   assert.match(edge, /findMemoSlotScene/);
   assert.match(edge, /probeWorldvectorlogo/);
   assert.match(edge, /findMemoWikidataLogo/);
   assert.match(edge, /findMemoWikipediaLogo/);
-  assert.match(edge, /memoLogoNameVariants\(subject\)/);
+  assert.match(edge, /memoLogoNameVariants\(marke, \{ erstesWort: false \}\)/);
   assert.match(edge, /parseWikidataLogoFromEntities/);
   // Ohne Protokoll ist beim nächsten Fehlschlag nicht zu sehen, was probiert wurde.
   assert.match(edge, /log\?\.\("logo_source"/);
@@ -4615,4 +4615,128 @@ test("Schreibstil fuer alle Textgeneratoren und Pruefung auf KI-Bauweise", () =>
   assert.match(befunde, /Doppelpunkt kündigt eine Pointe an \(potentials_lead\)/);
   assert.match(befunde, /Rhetorische Frage in market_p1/);
   assert.match(befunde, /potentials_lead übernimmt das Satzgerüst/);
+});
+
+test("Logos: Speicher zuerst, Pruefung mit Sicht, zweite Runde mit Beschreibung", () => {
+  // Schluessel im Speicher: klein, ohne Akzente und Satzzeichen.
+  assert.equal(backend.logoCacheKey("Lidl · Metzgerfrisch"), "lidl metzgerfrisch");
+  assert.equal(backend.logoCacheKey("Aldi Süd"), "aldi sud");
+  assert.equal(backend.logoCacheKey("H&M"), "h and m");
+  assert.equal(backend.logoCacheKey("dm-drogerie markt"), "dm drogerie markt");
+  // „Aldi“ ist nicht „Aldi Nord“: der Speicher liest ohne das erste Wort.
+  assert.ok(backend.memoLogoNameVariants("Aldi Nord").includes("Aldi"));
+  assert.deepEqual(backend.memoLogoNameVariants("Aldi Nord", { erstesWort: false }), ["Aldi Nord"]);
+  assert.ok(backend.memoLogoNameVariants("Lidl · Metzgerfrisch", { erstesWort: false }).includes("Lidl"));
+
+  // Wikimedia: nur Standardbreiten, 512 gibt 400.
+  const svg = "https://upload.wikimedia.org/wikipedia/commons/9/91/Lidl-Logo.svg";
+  assert.equal(backend.wikimediaRasterUrl(svg), "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Lidl-Logo.svg/500px-Lidl-Logo.svg.png");
+  assert.match(backend.wikimediaRasterUrl(svg, 960), /\/960px-Lidl-Logo\.svg\.png$/);
+  assert.equal(backend.wikimediaRasterUrl("https://example.com/logo.svg"), "");
+  const pfad = backend.wikimediaLogoAdressen("https://commons.wikimedia.org/wiki/Special:FilePath/Lidl-Logo.svg?width=1200");
+  assert.equal(pfad.pruef, "https://commons.wikimedia.org/wiki/Special:FilePath/Lidl-Logo.svg?width=500");
+  assert.equal(pfad.original, "https://commons.wikimedia.org/wiki/Special:FilePath/Lidl-Logo.svg");
+  // Wikidata und Commons nennen dieselbe Datei; sie zaehlt einmal.
+  assert.equal(pfad.datei, backend.wikimediaLogoAdressen(svg).datei);
+  assert.match(backend.wikimediaLogoAdressen(svg).pruef, /500px-Lidl-Logo\.svg\.png$/);
+  assert.equal(backend.wikimediaLogoAdressen("https://cdn.worldvectorlogo.com/logos/lidl.svg"), null);
+
+  // Pruefauftrag: alle Marken, jedes Bild mit Herkunft, Rueckmeldung in Runde zwei.
+  const marken = [
+    { marke: "Lidl · Metzgerfrisch", namen: ["Lidl · Metzgerfrisch", "Metzgerfrisch", "Lidl"], hinweis: "Gelber Kreis mit rotem Rand auf blauem Quadrat." },
+    { marke: "JD Sports", namen: ["JD Sports"] },
+  ];
+  const kandidaten = [
+    { nr: 1, marke: "Lidl · Metzgerfrisch", name: "Lidl", url: "https://images.example.org/verpackung.jpg", src: "data:image/jpeg;base64,AAAA", via: "bildsuche", titel: "Verpackung" },
+    { nr: 2, marke: "Lidl · Metzgerfrisch", name: "Lidl", url: pfad.original, src: "data:image/png;base64,AAAA", via: "wikidata", titel: "Lidl-Logo.svg" },
+    { nr: 3, marke: "JD Sports", name: "JD Sports", url: "https://images.example.org/jd.png", src: "data:image/png;base64,AAAA", via: "bildsuche", titel: "JD" },
+  ];
+  const prompt = backend.buildLogoPruefPrompt(marken, kandidaten);
+  assert.match(prompt, /„Lidl · Metzgerfrisch“ \(auch: Metzgerfrisch, Lidl\)/);
+  assert.match(prompt, /Ordne jedes Bild einer Art zu: logo/);
+  assert.match(prompt, /Laut der letzten Prüfung sieht das Logo so aus: Gelber Kreis/);
+  assert.match(prompt, /Bild 2: gesucht für „Lidl · Metzgerfrisch“ als „Lidl“; Quelle wikidata/);
+  assert.match(prompt, /0 wenn keines passt/);
+  assert.match(prompt, /"bilder":\{"1":\{"art":"…","zeigt":"…","score":…\}\}/);
+  // Kein Zahlenbeispiel im Antwortmuster: das Modell uebernahm die Werte.
+  assert.doesNotMatch(prompt, /"bild":\d|"score":\d/);
+  assert.doesNotMatch(prompt, /[—–]/);
+
+  // Auswertung: nur Art logo ab 8 von 10, nur fuer die eigene Marke, jedes Bild einmal.
+  const urteile = backend.parseLogoPruefung({
+    bilder: {
+      "1": { art: "verpackung", zeigt: "Fleischverpackung", score: 9 },
+      "2": { art: "logo", zeigt: "Lidl-Logo", score: 9 },
+      "3": { art: "werbemotiv", zeigt: "Anzeige", score: 8 },
+    },
+    logos: [
+      { marke: "Lidl · Metzgerfrisch", bild: 2, fuer: "LIDL", beschreibung: "Gelber Kreis, blaues Quadrat.", neue_suche: "" },
+      { marke: "JD Sports", bild: 3, fuer: "JD Sports", beschreibung: "Schwarzer Kreis mit jd.", neue_suche: "JD Sports logo official" },
+    ],
+  }, marken, kandidaten);
+  assert.equal(urteile.get("Lidl · Metzgerfrisch").treffer.nr, 2);
+  assert.equal(urteile.get("Lidl · Metzgerfrisch").fuer, "Lidl");
+  // Ein Werbemotiv zaehlt nicht, auch wenn das Modell es waehlt.
+  assert.equal(urteile.get("JD Sports").treffer, null);
+  assert.equal(urteile.get("JD Sports").score, 3);
+  assert.equal(urteile.get("JD Sports").neueSuche, "JD Sports logo official");
+  // Waehlt das Modell die Verpackung, gilt das beste echte Logo derselben Marke.
+  const umgelenkt = backend.parseLogoPruefung({
+    bilder: { "1": { art: "verpackung", score: 8 }, "2": { art: "logo", score: 9 } },
+    logos: [{ marke: "lidl · metzgerfrisch", bild: 1, fuer: "Metzgerfrisch" }],
+  }, marken, kandidaten);
+  assert.equal(umgelenkt.get("Lidl · Metzgerfrisch").treffer.nr, 2);
+  assert.equal(umgelenkt.get("Lidl · Metzgerfrisch").fuer, "Lidl");
+  const knapp = backend.parseLogoPruefung({ bilder: { "2": { art: "logo", score: 7 } }, logos: [{ marke: "Lidl · Metzgerfrisch", bild: 2 }] }, marken, kandidaten);
+  assert.equal(knapp.get("Lidl · Metzgerfrisch").treffer, null);
+  assert.equal(knapp.get("Lidl · Metzgerfrisch").score, 7);
+  // Haendler vor Eigenmarke.
+  assert.deepEqual(backend.memoLogoNameVariants("Lidl · Metzgerfrisch").slice(0, 3), ["Lidl · Metzgerfrisch", "Lidl", "Metzgerfrisch"]);
+  assert.match(prompt, /Logo des Händlers erste Wahl/);
+
+  // Bildsuche: Logos sind hier erwuenscht, SVG und gesperrte Seiten nicht.
+  const gesehen = new Set();
+  const aus = backend.memoLogoKandidatenAus({ images: [
+    { image_url: "https://www.lidl.de/static/lidl-logo.png", origin_url: "https://www.lidl.de", width: 600, height: 600, title: "Lidl Logo" },
+    { image_url: "https://example.org/lidl.svg", width: 600, height: 600 },
+    { image_url: "https://i.pinimg.com/lidl.png", width: 600, height: 600 },
+    { image_url: "https://example.org/klein.png", width: 60, height: 60 },
+  ] }, "Lidl · Metzgerfrisch", "Lidl", gesehen);
+  assert.deepEqual(aus.map((k) => k.url), ["https://www.lidl.de/static/lidl-logo.png"]);
+  assert.equal(aus[0].via, "bildsuche");
+  assert.ok(gesehen.has("https://www.lidl.de/static/lidl-logo.png"));
+  assert.match(backend.memoLogoSuchanfrage("Lidl"), /^Lidl Logo\n/);
+  assert.match(backend.memoLogoSuchanfrage("Lidl", { neueSuche: "Lidl Logo blau gelb", beschreibung: "Gelber Kreis." }), /^Lidl Logo blau gelb\n.*So sieht es aus: Gelber Kreis\./s);
+
+  // Ablauf in der Edge Function: Registry, Speicher, Suche, Sicht, Speichern.
+  const ablauf = edge.slice(edge.indexOf("async function findeMemoLogos("), edge.indexOf("async function memoLogoAuffindbar("));
+  assert.ok(ablauf.indexOf("registryLogo(sicher)") < ablauf.indexOf("ladeGespeichertesLogo(sicher)"));
+  assert.ok(ablauf.indexOf("ladeGespeichertesLogo(sicher)") < ablauf.indexOf("wikimediaLogoKandidaten("));
+  assert.ok(ablauf.indexOf("pruefeLogos(") < ablauf.indexOf("speichereLogo({"));
+  assert.match(ablauf, /runde <= 2/);
+  assert.match(ablauf, /hinweis: rueckmeldung\.get\(m\.marke\)\?\.beschreibung/);
+  assert.match(ablauf, /const hinweis = rueckmeldung\.get\(m\.marke\) \|\|/);
+  assert.match(ablauf, /sucheMemoBilder\(memoLogoSuchanfrage\(suchname, hinweis\), "logosuche"\)/);
+  assert.match(ablauf, /log\?\.\("logo_abgelehnt"/);
+  assert.match(edge, /recordStandaloneAiUsage\("memo_image_check", MEMO_BILD_PRUEFMODELL, "success", antwort\.usage, 0, undefined, gemessen, "logopruefung"\)/);
+  // Worldvectorlogo raet den Namen und liefert nur SVG: nicht in der Suche mit Sicht.
+  const wikimedia = edge.slice(edge.indexOf("async function wikimediaLogoKandidaten("), edge.indexOf("async function ladeLogoZurPruefung("));
+  assert.doesNotMatch(wikimedia, /probeWorldvectorlogo/);
+  // Benchmarks bekommen keine ungeprueften Gemini-Adressen mehr.
+  const finder = edge.slice(edge.indexOf("function createMemoPhotoFinder("), edge.indexOf("// Erzeugen, nicht suchen"));
+  assert.doesNotMatch(finder, /geminiUrls\[slot\.key\]/);
+  assert.match(edge, /finder\.vorabLogos\(/);
+  assert.match(edge, /memoLogoAuffindbar\(name\)/);
+  assert.doesNotMatch(edge, /findMemoSlotLogo/);
+
+  // Speicher in Supabase: nur der Dienst liest und schreibt.
+  const mig = readFileSync(new URL("../supabase/migrations/20260929230000_logo_cache.sql", import.meta.url), "utf8");
+  assert.match(mig, /create table if not exists signal_layer\.logo_cache/);
+  assert.match(mig, /enable row level security/);
+  assert.match(mig, /revoke all on signal_layer\.logo_cache from public, anon, authenticated/);
+  assert.match(mig, /'logosuche', 'logopruefung'/);
+  assert.match(mig, /when 'logo_abgelehnt' then 'Logo verworfen: '/);
+  // Ladeanzeige nennt die Pruefung und die Herkunft.
+  assert.match(studio, /event === "logo_pruefung"/);
+  assert.match(studio, /speicher: "aus dem Speicher"/);
 });

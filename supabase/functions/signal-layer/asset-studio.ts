@@ -4855,14 +4855,15 @@ const LEGAL_SUFFIX = /\s+(gmbh(\s*&\s*co\.?\s*kg)?|ag|se|kg|ohg|mbh|inc\.?|ltd\.
  * "cosnova" führt. Gesucht wird deshalb der Reihe nach: ganzer Name, Name vor
  * der Klammer, die Marken in der Klammer, Name ohne Rechtsform.
  */
-export function memoLogoNameVariants(subject: string): string[] {
+export function memoLogoNameVariants(subject: string, opts: { erstesWort?: boolean } = {}): string[] {
   const roh = String(subject || "").replace(/\s+/g, " ").trim();
   if (!roh) return [];
   const varianten = [roh];
   // „SPORT 2000 · Witeblaze“ ist Haendler plus Eigenmarke. Beide Teile sind
-  // eigene Namen; das erste Wort allein („SPORT“) fand ein fremdes Logo.
+  // eigene Namen; das erste Wort allein („SPORT“) fand ein fremdes Logo. Der
+  // Haendler steht vorn: sein Logo erkennt eine Entscheiderin sofort.
   const teile = roh.split(/\s+[·|]\s+/).map((teil) => teil.trim()).filter(Boolean);
-  if (teile.length > 1) varianten.push(teile[1], teile[0]);
+  if (teile.length > 1) varianten.push(teile[0], teile[1]);
   const klammer = /[（(]([^)）]+)[)）]/.exec(roh);
   const basis = roh.replace(/[（(][^)）]*[)）]/g, "").replace(/[\s–—-]+$/, "").trim();
   if (basis && basis !== roh) varianten.push(basis);
@@ -4883,8 +4884,205 @@ export function memoLogoNameVariants(subject: string): string[] {
   // Nur ein eigenstaendiger Name taugt als Rueckfall: nicht, wenn eine Zahl
   // zum Namen gehoert („SPORT 2000“), und kein Gattungswort.
   const gattung = /^(sport|sports|shop|store|home|food|fashion|mode|markt|market|group|gruppe|the|der|die|das|bio|eco|mega|super)$/i;
-  if (erstes.length > 3 && !/\d/.test(kern) && !gattung.test(erstes)) varianten.push(erstes);
+  // Der Logo-Speicher liest ohne diesen Rueckfall: „Aldi“ ist nicht „Aldi Nord“.
+  if (opts.erstesWort !== false && erstes.length > 3 && !/\d/.test(kern) && !gattung.test(erstes)) varianten.push(erstes);
   return uniqueStrings(varianten.filter((name) => name.length > 1)).slice(0, 5);
+}
+
+/** Schluessel im Logo-Speicher: klein, ohne Akzente und Satzzeichen. */
+export function logoCacheKey(name: string): string {
+  return String(name || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * Das Pruefmodell sieht keine SVG. Wikimedia rendert jede SVG als PNG-Vorschau
+ * unter /thumb/…/500px-Name.svg.png. Nur Standardbreiten gehen: 500 und 960
+ * liefern ein Bild, 512 und 1200 antworten mit 400 (getestet 29.9.2026).
+ */
+export function wikimediaRasterUrl(url: string, breite: 500 | 960 = 500): string {
+  const treffer = /^https:\/\/upload\.wikimedia\.org\/wikipedia\/(commons|[a-z]{2})\/([0-9a-f])\/([0-9a-f]{2})\/([^/?#]+\.svg)$/i.exec(String(url || ""));
+  if (!treffer) return "";
+  const [, projekt, a, ab, datei] = treffer;
+  return `https://upload.wikimedia.org/wikipedia/${projekt}/thumb/${a}/${ab}/${datei}/${breite}px-${datei}.png`;
+}
+
+/**
+ * Drei Fassungen einer Wikimedia-Logodatei: 500er-Vorschau fuer die Pruefung,
+ * das Original zum Speichern (SVG bleibt im PDF scharf) und eine 960er-Vorschau,
+ * falls das Original zu gross ist. Null, wenn die Adresse nicht von Wikimedia ist.
+ */
+export function wikimediaLogoAdressen(url: string): { pruef: string; original: string; gross: string; datei: string } | null {
+  let u: URL;
+  try { u = new URL(String(url || "")); } catch { return null; }
+  if (u.hostname === "commons.wikimedia.org" && /\/wiki\/Special:FilePath\//i.test(u.pathname)) {
+    const basis = `${u.origin}${u.pathname}`;
+    const datei = decodeURIComponent(u.pathname.split(/Special:FilePath\//i)[1] || "");
+    return { pruef: `${basis}?width=500`, original: basis, gross: `${basis}?width=960`, datei: wikimediaDateiSchluessel(datei) };
+  }
+  if (u.hostname === "upload.wikimedia.org") {
+    const teile = u.pathname.split("/");
+    const datei = /\/thumb\//.test(u.pathname) ? teile[teile.length - 2] || "" : teile[teile.length - 1] || "";
+    const svg = /\.svg$/i.test(u.pathname) && !/\/thumb\//.test(u.pathname);
+    return {
+      pruef: svg ? wikimediaRasterUrl(url, 500) : url,
+      original: url,
+      gross: svg ? wikimediaRasterUrl(url, 960) : url,
+      datei: wikimediaDateiSchluessel(decodeURIComponent(datei)),
+    };
+  }
+  return null;
+}
+
+/** Wikidata, Wikipedia und Commons nennen oft dieselbe Datei; so zaehlt sie einmal. */
+function wikimediaDateiSchluessel(datei: string): string {
+  return String(datei || "").replace(/^File:/i, "").replace(/ /g, "_").toLowerCase();
+}
+
+/** Ein Logo-Kandidat. `src` ist das geladene Rasterbild, das die Pruefung sieht. */
+export type LogoKandidat = {
+  nr: number;
+  /** Benchmark, fuer den gesucht wurde, etwa „Lidl · Metzgerfrisch“. */
+  marke: string;
+  /** Name, mit dem gesucht wurde, etwa „Lidl“. */
+  name: string;
+  /** Original zum Speichern; bei Wikimedia die SVG. */
+  url: string;
+  src: string;
+  via: string;
+  titel: string;
+};
+
+export type LogoMarke = { marke: string; namen: string[]; hinweis?: string };
+
+export type LogoUrteil = {
+  treffer: LogoKandidat | null;
+  score: number;
+  /** Name, dem das Logo gehoert. Schluessel im Logo-Speicher. */
+  fuer: string;
+  beschreibung: string;
+  neueSuche: string;
+};
+
+/** Ab dieser Bewertung gilt ein Logo als geprueft und kommt in den Speicher. */
+export const MEMO_LOGO_MIN_SCORE = 8;
+export const MEMO_LOGO_KANDIDATEN_JE_MARKE = 5;
+
+/**
+ * Auftrag an das Pruefmodell: welches Bild ist das echte, aktuelle Logo der
+ * Marke. Alle Marken eines Memos in einem Aufruf; Perplexity lehnt parallele
+ * Aufrufe mit 429 ab. Das Modell ordnet jedes Bild einer Art zu und bewertet
+ * es einzeln; gewaehlt wird im Code. Am 29.9.2026 nahm es sonst ein Werbemotiv
+ * mit Schriftzug, obwohl der Auftrag Werbemotive ausschloss.
+ */
+export function buildLogoPruefPrompt(marken: LogoMarke[], kandidaten: LogoKandidat[]): string {
+  const liste = marken.map((m) => {
+    const namen = m.namen.filter((name) => name !== m.marke);
+    return `- „${m.marke}“${namen.length ? ` (auch: ${namen.join(", ")})` : ""}${m.hinweis ? `. Laut der letzten Prüfung sieht das Logo so aus: ${m.hinweis}` : ""}`;
+  }).join("\n");
+  const bilder = kandidaten.map((k) =>
+    `Bild ${k.nr}: gesucht für „${k.marke}“ als „${k.name}“; Quelle ${k.via}${k.titel ? `; Titel „${k.titel}“` : ""}`).join("\n");
+  return `Du prüfst Logos für ein ROOTS Executive Memo. Die Bilder hängen in der Reihenfolge der Liste an dieser Nachricht.
+
+<marken>
+${liste}
+</marken>
+
+<bilder>
+${bilder}
+</bilder>
+
+Ordne jedes Bild einer Art zu: logo (freistehende Wort- oder Bildmarke auf ruhigem Grund), foto, verpackung, werbemotiv, ladenschild oder sonstiges. Bewerte dann jedes Bild 0 bis 10 danach, ob es das echte, aktuell verwendete Logo der Marke zeigt, für die es gesucht wurde: gut lesbar, ohne fremde Marken, kein historisches Logo, keine gleichnamige andere Firma. Ein Bild, das keine Art logo ist, bekommt höchstens 3.
+Bei „Händler · Eigenmarke“ ist das Logo des Händlers erste Wahl, das der Eigenmarke zweite.
+Beschreibe je Marke in einem Satz, wie ihr echtes Logo aussieht (Form, Farben, Schrift), auch wenn kein Bild passt. Liegt für eine Marke kein Bild bei ${MEMO_LOGO_MIN_SCORE} oder mehr, nenne eine Bildsuche, die das echte Logo findet.
+Antworte ausschliesslich mit JSON. Unter bilder steht jedes Bild mit seiner Nummer, unter logos jede Marke so geschrieben wie oben; bild ist die Nummer des besten Bildes, 0 wenn keines passt.
+{"bilder":{"1":{"art":"…","zeigt":"…","score":…}},"logos":[{"marke":"…","bild":…,"fuer":"Name, dem das Logo gehört","beschreibung":"…","neue_suche":"…"}]}`;
+}
+
+/**
+ * Wertet die Pruefung aus. Ein Logo gilt nur, wenn das Bild der Art logo ist,
+ * mindestens MEMO_LOGO_MIN_SCORE hat und fuer genau diese Marke gesucht wurde.
+ * Waehlt das Modell ein Bild, das diese Regeln bricht, gilt das beste andere.
+ */
+export function parseLogoPruefung(raw: unknown, marken: LogoMarke[], kandidaten: LogoKandidat[]): Map<string, LogoUrteil> {
+  const root = record(raw);
+  const bilder = record(root.bilder);
+  const bewertung = (nr: number) => {
+    const eintrag = record(bilder[String(nr)]);
+    const art = String(eintrag.art || eintrag.typ || "").trim().toLowerCase();
+    const score = Math.max(0, Math.min(10, Number(eintrag.score || 0)));
+    return { art, score: art === "logo" ? score : Math.min(score, 3) };
+  };
+  const urteile = new Map<string, LogoUrteil>();
+  const liste = Array.isArray(root.logos) ? root.logos as unknown[] : [];
+  const vergeben = new Set<number>();
+  for (const marke of marken) {
+    const e = record(liste.map(record).find((eintrag) => logoCacheKey(String(eintrag.marke || "")) === logoCacheKey(marke.marke)));
+    const eigene = kandidaten.filter((k) => k.marke === marke.marke);
+    const gueltig = (k: LogoKandidat) => bewertung(k.nr).art === "logo" && bewertung(k.nr).score >= MEMO_LOGO_MIN_SCORE && !vergeben.has(k.nr);
+    const gewaehlt = eigene.find((k) => k.nr === Number(e.bild || 0));
+    const treffer = gewaehlt && gueltig(gewaehlt)
+      ? gewaehlt
+      : eigene.filter(gueltig).sort((x, y) => bewertung(y.nr).score - bewertung(x.nr).score)[0] || null;
+    if (treffer) vergeben.add(treffer.nr);
+    const score = treffer ? bewertung(treffer.nr).score : Math.max(0, ...eigene.map((k) => bewertung(k.nr).score));
+    // Der Name, dem das Logo gehoert, muss einer der gesuchten sein; sonst
+    // gilt der Suchname. Er ist der Schluessel im Logo-Speicher.
+    const fuerRoh = logoCacheKey(String(e.fuer || ""));
+    const fuer = (treffer && treffer === gewaehlt
+      ? [...marke.namen, marke.marke].find((name) => logoCacheKey(name) === fuerRoh)
+      : "") || treffer?.name || marke.marke;
+    urteile.set(marke.marke, {
+      treffer,
+      score,
+      fuer,
+      beschreibung: text(e.beschreibung, 240),
+      neueSuche: text(e.neue_suche, 140),
+    });
+  }
+  return urteile;
+}
+
+/**
+ * Kandidaten aus einer sonar-Bildsuche nach einem Logo. Anders als bei den
+ * Motiven sind Logos hier erwuenscht; SVG sieht das Pruefmodell nicht.
+ */
+export function memoLogoKandidatenAus(
+  raw: unknown,
+  marke: string,
+  name: string,
+  schonGesehen: Set<string> = new Set(),
+  max = 3,
+): Array<Pick<LogoKandidat, "marke" | "name" | "url" | "via" | "titel">> {
+  const bilder = Array.isArray(record(raw).images) ? record(raw).images as unknown[] : [];
+  const out: Array<Pick<LogoKandidat, "marke" | "name" | "url" | "via" | "titel">> = [];
+  for (const eintrag of bilder) {
+    if (out.length >= max) break;
+    const bild = record(eintrag);
+    const url = String(bild.image_url || bild.url || "").trim();
+    if (!/^https:\/\//.test(url) || schonGesehen.has(url) || /\.svg(\?|$)/i.test(url)) continue;
+    let host = "";
+    try { host = new URL(url).hostname; } catch { continue; }
+    let quellHost = "";
+    try { quellHost = bild.origin_url ? new URL(String(bild.origin_url)).hostname : ""; } catch { quellHost = ""; }
+    if (MEMO_BILD_GESPERRT.test(host) || MEMO_BILD_GESPERRT.test(quellHost)) continue;
+    const breite = Number(bild.width || 0);
+    const hoehe = Number(bild.height || 0);
+    if (breite && breite < 120) continue;
+    if (breite && hoehe && (breite / hoehe < 0.2 || breite / hoehe > 8)) continue;
+    schonGesehen.add(url);
+    out.push({ marke, name, url, via: "bildsuche", titel: kurz(bild.title, 120) });
+  }
+  return out;
+}
+
+/** Suchanfrage fuer die Logo-Bildsuche; in Runde zwei mit der Beschreibung aus der Pruefung. */
+export function memoLogoSuchanfrage(name: string, rueckmeldung: { neueSuche?: string; beschreibung?: string } = {}): string {
+  const suche = String(rueckmeldung.neueSuche || "").trim() || `${name} Logo`;
+  const aussehen = String(rueckmeldung.beschreibung || "").trim();
+  return aussehen
+    ? `${suche}\nGesucht ist das offizielle, aktuelle Logo von ${name}. So sieht es aus: ${aussehen}`
+    : `${suche}\nGesucht ist das offizielle, aktuelle Logo von ${name} als Bilddatei.`;
 }
 
 /** Alias für Benchmark-Logos. Potenziale nutzen memoSceneQueries. */

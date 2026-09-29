@@ -1732,12 +1732,12 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-10";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-11";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-10";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-11";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-10";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-11";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
@@ -2461,6 +2461,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (event === "bild_rueckfall") return `Bild für ${bildRahmen(entry.key)} über den Rückfallweg${entry.quelle ? ` · ${entry.quelle}` : ""}${entry.score ? ` · ${Number(entry.score)}/10` : ""}`;
     if (event === "bild_rueckfall_leer") return `Kein passendes Bild für ${bildRahmen(entry.key)} gefunden`;
     if (event === "benchmarks_ohne_logo") return `Zu unbekannt, kein Logo auffindbar: ${(Array.isArray(entry.names) ? entry.names : []).join(", ")}`;
+    if (event === "logo_pruefung") {
+      return Number(entry.kandidaten || 0)
+        ? `${model || "Das Modell"} prüft ${Number(entry.kandidaten)} Logos, ${Number(entry.angenommen || 0)} passen${tok}`
+        : "Keine Logos zum Prüfen gefunden";
+    }
+    if (event === "logo_source") {
+      const woher = {
+        speicher: "aus dem Speicher",
+        registry: "aus der Registry",
+        sicht: `geprüft · ${Number(entry.score || 0)}/10`,
+        ungeprueft: "ohne Prüfung übernommen",
+      }[String(entry.source || "")];
+      return woher ? `Logo${entry.name ? ` ${entry.name}` : ""} ${woher}` : "";
+    }
+    if (event === "logo_abgelehnt") return `Kein sicheres Logo für ${entry.name || "einen Benchmark"} gefunden`;
+    if (event === "logo_zeit") return "Logoprüfung beendet, die Zeit reicht für keine weitere Runde";
     if (event === "bilder_nachgezogen") return "Bilder gesichert";
     if (event === "bilder_sicht_fertig") return `${Number(entry.gewaehlt || 0)} Bilder geprüft und gesetzt`;
     if (event === "image_start") return "Logo wird gesucht";
