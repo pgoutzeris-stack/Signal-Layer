@@ -1866,18 +1866,18 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-15";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-16";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-15";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-16";
 import {
   createFreiform, createKontextmenue, wendeAenderungenAn, bereinigeAenderungen, serialisiereAenderungen,
   zaehleAenderungen, elementAmPfad, pfadVon, bildAus, istTextElement, FREI_FARBEN,
-} from "./asset-freiform.js?v=20260929-15";
+} from "./asset-freiform.js?v=20260929-16";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-15";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-16";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260929-15";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260929-16";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -6582,6 +6582,22 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
   }
 
+  /**
+   * Wer das Studio aus der Entwurfsliste schliesst, hat keinen eigenen Lauf
+   * offen. Laeuft dort trotzdem ein Entwurf, bekommt er dieselbe Meldung.
+   */
+  function laufendeEntwuerfeAnheften() {
+    const liste = Array.isArray(state.drafts) ? state.drafts : [];
+    for (const row of liste) {
+      if (!row || row.status !== "running" || !row.id || hintergrundLaeufe.has(String(row.id))) continue;
+      const start = Date.parse(String(row.created_at || ""));
+      hintergrundMerken({
+        id: row.id, kind: row.kind === "memo" ? "memo" : assetKind, answers: row.answers || {}, optionen: startOptionen,
+        start: Number.isFinite(start) ? start : Date.now(), forecastMs: Number(row.forecast_ms) || 0, stage: row.stage || "lesen", log: [],
+      });
+    }
+  }
+
   /* ── CI-Sperre und freie Bearbeitung ── */
 
   const MAC = /Mac|iPhone|iPad/.test(String(navigator.platform || navigator.userAgent || ""));
@@ -7960,6 +7976,7 @@ ${stages}${post}
       state.leftRunning = true;
       inDenHintergrund();
     }
+    laufendeEntwuerfeAnheften();
     state.cancelRequested = true;
     while (cleanups.length) {
       const off = cleanups.pop();
