@@ -17,7 +17,7 @@ as $$
     from signal_layer.articles a
     where a.paywall_geprueft_at is null
       and not a.paywall_detected
-      and a.url is not null
+      and a.url ~* '^https?://'
       and length(coalesce(nullif(a.cleaned_content, ''), a.content, '')) < 2000
       and exists (select 1 from signal_layer.simple_signals s where s.article_id = a.id)
     order by a.crawled_at desc nulls last
