@@ -57,3 +57,51 @@ test("die Edge-Funktion nutzt beide neuen Datumsquellen", () => {
     "Meta-Muster muessen vor der Element-Suche stehen",
   );
 });
+
+const absatz = (n, wort = "Der Händler meldet ein deutliches Umsatzplus im zweiten Quartal") => Array.from({ length: n }, (_, i) => `<p>${wort}, Absatz ${i + 1}.</p>`).join("\n");
+
+test("Zustandsklassen am body-Tag löschen den Artikel nicht mehr", () => {
+  // rundschau.de: "ur-settings-sidebar-show", The Grocer: "enhanced-advertising".
+  for (const klasse of ["single-post ur-settings-sidebar-show", "M1-master enhanced-advertising enhanced-advertising-rhc-empty"]) {
+    const html = `<html><body class="${klasse}"><div class="entry-content">${absatz(8)}</div><div class="sidebar"><p>Meistgelesen heute und gestern im Handel.</p></div></body></html>`;
+    const { text } = helpers.artikelAusHtml(html);
+    assert.ok(text.includes("Absatz 8"), klasse);
+    assert.ok(!text.includes("Meistgelesen"), klasse);
+  }
+});
+
+test("das Wort captcha in einem Formular macht einen Artikel nicht zur Prüfseite", () => {
+  const artikel = `<body><article>${absatz(10)}</article><form><label>Friendly Captcha</label></form></body>`;
+  assert.equal(helpers.istPruefseite(artikel, helpers.artikelAusHtml(artikel).text), false);
+  assert.equal(helpers.istPruefseite("<html><body>Just a moment...</body></html>", ""), true);
+  assert.equal(helpers.istPruefseite("<html><body><p>Enable JavaScript and cookies to continue</p></body></html>", "Enable JavaScript and cookies to continue"), true);
+});
+
+test("Feed-Auszüge mit Verweis auf die Seite werden erkannt", () => {
+  assert.equal(helpers.istFeedAuszug("Langer Anriss ... *Continue reading this article on digiday.com . Sign up for Digiday newsletters.*"), true);
+  assert.equal(helpers.istFeedAuszug("Kurzer Text. The post Wenn Heidi Klum auf den Gabelstapler steigt appeared first on rundschau.de ."), true);
+  assert.equal(helpers.istFeedAuszug("Der Beitrag Takko Fashion eröffnet 2.000. Filiale erschien zuerst auf stores+shops ."), true);
+  assert.equal(helpers.istFeedAuszug("Die Filiale öffnet im Herbst [...]"), true);
+  assert.equal(helpers.istFeedAuszug("Der Konzern bestätigte die Zahlen am Montag."), false);
+});
+
+test("eingebettete Daten: der Block, der zu Titel und Anriss passt, nicht der längste", () => {
+  // foodbev.com (Wix): Artikel, verwandter Beitrag und Firmenportraet im selben JSON.
+  const artikel = "Pack leaks remain one of the leading causes of retailer returns. Seal integrity in modified atmosphere packaging protects brands. ".repeat(6);
+  const fremd = "Keurig Dr Pepper is a leading coffee and beverage company in North America with annual revenue in excess of eleven billion dollars. ".repeat(9);
+  const daten = { seo: { content: '{"tags":[{"type":"title","children":"{{wix-data-page-item.Blog/Posts.title}}"}]}'.repeat(12) }, post: { plainContent: artikel }, firma: { text: fremd } };
+  const html = `<html><head><meta property="og:title" content="Seal the deal for retailers: Guaranteeing seal integrity in modified atmosphere packaging"></head><body><script type="application/json" id="wix-warmup-data">${JSON.stringify(daten)}</script></body></html>`;
+  const { text } = helpers.artikelAusHtml(html);
+  assert.ok(text.startsWith("Pack leaks remain"), text.slice(0, 80));
+  // Ohne passenden Block kein Werbetext, sondern die HTML-Extraktion.
+  assert.equal(helpers.extractEmbeddedArticleBody(html, "Völlig anderes Thema über Möbelhandel"), null);
+});
+
+test("ein verschachtelter Inhaltsbereich wird ganz gelesen, nicht bis zum ersten schließenden Tag", () => {
+  // stores+shops: bis 30.9.2026 gewann ein kurzer verwandter Artikel.
+  const html = `<body><div class="post-content entry-content"><div class="bild"><span>Foto</span></div>${absatz(12)}</div>
+    <article class="verwandt"><p>Douglas macht Köln zur Beauty-Destination mit neuem Store in bester Lage der Innenstadt.</p><p>Mehr dazu im Beitrag über die Eröffnung und die Pläne.</p><p>Weitere Stores folgen im kommenden Jahr in anderen Städten.</p></article></body>`;
+  const { text } = helpers.artikelAusHtml(html);
+  assert.ok(text.includes("Absatz 12"), text.slice(0, 120));
+  assert.ok(!text.includes("Douglas"));
+});

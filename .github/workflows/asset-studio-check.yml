@@ -30,6 +30,8 @@ on:
       - "supabase/functions/signal-layer/paywall.ts"
       - "supabase/migrations/20260930150000_paywall_erkennung.sql"
       - "tests/paywall.test.mjs"
+      - "supabase/functions/signal-layer/extraction-helpers.ts"
+      - "tests/article-extraction.test.mjs"
       - "paywall-pill.mjs"
       - ".github/workflows/asset-studio-check.yml"
   pull_request:
@@ -60,6 +62,8 @@ on:
       - "supabase/functions/signal-layer/paywall.ts"
       - "supabase/migrations/20260930150000_paywall_erkennung.sql"
       - "tests/paywall.test.mjs"
+      - "supabase/functions/signal-layer/extraction-helpers.ts"
+      - "tests/article-extraction.test.mjs"
       - "paywall-pill.mjs"
       - ".github/workflows/asset-studio-check.yml"
 
@@ -87,4 +91,4 @@ jobs:
           node --check manual-signal.js
           node --check linkedin-guides.mjs
       - name: Test asset studio
-        run: node --experimental-strip-types --test tests/asset-studio.test.mjs tests/asset-freiform.test.mjs tests/manual-signal.test.mjs tests/linkedin-guides.test.mjs tests/deepseek-tarif.test.mjs tests/source-extract.test.mjs tests/paywall.test.mjs
+        run: node --experimental-strip-types --test tests/asset-studio.test.mjs tests/asset-freiform.test.mjs tests/manual-signal.test.mjs tests/linkedin-guides.test.mjs tests/deepseek-tarif.test.mjs tests/source-extract.test.mjs tests/paywall.test.mjs tests/article-extraction.test.mjs

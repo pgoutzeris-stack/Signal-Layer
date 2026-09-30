@@ -5,7 +5,7 @@ import {
   isBareEventAnnouncement,
 } from "./event-signals.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { extractDateFromDateElement } from "./extraction-helpers.ts";
+import { artikelAusHtml, extractDateFromDateElement, istFeedAuszug, istPruefseite } from "./extraction-helpers.ts";
 import { paywallAusHtml } from "./paywall.ts";
 import {
   CrawlPolicy,
@@ -786,6 +786,7 @@ const ADMIN_ACTIONS = new Set([
   "resume_classification_backfill",
   "reformat_recent_articles",
   "paywall_nachpruefen",
+  "volltext_nachholen",
   "resume_stalled_crawls",
 ]);
 
@@ -2508,142 +2509,6 @@ function extractPublishedDate(html: string, url: string): string | null {
   return null;
 }
 
-// Remove non-article page chrome (menus, headers, footers, sidebars, forms,
-// cookie/consent widgets) BEFORE text extraction. Many sites put their huge
-// navigation in plain <div>/<ul> menus that are not semantic <nav>, so we also
-// drop elements whose id/class marks them as navigation/menu/footer/etc.
-function stripPageChrome(html: string): string {
-  let out = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
-    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
-    .replace(/<header[\s\S]*?<\/header>/gi, " ")
-    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
-    .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
-    .replace(/<form[\s\S]*?<\/form>/gi, " ")
-    .replace(/<select[\s\S]*?<\/select>/gi, " ")
-    .replace(/<menu[\s\S]*?<\/menu>/gi, " ");
-  // Drop role=navigation/banner/contentinfo/search/dialog regions.
-  out = out.replace(/<([a-z0-9]+)\b[^>]*\brole=["'](?:navigation|banner|contentinfo|search|dialog|menu|menubar)["'][\s\S]*?<\/\1>/gi, " ");
-  // Drop chrome by class/id keyword regardless of tag or theme naming
-  // convention (sidebar widgets, related/teaser lists, share bars, comments,
-  // promo/ad slots, breadcrumbs, tag/category lists, newsletter signup).
-  // Tag-agnostic \1 backreference can truncate early on deeply nested same-
-  // tag markup — an accepted tradeoff shared with the role-based strip above,
-  // still net-positive since it removes far more chrome than it wrongly cuts.
-  const CHROME_CLASS_KEYWORDS = "widget|sidebar|related[-_]?posts?|teaser|share[-_]?bar|social[-_]?share|comments?[-_]?(section|area|list)|promo|advert|breadcrumbs?|tag[-_]?list|categor(?:y|ie)[-_]?list|newsletter[-_]?(signup|box)|most[-_]?read|meistgelesen|weiterlesen[-_]?box|empfehlung";
-  out = out.replace(new RegExp(`<([a-z0-9]+)\\b[^>]*\\b(?:class|id)=["'][^"']*(?:${CHROME_CLASS_KEYWORDS})[^"']*["'][\\s\\S]*?<\\/\\1>`, "gi"), " ");
-  return out;
-}
-
-// JSON-LD structured data (schema.org Article/NewsArticle) sometimes carries
-// the full plain-text articleBody directly — the single most reliable source
-// when present, since it needs no HTML-structure guessing at all. Markdown
-// structure (headings/lists) is lost here since it's plain text, but the
-// content itself is guaranteed to be the real article, never chrome.
-function extractJsonLdArticleBody(html: string): string | null {
-  const scripts = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
-  for (const block of scripts) {
-    const raw = block.replace(/<script[^>]*>/i, "").replace(/<\/script>/i, "").trim();
-    try {
-      const parsed = JSON.parse(raw);
-      const nodes = Array.isArray(parsed) ? parsed : (parsed["@graph"] || [parsed]);
-      for (const node of nodes) {
-        const body = node?.articleBody;
-        if (typeof body === "string" && body.trim().length >= 400) return body.trim();
-      }
-    } catch { /* malformed/partial JSON-LD — skip, other strategies still apply */ }
-  }
-  return null;
-}
-
-// Next.js, React and several corporate newsroom platforms hydrate article
-// data from JSON embedded in the initial HTML. Recover likely body fields
-// before requiring a full browser render. This keeps most JS-heavy sources on
-// the free native path while remaining bounded and source-agnostic.
-function extractEmbeddedArticleBody(html: string): string | null {
-  const blocks = html.match(/<script[^>]*(?:id=["']__NEXT_DATA__["']|type=["']application\/json["'])[^>]*>[\s\S]*?<\/script>/gi) || [];
-  const candidates: string[] = [];
-  const visit = (value: unknown, key = "", depth = 0): void => {
-    if (depth > 14 || candidates.length > 300) return;
-    if (typeof value === "string") {
-      if (/^(articlebody|article_body|body|content|storybody|story_body|text|richtext|rich_text|description)$/i.test(key)
-          && value.trim().length >= 400 && value.length <= 100_000) candidates.push(value.trim());
-      return;
-    }
-    if (Array.isArray(value)) {
-      for (const item of value.slice(0, 500)) visit(item, key, depth + 1);
-    } else if (value && typeof value === "object") {
-      for (const [childKey, child] of Object.entries(value as Record<string, unknown>)) visit(child, childKey, depth + 1);
-    }
-  };
-  for (const block of blocks) {
-    const raw = block.replace(/<script[^>]*>/i, "").replace(/<\/script>/i, "").trim();
-    try { visit(JSON.parse(raw)); } catch { /* malformed hydration payload */ }
-  }
-  return candidates.sort((a, b) => b.length - a.length)[0] || null;
-}
-
-// Density-scored container selection (lightweight Readability-style
-// heuristic). Instead of trusting raw text length — which a nav/teaser block
-// can win by sheer volume — score by paragraph density and penalize link-
-// heavy or chrome-labelled blocks, so real prose wins even under a class name
-// stripPageChrome/extractMainContentHtml's fixed keyword list doesn't know.
-function scoreCandidateBlock(block: string): number {
-  const textLen = block.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
-  if (textLen < 200) return -1;
-  const paragraphCount = (block.match(/<p\b[^>]*>/gi) || []).length;
-  const linkTextLen = (block.match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) || [])
-    .reduce((sum, a) => sum + a.replace(/<[^>]+>/g, " ").trim().length, 0);
-  const linkDensity = textLen > 0 ? linkTextLen / textLen : 1;
-  const chromeHit = /\b(nav|menu|sidebar|widget|footer|header|comment|share|social|promo|advert|related|teaser|breadcrumb)\b/i
-    .test((block.match(/class=["'][^"']*["']/i) || [""])[0]);
-  return textLen + paragraphCount * 80 - linkDensity * textLen * 1.5 - (chromeHit ? 2000 : 0);
-}
-
-// Best-effort main-content isolation. Prefers a semantic <article>/<main> or a
-// content-flagged container and returns the richest one; returns null when
-// nothing substantial is found so the caller can fall back to the whole body.
-function extractMainContentHtml(html: string): string | null {
-  const candidates: string[] = [];
-  const patterns = [
-    /<article\b[^>]*>[\s\S]*?<\/article>/gi,
-    /<main\b[^>]*>[\s\S]*?<\/main>/gi,
-    /<[a-z0-9]+\b[^>]*\b(?:id|class)=["'][^"']*(?:article-?body|articlebody|article-?content|post-?content|entry-?content|story-?body|story-?content|content-?body|rich-?text|main-?content|c-article|news-detail|jeg_content|post_content_elementor|td-post-content|single-content|artikel-content|beitragstext)[^"']*["'][\s\S]*?<\/[a-z0-9]+>/gi,
-  ];
-  for (const re of patterns) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(html)) !== null) candidates.push(m[0]);
-  }
-  // Score, don't just measure length — a sidebar/teaser block can be longer
-  // than the real article; density scoring picks the block that actually
-  // reads like prose (see scoreCandidateBlock).
-  let best: string | null = null;
-  let bestScore = -1;
-  for (const c of candidates) {
-    const score = scoreCandidateBlock(c);
-    if (score > bestScore) { bestScore = score; best = c; }
-  }
-  return bestScore >= 400 ? best : null;
-}
-
-// Generic last resort when no named container matched (unknown/uncommon CMS
-// themes — e.g. WordPress "Jnews"/Elementor sites that wrap content in
-// theme-specific classes we don't know). Real article prose lives in <p>
-// tags; site chrome (menus, teaser lists, sidebars) is built from <a>/<li>
-// without paragraph text, so collecting substantial <p> blocks reliably
-// skips navigation even when we can't name the surrounding container.
-function extractParagraphCluster(html: string): string | null {
-  const paragraphs = html.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [];
-  const substantial = paragraphs.filter((p) => p.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length >= 40);
-  if (!substantial.length) return null;
-  const joined = substantial.join("\n");
-  const len = joined.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
-  return len >= 400 ? joined : null;
-}
-
 // Per-domain login form field mapping for paywalled sources with a stored
 // ROOTS subscription (see set_source_login). Form structure varies too much
 // site-to-site to generalize; add a domain here whenever a login is wired.
@@ -2878,7 +2743,8 @@ async function fetchAuthenticatedArticleViaApify(
 type ExtractionDiagnostic = {
   code: "unsupported_url" | "access_denied" | "not_found" | "rate_limited" | "upstream_error"
     | "bot_protection" | "javascript_required" | "empty_html" | "too_short" | "paywall_no_session"
-    | "paywall_after_login" | "login_failed" | "timeout" | "network_error" | "feed_fallback_used" | "browser_fallback_used";
+    | "paywall_after_login" | "login_failed" | "timeout" | "network_error" | "feed_fallback_used" | "browser_fallback_used"
+    | "fulltext_recovered";
   message: string;
   http_status?: number;
   content_length?: number;
@@ -2981,6 +2847,7 @@ async function fetchArticleForSource(
   url: string,
   source?: { id: string; url: string; crawl_config?: Record<string, unknown> } | null,
   diagnosticCapture?: ExtractionDiagnosticCapture,
+  optionen: { ohneBrowser?: boolean } = {},
 ): Promise<AbgerufenerArtikel | null> {
   const loginRequired = Boolean(source?.crawl_config?.login_required);
   const cookie = loginRequired && source ? await getOrRefreshLoginCookie(source, url).catch(() => null) : null;
@@ -3001,7 +2868,7 @@ async function fetchArticleForSource(
   }
   const browserEligible = diagnosticCapture?.value
     && ["access_denied", "bot_protection", "javascript_required", "empty_html", "too_short", "paywall_after_login"].includes(diagnosticCapture.value.code);
-  if (browserEligible) {
+  if (browserEligible && !optionen.ohneBrowser) {
     const rendered = await fetchArticleViaBrowserWorker(url, cookie);
     if (rendered) {
       captureExtractionDiagnostic(diagnosticCapture, {
@@ -3031,8 +2898,11 @@ async function fetchArticleContent(
   // Editorial sites intermittently return consent/interstitial pages or time
   // out. Retry once with cache bypass before declaring the body unavailable.
   // This is deliberately bounded: classification must not stall a crawl.
+  // Feeds liefern oft noch http-Adressen; moebelmarkt.de antwortet darauf mit
+  // HTTP 500, unter https mit dem Artikel. Deshalb zuerst https, dann das Original.
+  const ziele = /^http:\/\//i.test(url) ? [url.replace(/^http:/i, "https:"), url] : [url, url];
   for (let attempt = 0; attempt < 2; attempt += 1) try {
-    const res = await fetchWithTimeout(url, attempt === 0 ? (cookieHeader ? { headers: { Cookie: cookieHeader } } : {}) : {
+    const res = await fetchWithTimeout(ziele[attempt], attempt === 0 ? (cookieHeader ? { headers: { Cookie: cookieHeader } } : {}) : {
       cache: "no-store",
       headers: { "Cache-Control": "no-cache", Pragma: "no-cache", ...(cookieHeader ? { Cookie: cookieHeader } : {}) },
     });
@@ -3043,69 +2913,22 @@ async function fetchArticleContent(
         code, message: `Die Quelle antwortete mit HTTP ${res.status}.`, http_status: res.status,
         session_used: Boolean(cookieHeader),
       });
+      if (attempt === 0 && ziele[1] !== ziele[0]) continue;
       return null;
     }
     const html = await readResponseText(res);
-    // "captcha" needs word boundaries: reCAPTCHA/hCaptcha widget config ships
-    // in the markup of perfectly readable articles (bild.de embeds
-    // "recaptchaSiteKey" on every page), and an unanchored match discarded the
-    // whole article as a bot challenge.
-    if (/cf-chl-|checking your browser|just a moment|cloudflare ray id|\bcaptcha\b/i.test(html)) {
+    const { title, excerpt, text } = artikelAusHtml(html);
+    if (istPruefseite(html, text)) {
       captureExtractionDiagnostic(diagnosticCapture, {
         code: "bot_protection", message: "Die Quelle lieferte eine Bot-/Cloudflare-Prüfseite statt des Artikels.",
         http_status: res.status, content_length: html.length, session_used: Boolean(cookieHeader),
       });
       return null;
     }
-
-    const titleMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
-      || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    const title = (titleMatch?.[1] || "").trim();
-
-    const descMatch = html.match(/<meta[^>]+(?:property=["']og:description["']|name=["']description["'])[^>]+content=["']([^"']+)["']/i);
-    const excerpt = (descMatch?.[1] || "").trim();
-
     const publishedAt = extractPublishedDate(html, url);
 
-    const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
-    const cleanedBody = stripPageChrome(bodyMatch ? bodyMatch[0] : html);
-    // Extraction palette, most reliable first: (1) JSON-LD articleBody needs
-    // no HTML-structure guessing at all when present; (2) a named/likely
-    // article container scored by paragraph density beats chrome even under
-    // an unknown theme's class name; (3) a generic <p>-block cluster catches
-    // themes matched by neither; (4) the whole chrome-stripped body as the
-    // final fallback so extraction never simply fails.
-    let text = extractJsonLdArticleBody(html) || extractEmbeddedArticleBody(html)
-      || extractMainContentHtml(cleanedBody) || extractParagraphCluster(cleanedBody) || cleanedBody;
-    text = text
-      // Preserve structure as lightweight Markdown BEFORE the generic tag
-      // strip below collapses everything into one flat blob — otherwise
-      // headings/bold/lists are indistinguishable from body text once the
-      // tags are gone, and that structure can't be reconstructed afterwards.
-      // Only emit a Markdown marker when the element actually wraps text —
-      // an empty or image-only <strong>/<em>/<h*> otherwise leaves orphaned
-      // ** or * artifacts once its inner tags are stripped below.
-      .replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_m, inner) => inner.trim() ? `\n\n## ${inner}\n\n` : " ")
-      .replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, inner) => inner.trim() ? `**${inner}**` : " ")
-      .replace(/<(em|i)[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, inner) => inner.trim() ? `*${inner}*` : " ")
-      .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_m, inner) => inner.trim() ? `\n- ${inner}` : " ")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/(p|div|tr|blockquote)>/gi, "\n\n")
-      .replace(/<[^>]+>/g, " ")
-      // Clean up markers left empty after an inner tag (e.g. an image) was
-      // stripped. The bold pattern only matches an empty pair, and the italic
-      // pattern requires whitespace between, so real **bold**/*italic* stay.
-      .replace(/\*\*\s*\*\*/g, " ")
-      .replace(/\*[ \t]+\*/g, " ")
-      .replace(/&nbsp;/g, " ")
-      .replace(/[ \t]+/g, " ")
-      .split("\n").map((line) => line.trim()).join("\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-    text = decodeArticleText(text);
-
     const result = {
-      title: decodeArticleText(title), content: text.slice(0, ARTICLE_CONTENT_MAX), excerpt: decodeArticleText(excerpt), publishedAt,
+      title, content: text.slice(0, ARTICLE_CONTENT_MAX), excerpt, publishedAt,
       paywallMarkiert: paywallAusHtml(html, text),
     };
     // A tiny body is commonly a paywall/JS shell. Give the retry a chance to
@@ -7959,7 +7782,7 @@ Deno.serve(async (req: Request) => {
       isScheduled = await isScheduledTrigger(req);
       if (!isScheduled) return unauthorizedResponse(req, origin);
     }
-  } else if (action === "reformat_recent_articles" || action === "paywall_nachpruefen") {
+  } else if (action === "reformat_recent_articles" || action === "paywall_nachpruefen" || action === "volltext_nachholen") {
     // Self-refires via the service-role bearer; a user may also kick it off.
     if (!isInternalCall(req)) {
       auth = await requireAuth(req);
@@ -9668,7 +9491,7 @@ Deno.serve(async (req: Request) => {
           const rejected: Record<string, number> = {};
           for (const candidate of batch) {
             const suppliedContent = String(candidate.content || "").trim();
-            const pageContent = suppliedContent.length < 800 || looksLikePaywallTeaser(suppliedContent)
+            const pageContent = suppliedContent.length < 800 || looksLikePaywallTeaser(suppliedContent) || istFeedAuszug(suppliedContent)
               ? await fetchArticleForSource(candidate.url, source)
               : null;
             const synopsisFallback = buildCandidateSynopsis(
@@ -12087,6 +11910,55 @@ Deno.serve(async (req: Request) => {
           body: JSON.stringify({ action: "reformat_recent_articles" }),
         }).catch((e) => console.error("Failed to continue reformat batch:", e));
         return corsResponse(origin, { ok: true, processed: articles.length, updated });
+      }
+
+      case "volltext_nachholen": {
+        // Holt kurze Texte ohne Paywall erneut, mit der verbesserten Extraktion
+        // vom 30.9.2026. Kein Modell, kein Browser-Worker. Uebernommen wird nur
+        // ein deutlich laengerer Text; volltext_nachgeholt_at markiert die
+        // Artikel fuer einen spaeteren Pipeline-Lauf.
+        const admin = getAdminClient();
+        const menge = Math.min(Math.max(Number(body.limit) || 18, 1), 40);
+        const { data: kandidaten, error } = await admin.schema("signal_layer")
+          .rpc("volltext_kandidaten", { p_limit: menge });
+        if (error) return errorResponse(origin, error.message, 500);
+        const liste = (kandidaten || []) as Array<{ id: string; url: string; source_id: string | null; laenge: number }>;
+        if (!liste.length) return corsResponse(origin, { ok: true, done: true });
+        const quellen = new Map<string, { id: string; url: string; crawl_config?: Record<string, unknown> } | null>();
+        let verbessert = 0;
+        const hole = async (zeile: { id: string; url: string; source_id: string | null; laenge: number }) => {
+          try {
+            let quelle = zeile.source_id ? quellen.get(zeile.source_id) : null;
+            if (zeile.source_id && quelle === undefined) {
+              const { data: src } = await admin.schema("signal_layer").from("sources")
+                .select("id, url, crawl_config").eq("id", zeile.source_id).maybeSingle();
+              quelle = src || null;
+              quellen.set(zeile.source_id, quelle);
+            }
+            const erfasst: ExtractionDiagnosticCapture = {};
+            const abruf = await fetchArticleForSource(zeile.url, quelle || null, erfasst, { ohneBrowser: true });
+            const inhalt = String(abruf?.content || "").trim();
+            const bereinigt = inhalt ? cleanArticleText(inhalt) : "";
+            const jetzt = new Date().toISOString();
+            if (bereinigt.length >= Math.max(zeile.laenge * 1.3, zeile.laenge + 200)) {
+              verbessert += 1;
+              await admin.schema("signal_layer").from("articles").update({
+                content: inhalt.slice(0, ARTICLE_CONTENT_MAX), cleaned_content: bereinigt, ...paywallSpalten(abruf),
+                volltext_geprueft_at: jetzt, volltext_nachgeholt_at: jetzt,
+                extraction_diagnostic: {
+                  code: "fulltext_recovered", recovered: true, checked_at: jetzt, content_length: bereinigt.length,
+                  message: `Volltext nachgeholt: ${bereinigt.length} statt ${zeile.laenge} Zeichen.`,
+                },
+              }).eq("id", zeile.id);
+            } else {
+              await admin.schema("signal_layer").from("articles").update({ volltext_geprueft_at: jetzt }).eq("id", zeile.id);
+            }
+          } catch {
+            await admin.schema("signal_layer").from("articles").update({ volltext_geprueft_at: new Date().toISOString() }).eq("id", zeile.id);
+          }
+        };
+        for (let i = 0; i < liste.length; i += 6) await Promise.all(liste.slice(i, i + 6).map(hole));
+        return corsResponse(origin, { ok: true, processed: liste.length, verbessert });
       }
 
       case "paywall_nachpruefen": {
