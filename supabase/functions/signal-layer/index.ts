@@ -6,6 +6,7 @@ import {
 } from "./event-signals.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { extractDateFromDateElement } from "./extraction-helpers.ts";
+import { paywallAusHtml } from "./paywall.ts";
 import {
   CrawlPolicy,
   SourceType,
@@ -784,6 +785,7 @@ const ADMIN_ACTIONS = new Set([
   "start_classification_backfill",
   "resume_classification_backfill",
   "reformat_recent_articles",
+  "paywall_nachpruefen",
   "resume_stalled_crawls",
 ]);
 
@@ -1299,7 +1301,7 @@ async function ensureSimpleArticleText(
     const cleaned = cleanArticleText(fetched?.content || "");
     if (cleaned.trim().length <= body.trim().length) return article;
     await admin.schema("signal_layer").from("articles")
-      .update({ content: fetched?.content || null, cleaned_content: cleaned }).eq("id", article.id);
+      .update({ content: fetched?.content || null, cleaned_content: cleaned, ...paywallSpalten(fetched) }).eq("id", article.id);
     return { ...article, content: fetched?.content || null, cleaned_content: cleaned };
   } catch {
     return article;
@@ -2763,31 +2765,16 @@ async function getOrRefreshLoginCookie(source: { id: string; url: string; crawl_
 }
 
 
-async function recordSourcePaywallStatus(
-  source: { id: string; crawl_config?: Record<string, unknown> },
-  detected: boolean,
-  evidence = "",
-): Promise<void> {
-  // Login may have refreshed the session after the source row was loaded.
-  // Re-read the config so recording paywall health never overwrites a fresh
-  // session cookie with the stale pre-login object.
-  const { data: latestSource } = await getAdminClient().schema("signal_layer").from("sources")
-    .select("crawl_config").eq("id", source.id).maybeSingle();
-  const current = latestSource?.crawl_config || source.crawl_config || {};
-  const credentialsMissing = detected && !current.login_configured_at;
-  if (Boolean(current.paywall_detected) === detected
-      && Boolean(current.paywall_credentials_missing) === credentialsMissing
-      && (!detected || current.paywall_evidence === evidence)) return;
-  await getAdminClient().schema("signal_layer").from("sources").update({
-    crawl_config: {
-      ...current,
-      paywall_detected: detected,
-      paywall_detected_at: detected ? new Date().toISOString() : null,
-      paywall_evidence: detected ? evidence.slice(0, 220) : null,
-      paywall_credentials_missing: credentialsMissing,
-      paywall_access_status: detected ? (current.login_configured_at ? "credentials_configured" : "credentials_required") : null,
-    },
-  }).eq("id", source.id);
+/**
+ * Seitenmarkierung (JSON-LD isAccessibleForFree) aus einem Abruf fuer das
+ * Artikel-Update. Der Paywall-Befund selbst entsteht per Trigger in der
+ * Datenbank, der Status der Quelle aus ihren Artikeln
+ * (signal_layer.paywall_quellen_aktualisieren). Bis 30.9.2026 schrieb jeder
+ * Abruf den Quellenstatus neu, ein freier Artikel loeschte die Paywall wieder.
+ */
+function paywallSpalten(abruf: { paywallMarkiert?: boolean | null } | null | undefined): Record<string, unknown> {
+  if (!abruf || abruf.paywallMarkiert === undefined) return {};
+  return { paywall_markiert: abruf.paywallMarkiert, paywall_geprueft_at: new Date().toISOString() };
 }
 
 // RSS and provider candidates often contain an editorial synopsis even when
@@ -2957,6 +2944,11 @@ async function enqueueBrowserRenderJob(articleId: string, diagnostic?: Extractio
   }, { onConflict: "article_id" });
 }
 
+/** Ergebnis eines Artikelabrufs. paywallMarkiert: Angabe der Seite, undefined ohne HTML. */
+type AbgerufenerArtikel = {
+  title: string; content: string; excerpt: string; publishedAt: string | null; paywallMarkiert?: boolean | null;
+};
+
 async function fetchArticleViaBrowserWorker(
   url: string,
   cookie: string | null,
@@ -2989,7 +2981,7 @@ async function fetchArticleForSource(
   url: string,
   source?: { id: string; url: string; crawl_config?: Record<string, unknown> } | null,
   diagnosticCapture?: ExtractionDiagnosticCapture,
-): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
+): Promise<AbgerufenerArtikel | null> {
   const loginRequired = Boolean(source?.crawl_config?.login_required);
   const cookie = loginRequired && source ? await getOrRefreshLoginCookie(source, url).catch(() => null) : null;
   if (loginRequired && !cookie) captureExtractionDiagnostic(diagnosticCapture, {
@@ -2999,7 +2991,6 @@ async function fetchArticleForSource(
   const direct = await fetchArticleContent(url, cookie, diagnosticCapture);
   if (source && direct) {
     const paywall = looksLikePaywallTeaser(direct.content);
-    await recordSourcePaywallStatus(source, paywall, paywall ? direct.content.replace(/\s+/g, " ").slice(0, 220) : "").catch(() => {});
     if (paywall) captureExtractionDiagnostic(diagnosticCapture, {
       code: cookie ? "paywall_after_login" : "paywall_no_session",
       message: cookie
@@ -3013,7 +3004,6 @@ async function fetchArticleForSource(
   if (browserEligible) {
     const rendered = await fetchArticleViaBrowserWorker(url, cookie);
     if (rendered) {
-      if (source) await recordSourcePaywallStatus(source, false).catch(() => {});
       captureExtractionDiagnostic(diagnosticCapture, {
         code: "browser_fallback_used", message: "Der native Abruf war unvollständig; der eigene Browser-Worker lieferte den vollständigen Artikeltext.",
         content_length: rendered.content.length, login_required: loginRequired, session_used: Boolean(cookie), recovered: true,
@@ -3030,7 +3020,7 @@ async function fetchArticleContent(
   url: string,
   cookieHeader?: string | null,
   diagnosticCapture?: ExtractionDiagnosticCapture,
-): Promise<{ title: string; content: string; excerpt: string; publishedAt: string | null } | null> {
+): Promise<AbgerufenerArtikel | null> {
   if (isLikelyNonEditorialUrl(url)) {
     captureExtractionDiagnostic(diagnosticCapture, {
       code: "unsupported_url", message: "Die URL verweist auf eine PDF-, Datei-, Übersichts- oder andere nicht-redaktionelle Seite.",
@@ -3114,7 +3104,10 @@ async function fetchArticleContent(
       .trim();
     text = decodeArticleText(text);
 
-    const result = { title: decodeArticleText(title), content: text.slice(0, ARTICLE_CONTENT_MAX), excerpt: decodeArticleText(excerpt), publishedAt };
+    const result = {
+      title: decodeArticleText(title), content: text.slice(0, ARTICLE_CONTENT_MAX), excerpt: decodeArticleText(excerpt), publishedAt,
+      paywallMarkiert: paywallAusHtml(html),
+    };
     // A tiny body is commonly a paywall/JS shell. Give the retry a chance to
     // return the real article; after the second attempt preserve the result so
     // it can be audited as content_unavailable instead of being mislabelled.
@@ -7966,7 +7959,7 @@ Deno.serve(async (req: Request) => {
       isScheduled = await isScheduledTrigger(req);
       if (!isScheduled) return unauthorizedResponse(req, origin);
     }
-  } else if (action === "reformat_recent_articles") {
+  } else if (action === "reformat_recent_articles" || action === "paywall_nachpruefen") {
     // Self-refires via the service-role bearer; a user may also kick it off.
     if (!isInternalCall(req)) {
       auth = await requireAuth(req);
@@ -8224,11 +8217,9 @@ Deno.serve(async (req: Request) => {
           const { data: failedArticle } = await admin.schema("signal_layer").from("articles")
             .select("source_id,source:sources(id,url,crawl_config)").eq("id", job.article_id).maybeSingle();
           const failedSource = Array.isArray(failedArticle?.source) ? failedArticle.source[0] : failedArticle?.source;
-          if (Boolean(rendered?.paywall) && failedSource) {
-            await recordSourcePaywallStatus(failedSource, true, renderedContent.replace(/\s+/g, " ").slice(0, 220)).catch(() => {});
-          }
           const loginConfigured = Boolean(failedSource?.crawl_config?.login_configured_at);
           await admin.schema("signal_layer").from("articles").update({
+            ...(Boolean(rendered?.paywall) ? { paywall_markiert: true, paywall_geprueft_at: now } : {}),
             extraction_diagnostic: Boolean(rendered?.paywall) ? {
               code: loginConfigured ? "paywall_after_login" : "paywall_no_session",
               message: loginConfigured
@@ -9466,7 +9457,7 @@ Deno.serve(async (req: Request) => {
               analysisContent = retried.content;
               if (retried.title && retried.title.length < 300) analysisTitle = retried.title;
               await admin.schema("signal_layer").from("articles").update({
-                title: analysisTitle, content: analysisContent, excerpt: retried.excerpt || article.excerpt,
+                title: analysisTitle, content: analysisContent, excerpt: retried.excerpt || article.excerpt, ...paywallSpalten(retried),
               }).eq("id", article.id);
             }
             if (!editorialTextQuality(analysisContent).sufficient) {
@@ -9642,11 +9633,6 @@ Deno.serve(async (req: Request) => {
             // never sends a source URL or credentials to an external crawler.
             const recoveryEntryUrl = String(source.crawl_config?.recommended_entry_url || source.url);
             const freeResult = await runFreeLinkCrawl(recoveryEntryUrl, crawlPolicy);
-            if (freeResult.errorCode === "paywall_detected") {
-              await recordSourcePaywallStatus(source, true, freeResult.errorMessage || "Paywall im Quellenabruf erkannt");
-            } else if (freeResult.candidates.length > 0) {
-              await recordSourcePaywallStatus(source, false);
-            }
             candidates = freeResult.candidates;
             discoveredCount = freeResult.discoveredCount;
             providerHttpStatus = freeResult.httpStatus;
@@ -9752,6 +9738,7 @@ Deno.serve(async (req: Request) => {
                 excerpt: fetched.excerpt,
                 published_at: resolvedPublishedAt,
                 classification_status: "pending",
+                ...paywallSpalten(pageContent),
               })
               .select().single();
             // onConflict(url) race with a parallel run → just skip, not fatal.
@@ -10171,7 +10158,7 @@ Deno.serve(async (req: Request) => {
         const [{ data: signal }, { data: article, error }, { data: usageEvents }, exchangeRate] = await Promise.all([
           admin.schema("signal_layer").from("simple_signals").select("*").eq("article_id", articleId).maybeSingle(),
           admin.schema("signal_layer").from("articles")
-            .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, language, source:sources(company, url, category)")
+            .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, language, paywall_detected, paywall_evidence, source:sources(company, url, category)")
             .eq("id", articleId).single(),
           admin.schema("signal_layer").from("ai_usage_events")
             .select("model,operation,status,inference_mode,input_tokens,cached_input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,estimated_cost_eur,pricing_currency,native_cost,native_to_eur_rate,usd_to_eur_rate,pricing_version,search_query_count,error_code,created_at")
@@ -11118,7 +11105,7 @@ Deno.serve(async (req: Request) => {
         const { lane, limit, pipeline_version: pipelineVersion } = body as { lane?: string; limit?: number; pipeline_version?: string };
         if (lane && !["marketing", "sales"].includes(lane)) return errorResponse(origin, "invalid lane");
         const admin = getAdminClient();
-        const signalColumns = "article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, trigger_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, score_details, pipeline_version, matched_families, model, prompt_version, article:articles(id, title, title_de, url, published_at, article_type, source:sources(company, url, category))";
+        const signalColumns = "article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, trigger_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, score_details, pipeline_version, matched_families, model, prompt_version, article:articles(id, title, title_de, url, published_at, article_type, paywall_detected, paywall_evidence, source:sources(company, url, category))";
         const fromHistory = Boolean(pipelineVersion);
         let query = fromHistory
           ? admin.schema("signal_layer").from("simple_signal_history")
@@ -11148,7 +11135,7 @@ Deno.serve(async (req: Request) => {
           body as { limit?: number; offset?: number; pipeline_version?: string; reasons?: string[]; exclude_reasons?: string[] };
         const safeLimit = Math.min(Math.max(Number(limit) || 60, 1), 200);
         const safeOffset = Math.max(Number(offset) || 0, 0);
-        const rejectedColumns = "article_id, reject_reason, matched_families, summary_de, article_type, pipeline_version, article:articles(id, title, title_de, url, published_at, source:sources(company, url, category))";
+        const rejectedColumns = "article_id, reject_reason, matched_families, summary_de, article_type, pipeline_version, article:articles(id, title, title_de, url, published_at, paywall_detected, paywall_evidence, source:sources(company, url, category))";
         const { data, error, count } = rejectedVersion
           ? await getAdminClient().schema("signal_layer").from("simple_signal_history")
             .select(`${rejectedColumns}, classified_at`, { count: "exact" })
@@ -11314,7 +11301,7 @@ Deno.serve(async (req: Request) => {
         const archiveCutoff = new Date();
         archiveCutoff.setUTCMonth(archiveCutoff.getUTCMonth() - 3);
         let query = admin.schema("signal_layer").from("articles")
-          .select("id, title, title_de, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, source:sources(company, url, category)", { count: "exact" })
+          .select("id, title, title_de, url, published_at, article_type, classification_status, relevance_confidence, ai_summary, ai_rationale, rejection_reasons, primary_company, matched_companies, matched_persons, classified_at, paywall_detected, paywall_evidence, source:sources(company, url, category)", { count: "exact" })
           .order("classified_at", { ascending: false, nullsFirst: false })
           .order("published_at", { ascending: false, nullsFirst: false })
           .range(safeOffset, safeOffset + safeLimit - 1);
@@ -11344,7 +11331,7 @@ Deno.serve(async (req: Request) => {
         const admin = getAdminClient();
         const [{ data, error }, { data: usageEvents }, { data: analysisJob }, { data: browserJob }, exchangeRate] = await Promise.all([
           admin.schema("signal_layer").from("articles")
-            .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, route_score_details, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classification_audit, manual_review_tracks, manual_review_reason, extraction_diagnostic, duplicate_of, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
+            .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, article_type, matched_offering, matched_offering_reasoning, classification_status, relevance_confidence, marketing_relevance_score, marketing_relevance_reason, sales_relevance_score, sales_relevance_reason, relevance_scoring_version, route_score_details, topics, territory, matched_companies, matched_persons, buying_center_candidate, routing, sales_triggers, routing_evidence, market_insight_transferable, market_insight_explanation, primary_company, company_mentions, person_mentions, rejection_reasons, ai_summary, ai_rationale, language, ai_model, reviewer_model, prompt_version, classification_payload, classification_audit, manual_review_tracks, manual_review_reason, extraction_diagnostic, paywall_detected, paywall_evidence, duplicate_of, classified_at, tag_confidence, tag_evidence, event_cluster_key, gemini_request_count, gemini_input_tokens, gemini_output_tokens, gemini_thinking_tokens, gemini_total_tokens, gemini_cost_usd, gemini_cost_eur, gemini_usd_eur_rate, gemini_cost_updated_at, source:sources(company, url, category)")
             .eq("id", articleId).single(),
           admin.schema("signal_layer").from("ai_usage_events")
             .select("model,operation,status,inference_mode,input_tokens,cached_input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,estimated_cost_eur,pricing_currency,native_cost,native_to_eur_rate,usd_to_eur_rate,pricing_version,search_query_count,error_code,created_at")
@@ -11460,11 +11447,13 @@ Deno.serve(async (req: Request) => {
           if (row.feed_type === "apify" && row.status === "error") summary.apify_errors += 1;
           return summary;
         }, { attempts: 0, successful: 0, empty: 0, errors: 0, candidates: 0, inserted: 0, apify_attempts: 0, apify_errors: 0 });
-        // Only aggregate paywalls confirmed by the current extractor. Older
-        // `paywall_detected` flags used a broader heuristic and can contain
-        // ordinary login/navigation copy rather than a blocked article.
+        // Der Zugangsstatus kommt aus signal_layer.paywall_quellen_aktualisieren
+        // und beruht auf den Artikeln der Quelle, nicht auf dem letzten Abruf.
         const paywallSources = (sourceConfigs || []).filter((source) =>
-          ["credentials_required", "credentials_configured"].includes(String(source.crawl_config?.paywall_access_status || ""))
+          ["credentials_required", "credentials_configured", "credentials_ineffective"].includes(String(source.crawl_config?.paywall_access_status || ""))
+        );
+        const paywallSourcesIneffective = paywallSources.filter((source) =>
+          source.crawl_config?.paywall_access_status === "credentials_ineffective"
         );
         const paywallSourcesMissingCredentials = paywallSources.filter((source) =>
           source.crawl_config?.paywall_access_status === "credentials_required"
@@ -11473,6 +11462,8 @@ Deno.serve(async (req: Request) => {
         sourceHealth.paywall_source_names = paywallSources.map((source) => source.company).slice(0, 12);
         sourceHealth.paywall_missing_credentials = paywallSourcesMissingCredentials.length;
         sourceHealth.paywall_missing_credential_names = paywallSourcesMissingCredentials.map((source) => source.company).slice(0, 20);
+        sourceHealth.paywall_ineffective_credentials = paywallSourcesIneffective.length;
+        sourceHealth.paywall_ineffective_names = paywallSourcesIneffective.map((source) => source.company).slice(0, 20);
         let crawlWithProgress = crawl || null;
         if (crawl) {
           const sourceIds = Array.isArray(crawl.source_ids) ? crawl.source_ids as string[] : [];
@@ -12070,7 +12061,7 @@ Deno.serve(async (req: Request) => {
             // fall back to re-cleaning the already-stored content so paywalled
             // or moved articles still gain proper paragraphs/headings.
             const source = freshContent || (String(article.content || "").trim().length >= 80 ? String(article.content) : null);
-            const update: Record<string, unknown> = { content_reformatted_at: now };
+            const update: Record<string, unknown> = { content_reformatted_at: now, ...paywallSpalten(fetched) };
             if (freshContent) update.content = freshContent;
             if (source) {
               const cleaned = cleanArticleText(source);
@@ -12096,6 +12087,35 @@ Deno.serve(async (req: Request) => {
           body: JSON.stringify({ action: "reformat_recent_articles" }),
         }).catch((e) => console.error("Failed to continue reformat batch:", e));
         return corsResponse(origin, { ok: true, processed: articles.length, updated });
+      }
+
+      case "paywall_nachpruefen": {
+        // Liest fuer kurze, noch ungepruefte Artikel die Zugangsangabe der
+        // Seite nach (JSON-LD isAccessibleForFree). Ein Seitenabruf je Artikel,
+        // kein Modell. Den Befund setzt der Trigger in der Datenbank.
+        const admin = getAdminClient();
+        const menge = Math.min(Math.max(Number(body.limit) || 24, 1), 60);
+        const { data: kandidaten, error } = await admin.schema("signal_layer")
+          .rpc("paywall_pruefkandidaten", { p_limit: menge });
+        if (error) return errorResponse(origin, error.message, 500);
+        const liste = (kandidaten || []) as Array<{ id: string; url: string }>;
+        if (!liste.length) {
+          await admin.schema("signal_layer").rpc("paywall_quellen_aktualisieren");
+          return corsResponse(origin, { ok: true, done: true });
+        }
+        let kostenpflichtig = 0;
+        const pruefe = async (zeile: { id: string; url: string }) => {
+          let angabe: boolean | null = null;
+          try {
+            const antwort = await fetchWithTimeout(zeile.url, {}, 15_000);
+            if (antwort.ok) angabe = paywallAusHtml(await readResponseText(antwort));
+          } catch { /* Seite nicht erreichbar: bleibt ohne Angabe */ }
+          if (angabe === true) kostenpflichtig += 1;
+          await admin.schema("signal_layer").from("articles")
+            .update({ paywall_markiert: angabe, paywall_geprueft_at: new Date().toISOString() }).eq("id", zeile.id);
+        };
+        for (let i = 0; i < liste.length; i += 6) await Promise.all(liste.slice(i, i + 6).map(pruefe));
+        return corsResponse(origin, { ok: true, processed: liste.length, kostenpflichtig });
       }
 
       case "finish_asset": {

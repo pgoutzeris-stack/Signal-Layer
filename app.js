@@ -2,15 +2,16 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260929-16";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260930-1";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260929-16";
-import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260929-16";
+import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260930-1";
+import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-16";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260929-16";
-import { openManualSignal } from "./manual-signal.js?v=20260929-16";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260930-1";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
+import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260830-1330";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
@@ -1963,7 +1964,7 @@ function renderArchive() {
       <div class="finding-item-top"><span class="finding-dimension">${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type || "Sonstiger Inhalt")}</span><div class="finding-top-tags">${isNew ? '<span class="finding-new-badge">NEU</span>' : ""}${formatFindingDate(article.published_at)}</div></div>
       <span class="finding-title">${escapeText(articleDisplayTitle(article))}</span>
       <p class="archive-reason"><i class="fa-solid fa-circle-info"></i><span>${escapeHtml(archiveExplanation(article))}</span></p>
-      <div class="finding-meta">${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i>${escapeHtml(source.company)}</span>` : ""}<span class="tag"><i class="fa-solid fa-circle-info"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span>${technicalAuditPill(article.id)}</div>
+      <div class="finding-meta">${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i>${escapeHtml(source.company)}</span>` : ""}${paywallPillHtml(article, escapeHtml)}<span class="tag"><i class="fa-solid fa-circle-info"></i>${escapeHtml(STATUS_LABELS[status] || status)}</span>${technicalAuditPill(article.id)}</div>
     </article>`;
   }).join("");
 }
@@ -2574,6 +2575,7 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
           ${article.article_type ? `<span class="tag"><i class="fa-solid fa-file-lines"></i> ${escapeHtml(ARTICLE_TYPE_LABELS[article.article_type] || article.article_type)}</span>` : ""}
           ${article.language ? `<span class="tag tag--language">${escapeHtml(article.language.toUpperCase())}</span>` : ""}
           ${hasExternalSource(article) ? `<a class="tag tag--source" href="${escapeHtml(article.url)}" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> Originalquelle</a>` : ""}
+          ${paywallPillHtml(article, escapeHtml)}
         </div>
         ${article.ai_summary ? `<p class="article-detail-summary">${escapeText(article.ai_summary)}</p>` : ""}
         ${isTranslated ? `<p class="article-translated-note"><i class="fa-solid fa-language"></i> Automatisch aus dem ${escapeHtml((article.language || "").toUpperCase())} übersetzt</p>` : ""}
@@ -3148,8 +3150,11 @@ function renderSources() {
     // classified access. Historical broad paywall flags are intentionally
     // ignored because they also matched ordinary login/navigation copy.
     const paywallDetected = paywallAccessStatus === "credentials_required"
-      || paywallAccessStatus === "credentials_configured";
+      || paywallAccessStatus === "credentials_configured"
+      || paywallAccessStatus === "credentials_ineffective";
     const paywallCredentialsMissing = paywallAccessStatus === "credentials_required";
+    // Hinterlegt, aber seit dem Login weiter nur Anreisser.
+    const paywallIneffective = paywallAccessStatus === "credentials_ineffective";
     const storedArticles = Number(s.stored_article_count || 0);
     const crawlHealth = s.last_attempted_at === null ? "Noch nie gecrawlt"
       : storedArticles === 0 ? "Keine Artikel gespeichert"
@@ -3164,14 +3169,15 @@ function renderSources() {
         ${s.description ? `<div class="source-desc">${escapeHtml(s.description)}</div>` : ""}
       </td>
       <td><a href="${escapeHtml(s.url)}" class="source-url" data-external target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(formatUrlDisplay(s.url))}</a></td>
-      <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}${paywallCredentialsMissing ? `<span class="source-login-badge"><i class="fa-solid fa-key"></i> Zugang fehlt</span>` : loginRequired ? `<span class="source-login-badge ${loginConfigured ? "source-login-badge--configured" : ""}"><i class="fa-solid fa-lock"></i> ${loginConfigured ? "Zugang hinterlegt" : "Login nötig"}</span>` : ""}</td>
+      <td>${s.category ? `<span class="tag">${escapeHtml(s.category)}</span>` : ""}${paywallCredentialsMissing ? `<span class="source-login-badge"><i class="fa-solid fa-key"></i> Zugang fehlt</span>` : paywallIneffective ? `<span class="source-login-badge"><i class="fa-solid fa-key"></i> Zugang greift nicht</span>` : loginRequired ? `<span class="source-login-badge ${loginConfigured ? "source-login-badge--configured" : ""}"><i class="fa-solid fa-lock"></i> ${loginConfigured ? "Zugang hinterlegt" : "Login nötig"}</span>` : ""}</td>
       <td>
         <span class="source-health"${errInfo ? ` data-error-tip="1" data-error-label="${escapeHtml(errInfo.label)}" data-error-explain="${escapeHtml(errInfo.explanation)}" data-error-raw="${escapeHtml(s.last_error || "")}" tabindex="0"` : ""}>
           <span class="quality-tag ${errInfo ? "quality-tag--error" : crawlHealthClass}">
             <i class="${errInfo ? "fa-solid fa-triangle-exclamation" : storedArticles === 0 ? "fa-solid fa-magnifying-glass" : "fa-solid fa-check"}"></i>
             ${errInfo ? escapeHtml(errInfo.label) : escapeHtml(crawlHealth)}
           </span>
-          ${paywallDetected ? `<span class="quality-tag ${paywallCredentialsMissing ? "quality-tag--error" : "quality-tag--paywall"}" data-error-tip="1" data-error-label="${paywallCredentialsMissing ? "Paywall – Zugangsdaten erforderlich" : "Paywall – Zugang hinterlegt"}" data-error-explain="${paywallCredentialsMissing ? "Für diese Quelle wurde eine echte Paywall erkannt, aber es sind keine Credentials hinterlegt. Über das Schlüssel-Symbol kann ein vorhandenes Abo sicher im Vault konfiguriert werden." : "Die Quelle besitzt eine Paywall und gültige Zugangsdaten sind hinterlegt. Der Worker verifiziert die Session beim Artikelabruf."}" data-error-raw="${escapeHtml(s.crawl_config?.paywall_evidence || "Paywall-/Login-Hinweis im Abruf")}" tabindex="0"><i class="fa-solid ${paywallCredentialsMissing ? "fa-key" : "fa-lock-open"}"></i> ${paywallCredentialsMissing ? "Zugang fehlt" : "Paywall"}</span>` : ""}
+          ${paywallIneffective ? `<span class="quality-tag quality-tag--error" data-error-tip="1" data-error-label="Paywall: Zugang greift nicht" data-error-explain="Zugangsdaten sind hinterlegt, trotzdem kommen seit dem Login weiter nur Anreißer an. Abo und Login prüfen." data-error-raw="${escapeHtml(s.crawl_config?.paywall_evidence || "")}" tabindex="0"><i class="fa-solid fa-lock"></i> Paywall</span>`
+          : paywallDetected ? `<span class="quality-tag ${paywallCredentialsMissing ? "quality-tag--error" : "quality-tag--paywall"}" data-error-tip="1" data-error-label="${paywallCredentialsMissing ? "Paywall – Zugangsdaten erforderlich" : "Paywall – Zugang hinterlegt"}" data-error-explain="${paywallCredentialsMissing ? "Für diese Quelle wurde eine echte Paywall erkannt, aber es sind keine Credentials hinterlegt. Über das Schlüssel-Symbol kann ein vorhandenes Abo sicher im Vault konfiguriert werden." : "Die Quelle besitzt eine Paywall und gültige Zugangsdaten sind hinterlegt. Der Worker verifiziert die Session beim Artikelabruf."}" data-error-raw="${escapeHtml(s.crawl_config?.paywall_evidence || "Paywall-/Login-Hinweis im Abruf")}" tabindex="0"><i class="fa-solid ${paywallCredentialsMissing ? "fa-key" : "fa-lock-open"}"></i> ${paywallCredentialsMissing ? "Zugang fehlt" : "Paywall"}</span>` : ""}
         </span>
       </td>
       <td>
@@ -4142,7 +4148,13 @@ async function loadLastRun() {
       crawlResults.push({ value: missingPaywallCredentials, label: "Paywall-Zugänge fehlen", tone: "error", icon: "fa-solid fa-key", detail: names,
         detailLabel: "Zugangsdaten erforderlich", detailExplain: "Diese Quellen haben eine bestätigte Paywall, aber noch keine hinterlegten Zugangsdaten. Volltexte können erst nach Konfiguration eines gültigen Abos abgerufen werden." });
     }
-    const configuredPaywallSources = Math.max(0, paywallSources - missingPaywallCredentials);
+    const ineffectivePaywallCredentials = Number(health?.paywall_ineffective_credentials || 0);
+    if (ineffectivePaywallCredentials) {
+      const names = (health?.paywall_ineffective_names || []).join(" · ");
+      crawlResults.push({ value: ineffectivePaywallCredentials, label: "Paywall-Zugänge greifen nicht", tone: "error", icon: "fa-solid fa-key", detail: names,
+        detailLabel: "Zugang hinterlegt, trotzdem Anreißer", detailExplain: "Für diese Quellen sind Zugangsdaten hinterlegt, seit dem Login kommen aber weiter nur Anreißer an. Abo und Login prüfen." });
+    }
+    const configuredPaywallSources = Math.max(0, paywallSources - missingPaywallCredentials - ineffectivePaywallCredentials);
     if (configuredPaywallSources) {
       const names = (health?.paywall_source_names || []).join(" · ");
       crawlResults.push({ value: configuredPaywallSources, label: "Paywalls mit Zugang", tone: "warning", icon: "fa-solid fa-lock-open", detail: names,
@@ -4165,7 +4177,7 @@ async function loadLastRun() {
     ).join("");
     els.statusAccessSummary.textContent = browserPending
       ? `${browserPending.toLocaleString("de-DE")} aktiv`
-      : missingPaywallCredentials ? `${missingPaywallCredentials.toLocaleString("de-DE")} Hinweise`
+      : missingPaywallCredentials + ineffectivePaywallCredentials ? `${(missingPaywallCredentials + ineffectivePaywallCredentials).toLocaleString("de-DE")} Hinweise`
         : `${browserRecovered.toLocaleString("de-DE")} erledigt`;
     const accessWindowDate = accessWindow?.started_at ? new Date(accessWindow.started_at) : null;
     const accessWindowDateLabel = accessWindowDate && !Number.isNaN(accessWindowDate.getTime())

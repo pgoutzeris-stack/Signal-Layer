@@ -1932,6 +1932,11 @@
   .tag--source:hover { border-color: var(--brand); color: var(--brand-dark); }
   .tag--person { background: var(--warning-bg); border-color: #fbbf24; color: var(--warning-text); }
   .tag--language { font-weight: 700; letter-spacing: .04em; }
+  .tag--paywall { color: var(--danger); border-color: #fecaca; background: #fef2f2; font-weight: 650; }
+  .tag--paywall i { font-size: .62rem; }
+  @media (prefers-color-scheme: dark) {
+    .tag--paywall { color: #fca5a5; border-color: rgba(239, 68, 68, .45); background: rgba(239, 68, 68, .14); }
+  }
   .tagging-stats-warning { color: var(--warning-text); font-weight: 600; }
   .meta-chip {
     height: 24px; box-sizing: border-box; background: var(--status-bg); padding: 0 9px; border-radius: 999px; border: 1px solid var(--line);
@@ -2552,7 +2557,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260929-16';
+  import { initApp } from './app.js?v=20260930-1';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

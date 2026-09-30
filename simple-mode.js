@@ -13,9 +13,10 @@
 // Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
-import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20260929-16";
+import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20260930-1";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { articleDisplayTitle } from "./article-title.mjs?v=20260929-16";
+import { articleDisplayTitle } from "./article-title.mjs?v=20260930-1";
+import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
 
 let ctx = null;
 let els = {};
@@ -161,6 +162,7 @@ function signalCard(signal) {
         ${signal.company && !(signal.tier1_companies || []).includes(signal.company) ? `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
         ${signal.person_name ? `<span class="tag tag--person" data-pill-info="Einstufung: Person${signal.person_role ? " · " + esc(signal.person_role) : ""}" tabindex="0"><i class="fa-solid fa-user"></i> ${esc(signal.person_name)}</span>` : ""}
         ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
+        ${paywallPillHtml(article, esc)}
         ${ctx.technicalAuditPill(article.id || signal.article_id)}
       </div>
     </article>
@@ -334,6 +336,7 @@ function renderRejected(articles, rejectLabels) {
           <p class="finding-rationale"><i class="fa-solid fa-scale-balanced"></i><span>${escText(reason)}</span></p>
           <div class="finding-meta">
             ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
+            ${paywallPillHtml(article, esc)}
             ${ctx.technicalAuditPill(article.id || row.article_id)}
           </div>
         </article>
@@ -613,6 +616,7 @@ function renderArchive() {
           ${row.summary_de ? `<small class="archive-summary">${escText(row.summary_de)}</small>` : ""}
           <div class="finding-meta">
             ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
+            ${paywallPillHtml(article, esc)}
             <span class="tag"><i class="fa-solid fa-circle-info"></i> Nicht relevant</span>
             ${ctx.technicalAuditPill(article.id || row.article_id)}
           </div>
