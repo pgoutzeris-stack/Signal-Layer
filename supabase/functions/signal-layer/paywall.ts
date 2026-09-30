@@ -67,25 +67,77 @@ function freiWert(wert: unknown): boolean | null {
   return null;
 }
 
+/** Was die Seite im JSON-LD ueber Zugang und Umfang des Artikels sagt. */
+export type SeitenZugang = {
+  /** isAccessibleForFree: true = kostenpflichtig, false = frei, null = keine Angabe. */
+  kostenpflichtig: boolean | null;
+  /** wordCount des Artikels, null ohne Angabe. */
+  woerter: number | null;
+  /** Laenge von articleBody, 0 ohne. */
+  koerper: number;
+  /** Textlaenge im als kostenpflichtig markierten Bereich (hasPart.cssSelector), null ohne Bereich. */
+  gesperrt: number | null;
+};
+
+const LEERE_ELEMENTE = new Set(["br", "img", "input", "meta", "link", "hr", "source", "area", "base", "col", "embed", "param", "track", "wbr"]);
+
+/** Sichtbarer Text im ersten Element mit dieser Klasse, null wenn es fehlt. */
+function textInKlasse(html: string, klasse: string): number | null {
+  const kopf = new RegExp(`<([a-zA-Z0-9]+)\\b[^>]*class=["'][^"']*(?<![\\w-])${klasse.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])[^"']*["'][^>]*>`);
+  const treffer = kopf.exec(html);
+  if (!treffer) return null;
+  const tag = treffer[1].toLowerCase();
+  const marke = /<(\/?)([a-zA-Z0-9]+)\b[^>]*?(\/?)>/g;
+  marke.lastIndex = treffer.index + treffer[0].length;
+  let tiefe = 1;
+  let ende = html.length;
+  for (let m = marke.exec(html); m && tiefe > 0; m = marke.exec(html)) {
+    const name = m[2].toLowerCase();
+    if (name !== tag || LEERE_ELEMENTE.has(name) || m[3]) continue;
+    tiefe += m[1] ? -1 : 1;
+    if (tiefe === 0) ende = m.index;
+  }
+  return html.slice(treffer.index + treffer[0].length, ende)
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z#0-9]+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim().length;
+}
+
 /**
- * Was die Seite selbst ueber den Zugang sagt (schema.org isAccessibleForFree,
- * das Verlage fuer Google setzen). true = Inhalt kostenpflichtig, false = frei,
- * null = keine Angabe. Listen verwandter Artikel zaehlen nicht mit, nur der
- * Artikel selbst und seine Teile (hasPart).
+ * Liest isAccessibleForFree, wordCount, articleBody und den gesperrten Bereich
+ * aus dem JSON-LD. Listen verwandter Artikel zaehlen nicht mit, nur der Artikel
+ * selbst und seine Teile (hasPart).
  */
-export function paywallAusHtml(html: string): boolean | null {
-  const bloecke = String(html || "").match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
-  let frei: boolean | null = null;
+export function seitenZugang(html: string): SeitenZugang {
+  const quelle = String(html || "");
+  const bloecke = quelle.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
+  let frei = false;
   let kostenpflichtig = false;
+  let woerter: number | null = null;
+  let koerper = 0;
+  const selektoren = new Set<string>();
   const pruefe = (knoten: unknown, tiefe: number): void => {
     if (!knoten || typeof knoten !== "object" || tiefe > 3) return;
     if (Array.isArray(knoten)) { knoten.forEach((k) => pruefe(k, tiefe)); return; }
     const k = knoten as Record<string, unknown>;
     const typ = Array.isArray(k["@type"]) ? k["@type"].join(" ") : String(k["@type"] || "");
+    const artikel = ARTIKEL_TYP.test(typ) || !typ;
+    const teil = /webpageelement/i.test(typ);
     const wert = freiWert(k.isAccessibleForFree);
-    if (wert !== null && (ARTIKEL_TYP.test(typ) || /webpageelement/i.test(typ) || !typ)) {
+    if (wert !== null && (artikel || teil)) {
       if (wert === false) kostenpflichtig = true;
-      else if (frei === null) frei = true;
+      else frei = true;
+      if (wert === false && teil) {
+        const sel = k.cssSelector;
+        for (const s of Array.isArray(sel) ? sel : [sel]) if (typeof s === "string" && s.trim()) selektoren.add(s.trim());
+      }
+    }
+    if (artikel && !teil) {
+      const anzahl = Number(k.wordCount);
+      if (Number.isFinite(anzahl) && anzahl > 0) woerter = Math.max(woerter ?? 0, Math.round(anzahl));
+      if (typeof k.articleBody === "string") koerper = Math.max(koerper, k.articleBody.trim().length);
     }
     if (k["@graph"]) pruefe(k["@graph"], tiefe + 1);
     if (k.hasPart) pruefe(k.hasPart, tiefe + 1);
@@ -100,20 +152,54 @@ export function paywallAusHtml(html: string): boolean | null {
       const roheAngabe = roh.match(/"isAccessibleForFree"\s*:\s*"?(true|false)"?/i);
       if (roheAngabe) {
         if (roheAngabe[1].toLowerCase() === "false") kostenpflichtig = true;
-        else if (frei === null) frei = true;
+        else frei = true;
       }
     }
   }
-  if (kostenpflichtig) return true;
-  if (frei) return false;
-  return null;
+  let gesperrt: number | null = null;
+  for (const sel of selektoren) {
+    if (!/^\.[\w-]+$/.test(sel)) continue;
+    const laenge = textInKlasse(quelle, sel.slice(1));
+    if (laenge !== null) gesperrt = Math.max(gesperrt ?? 0, laenge);
+  }
+  return { kostenpflichtig: kostenpflichtig ? true : frei ? false : null, woerter, koerper, gesperrt };
+}
+
+/** So viel Text im gesperrten Bereich heisst: die Seite liefert ihn mit aus. */
+export const PAYWALL_GELIEFERT_MIN = 800;
+
+/**
+ * Ob unser Text wegen einer Paywall nur ein Anreisser ist, gemessen an dem, was
+ * die Seite selbst angibt. true = kostenpflichtig und unvollstaendig, false =
+ * frei oder trotz Markierung vollstaendig geliefert, null = keine Angabe.
+ *
+ * Aus der Pruefung vom 30.09.2026: FashionUnited und top agrar markieren
+ * Artikel als kostenpflichtig, liefern den Text aber ganz im HTML und blenden
+ * ihn erst im Browser aus. The Grocer und Adweek liefern ihn ebenfalls mit;
+ * dort fehlte der Text, weil die Extraktion ihn nicht fand, nicht wegen der
+ * Paywall. SZ, t3n, Business Insider und Tabak Zeitung nennen die Wortzahl des
+ * ganzen Artikels, unser Text hat davon ein Zehntel.
+ */
+export function paywallMarkierung(zugang: SeitenZugang, text = ""): boolean | null {
+  if (zugang.kostenpflichtig !== true) return zugang.kostenpflichtig;
+  const inhalt = String(text || "").trim();
+  const woerter = inhalt ? inhalt.split(/\s+/).length : 0;
+  if (zugang.woerter !== null && zugang.woerter >= 30) return woerter < zugang.woerter * 0.7;
+  if ((zugang.gesperrt ?? 0) >= PAYWALL_GELIEFERT_MIN) return false;
+  if (zugang.koerper >= Math.max(1000, inhalt.length * 1.5)) return false;
+  return true;
+}
+
+/** Kurzform fuer den Abruf: Markierung der Seite gemessen am extrahierten Text. */
+export function paywallAusHtml(html: string, text = ""): boolean | null {
+  return paywallMarkierung(seitenZugang(html), text);
 }
 
 export type PaywallBefund = { erkannt: boolean; beleg: string | null };
 
 /**
  * Ob der gespeicherte Text wegen einer Paywall nur ein Anreisser ist.
- * markiert: Ergebnis von paywallAusHtml beim Abruf (null = unbekannt).
+ * markiert: Ergebnis von paywallMarkierung beim Abruf (null = unbekannt).
  * Spiegelt signal_layer.paywall_befund in der Datenbank.
  */
 export function paywallBefund({ title, content, cleaned, markiert }: {

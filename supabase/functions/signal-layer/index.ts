@@ -3106,7 +3106,7 @@ async function fetchArticleContent(
 
     const result = {
       title: decodeArticleText(title), content: text.slice(0, ARTICLE_CONTENT_MAX), excerpt: decodeArticleText(excerpt), publishedAt,
-      paywallMarkiert: paywallAusHtml(html),
+      paywallMarkiert: paywallAusHtml(html, text),
     };
     // A tiny body is commonly a paywall/JS shell. Give the retry a chance to
     // return the real article; after the second attempt preserve the result so
@@ -12098,17 +12098,19 @@ Deno.serve(async (req: Request) => {
         const { data: kandidaten, error } = await admin.schema("signal_layer")
           .rpc("paywall_pruefkandidaten", { p_limit: menge });
         if (error) return errorResponse(origin, error.message, 500);
-        const liste = (kandidaten || []) as Array<{ id: string; url: string }>;
+        const liste = (kandidaten || []) as Array<{ id: string; url: string; text: string | null }>;
         if (!liste.length) {
           await admin.schema("signal_layer").rpc("paywall_quellen_aktualisieren");
           return corsResponse(origin, { ok: true, done: true });
         }
         let kostenpflichtig = 0;
-        const pruefe = async (zeile: { id: string; url: string }) => {
+        const pruefe = async (zeile: { id: string; url: string; text: string | null }) => {
           let angabe: boolean | null = null;
           try {
             const antwort = await fetchWithTimeout(zeile.url, {}, 15_000);
-            if (antwort.ok) angabe = paywallAusHtml(await readResponseText(antwort));
+            // Gemessen am gespeicherten Text: nur wenn davon deutlich weniger da ist,
+            // als die Seite angibt oder mitliefert, ist es ein Anreisser.
+            if (antwort.ok) angabe = paywallAusHtml(await readResponseText(antwort), zeile.text || "");
           } catch { /* Seite nicht erreichbar: bleibt ohne Angabe */ }
           if (angabe === true) kostenpflichtig += 1;
           await admin.schema("signal_layer").from("articles")

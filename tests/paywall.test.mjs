@@ -92,3 +92,37 @@ test("die Pill erscheint nur bei erkannter Paywall und trägt den Beleg", async 
   assert.match(html, /Paywall erkannt/);
   assert.match(html, /data-pill-info="Beleg: FAZ\+-Preis"/);
 });
+
+const seite = (ld, body = "") => `<html><head><script type="application/ld+json">${JSON.stringify(ld)}</script></head><body>${body}</body></html>`;
+const worte = (n) => Array.from({ length: n }, (_, i) => `Wort${i}`).join(" ");
+
+test("Wortzahl der Seite entscheidet: Anreißer gegen vollständigen Text", () => {
+  // SZ: 469 Wörter laut Seite, bei uns 68.
+  const sz = seite({ "@type": "NewsArticle", isAccessibleForFree: false, wordCount: 469 });
+  assert.equal(paywall.paywallAusHtml(sz, worte(68)), true);
+  // FAZ: 206 Wörter laut Seite, bei uns 222 (mit Seitenresten).
+  const faz = seite({ "@type": "NewsArticle", isAccessibleForFree: "False", wordCount: "206" });
+  assert.equal(paywall.paywallAusHtml(faz, worte(222)), false);
+});
+
+test("liefert die Seite den gesperrten Teil im HTML, ist es keine Paywall-Lücke", () => {
+  // FashionUnited: .member-content enthält den ganzen Artikel, das Login-Fenster kommt erst im Browser.
+  const voll = `<div class="member-content css-x"><p>${"Der Absatz trägt echten Text. ".repeat(40)}</p><div><p>Weiter.</p></div></div><form>E-Mail-Adresse</form>`;
+  const fu = seite({ "@type": "NewsArticle", isAccessibleForFree: false,
+    hasPart: { "@type": "WebPageElement", isAccessibleForFree: false, cssSelector: ".member-content" } }, voll);
+  assert.ok(paywall.seitenZugang(fu).gesperrt >= paywall.PAYWALL_GELIEFERT_MIN);
+  assert.equal(paywall.paywallAusHtml(fu, "Der Absatz trägt echten Text. ".repeat(40)), false);
+  // WiWo: im gesperrten Bereich steht nur der Werbekasten.
+  const werbung = `<div class="hmg-paywalled">${"Jetzt WiWo+ testen. ".repeat(20)}</div>`;
+  const wiwo = seite({ "@type": "NewsArticle", isAccessibleForFree: false,
+    hasPart: { "@type": "WebPageElement", isAccessibleForFree: false, cssSelector: ".hmg-paywalled" } }, werbung);
+  assert.equal(paywall.paywallAusHtml(wiwo, worte(80)), true);
+});
+
+test("ein langer articleBody bei kurzem Text ist ein Extraktionsfehler, keine Paywall", () => {
+  const adweek = seite({ "@type": "NewsArticle", isAccessibleForFree: false, articleBody: "Voller Artikeltext. ".repeat(250) });
+  assert.equal(paywall.paywallAusHtml(adweek, "Nur der Titel"), false);
+  // Handelsblatt: articleBody ist selbst nur der Anreißer.
+  const hb = seite({ "@type": "NewsArticle", isAccessibleForFree: false, articleBody: "Anreißer. ".repeat(120) });
+  assert.equal(paywall.paywallAusHtml(hb, "Anreißer. ".repeat(120)), true);
+});
