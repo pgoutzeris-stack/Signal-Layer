@@ -1866,18 +1866,18 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-14";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-15";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-14";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-15";
 import {
   createFreiform, createKontextmenue, wendeAenderungenAn, bereinigeAenderungen, serialisiereAenderungen,
   zaehleAenderungen, elementAmPfad, pfadVon, bildAus, istTextElement, FREI_FARBEN,
-} from "./asset-freiform.js?v=20260929-14";
+} from "./asset-freiform.js?v=20260929-15";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-14";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-15";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260929-14";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260929-15";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1894,6 +1894,153 @@ export function closeAssetStudio() {
   if (openInstance) openInstance.close();
 }
 
+/* ── Laeufe im Hintergrund: angeheftete Meldung unten rechts ── */
+
+const HINTERGRUND_ABSCHNITTE = {
+  lesen: "Signal und Artikel werden gelesen",
+  recherchieren: "Benchmarks und Marktzahlen werden recherchiert",
+  modell: "Das Modell schreibt den Entwurf",
+  pruefen: "Der Entwurf wird geprüft",
+  bilder: "Bilder werden gesucht und geprüft",
+  fuellen: "Die Vorlage wird gefüllt",
+};
+const hintergrundLaeufe = new Map();
+
+function hintergrundCss() {
+  if (document.getElementById("as-lauf-css")) return;
+  const stil = document.createElement("style");
+  stil.id = "as-lauf-css";
+  // Gleiche Form wie die Toasts der App, dazu Balken und Restzeit.
+  stil.textContent = `
+.as-lauf-dock{position:fixed; right:20px; bottom:20px; z-index:999999; display:flex; flex-direction:column; gap:10px;}
+#toast-container .as-lauf, .as-lauf-dock .as-lauf{cursor:pointer; flex-direction:column; align-items:stretch; gap:8px; width:320px; min-width:250px;}
+.as-lauf{background:var(--bg,#fff); border-left:4px solid var(--brand,#206efb); box-shadow:var(--shadow,0 10px 30px rgba(15,23,42,.14)); padding:12px 16px 12px 20px;
+  border-radius:8px; display:flex; color:var(--ink,#0f172a); font-size:.9rem; font-family:inherit; transition:transform .18s ease, box-shadow .18s ease; animation:as-lauf-rein .28s cubic-bezier(.2,.8,.2,1);}
+.as-lauf:hover{transform:translateY(-2px); box-shadow:0 14px 34px rgba(15,23,42,.18);}
+.as-lauf.is-fertig{border-left-color:var(--success,#16a34a);}
+.as-lauf.is-fehler{border-left-color:var(--danger,#dc2626);}
+.as-lauf-kopf{display:flex; align-items:center; gap:10px;}
+.as-lauf-kopf > i{color:var(--brand,#206efb);}
+.as-lauf.is-fertig .as-lauf-kopf > i{color:var(--success,#16a34a);}
+.as-lauf.is-fehler .as-lauf-kopf > i{color:var(--danger,#dc2626);}
+.as-lauf-titel{flex:1; font-weight:700;}
+.as-lauf-zu{border:0; background:transparent; color:#94a3b8; width:22px; height:22px; border-radius:6px; cursor:pointer; display:grid; place-items:center;}
+.as-lauf-zu:hover{background:#f1f5f9; color:#0f172a;}
+.as-lauf-text{font-size:.82rem; color:var(--muted,#475569);}
+.as-lauf-balken{height:6px; border-radius:99px; background:#e2e8f0; overflow:hidden;}
+.as-lauf-balken span{display:block; height:100%; border-radius:inherit; background:var(--brand,#206efb); transition:width .6s ease;}
+.as-lauf-zeit{font-size:.78rem; color:var(--muted,#475569); font-variant-numeric:tabular-nums;}
+@keyframes as-lauf-rein{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;}}
+@media (prefers-reduced-motion:reduce){.as-lauf{animation:none; transition:none;}}`;
+  document.head.appendChild(stil);
+}
+
+function hintergrundContainer() {
+  const app = document.getElementById("toast-container");
+  if (app) return app;
+  let dock = document.querySelector(".as-lauf-dock");
+  if (!dock) {
+    dock = document.createElement("div");
+    dock.className = "as-lauf-dock";
+    document.body.appendChild(dock);
+  }
+  return dock;
+}
+
+function hintergrundZeichnen(lauf) {
+  const esc = lauf.optionen.escapeHtml || DEFAULT_ESCAPE;
+  const art = lauf.kind === "memo" ? "Executive Memo" : "LinkedIn-Asset";
+  let titel = `${art} läuft`;
+  let text = HINTERGRUND_ABSCHNITTE[lauf.stage] || "Der Entwurf entsteht";
+  let icon = "fa-solid fa-spinner fa-spin";
+  let pct = 0;
+  let zeit = "";
+  if (lauf.status === "done") {
+    titel = `${art} fertig`;
+    text = "Zum Öffnen klicken.";
+    icon = "fa-solid fa-circle-check";
+    pct = 100;
+  } else if (lauf.status === "error") {
+    titel = `${art} nicht fertig`;
+    text = "Zum Ansehen klicken.";
+    icon = "fa-solid fa-circle-exclamation";
+  } else {
+    const verstrichen = Math.max(0, Date.now() - lauf.start);
+    const rest = assetEtaRemainingMs({
+      kind: lauf.kind, answers: lauf.answers || {}, stage: lauf.stage || "lesen", runLog: lauf.log || [],
+      elapsedMs: verstrichen, stages: assetEtaStagesFromLog(lauf.log || []), forecastMs: lauf.forecastMs || 0,
+    });
+    pct = assetEtaProgressPct(verstrichen, rest);
+    zeit = assetEtaLabel(rest);
+  }
+  lauf.el.className = `toast as-lauf${lauf.status === "done" ? " is-fertig" : lauf.status === "error" ? " is-fehler" : ""}`;
+  lauf.el.innerHTML = `<div class="as-lauf-kopf"><i class="${icon}"></i><span class="as-lauf-titel">${esc(titel)}</span>
+      <button type="button" class="as-lauf-zu" data-lauf-zu aria-label="Meldung schließen"><i class="fa-solid fa-xmark"></i></button></div>
+    <span class="as-lauf-text">${esc(text)}</span>
+    ${lauf.status === "running" ? `<div class="as-lauf-balken" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
+    <span class="as-lauf-zeit">${esc(zeit)}</span>` : ""}`;
+}
+
+async function hintergrundAbfragen(lauf) {
+  if (!hintergrundLaeufe.has(lauf.id) || lauf.status !== "running") return;
+  try {
+    const res = await Promise.race([
+      lauf.optionen.callApi("get_asset", { asset_id: lauf.id }),
+      new Promise((_ja, nein) => setTimeout(() => nein(new Error("Frist")), 30_000)),
+    ]);
+    const row = res && typeof res === "object" ? (res.asset || res) : {};
+    if (row.stage) lauf.stage = String(row.stage);
+    if (Array.isArray(row.run_log)) lauf.log = row.run_log;
+    if (Number(row.forecast_ms) > 0) lauf.forecastMs = Number(row.forecast_ms);
+    const start = Date.parse(String(row.created_at || ""));
+    if (Number.isFinite(start)) lauf.start = start;
+    if (row.status && row.status !== "running") lauf.status = row.status === "done" ? "done" : "error";
+  } catch (_) { /* naechste Runde */ }
+  if (hintergrundLaeufe.has(lauf.id)) hintergrundZeichnen(lauf);
+}
+
+function hintergrundLoesen(id) {
+  const lauf = hintergrundLaeufe.get(String(id || ""));
+  if (!lauf) return;
+  clearInterval(lauf.abfrage);
+  clearInterval(lauf.takt);
+  lauf.el.remove();
+  hintergrundLaeufe.delete(lauf.id);
+}
+
+/**
+ * Ein Lauf, den der Nutzer in den Hintergrund geschickt hat. Die Meldung
+ * bleibt stehen, solange die App offen ist; ein Klick oeffnet die
+ * Live-Ansicht dieses Entwurfs.
+ */
+function hintergrundMerken({ id, kind, answers, optionen, start, forecastMs, stage, log }) {
+  if (!id || typeof optionen?.callApi !== "function") return;
+  hintergrundLoesen(id);
+  hintergrundCss();
+  const el = document.createElement("div");
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+  const lauf = {
+    id: String(id), kind, answers, optionen, el, status: "running",
+    start: start || Date.now(), forecastMs, stage: stage || "lesen", log: log || [],
+  };
+  el.addEventListener("click", (event) => {
+    if (event.target.closest("[data-lauf-zu]")) {
+      hintergrundLoesen(lauf.id);
+      return;
+    }
+    hintergrundLoesen(lauf.id);
+    closeAssetStudio();
+    const host = optionen.host instanceof HTMLElement && optionen.host.isConnected ? optionen.host : undefined;
+    openAssetStudio({ ...optionen, host, assetId: lauf.id, showDrafts: false });
+  });
+  hintergrundContainer().appendChild(el);
+  hintergrundLaeufe.set(lauf.id, lauf);
+  hintergrundZeichnen(lauf);
+  lauf.takt = setInterval(() => { if (lauf.status === "running") hintergrundZeichnen(lauf); }, 1_000);
+  lauf.abfrage = setInterval(() => { void hintergrundAbfragen(lauf); }, 4_000);
+}
+
 export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill, assetId, showDrafts } = {}) {
   // Zwei Studios gleichzeitig würden sich Tastatur und Auswahl streitig machen.
   // Eine Instanz, deren Overlay nicht mehr im Dokument haengt, ist aber keine
@@ -1905,6 +2052,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   const esc = typeof escapeHtml === "function" ? escapeHtml : DEFAULT_ESCAPE;
+  // Damit die Meldung im Hintergrund dasselbe Studio wieder oeffnen kann.
+  const startOptionen = { kind, articleId, signal, callApi, escapeHtml, host, notify, openSettingsPanel, prefill };
+  // Wer den Entwurf wieder oeffnet, braucht die angeheftete Meldung nicht mehr.
+  if (assetId) hintergrundLoesen(assetId);
   const api = typeof callApi === "function" ? callApi : async () => { throw new Error("Keine Verbindung zum Server verfügbar."); };
   /** Wie oft ein verlorener Abruf wiederholt wird, bevor das Studio aufgibt. */
   const POLL_NETZ_VERSUCHE = 6;
@@ -6422,6 +6573,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     openCropper(file, cropState.uid, cropState.key);
   });
 
+  /** Laufenden Auftrag unten rechts anheften, mit Balken und Restzeit. */
+  function inDenHintergrund() {
+    if (!state.busy || !state.assetId) return;
+    hintergrundMerken({
+      id: state.assetId, kind: assetKind, answers: state.answers, optionen: startOptionen,
+      start: state.ladeStart, forecastMs: state.forecastMs, stage: state.ladeAbschnitt, log: state.laufLog,
+    });
+  }
+
   /* ── CI-Sperre und freie Bearbeitung ── */
 
   const MAC = /Mac|iPhone|iPad/.test(String(navigator.platform || navigator.userAgent || ""));
@@ -7198,6 +7358,7 @@ ${stages}${post}
     if (act === "cancel-generate") { void cancelGenerate(); return; }
     if (act === "to-form") {
       if (state.busy) {
+        inDenHintergrund();
         state.leftRunning = true;
         state.cancelRequested = true;
         ladeTaktStop();
@@ -7212,6 +7373,7 @@ ${stages}${post}
     }
     if (act === "show-drafts") {
       if (state.busy) {
+        inDenHintergrund();
         state.leftRunning = true;
         state.cancelRequested = true;
         ladeTaktStop();
@@ -7796,11 +7958,7 @@ ${stages}${post}
   function close() {
     if (state.busy) {
       state.leftRunning = true;
-      if (typeof notify === "function") {
-        // Eine Benachrichtigung beim Abschluss gibt es nicht; der Entwurf steht
-        // danach unter Entwürfe am Artikel.
-        notify("Der Entwurf läuft weiter und steht danach unter Entwürfe am Artikel.");
-      }
+      inDenHintergrund();
     }
     state.cancelRequested = true;
     while (cleanups.length) {

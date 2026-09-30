@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-14");
-  assert.match(indexHtml, /app\.js\?v=20260929-14/);
+  assert.equal(studioVersion, "20260929-15");
+  assert.match(indexHtml, /app\.js\?v=20260929-15/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4814,4 +4814,15 @@ test("Gescheiterte Memos kommen markiert in die Bearbeitung", () => {
   assert.match(studio, /el\.classList\.add\("as-pruef-feld"\);/);
   assert.match(studio, /data-act="pruef-geh" data-feld=/);
   assert.match(studio, /clone\.querySelectorAll\("\.as-pruef-feld, \.is-angesprungen"\)/);
+});
+
+test("Lauf im Hintergrund: angeheftete Meldung mit Balken, Klick oeffnet die Live-Ansicht", () => {
+  assert.match(studio, /function hintergrundMerken\(\{ id, kind, answers, optionen, start, forecastMs, stage, log \}\)/);
+  assert.match(studio, /document\.getElementById\("toast-container"\)/);
+  assert.match(studio, /lauf\.el\.className = `toast as-lauf/);
+  assert.match(studio, /openAssetStudio\(\{ \.\.\.optionen, host, assetId: lauf\.id, showDrafts: false \}\)/);
+  assert.match(studio, /lauf\.abfrage = setInterval\(\(\) => \{ void hintergrundAbfragen\(lauf\); \}, 4_000\);/);
+  assert.match(studio, /if \(assetId\) hintergrundLoesen\(assetId\);/);
+  // Schliessen, "Im Hintergrund", Fragebogen und Entwuerfe heften den Lauf an.
+  assert.equal((studio.match(/inDenHintergrund\(\);/g) || []).length, 3);
 });
