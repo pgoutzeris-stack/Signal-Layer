@@ -3500,7 +3500,7 @@ test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   assert.match(studio, /data-act="close-popup"/);
   assert.match(studio, /function cancelGenerate/);
   assert.match(studio, /state\.leftRunning/);
-  assert.match(studio, /Der Entwurf läuft weiter/);
+  assert.match(studio, /state\.leftRunning = true;\n      inDenHintergrund\(\);/);
   const closePopup = studio.slice(studio.indexOf('if (act === "close-popup")'), studio.indexOf('if (act === "toggle-fs")'));
   assert.doesNotMatch(closePopup, /cancel_asset/);
   const closeRail = studio.slice(studio.indexOf('if (act === "close")'), studio.indexOf('if (act === "generate")'));
