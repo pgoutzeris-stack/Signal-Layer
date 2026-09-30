@@ -2,8 +2,8 @@
 <html lang="de"><head><meta charset="utf-8"><title>Fragebogen Harness</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></head>
 <body><button id="li">LinkedIn</button> <button id="me">Ansprache</button> <button id="ms">Manuelles Signal</button>
 <script type="module">
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-13";
-import { openManualSignal } from "./manual-signal.js?v=20260929-13";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260929-14";
+import { openManualSignal } from "./manual-signal.js?v=20260929-14";
 import { MEMO_EXAMPLE } from "./memo-example.js";
 // Ein fertiges Memo fuer den Bearbeiten-Schritt, gebaut aus dem Referenzmemo.
 const beispielMemo = () => {
@@ -32,6 +32,7 @@ const callApi = async (a, payload) => {
   if (a === "get_asset" && payload.asset_id === "lauf-1") {
     window.laufAbrufe = (window.laufAbrufe || 0) + 1;
     if (window.laufAbrufe < 3) return { asset: { id: "lauf-1", status: "running", stage: "pruefen", created_at: new Date().toISOString(), run_log: [{ t: 1000, event: "finish_start" }] } };
+    if (window.laufHinweise) return { asset: { id: "lauf-1", status: "done", payload: { ...beispielMemo(), title: "", pruefhinweise: window.laufHinweise } } };
     return { asset: { id: "lauf-1", status: "error", error_message: window.laufFehler || "Das Cover wiederholt die Signalüberschrift. title muss die Herausforderung nennen, nicht die Nachricht.\n---\n{\"title\":\"Wie Ankerkraut Marke und Kanalrollen neu ordnet\"}" } };
   }
   if (a === "get_asset") return { asset: { id: payload.asset_id, status: "done", answers: {}, payload: beispielMemo(), edited_html: window.gespeichert || "" } };

@@ -256,7 +256,7 @@ import {
   parseWikipediaPageImages,
   pickWikipediaLogoFile,
   memoLogoNameVariants,
-  memoPruefhinweis,
+  memoPruefhinweise,
   logoCacheKey,
   wikimediaLogoAdressen,
   buildLogoPruefPrompt,
@@ -7538,7 +7538,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     // Was nach der Kritik offen ist, steht im Memo als Pruefhinweis. Das
     // Studio zeigt es an; der Nutzer entscheidet, statt dass der Lauf scheitert.
     if (assetKind === "memo" && !gespeichert) {
-      const hinweise = [...new Set(restBefunde.map(memoPruefhinweis))].slice(0, 6);
+      const hinweise = memoPruefhinweise(payload as MemoPayload, restBefunde);
       if (hinweise.length) {
         (payload as MemoPayload).pruefhinweise = hinweise;
         loggen("pruefhinweise", { n: hinweise.length, hinweise });

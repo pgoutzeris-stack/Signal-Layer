@@ -146,7 +146,7 @@ test("Studio: CI-Sperre, Badge, Bestaetigung vor Download und Druck", () => {
   assert.match(studio, /saved\.querySelector\("\.as-stage--memo\[data-as-frei\]"\)/);
   assert.match(studio, /const liste = bereinigeAenderungen\(daten\?\.el\);/);
   // Ein neuer Entwurf beginnt CI-konform.
-  assert.match(studio, /state\.ciFrei = false;\n    state\.pruefZu = false;\n    freiVerlauf\.length = 0;/);
+  assert.match(studio, /state\.ciFrei = false;\n    state\.pruefZu = false;\n    state\.pruefErledigt = new Set\(\);\n    freiVerlauf\.length = 0;/);
   // Rechtsklick in beiden Modi, Rueckgaengig fuer freie Aenderungen.
   assert.match(studio, /on\(overlay, "contextmenu", \(event\) => \{/);
   assert.match(studio, /label: "CI wiederherstellen"/);

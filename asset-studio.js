@@ -587,6 +587,12 @@ const FREI_CSS = `
 #as-overlay .as-pruef-zu:hover{background:rgba(180,83,9,.1);}
 #as-overlay .as-pruef ul{margin:0; padding-left:18px;}
 #as-overlay .as-pruef li + li{margin-top:4px;}
+#as-overlay .as-pruef-geh{all:unset; cursor:pointer; text-decoration:underline; text-decoration-color:rgba(180,83,9,.4); text-underline-offset:2px;}
+#as-overlay .as-pruef-geh:hover{color:#92400e; text-decoration-color:currentColor;}
+#as-overlay .as-pruef-geh:focus-visible{outline:2px solid #b45309; outline-offset:2px; border-radius:3px;}
+#as-overlay [data-stage] .as-pruef-feld{background:rgba(254,243,199,.7); box-shadow:0 0 0 1px #f59e0b; border-radius:3px; min-height:1em; min-width:3em;}
+#as-overlay [data-stage] .as-pruef-feld.is-angesprungen{animation:as-pruef-puls .6s ease 2;}
+@keyframes as-pruef-puls{50%{background:rgba(253,230,138,1);}}
 @keyframes as-badge-rein{from{opacity:0; transform:translateY(-4px) scale(.96);} to{opacity:1; transform:none;}}
 
 /* Freie Bearbeitung: Auswahl, Griffe, Hilfslinien */
@@ -1860,18 +1866,18 @@ function sanitizeFragment(html) {
 }
 
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
-import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-13";
+import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20260929-14";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-13";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20260929-14";
 import {
   createFreiform, createKontextmenue, wendeAenderungenAn, bereinigeAenderungen, serialisiereAenderungen,
   zaehleAenderungen, elementAmPfad, pfadVon, bildAus, istTextElement, FREI_FARBEN,
-} from "./asset-freiform.js?v=20260929-13";
+} from "./asset-freiform.js?v=20260929-14";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-13";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20260929-14";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260929-13";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260929-14";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -1982,6 +1988,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     ciFrei: false,
     // Pruefhinweise fuer diese Sitzung ausgeblendet.
     pruefZu: false,
+    // Felder, die der Nutzer nach einem Hinweis schon bearbeitet hat.
+    pruefErledigt: new Set(),
     // Der Nutzer hat bestaetigt, mit leeren Memo-Feldern weiterzugehen.
     memoLueckenOk: false,
     ladeStart: 0,
@@ -4240,6 +4248,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       await compactAdoptedImages();
       state.busy = false;
       ladeTaktStop();
+      // Mit offenen Stellen geht es direkt in die Bearbeitung, dort sind sie markiert.
+      if (pruefHinweise().length) state.step = "edit";
       render();
     } catch (err) {
       if (state.cancelRequested) return;
@@ -4304,6 +4314,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Freigabe selbst mit (restoreMemoEdits).
     state.ciFrei = false;
     state.pruefZu = false;
+    state.pruefErledigt = new Set();
     freiVerlauf.length = 0;
     freiZukunft.length = 0;
     // Ein fertiger Entwurf beginnt auf Seite 1. Der Fragebogen blaettert die
@@ -6511,21 +6522,56 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   /** Was nach der Kritik offen blieb. Der Lauf ist fertig, der Nutzer entscheidet. */
+  /** Pruefhinweise des Laufs: { feld, text }. Aeltere Laeufe lieferten nur Text. */
+  function pruefHinweise() {
+    const roh = isMemo && Array.isArray(state.payload?.pruefhinweise) ? state.payload.pruefhinweise : [];
+    return roh.map((h) => (typeof h === "string" ? { feld: "", text: h } : { feld: String(h?.feld || ""), text: String(h?.text || "") }))
+      .filter((h) => h.text.trim()).slice(0, 12);
+  }
+
   function zeigePruefhinweise(area) {
     if (!area) return;
     area.querySelector(":scope > .as-pruef")?.remove();
-    const hinweise = isMemo && Array.isArray(state.payload?.pruefhinweise)
-      ? state.payload.pruefhinweise.map((h) => String(h || "").trim()).filter(Boolean).slice(0, 6)
-      : [];
-    if (!hinweise.length || state.pruefZu) return;
+    const hinweise = pruefHinweise();
+    // Die Stellen selbst markieren; wer das Feld bearbeitet, loescht die Markierung.
+    area.querySelectorAll(".as-pruef-feld").forEach((el) => el.classList.remove("as-pruef-feld"));
+    for (const h of hinweise) {
+      if (!h.feld || state.pruefErledigt?.has(h.feld)) continue;
+      const el = area.querySelector(`[data-field="${CSS.escape(h.feld)}"]`);
+      if (!el) continue;
+      el.classList.add("as-pruef-feld");
+      el.setAttribute("title", h.text);
+    }
+    const offen = hinweise.filter((h) => !h.feld || !state.pruefErledigt?.has(h.feld));
+    if (!offen.length || state.pruefZu) return;
     const box = document.createElement("div");
     box.className = "as-pruef";
     box.setAttribute("data-as-chrome", "");
     box.setAttribute("role", "note");
-    box.innerHTML = `<div class="as-pruef-kopf"><i class="fa-solid fa-circle-exclamation"></i><b>Bitte prüfen</b>
+    box.innerHTML = `<div class="as-pruef-kopf"><i class="fa-solid fa-circle-exclamation"></i><b>Bitte prüfen: ${offen.length} ${offen.length === 1 ? "Stelle" : "Stellen"}</b>
       <button type="button" class="as-pruef-zu" data-act="pruef-zu" aria-label="Hinweise ausblenden" title="Ausblenden"><i class="fa-solid fa-xmark"></i></button></div>
-      <ul>${hinweise.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>`;
+      <ul>${offen.map((h) => (h.feld
+        ? `<li><button type="button" class="as-pruef-geh" data-act="pruef-geh" data-feld="${attr(h.feld)}">${esc(h.text)}</button></li>`
+        : `<li>${esc(h.text)}</li>`)).join("")}</ul>`;
     area.appendChild(box);
+  }
+
+  /** Zur markierten Stelle: Seite umschalten, Feld fokussieren. */
+  function gehZuPruefstelle(feld) {
+    const area = shell.querySelector("[data-stagearea]");
+    const el = area?.querySelector(`[data-field="${CSS.escape(feld)}"]`);
+    if (!el) return;
+    const seiten = [...area.querySelectorAll(".em-page")];
+    const index = seiten.findIndex((seite) => seite.contains(el));
+    if (index >= 0 && index !== state.prevIndex) {
+      state.prevIndex = index;
+      zeigeAktiveMemoSeite(area);
+      aktualisiereBlaetterLabel();
+      fitStages();
+    }
+    el.focus?.();
+    el.classList.add("is-angesprungen");
+    setTimeout(() => el.classList.remove("is-angesprungen"), 1200);
   }
 
   /** Ein CI-Element: gesperrt markiert, Bild, Grafik, fester Text, Flaeche oder Linie. */
@@ -6872,6 +6918,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return [...area.querySelectorAll("[data-stage]")].map((stage) => {
       const clone = stage.cloneNode(true);
       clone.querySelectorAll(".as-frei-tippt").forEach((node) => node.classList.remove("as-frei-tippt"));
+      clone.querySelectorAll(".as-pruef-feld, .is-angesprungen").forEach((node) => {
+        node.classList.remove("as-pruef-feld", "is-angesprungen");
+        node.removeAttribute("title");
+      });
       // Der gespeicherte Stand traegt die freien Aenderungen als Liste mit,
       // damit das naechste Oeffnen sie wieder anwendet. Die Datei fuer den
       // Kunden bekommt keinen Vermerk.
@@ -7349,6 +7399,7 @@ ${stages}${post}
     if (act === "crop-ok") { confirmCrop(); return; }
     if (act === "crop-browse") { browseCropFile(); return; }
     if (act === "crop-remove") { entferneCropBild(); return; }
+    if (act === "pruef-geh") { gehZuPruefstelle(hit.getAttribute("data-feld") || ""); return; }
     if (act === "pruef-zu") {
       state.pruefZu = true;
       shell.querySelector("[data-stagearea] > .as-pruef")?.remove();
@@ -7396,6 +7447,14 @@ ${stages}${post}
   }
 
   function onInput(event) {
+    // Wer eine markierte Stelle bearbeitet, hat den Hinweis gesehen.
+    const markiert = event.target.closest?.(".as-pruef-feld");
+    if (markiert) {
+      state.pruefErledigt.add(markiert.getAttribute("data-field") || "");
+      markiert.classList.remove("as-pruef-feld");
+      markiert.removeAttribute("title");
+      zeigePruefhinweise(shell.querySelector("[data-stagearea]"));
+    }
     const ciHaken = event.target.closest?.("[data-ci-check], [data-cidl-check]");
     if (ciHaken) {
       const knopf = ciHaken.hasAttribute("data-ci-check")

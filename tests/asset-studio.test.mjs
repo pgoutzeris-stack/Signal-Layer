@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260929-13");
-  assert.match(indexHtml, /app\.js\?v=20260929-13/);
+  assert.equal(studioVersion, "20260929-14");
+  assert.match(indexHtml, /app\.js\?v=20260929-14/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4761,8 +4761,11 @@ test("Fehler erst am Ende, nie ein stehender Ladebalken", async () => {
   assert.match(befunde[0], /wiederholt die Signalüberschrift/);
   assert.equal(backend.memoPruefhinweis(befunde[0]), "Der Titel wiederholt die Signalüberschrift. Er sollte die Herausforderung nennen, nicht die Nachricht.");
   assert.match(backend.memoPruefhinweis("Die Ansprache enthalten unbelegte Zahlen oder Zahlwörter (62 %, drei). Nur Ziffern ..."), /^Zahlen ohne Beleg im Artikel oder in der Recherche: 62 %, drei\./);
-  // Struktur bleibt hart: ohne drei Benchmarks gibt es kein Memo.
-  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({ benchmarks: [] })), antworten, { befunde: [] }), /drei Benchmarks/);
+  // Struktur: streng ein Abbruch, nachsichtig aufgefuellt und als Befund gemeldet.
+  assert.throws(() => backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({ benchmarks: [] })), antworten), /drei Benchmarks/);
+  const strukturBefunde = [];
+  backend.normalizeAssetPayload("memo", JSON.stringify(memoRoh({ benchmarks: [] })), antworten, { befunde: strukturBefunde });
+  assert.ok(strukturBefunde.some((b) => /^\[benchmarks\.0\.name,benchmarks\.1\.name,benchmarks\.2\.name\] Das Memo braucht genau drei Benchmarks/.test(b)), strukturBefunde.join(" | "));
 
   // Abschluss: nachsichtiger Rueckfall fuer Entwurf und Kritik, harte Befunde wiegen dreifach.
   assert.match(edge, /const gerettet = nachsichtig\(String\(result\.text \|\| ""\)\);/);
@@ -4790,6 +4793,25 @@ test("Fehler erst am Ende, nie ein stehender Ladebalken", async () => {
   assert.match(studio, /state\.formTab = "drafts";\n      state\.busy = false;\n      ladeTaktStop\(\);/);
   // Pruefhinweise neben der Seite, ausblendbar, nie im Export.
   assert.match(studio, /box\.className = "as-pruef";\n    box\.setAttribute\("data-as-chrome", ""\);/);
-  assert.match(studio, /<b>Bitte prüfen<\/b>/);
+  assert.match(studio, /<b>Bitte prüfen: \$\{offen\.length\}/);
   assert.doesNotMatch(studio, /Sie bekommen eine Benachrichtigung/);
+});
+
+test("Gescheiterte Memos kommen markiert in die Bearbeitung", () => {
+  const antworten = backend.normalizeAssetAnswers("memo", {});
+  // Streng bleibt ein fehlender Benchmark ein Abbruch; nachsichtig wird aufgefuellt.
+  const roh = JSON.stringify(memoRoh({ title: "", benchmarks: dreiBenchmarks().slice(0, 2) }));
+  assert.throws(() => backend.normalizeAssetPayload("memo", roh, antworten));
+  const befunde = [];
+  const memo = backend.normalizeAssetPayload("memo", roh, antworten, { befunde });
+  assert.equal(memo.benchmarks.length, 3);
+  const hinweise = backend.memoPruefhinweise(memo, befunde);
+  assert.ok(hinweise.some((h) => h.feld === "title" && /nicht geliefert/.test(h.text)), JSON.stringify(hinweise));
+  assert.ok(hinweise.some((h) => h.feld === "benchmarks.2.name" && /fehlt ein Benchmark/.test(h.text)), JSON.stringify(hinweise));
+  assert.doesNotMatch(JSON.stringify(hinweise), /[—–]/);
+  // Studio: direkt bearbeiten, Stellen markieren, Klick springt hin, Markierung nie im Export.
+  assert.match(studio, /if \(pruefHinweise\(\)\.length\) state\.step = "edit";/);
+  assert.match(studio, /el\.classList\.add\("as-pruef-feld"\);/);
+  assert.match(studio, /data-act="pruef-geh" data-feld=/);
+  assert.match(studio, /clone\.querySelectorAll\("\.as-pruef-feld, \.is-angesprungen"\)/);
 });

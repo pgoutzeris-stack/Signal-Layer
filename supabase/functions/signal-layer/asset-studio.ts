@@ -1220,7 +1220,7 @@ export type MemoPotential = {
 
 export type MemoPayload = {
   /** Was nach der Kritik noch offen ist, in Worten fuer den Nutzer. */
-  pruefhinweise?: string[];
+  pruefhinweise?: Array<{ feld: string; text: string }>;
   title: string;
   standfirst: string;
   summary_0: string;
@@ -4563,18 +4563,28 @@ function normalizeMemo(
     !summary0 ? "summary_0" : "", !summary1 ? "summary_1" : "", !summary2 ? "summary_2" : "",
     !insightTitle ? "insight_title" : "", !quoteText ? "quote_text" : "",
   ].filter(Boolean);
+  // Streng wirft jeder Strukturfehler. Nachsichtig bleibt das Feld leer, der
+  // Befund nennt es in eckigen Klammern, und das Studio markiert die Stelle.
+  const hart = (meldung: string, felder: string[]) => {
+    if (!context.befunde) throw new Error(meldung);
+    context.befunde.push(`[${felder.join(",")}] ${meldung}`);
+  };
   if (fehlt.length) {
-    throw new Error(`Der Ansprache fehlen tragende Felder: ${fehlt.join(", ")}. Geliefert wurden: ${Object.keys(raw).join(", ") || "keine Felder"}.`);
+    hart(`Der Ansprache fehlen tragende Felder: ${fehlt.join(", ")}. Geliefert wurden: ${Object.keys(raw).join(", ") || "keine Felder"}.`, fehlt);
   }
   if (benchmarks.length < 3) {
-    throw new Error(`Das Memo braucht genau drei Benchmarks. Geliefert: ${benchmarks.length}.`);
+    const fehlend = [0, 1, 2].slice(benchmarks.length).map((i) => `benchmarks.${i}.name`);
+    hart(`Das Memo braucht genau drei Benchmarks. Geliefert: ${benchmarks.length}.`, fehlend);
+    while (benchmarks.length < 3) benchmarks.push({ name: "", title: "", text: "", tag: "", image_hint: "" });
   }
-  const ohneTitel = benchmarks.filter((eintrag, i) => !eintrag.title && !eigen[`bm${i + 1}_title`]).length;
-  if (ohneTitel) {
-    throw new Error(`Jede Benchmark-Karte braucht eine eigene Überschrift. Ohne Überschrift: ${ohneTitel}.`);
+  const ohneTitel = benchmarks.map((eintrag, i) => (!eintrag.title && !eigen[`bm${i + 1}_title`] && eintrag.name ? i : -1)).filter((i) => i >= 0);
+  if (ohneTitel.length) {
+    hart(`Jede Benchmark-Karte braucht eine eigene Überschrift. Ohne Überschrift: ${ohneTitel.length}.`, ohneTitel.map((i) => `benchmarks.${i}.title`));
   }
   if (potentials.length < 3) {
-    throw new Error(`Das Memo braucht genau drei Potenziale. Geliefert: ${potentials.length}.`);
+    const fehlend = [0, 1, 2].slice(potentials.length).map((i) => `potentials.${i}.title`);
+    hart(`Das Memo braucht genau drei Potenziale. Geliefert: ${potentials.length}.`, fehlend);
+    while (potentials.length < 3) potentials.push({ title: "", potential: "", image_hint: "" });
   }
 
   const corpus = [
@@ -4639,13 +4649,57 @@ function normalizeMemo(
   return memo;
 }
 
+export type MemoPruefhinweis = { feld: string; text: string };
+
+/** Befunde samt Feld, an dem das Studio die Stelle markiert. */
+export function memoPruefhinweise(memo: MemoPayload, befunde: string[]): MemoPruefhinweis[] {
+  const felder: Array<[string, string]> = [
+    ["title", memo.title], ["standfirst", memo.standfirst],
+    ["summary_0", memo.summary_0], ["summary_1", memo.summary_1], ["summary_2", memo.summary_2],
+    ["market_title", memo.market_title], ["market_p1", memo.market_p1], ["market_lead2", memo.market_lead2], ["market_p2", memo.market_p2],
+    ["insight_title", memo.insight_title], ["benchmark_title", memo.benchmark_title], ["quote_text", memo.quote_text],
+    ["potentials_title", memo.potentials_title], ["potentials_lead", memo.potentials_lead], ["potentials_lead2", memo.potentials_lead2],
+    ["cta", memo.cta], ["about_fit", memo.about_fit], ["about_fit2", memo.about_fit2],
+    ...memo.kpis.flatMap((k, i): Array<[string, string]> => [[`kpis.${i}.value`, k.value], [`kpis.${i}.label`, k.label]]),
+    ...memo.benchmarks.flatMap((b, i): Array<[string, string]> => [[`benchmarks.${i}.title`, b.title], [`benchmarks.${i}.text`, b.text], [`benchmarks.${i}.tag`, b.tag]]),
+    ...memo.potentials.flatMap((p, i): Array<[string, string]> => [[`potentials.${i}.title`, p.title], [`potentials.${i}.potential`, p.potential]]),
+  ];
+  const finde = (test: (wert: string) => boolean) => felder.find(([, wert]) => wert && test(String(wert)))?.[0] || "";
+  const out: MemoPruefhinweis[] = [];
+  for (const befund of befunde) {
+    const text = memoPruefhinweis(befund);
+    const klammer = /^\[([^\]]*)\]/.exec(befund)?.[1];
+    if (klammer) {
+      for (const feld of klammer.split(",").filter(Boolean)) out.push({ feld, text });
+      continue;
+    }
+    let feld = "";
+    const zahlen = /unbelegte Zahlen oder Zahlwörter \(([^)]*)\)/.exec(befund)?.[1];
+    if (zahlen) {
+      const erste = zahlen.split(",")[0].trim();
+      feld = finde((wert) => wert.includes(erste));
+    } else if (/100-Tage-CMO/.test(befund)) {
+      feld = finde((wert) => /100[\s-]*tage|hundert[\s-]*tage/i.test(wert));
+    } else if (/Cover|title|Titel/.test(befund)) {
+      feld = "title";
+    }
+    out.push({ feld, text });
+  }
+  const gesehen = new Set<string>();
+  return out.filter((h) => { const key = `${h.feld}|${h.text}`; if (gesehen.has(key)) return false; gesehen.add(key); return true; }).slice(0, 12);
+}
+
 /**
  * Ein Befund aus der nachsichtigen Pruefung in Worten fuer den Nutzer. Die
  * Pruefung spricht zum Modell ("title muss ..."); im Studio steht, was zu
  * pruefen ist.
  */
 export function memoPruefhinweis(befund: string): string {
-  const b = String(befund || "").trim();
+  const b = String(befund || "").replace(/^\[[^\]]*\]\s*/, "").trim();
+  if (/fehlen tragende Felder/.test(b)) return "Das Modell hat dieses Feld nicht geliefert. Bitte selbst schreiben.";
+  if (/genau drei Benchmarks/.test(b)) return "Hier fehlt ein Benchmark. Bitte ein passendes Beispiel mit Name, Überschrift und Text eintragen.";
+  if (/eigene Überschrift/.test(b)) return "Die Karte hat keine Überschrift. Bitte die Kernaussage des Beispiels als kurze Überschrift setzen.";
+  if (/genau drei Potenziale/.test(b)) return "Hier fehlt ein Hebel. Bitte Titel und Potenzial selbst schreiben.";
   const zahlen = /unbelegte Zahlen oder Zahlwörter \(([^)]*)\)/.exec(b)?.[1];
   if (zahlen) return `Zahlen ohne Beleg im Artikel oder in der Recherche: ${zahlen}. Bitte prüfen oder streichen.`;
   if (/wiederholt die Signalüberschrift/.test(b)) return "Der Titel wiederholt die Signalüberschrift. Er sollte die Herausforderung nennen, nicht die Nachricht.";
