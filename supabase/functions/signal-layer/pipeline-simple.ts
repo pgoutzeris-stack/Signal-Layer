@@ -388,7 +388,9 @@ export function findTier1Companies(text: string, companies: SimpleTier1Company[]
 }
 
 function articleText(article: SimpleArticleInput): string {
-  const body = String(article.cleaned_content || article.content || "").trim();
+  // Der gespeicherte Text ist seit 30.9.2026 bis 60.000 Zeichen lang; der
+  // Prompt bleibt bei 20.000, so kostet ein langer Artikel nicht mehr.
+  const body = String(article.cleaned_content || article.content || "").trim().slice(0, 20_000);
   return `${String(article.title || "").trim()}\n${body}`.trim();
 }
 
