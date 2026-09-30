@@ -105,3 +105,20 @@ test("ein verschachtelter Inhaltsbereich wird ganz gelesen, nicht bis zum ersten
   assert.ok(text.includes("Absatz 12"), text.slice(0, 120));
   assert.ok(!text.includes("Douglas"));
 });
+
+test("Prosa-Prüfung: Menü, Stylesheet und Hinweistexte sind kein Artikel", () => {
+  const menue = ["## WiWo Summer School", "- Podcast", "- eMagazin", "- WiWo Börse", "- Club", "- Unternehmen", "- Energie", "- Industrie", "- FAQ", "- Datenschutzerklärung"].join("\n\n").repeat(3);
+  assert.equal(helpers.istProsa(menue), false);
+  const css = "#SITE_CONTAINER #main_MF .css-editing-scope .wixui-corner-radius { border-radius: 4px; }\n".repeat(20);
+  assert.equal(helpers.istProsa(css), false);
+  const artikel = "Der Händler meldet ein Umsatzplus. Die Zahlen liegen über den Erwartungen. Der Vorstand bestätigt die Prognose für das Gesamtjahr. ".repeat(4);
+  assert.equal(helpers.istProsa(artikel), true);
+});
+
+test("script-Text in einem Stylesheet lässt kein CSS im Artikel zurück", () => {
+  const html = `<body><style id=wix-custom-css>#SITE_CONTAINER .x { color: red; } /* <script> */ .y { top: 0; }</style>
+    <script>var a = "</style>";</script><div class="post-content">${absatz(8)}</div></body>`;
+  const { text } = helpers.artikelAusHtml(html);
+  assert.ok(!text.includes("SITE_CONTAINER"), text.slice(0, 80));
+  assert.ok(text.includes("Absatz 8"));
+});

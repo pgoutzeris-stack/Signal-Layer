@@ -86,10 +86,11 @@ function isoDay(year: number, monthIndex: number, day: number): string | null {
 // navigation in plain <div>/<ul> menus that are not semantic <nav>, so we also
 // drop elements whose id/class marks them as navigation/menu/footer/etc.
 export function stripPageChrome(html: string): string {
+  // Ein Durchgang fuer script, style und noscript: steht "<script" als Text
+  // in einem Stylesheet (Wix, circana.com), schnitt die getrennte Entfernung
+  // das schliessende </style> weg und das CSS blieb als Artikeltext stehen.
   let out = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<(script|style|noscript)\b[\s\S]*?<\/\1\s*>/gi, " ")
     .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
     .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
     .replace(/<header[\s\S]*?<\/header>/gi, " ")
@@ -139,6 +140,20 @@ export function extractJsonLdArticleBody(html: string): string | null {
 // data from JSON embedded in the initial HTML. Recover likely body fields
 // before requiring a full browser render. This keeps most JS-heavy sources on
 // the free native path while remaining bounded and source-agnostic.
+/**
+ * Fliesstext statt Daten, Markup oder CSS. Wix-Seiten (foodbev.com, Circana)
+ * betten JSON-Vorlagen und Stylesheets als Strings ein; beides kam bis
+ * 30.9.2026 als Artikeltext durch.
+ */
+function istFliesstext(wert: string): boolean {
+  const text = wert.trim();
+  if (/^[{[<#.@]/.test(text) || /\{\{/.test(text)) return false;
+  const code = (text.match(/[{};<>]/g) || []).length;
+  if (code > text.length * 0.005) return false;
+  const buchstaben = (text.match(/[\p{L}\s.,;:!?'"„“”‘’()-]/gu) || []).length;
+  return buchstaben >= text.length * 0.9;
+}
+
 export function extractEmbeddedArticleBody(html: string, bezug = ""): string | null {
   const blocks = html.match(/<script[^>]*(?:id=["']__NEXT_DATA__["']|type=["']application\/json["'])[^>]*>[\s\S]*?<\/script>/gi) || [];
   const candidates: string[] = [];
@@ -146,7 +161,7 @@ export function extractEmbeddedArticleBody(html: string, bezug = ""): string | n
     if (depth > 14 || candidates.length > 300) return;
     if (typeof value === "string") {
       if (/^(articlebody|article_body|body|content|plaincontent|plain_content|storybody|story_body|text|richtext|rich_text|description)$/i.test(key)
-          && value.trim().length >= 400 && value.length <= 100_000 && !/^\s*[{[<]|\{\{/.test(value)) candidates.push(value.trim());
+          && value.trim().length >= 400 && value.length <= 100_000 && istFliesstext(value)) candidates.push(value.trim());
       return;
     }
     if (Array.isArray(value)) {
@@ -229,13 +244,31 @@ export function extractMainContentHtml(html: string): string | null {
   // Score, don't just measure length — a sidebar/teaser block can be longer
   // than the real article; density scoring picks the block that actually
   // reads like prose (see scoreCandidateBlock).
-  let best: string | null = null;
-  let bestScore = -1;
-  for (const c of candidates) {
-    const score = scoreCandidateBlock(c);
-    if (score > bestScore) { bestScore = score; best = c; }
-  }
-  return bestScore >= 400 ? best : null;
+  const bewertet = candidates
+    .map((c) => ({ c, score: scoreCandidateBlock(c), absaetze: absatzText(c), laenge: sichtbareLaenge(c) }))
+    .filter((k) => k.score >= 400);
+  if (!bewertet.length) return null;
+  // Seit die Bereiche ganz gelesen werden, enthaelt ein <main> oder <article>
+  // auch Empfehlungslisten und Fusszeilen. Deshalb gewinnt der engste Bereich,
+  // der fast alle Artikelabsaetze traegt. Ohne echte Absaetze bleibt es beim
+  // besten Score.
+  const meisteAbsaetze = Math.max(...bewertet.map((k) => k.absaetze));
+  if (meisteAbsaetze < 300) return bewertet.sort((a, b) => b.score - a.score)[0].c;
+  return bewertet
+    .filter((k) => k.absaetze >= meisteAbsaetze * 0.85)
+    .sort((a, b) => a.laenge - b.laenge)[0].c;
+}
+
+function sichtbareLaenge(block: string): number {
+  return block.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
+}
+
+/** Text in Absaetzen mit mindestens 40 Zeichen: der eigentliche Artikel. */
+function absatzText(block: string): number {
+  return (block.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [])
+    .map((p) => sichtbareLaenge(p))
+    .filter((laenge) => laenge >= 40)
+    .reduce((summe, laenge) => summe + laenge, 0);
 }
 
 // Generic last resort when no named container matched (unknown/uncommon CMS
@@ -327,4 +360,20 @@ export function istPruefseite(html: string, text: string): boolean {
 export function istFeedAuszug(text: string): boolean {
   const ende = String(text || "").trim().slice(-400);
   return /continue reading (this article|this story)?\s*on|appeared first on|erschien zuerst auf|read the full (story|article)|den (vollst.ndigen|ganzen) (artikel|beitrag) lesen|(\[(…|\.\.\.)\]|\[&hellip;\])\s*$/i.test(ende);
+}
+
+/**
+ * Fliesstext mit echten Saetzen statt Menue, Linkliste oder Stylesheet. Beim
+ * Nachholen am 30.9.2026 kamen sonst die Navigation von wiwo.de und das CSS
+ * von circana.com als "laengerer Text" durch.
+ */
+export function istProsa(text: string): boolean {
+  const inhalt = String(text || "").trim();
+  if (inhalt.length < 300) return false;
+  if ((inhalt.match(/[{};]/g) || []).length > inhalt.length * 0.01) return false;
+  const saetze = (inhalt.match(/[\p{L}\d"“”»«)’][.!?](?=\s|$)/gu) || []).length;
+  if (saetze < 3) return false;
+  const zeilen = inhalt.split(/\n+/).map((z) => z.trim()).filter(Boolean);
+  const listig = zeilen.filter((z) => /^(-|\*|•|##)\s/.test(z) || (z.length < 40 && !/[.!?:]$/.test(z))).length;
+  return listig < zeilen.length * 0.6;
 }

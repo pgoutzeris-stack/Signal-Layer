@@ -5,7 +5,7 @@ import {
   isBareEventAnnouncement,
 } from "./event-signals.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { artikelAusHtml, extractDateFromDateElement, istFeedAuszug, istPruefseite } from "./extraction-helpers.ts";
+import { artikelAusHtml, extractDateFromDateElement, istFeedAuszug, istProsa, istPruefseite } from "./extraction-helpers.ts";
 import { paywallAusHtml } from "./paywall.ts";
 import {
   CrawlPolicy,
@@ -11913,20 +11913,23 @@ Deno.serve(async (req: Request) => {
       }
 
       case "volltext_nachholen": {
-        // Holt kurze Texte ohne Paywall erneut, mit der verbesserten Extraktion
-        // vom 30.9.2026. Kein Modell, kein Browser-Worker. Uebernommen wird nur
-        // ein deutlich laengerer Text; volltext_nachgeholt_at markiert die
-        // Artikel fuer einen spaeteren Pipeline-Lauf.
+        // Holt Texte mit der Extraktion vom 30.9.2026 neu: kurze Texte ohne
+        // Paywall, Texte mit kaputten Umlauten (Altbestand vor dem
+        // Zeichensatz-Fix) und die schon einmal nachgeholten zur Neubewertung.
+        // Kein Modell, kein Browser-Worker. volltext_nachgeholt_at markiert
+        // die Artikel fuer einen spaeteren Pipeline-Lauf.
         const admin = getAdminClient();
         const menge = Math.min(Math.max(Number(body.limit) || 18, 1), 40);
         const { data: kandidaten, error } = await admin.schema("signal_layer")
           .rpc("volltext_kandidaten", { p_limit: menge });
         if (error) return errorResponse(origin, error.message, 500);
-        const liste = (kandidaten || []) as Array<{ id: string; url: string; source_id: string | null; laenge: number }>;
+        type Kandidat = { id: string; url: string; source_id: string | null; title: string | null; text: string | null; nachgeholt: boolean };
+        const liste = (kandidaten || []) as Kandidat[];
         if (!liste.length) return corsResponse(origin, { ok: true, done: true });
         const quellen = new Map<string, { id: string; url: string; crawl_config?: Record<string, unknown> } | null>();
-        let verbessert = 0;
-        const hole = async (zeile: { id: string; url: string; source_id: string | null; laenge: number }) => {
+        const zaehler = { laenger: 0, umlaute: 0, neu_bewertet: 0, zurueckgesetzt: 0 };
+        const hole = async (zeile: Kandidat) => {
+          const jetzt = new Date().toISOString();
           try {
             let quelle = zeile.source_id ? quellen.get(zeile.source_id) : null;
             if (zeile.source_id && quelle === undefined) {
@@ -11935,30 +11938,53 @@ Deno.serve(async (req: Request) => {
               quelle = src || null;
               quellen.set(zeile.source_id, quelle);
             }
-            const erfasst: ExtractionDiagnosticCapture = {};
-            const abruf = await fetchArticleForSource(zeile.url, quelle || null, erfasst, { ohneBrowser: true });
+            const alt = String(zeile.text || "");
+            const altKaputt = alt.includes("\uFFFD");
+            const abruf = await fetchArticleForSource(zeile.url, quelle || null, {}, { ohneBrowser: true });
             const inhalt = String(abruf?.content || "").trim();
             const bereinigt = inhalt ? cleanArticleText(inhalt) : "";
-            const jetzt = new Date().toISOString();
-            if (bereinigt.length >= Math.max(zeile.laenge * 1.3, zeile.laenge + 200)) {
-              verbessert += 1;
+            const tauglich = istProsa(bereinigt) && !bereinigt.includes("\uFFFD");
+            // Hinter einer Paywall ist der gelesene Text nie der Artikel, nur
+            // Anreisser oder Seitenrahmen (wiwo.de: Navigation).
+            const kostenpflichtig = abruf?.paywallMarkiert === true;
+            const grund = !tauglich ? null
+              : altKaputt && bereinigt.length >= alt.length * 0.8 ? "umlaute"
+              : !kostenpflichtig && bereinigt.length >= Math.max(alt.length * 1.3, alt.length + 200) ? "laenger"
+              : zeile.nachgeholt && !kostenpflichtig && bereinigt.length >= 400 ? "neu_bewertet"
+              : null;
+            if (grund) {
+              zaehler[grund] += 1;
               await admin.schema("signal_layer").from("articles").update({
                 content: inhalt.slice(0, ARTICLE_CONTENT_MAX), cleaned_content: bereinigt, ...paywallSpalten(abruf),
-                volltext_geprueft_at: jetzt, volltext_nachgeholt_at: jetzt,
+                volltext_geprueft_at: jetzt,
+                ...(grund === "umlaute" && !zeile.nachgeholt ? {} : { volltext_nachgeholt_at: jetzt }),
                 extraction_diagnostic: {
                   code: "fulltext_recovered", recovered: true, checked_at: jetzt, content_length: bereinigt.length,
-                  message: `Volltext nachgeholt: ${bereinigt.length} statt ${zeile.laenge} Zeichen.`,
+                  message: grund === "umlaute"
+                    ? "Neu abgerufen: Umlaute aus dem Altbestand repariert."
+                    : `Volltext nachgeholt: ${bereinigt.length} statt ${alt.length} Zeichen.`,
+                },
+              }).eq("id", zeile.id);
+            } else if (zeile.nachgeholt && !istProsa(alt)) {
+              // Der erste Nachhol-Lauf hatte hier Navigation oder CSS gespeichert.
+              zaehler.zurueckgesetzt += 1;
+              await admin.schema("signal_layer").from("articles").update({
+                content: String(zeile.title || "").trim() || null, cleaned_content: "", ...paywallSpalten(abruf),
+                volltext_geprueft_at: jetzt, volltext_nachgeholt_at: null,
+                extraction_diagnostic: {
+                  code: "too_short", recovered: false, checked_at: jetzt, content_length: 0,
+                  message: "Kein Artikeltext lesbar; ein zuvor gespeicherter Seitenrahmen wurde entfernt.",
                 },
               }).eq("id", zeile.id);
             } else {
-              await admin.schema("signal_layer").from("articles").update({ volltext_geprueft_at: jetzt }).eq("id", zeile.id);
+              await admin.schema("signal_layer").from("articles").update({ volltext_geprueft_at: jetzt, ...paywallSpalten(abruf) }).eq("id", zeile.id);
             }
           } catch {
-            await admin.schema("signal_layer").from("articles").update({ volltext_geprueft_at: new Date().toISOString() }).eq("id", zeile.id);
+            await admin.schema("signal_layer").from("articles").update({ volltext_geprueft_at: jetzt }).eq("id", zeile.id);
           }
         };
         for (let i = 0; i < liste.length; i += 6) await Promise.all(liste.slice(i, i + 6).map(hole));
-        return corsResponse(origin, { ok: true, processed: liste.length, verbessert });
+        return corsResponse(origin, { ok: true, processed: liste.length, ...zaehler });
       }
 
       case "paywall_nachpruefen": {
