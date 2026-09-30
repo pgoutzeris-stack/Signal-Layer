@@ -12061,7 +12061,11 @@ Deno.serve(async (req: Request) => {
               sourceWithAuth = src || null;
             }
             const fetched = await fetchArticleForSource(article.url, sourceWithAuth);
-            const freshContent = fetched && (fetched.content || "").trim().length >= 80 ? fetched.content : null;
+            // Nur ersetzen, was nicht kuerzer wird: ein Abruf hinter der Paywall
+            // haette einen frueher ueber Apify geholten Volltext zum Teaser gemacht.
+            const bisher = String(article.content || "").trim().length;
+            const frisch = String(fetched?.content || "").trim();
+            const freshContent = frisch.length >= 80 && frisch.length >= bisher * 0.9 ? frisch : null;
             // Prefer a fresh re-fetch (also refreshes raw content), but always
             // fall back to re-cleaning the already-stored content so paywalled
             // or moved articles still gain proper paragraphs/headings.
