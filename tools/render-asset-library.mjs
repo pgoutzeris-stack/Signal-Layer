@@ -3,7 +3,7 @@
  * Rendert jede Vorlage aus asset-templates.js als eigene HTML-Seite im echten
  * Kachelmass 1080x1350. Aus den Seiten macht der Aufruf danach JPEG und PDF.
  *
- * Wozu: die Bibliothek einmal ausserhalb der App ansehen — und jede neue
+ * Wozu: die Bibliothek einmal ausserhalb der App ansehen - und jede neue
  * Vorlage sofort auf Umbrueche, Ueberlagerungen und Rahmendurchbrueche pruefen,
  * ohne einen bezahlten Modelllauf zu starten.
  *

@@ -100,7 +100,7 @@ export function feldHinweise(key, wert, kontext = {}) {
     } else {
       const stark = laenge >= LINKEDIN_LIMITS.captionStarkVon && laenge <= LINKEDIN_LIMITS.captionStarkBis;
       hinweise.push(zeile(laenge > LINKEDIN_LIMITS.captionHart ? "warn" : stark ? "ok" : "info",
-        `${laenge} Zeichen · stärkster Bereich ${LINKEDIN_LIMITS.captionStarkVon.toLocaleString("de-DE")}–${LINKEDIN_LIMITS.captionStarkBis.toLocaleString("de-DE")} · Limit ${LINKEDIN_LIMITS.captionHart.toLocaleString("de-DE")}`));
+        `${laenge} Zeichen · stärkster Bereich ${LINKEDIN_LIMITS.captionStarkVon.toLocaleString("de-DE")}-${LINKEDIN_LIMITS.captionStarkBis.toLocaleString("de-DE")} · Limit ${LINKEDIN_LIMITS.captionHart.toLocaleString("de-DE")}`));
     }
     if (laenge > 200 && !/\?|\bwie\b|\bwas\b|\bwelche/i.test(text.slice(-220))) {
       hinweise.push(zeile("info", "Am Ende fehlt eine Frage oder ein Aufruf. Ohne den kommentiert kaum jemand."));
@@ -127,7 +127,7 @@ export function feldHinweise(key, wert, kontext = {}) {
       `${saetze} ${saetze === 1 ? "Satz" : "Sätze"} · ${laenge} Zeichen · Zielbereich ein Satz`));
     if (carousel) {
       hinweise.push(zeile("info",
-        `Das Modell verteilt die Aussage auf ${LINKEDIN_LIMITS.slidesVon}–${LINKEDIN_LIMITS.slidesBis} Folien mit je ${LINKEDIN_LIMITS.worteJeFolieVon}–${LINKEDIN_LIMITS.worteJeFolieBis} Wörtern.`));
+        `Das Modell verteilt die Aussage auf ${LINKEDIN_LIMITS.slidesVon}-${LINKEDIN_LIMITS.slidesBis} Folien mit je ${LINKEDIN_LIMITS.worteJeFolieVon}-${LINKEDIN_LIMITS.worteJeFolieBis} Wörtern.`));
     }
     if (laenge && !/\d/.test(text)) {
       hinweise.push(zeile("info", "Keine Zahl in der Aussage."));
@@ -194,7 +194,7 @@ export function slideEmpfehlung(anzahl) {
     return zeile("info", `${n} Folien sind knapp. Unter ${LINKEDIN_LIMITS.slidesVon} bleibt für Beleg und Abschluss kaum Platz.`);
   }
   if (n > LINKEDIN_LIMITS.slidesBis) {
-    return zeile("warn", `${n} Folien liegen über dem Arbeitsbereich von ${LINKEDIN_LIMITS.slidesVon}–${LINKEDIN_LIMITS.slidesBis}: die letzten Folien sehen die wenigsten Leser.`);
+    return zeile("warn", `${n} Folien liegen über dem Arbeitsbereich von ${LINKEDIN_LIMITS.slidesVon}-${LINKEDIN_LIMITS.slidesBis}: die letzten Folien sehen die wenigsten Leser.`);
   }
   return zeile("ok", `${n} Folien liegen im Bereich, in dem Dokumentbeiträge am weitesten gewischt werden.`);
 }

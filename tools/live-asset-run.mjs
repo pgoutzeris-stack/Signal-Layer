@@ -63,7 +63,7 @@ for (const fall of faelle) {
       stages: gesehen.join(" → "),
       tokens: asset.total_tokens, eur: asset.cost_eur, fehler: asset.error_message || "",
     });
-    console.log(`${ok ? "OK" : "FAIL"} ${fall.name}: ${sek}s, ${gesehen.join(" → ")}, ${asset.total_tokens || 0} tok, ${asset.cost_eur ?? "–"} € ${asset.error_message || ""}`);
+    console.log(`${ok ? "OK" : "FAIL"} ${fall.name}: ${sek}s, ${gesehen.join(" → ")}, ${asset.total_tokens || 0} tok, ${asset.cost_eur ?? "-"} € ${asset.error_message || ""}`);
   } catch (err) {
     zeilen.push({ name: fall.name, ok: false, sekunden: Math.round((Date.now() - t0) / 1000), status: "error", stages: "", tokens: null, eur: null, fehler: String(err.message || err) });
     console.log(`FAIL ${fall.name}: ${err.message || err}`);

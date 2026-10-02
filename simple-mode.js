@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
-// Signal Layer — Frontend des einfachen Modus ("Simple")
+// Signal Layer - Frontend des einfachen Modus ("Simple")
 //
 // Diese Datei ist der komplette einfache Modus im Browser. Wer die einfache
 // Oberfläche ändern will, ändert nur diese Datei; app.js bleibt der Advanced-
-// Modus. Verbindung nach app.js ausschliesslich über init(context) — dadurch
+// Modus. Verbindung nach app.js ausschliesslich über init(context) - dadurch
 // gibt es keine gegenseitigen Importe.
 //
 // Die Regeln selbst stehen serverseitig in

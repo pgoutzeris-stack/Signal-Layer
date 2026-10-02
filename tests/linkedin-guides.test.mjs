@@ -43,7 +43,7 @@ test("beim Dokumentbeitrag gilt eine andere Textlänge als beim Einzelbild", () 
   const carousel = feldHinweise("caption_text", "Hook.\n\n" + "y".repeat(1_000), { carousel: true });
   assert.ok(carousel.some((h) => /von 900 Zeichen/.test(h.text) && h.ton === "warn"));
   const einzel = feldHinweise("caption_text", "Hook.\n\n" + "y".repeat(1_500), { carousel: false });
-  assert.ok(einzel.some((h) => /stärkster Bereich 1\.300–2\.500/.test(h.text) && h.ton === "ok"));
+  assert.ok(einzel.some((h) => /stärkster Bereich 1\.300-2\.500/.test(h.text) && h.ton === "ok"));
 });
 
 test("der Aufruf kennt die Endfolie und die Spur", () => {
@@ -81,14 +81,14 @@ test("Titelsatz und Kernaussage werden an der Folie gemessen", () => {
 
   const aussage = feldHinweise("storyline_text", "Eigenmarken wachsen, weil Marken die Lücke offen lassen.", { carousel: true });
   assert.equal(ton(aussage), "ok");
-  assert.ok(aussage.some((h) => /6–12 Folien/.test(h.text)));
+  assert.ok(aussage.some((h) => /6-12 Folien/.test(h.text)));
 });
 
 test("die Folienzahl wird begründet, nicht nur gezählt", () => {
   assert.equal(slideEmpfehlung(9).ton, "ok");
   assert.equal(slideEmpfehlung(4).ton, "info");
   assert.equal(slideEmpfehlung(16).ton, "warn");
-  assert.match(slideEmpfehlung(16).text, /6–12/);
+  assert.match(slideEmpfehlung(16).text, /6-12/);
   assert.equal(slideEmpfehlung(0), null);
 });
 

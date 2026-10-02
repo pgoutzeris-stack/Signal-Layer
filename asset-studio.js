@@ -3141,7 +3141,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       U6: { title: "Marken wachsen an Entscheidungen, nicht an Budget", subtitle: "Vier Weichenstellungen, die Wirkung planbar machen." },
       U7: { title: "Welcher Hebel bringt Ihrer Marke zuerst Wirkung?", subtitle: "Wir gehen Positionierung, Kanäle und Auftritt in einer Sitzung durch.", takeaway: "Termin vereinbaren" },
       U8: { title: "Welcher Hebel bringt Ihrer Marke zuerst Wirkung?", subtitle: "Wir gehen Positionierung, Kanäle und Auftritt in einer Sitzung durch.", takeaway: "Termin vereinbaren" },
-      A: { quote: "Eine Marke wird nicht relevant, weil sie lauter spricht – sondern weil sie klarer entscheidet.", attribution: "Leitung Marketing · Beispiel" },
+      A: { quote: "Eine Marke wird nicht relevant, weil sie lauter spricht - sondern weil sie klarer entscheidet.", attribution: "Leitung Marketing · Beispiel" },
       B: { title: "Klarheit schlägt Kampagnendruck.", subtitle: "Wenn Positionierung und Aktivierung dieselbe Entscheidung tragen, wird Marketing schneller und wiedererkennbarer." },
       C: { title: "Aus Kontakt wird Erinnerung.", subtitle: "Ein starkes Motiv wirkt, wenn es dieselbe Botschaft wie die Marke trägt." },
       D: { title: "Wiedererkennung beginnt vor dem Logo.", subtitle: "Farbe, Haltung und Bildwelt machen Marken im ersten Moment eindeutig." },
@@ -3158,11 +3158,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       S2: { title: "Vier Stufen wirksamer Markenführung", subtitle: "Von Einzelmaßnahmen zu einer geführten Marke.", steps: [{ n: "04", title: "Leitidee", text: "" }, { n: "03", title: "System", text: "" }, { n: "02", title: "Kanäle", text: "" }, { n: "01", title: "Maßnahmen", text: "" }], takeaway: "**Ziel:** Entscheidungen kommen aus einer gemeinsamen Logik." },
       S3: { title: "Das Haus der Markenaktivierung", subtitle: "Ein Versprechen, drei tragende Fähigkeiten, ein Ziel.", slot_a: "Markenversprechen", slot_b: "führt Entscheidungen", slot_center: "Messbares Wachstumsziel", steps: [{ n: "1", title: "Insight", text: "Kunden verstehen" }, { n: "2", title: "Position", text: "Nutzen zuspitzen" }, { n: "3", title: "Aktivierung", text: "Erlebnis verbinden" }], takeaway: "**Stabilität:** Jede Säule zahlt auf dasselbe Versprechen ein." },
       S4: { title: "Vom Kontakt zur Präferenz", subtitle: "Ein Marketing-Funnel mit einer Aufgabe je Stufe.", steps: [{ n: "1", title: "Reichweite", text: "gesehen" }, { n: "2", title: "Relevanz", text: "verstanden" }, { n: "3", title: "Interesse", text: "erwogen" }, { n: "4", title: "Präferenz", text: "gewählt" }, { n: "5", title: "Handlung", text: "getan" }], takeaway: "**Prinzip:** Die nächste Stufe braucht einen neuen Grund." },
-      T1: { title: "Wie Markenstärke Nachfrage aufbaut", subtitle: "Illustrativer Index – keine realen Marktdaten.", stats: [{ value: "100", label: "2024" }, { value: "108", label: "2025" }, { value: "121", label: "2026" }, { value: "137", label: "2027" }, { value: "156", label: "2028" }, { value: "178", label: "2029" }, { value: "203", label: "2030" }], takeaway: "**Lesart:** Konsistente Markenarbeit entfaltet Wirkung über Zeit." },
-      T2: { title: "Was Klarheit zur Markenwirkung beiträgt", subtitle: "Illustrativer Wasserfall – keine realen Marktdaten.", stats: [{ value: "100", label: "Basis" }, { value: "+18", label: "Klarheit" }, { value: "118", label: "Wirkung" }], takeaway: "**Lesart:** Die Veränderung erklärt den Weg zum Ergebnis." },
-      T3: { title: "Was Markenpräferenz treibt", subtitle: "Illustrative Aufteilung – keine realen Marktdaten.", stats: [{ value: "45 %", label: "Relevanz" }, { value: "35 %", label: "Konsistenz" }, { value: "20 %", label: "Distinktion" }], slot_center: "100 %", takeaway: "**Lesart:** Präferenz entsteht aus drei verbundenen Faktoren." },
-      T4: { title: "Wo Aktivierung bereits anschlussfähig ist", subtitle: "Illustrativer Kanalvergleich – keine realen Marktdaten.", stats: [{ value: "82 %", label: "CRM" }, { value: "74 %", label: "Content" }, { value: "63 %", label: "Media" }, { value: "51 %", label: "Sales" }, { value: "46 %", label: "Service" }], takeaway: "**Priorität:** Erst die stärksten Kontaktpunkte verbinden." },
-      T5: { title: "Wie Relevanz im Funnel verdichtet", subtitle: "Illustratives Rechenbeispiel – keine realen Marktdaten.", stats: [{ value: "100 Tsd.", label: "Kontakte" }, { value: "62 Tsd.", label: "Relevante" }, { value: "31 Tsd.", label: "Interessierte" }, { value: "14 Tsd.", label: "Präferenz" }, { value: "6 Tsd.", label: "Handlung" }], takeaway: "**Aufgabe:** Jede Stufe braucht eine konkrete Entscheidungshilfe." },
+      T1: { title: "Wie Markenstärke Nachfrage aufbaut", subtitle: "Illustrativer Index - keine realen Marktdaten.", stats: [{ value: "100", label: "2024" }, { value: "108", label: "2025" }, { value: "121", label: "2026" }, { value: "137", label: "2027" }, { value: "156", label: "2028" }, { value: "178", label: "2029" }, { value: "203", label: "2030" }], takeaway: "**Lesart:** Konsistente Markenarbeit entfaltet Wirkung über Zeit." },
+      T2: { title: "Was Klarheit zur Markenwirkung beiträgt", subtitle: "Illustrativer Wasserfall - keine realen Marktdaten.", stats: [{ value: "100", label: "Basis" }, { value: "+18", label: "Klarheit" }, { value: "118", label: "Wirkung" }], takeaway: "**Lesart:** Die Veränderung erklärt den Weg zum Ergebnis." },
+      T3: { title: "Was Markenpräferenz treibt", subtitle: "Illustrative Aufteilung - keine realen Marktdaten.", stats: [{ value: "45 %", label: "Relevanz" }, { value: "35 %", label: "Konsistenz" }, { value: "20 %", label: "Distinktion" }], slot_center: "100 %", takeaway: "**Lesart:** Präferenz entsteht aus drei verbundenen Faktoren." },
+      T4: { title: "Wo Aktivierung bereits anschlussfähig ist", subtitle: "Illustrativer Kanalvergleich - keine realen Marktdaten.", stats: [{ value: "82 %", label: "CRM" }, { value: "74 %", label: "Content" }, { value: "63 %", label: "Media" }, { value: "51 %", label: "Sales" }, { value: "46 %", label: "Service" }], takeaway: "**Priorität:** Erst die stärksten Kontaktpunkte verbinden." },
+      T5: { title: "Wie Relevanz im Funnel verdichtet", subtitle: "Illustratives Rechenbeispiel - keine realen Marktdaten.", stats: [{ value: "100 Tsd.", label: "Kontakte" }, { value: "62 Tsd.", label: "Relevante" }, { value: "31 Tsd.", label: "Interessierte" }, { value: "14 Tsd.", label: "Präferenz" }, { value: "6 Tsd.", label: "Handlung" }], takeaway: "**Aufgabe:** Jede Stufe braucht eine konkrete Entscheidungshilfe." },
       T6: { title: "Vier Phasen zur klaren Aktivierung", subtitle: "Eine kompakte Roadmap vom Insight bis zum Markt.", steps: [{ n: "Woche 1", title: "Insight", text: "Muster erkennen" }, { n: "Woche 2", title: "Position", text: "Nutzen zuspitzen" }, { n: "Woche 3", title: "Leitidee", text: "System bauen" }, { n: "Woche 4", title: "Aktivierung", text: "Pilot starten" }], takeaway: "**Takt:** Jede Phase endet mit einer belastbaren Entscheidung." },
     };
     const slide = normalizeSlide({
@@ -4372,7 +4372,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const antworten = { ...state.answers, layout: gewaehlt, slide_count: String(anzahl), slides: anzahl };
       // Wer erst selbst gewaehlt hat und dann auf "KI soll waehlen" zurueck
       // geht, hat seine Folge widerrufen. Sie mitzuschicken haette den Server
-      // weiter manuell pruefen lassen — und an der fehlenden Endfolie scheitern.
+      // weiter manuell pruefen lassen - und an der fehlenden Endfolie scheitern.
       if (isMemo || antworten.asset_type !== "carousel" || antworten.slide_mix !== "custom") {
         antworten.slide_pick = "";
         antworten.slide_cover = "";
@@ -5797,7 +5797,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <button type="button" class="as-btn" data-act="print"><i class="fa-solid fa-print"></i>Drucken / PDF</button>
         <button type="button" class="as-btn as-btn--primary" data-act="save"><i class="fa-regular fa-floppy-disk"></i>Entwurf speichern</button>
         ${state.assetId ? `<button type="button" class="as-btn${state.owned ? " as-btn--owned" : ""}" data-act="own">
-          <i class="fa-solid fa-${state.owned ? "user-check" : "user-plus"}"></i>${state.owned ? "Übernommen — freigeben" : "Ownerschaft übernehmen"}
+          <i class="fa-solid fa-${state.owned ? "user-check" : "user-plus"}"></i>${state.owned ? "Übernommen - freigeben" : "Ownerschaft übernehmen"}
         </button>` : ""}
         <p class="as-savehint" data-savehint></p>
       </div>

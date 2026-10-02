@@ -2077,7 +2077,7 @@
               <div class="crawl-source-progress" id="crawl-source-progress" hidden>
                 <div class="backfill-status-row"><span>Quellen-Crawl</span><b id="crawl-source-progress-text">0 / 0</b></div>
                 <div class="backfill-progress-track"><span id="crawl-source-progress-bar"></span></div>
-                <div class="crawl-source-current"><span class="backfill-current-article live-shimmer" id="crawl-current-source">–</span><a class="live-shimmer" id="crawl-current-source-url" href="#" data-external target="_blank" rel="noopener noreferrer"></a></div>
+                <div class="crawl-source-current"><span class="backfill-current-article live-shimmer" id="crawl-current-source">-</span><a class="live-shimmer" id="crawl-current-source-url" href="#" data-external target="_blank" rel="noopener noreferrer"></a></div>
               </div>
               <div class="backfill-status" id="backfill-status">
                 <div class="article-live-progress" id="article-live-progress" hidden>
@@ -2096,13 +2096,13 @@
                 <section class="status-disclosure-panel status-cost-panel" id="status-cost-panel">
                   <button type="button" class="status-disclosure-toggle" id="status-cost-toggle" aria-expanded="false" aria-controls="status-cost-body">
                     <span><i class="fa-solid fa-coins"></i><span><b>Kosten ausklappen</b><small id="cost-panel-model">Live aus dem Supabase-Kostenledger</small></span></span>
-                    <span><strong id="status-cost-summary">–</strong><i class="fa-solid fa-chevron-down"></i></span>
+                    <span><strong id="status-cost-summary">-</strong><i class="fa-solid fa-chevron-down"></i></span>
                   </button>
                   <div class="status-disclosure-body" id="status-cost-body" hidden>
                     <div class="telemetry-grid">
-                      <div class="telemetry-stat telemetry-stat--interactive" id="gemini-cost-stat" tabindex="0"><span id="cost-month-label">Kosten gesamt</span><b id="gemini-cost-month">–</b><div class="cost-detail-popover" id="total-cost-detail" role="tooltip"></div></div>
-                      <div class="telemetry-stat telemetry-stat--interactive" id="today-cost-stat" tabindex="0"><span>Heute</span><b id="gemini-cost-today">–</b><div class="cost-detail-popover" id="today-cost-detail" role="tooltip"></div></div>
-                      <div class="telemetry-stat telemetry-stat--interactive" id="crawl-cost-forecast-stat" tabindex="0"><span>Crawl-Prognose</span><b id="gemini-request-count">–</b><div class="cost-detail-popover" id="crawl-cost-detail" role="tooltip"></div></div>
+                      <div class="telemetry-stat telemetry-stat--interactive" id="gemini-cost-stat" tabindex="0"><span id="cost-month-label">Kosten gesamt</span><b id="gemini-cost-month">-</b><div class="cost-detail-popover" id="total-cost-detail" role="tooltip"></div></div>
+                      <div class="telemetry-stat telemetry-stat--interactive" id="today-cost-stat" tabindex="0"><span>Heute</span><b id="gemini-cost-today">-</b><div class="cost-detail-popover" id="today-cost-detail" role="tooltip"></div></div>
+                      <div class="telemetry-stat telemetry-stat--interactive" id="crawl-cost-forecast-stat" tabindex="0"><span>Crawl-Prognose</span><b id="gemini-request-count">-</b><div class="cost-detail-popover" id="crawl-cost-detail" role="tooltip"></div></div>
                     </div>
                     <div class="spend-forecast" id="spend-forecast" hidden><i class="fa-solid fa-chart-line"></i><div><b id="spend-forecast-title"></b><span id="spend-forecast-copy"></span></div></div>
                   </div>
@@ -2113,7 +2113,7 @@
                     <span><strong id="status-access-summary">0 aktiv</strong><i class="fa-solid fa-chevron-down"></i></span>
                   </button>
                   <div class="status-disclosure-body" id="status-access-body" hidden>
-                    <div class="telemetry-grid"><div class="telemetry-stat"><span>Quellenläufe</span><b id="source-attempt-count">–</b></div></div>
+                    <div class="telemetry-grid"><div class="telemetry-stat"><span>Quellenläufe</span><b id="source-attempt-count">-</b></div></div>
                     <div class="source-health-note" id="source-health-note"></div>
                   </div>
                 </section>
@@ -2141,9 +2141,9 @@
         <section class="app-view show" id="view-dashboard">
           <div class="pi-dashboard" data-performance-dashboard="advanced"></div>
           <div class="overview-grid">
-            <article class="overview-card"><i class="fa-solid fa-shield-halved"></i><span>Zuverlässige Signale</span><b id="dashboard-reliable-count">–</b></article>
-            <article class="overview-card"><i class="fa-solid fa-user-check"></i><span>Manuelle Prüfung</span><b id="dashboard-review-count">–</b></article>
-            <article class="overview-card overview-card--archive"><i class="fa-solid fa-box-archive"></i><span>Archivierte Artikel</span><b id="dashboard-archive-count">–</b></article>
+            <article class="overview-card"><i class="fa-solid fa-shield-halved"></i><span>Zuverlässige Signale</span><b id="dashboard-reliable-count">-</b></article>
+            <article class="overview-card"><i class="fa-solid fa-user-check"></i><span>Manuelle Prüfung</span><b id="dashboard-review-count">-</b></article>
+            <article class="overview-card overview-card--archive"><i class="fa-solid fa-box-archive"></i><span>Archivierte Artikel</span><b id="dashboard-archive-count">-</b></article>
           </div>
         </section>
 
@@ -2286,13 +2286,13 @@
                   <section class="status-disclosure-panel status-cost-panel">
                     <button type="button" class="status-disclosure-toggle" id="simple-cost-toggle" aria-expanded="false" aria-controls="simple-cost-body">
                       <span><i class="fa-solid fa-coins"></i><span><b>Kosten ausklappen</b><small id="simple-cost-model">Nur Simple-KI-Aufrufe</small></span></span>
-                      <span><strong id="simple-cost-summary">–</strong><i class="fa-solid fa-chevron-down"></i></span>
+                      <span><strong id="simple-cost-summary">-</strong><i class="fa-solid fa-chevron-down"></i></span>
                     </button>
                     <div class="status-disclosure-body" id="simple-cost-body" hidden>
                       <div class="telemetry-grid">
-                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-today-cost-stat" tabindex="0"><span>Heute</span><b id="simple-cost-today">–</b><div class="cost-detail-popover" id="simple-today-cost-detail" role="tooltip"></div></div>
-                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-total-cost-stat" tabindex="0"><span>Simple seit V1.0</span><b id="simple-cost-total">–</b><div class="cost-detail-popover" id="simple-total-cost-detail" role="tooltip"></div></div>
-                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-forecast-cost-stat" tabindex="0"><span>Lauf-Prognose</span><b id="simple-cost-projected">–</b><div class="cost-detail-popover" id="simple-forecast-cost-detail" role="tooltip"></div></div>
+                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-today-cost-stat" tabindex="0"><span>Heute</span><b id="simple-cost-today">-</b><div class="cost-detail-popover" id="simple-today-cost-detail" role="tooltip"></div></div>
+                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-total-cost-stat" tabindex="0"><span>Simple seit V1.0</span><b id="simple-cost-total">-</b><div class="cost-detail-popover" id="simple-total-cost-detail" role="tooltip"></div></div>
+                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-forecast-cost-stat" tabindex="0"><span>Lauf-Prognose</span><b id="simple-cost-projected">-</b><div class="cost-detail-popover" id="simple-forecast-cost-detail" role="tooltip"></div></div>
                       </div>
                     </div>
                   </section>
@@ -2375,10 +2375,10 @@
               <option value="inactive">Inaktiv</option>
             </select>
             <select class="toolbar-select" id="source-sort">
-              <option value="company_asc">Quelle A–Z</option>
-              <option value="company_desc">Quelle Z–A</option>
-              <option value="category_asc">Kategorie A–Z</option>
-              <option value="category_desc">Kategorie Z–A</option>
+              <option value="company_asc">Quelle A-Z</option>
+              <option value="company_desc">Quelle Z-A</option>
+              <option value="category_asc">Kategorie A-Z</option>
+              <option value="category_desc">Kategorie Z-A</option>
               <option value="created_desc">Neueste zuerst</option>
               <option value="created_asc">Älteste zuerst</option>
             </select>

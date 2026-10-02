@@ -121,7 +121,7 @@ function reviewTrackMeta(tracks = []) {
   if (hasMarketing && hasSales) return {
     label: "Marketing + Sales",
     icon: "fa-solid fa-arrows-split-up-and-left",
-    explanation: "Der Artikel zeigt sowohl einen möglichen Marketing-Nutzwert als auch eine mögliche konkrete Sales-Chance. In beiden Prüfpfaden ist aber mindestens ein Pflichtkriterium noch nicht sicher genug belegt – deshalb entscheidet ein Mensch.",
+    explanation: "Der Artikel zeigt sowohl einen möglichen Marketing-Nutzwert als auch eine mögliche konkrete Sales-Chance. In beiden Prüfpfaden ist aber mindestens ein Pflichtkriterium noch nicht sicher genug belegt - deshalb entscheidet ein Mensch.",
   };
   if (hasSales) return {
     label: "Sales",
@@ -227,7 +227,7 @@ function renderEvidenceLinkedText(value, evidence) {
 // Converts the lightweight Markdown the crawler now preserves (## headings,
 // **bold**, - list items, blank-line paragraph breaks) into real HTML.
 // Runs on the already-escaped+evidence-marked HTML string from
-// renderEvidenceLinkedText, not raw text — the markers (#, *, -) survive
+// renderEvidenceLinkedText, not raw text - the markers (#, *, -) survive
 // escapeHtml untouched, and evidence quotes essentially never straddle a
 // paragraph/heading boundary, so splitting by "\n" here is safe.
 function formatArticleBody(html) {
@@ -655,7 +655,7 @@ function modelTariffCopy(model) {
   const gegen = anderer === null || anderer === undefined
     ? ""
     : ` · ${model.peak_now ? "Nebenzeit" : "Spitzenzeit"} Ausgabe ${formatCostEur(anderer)}`;
-  return ` · ${tarif} (${model.peak_window || "01:00–04:00 und 06:00–10:00 UTC"})${gegen}`;
+  return ` · ${tarif} (${model.peak_window || "01:00-04:00 und 06:00-10:00 UTC"})${gegen}`;
 }
 
 // Modelle des einfachen Modus kommen aus dem Servercode (pipeline-simple.ts),
@@ -697,7 +697,7 @@ function renderOperationsPanel(telemetry) {
         ${operationsModelSelect("ai.primary_model", "Hauptmodell", "Analysiert alle Artikel nach dem Vorfilter.", "fa-solid fa-bolt")}
         ${operationsModelSelect("ai.review_model", "Modell für zweite Prüfung", "Kontrolliert nur echte Grenzfälle und widersprüchliche Belege.", "fa-solid fa-shield-halved")}
       </div>
-      <div class="operations-review-row"><div><b>Zweite Prüfung bei Unsicherheit</b><small>${reviewEnabled ? "Aktiv – erhöht die Sicherheit bei Grenzfällen." : "Aus – Grenzfälle werden nicht erneut geprüft."}</small></div><label class="source-toggle pipeline-switch"><input data-pipeline-path="ai.review_enabled" type="checkbox" ${reviewEnabled ? "checked" : ""} aria-label="Zweite Prüfung bei Unsicherheit"><span class="source-toggle-slider"></span></label></div>
+      <div class="operations-review-row"><div><b>Zweite Prüfung bei Unsicherheit</b><small>${reviewEnabled ? "Aktiv - erhöht die Sicherheit bei Grenzfällen." : "Aus - Grenzfälle werden nicht erneut geprüft."}</small></div><label class="source-toggle pipeline-switch"><input data-pipeline-path="ai.review_enabled" type="checkbox" ${reviewEnabled ? "checked" : ""} aria-label="Zweite Prüfung bei Unsicherheit"><span class="source-toggle-slider"></span></label></div>
       <div class="operations-review-row"><div><b>50-%-Batchpreis für automatische Läufe</b><small>Aktiv und serverseitig geschützt – neue Crawl- und Neuanalyse-Artikel werden gesammelt mit Gemini 2.5 Flash-Lite verarbeitet. Bei einem Batchfehler erfolgt kein stiller Wechsel zum Standardpreis.</small></div><label class="source-toggle pipeline-switch"><input data-pipeline-path="ai.batch_enabled" type="checkbox" checked disabled aria-label="Gemini Batch ist fest aktiviert"><span class="source-toggle-slider"></span></label></div>
       ${pipelineFields(["ai.batch_size"])}
       <button type="button" class="operations-refresh" data-refresh-gemini-models ${geminiModelCatalogState.status === "loading" ? "disabled" : ""}><i class="fa-solid fa-arrows-rotate"></i> Modellauswahl aktualisieren</button>
@@ -847,7 +847,7 @@ function renderManifestRule(rule) {
 // fest verdrahtet bleibt. Bewusst schlank - keine Kachelteppiche mehr.
 // Eine Zeile, beide Modi gleich: Version und letzte Änderung.
 function pipelineVersionLine() {
-  const label = pipelineSettings?.rule_manifest?.version_label || pipelineSettings?.version || "–";
+  const label = pipelineSettings?.rule_manifest?.version_label || pipelineSettings?.version || "-";
   const changed = pipelineSettings?.updated_at
     ? new Date(pipelineSettings.updated_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
     : "unbekannt";
@@ -1225,7 +1225,7 @@ function renderBusinessPipelineStudio() {
   const diagnostics = document.getElementById("diagnostics-content");
   const q = pipelineSettings.config.quality;
   const manifest = pipelineSettings.rule_manifest;
-  if (diagnostics) diagnostics.innerHTML = `<div class="diagnostic-grid"><section class="diagnostic-card"><h4>Versionierte Quelle der Wahrheit</h4><div class="diagnostic-row"><span>Regelmanifest</span><code>${escapeHtml(manifest?.version || "nicht verfügbar")}</code></div><div class="diagnostic-row"><span>Prompt-Version</span><code>${escapeHtml(manifest?.prompt_version || pipelineSettings.prompt_version || "–")}</code></div><div class="diagnostic-row"><span>Scoring-Version</span><code>${escapeHtml(manifest?.scoring_version || pipelineSettings.scoring_version || "–")}</code></div><div class="diagnostic-row"><span>Konfiguration</span><code>${Number(pipelineSettings.version || 0)}</code></div></section><section class="diagnostic-card"><h4>Schwellen aus Profil „${escapeHtml(getConfigValue("experience.quality_profile"))}“</h4>${Object.entries(q).map(([key,value]) => `<div class="diagnostic-row"><span>${escapeHtml(key)}</span><code>${Number(value).toFixed(2)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>KI-Operationen</h4>${(manifest?.ai_operations || []).map((operation) => `<div class="diagnostic-row"><span>${escapeHtml(operation.title)}</span><code>${escapeHtml(operation.model)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>Aktive Guardrails</h4><div class="diagnostic-row"><span>Fachsignal-Vorfilter</span><code>aktiv · kein Routing</code></div><div class="diagnostic-row"><span>Belegprüfung</span><code>Originaltext + Tag-Kontext</code></div><div class="diagnostic-row"><span>Operations-Schutz</span><code>aktiv</code></div><div class="diagnostic-row"><span>Duplikate</span><code>Inhalt + Titel + Ereignis</code></div></section></div>`;
+  if (diagnostics) diagnostics.innerHTML = `<div class="diagnostic-grid"><section class="diagnostic-card"><h4>Versionierte Quelle der Wahrheit</h4><div class="diagnostic-row"><span>Regelmanifest</span><code>${escapeHtml(manifest?.version || "nicht verfügbar")}</code></div><div class="diagnostic-row"><span>Prompt-Version</span><code>${escapeHtml(manifest?.prompt_version || pipelineSettings.prompt_version || "-")}</code></div><div class="diagnostic-row"><span>Scoring-Version</span><code>${escapeHtml(manifest?.scoring_version || pipelineSettings.scoring_version || "-")}</code></div><div class="diagnostic-row"><span>Konfiguration</span><code>${Number(pipelineSettings.version || 0)}</code></div></section><section class="diagnostic-card"><h4>Schwellen aus Profil „${escapeHtml(getConfigValue("experience.quality_profile"))}“</h4>${Object.entries(q).map(([key,value]) => `<div class="diagnostic-row"><span>${escapeHtml(key)}</span><code>${Number(value).toFixed(2)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>KI-Operationen</h4>${(manifest?.ai_operations || []).map((operation) => `<div class="diagnostic-row"><span>${escapeHtml(operation.title)}</span><code>${escapeHtml(operation.model)}</code></div>`).join("")}</section><section class="diagnostic-card"><h4>Aktive Guardrails</h4><div class="diagnostic-row"><span>Fachsignal-Vorfilter</span><code>aktiv · kein Routing</code></div><div class="diagnostic-row"><span>Belegprüfung</span><code>Originaltext + Tag-Kontext</code></div><div class="diagnostic-row"><span>Operations-Schutz</span><code>aktiv</code></div><div class="diagnostic-row"><span>Duplikate</span><code>Inhalt + Titel + Ereignis</code></div></section></div>`;
 }
 
 async function loadPipelineReview() {
@@ -1366,7 +1366,7 @@ async function previewPipelineImpact() {
   target.innerHTML = `<b>Regelbasierte Vorschau mit ${Number(impact.sample_size).toLocaleString("de-DE")} bestehenden Artikeln:</b> aktuell ${impact.current_visible} sichtbare Signale, mit dem Entwurf ${impact.projected_visible}. Veränderung: ${impact.delta > 0 ? "+" : ""}${impact.delta}. Die Vorschau verwendet vorhandene Klassifikationen und startet keine KI; neue Treffer durch eine spätere Neuanalyse kann sie deshalb nicht vorhersagen.`;
 }
 
-// Thema (topic) — the 5 canonical dimensions, multi-select per article.
+// Thema (topic) - the 5 canonical dimensions, multi-select per article.
 const TOPIC_LABELS = {
   customer_insights: "Customer Insights",
   marketing_insights: "Marketing Insights",
@@ -1377,7 +1377,7 @@ const TOPIC_LABELS = {
   buying_center: "Buying-Center-Kandidat",
 };
 
-// Territory — the 5 ROOTS content territories, single pick per article.
+// Territory - the 5 ROOTS content territories, single pick per article.
 const TERRITORY_LABELS = {
   wachstumstreiber: "Wachstumstreiber",
   markenaktivierung: "Markenaktivierung",
@@ -2634,7 +2634,7 @@ function closeArticleDetail() {
 }
 
 function auditJson(value) {
-  if (value === null || value === undefined || value === "") return "–";
+  if (value === null || value === undefined || value === "") return "-";
   if (typeof value === "string") return value;
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
@@ -2644,7 +2644,7 @@ const AUDIT_SECTION_INTROS = {
   deterministic: "Diese Regeln laufen ohne KI. Sie entfernen eindeutig ungeeignete Seiten und Dubletten, bevor Modellkosten entstehen.",
   models: "Hier stehen die verwendeten KI-Modelle und alle fachlichen Aussagen, die nach der technischen Validierung übrig geblieben sind. Artikeltext gilt dabei immer nur als Datenquelle, nie als Anweisung.",
   gates: "Gates sind Pflichtschranken. Ein positives Thema allein reicht nicht: Marketing und Sales müssen ihre jeweiligen Belege und Mindestbedingungen separat bestehen.",
-  scores: "Der Score misst den konkreten Nutzwert für ROOTS – nicht die Sicherheit des Modells. Die finale Entscheidung zeigt, wohin der Artikel tatsächlich geroutet wurde.",
+  scores: "Der Score misst den konkreten Nutzwert für ROOTS - nicht die Sicherheit des Modells. Die finale Entscheidung zeigt, wohin der Artikel tatsächlich geroutet wurde.",
   operations: "Hier wird nachvollziehbar, wie viele KI-Aufrufe und Token angefallen sind, was sie gekostet haben und ob die technischen Worker erfolgreich liefen.",
 };
 
@@ -2861,14 +2861,14 @@ async function openTechnicalAudit(articleId) {
     const fallbackUsed = Boolean(modelAudit.fallback_used);
     const actualModelRaw = modelAudit.primary_actual || article.ai_model || "";
     const aiModelWasUsed = Boolean(actualModelRaw && !["deterministic-rules", "content-extraction"].includes(actualModelRaw));
-    const configuredModel = modelAudit.primary_configured || modelAudit.primary || article.ai_model || "–";
+    const configuredModel = modelAudit.primary_configured || modelAudit.primary || article.ai_model || "-";
     const actualModel = aiModelWasUsed ? actualModelRaw : "Regelbasiert";
     els.technicalAuditContent.innerHTML = `
       <button type="button" class="article-detail-close technical-audit-close" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
       <header class="technical-audit-head"><span>Nachvollziehbare Klassifizierung</span><h2 id="technical-audit-title">${escapeText(articleDisplayTitle(article))}</h2><p>Gespeicherter Prüfpfad aus Extraktion, deterministischen Regeln, validierten KI-Ausgaben, Routing-Gates, Scores und Tokenkosten.</p></header>
       <div class="technical-audit-body">
         <div class="audit-summary-grid">
-          <div class="audit-summary-card"><span>Ergebnis</span><b>${escapeHtml(STATUS_LABELS[article.classification_status] || article.classification_status || "–")}</b></div>
+          <div class="audit-summary-card"><span>Ergebnis</span><b>${escapeHtml(STATUS_LABELS[article.classification_status] || article.classification_status || "-")}</b></div>
           <div class="audit-summary-card"><span>Review-Track</span><b>${escapeHtml(tracks.length ? tracks.map((track) => track === "sales" ? "Sales" : "Marketing").join(" + ") : "Keiner")}</b></div>
           <div class="audit-summary-card"><span>Tatsächliches Modell</span><b>${escapeHtml([actualModel, article.reviewer_model].filter(Boolean).join(" + "))}</b></div>
           <div class="audit-summary-card"><span>KI-Verbrauch</span><b>${totalTokens.toLocaleString("de-DE")} Token · ${formatCostEur(hasCurrentEuroRate ? totalCostEur : null)}</b></div>
@@ -3177,7 +3177,7 @@ function renderSources() {
             ${errInfo ? escapeHtml(errInfo.label) : escapeHtml(crawlHealth)}
           </span>
           ${paywallIneffective ? `<span class="quality-tag quality-tag--error" data-error-tip="1" data-error-label="Paywall: Zugang greift nicht" data-error-explain="Zugangsdaten sind hinterlegt, trotzdem kommen seit dem Login weiter nur Anreißer an. Abo und Login prüfen." data-error-raw="${escapeHtml(s.crawl_config?.paywall_evidence || "")}" tabindex="0"><i class="fa-solid fa-lock"></i> Paywall</span>`
-          : paywallDetected ? `<span class="quality-tag ${paywallCredentialsMissing ? "quality-tag--error" : "quality-tag--paywall"}" data-error-tip="1" data-error-label="${paywallCredentialsMissing ? "Paywall – Zugangsdaten erforderlich" : "Paywall – Zugang hinterlegt"}" data-error-explain="${paywallCredentialsMissing ? "Für diese Quelle wurde eine echte Paywall erkannt, aber es sind keine Credentials hinterlegt. Über das Schlüssel-Symbol kann ein vorhandenes Abo sicher im Vault konfiguriert werden." : "Die Quelle besitzt eine Paywall und gültige Zugangsdaten sind hinterlegt. Der Worker verifiziert die Session beim Artikelabruf."}" data-error-raw="${escapeHtml(s.crawl_config?.paywall_evidence || "Paywall-/Login-Hinweis im Abruf")}" tabindex="0"><i class="fa-solid ${paywallCredentialsMissing ? "fa-key" : "fa-lock-open"}"></i> ${paywallCredentialsMissing ? "Zugang fehlt" : "Paywall"}</span>` : ""}
+          : paywallDetected ? `<span class="quality-tag ${paywallCredentialsMissing ? "quality-tag--error" : "quality-tag--paywall"}" data-error-tip="1" data-error-label="${paywallCredentialsMissing ? "Paywall - Zugangsdaten erforderlich" : "Paywall - Zugang hinterlegt"}" data-error-explain="${paywallCredentialsMissing ? "Für diese Quelle wurde eine echte Paywall erkannt, aber es sind keine Credentials hinterlegt. Über das Schlüssel-Symbol kann ein vorhandenes Abo sicher im Vault konfiguriert werden." : "Die Quelle besitzt eine Paywall und gültige Zugangsdaten sind hinterlegt. Der Worker verifiziert die Session beim Artikelabruf."}" data-error-raw="${escapeHtml(s.crawl_config?.paywall_evidence || "Paywall-/Login-Hinweis im Abruf")}" tabindex="0"><i class="fa-solid ${paywallCredentialsMissing ? "fa-key" : "fa-lock-open"}"></i> ${paywallCredentialsMissing ? "Zugang fehlt" : "Paywall"}</span>` : ""}
         </span>
       </td>
       <td>
@@ -3343,7 +3343,7 @@ const costDetailTimers = new WeakMap();
 
 function formatCostEur(value) {
   return value === null || value === undefined
-    ? "–"
+    ? "-"
     : Number(value).toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
@@ -3603,7 +3603,7 @@ function renderSimpleHeaderStatusContent() {
   byId("simple-cost-summary").textContent = formatSimpleTotalEur(simpleCostSummary?.total_eur);
   byId("simple-cost-today").textContent = formatCostEur(simpleCostSummary?.today_eur);
   byId("simple-cost-total").textContent = formatSimpleTotalEur(simpleCostSummary?.total_eur);
-  byId("simple-cost-projected").textContent = activeSimpleRun ? formatCostEur(simpleForecast?.projected_eur) : "–";
+  byId("simple-cost-projected").textContent = activeSimpleRun ? formatCostEur(simpleForecast?.projected_eur) : "-";
   const analysisModel = simpleForecast?.analysis_model || run?.model || "nicht gesetzt";
   const researchModel = simpleForecast?.research_model || run?.research_model || "nicht gesetzt";
   byId("simple-cost-model").textContent = `Backend: Analyse ${analysisModel} · Recherche ${researchModel}`;
@@ -3755,7 +3755,7 @@ function companyKpiTileHtml(k) {
   const sourceName = escapeHtml(String(k.source_title || "").trim() || (source ? new URL(source).hostname.replace(/^www\./, "") : ""));
   const klasse = `cp-kpi${geschaetzt ? " cp-kpi--estimated" : ""}${source ? " cp-kpi--linked" : ""}`;
   const titel = geschaetzt ? "Geschätzt, nicht belegt" : source ? `Beleg: ${sourceName}` : "";
-  const inner = `<b>${escapeHtml(k.value || "–")}</b><span>${geschaetzt ? '<i class="fa-solid fa-calculator"></i> ' : ""}${escapeHtml(k.label || "")}</span>
+  const inner = `<b>${escapeHtml(k.value || "-")}</b><span>${geschaetzt ? '<i class="fa-solid fa-calculator"></i> ' : ""}${escapeHtml(k.label || "")}</span>
       ${k.as_of ? `<small class="cp-kpi-asof">${escapeHtml(k.as_of)}</small>` : ""}
       ${k.hint ? `<small>${escapeHtml(k.hint)}</small>` : ""}
       ${source ? `<small class="cp-kpi-src"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${sourceName}</small>` : ""}`;
@@ -4101,7 +4101,7 @@ async function loadLastRun() {
     bindCostDetailPopover(document.getElementById("today-cost-stat"), todayCostDetail);
     const crawlForecast = costs?.crawl_forecast;
     const forecastRunId = crawlForecast?.run_id || crawlForecast?.crawl_run_id;
-    els.geminiRequestCount.textContent = forecastRunId ? formatEur(crawlForecast.projected_eur) : "–";
+    els.geminiRequestCount.textContent = forecastRunId ? formatEur(crawlForecast.projected_eur) : "-";
     const crawlForecastStat = document.getElementById("crawl-cost-forecast-stat");
     if (crawlForecastStat) {
       const configuredModels = [crawlForecast?.configured_models?.primary, crawlForecast?.configured_models?.review].filter(Boolean).join(" + ");
@@ -4584,7 +4584,7 @@ function bindUi() {
         renderPipelineStudio();
       }
       // Save/preview live in the pinned bottom savebar of each panel, not the
-      // header — keep the header actions hidden everywhere.
+      // header - keep the header actions hidden everywhere.
       // Speichern und Prüfen leben ausschliesslich in der Fussleiste des
       // jeweiligen Bereichs, nie in der Kopfzeile.
       document.querySelectorAll(".settings-panel").forEach((p) => p.classList.remove("show"));
