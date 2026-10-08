@@ -64,5 +64,5 @@ test('database and endpoints keep reads free, restrict starts, deduplicate jobs 
  assert.match(backend,/if \(action === "start_person_research"\) await db\.from\("person_researches"\)\.update/);
  assert.match(backend,/person_research_id: assetUsageContext\.getStore\(\)\?\.personResearchId/);
  assert.match(backend,/usd: \.005, toolUsd: \.005/);
- const migration=readFileSync(new URL('../supabase/migrations/20261008140038_person_research.sql',import.meta.url),'utf8');assert.match(migration,/enable row level security/);assert.match(migration,/revoke all.*authenticated/);assert.match(migration,/create unique index person_research_one_running_idx/);assert.match(migration,/status<>'verified' and profile is null/);
+ const migration=readFileSync(new URL('../supabase/migrations/20261008141439_person_research.sql',import.meta.url),'utf8');assert.match(migration,/enable row level security/);assert.match(migration,/revoke all.*authenticated/);assert.match(migration,/create unique index person_research_one_running_idx/);assert.match(migration,/status<>'verified' and profile is null/);
 });
