@@ -3701,7 +3701,35 @@ async function runPersonResearch(id: string, target: any) {
         throw e;
       }
     };
-    const profile = await researchPerson({ stage, search, google: googleKey ? google : undefined, verify, audit: (evidence: any) => console.info("person_research_verdict", id, JSON.stringify(evidence)) }, target);
+    const { data: sourceArticle } = await db.from("articles").select("url,title,cleaned_content,published_at").eq("id", target.articleId).maybeSingle();
+    const contextSources = sourceArticle?.cleaned_content ? [{url:sourceArticle.url,title:sourceArticle.title,snippet:sourceArticle.cleaned_content,date:sourceArticle.published_at}] : [];
+    const enrich = async (sources: any[]) => {
+      const candidates = sources.filter(source => !new URL(source.url).hostname.endsWith("linkedin.com"))
+        .sort((a,b) => Number(b.url===sourceArticle?.url)-Number(a.url===sourceArticle?.url) || Number(/management|leadership|team/i.test(b.url))-Number(/management|leadership|team/i.test(a.url))).slice(0,5);
+      await Promise.allSettled(candidates.map(async source => {
+        let current = source.url;
+        for(let hop=0;hop<3;hop++) {
+          const response = await fetchWithTimeout(current,{redirect:"manual"},8000);
+          if(response.status>=300 && response.status<400) {
+            const location=response.headers.get("location"); await response.body?.cancel();
+            const next=location?sourceUrl(new URL(location,current).href):"";
+            if(!next || new URL(next).hostname!==new URL(source.url).hostname)return;
+            current=next; continue;
+          }
+          if(!response.ok || !/text\/html/i.test(response.headers.get("content-type")||"") || Number(response.headers.get("content-length")||0)>1500000){await response.body?.cancel();return;}
+          const html=(await response.text()).slice(0,1500000);
+          const extracted=artikelAusHtml(html);
+          const text=String(extracted.text||"");
+          if(text.length>source.text.length)source.text=text.slice(0,16000);
+          const published=extractPublishedDate(html,current);
+          if(published)source.date=published.slice(0,10);
+          if(source.url===sourceArticle?.url && published && !sourceArticle.published_at)await db.from("articles").update({published_at:published}).eq("id",target.articleId).is("published_at",null);
+          return;
+        }
+      }));
+      return sources;
+    };
+    const profile = await researchPerson({ stage, search, contextSources, enrich, google: googleKey ? google : undefined, verify, audit: (evidence: any) => console.info("person_research_verdict", id, JSON.stringify(evidence)) }, target);
     const { error } = await db.from("person_researches").update({ status: "verified", stage: "fertig", profile, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
     if (error) throw new Error("Verifiziertes Profil konnte nicht gespeichert werden");
   } catch (e) {

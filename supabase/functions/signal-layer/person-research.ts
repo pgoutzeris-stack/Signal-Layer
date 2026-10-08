@@ -11,7 +11,7 @@ export class PersonUncertain extends Error { code: string; constructor(code: str
 const norm = (v: unknown) => String(v ?? "").normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const includesName = (text: string, name: string) => ` ${norm(text)} `.includes(` ${norm(name)} `);
 export function sourceUrl(value: unknown): string {
-  try { const u = new URL(String(value)); if(u.protocol !== "https:" || u.username || u.password || !u.hostname.includes(".") || /^[\d.]+$/.test(u.hostname) || u.hostname.includes(":") || /(^|\.)(localhost|local|internal)$/.test(u.hostname)) return ""; u.hash=""; for(const key of [...u.searchParams.keys()]) if(/^(utm_|trk|trackingId)/i.test(key))u.searchParams.delete(key); return u.href.replace(/\/$/, ""); } catch { return ""; }
+  try { const u = new URL(String(value)); if(u.protocol !== "https:" || u.username || u.password || u.port && u.port !== "443" || !u.hostname.includes(".") || /^[\d.]+$/.test(u.hostname) || u.hostname.includes(":") || /(^|\.)(localhost|local|internal)$/.test(u.hostname)) return ""; u.hash=""; for(const key of [...u.searchParams.keys()]) if(/^(utm_|trk|trackingId)/i.test(key))u.searchParams.delete(key); return u.href.replace(/\/$/, ""); } catch { return ""; }
 }
 export function linkedinProfileUrl(value: unknown): string {
   const url=sourceUrl(value); if(!url)return ""; const u=new URL(url);
@@ -60,7 +60,7 @@ export function parsePersonJson(text: string): any {
   try{return JSON.parse(clean);}catch{throw new PersonUncertain("invalid_json");}
 }
 export function validatePersonProfile(target: PersonTarget, raw: any, google: any, sources: any[], googleUrls: string[], now=new Date()): any {
-  if(raw?.status!=="verified" || Number(raw.confidence)<0.95 || raw.identity_unique!==true || raw.current_company_match!==true || raw.current_role_verified!==true || !Array.isArray(raw.uncertainties) || raw.uncertainties.length)throw new PersonUncertain("identity_or_current_role_uncertain");
+  if(raw?.status!=="verified" || !(Number(raw.confidence)>=0.95) || raw.identity_unique!==true || raw.current_company_match!==true || raw.current_role_verified!==true || !Array.isArray(raw.uncertainties) || raw.uncertainties.length)throw new PersonUncertain("identity_or_current_role_uncertain");
   if(google && (google.identity_unique!==true || google.current_company_match!==true || google.current_role_verified!==true || google.recent_information_found!==true || !Array.isArray(google.uncertainties) || google.uncertainties.length))throw new PersonUncertain("independent_check_conflict");
   if(norm(raw.name)!==norm(target.name)||norm(raw.company)!==norm(target.company))throw new PersonUncertain("wrong_person_or_company");
   const candidate=linkedinProfileUrl(raw.linkedin_url);
@@ -120,7 +120,8 @@ export async function researchPerson(deps: any, target: PersonTarget): Promise<a
   const primary=await deps.search({query:`${q} LinkedIn aktuelle Position ${target.role}`,search_type:"people",search_domain_filter:["linkedin.com"],max_results:8,max_tokens_per_page:1800},"linkedin_person_search");
   await deps.stage("aktualitaet");
   const more=await deps.search({query:[`${q} ${target.role} Management Presse aktuelle Nachrichten Interview`,`${q} verlässt leaves departure Rollenwechsel current role`],max_results:16,max_tokens_per_page:2400},"current_person_company_search");
-  const sources=normalizeSearchSources([...(primary.results||[]),...(more.results||[])]);
+  let sources=normalizeSearchSources([...(primary.results||[]),...(more.results||[]),...(deps.contextSources||[])]);
+  if(deps.enrich) sources=await deps.enrich(sources);
   if(!sources.some(s=>primarySource(s,target)))throw new PersonUncertain("primary_person_company_missing");
   let check=null,urls:string[]=[];
   if(deps.google) {
