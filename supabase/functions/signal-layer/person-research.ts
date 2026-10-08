@@ -75,8 +75,8 @@ export function validatePersonProfile(target: PersonTarget, raw: any, google: an
   const factSources=new Set<string>();
   const facts=raw.facts.flatMap((f:any)=>{
     const src=sources.find(s=>sourceUrl(s.url)===sourceUrl(f.source_url));
-    const quote=String(f.quote||"").trim(),label=String(f.label||"").trim(),value=String(f.value||"").trim();
-    if(!["current_role","recent_activity","career","expertise","professional_fact"].includes(f.kind)||!src||!quote||quote.length<20||quote.length>1600||!label||label.length>80||!value||value.length>700||!src.text.includes(quote)||f.verified!==true)return [];
+    const quote=String(f.quote||"").trim().replace(/\s+/g," "),label=String(f.label||"").trim(),value=String(f.value||"").trim();
+    if(!["current_role","recent_activity","career","expertise","professional_fact"].includes(f.kind)||!src||!quote||quote.length<20||quote.length>1600||!label||label.length>80||!value||value.length>700||!src.text.replace(/\s+/g," ").includes(quote)||f.verified!==true)return [];
     const date=src.date,age=date?(now.getTime()-Date.parse(date))/86400000:Infinity;
     const fresh=age>=0&&age<=PERSON_RECENCY_DAYS;
     if(f.kind==="current_role") {
@@ -86,7 +86,7 @@ export function validatePersonProfile(target: PersonTarget, raw: any, google: an
       if(!associated || !norm(quote).includes(norm(value)) || !(fresh || management || linkedinProfileUrl(src.url)&&present))return [];
       role=true;
     }
-    if(f.kind==="recent_activity"&&fresh&&includesName(quote,target.name)&&includesName(quote,target.company))recent=true;
+    if(fresh&&includesName(quote,target.name)&&includesName(quote,target.company))recent=true;
     factSources.add(src.url);
     return [{kind:String(f.kind),label,value,quote,source_url:src.url,source_title:src.title,date}];
   });
@@ -94,7 +94,10 @@ export function validatePersonProfile(target: PersonTarget, raw: any, google: an
     const host=new URL(url).hostname.split(".");
     return host.slice(/^(co\.uk|com\.au|co\.jp)$/.test(host.slice(-2).join("."))?-3:-2).join(".");
   }));
-  if(!role||!recent||domains.size<2||!primaries.some(s=>factSources.has(s.url)))throw new PersonUncertain("no_current_information");
+  if(!role)throw new PersonUncertain("current_role_missing");
+  if(!recent)throw new PersonUncertain("recent_information_missing");
+  if(domains.size<2)throw new PersonUncertain("independent_sources_missing");
+  if(!primaries.some(s=>factSources.has(s.url)))throw new PersonUncertain("primary_fact_missing");
   return {name:target.name,company:target.company,linkedin_url:linkedin||null,facts,researched_at:now.toISOString(),expires_at:new Date(now.getTime()+PERSON_PROFILE_TTL_MS).toISOString(),version:PERSON_RESEARCH_VERSION};
 }
 export function visiblePersonResearch(row: any, target: PersonTarget, now=Date.now()) {
