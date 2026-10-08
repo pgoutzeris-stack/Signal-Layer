@@ -830,19 +830,34 @@ const CHROME_CSS = `
   box-shadow:0 8px 24px rgba(15,23,42,.16);
   place-items:center;
 }
-#as-overlay.as-fs-open .as-fs-exit{display:grid;}
-#as-overlay.as-fs-open{grid-template-columns:1fr;}
+#as-overlay.as-fs-open{position:fixed; inset:0; width:100%; height:100%; border-radius:0; grid-template-columns:1fr;}
 #as-overlay.as-fs-open .as-rail,
-#as-overlay.as-fs-open .as-topbar,
-#as-overlay.as-fs-open .as-ribbon,
 #as-overlay.as-fs-open .as-split2-form,
-#as-overlay.as-fs-open .as-inspector,
-#as-overlay.as-fs-open .as-prev-label{display:none !important;}
-#as-overlay.as-fs-open .as-main{grid-template-rows:minmax(0,1fr);}
-#as-overlay.as-fs-open .as-content{padding:16px 56px 16px 16px;}
+#as-overlay.as-fs-open .as-prev-label,
+#as-overlay.as-fs-open .as-fs-btn{display:none!important;}
+#as-overlay.as-fs-open .as-main{grid-template-rows:auto minmax(0,1fr);}
+#as-overlay.as-fs-open .as-main:has(.as-ribbon){grid-template-rows:auto auto minmax(0,1fr);}
+#as-overlay.as-fs-open .as-content{padding:8px;}
 #as-overlay.as-fs-open .as-split2{grid-template-columns:1fr;}
 #as-overlay.as-fs-open .as-split2-prev{height:100%;}
-#as-overlay.as-fs-open .as-work{grid-template-columns:1fr;}
+#as-overlay.as-fs-open .as-topbar{padding:8px 16px;}
+#as-overlay.as-fs-open.as-fs-tools-hidden .as-topbar,
+#as-overlay.as-fs-open.as-fs-tools-hidden .as-ribbon,
+#as-overlay.as-fs-open.as-fs-tools-hidden .as-inspector,
+#as-overlay.as-fs-open.as-fs-tools-hidden .as-fmt,
+#as-overlay.as-fs-open.as-fs-tools-hidden [data-as-chrome],
+#as-overlay.as-fs-open.as-fs-tools-hidden .as-prev-nav{display:none!important;}
+#as-overlay.as-fs-open.as-fs-tools-hidden .as-main,
+#as-overlay.as-fs-open.as-fs-tools-hidden .as-main:has(.as-ribbon){grid-template-rows:minmax(0,1fr);}
+#as-overlay.as-fs-open.as-fs-tools-hidden .as-work{grid-template-columns:1fr;}
+#as-overlay.as-fs-open.as-fs-tools-hidden .as-content{padding:0;}
+#as-overlay .as-fs-controls{display:none; position:absolute; right:12px; bottom:12px; z-index:100; align-items:center; gap:5px; padding:6px; border:1px solid #dce6f5; border-radius:14px; background:#fffffff0; backdrop-filter:blur(12px); box-shadow:0 8px 30px #17386620;}
+#as-overlay.as-fs-open .as-fs-controls{display:flex;}
+#as-overlay .as-fs-controls button{width:34px; height:34px; border:0; border-radius:9px; background:transparent; color:var(--brand,#206efb); display:grid; place-items:center; cursor:pointer;}
+#as-overlay .as-fs-controls button:hover,#as-overlay .as-fs-controls button:focus-visible{background:#e8f0ff; outline:2px solid #a8c5ff;}
+#as-overlay .as-fs-controls output{min-width:48px; text-align:center; font-size:12px; font-variant-numeric:tabular-nums; color:#405575;}
+#as-overlay .as-fs-controls.is-collapsed > :not([data-act="toggle-fs-controls"]){display:none;}
+#as-overlay .as-fs-controls.is-collapsed{padding:4px;}
 
 #as-overlay .em-shot-hint{display:none !important;}
 #as-overlay .li-photo-hint{display:none !important;}
@@ -2312,13 +2327,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     saeubern: sanitizeFragment,
   });
 
-  const fsExit = document.createElement("button");
-  fsExit.type = "button";
-  fsExit.className = "as-fs-exit";
-  fsExit.setAttribute("data-act", "toggle-fs");
-  fsExit.setAttribute("aria-label", "Vollbild beenden");
-  fsExit.innerHTML = `<i class="fa-solid fa-xmark"></i>`;
-  overlay.appendChild(fsExit);
+  const fsControls = document.createElement("div");
+  fsControls.className = "as-fs-controls";
+  fsControls.setAttribute("role", "toolbar");
+  fsControls.setAttribute("aria-label", "Vollbild und Zoom");
+  fsControls.innerHTML = `
+    <button type="button" data-act="toggle-fs-controls" aria-label="Vollbildleiste einklappen" aria-expanded="true"><i class="fa-solid fa-angles-right"></i></button>
+    <button type="button" data-act="toggle-fs-tools" aria-label="Bearbeitungsleisten ausblenden" aria-pressed="false"><i class="fa-solid fa-eye-slash"></i></button>
+    <button type="button" data-act="fs-zoom-out" aria-label="Verkleinern"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+    <output data-fs-zoom aria-label="Zoomstufe">100 %</output>
+    <button type="button" data-act="fs-zoom-in" aria-label="Vergrößern"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+    <button type="button" data-act="fs-zoom-fit" aria-label="Seite einpassen"><i class="fa-solid fa-arrows-to-dot"></i></button>
+    <button type="button" data-act="toggle-fs" aria-label="Vollbild beenden"><i class="fa-solid fa-compress"></i></button>`;
+  overlay.appendChild(fsControls);
+  let fsBodyOverflow;
 
   // Das Studio gehoert in das Artikel-Popup, nicht darueber: der Artikel bleibt
   // stehen, das Studio legt sich als Ebene in denselben Rahmen, und Schliessen
@@ -5680,7 +5702,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       legeMemoSeiteMass(stage);
       const w = stage.offsetWidth || (isMemo ? MEMO_SEITE_PX.w : 1080);
       const h = stage.offsetHeight || (isMemo ? MEMO_SEITE_PX.h : 1350);
-      const zoom = Math.max(1, Number(state.viewZoom) || 1);
+      const zoom = Math.max(.5, Number(state.viewZoom) || 1);
       // Ohne brauchbares Hoehenmass wurde nur nach Breite skaliert: eine
       // 1350 px hohe Folie lief dann unten aus ihrem Kasten heraus.
       const gemessen = availH > 80 ? availH : Math.round(area.getBoundingClientRect().height);
@@ -5970,17 +5992,49 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     sel.value = "";
   }
 
-  function toggleFullscreen() {
-    overlay.classList.toggle("as-fs-open");
-    const open = overlay.classList.contains("as-fs-open");
-    overlay.querySelectorAll(".as-fs-btn i").forEach((icon) => {
-      icon.className = open ? "fa-solid fa-compress" : "fa-solid fa-expand";
-    });
-    overlay.querySelectorAll(".as-fs-btn").forEach((btn) => {
-      btn.setAttribute("aria-label", open ? "Vollbild beenden" : "Vollbild");
-    });
-    fitPreview();
+  function updateFullscreenControls() {
+    fsControls.querySelector("[data-fs-zoom]").textContent = `${Math.round(state.viewZoom * 100)} %`;
+    const hidden = overlay.classList.contains("as-fs-tools-hidden");
+    const button = fsControls.querySelector('[data-act="toggle-fs-tools"]');
+    button.setAttribute("aria-pressed", String(hidden));
+    button.setAttribute("aria-label", hidden ? "Bearbeitungsleisten einblenden" : "Bearbeitungsleisten ausblenden");
+    button.querySelector("i").className = `fa-solid fa-${hidden ? "eye" : "eye-slash"}`;
+  }
+
+  function setViewZoom(value) {
+    state.viewZoom = Math.round(Math.min(4, Math.max(.5, value)) * 100) / 100;
+    updateFullscreenControls();
     fitStages();
+  }
+
+  function leaveFullscreen() {
+    if (!overlay.classList.contains("as-fs-open")) return;
+    overlay.classList.remove("as-fs-open", "as-fs-tools-hidden");
+    fsControls.classList.remove("is-collapsed");
+    fsControls.querySelector('[data-act="toggle-fs-controls"]').setAttribute("aria-expanded", "true");
+    if (inHost && mount.isConnected) { mount.appendChild(overlay); overlay.classList.add("as-in-host"); }
+    if (fsBodyOverflow !== undefined) { document.body.style.overflow = fsBodyOverflow; fsBodyOverflow = undefined; }
+    state.viewZoom = 1;
+    fitPreview(); fitStages();
+  }
+
+  function toggleFullscreen() {
+    if (overlay.classList.contains("as-fs-open")) {
+      leaveFullscreen();
+      if (document.fullscreenElement === overlay) void document.exitFullscreen().catch(() => {});
+      return;
+    }
+    fsBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // Move beyond the article modal's clipping and transformed ancestors.
+    document.body.appendChild(overlay);
+    overlay.classList.remove("as-in-host");
+    overlay.classList.add("as-fs-open");
+    updateFullscreenControls();
+    fitPreview(); fitStages();
+    // Embedded hosts can deny the native API; viewport fullscreen remains usable.
+    if (document.fullscreenEnabled && overlay.requestFullscreen) void overlay.requestFullscreen().catch(() => {});
+    requestAnimationFrame(() => { fitPreview(); fitStages(); });
   }
 
   /* ── Bilder ── */
@@ -7096,7 +7150,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   body > *:not(#as-overlay){display:none !important;}
   #as-overlay{position:static !important; display:block !important; background:#fff !important; overflow:visible !important;}
   #as-overlay .as-rail, #as-overlay .as-topbar, #as-overlay .as-inspector,
-  #as-overlay .as-slidetools, #as-overlay .as-fmt, #as-overlay .as-ribbon, #as-overlay .as-fs-btn, #as-overlay .as-fs-exit, #as-overlay .as-prev-nav, #as-overlay [data-as-chrome]{display:none !important;}
+  #as-overlay .as-slidetools, #as-overlay .as-fmt, #as-overlay .as-ribbon, #as-overlay .as-fs-btn, #as-overlay .as-fs-exit, #as-overlay .as-fs-controls, #as-overlay .as-prev-nav, #as-overlay [data-as-chrome]{display:none !important;}
   #as-overlay .as-main, #as-overlay .as-content{overflow:visible !important; padding:0 !important; border:0 !important;}
   #as-overlay .as-work{display:block !important;}
   #as-overlay .as-stagearea{overflow:visible !important; height:auto !important;}
@@ -7390,6 +7444,17 @@ ${stages}${post}
       return;
     }
     if (act === "toggle-fs") { toggleFullscreen(); return; }
+    if (act === "toggle-fs-tools") {
+      overlay.classList.toggle("as-fs-tools-hidden"); updateFullscreenControls(); fitStages(); fitPreview(); return;
+    }
+    if (act === "toggle-fs-controls") {
+      const collapsed = fsControls.classList.toggle("is-collapsed");
+      hit.setAttribute("aria-expanded", String(!collapsed));
+      hit.setAttribute("aria-label", collapsed ? "Vollbildleiste einblenden" : "Vollbildleiste einklappen"); return;
+    }
+    if (act === "fs-zoom-in") { setViewZoom(state.viewZoom * 1.2); return; }
+    if (act === "fs-zoom-out") { setViewZoom(state.viewZoom / 1.2); return; }
+    if (act === "fs-zoom-fit") { setViewZoom(1); return; }
     if (act === "leave-generate") { close(); return; }
     if (act === "cancel-generate") { void cancelGenerate(); return; }
     if (act === "to-form") {
@@ -7916,8 +7981,7 @@ ${stages}${post}
     if (!cropOverlay.hidden) return;
     event.preventDefault();
     const faktor = event.deltaY < 0 ? 1.08 : 1 / 1.08;
-    state.viewZoom = Math.round(Math.min(2.8, Math.max(1, (state.viewZoom || 1) * faktor)) * 100) / 100;
-    fitStages();
+    setViewZoom((state.viewZoom || 1) * faktor);
   }
 
   function on(target, type, handler, options) {
@@ -7961,6 +8025,10 @@ ${stages}${post}
   });
   on(document, "keydown", onKeyDown, true);
   on(document, "selectionchange", onSelectionChange);
+  on(document, "fullscreenchange", () => {
+    if (!document.fullscreenElement) leaveFullscreen();
+    else if (document.fullscreenElement === overlay) { fitPreview(); fitStages(); }
+  });
   on(overlay, "wheel", onStageWheel, { passive: false });
   on(window, "resize", () => { fitStages(); fitPreview(); });
   // Ein Groessenwaechter statt einer einmaligen Messung: die Spalte kennt ihre
@@ -7997,6 +8065,8 @@ ${stages}${post}
   /* ── Abbau ── */
 
   function close() {
+    leaveFullscreen();
+    if (document.fullscreenElement === overlay) void document.exitFullscreen().catch(() => {});
     if (state.busy) {
       state.leftRunning = true;
       inDenHintergrund();

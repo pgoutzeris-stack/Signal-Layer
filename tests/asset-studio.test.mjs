@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20261008-3");
-  assert.match(indexHtml, /app\.js\?v=20261008-4/);
+  assert.equal(studioVersion, "20261008-5");
+  assert.match(indexHtml, /app\.js\?v=20261008-5/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4866,4 +4866,13 @@ test('Memo title guidance and validation work across technology, regulation, ser
     assert.deepEqual(findings,[],title);
     assert.match(backend.memoQualitaetsBefunde({title:`Wie ${firma} ein eigenes Profil geben kann`},{firma}).join('\n'),/vagen Mittel/);
   }
+});
+
+test('fullscreen editor can toggle chrome, collapse controls, zoom and restore its modal', async () => {
+  assert.match(studio,/document\.body\.appendChild\(overlay\)/);
+  assert.match(studio,/overlay\.requestFullscreen\(\)\.catch/);
+  assert.match(studio,/mount\.appendChild\(overlay\)/);
+  for(const action of ['toggle-fs-tools','toggle-fs-controls','fs-zoom-in','fs-zoom-out','fs-zoom-fit']) assert.ok(studio.includes(`act === "${action}"`),action);
+  assert.match(studio,/Math\.min\(4, Math\.max\(\.5, value\)\)/);
+  assert.match(studio,/on\(document, "fullscreenchange"/);
 });
