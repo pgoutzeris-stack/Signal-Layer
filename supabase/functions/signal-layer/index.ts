@@ -10821,6 +10821,11 @@ Deno.serve(async (req: Request) => {
         ) || "";
         const trigger = company ? await generateSimpleTrigger({
           admin, apiKey: modelKey, model,
+          request: (prompt: string, options: { systemInstruction?: string; responseSchema?: Record<string, unknown>; maxOutputTokens?: number }) => callJsonModel({
+            model, apiKey: modelKey, prompt, systemText: options.systemInstruction,
+            schema: options.responseSchema, maxOutputTokens: options.maxOutputTokens || 8192,
+            temperature: 0, timeoutMs: 90_000, attempts: 1,
+          }),
           priceUsage: modelCostFields,
           rootsPortfolio: await getSimpleRootsPortfolio(),
           tier1Companies: await getSimpleTier1Companies(),
