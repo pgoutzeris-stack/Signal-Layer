@@ -68,7 +68,7 @@ export type SimpleModelRates = {
 
 export type SimpleModelOption = SimpleModelRates & {
   id: string;
-  provider: "deepseek" | "gemini";
+  provider: "deepseek" | "gemini" | "perplexity";
   label: string;
   pricing_currency?: "USD" | "CNY";
   /** Spitzentarif, falls der Anbieter nach Tageszeit abrechnet. */
@@ -78,6 +78,7 @@ export type SimpleModelOption = SimpleModelRates & {
 };
 
 export const SIMPLE_MODEL_CATALOG: SimpleModelOption[] = [
+  { id: "openai/gpt-5.4", provider: "perplexity", label: "GPT-5.4 (Perplexity)", input_usd: 2.5, cached_input_usd: 2.5, output_usd: 15 },
   {
     id: "deepseek-v4-pro", provider: "deepseek", label: "DeepSeek V4 Pro", pricing_currency: "USD",
     input_usd: 0.66, cached_input_usd: 0.022, output_usd: 1.98,
@@ -805,6 +806,7 @@ export type SimpleDeps = {
   rootsPortfolio?: string;
   /** Tier-1-Zielkunden, identisch zur Advanced-Pipeline. */
   tier1Companies?: SimpleTier1Company[];
+  request?: (prompt: string, options: SimpleRequestOptions) => Promise<{ ok: boolean; text: string; usage: SimpleUsage; status: number; error: string }>;
   priceUsage?: (model: string, usage: SimpleUsage, inferenceMode?: "standard" | "batch") => Promise<Record<string, unknown>>;
 };
 
@@ -989,6 +991,23 @@ async function callSimpleJson<T>(
 ): Promise<T> {
   const model = deps.model || SIMPLE_MODEL;
   const option = simpleModelOption(model);
+  if (option.provider === "perplexity") {
+    if (!deps.request) throw new Error("Perplexity classification transport is unavailable");
+    const startedAt = Date.now();
+    const result = await deps.request(prompt, options);
+    if (!result.ok) {
+      await recordSimpleUsage(deps, articleId, model, "error", result.usage, Date.now() - startedAt, `http_${result.status || "network"}`, result.error);
+      throw new Error(`${option.label} failed: ${result.status} ${result.error.slice(0, 300)}`);
+    }
+    let answer: T;
+    try { answer = JSON.parse(result.text) as T; }
+    catch (error) {
+      await recordSimpleUsage(deps, articleId, model, "error", result.usage, Date.now() - startedAt, "invalid_response", String(error));
+      throw error;
+    }
+    await recordSimpleUsage(deps, articleId, model, "success", result.usage, Date.now() - startedAt);
+    return answer;
+  }
   const request = option.provider === "deepseek"
     ? deepseekRequest(model, deps.apiKey, prompt, options)
     : geminiRequest(model, deps.apiKey, prompt, options);
