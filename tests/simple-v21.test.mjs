@@ -422,3 +422,36 @@ test("Info-Symbol im Versionsmenue: sinnvoller Inhalt, eigener Hinweis am body, 
   assert.doesNotMatch(html, /\.roots-select-info \{[^}]*cursor: help/);
   assert.match(html, /\.roots-tip-float \{[^}]*white-space: pre-line;/);
 });
+
+test('Ergo board appointment recognizes a separated global marketing mandate', () => {
+  const article = {
+    id: 'ergo', title: 'Ergo holt Vorständin von Google',
+    cleaned_content: 'Zum 1. Oktober gibt es beim Versicherungsunternehmen Ergo einen Wechsel in der Vorstandsetage: Nina Michahelles übernimmt ab Oktober gebündelt die Verantwortung für das Ressort Globales Marketing und Customer Experience. Sie wechselt von Google zu Ergo und verbindet klassische Markenführung mit daten- und KI-gestützten Strategien. Sie soll Marke und Marketing strategisch weiterentwickeln.',
+  };
+  const prefilter = pipeline.prefilterSimpleArticle(article);
+  assert.ok(prefilter.families.some(f => f.id === 'cmo_wechsel'));
+  const fallback = pipeline.deterministicLeadershipFallback(article, prefilter.families);
+  assert.equal(fallback?.familyId, 'cmo_wechsel');
+  assert.equal(fallback?.company, 'Ergo');
+  assert.match(fallback?.companyEvidence || '', /Globales Marketing/);
+});
+
+test('board appointments with unrelated marketing mentions do not imply CMO changes', () => {
+  const article = {
+    id: 'finance', title: 'Ergo holt Finanzvorständin von Google',
+    cleaned_content: 'Ergo beruft eine neue Finanzvorständin. Sie übernimmt die Verantwortung für das Ressort Finanzen und Risikomanagement. Bei Google arbeitete sie mit dem Marketing zusammen. Die neue Rolle verantwortet die Bilanz und das Controlling des Versicherungsunternehmens. Das Marketing wird weiterhin von der bestehenden Leitung geführt.',
+  };
+  assert.ok(!pipeline.prefilterSimpleArticle(article).families.some(f => f.id === 'cmo_wechsel'));
+});
+
+test('a proven Ergo CMO appointment survives a conflicting model family', async () => {
+  const article = {id:'ergo-model', title:'Ergo holt Vorständin von Google', cleaned_content:'Zum 1. Oktober gibt es beim Versicherungsunternehmen Ergo einen Wechsel in der Vorstandsetage: Nina Michahelles übernimmt ab Oktober gebündelt die Verantwortung für das Ressort Globales Marketing und Customer Experience. Sie wechselt von Google zu Ergo und verbindet klassische Markenführung mit daten- und KI-gestützten Strategien. Sie soll Marke und Marketing strategisch weiterentwickeln.'};
+  const modelAnswer = {lane:'marketing', signal_id:'virale_news', confidence:.9, score:75, evidence:'Sie soll Marke und Marketing strategisch weiterentwickeln.', headline_de:article.title, summary_de:'Ergo besetzt die Marketingverantwortung neu.', article_type:'news', language:'de', company:'Google', relevance:{a:70,b:75,c:35,d:90}};
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(modelAnswer)}}],usage:{prompt_tokens:1200,completion_tokens:400,total_tokens:1600}}),{headers:{'content-type':'application/json'}});
+  const admin={schema:()=>({from:()=>({insert:async()=>({error:null}),update:()=>({eq:async()=>({error:null})})})})};
+  try {
+    const result=await pipeline.classifySimpleArticle({admin,apiKey:'test-key',model:'deepseek-v4-pro',tier1Companies:[],rootsPortfolio:'- people_erste_100_tage_cmo | [people] Die ersten 100 Tage als CMO: ROOTS strukturiert Standortbestimmung, Stakeholder und Prioritäten.'},article);
+    assert.equal(result.status,'signal');assert.equal(result.signal_id,'cmo_wechsel');assert.equal(result.company,'Ergo');assert.equal(result.lane,'sales');
+  } finally {globalThis.fetch=originalFetch;}
+});

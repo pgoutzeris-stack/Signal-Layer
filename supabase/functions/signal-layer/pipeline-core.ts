@@ -128,25 +128,60 @@ function resolveCharset(label: string | null | undefined): string | null {
 export async function readResponseText(res: Response): Promise<string> {
   const bytes = new Uint8Array(await res.arrayBuffer());
   const headerCharset = resolveCharset(res.headers.get("content-type")?.match(/charset=([^;]+)/i)?.[1]);
-  if (headerCharset && headerCharset !== "utf-8") {
-    return new TextDecoder(headerCharset).decode(bytes);
+  // Valid UTF-8 wins over stale Latin-1 headers. Invalid UTF-8 must not be
+  // accepted just because a server claims UTF-8: retain the original bytes.
+  try {
+    return repairArticleEncoding(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch { /* inspect the document declaration before the legacy fallback */ }
+  const probe = decodeWindows1252(bytes);
+  const declared = resolveCharset(
+    probe.slice(0, 4_000).match(/charset\s*=\s*["']?([\w-]+)/i)?.[1]
+      || probe.slice(0, 200).match(/encoding\s*=\s*["']([\w-]+)["']/i)?.[1],
+  );
+  const legacy = [declared, headerCharset].find((label) => label && label !== "utf-8") || "windows-1252";
+  return repairArticleEncoding(legacy === "windows-1252" ? decodeWindows1252(bytes) : new TextDecoder(legacy).decode(bytes));
+}
+
+const WINDOWS_1252_CONTROLS = "€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ";
+function decodeWindows1252(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte >= 0x80 && byte <= 0x9f
+    ? WINDOWS_1252_CONTROLS[byte - 0x80] : String.fromCharCode(byte)).join("");
+}
+
+const MOJIBAKE_PAIRS = [..."äöüÄÖÜßéèêëáàâåçñóòôúùûíìîïÉÈÊÁÀÇÑÓÔÚÍØøœŒ’‘“”„–—…€©®™ "]
+  .flatMap((character) => [decodeWindows1252(new TextEncoder().encode(character)), new TextDecoder("windows-1252").decode(new TextEncoder().encode(character))].map((broken) => [broken, character] as const))
+  .filter(([broken, character]) => broken !== character);
+
+/** Recover reversible mojibake; lost bytes only from a unique intact word. */
+export function repairArticleEncoding(value: string, reference = ""): string {
+  let text = String(value || "");
+  if (/^%PDF-/.test(text) || text.includes("\u0000")) return text;
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const [broken, character] of MOJIBAKE_PAIRS) text = text.replaceAll(broken, character);
   }
-  const utf8 = new TextDecoder("utf-8").decode(bytes);
-  if (!headerCharset && utf8.includes("\uFFFD")) {
-    const declared = resolveCharset(
-      utf8.slice(0, 4_000).match(/charset\s*=\s*["']?([\w-]+)/i)?.[1]
-        || utf8.slice(0, 200).match(/encoding\s*=\s*["']([\w-]+)["']/i)?.[1],
-    );
-    if (declared && declared !== "utf-8") return new TextDecoder(declared).decode(bytes);
-    // Keine brauchbare Angabe, aber kaputte Zeichen: Windows-1252 ist bei
-    // deutschen Redaktionssystemen die weitaus häufigste Ursache.
-    return new TextDecoder("windows-1252").decode(bytes);
-  }
-  return utf8;
+  if (!text.includes("\uFFFD") || !reference) return text;
+  const words = [...new Set(reference.match(/[\p{L}\p{M}]+/gu) || [])];
+  text = text.replace(/[\p{L}\p{M}\uFFFD]*\uFFFD[\p{L}\p{M}\uFFFD]*/gu, (broken) => {
+    if (broken.length < 2) return broken;
+    const pattern = new RegExp(`^${broken.replaceAll("\uFFFD", "[\\p{L}\\p{M}]")}$`, "u");
+    const matches = words.filter((word) => pattern.test(word));
+    return matches.length === 1 ? matches[0] : broken;
+  });
+  const normalizeContext = (value: string) => value.replace(/[*_#]/g, "").replace(/\s+/g, " ");
+  const intact = normalizeContext(reference);
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(/\uFFFD/g, (_character, offset: number) => {
+    const before = normalizeContext(text.slice(Math.max(0, offset - 24), offset).split("\uFFFD").pop() || "");
+    const after = normalizeContext(text.slice(offset + 1, offset + 25).split("\uFFFD")[0]);
+    if ((before.match(/\p{L}/gu) || []).length < 6 || (after.match(/\p{L}/gu) || []).length < 6) return "\uFFFD";
+    const pattern = new RegExp(`${escape(before)}([^\\uFFFD])${escape(after)}`, "gu");
+    const candidates = [...new Set([...intact.matchAll(pattern)].map((match) => match[1]))];
+    return candidates.length === 1 ? candidates[0] : "\uFFFD";
+  });
 }
 
 export function decodeArticleText(value: string): string {
-  return value
+  return repairArticleEncoding(value)
     .replace(/&nbsp;|&#160;/gi, " ")
     .replace(/&auml;/g, "ä").replace(/&ouml;/g, "ö").replace(/&uuml;/g, "ü")
     .replace(/&Auml;/g, "Ä").replace(/&Ouml;/g, "Ö").replace(/&Uuml;/g, "Ü")

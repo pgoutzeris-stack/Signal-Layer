@@ -342,9 +342,9 @@ export type SimpleGuardrail = { id: string; label: string; description: string }
 
 export const SIMPLE_GUARDRAILS: SimpleGuardrail[] = [
   { id: "no_crawl", label: "Kein neuer Crawl", description: "Der einfache Modus liest ausschliesslich bereits gespeicherte Artikel neu aus. Es werden keine Quellen abgerufen." },
-  { id: "keyword_never_decides", label: "Keyword entscheidet nie allein", description: "Signalmuster entscheiden nur, ob Gemini den Artikel prüfen darf. Ein Treffer erzeugt niemals selbst ein Signal." },
+  { id: "keyword_never_decides", label: "Keyword entscheidet nie allein", description: "Signalmuster entscheiden nur, ob das KI-Modell den Artikel prüfen darf. Ein Treffer erzeugt niemals selbst ein Signal." },
   { id: "verbatim_evidence", label: "Wörtliche Evidenz erforderlich", description: "Jedes Signal braucht ein Zitat, das wortgleich im Artikel steht. Fehlt es, wird das Signal verworfen." },
-  { id: "candidate_lock", label: "Nur vorgefilterte Familien", description: "Gemini darf nur eine der Signalfamilien wählen, die der Vorfilter für diesen Artikel bereits bestätigt hat." },
+  { id: "candidate_lock", label: "Nur vorgefilterte Familien", description: "Das KI-Modell darf nur eine der Signalfamilien wählen, die der Vorfilter für diesen Artikel bereits bestätigt hat." },
   { id: "sensitive_topics", label: "Politik, Religion, sensible Themen aus", description: "Sensible Themen im Titel schliessen den Artikel komplett aus; im Text schliessen sie die bild.de-News-Spur aus." },
   { id: "news_domain_lock", label: "News nur von bild.de", description: `Die Marketing-Spur "Aktuelle News & Topics" akzeptiert ausschliesslich Artikel von ${SIMPLE_NEWS_DOMAINS.join(", ")}.` },
   { id: "roots_link", label: "Konkreter ROOTS-Leistungsfit", description: "Nur zur Signalfamilie passende Leistungen samt Beschreibung gehen in den KI-Aufruf. Gespeichert werden ausschließlich exakte Leistungsnamen und ein unternehmensbezogener Anschluss; generische Formeln werden entfernt." },
@@ -429,7 +429,7 @@ export function prefilterSimpleArticle(
     if (family.domains && !matchesDomain(article, family.domains)) return false;
     if (family.domains && sensitiveBody) return false;
     if (family.excludeTitle && family.excludeTitle.test(normalizedTitle)) return false;
-    if (!family.trigger.test(normalized)) return false;
+    if (!family.trigger.test(normalized) && !(family.id === "cmo_wechsel" && editorialSentences(text).some(hasMarketingLeadership))) return false;
     return !family.context || family.context.test(normalized);
   });
   if (families.length === 0) return { families: [], text, tier1, reject: "kein_signalmuster" };
@@ -1347,8 +1347,8 @@ export const SIMPLE_REJECT_LABELS: Record<string, string> = {
   zu_wenig_text: "Zu wenig Artikeltext für eine belastbare Prüfung.",
   sensibles_thema: "Sensibles Thema (Politik, Religion, Kriminalität, Unglück, Gesundheit).",
   kein_signalmuster: "Keine der einfachen Signalfamilien trifft zu.",
-  modell_ohne_signal: "Gemini sieht kein belegtes Signal in diesem Artikel.",
-  familie_nicht_erlaubt: "Gemini hat eine Familie gewählt, die der Vorfilter nicht bestätigt hat.",
+  modell_ohne_signal: "Das KI-Modell sieht kein belegtes Signal in diesem Artikel.",
+  familie_nicht_erlaubt: "Die Signalfamilie oder Bahn der KI-Antwort stimmt nicht mit dem Vorfilter überein.",
   evidenz_fehlt: "Das Zitat steht nicht wortgleich im Artikel.",
   zu_unsicher: "Konfidenz oder Nutzwert unter der Mindestschwelle.",
   sensibles_zitat: "Das Zitat betrifft ein sensibles Thema.",
@@ -1407,8 +1407,18 @@ export type SimpleLeadershipFallback = {
 };
 
 const SIMPLE_CMO_ROLE_PATTERN = /\b(?:cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter(?:in)?|marketingleitung|marketing[ -]?chef(?:in)?|marketingdirektor(?:in)?|marketingvorstand(?:in)?|marketingressort|vorstandin marketing|vorstand marketing|head of marketing|marketing director|vp marketing|markenchef(?:in)?|brand director|chief creative officer|chief product officer|head of brand)\b/i;
+// A concrete takeover of marketing responsibility counts even when the
+// board title and the department name are separated in the sentence.
+export function hasMarketingLeadership(text: string): boolean {
+  const normalized = normalizeMatchText(text);
+  return SIMPLE_CMO_ROLE_PATTERN.test(normalized)
+    || /\b(?:ubernimmt|ubernahm|verantwortet|ubernehmen)\b/.test(normalized)
+      && /\b(?:verantwortung|ressort|leitung|fuhrung)\b/.test(normalized)
+      && /\b(?:marketing|markenfuhrung|brand management)\b/.test(normalized);
+}
+
 const SIMPLE_TRANSFORMATION_ROLE_PATTERN = /\b(?:chief transformation officer|transformation officer|transformationschef(?:in)?|transformationsleitung)\b/i;
-const SIMPLE_LEADERSHIP_CHANGE_PATTERN = /\b(?:wird|wechselt|uebernimmt|übernimmt|verlaesst|verlässt|ernennt|ernannt|holt|beruft|bestellt|tritt an|folgt auf|neuer|neue|appointed|appoints|joins|named|hires|succeeds)\b/i;
+const SIMPLE_LEADERSHIP_CHANGE_PATTERN = /\b(?:wird|wechselt|ubernimmt|uebernimmt|verlasst|verlaesst|ernennt|ernannt|holt|beruft|bestellt|tritt an|folgt auf|neuer|neue|appointed|appoints|joins|named|hires|succeeds)\b/i;
 // Bewusst enger als der kostenlose Familienfilter: Ein CTO-Titel wird nur
 // gerettet, wenn der Artikel ein konkretes ROOTS-nahes Mandat beschreibt.
 const SIMPLE_TRANSFORMATION_MANDATE_PATTERN = /\b(?:marketing|marke(?:n)?|brand|kunde(?:n)?|kundin(?:nen)?|customer|consumer|omnichannel|e[ -]?commerce|datenstrategie|customer journey|customer experience|portfolio|sortiment|handelsmodell|plattform|positionierung|kommunikation|pricing|preisstrategie|wachstumsstrategie)\b/i;
@@ -1423,10 +1433,11 @@ function cleanCompanyCandidate(value: string): string {
 
 function leadershipCompanyFromTitle(title: string): string {
   const headline = String(title || "").replace(/\s+\|\s+[^|]+$/, "").trim();
+  const prefix = headline.match(/^([^:|–—]{2,80}?)\s+(?:ernennt|holt|beruft|bestellt|engagiert|macht|appoints|names|hires)\b/i)?.[1];
+  if (prefix) return cleanCompanyCandidate(prefix);
   const suffix = headline.match(/\b(?:bei|von|fuer|für|at)\s+([^|–—:;,]{2,80})$/i)?.[1];
   if (suffix) return cleanCompanyCandidate(suffix);
-  const prefix = headline.match(/^([^:|–—]{2,80}?)\s+(?:ernennt|holt|beruft|bestellt|engagiert|macht|appoints|names|hires)\b/i)?.[1];
-  return cleanCompanyCandidate(prefix || "");
+  return "";
 }
 
 function editorialSentences(value: string): string[] {
@@ -1454,13 +1465,13 @@ export function deterministicLeadershipFallback(
   const companyEvidence = [title, ...sentences].find((sentence) =>
     sentence.length >= 20
     && normalizeMatchText(sentence).includes(normalizeMatchText(company))
-    && (SIMPLE_CMO_ROLE_PATTERN.test(sentence) || SIMPLE_TRANSFORMATION_ROLE_PATTERN.test(sentence))
-    && SIMPLE_LEADERSHIP_CHANGE_PATTERN.test(sentence)
+    && (hasMarketingLeadership(sentence) || SIMPLE_TRANSFORMATION_ROLE_PATTERN.test(sentence))
+    && SIMPLE_LEADERSHIP_CHANGE_PATTERN.test(normalizeMatchText(sentence))
   ) || "";
   if (!companyEvidence) return null;
 
   if (families.some((family) => family.id === "cmo_wechsel")
-      && SIMPLE_CMO_ROLE_PATTERN.test(companyEvidence)) {
+      && hasMarketingLeadership(companyEvidence)) {
     return {
       familyId: "cmo_wechsel",
       company,
@@ -1546,10 +1557,12 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     article_type: SIMPLE_ARTICLE_TYPES.includes(String(answer.article_type) as typeof SIMPLE_ARTICLE_TYPES[number])
       ? String(answer.article_type) : null,
     language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
-    score_details: { redaktioneller_kern: editorialDetails },
+    score_details: { redaktioneller_kern: editorialDetails, modellwahl: { familie: answer.signal_id, bahn: answer.lane } },
   };
   const leadershipFallback = deterministicLeadershipFallback(preparedArticle, prefilter.families);
-  if (answer.lane !== "sales" && answer.lane !== "marketing" && leadershipFallback) {
+  if (leadershipFallback && ((answer.lane !== "sales" && answer.lane !== "marketing")
+      || !prefilter.families.some((family) => family.id === answer.signal_id && family.lane === answer.lane)
+      || leadershipFallback.familyId === "cmo_wechsel" && answer.signal_id !== "cmo_wechsel")) {
     const fallbackFamily = prefilter.families.find((candidate) => candidate.id === leadershipFallback.familyId)!;
     const selectedPortfolio = selectRootsPortfolio(deps.rootsPortfolio || "", [fallbackFamily], coreText);
     const fallbackOffering = rootsPortfolioLabels(selectedPortfolio)[0] || "";

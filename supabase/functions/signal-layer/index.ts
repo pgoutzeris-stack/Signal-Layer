@@ -15,6 +15,7 @@ import {
   containsMatchTerm,
   decodeArticleText,
   readResponseText,
+  repairArticleEncoding,
   detectLanguage,
   evidenceExists,
   looksLikePaywallTeaser,
@@ -785,6 +786,7 @@ const ADMIN_ACTIONS = new Set([
   "start_classification_backfill",
   "resume_classification_backfill",
   "reformat_recent_articles",
+  "repair_article_encoding",
   "paywall_nachpruefen",
   "volltext_nachholen",
   "resume_stalled_crawls",
@@ -1289,9 +1291,21 @@ async function ensureSimpleArticleText(
   admin: ReturnType<typeof getAdminClient>,
   article: any,
 ): Promise<any> {
-  const body = String(article.cleaned_content || article.content || "");
-  if (body.trim().length >= SIMPLE_MIN_TEXT_CHARS || !article.url) return article;
-  try {
+  const textFields = ["title", "title_de", "content", "cleaned_content", "content_de", "excerpt", "ai_summary", "ai_rationale"];
+  const reference = textFields.map((field) => String(article[field] || "")).join("\n");
+  const update: Record<string, unknown> = {};
+  for (const field of textFields) {
+    if (typeof article[field] !== "string") continue;
+    const repaired = repairArticleEncoding(article[field], reference);
+    if (repaired !== article[field]) update[field] = repaired;
+  }
+  let prepared = { ...article, ...update };
+  const body = String(prepared.cleaned_content || prepared.content || "");
+  const lostCharacters = textFields.some((field) => String(prepared[field] || "").includes("\uFFFD"));
+  const diagnostic = objectRecord(article.extraction_diagnostic);
+  const fetchNeeded = body.trim().length < SIMPLE_MIN_TEXT_CHARS
+    || lostCharacters && !diagnostic.encoding_repair_attempted;
+  if (fetchNeeded && article.url) try {
     let sourceWithAuth: { id: string; url: string; crawl_config?: Record<string, unknown> } | null = null;
     if (article.source_id) {
       const { data: src } = await admin.schema("signal_layer").from("sources")
@@ -1300,13 +1314,34 @@ async function ensureSimpleArticleText(
     }
     const fetched = await fetchArticleForSource(String(article.url), sourceWithAuth);
     const cleaned = cleanArticleText(fetched?.content || "");
-    if (cleaned.trim().length <= body.trim().length) return article;
-    await admin.schema("signal_layer").from("articles")
-      .update({ content: fetched?.content || null, cleaned_content: cleaned, ...paywallSpalten(fetched) }).eq("id", article.id);
-    return { ...article, content: fetched?.content || null, cleaned_content: cleaned };
-  } catch {
-    return article;
+    // Never replace a full stored article with a consent or paywall excerpt.
+    if (cleaned.length >= Math.max(80, body.trim().length * 0.8) && !cleaned.includes("\uFFFD")) {
+      update.content = fetched!.content;
+      update.cleaned_content = cleaned;
+      Object.assign(update, paywallSpalten(fetched));
+    }
+    if (fetched?.title && !fetched.title.includes("\uFFFD") && String(prepared.title || "").includes("\uFFFD")) {
+      const repairedTitle = repairArticleEncoding(String(prepared.title || ""), fetched.title);
+      if (!repairedTitle.includes("\uFFFD")) update.title = repairedTitle;
+    }
+    if (fetched?.excerpt && !fetched.excerpt.includes("\uFFFD") && String(prepared.excerpt || "").includes("\uFFFD")) update.excerpt = fetched.excerpt;
+    const freshReference = `${fetched?.title || ""}\n${cleaned}\n${fetched?.excerpt || ""}\n${reference}`;
+    for (const field of textFields) {
+      const value = update[field] ?? prepared[field];
+      if (typeof value !== "string") continue;
+      const repaired = repairArticleEncoding(value, freshReference);
+      if (repaired !== value) update[field] = repaired;
+    }
+  } catch { /* keep the original; never invent characters or discard text */ }
+  if (lostCharacters && fetchNeeded) {
+    update.extraction_diagnostic = { ...diagnostic, encoding_repair_attempted: new Date().toISOString() };
   }
+  if (Object.keys(update).length) {
+    const { error } = await admin.schema("signal_layer").from("articles").update(update).eq("id", article.id);
+    if (error) throw new Error(`Zeichenreparatur nicht gespeichert: ${error.message}`);
+    prepared = { ...article, ...update };
+  }
+  return prepared;
 }
 
 // ROOTS-Portfolio als strukturierte Zeilen. Die Simple-Pipeline waehlt daraus
@@ -7782,7 +7817,7 @@ Deno.serve(async (req: Request) => {
       isScheduled = await isScheduledTrigger(req);
       if (!isScheduled) return unauthorizedResponse(req, origin);
     }
-  } else if (action === "reformat_recent_articles" || action === "paywall_nachpruefen" || action === "volltext_nachholen") {
+  } else if (action === "repair_article_encoding" || action === "reformat_recent_articles" || action === "paywall_nachpruefen" || action === "volltext_nachholen") {
     // Self-refires via the service-role bearer; a user may also kick it off.
     if (!isInternalCall(req)) {
       auth = await requireAuth(req);
@@ -9978,10 +10013,10 @@ Deno.serve(async (req: Request) => {
         const articleId = String(body.article_id || "");
         if (!articleId) return errorResponse(origin, "article_id is required");
         const admin = getAdminClient();
-        const [{ data: signal }, { data: article, error }, { data: usageEvents }, exchangeRate] = await Promise.all([
+        const [{ data: signal }, { data: storedArticle, error }, { data: usageEvents }, exchangeRate] = await Promise.all([
           admin.schema("signal_layer").from("simple_signals").select("*").eq("article_id", articleId).maybeSingle(),
           admin.schema("signal_layer").from("articles")
-            .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, published_at, crawled_at, language, paywall_detected, paywall_evidence, source:sources(company, url, category)")
+            .select("id, title, title_de, url, content, cleaned_content, content_de, excerpt, source_id, extraction_diagnostic, published_at, crawled_at, language, paywall_detected, paywall_evidence, source:sources(company, url, category)")
             .eq("id", articleId).single(),
           admin.schema("signal_layer").from("ai_usage_events")
             .select("model,operation,status,inference_mode,input_tokens,cached_input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_usd,estimated_cost_eur,pricing_currency,native_cost,native_to_eur_rate,usd_to_eur_rate,pricing_version,search_query_count,error_code,created_at")
@@ -9990,6 +10025,8 @@ Deno.serve(async (req: Request) => {
           getUsdEurRateSnapshot().catch(() => ({ rate: null, date: null, source: "Frankfurter" as const, fetched_at: null })),
         ]);
         if (error) return errorResponse(origin, error.message, error.code === "PGRST116" ? 404 : 500);
+
+        const article = await ensureSimpleArticleText(admin, storedArticle);
 
         const detailConfig = await getPipelineConfig();
         const rules = simpleRuleManifest(
@@ -11823,6 +11860,44 @@ Deno.serve(async (req: Request) => {
       // how the SAME article reads. Batched + fire-and-forget, self-terminates
       // once every eligible article carries a content_reformatted_at marker.
       // ---------------------------------------------------------------
+      case "repair_article_encoding": {
+        const admin = getAdminClient();
+        const ids = requestedSimpleArticleIds(body.article_ids, 200);
+        let query = admin.schema("signal_layer").from("articles").select("*");
+        if (ids.length) query = query.in("id", ids);
+        else query = query.or("title.like.*�*,content.like.*�*,cleaned_content.like.*�*,title.like.*Ã*,content.like.*Ã*,title.like.*â€*,content.like.*â€*")
+          .is("extraction_diagnostic->>encoding_repair_attempted", null);
+        const { data: rows, error } = await query.order("id").limit(5);
+        if (error) return errorResponse(origin, error.message, 500);
+        const results: Array<Record<string, unknown>> = [];
+        for (const row of rows || []) {
+          const repaired = await ensureSimpleArticleText(admin, row);
+          const reference = `${repaired.title || ""}\n${repaired.cleaned_content || repaired.content || ""}`;
+          const { data: signal } = await admin.schema("signal_layer").from("simple_signals").select("*").eq("article_id", row.id).maybeSingle();
+          if (signal) {
+            const patch: Record<string, string> = {};
+            for (const field of ["headline_de", "summary_de", "why_de", "trigger_de", "evidence", "company", "person_name", "person_role", "roots_link_de"]) {
+              if (typeof signal[field] !== "string") continue;
+              const value = repairArticleEncoding(signal[field], reference);
+              if (value !== signal[field]) patch[field] = value;
+            }
+            if (Object.keys(patch).length) {
+              const { error: signalError } = await admin.schema("signal_layer").from("simple_signals").update(patch).eq("article_id", row.id);
+              if (signalError) return errorResponse(origin, signalError.message, 500);
+            }
+          }
+          // Mark failures too: an unavailable source must not cause an endless chain.
+          const remaining = [repaired.title, repaired.content, repaired.cleaned_content].some((value) => String(value || "").includes("�"));
+          const { error: markError } = await admin.schema("signal_layer").from("articles").update({ extraction_diagnostic: {
+            ...objectRecord(repaired.extraction_diagnostic), encoding_repair_attempted: new Date().toISOString(), encoding_repair_remaining: remaining,
+          } }).eq("id", row.id);
+          if (markError) return errorResponse(origin, markError.message, 500);
+          results.push({ id: row.id, title: repaired.title, remaining });
+        }
+        if (!ids.length && rows?.length === 5) triggerSelf({ action: "repair_article_encoding" });
+        return corsResponse(origin, { ok: true, processed: results.length, results, done: (rows?.length || 0) < 5 });
+      }
+
       case "reformat_recent_articles": {
         const admin = getAdminClient();
         const REFORMAT_BATCH = 5;
