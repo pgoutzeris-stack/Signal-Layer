@@ -1,3 +1,4 @@
+import { articleReadingText } from "./supabase/functions/signal-layer/article-reading-text.mjs?v=20261008-11";
 import { personPillHtml, installPersonProfiles } from "./person-profile-ui.mjs?v=20261008-10";
 import { matchesDropdownSearch, createDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs?v=20261008-4";
 import { SIGNAL_LAYER_API_URL } from "./config.js";
@@ -2584,8 +2585,8 @@ async function openArticleDetail(articleId, { action = detailActionForMode() } =
     const valueReason = status === "uncertain" ? article.manual_review_reason
       : salesPerspective ? article.sales_relevance_reason : article.marketing_relevance_reason;
     // Prefer the German translation for foreign-language articles.
-    const isTranslated = Boolean(article.content_de) && article.language && article.language !== "de";
-    const fulltext = article.content_de || article.cleaned_content || article.content || article.excerpt || "Kein Artikeltext gespeichert.";
+    const isTranslated = Boolean(article.content_de) && articleReadingText(article) === article.content_de.trim() && article.language && article.language !== "de";
+    const fulltext = articleReadingText(article) || "Kein Artikeltext gespeichert.";
     const decisionExplanation = article.ai_rationale || reasons[0]
       || (status === "legacy" ? "Altbestand: Dieser Artikel wurde noch nicht durch die aktuelle Pipeline analysiert."
         : status === "pending" ? "Noch nicht analysiert: Der Artikel wartet auf die nächste Verarbeitung."

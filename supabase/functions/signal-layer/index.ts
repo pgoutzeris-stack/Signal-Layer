@@ -1,3 +1,4 @@
+import { articleReadingText } from "./article-reading-text.mjs";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.8";
@@ -7311,7 +7312,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     // ob das Memo das Thema des Referenzmemos uebernommen hat.
     const memoThema = [
       assetSignal.roots_offering, assetSignal.roots_link_de, assetSignal.headline_de, assetSignal.why_de,
-      assetArticle.title_de, assetArticle.title, assetArticle.content_de || assetArticle.cleaned_content || assetArticle.content,
+      assetArticle.title_de, assetArticle.title, articleReadingText(assetArticle),
     ].filter(Boolean).join("\n");
     // Laengenvertrag plus die Befunde, die ein Memo vom Referenzmemo trennen.
     // Beide gehen in denselben zweiten Anlauf.
@@ -7839,7 +7840,7 @@ async function retryGeneratedAssetModel(assetId: string): Promise<void> {
     if (!gegenstand && assetKind === "linkedin") {
       gegenstand = await ermittleAssetGegenstand({
         model: assetModel, apiKey: assetKey, signal: signalForAsset,
-        articleText: String(assetArticle.content_de || assetArticle.cleaned_content || assetArticle.content || ""),
+        articleText: String(articleReadingText(assetArticle) || ""),
       });
       if (gegenstand) await persist({ subject: gegenstand });
     }
@@ -13015,7 +13016,7 @@ Deno.serve(async (req: Request) => {
           if (assetKind === "linkedin") {
             gegenstand = await ermittleAssetGegenstand({
               model: assetModel, apiKey: assetKey, signal: signalForAsset,
-              articleText: String(assetArticle.content_de || assetArticle.cleaned_content || assetArticle.content || ""),
+              articleText: String(articleReadingText(assetArticle) || ""),
             });
             loggen("gegenstand", gegenstand ? { ...gegenstand } : { ok: false });
             if (gegenstand) await persist({ subject: gegenstand });
