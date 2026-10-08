@@ -63,9 +63,9 @@ export function validatePersonProfile(target: PersonTarget, raw: any, google: an
   if(raw?.status!=="verified" || raw.confidence!==1 || raw.identity_unique!==true || raw.current_company_match!==true || raw.current_role_verified!==true || !Array.isArray(raw.uncertainties) || raw.uncertainties.length)throw new PersonUncertain("identity_or_current_role_uncertain");
   if(google && (google.identity_unique!==true || google.current_company_match!==true || google.current_role_verified!==true || google.recent_information_found!==true || !Array.isArray(google.uncertainties) || google.uncertainties.length))throw new PersonUncertain("independent_check_conflict");
   if(norm(raw.name)!==norm(target.name)||norm(raw.company)!==norm(target.company))throw new PersonUncertain("wrong_person_or_company");
-  const linkedin=linkedinProfileUrl(raw.linkedin_url);
-  // Profile URLs are optional, but must be observed and consistent, never guessed.
-  if(raw.linkedin_url && (!linkedin || !sources.some(s=>linkedinProfileUrl(s.url)===linkedin && includesName(`${s.title} ${s.text}`,target.name) && includesName(s.text,target.company))))throw new PersonUncertain("unsupported_linkedin_url");
+  const candidate=linkedinProfileUrl(raw.linkedin_url);
+  // A missing/unsupported optional profile link is omitted, not an identity failure.
+  const linkedin=candidate&&sources.some(s=>linkedinProfileUrl(s.url)===candidate && includesName(`${s.title} ${s.text}`,target.name) && includesName(`${s.title} ${s.text}`,target.company))?candidate:"";
   if(google?.linkedin_url && linkedin && linkedin!==linkedinProfileUrl(google.linkedin_url))throw new PersonUncertain("independent_linkedin_conflict");
   if(google && (!googleUrls.length || !googleUrls.some(url=>sources.some(s=>sourceUrl(s.url)===sourceUrl(url)))))throw new PersonUncertain("independent_source_confirmation_missing");
   const primaries=sources.filter(s=>primarySource(s,target));
@@ -73,22 +73,22 @@ export function validatePersonProfile(target: PersonTarget, raw: any, google: an
   if(!Array.isArray(raw.facts)||!raw.facts.length||raw.facts.length>14)throw new PersonUncertain("facts_missing");
   let recent=false,role=false;
   const factSources=new Set<string>();
-  const facts=raw.facts.map((f:any)=>{
+  const facts=raw.facts.flatMap((f:any)=>{
     const src=sources.find(s=>sourceUrl(s.url)===sourceUrl(f.source_url));
     const quote=String(f.quote||"").trim(),label=String(f.label||"").trim(),value=String(f.value||"").trim();
-    if(!["current_role","recent_activity","career","expertise","professional_fact"].includes(f.kind)||!src||!quote||quote.length<20||quote.length>1600||!label||label.length>80||!value||value.length>700||!src.text.includes(quote)||f.verified!==true)throw new PersonUncertain("unsupported_fact");
+    if(!["current_role","recent_activity","career","expertise","professional_fact"].includes(f.kind)||!src||!quote||quote.length<20||quote.length>1600||!label||label.length>80||!value||value.length>700||!src.text.includes(quote)||f.verified!==true)return [];
     const date=src.date,age=date?(now.getTime()-Date.parse(date))/86400000:Infinity;
     const fresh=age>=0&&age<=PERSON_RECENCY_DAYS;
     if(f.kind==="current_role") {
       const associated=includesName(`${src.title} ${src.text}`,target.name)&&includesName(`${src.title} ${src.text}`,target.company);
       const management=employerSource(src,target.company)&&/\b(management|leadership|fuhrung|vorstand|executive|team)\b/.test(norm(`${src.url} ${src.title}`));
       const present=/\bpresent\b|\bcurrent(?:ly)?\b|\baktuell\b|\bderzeit\b|\bheute\b|bis\s+jetzt|\bnow\b|to\s+date/i.test(quote);
-      if(!associated || !norm(quote).includes(norm(value)) || !(fresh || management || linkedinProfileUrl(src.url)&&present))throw new PersonUncertain("current_role_not_supported");
+      if(!associated || !norm(quote).includes(norm(value)) || !(fresh || management || linkedinProfileUrl(src.url)&&present))return [];
       role=true;
     }
     if(f.kind==="recent_activity"&&fresh&&includesName(quote,target.name)&&includesName(quote,target.company))recent=true;
     factSources.add(src.url);
-    return {kind:String(f.kind),label,value,quote,source_url:src.url,source_title:src.title,date};
+    return [{kind:String(f.kind),label,value,quote,source_url:src.url,source_title:src.title,date}];
   });
   const domains=new Set([...factSources].map(url=>{
     const host=new URL(url).hostname.split(".");
