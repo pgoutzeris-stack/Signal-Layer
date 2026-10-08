@@ -31,7 +31,7 @@ test('forecast uses historical p90 with reserve without treating unknown costs a
 });
 test('preflight only reads; backend enforces credit guard before creating an asset',()=>{
  const source=readFileSync(new URL('../supabase/functions/signal-layer/index.ts',import.meta.url),'utf8');
- const helper=source.slice(source.indexOf('async function checkAssetBudget'),source.indexOf('// Renders a Gemini response schema'));
+ const helper=source.slice(source.indexOf('async function checkAssetBudget'),source.indexOf('async function personResearchTarget'));
  assert.doesNotMatch(helper,/\.insert\(|\.update\(|callModel\(/);
  assert.match(helper,/api\.deepseek\.com\/user\/balance/);
  const generation=source.slice(source.indexOf('case "generate_asset"'));

@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "person-profile-ui.mjs"
       - "app.js"
       - "dropdown-search.mjs"
       - "tests/dropdown-search.test.mjs"
@@ -18,6 +19,7 @@ on:
       - ".github/workflows/frontend-runtime-check.yml"
   pull_request:
     paths:
+      - "person-profile-ui.mjs"
       - "app.js"
       - "dropdown-search.mjs"
       - "tests/dropdown-search.test.mjs"
@@ -44,6 +46,7 @@ jobs:
           node-version: 24
       - name: Check JavaScript syntax
         run: |
+          node --check person-profile-ui.mjs
           node --check app.js
           node --check dropdown-search.mjs
           node --check fehler-klartext.mjs

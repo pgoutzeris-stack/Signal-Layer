@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "asset-studio.js"
+      - "person-profile-ui.mjs"
+      - "supabase/functions/signal-layer/person-research.ts"
+      - "tests/person-research.test.mjs"
       - "asset-budget-ui.mjs"
       - "supabase/functions/signal-layer/asset-budget.ts"
       - "tests/asset-budget.test.mjs"
@@ -44,6 +47,9 @@ on:
   pull_request:
     paths:
       - "asset-studio.js"
+      - "person-profile-ui.mjs"
+      - "supabase/functions/signal-layer/person-research.ts"
+      - "tests/person-research.test.mjs"
       - "asset-budget-ui.mjs"
       - "supabase/functions/signal-layer/asset-budget.ts"
       - "tests/asset-budget.test.mjs"
@@ -106,4 +112,4 @@ jobs:
           node --check manual-signal.js
           node --check linkedin-guides.mjs
       - name: Test asset studio
-        run: node --experimental-strip-types --test tests/asset-budget.test.mjs tests/draft-usage.test.mjs tests/pricing-ledger.test.mjs tests/asset-studio.test.mjs tests/asset-freiform.test.mjs tests/manual-signal.test.mjs tests/linkedin-guides.test.mjs tests/deepseek-tarif.test.mjs tests/source-extract.test.mjs tests/paywall.test.mjs tests/article-extraction.test.mjs
+        run: node --experimental-strip-types --test tests/person-research.test.mjs tests/asset-budget.test.mjs tests/draft-usage.test.mjs tests/pricing-ledger.test.mjs tests/asset-studio.test.mjs tests/asset-freiform.test.mjs tests/manual-signal.test.mjs tests/linkedin-guides.test.mjs tests/deepseek-tarif.test.mjs tests/source-extract.test.mjs tests/paywall.test.mjs tests/article-extraction.test.mjs

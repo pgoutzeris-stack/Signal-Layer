@@ -1,3 +1,4 @@
+import { personPillHtml, installPersonProfiles } from "./person-profile-ui.mjs?v=20261008-7";
 import { matchesDropdownSearch, createDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs?v=20261008-4";
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
@@ -6,7 +7,7 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260930-1";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261008-4";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261008-7";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
@@ -1670,6 +1671,7 @@ function renderFindings(track) {
               return `<span class="tag tag--kunde" data-company-profile="${escapeHtml(c)}" data-company-trigger="${escapeHtml(isTarget ? article.trigger_de || "" : "")}" data-company-trigger-state="${isTarget ? "target" : "mention"}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`;
             }).join("")}
             ${companyGroups.company.map((c) => `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${escapeHtml(c)}</span>`).join("")}
+            ${(article.person_mentions || []).filter(p => p.name).map(p => personPillHtml({ name: p.name, role: p.role || "", company: article.primary_company || "", articleId: article.id, mode: "advanced", candidate: article.buying_center_candidate })).join("")}
             ${source?.company ? `<span class="tag tag--source" title="Quelle: ${escapeHtml(source.company)}"><i class="fa-solid fa-newspaper"></i> ${escapeHtml(source.company)}</span>` : ""}
             ${technicalAuditPill(article.id)}
           </div>
@@ -2549,9 +2551,8 @@ function renderDetailTags(article) {
       return `<span class="tag tag--${tier === "tier1" ? "kunde" : "company"}"${profileAttrs} data-pill-info="Einstufung: ${tier === "tier1" ? "Tier-1-Unternehmen" : "Company"}" tabindex="0"><i class="fa-solid fa-building"></i> ${escapeHtml(company)}</span>`;
     }),
     ...people.map((person) => {
-      const mention = (article.person_mentions || []).find((entry) => entry?.name === person);
-      const role = mention?.role ? ` · ${mention.role}` : "";
-      return `<span class="tag tag--person" data-pill-info="Einstufung: Person${escapeHtml(role)}" tabindex="0"><i class="fa-solid fa-user"></i> ${escapeHtml(person)}</span>`;
+      const mention = (article.person_mentions || []).find((entry) => entry?.name === person || person === `${entry?.name} (${entry?.role})`);
+      return personPillHtml({ name: mention?.name || person, role: mention?.role || "", company: article.primary_company || "", articleId: article.id, mode: document.body.classList.contains("mode-simple") ? "simple" : "advanced", candidate: article.buying_center_candidate });
     }),
     ...(article.buying_center_roles || []).map((role) => `<span class="tag tag--company" data-pill-info="Einstufung: Buying-Center-Rolle" tabindex="0"><i class="fa-solid fa-users"></i> ${escapeHtml(role)}</span>`),
     ...salesTriggers.map((trigger) => `<span class="tag"><i class="fa-solid fa-bolt"></i> ${escapeHtml(SALES_TRIGGER_LABELS[trigger] || trigger)}</span>`),
@@ -3415,6 +3416,8 @@ function costOperationLabel(operation) {
     translation: "Übersetzung",
     offering_match: "ROOTS-Leistungsmatch",
     company_profile: "Steckbrief-Recherche",
+    person_research: "Personenrecherche",
+    person_verify: "Personen-Gegenprüfung",
     company_logo: "Logo-Recherche",
   })[operation] || operation || "KI-Aufruf";
 }
@@ -4862,6 +4865,7 @@ export function initApp(client) {
   sb = client;
   if (!appInitialized) {
     appInitialized = true;
+    installPersonProfiles({ callApi });
     cacheEls();
     bindUi();
     mountResultsHeader();

@@ -1,3 +1,4 @@
+import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { billingProvider, balanceVerdict, recentBudgetFailure, conservativeForecast } from "./asset-budget.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.8";
@@ -808,6 +809,8 @@ const EDITOR_ACTIONS = new Set([
   // eines bereits erzeugten Assets bleibt fuer Leser offen.
   "generate_asset",
   "preflight_asset",
+  "start_person_research",
+  "preflight_person_research",
   "cancel_asset",
   // Ein einzelnes Memofeld schaerfen ist derselbe bezahlte Aufruf, nur klein.
   "sharpen_memo_field",
@@ -3362,7 +3365,7 @@ const GEMINI_GROUNDING_USD_PER_PROMPT = 0.035;
 
 // Ordnet jede Kostenbuchung dem Asset zu, dessen Lauf sie ausgeloest hat,
 // auch wenn die Buchung tief in Recherche oder Bildsuche passiert.
-const assetUsageContext = new AsyncLocalStorage<{ assetId: string }>();
+const assetUsageContext = new AsyncLocalStorage<{ assetId?: string; personResearchId?: string; articleId?: string; promptVersion?: string }>();
 function currentUsageAssetId(): string | null {
   return assetUsageContext.getStore()?.assetId || null;
 }
@@ -3525,7 +3528,9 @@ async function recordStandaloneAiUsage(
       grounding = await groundingCostFields(costs);
     }
     const { error } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
-      operation, model, status, attempt: 1, prompt_version: ASSET_PROMPT_VERSION,
+      operation, model, status, attempt: 1, prompt_version: assetUsageContext.getStore()?.promptVersion || ASSET_PROMPT_VERSION,
+      article_id: assetUsageContext.getStore()?.articleId || null,
+      person_research_id: assetUsageContext.getStore()?.personResearchId || null,
       asset_id: currentUsageAssetId(), step: step || standaloneSchritt(operation),
       input_tokens: usage.input + usage.cachedInput, cached_input_tokens: usage.cachedInput,
       output_tokens: usage.output, thinking_tokens: usage.thinking, total_tokens: usage.total,
@@ -3647,6 +3652,109 @@ async function checkAssetBudget(kind: "memo" | "linkedin", answers: any, model: 
     }
   }));
   return { checked_at: new Date().toISOString(), blocked: checks.some(c => !c.optional && c.status === "blocked"), warning: checks.some(c => c.status === "warning" || c.status === "blocked"), checks };
+}
+
+async function personResearchTarget(body: any) {
+  const id = String(body.article_id || "");
+  const mode = body.mode === "advanced" ? "advanced" : "simple";
+  const db = getAdminClient().schema("signal_layer");
+  const [article, signal] = await Promise.all([
+    db.from("articles").select("id,primary_company,person_mentions,buying_center_candidate,classification_status").eq("id", id).maybeSingle(),
+    mode === "simple" ? db.from("simple_signals").select("status,company,person_name,person_role").eq("article_id", id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+  ]);
+  if (article.error || signal.error) throw new Error("Personenkontext konnte nicht geladen werden");
+  return resolvePersonTarget(article.data, signal.data, String(body.person_name || "").trim(), mode);
+}
+
+async function personResearchBudget() {
+  const checks = await Promise.all([
+    checkAssetBudget("linkedin", { asset_type: "single", slides: 1 }, PERSON_VERIFY_MODEL),
+    checkAssetBudget("linkedin", { asset_type: "single", slides: 1 }, PERSON_GOOGLE_MODEL),
+  ]);
+  return { blocked: checks.some(c => c.blocked), warning: checks.some(c => c.warning), checks: checks.flatMap(c => c.checks), checked_at: new Date().toISOString() };
+}
+
+// Resolve only the documented Google grounding redirect; never fetch a
+// researcher-supplied arbitrary URL or follow it into a private network.
+async function personGoogleSourceUrl(uri: string) {
+  const normalized = sourceUrl(uri);
+  if (!normalized) return "";
+  let current = normalized;
+  for (let hop = 0; hop < 3; hop++) {
+    if (new URL(current).hostname !== "vertexaisearch.cloud.google.com") return current;
+    try {
+      const r = await fetchWithTimeout(current, { redirect: "manual" }, 4000);
+      await r.body?.cancel();
+      const location = r.headers.get("location");
+      if (!location || r.status < 300 || r.status >= 400) return "";
+      current = sourceUrl(new URL(location, current).href);
+      if (!current) return "";
+    } catch { return ""; }
+  }
+  return "";
+}
+
+async function runPersonResearch(id: string, target: any) {
+  const db = getAdminClient().schema("signal_layer");
+  try {
+    const [perplexityKey, googleKey] = await Promise.all([getPerplexityKey(), getGeminiKey()]);
+    if (!perplexityKey || !googleKey) throw new PersonUncertain("provider_key_missing");
+    const stage = async (value: string) => {
+      const { error } = await db.from("person_researches").update({ stage: value, updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
+      if (error) throw new Error("Recherchefortschritt konnte nicht gespeichert werden");
+    };
+    const search = async (input: any, step: string) => {
+      let booked = false;
+      try {
+        const r = await fetchWithTimeout("https://api.perplexity.ai/search", { method: "POST", headers: { Authorization: `Bearer ${perplexityKey}`, "Content-Type": "application/json" }, body: JSON.stringify(input) }, 35000);
+        // Search API pricing: USD 5/1,000 successful POSTs, including empty results.
+        await recordStandaloneAiUsage("person_research", "perplexity/search", r.ok ? "success" : "error", undefined, 0, r.ok ? undefined : `http_${r.status}`, r.ok ? { usd: .005, toolUsd: .005 } : undefined, step);
+        booked = true;
+        if (!r.ok) { await r.body?.cancel(); throw new PersonUncertain("perplexity_search_failed"); }
+        return await r.json();
+      } catch (e) {
+        if (!booked) await recordStandaloneAiUsage("person_research", "perplexity/search", "error", undefined, 0, "search_transport_error", undefined, step);
+        throw e;
+      }
+    };
+    const google = async (prompt: string) => {
+      let booked = false;
+      try {
+        const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${PERSON_GOOGLE_MODEL}:generateContent`, { method: "POST", headers: { "x-goog-api-key": googleKey, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], tools: [{ google_search: {} }], generationConfig: { temperature: 0, maxOutputTokens: 3000, thinkingConfig: { thinkingBudget: 0 } } }) }, 45000);
+        const data = await r.json().catch(() => ({}));
+        const usage = data.usageMetadata || {}, cached = Number(usage.cachedContentTokenCount || 0), candidate = data.candidates?.[0], queries = candidate?.groundingMetadata?.webSearchQueries || [];
+        await recordStandaloneAiUsage("person_research", PERSON_GOOGLE_MODEL, r.ok ? "success" : "error", { input: Math.max(0, Number(usage.promptTokenCount || 0) - cached), cachedInput: cached, output: Number(usage.candidatesTokenCount || 0), thinking: Number(usage.thoughtsTokenCount || 0), total: Number(usage.totalTokenCount || 0) }, queries.length, r.ok ? undefined : `http_${r.status}`, undefined, "google_identity_check");
+        booked = true;
+        if (!r.ok || candidate?.finishReason !== "STOP") throw new PersonUncertain("google_search_failed");
+        const urls = await Promise.all((candidate.groundingMetadata?.groundingChunks || []).slice(0,15).map((c: any) => personGoogleSourceUrl(String(c.web?.uri || ""))));
+        return { text: (candidate.content?.parts || []).map((p: any) => p.thought ? "" : p.text || "").join(""), urls: urls.filter(Boolean), searchQueries: queries.length };
+      } catch (e) {
+        if (!booked) await recordStandaloneAiUsage("person_research", PERSON_GOOGLE_MODEL, "error", undefined, 0, "google_transport_error", undefined, "google_identity_check");
+        throw e;
+      }
+    };
+    const verify = async (prompt: string) => {
+      let booked = false;
+      try {
+        const r = await fetchWithTimeout(PERPLEXITY_RESPONSES_URL, { method: "POST", headers: { Authorization: `Bearer ${perplexityKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: PERSON_VERIFY_MODEL, max_output_tokens: 3500, instructions: "Prüfe die Identität und jeden Quellenbeleg streng. Antworte nur mit dem verlangten JSON. Ohne zweifelsfreie aktuelle Belege status uncertain.", input: prompt }) }, 45000);
+        const parsed = parsePerplexityAntwort(await r.text());
+        await recordStandaloneAiUsage("person_verify", PERSON_VERIFY_MODEL, r.ok ? "success" : "error", parsed.usage, 0, r.ok ? undefined : `http_${r.status}`, { usd: parsed.costUsd, toolUsd: 0 }, "person_consolidation_check");
+        booked = true;
+        if (!r.ok || !parsed.content) throw new PersonUncertain("person_verification_failed");
+        return parsed.content;
+      } catch (e) {
+        if (!booked) await recordStandaloneAiUsage("person_verify", PERSON_VERIFY_MODEL, "error", undefined, 0, "verification_transport_error", undefined, "person_consolidation_check");
+        throw e;
+      }
+    };
+    const profile = await researchPerson({ stage, search, google, verify }, target);
+    const { error } = await db.from("person_researches").update({ status: "verified", stage: "fertig", profile, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
+    if (error) throw new Error("Verifiziertes Profil konnte nicht gespeichert werden");
+  } catch (e) {
+    const code = e instanceof PersonUncertain ? e.code : "research_unavailable";
+    const { error } = await db.from("person_researches").update({ status: e instanceof PersonUncertain ? "uncertain" : "error", stage: "manuell_pruefen", profile: null, failure_code: code, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
+    if (error) console.error("Personenrecherche konnte nicht abgeschlossen werden", error.code);
+  }
 }
 
 // Renders a Gemini response schema as a compact JSON shape for providers that
@@ -12504,6 +12612,39 @@ Deno.serve(async (req: Request) => {
             article: { id: manualId, title_de: manual.headline, url: manualArticle.url },
           },
         });
+      }
+
+      case "get_person_profile":
+      case "preflight_person_research":
+      case "start_person_research": {
+        if (!auth || !(await currentSignalLayerAccess(auth.userId))) return errorResponse(origin, "Signal Layer access required", 403);
+        let target;
+        try { target = await personResearchTarget(body); } catch (e) {
+          if (e instanceof PersonUncertain) return corsResponse(origin, { status: "uncertain", profile: null, error_message: PERSON_UNCERTAIN });
+          return errorResponse(origin, PERSON_UNCERTAIN, 500);
+        }
+        const db = getAdminClient().schema("signal_layer");
+        if (action === "preflight_person_research") return corsResponse(origin, await personResearchBudget());
+        // Stale jobs are failed closed; a read never starts paid work.
+        if (action === "start_person_research") await db.from("person_researches").update({ status: "error", stage: "manuell_pruefen", profile: null, failure_code: "worker_timeout", finished_at: new Date().toISOString() })
+          .eq("article_id", target.articleId).eq("person_name", target.name).eq("company", target.company).eq("status", "running").lt("created_at", new Date(Date.now()-5*60000).toISOString());
+        const { data: existing, error: lookupError } = await db.from("person_researches").select("id,person_name,company,status,stage,profile,created_at,finished_at").eq("article_id", target.articleId).eq("person_name", target.name).eq("company", target.company).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (lookupError) return errorResponse(origin, PERSON_UNCERTAIN, 500);
+        if (action === "get_person_profile" || existing?.status === "running") return corsResponse(origin, visiblePersonResearch(existing, target));
+        const budget = await personResearchBudget();
+        if (budget.blocked || (budget.warning && body.accept_budget_warning !== true)) return corsResponse(origin, { blocked: "provider_budget", preflight: budget });
+        const { count } = await db.from("person_researches").select("id", { count: "exact", head: true }).eq("status", "running").gte("created_at", new Date(Date.now()-5*60000).toISOString());
+        if (Number(count) >= 3) return errorResponse(origin, "Es laufen bereits drei Personenrecherchen. Bitte gleich erneut versuchen.", 429);
+        const { data: job, error: insertError } = await db.from("person_researches").insert({ article_id: target.articleId, person_name: target.name, company: target.company, signal_role: target.role, mode: target.mode, created_by: auth.userId, prompt_version: PERSON_RESEARCH_VERSION }).select("id,person_name,company,status,stage,created_at").single();
+        if (insertError) {
+          if (insertError.code === "23505") {
+            const { data: running } = await db.from("person_researches").select("id,person_name,company,status,stage,created_at").eq("article_id", target.articleId).eq("person_name", target.name).eq("company", target.company).eq("status", "running").maybeSingle();
+            return corsResponse(origin, visiblePersonResearch(running, target));
+          }
+          return errorResponse(origin, "Personenrecherche konnte nicht gestartet werden", 500);
+        }
+        EdgeRuntime.waitUntil(assetUsageContext.run({ personResearchId: job.id, articleId: target.articleId, promptVersion: PERSON_RESEARCH_VERSION }, () => runPersonResearch(job.id, target)));
+        return corsResponse(origin, visiblePersonResearch(job, target));
       }
 
       case "preflight_asset": {
