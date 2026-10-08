@@ -1,3 +1,4 @@
+import { removeDuplicateMemoPhotos } from "./memo-image-identity.mjs?v=20261008-8";
 import { confirmAssetBudget } from "./asset-budget-ui.mjs?v=20261008-6";
 import { draftMetadataHtml, bindDraftUsagePopovers } from "./draft-usage.mjs?v=20261008-3";
 // Asset Studio: Fragebogen, Entwurf und Werkbank für LinkedIn-Assets und
@@ -1906,7 +1907,7 @@ function sanitizeFragment(html) {
 import { feldHinweise, guideMarkup, slideEmpfehlung } from "./linkedin-guides.mjs?v=20260824-0305";
 import { MEMO_SECTIONS, MEMO_BILDGRUPPEN, memoBildgruppe, memoFeld, memoAbschnitt, memoFeldFehler, memoFeldHinweise, memoAbschnittFehler } from "./memo-guides.mjs?v=20261008-2";
 import { ASSET_TEMPLATE_CSS, ASSET_LAYOUT_CSS, ASSET_TEMPLATES, ASSET_LAYOUTS, ASSET_LAYOUT_LABELS } from "./asset-templates.js?v=20260824-0305";
-import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20261008-2";
+import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from "./memo-template.js?v=20261008-8";
 import {
   createFreiform, createKontextmenue, wendeAenderungenAn, bereinigeAenderungen, serialisiereAenderungen,
   zaehleAenderungen, elementAmPfad, pfadVon, bildAus, istTextElement, FREI_FARBEN,
@@ -6378,6 +6379,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   async function compactAdoptedImages() {
     if (isMemo && state.memo) {
+      await removeDuplicateMemoPhotos(state.memo);
       // Ein Logo darf nicht angeschnitten werden, also contain auf Weiss. Ein
       // Potenzial-Foto muss die Kachel füllen: contain hat weisse Ränder in das
       // Bild gebrannt, die Rundung der Kachel war damit unsichtbar (16.8.2026).

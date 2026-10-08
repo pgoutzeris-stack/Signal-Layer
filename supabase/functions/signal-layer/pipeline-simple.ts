@@ -32,10 +32,10 @@ import {
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
-export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.7";
+export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.8";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "2.7";
-export const SIMPLE_UPDATED_AT = "2026-08-28";
+export const SIMPLE_VERSION = "2.8";
+export const SIMPLE_UPDATED_AT = "2026-10-08";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 
 // Auswahlbare Modelle des einfachen Modus mit den Preisen, die im Kostenledger
@@ -189,11 +189,17 @@ export type SimpleFamily = {
 // ---------------------------------------------------------------------------
 const SALES_FAMILIES: SimpleFamily[] = [
   {
+    id: "agentur_ausschreibung", lane: "sales", label: "Agentur-Ausschreibung",
+    definition: "Ein genanntes Unternehmen oder ein öffentlicher Auftraggeber schreibt ein konkretes Agentur-, Marketing-, Marken-, Kommunikations- oder Strategiemandat aus. Die belegte Suche ist direkte Kaufabsicht; keine Vergabefrist oder Budgets erfinden. Eine allgemeine Meldung über Vergaberecht genügt nicht.",
+    trigger: /\b(ausschreib\w*|tender\w*|request for proposal|rfp|vergab\w*)\b/,
+    context: /\b(agentur\w*|leadagentur|agency|agencies|marketing|marke\w*|brand\w*|kommunikation|kreativ\w*|strategische beratung|kampagn\w*)\b/,
+  },
+  {
     id: "cmo_wechsel",
     lane: "sales",
     label: "CMO Wechsel",
     definition: "Eine Führungsrolle für Marketing, Marke oder Produkt (CMO, Marketingleitung, Head of Marketing, Brand Director, Chief Creative Officer, Chief Product Officer) wird neu besetzt, verlassen oder umgebaut. Der Wechsel selbst ist ein belastbarer Timing-Anlass für Standortbestimmung, Priorisierung und die ersten 100 Tage; ein zusätzlich behauptetes Problem oder Budget ist nicht erforderlich. Entscheidend ist die Verantwortung für Marke, Markenauftritt oder Produkthandschrift, nicht der genaue Titel.",
-    trigger: /\b(cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter\w*|marketingleitung|marketingchef\w*|marketingdirektor\w*|marketingvorstand\w*|marketingressort|vorstandin marketing|vorstand marketing|marketinggeschaftsfuhr\w*|head of marketing|marketing director|vp marketing|markenchef\w*|markenverantwortung|leiter\w* marketing|leitung marketing|bereichsleiter\w* marketing|marketing chef\w*|marketing leiter\w*|marketing leitung|marketing direktor\w*|marketing vorstand\w*|marken chef\w*|brand director|brand lead|senior brand director|chief creative officer|chief product officer|chief brand director|head of brand|brand strategy director|markendirektor\w*|produktdirektor\w*|global product director|marketingverantwortlich\w*)\b/,
+    trigger: /\b(cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter\w*|marketingleitung|marketingchef\w*|marketingdirektor\w*|marketingvorstand\w*|marketingressort|vorstandin marketing|vorstand marketing|marketinggeschaftsfuhr\w*|head of marketing|marketing director|vp marketing|vice president marketing|vice president of marketing|vp of marketing|marketing[ -]?verantwortlich\w*|markenchef\w*|markenverantwortung|leiter\w* marketing|leitung marketing|bereichsleiter\w* marketing|marketing chef\w*|marketing leiter\w*|marketing leitung|marketing direktor\w*|marketing vorstand\w*|marken chef\w*|brand director|brand lead|senior brand director|chief creative officer|chief product officer|chief brand director|head of brand|brand strategy director|markendirektor\w*|produktdirektor\w*|global product director|marketing[ -]?verantwortlich\w*|vice president marketing|vice president of marketing|vp of marketing)\b/,
     context: /\b(wechsel\w*|wechselt|ubernimmt|ubernahme|verlasst|verlassen|scheidet aus|abgang|nachfolge\w*|nachfolger\w*|folgt auf|ernannt|ernennt|bestellt|berufen|beruft|antritt|tritt an|tritt zuruck|rucktritt|besetzt|neubesetzung|umbesetzung|vakan\w*|interim|neuer|neue|neues|kommissarisch|appointed|appoints|joins|steps down|succeeds|hires|named|departs|exit)\b/,
   },
   {
@@ -243,6 +249,12 @@ const SALES_FAMILIES: SimpleFamily[] = [
 // ---------------------------------------------------------------------------
 const MARKETING_FAMILIES: SimpleFamily[] = [
   {
+    id: "marken_kooperation", lane: "marketing", label: "Markenkooperation & Co-Branding",
+    definition: "Konkrete Marken-, Kultur-, Künstler- oder Creator-Kooperation: Co-Branding, Community-Aktivierung, gemeinsame Produktgestaltung oder limitierte Edition. Für Marketing geeignet, wenn Partner, Umsetzung und Marken-/Zielgruppenbezug belegt sind. Sales nur bei zusätzlich ausdrücklich belegter Unternehmensherausforderung oder Partner-/Beratungsbedarf.",
+    trigger: /\b(kooperation\w*|co branding|cobranding|collaboration\w*|collab\w*|lizenzkooperation\w*|celebrity kooperation|limited edition|limitierte edition)\b/,
+    context: /\b(marke\w*|brand\w*|kampagn\w*|community|communities|fan\w*|creator\w*|kunstler\w*|produktdesign|design\w*|zielgrupp\w*|aktivier\w*)\b/,
+  },
+  {
     id: "news_aktuell",
     lane: "marketing",
     label: "Aktuelle News & Topics (nur bild.de)",
@@ -275,7 +287,7 @@ const MARKETING_FAMILIES: SimpleFamily[] = [
     lane: "marketing",
     label: "Markenstrategie",
     definition: "Markenführung mit Substanz: Positionierung, Markenarchitektur, Markenkern, Premiumisierung, Markenwert, Markenvertrauen.",
-    trigger: /\b(markenstrateg\w*|markenfuhrung|markenpositionier\w*|markenarchitektur|markenkern|markenwert\w*|markenversprechen|markenrelevanz|markenvertrauen|markenbekanntheit|markenkonsistenz|funktion der marke|marke als infrastruktur|markenbotschafter|papierverpackung\w*|dachmarke\w*|submarke\w*|brand purpose|brand equity|brand positioning|brand architecture|premiumisier\w*|markenportfolio)\b/,
+    trigger: /\b(markenstrateg\w*|markenfuhrung|markenpositionier\w*|markenarchitektur|markenkern|markenwert\w*|markenversprechen|markenrelevanz|markenvertrauen|markenbekanntheit|markenkonsistenz|funktion der marke|marke als infrastruktur|markenbotschafter|papierverpackung\w*|dachmarke\w*|submarke\w*|visual identity|visual identity system|corporate identity|corporate design|brand identity|typeface|typograph\w*|typograf\w*|schriftbild|schriftart\w*|markendesign|brand purpose|brand equity|brand positioning|brand architecture|premiumisier\w*|markenportfolio)\b/,
     context: /\b(marke\w*|brand\w*|kunde\w*|customer|consumer|konsument\w*|zielgrupp\w*|position\w*|wachstum\w*|studie\w*|prozent|erkenntnis\w*|strateg\w*|wert\w*|vertrauen|relevanz|wahrnehmung)\b/,
   },
   {
@@ -308,7 +320,7 @@ const MARKETING_FAMILIES: SimpleFamily[] = [
     label: "KI im Marketing",
     definition: "Übertragbares Wissen zum Einsatz von KI, Automatisierung, MarTech oder Analytics im Marketing - Studie, Benchmark, Vorgehen oder belegte Wirkung. Reine Produktankündigungen, Finanzierungsrunden und Aktienmeldungen von Technologieanbietern zählen nicht.",
     trigger: /\b(kunstliche intelligenz|kunstlicher intelligenz|\bki\b|generative ki|genai|generative ai|\bai\b|\bllm\b|sprachmodell\w*|large language model\w*|chatgpt|copilot|agentic|ki agent\w*|ai agent\w*|marketing automation|marketingautomation|automatisierung\w*|martech|marketing technolog\w*|customer data platform|\bcdp\b|\bcrm\b|marketing analytics|predictive analytics|attribution\w*|personalisierung\w*|hyperpersonalisier\w*|dashboard\w*|datenstrategie\w*|data governance|first party data)\b/,
-    context: /\b(marketing|marke\w*|brand\w*|kampagn\w*|campaign|kommunikation|content|media|kunde\w*|customer|shopper|handel\w*|retail)\b.*\b(studie\w*|analyse\w*|benchmark\w*|best practice\w*|learning\w*|erkenntnis\w*|leitfaden|how to|vorgehen|methode\w*|framework|whitepaper|report|checkliste|erfahrung\w*|prozent|effizien\w*|produktivitat\w*|\broi\b|wirkung\w*|einsatz|eingesetzt|pilot\w*|rollout|roll out|skalier\w*|use case\w*|anwendungsfall\w*)\b/,
+    context: /\b(marketing|marke\w*|brand\w*|kampagn\w*|campaign|kommunikation|content|media|kunde\w*|customer|shopper|handel\w*|retail)\b.*\b(studie\w*|analyse\w*|benchmark\w*|best practice\w*|learning\w*|erkenntnis\w*|leitfaden|how to|vorgehen|methode\w*|framework|whitepaper|report|checkliste|erfahrung\w*|prozent|effizien\w*|produktivitat\w*|\broi\b|wirkung\w*|wirken|einsatzzweck\w*|entscheidungsrahmen|anwendung\w*|fails|einsatz|eingesetzt|pilot\w*|rollout|roll out|skalier\w*|use case\w*|anwendungsfall\w*)\b/,
     // Anbieter- und Boersenmeldungen sind kein uebertragbares Prozesswissen.
     // Sie stehen genau so in der Ueberschrift.
     excludeTitle: /\b(aktie\w*|borsengang|boersengang|\bipo\b|quartal\w*|umsatzplus|dividende\w*|finanzierungsrunde\w*|series [abcd]\b|bewertung von|milliardenbewertung|nvidia|openai kundigt|ubernimmt fur|ubernahme fur)\b/,
@@ -409,6 +421,13 @@ function matchesDomain(article: SimpleArticleInput, domains: string[]): boolean 
     || sourceHost === domain || sourceHost.endsWith(`.${domain}`));
 }
 
+export function hasPackagingPrintTransition(value: string): boolean {
+  const text = normalizeMatchText(value);
+  return /\b(verpackungsmaterial\w*|verpackungsentwicklung|packaging material\w*|recycelte\w* kunststoff\w*|recycled plastic\w*|substrat\w*)\b/.test(text)
+    && /\b(farb\w*|color|colour|druck\w*|print\w*|design\w*)\b/.test(text)
+    && /\b(digital\w* tool|vorhersehen|vorhersag\w*|virtuell\w*|freigab\w*|workflow\w*|prototyp\w*|qualitatskontroll\w*|druckvorstufe|prepress)\b/.test(text);
+}
+
 export function prefilterSimpleArticle(
   article: SimpleArticleInput,
   tier1Companies: SimpleTier1Company[] = [],
@@ -429,7 +448,7 @@ export function prefilterSimpleArticle(
     if (family.domains && !matchesDomain(article, family.domains)) return false;
     if (family.domains && sensitiveBody) return false;
     if (family.excludeTitle && family.excludeTitle.test(normalizedTitle)) return false;
-    if (!family.trigger.test(normalized) && !(family.id === "cmo_wechsel" && editorialSentences(text).some(hasMarketingLeadership))) return false;
+    if (!family.trigger.test(normalized) && !((family.id === "cmo_wechsel" && editorialSentences(text).some(hasMarketingLeadership) || family.id === "design_to_print" && hasPackagingPrintTransition(text)))) return false;
     return !family.context || family.context.test(normalized);
   });
   if (families.length === 0) return { families: [], text, tier1, reject: "kein_signalmuster" };
@@ -495,6 +514,8 @@ const SIMPLE_FAMILY_OFFERINGS: Record<string, string[]> = {
     "productivity_marketing_operations_audit", "productivity_governance_modell",
     "productivity_project_management_office", "performance_marketing_tool_auswahl",
   ],
+  agentur_ausschreibung: ["people_effiziente_agentur_pitches", "people_agenturen_richtig_briefen", "planning_marketingstrategie"],
+  marken_kooperation: ["planning_marketingstrategie", "presence_social_media_strategie", "purpose_markenpositionierung"],
   marketing_prozess: [
     "productivity_marketing_operations_audit", "productivity_marketing_operations_ziele",
     "productivity_marketing_prozesse", "productivity_governance_modell",
@@ -688,7 +709,10 @@ Entscheide, ob der Artikel genau eine dieser Signalfamilien wirklich belegt.
 Wähle nur eine Familie aus der Liste; erfinde keine neue und wähle keine, die nicht oben steht.
 evidence muss ein wörtlich aus article_title oder article_text kopierter Satz sein, der genau dieses Signal belegt.
 Reicht die Substanz nicht (nur Nebenerwähnung, Terminhinweis, Stellenanzeige, Navigation, Werbetext, reine Produktwerbung), dann lane="keine".
-Politik, Religion, Krieg, Kriminalität, Unglücke, Krankheit und andere sensible Themen sind niemals ein Signal: dann lane="keine".
+Politik, Religion, Krieg, Kriminalität, Unglücke, Krankheit und andere sensible Themen sind niemals ein Signal: dann lane="keine". Ein rein fachlicher Marken-, Verpackungs- oder Marketingartikel wird nicht allein deshalb ausgeschlossen, weil er eine Krankenkasse als Auftraggeber nennt oder Tabak/Alkohol als visuellen Markenvergleich erwähnt.
+Paywall ist nur ein Transparenzflag, kein Ausschluss und kein Grund für manuelle Prüfung. Nutze ausschließlich den sichtbaren redaktionellen Text. Ein vollständiger sichtbarer Satz oder der Titel darf einen eindeutigen Rollenwechsel oder eine konkrete Agentur-Ausschreibung belegen; keine fehlenden Fristen, Budgets oder Mandatsdetails erfinden.
+Markenidentität, Typografie und Verbraucherreaktionen sind Marketing, wenn eine übertragbare Markenwirkung erläutert wird. Konkrete Co-Branding-/Künstler-Kooperationen sind Marketing; reine Produktverfügbarkeit ohne Marken- oder Aktivierungsmechanik bleibt ausgeschlossen. Bei KI-Avataren im Kundenkontakt genügt ein belegter Entscheidungsrahmen, Einsatzzweck oder Wirkungsvergleich für ki_marketing.
+Wähle agentur_ausschreibung für einen ausdrücklich ausgeschriebenen Marketing-/Agenturauftrag. Eine öffentliche Ausschreibung belegt direkte Kaufabsicht und darf hohe Sales-Relevanz erhalten. Materialwechsel bei Verpackungen zählt als design_to_print nur mit ausdrücklich belegtem Farb-/Design-, Freigabe-, Artwork- oder Prototypenprozess.
 Bewerte die Relevanz in vier Teilwerten von 0 bis 100. Für lane="marketing": a Neuheit, b strategischer Wert, c Übertragbarkeit auf andere Marken, d Evidenzstärke. Für lane="sales": a Problemstärke des Unternehmens, b Passung zu strategischer Marketingberatung, c erkennbare Kaufabsicht oder Bedarf, d Timing. 80+ nur bei konkretem, belegtem Anlass; ein blosses Thema ohne Beleg bleibt unter 50. relevance.reason ist ein deutscher Satz.
 score ist dein Gesamteindruck von 0 bis 100; der ausgewiesene Prozentwert wird serverseitig aus den vier Teilwerten berechnet.
 Sales heisst: ein konkretes Unternehmen hat gerade eine Situation, in der ROOTS-Beratung anschlussfähig wäre. Nenne dieses Unternehmen in company.
@@ -1398,7 +1422,7 @@ function rejected(
 }
 
 export type SimpleLeadershipFallback = {
-  familyId: "cmo_wechsel" | "strategiewechsel";
+  familyId: "cmo_wechsel" | "strategiewechsel" | "agentur_ausschreibung";
   company: string;
   companyEvidence: string;
   signalEvidence: string;
@@ -1406,7 +1430,7 @@ export type SimpleLeadershipFallback = {
   relevance: { a: number; b: number; c: number; d: number };
 };
 
-const SIMPLE_CMO_ROLE_PATTERN = /\b(?:cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter(?:in)?|marketingleitung|marketing[ -]?chef(?:in)?|marketingdirektor(?:in)?|marketingvorstand(?:in)?|marketingressort|vorstandin marketing|vorstand marketing|head of marketing|marketing director|vp marketing|markenchef(?:in)?|brand director|chief creative officer|chief product officer|head of brand)\b/i;
+const SIMPLE_CMO_ROLE_PATTERN = /\b(?:cmo|chief marketing officer|chief brand officer|chief growth officer|marketingleiter(?:in)?|marketingleitung|marketing[ -]?chef(?:in)?|marketingdirektor(?:in)?|marketingvorstand(?:in)?|marketingressort|vorstandin marketing|vorstand marketing|head of marketing|marketing director|marketing[ -]?verantwortlich\w*|vice president(?: of)? marketing|vp of marketing|vp marketing|markenchef(?:in)?|brand director|chief creative officer|chief product officer|head of brand)\b/i;
 // A concrete takeover of marketing responsibility counts even when the
 // board title and the department name are separated in the sentence.
 export function hasMarketingLeadership(text: string): boolean {
@@ -1432,7 +1456,7 @@ function cleanCompanyCandidate(value: string): string {
 }
 
 function leadershipCompanyFromTitle(title: string): string {
-  const headline = String(title || "").replace(/\s+\|\s+[^|]+$/, "").trim();
+  const headline = String(title || "").replace(/\s+\|\s+[^|]+$/, "").replace(/^.{2,80}?:\s*/, "").trim();
   const prefix = headline.match(/^([^:|–—]{2,80}?)\s+(?:ernennt|holt|beruft|bestellt|engagiert|macht|appoints|names|hires)\b/i)?.[1];
   if (prefix) return cleanCompanyCandidate(prefix);
   const suffix = headline.match(/\b(?:bei|von|fuer|für|at)\s+([^|–—:;,]{2,80})$/i)?.[1];
@@ -1498,6 +1522,16 @@ export function deterministicLeadershipFallback(
   return null;
 }
 
+export function deterministicAgencyTenderFallback(article: SimpleArticleInput, families: SimpleFamily[]): SimpleLeadershipFallback | null {
+  if (!families.some(f => f.id === "agentur_ausschreibung")) return null;
+  const title = String(article.title || "").replace(/^.{2,80}?:\s*/, "").replace(/\s+[-|]\s+(?:HORIZONT|W&V|ADWEEK).*$/i, "").trim();
+  const company = title.match(/^(.{2,100}?)\s+(?:sucht|suchen|schreibt|schreiben|vergibt|vergeben|searches|seeks|seeking|invites)\b/i)?.[1]?.trim();
+  const text = articleText(article);
+  if (!company || /^(?:agenturen?|unternehmen|firmen|marken|wer|man|die branche|viele|mehrere)$/i.test(company) || !/\b(agentur\w*|leadagentur|agencies|agency|marketing|kommunikation)\b/.test(normalizeMatchText(title)) || !evidenceExists(title,text)) return null;
+  return { familyId: "agentur_ausschreibung", company, companyEvidence: title, signalEvidence: title,
+    reason: `Die Agentur-Ausschreibung bei ${company} belegt einen konkreten externen Bedarf und direkte Kaufabsicht.`, relevance: { a: 90, b: 90, c: 95, d: 95 } };
+}
+
 export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArticleInput): Promise<SimpleResult> {
   const rawBody = String(article.cleaned_content || article.content || "");
   const deterministicCore = deterministicEditorialCore(rawBody);
@@ -1559,14 +1593,16 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
     score_details: { redaktioneller_kern: editorialDetails, modellwahl: { familie: answer.signal_id, bahn: answer.lane } },
   };
-  const leadershipFallback = deterministicLeadershipFallback(preparedArticle, prefilter.families);
-  if (leadershipFallback && ((answer.lane !== "sales" && answer.lane !== "marketing")
+  const leadershipFallback = deterministicAgencyTenderFallback(preparedArticle, prefilter.families) || deterministicLeadershipFallback(preparedArticle, prefilter.families);
+  if (leadershipFallback && (leadershipFallback.familyId === "agentur_ausschreibung" || (answer.lane !== "sales" && answer.lane !== "marketing")
       || !prefilter.families.some((family) => family.id === answer.signal_id && family.lane === answer.lane)
       || leadershipFallback.familyId === "cmo_wechsel" && answer.signal_id !== "cmo_wechsel")) {
     const fallbackFamily = prefilter.families.find((candidate) => candidate.id === leadershipFallback.familyId)!;
     const selectedPortfolio = selectRootsPortfolio(deps.rootsPortfolio || "", [fallbackFamily], coreText);
     const fallbackOffering = rootsPortfolioLabels(selectedPortfolio)[0] || "";
-    const rootsAction = fallbackFamily.id === "cmo_wechsel"
+    const rootsAction = fallbackFamily.id === "agentur_ausschreibung"
+      ? `ROOTS unterstützt die belegte Mandatssuche mit ${fallbackOffering || "strukturiertem Agenturbriefing und einer effizienten Auswahl"}.`
+      : fallbackFamily.id === "cmo_wechsel"
       ? `ROOTS strukturiert mit ${fallbackOffering || "einer Standortbestimmung"} die Prioritaeten, Stakeholder und Agenda fuer die ersten 100 Tage.`
       : `ROOTS analysiert mit ${fallbackOffering || "einem Marketing-Audit"} das belegte Mandat und priorisiert die strategischen Marketing- und Kundenhebel.`;
     answer = {
@@ -1581,13 +1617,18 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
       company: leadershipFallback.company,
       company_evidence: leadershipFallback.companyEvidence,
       roots_offering: fallbackOffering,
-      roots_link_de: `${leadershipFallback.company} hat die Fuehrungsverantwortung in einem fuer ROOTS relevanten Feld neu geordnet; der belegte Wechsel schafft einen konkreten Zeitpunkt fuer Standortbestimmung und Priorisierung. ${rootsAction}`,
+      roots_link_de: fallbackFamily.id === "agentur_ausschreibung" ? `${leadershipFallback.company} sucht mit einer öffentlichen Ausschreibung Agenturen für konkrete Mandate. ${rootsAction}` : `${leadershipFallback.company} hat die Fuehrungsverantwortung in einem fuer ROOTS relevanten Feld neu geordnet; der belegte Wechsel schafft einen konkreten Zeitpunkt fuer Standortbestimmung und Priorisierung. ${rootsAction}`,
       relevance: { ...leadershipFallback.relevance, reason: leadershipFallback.reason },
     };
   }
   if (answer.lane !== "sales" && answer.lane !== "marketing") {
     return { ...rejected(article, "modell_ohne_signal", prefilter.families, model), ...answerContext };
   }
+  // A relaunch is often a marketing case, not a consulting opportunity.
+  // Downgrade only to a source-confirmed marketing counterpart.
+  const counterparts: Record<string, string> = { marken_relaunch: "marken_strategie", eigenmarken_launch: "eigenmarken_strategie" };
+  const counterpart = counterparts[String(answer.signal_id || "")];
+  if (answer.lane === "marketing" && counterpart && prefilter.families.some(f => f.id === counterpart && f.lane === "marketing")) answer = { ...answer, signal_id: counterpart };
   const family = prefilter.families.find((candidate) => candidate.id === answer.signal_id);
   // Gemini may only confirm a family the prefilter already accepted, and the
   // lane must be the one that family belongs to.

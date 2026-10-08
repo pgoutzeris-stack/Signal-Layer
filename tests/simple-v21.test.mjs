@@ -4,9 +4,30 @@ import { readFileSync } from "node:fs";
 
 const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
 
-test("the canonical ROOTS match runs as a separate v2.7 ruleset", () => {
-  assert.equal(pipeline.SIMPLE_VERSION, "2.7");
-  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.7");
+test('reported manual-review articles reach their relevant families despite paywalls', () => {
+  const examples = JSON.parse(readFileSync(new URL('./fixtures/manual-review-examples.json', import.meta.url)));
+  const expected = ['ki_marketing', 'design_to_print', 'marken_strategie', 'marken_kooperation', 'agentur_ausschreibung', 'cmo_wechsel'];
+  examples.forEach((article, i) => {
+    const result = pipeline.prefilterSimpleArticle(article);
+    assert.ok(!result.reject, `${article.title}: ${result.reject}`);
+    assert.ok(result.families.some(f => f.id === expected[i]), article.title);
+  });
+  const tender = examples[4], cmo = examples[5];
+  assert.equal(pipeline.deterministicAgencyTenderFallback(tender, pipeline.prefilterSimpleArticle(tender).families)?.company, 'Siemens Betriebskrankenkasse');
+  assert.equal(pipeline.deterministicLeadershipFallback(cmo, pipeline.prefilterSimpleArticle(cmo).families)?.company, 'Mondelez');
+});
+test('packaging sustainability alone is not a Design to Print transition', () => {
+  assert.equal(pipeline.hasPackagingPrintTransition('Unilever reduziert Verpackungsmaterialien und investiert in recycelten Kunststoff.'), false);
+  assert.equal(pipeline.hasPackagingPrintTransition('Ein digitales Tool zur Farbvorhersage optimiert recycelte Kunststoffe in der Verpackungsentwicklung.'), true);
+});
+test('generic agency searches do not create a named-buyer sales rescue', () => {
+  const article = {id:'generic',title:'Unternehmen suchen Agenturen',cleaned_content:'Eine Studie erklärt Ausschreibungen für Agenturen und Marketing. '.repeat(8)};
+  assert.equal(pipeline.deterministicAgencyTenderFallback(article,pipeline.prefilterSimpleArticle(article).families),null);
+});
+
+test("the canonical ROOTS match runs as a separate v2.8 ruleset", () => {
+  assert.equal(pipeline.SIMPLE_VERSION, "2.8");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.8");
 });
 
 test("canonicalizes safe model variants to exact ROOTS database labels", () => {
@@ -239,7 +260,7 @@ function familyIds(article) {
   return pipeline.prefilterSimpleArticle(padded).families.map((family) => family.id);
 }
 
-test("v2.7 prefilter recovers the missed ROOTS occasions", () => {
+test("v2.8 prefilter recovers the missed ROOTS occasions", () => {
   assert.ok(familyIds({
     id: "d2p",
     title: "Cloudbasiertes Farbmanagement für den Verpackungsdruck",
@@ -313,7 +334,7 @@ test("v2.7 prefilter recovers the missed ROOTS occasions", () => {
   }).includes("marketing_strategie"));
 });
 
-test("v2.7 cuts LZ and New Business paywalls before the prefilter", () => {
+test("v2.8 cuts LZ and New Business paywalls before the prefilter", () => {
   const lede = "Livekindly Collective will Dalco Food schlucken, einen Hersteller für Handelsmarken und Private Label.";
   const body = `${lede}\n\nSie haben Fragen oder Anmerkungen zu diesem Artikel?\n${"Kontaktieren Sie die Redaktion wegen Nutzungsrechten. ".repeat(6)}`;
   const editorial = pipeline.deterministicEditorialCore(body);
@@ -333,7 +354,7 @@ test("an unproven model tail no longer discards the article", () => {
   assert.match(resolved.text, /Beefeater/);
 });
 
-test("the v2.7 prompt names the recovered ROOTS occasions and offerings", () => {
+test("the v2.8 prompt names the recovered ROOTS occasions and offerings", () => {
   const source = readFileSync(new URL("../supabase/functions/signal-layer/pipeline-simple.ts", import.meta.url), "utf8");
   assert.match(source, /<recognition_rules>/);
   assert.match(source, /Marketingressort/);
@@ -378,7 +399,7 @@ test("kein Thema traegt den Namen eines anderen", () => {
   assert.match(migration, /simple_signal_history/);
 });
 
-test("v2.7: KI im Marketing und Social Media & Creator als eigene Themen", async () => {
+test("v2.8: KI im Marketing und Social Media & Creator als eigene Themen", async () => {
   const pipeline = await import("../supabase/functions/signal-layer/pipeline-simple.ts");
   const ki = pipeline.SIMPLE_FAMILIES.find((entry) => entry.id === "ki_marketing");
   const social = pipeline.SIMPLE_FAMILIES.find((entry) => entry.id === "social_media");
@@ -387,22 +408,22 @@ test("v2.7: KI im Marketing und Social Media & Creator als eigene Themen", async
   assert.equal(social.lane, "marketing");
   assert.ok(social.trigger.test("tiktok und creator kooperationen fur marken"));
   assert.ok(social.context.test("marke setzt auf creator studie zeigt 40 prozent mehr reichweite"));
-  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.7");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.8");
 });
 
 test("Versionsmenue: eine Version ohne Signale gilt nicht als aktuell", async () => {
   const view = await import("../simple-view-state.mjs");
   const versions = [
-    { version: "roots-simple-v2.7", signals: 0 },
+    { version: "roots-simple-v2.8", signals: 0 },
     { version: "roots-simple-v2.6", signals: 392, last_run_at: "2026-09-20T10:00:00Z" },
     { version: "roots-simple-v2.5", signals: 120, last_run_at: "2026-08-10T10:00:00Z" },
   ];
-  const menu = view.simpleVersionMenu(versions, "roots-simple-v2.7");
+  const menu = view.simpleVersionMenu(versions, "roots-simple-v2.8");
   assert.equal(menu.current.version, "roots-simple-v2.6");
   assert.deepEqual(menu.historical.map((entry) => entry.version), ["roots-simple-v2.5"]);
-  assert.match(view.simpleCurrentVersionLabel(versions, "roots-simple-v2.7"), /^roots-simple-v2\.6 · aktuell · 392 Signale$/);
-  const spaeter = view.simpleVersionMenu([{ version: "roots-simple-v2.7", signals: 5 }, ...versions.slice(1)], "roots-simple-v2.7");
-  assert.equal(spaeter.current.version, "roots-simple-v2.7");
+  assert.match(view.simpleCurrentVersionLabel(versions, "roots-simple-v2.8"), /^roots-simple-v2\.6 · aktuell · 392 Signale$/);
+  const spaeter = view.simpleVersionMenu([{ version: "roots-simple-v2.8", signals: 5 }, ...versions.slice(1)], "roots-simple-v2.8");
+  assert.equal(spaeter.current.version, "roots-simple-v2.8");
   assert.deepEqual(spaeter.historical.map((entry) => entry.version), ["roots-simple-v2.6", "roots-simple-v2.5"]);
 });
 

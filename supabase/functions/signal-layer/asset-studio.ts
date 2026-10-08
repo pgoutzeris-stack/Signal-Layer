@@ -5819,6 +5819,14 @@ export function attachMemoSlotImage(
   extra: { pos?: string; quelle?: string } = {},
 ): MemoPayload {
   if (!src) return payload;
+  // Fotos dürfen nicht mehrere Kacheln belegen; Benchmark-Wortmarken sind separat.
+  if (key === "cover" || key === "insight" || key.startsWith("potentials.")) {
+    const photos = [
+      ["cover", payload.cover?.src], ["insight", payload.insight?.src],
+      ...(payload.potentials || []).map((item, i) => [`potentials.${i}`, item.image?.src]),
+    ];
+    if (photos.some(([slot, used]) => slot !== key && used && used === src)) return payload;
+  }
   const pos = /^\d{1,3}% \d{1,3}%$/.test(String(extra.pos || "")) ? String(extra.pos) : "50% 50%";
   const bild: MemoImage = fit === "contain" ? { src, pos, fit } : { src, pos };
   if (extra.quelle) bild.quelle = String(extra.quelle).slice(0, 400);
@@ -6098,7 +6106,7 @@ ${rahmen}
 ${liste}
 </bilder>
 
-Sieh dir jedes Bild an und entscheide, ob und wohin es gehört. Ein Bild darf in einen anderen Rahmen als den, für den es gesucht wurde. Jedes Bild höchstens einmal.
+Sieh dir jedes Bild an und entscheide, ob und wohin es gehört. Ein Bild darf in einen anderen Rahmen als den, für den es gesucht wurde. Jedes Bild höchstens einmal. Unterschiedliche URLs, Auflösungen, Kompressionen oder Ausschnitte desselben Fotos zählen als dasselbe Bild. Vergleiche die Motive visuell: keine Wiederholung desselben Fotos in cover, insight oder potentials. Lasse einen Rahmen leer, wenn kein eigenständiges passendes Motiv vorhanden ist.
 Bewerte 0 bis 10 und nenne für jeden Rahmen dein bestes Bild, auch wenn es unter ${MEMO_BILD_MIN_SCORE} liegt. Unter ${MEMO_BILD_MIN_SCORE} bleibt der Rahmen vorerst leer.
 Hoch bewerten: zeigt genau, was der Rahmen verlangt, ${firma ? `bei ${firma} selbst oder in seinem Umfeld` : "im Thema"}, scharf, gut beleuchtet, lässt sich auf das Seitenverhältnis zuschneiden, ohne das Wichtige zu verlieren.
 Null Punkte: Logo, Grafik, Diagramm, Screenshot, Collage, Wasserzeichen, eingebrannter Text oder Preisschild im Mittelpunkt, eine erkennbare Einzelperson im Fokus, ein Wettbewerber als Hauptmotiv, ein anderes Land oder eine andere Branche als der Fall, Symbolfoto ohne Bezug.
@@ -6312,6 +6320,11 @@ export async function fillMemoImages(
         // Benchmarks kommen als Wortmarke aus der Logosuche. Sie darf der
         // Rahmen nicht anschneiden; ein Foto darf er.
         attachMemoSlotImage(payload, slot.key, src, slot.kind === "benchmark" ? "contain" : "cover");
+        if (memoSlotImageSrc(payload, slot.key) !== src) {
+          filled.fail += 1;
+          await opts.log?.("image_fail", { key: slot.key, error: "duplicate_photo" });
+          return;
+        }
         filled.ok += 1;
         await opts.log?.("image_ok", { key: slot.key, subject: slot.subject, kind: slot.kind });
       } else {
