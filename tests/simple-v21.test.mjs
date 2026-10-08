@@ -41,9 +41,9 @@ test('Perplexity classification uses the same schema and records actual provider
   assert.equal(events[0].total_tokens,1400);
 });
 
-test("the canonical ROOTS match runs as a separate v2.8 ruleset", () => {
-  assert.equal(pipeline.SIMPLE_VERSION, "2.8");
-  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.8");
+test("the updated ROOTS match remains within the selected v2.6 release", () => {
+  assert.equal(pipeline.SIMPLE_VERSION, "2.6");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.6");
 });
 
 test("canonicalizes safe model variants to exact ROOTS database labels", () => {
@@ -276,7 +276,7 @@ function familyIds(article) {
   return pipeline.prefilterSimpleArticle(padded).families.map((family) => family.id);
 }
 
-test("v2.8 prefilter recovers the missed ROOTS occasions", () => {
+test("v2.6 prefilter recovers the missed ROOTS occasions", () => {
   assert.ok(familyIds({
     id: "d2p",
     title: "Cloudbasiertes Farbmanagement für den Verpackungsdruck",
@@ -350,7 +350,7 @@ test("v2.8 prefilter recovers the missed ROOTS occasions", () => {
   }).includes("marketing_strategie"));
 });
 
-test("v2.8 cuts LZ and New Business paywalls before the prefilter", () => {
+test("v2.6 cuts LZ and New Business paywalls before the prefilter", () => {
   const lede = "Livekindly Collective will Dalco Food schlucken, einen Hersteller für Handelsmarken und Private Label.";
   const body = `${lede}\n\nSie haben Fragen oder Anmerkungen zu diesem Artikel?\n${"Kontaktieren Sie die Redaktion wegen Nutzungsrechten. ".repeat(6)}`;
   const editorial = pipeline.deterministicEditorialCore(body);
@@ -370,7 +370,7 @@ test("an unproven model tail no longer discards the article", () => {
   assert.match(resolved.text, /Beefeater/);
 });
 
-test("the v2.8 prompt names the recovered ROOTS occasions and offerings", () => {
+test("the v2.6 prompt names the recovered ROOTS occasions and offerings", () => {
   const source = readFileSync(new URL("../supabase/functions/signal-layer/pipeline-simple.ts", import.meta.url), "utf8");
   assert.match(source, /<recognition_rules>/);
   assert.match(source, /Marketingressort/);
@@ -424,7 +424,7 @@ test("v2.8: KI im Marketing und Social Media & Creator als eigene Themen", async
   assert.equal(social.lane, "marketing");
   assert.ok(social.trigger.test("tiktok und creator kooperationen fur marken"));
   assert.ok(social.context.test("marke setzt auf creator studie zeigt 40 prozent mehr reichweite"));
-  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.8");
+  assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.6");
 });
 
 test("Versionsmenue: eine Version ohne Signale gilt nicht als aktuell", async () => {

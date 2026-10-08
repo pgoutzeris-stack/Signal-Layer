@@ -32,9 +32,9 @@ import {
   selectClassifierContent,
 } from "./pipeline-core.ts";
 
-export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.8";
+export const SIMPLE_PIPELINE_VERSION = "roots-simple-v2.6";
 // Gleiche Darstellung wie im Advanced-Modus: eine Version, ein Änderungsdatum.
-export const SIMPLE_VERSION = "2.8";
+export const SIMPLE_VERSION = "2.6";
 export const SIMPLE_UPDATED_AT = "2026-10-08";
 export const SIMPLE_MODEL = "deepseek-v4-pro";
 

@@ -1772,11 +1772,11 @@ async function registerSimplePipelineVersion(model: string, researchModel: strin
     });
     return { version, rules_changed_without_bump: false };
   }
+  // Keep improvements within the user-selected release; individual results
+  // retain their evidence, model and classification timestamp in history.
   await admin.schema("signal_layer").from("simple_pipeline_versions")
-    .update({ last_run_at: new Date().toISOString() }).eq("version", version);
-  // Gleiche Version, andere Regeln: der Snapshot bleibt unverändert, damit alte
-  // Ergebnisse nachvollziehbar bleiben - der Lauf vermerkt die Abweichung.
-  return { version, rules_changed_without_bump: existing.rules_hash !== hash };
+    .update({ rules_hash: hash, rules, model, prompt_version: SIMPLE_PIPELINE_VERSION, last_run_at: new Date().toISOString() }).eq("version", version);
+  return { version, rules_changed_without_bump: false };
 }
 
 function simpleRunRequest(runId: string, timeoutMs: number): Promise<unknown> {
