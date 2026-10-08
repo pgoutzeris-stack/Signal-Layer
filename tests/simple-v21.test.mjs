@@ -30,7 +30,7 @@ test('Perplexity classification uses the same schema and records actual provider
   const events=[];
   const admin={schema:()=>({from:()=>({insert:async row=>{events.push(row);return {error:null};},update:()=>({eq:async()=>({error:null})})})})};
   const usage={input:800,cachedInput:0,output:400,thinking:200,total:1400};
-  const result=await pipeline.classifySimpleArticle({admin,apiKey:'test',model:'openai/gpt-5.4',request:async(prompt,options)=>{
+  const result=await pipeline.classifySimpleArticle({admin,apiKey:'test',model:'openai/gpt-5.4',rootsPortfolio:'- people_effiziente_agentur_pitches | [people] Effiziente Agentur-Pitches: ROOTS strukturiert die Auswahl.',request:async(prompt,options)=>{
     assert.match(options.systemInstruction,/ROOTS Signal Layer/);
     assert.ok(options.responseSchema.properties);
     return {ok:true,status:200,error:'',usage,text:JSON.stringify({lane:'sales',signal_id:'agentur_ausschreibung',confidence:.95,score:95,evidence:article.title,company:'Siemens Betriebskrankenkasse',company_evidence:article.title,language:'de',roots_link_de:'Siemens Betriebskrankenkasse sucht Agenturen für konkrete Mandate. ROOTS strukturiert die Agenturbriefings und priorisiert passende Auswahlkriterien.',relevance:{a:90,b:90,c:95,d:95}})};

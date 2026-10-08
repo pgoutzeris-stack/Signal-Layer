@@ -1620,7 +1620,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     const selectedPortfolio = selectRootsPortfolio(deps.rootsPortfolio || "", [fallbackFamily], coreText);
     const fallbackOffering = rootsPortfolioLabels(selectedPortfolio)[0] || "";
     const rootsAction = fallbackFamily.id === "agentur_ausschreibung"
-      ? `ROOTS unterstützt die belegte Mandatssuche mit ${fallbackOffering || "strukturiertem Agenturbriefing und einer effizienten Auswahl"}.`
+      ? `ROOTS strukturiert mit ${fallbackOffering || "klaren Agenturbriefings und Auswahlkriterien"} den Prozess für die belegte Mandatssuche.`
       : fallbackFamily.id === "cmo_wechsel"
       ? `ROOTS strukturiert mit ${fallbackOffering || "einer Standortbestimmung"} die Prioritaeten, Stakeholder und Agenda fuer die ersten 100 Tage.`
       : `ROOTS analysiert mit ${fallbackOffering || "einem Marketing-Audit"} das belegte Mandat und priorisiert die strategischen Marketing- und Kundenhebel.`;
