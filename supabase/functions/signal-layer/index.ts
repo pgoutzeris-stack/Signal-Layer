@@ -3701,7 +3701,7 @@ async function runPersonResearch(id: string, target: any) {
         throw e;
       }
     };
-    const profile = await researchPerson({ stage, search, google: googleKey ? google : undefined, verify }, target);
+    const profile = await researchPerson({ stage, search, google: googleKey ? google : undefined, verify, audit: (evidence: any) => console.info("person_research_verdict", id, JSON.stringify(evidence)) }, target);
     const { error } = await db.from("person_researches").update({ status: "verified", stage: "fertig", profile, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
     if (error) throw new Error("Verifiziertes Profil konnte nicht gespeichert werden");
   } catch (e) {

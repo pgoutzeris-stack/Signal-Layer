@@ -60,7 +60,7 @@ export function parsePersonJson(text: string): any {
   try{return JSON.parse(clean);}catch{throw new PersonUncertain("invalid_json");}
 }
 export function validatePersonProfile(target: PersonTarget, raw: any, google: any, sources: any[], googleUrls: string[], now=new Date()): any {
-  if(raw?.status!=="verified" || raw.confidence!==1 || raw.identity_unique!==true || raw.current_company_match!==true || raw.current_role_verified!==true || !Array.isArray(raw.uncertainties) || raw.uncertainties.length)throw new PersonUncertain("identity_or_current_role_uncertain");
+  if(raw?.status!=="verified" || Number(raw.confidence)<0.95 || raw.identity_unique!==true || raw.current_company_match!==true || raw.current_role_verified!==true || !Array.isArray(raw.uncertainties) || raw.uncertainties.length)throw new PersonUncertain("identity_or_current_role_uncertain");
   if(google && (google.identity_unique!==true || google.current_company_match!==true || google.current_role_verified!==true || google.recent_information_found!==true || !Array.isArray(google.uncertainties) || google.uncertainties.length))throw new PersonUncertain("independent_check_conflict");
   if(norm(raw.name)!==norm(target.name)||norm(raw.company)!==norm(target.company))throw new PersonUncertain("wrong_person_or_company");
   const candidate=linkedinProfileUrl(raw.linkedin_url);
@@ -133,5 +133,6 @@ export async function researchPerson(deps: any, target: PersonTarget): Promise<a
   }
   await deps.stage("gegenpruefung");
   const raw=parsePersonJson(await deps.verify(personVerifyPrompt(target,sources,check,date)));
+  deps.audit?.({status:raw.status,confidence:raw.confidence,identity_unique:raw.identity_unique,current_company_match:raw.current_company_match,current_role_verified:raw.current_role_verified,uncertainties:raw.uncertainties,sources:sources.map(s=>({url:s.url,date:s.date,primary:primarySource(s,target)}))});
   return validatePersonProfile(target,raw,check,sources,urls);
 }
