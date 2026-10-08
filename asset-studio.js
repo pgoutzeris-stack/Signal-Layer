@@ -1,5 +1,4 @@
 import { removeDuplicateMemoPhotos } from "./memo-image-identity.mjs?v=20261008-8";
-import { confirmAssetBudget } from "./asset-budget-ui.mjs?v=20261008-6";
 import { draftMetadataHtml, bindDraftUsagePopovers } from "./draft-usage.mjs?v=20261008-3";
 // Asset Studio: Fragebogen, Entwurf und Werkbank für LinkedIn-Assets und
 // Ansprachen. Das Modul baut sein Overlay selbst und bringt die Stile
@@ -4363,9 +4362,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     zeichneForm();
   }
 
-  let preflightPending = false;
   async function generate() {
-    if (preflightPending || state.busy) return;
+    if (state.busy) return;
     readForm();
     if (isMemo && state.answers.memo_track === "cmo100") {
       formFehler("memo_track", "Das 100-Tage-CMO-Dokument ist noch in Ausarbeitung. Es ist kein Executive Memo. Bitte das thematische Executive Memo wählen.");
@@ -4405,39 +4403,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         }
       }
     }
-    preflightPending = true;
-    const startButtons = [...shell.querySelectorAll('[data-act="generate"]')];
-    const buttonLabels = startButtons.map(b => b.innerHTML);
-    startButtons.forEach(b => { b.disabled = true; b.textContent = "Guthaben wird geprüft …"; });
-      const gewaehlt = state.answers.variant;
-      const anzahl = !isMemo && state.answers.asset_type === "carousel" ? carouselRequestedSlides(state.answers) : 1;
-      const antworten = { ...state.answers, layout: gewaehlt, slide_count: String(anzahl), slides: anzahl };
-      // Wer erst selbst gewaehlt hat und dann auf "KI soll waehlen" zurueck
-      // geht, hat seine Folge widerrufen. Sie mitzuschicken haette den Server
-      // weiter manuell pruefen lassen - und an der fehlenden Endfolie scheitern.
-      if (isMemo || antworten.asset_type !== "carousel" || antworten.slide_mix !== "custom") {
-        antworten.slide_pick = "";
-        antworten.slide_cover = "";
-        antworten.slide_content = "";
-        antworten.slide_end = "";
-      }
-    let acceptBudgetWarning = false;
-    try {
-      const preflight = await api("preflight_asset", { kind: assetKind, answers: antworten });
-      if (!overlay.isConnected) return;
-      if (preflight.blocked || preflight.warning) {
-        acceptBudgetWarning = await confirmAssetBudget(preflight, overlay);
-        if (!acceptBudgetWarning) return;
-      }
-    } catch {
-      if (!overlay.isConnected) return;
-      acceptBudgetWarning = await confirmAssetBudget({ checks: [{ label: "Guthabenprüfung", message: "Die Prüfung ist derzeit nicht erreichbar. Es ist unbekannt, ob das Guthaben ausreicht." }] }, overlay);
-      if (!acceptBudgetWarning) return;
-    } finally {
-      preflightPending = false;
-      startButtons.forEach((b, i) => { b.disabled = false; b.innerHTML = buttonLabels[i]; });
+    const gewaehlt = state.answers.variant;
+    const anzahl = !isMemo && state.answers.asset_type === "carousel" ? carouselRequestedSlides(state.answers) : 1;
+    const antworten = { ...state.answers, layout: gewaehlt, slide_count: String(anzahl), slides: anzahl };
+    // Wer erst selbst gewaehlt hat und dann auf "KI soll waehlen" zurueck
+    // geht, hat seine Folge widerrufen. Sie mitzuschicken haette den Server
+    // weiter manuell pruefen lassen - und an der fehlenden Endfolie scheitern.
+    if (isMemo || antworten.asset_type !== "carousel" || antworten.slide_mix !== "custom") {
+      antworten.slide_pick = "";
+      antworten.slide_cover = "";
+      antworten.slide_content = "";
+      antworten.slide_end = "";
     }
-    if (!overlay.isConnected) return;
     state.formError = "";
     state.formErrorKey = "";
     state.step = "draft";
@@ -4454,17 +4431,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         article_id: articleId || null,
         answers: antworten,
         image_uploads: isMemo ? state.formImages : undefined,
-        accept_budget_warning: acceptBudgetWarning,
       });
       if (state.cancelRequested) return;
-      if (res?.blocked === "provider_budget") {
-        state.busy = false;
-        state.step = "form";
-        ladeTaktStop();
-        render();
-        await confirmAssetBudget({ ...res.preflight, blocked: true }, overlay);
-        return;
-      }
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       state.assetId = row.id || null;
       state.owned = Boolean(row.owner_id);

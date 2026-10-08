@@ -1,4 +1,4 @@
-import { personPillHtml, installPersonProfiles } from "./person-profile-ui.mjs?v=20261008-7";
+import { personPillHtml, installPersonProfiles } from "./person-profile-ui.mjs?v=20261008-9";
 import { matchesDropdownSearch, createDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs?v=20261008-4";
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
@@ -11,7 +11,7 @@ import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleS
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261008-8";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261008-9";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260830-1330";
@@ -2310,15 +2310,13 @@ function enhanceHeaderSelects() {
       /source/.test(select.id) ? "Quellen suchen…" : /topic/.test(select.id) ? "Themen suchen…" : "Unternehmen suchen…",
       () => render(),
     ) : null;
-    const allHost = document.createElement("div");
-    allHost.className = "roots-select-menu-all";
     const optionsHost = document.createElement("div");
     if (search) {
       menu.setAttribute("role", "dialog");
       trigger.setAttribute("aria-haspopup", "dialog");
       optionsHost.setAttribute("role", "listbox");
       optionsHost.setAttribute("aria-multiselectable", "true");
-      menu.append(search.wrap, allHost, optionsHost);
+      menu.append(search.wrap, optionsHost);
     }
     menu.addEventListener("click", (event) => event.stopPropagation());
 
@@ -2409,19 +2407,13 @@ function enhanceHeaderSelects() {
       if (!isGrid) { menu.replaceChildren(...options.map(makeOption)); return; }
       const host = search ? optionsHost : menu;
       host.replaceChildren();
-      allHost.replaceChildren();
       const allOption = options.find((option) => option.value === "all");
       const selectable = options.filter((option) => option.value !== "all" && option.dataset.empty !== "1" && matchesDropdownSearch(option.textContent, search?.input.value));
       const emptyOptions = options.filter((option) => option.dataset.empty === "1" && matchesDropdownSearch(option.textContent, search?.input.value));
-      if (allOption) {
+      if (allOption && !search) {
         const button = makeOption(allOption);
         button.classList.add("roots-select-option--full");
-        if (search) {
-          button.removeAttribute("role");
-          button.removeAttribute("aria-selected");
-          button.setAttribute("aria-pressed", String(selection.length === 0));
-          allHost.append(button);
-        } else host.append(button);
+        host.append(button);
       }
       if (!selectable.length && !emptyOptions.length && search?.input.value) {
         const empty = document.createElement("div");
@@ -2430,9 +2422,10 @@ function enhanceHeaderSelects() {
         empty.textContent = "Keine Einträge gefunden.";
         host.append(empty);
       }
-      if (selectable.length) {
+      if (selectable.length || (search && allOption)) {
         const grid = document.createElement("div");
         grid.className = "roots-select-grid";
+        if (search && allOption) grid.append(makeOption(allOption));
         grid.append(...selectable.map(makeOption));
         host.append(grid);
       }

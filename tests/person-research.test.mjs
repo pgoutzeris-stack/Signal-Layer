@@ -59,7 +59,7 @@ test('frontend failure ignores any attached facts; role-only/company-less pills 
 });
 test('database and endpoints keep reads free, restrict starts, deduplicate jobs and book every research step',()=>{
  const backend=readFileSync(new URL('../supabase/functions/signal-layer/index.ts',import.meta.url),'utf8');
- assert.match(backend,/"start_person_research",/);assert.match(backend,/"preflight_person_research",/);
+ assert.match(backend,/"start_person_research",/);
  assert.match(backend,/action === "get_person_profile" \|\| existing\?\.status === "running"/);
  assert.match(backend,/if \(action === "start_person_research"\) await db\.from\("person_researches"\)\.update/);
  assert.match(backend,/person_research_id: assetUsageContext\.getStore\(\)\?\.personResearchId/);

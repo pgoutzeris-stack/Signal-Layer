@@ -1,4 +1,3 @@
-import { confirmAssetBudget } from './asset-budget-ui.mjs?v=20261008-6';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const PERSON_FAILURE='Person nicht zweifelsfrei recherchierbar – bitte manuell prüfen';
 export function personPillHtml({name,role='',company='',articleId='',mode='simple',candidate=true}) {
@@ -49,16 +48,9 @@ export function installPersonProfiles({callApi,doc=document}) {
   async function start() {
     if(starting||!host)return;
     starting=true;const token=sequence;clearTimeout(timer);render(lastRow);
-    let accept=false;
     try {
-      const budget=await callApi('preflight_person_research',args());
+      const row=await callApi('start_person_research',args());
       if(token!==sequence||!host)return;
-      if(budget.status==='uncertain'){render({status:'uncertain'});return;}
-      if(budget.warning||budget.blocked){accept=await confirmAssetBudget(budget,host);if(!accept)return;}
-      if(token!==sequence||!host)return;
-      const row=await callApi('start_person_research',{...args(),accept_budget_warning:accept});
-      if(token!==sequence||!host)return;
-      if(row.blocked==='provider_budget'){await confirmAssetBudget({...row.preflight,blocked:true},host);return;}
       starting=false;render(row);if(row.status==='running')timer=setTimeout(()=>load(token),1500);
     }catch{if(token===sequence&&host)render({status:'error'});}
     finally{if(token===sequence&&host){starting=false;render(lastRow);}}
@@ -66,10 +58,8 @@ export function installPersonProfiles({callApi,doc=document}) {
   const click=e=>{const pill=e.target.closest('[data-person-profile]');if(!pill)return;e.preventDefault();e.stopImmediatePropagation();void open(pill);};
   const keys=e=>{
     if(host&&e.key==='Escape'){
-      if(host.querySelector('.as-budget-dialog[open]')){e.preventDefault();e.stopImmediatePropagation();host.querySelector('.as-budget-dialog').dispatchEvent(new Event('cancel',{cancelable:true}));return;}
       e.preventDefault();e.stopImmediatePropagation();close();return;
     }
-    if(host?.querySelector('.as-budget-dialog[open]'))return;
     if(['Enter',' '].includes(e.key)&&e.target.matches('[data-person-profile]')){e.preventDefault();e.stopImmediatePropagation();void open(e.target);}
     if(host&&e.key==='Tab'){
       const items=[...host.querySelectorAll('button:not([disabled]),a[href],summary')].filter(el=>el.getClientRects().length);const first=items[0],last=items.at(-1);

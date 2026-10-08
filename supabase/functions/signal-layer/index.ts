@@ -1,5 +1,4 @@
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
-import { billingProvider, balanceVerdict, recentBudgetFailure, conservativeForecast } from "./asset-budget.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.8";
 import {
@@ -808,9 +807,7 @@ const EDITOR_ACTIONS = new Set([
   // Ein Asset ist ein bezahlter Modellaufruf auf Anbieterbudget. Das Ansehen
   // eines bereits erzeugten Assets bleibt fuer Leser offen.
   "generate_asset",
-  "preflight_asset",
   "start_person_research",
-  "preflight_person_research",
   "cancel_asset",
   // Ein einzelnes Memofeld schaerfen ist derselbe bezahlte Aufruf, nur klein.
   "sharpen_memo_field",
@@ -3615,46 +3612,6 @@ async function modelApiKey(model: string): Promise<string> {
   return provider === "deepseek" ? await getDeepseekKey() : await getGeminiKey();
 }
 
-// Read-only: never run a paid inference call to test credit availability.
-async function checkAssetBudget(kind: "memo" | "linkedin", answers: any, model: string) {
-  const admin = getAdminClient().schema("signal_layer");
-  const providers = [{ provider: modelProvider(model), model, optional: false }];
-  if (kind === "memo" && answers.images !== "upload") providers.push({ provider: "gemini", model: MEMO_SCENE_IMAGE_MODEL, optional: true });
-  const [history, failures, successes] = await Promise.all([
-    admin.from("generated_assets").select("id,answers,model").eq("kind", kind).eq("status", "done").order("created_at", { ascending: false }).limit(20),
-    admin.from("ai_usage_events").select("model,status,total_tokens,error_code,error_message,created_at").eq("status", "error").gte("created_at", new Date(Date.now()-6*3600000).toISOString()).order("created_at", { ascending: false }).limit(200),
-    admin.from("ai_usage_events").select("model,status,total_tokens,created_at").eq("status", "success").gte("created_at", new Date(Date.now()-6*3600000).toISOString()).order("created_at", { ascending: false }).limit(300),
-  ]);
-  const comparable = (history.data || []).filter((a: any) => a.model === model && (kind === "memo" || (a.answers?.asset_type === answers.asset_type && Number(a.answers?.slides || 1) === Number(answers.slides || 1))));
-  const costs = comparable.length ? await admin.from("ai_usage_events").select("asset_id,model,estimated_cost_usd").in("asset_id", comparable.map((a: any) => a.id)).limit(1000) : { data: [], error: null };
-  const checks = await Promise.all(providers.map(async plan => {
-    const label = plan.provider === "perplexity" ? "Perplexity" : plan.provider === "deepseek" ? "DeepSeek" : "Google Gemini";
-    const base = { provider: plan.provider, label, optional: plan.optional, estimated_usd: null as number | null };
-    try {
-      const key = await modelApiKey(plan.model);
-      if (!key) return { ...base, status: plan.optional ? "unknown" : "blocked", message: `Für ${label} ist kein API-Schlüssel hinterlegt.${plan.optional ? " Die optionale Bilderzeugung ist nicht verfügbar." : ""}` };
-      const sums = new Map<string, number>();
-      for (const row of costs.data || []) if (billingProvider(row.model) === plan.provider) sums.set(row.asset_id, (sums.get(row.asset_id) || 0) + Number(row.estimated_cost_usd || 0));
-      // Draft, revision and prompt reserve. For memos historical provider totals
-      // also include research; no unavailable provider price is presented as zero.
-      const draftCost = await modelCostFields(plan.model, { input: 30000, cachedInput: 0, output: plan.optional ? 0 : assetOutputTokenBudget(kind, answers) * 2, thinking: 0, total: 30000 + assetOutputTokenBudget(kind, answers) * 2 });
-      base.estimated_usd = conservativeForecast([...sums.values()], plan.optional ? null : (Number(draftCost.estimated_cost_usd) > 0 ? Number(draftCost.estimated_cost_usd) * 1.5 : null));
-      if (plan.provider === "deepseek") {
-        const response = await fetchWithTimeout("https://api.deepseek.com/user/balance", { headers: { Authorization: `Bearer ${key}` } }, 4500);
-        if (!response.ok) return { ...base, status: "warning", message: "DeepSeek-Guthaben konnte nicht abgefragt werden. Die Generierung kann an fehlendem Guthaben scheitern." };
-        const [cnyEur, usdEur] = await Promise.all([getCnyEurRate(), getUsdEurRate()]);
-        const verdict = balanceVerdict(await response.json(), base.estimated_usd, cnyEur && usdEur ? cnyEur / usdEur : NaN);
-        return { ...base, ...verdict, status: verdict.status === "unknown" ? "warning" : verdict.status };
-      }
-      if (recentBudgetFailure([...(failures.data || []), ...(successes.data || [])], plan.provider)) return { ...base, status: "warning", message: `${label} hat zuletzt einen Guthaben- oder Zahlungslimitfehler gemeldet. Das Restguthaben lässt sich mit diesem API-Schlüssel nicht direkt abfragen. Bitte das Anbieter-Konto prüfen.` };
-      return { ...base, status: "unknown", message: `${label} bietet mit diesem API-Schlüssel keine direkte Guthabenabfrage. ${failures.error || successes.error ? "Die letzten Anbieterfehler konnten nicht geprüft werden." : "Kein aktueller Guthabenfehler in den gespeicherten Aufrufen erkannt."}` };
-    } catch {
-      return { ...base, status: "warning", message: `${label} konnte nicht geprüft werden. Es ist unbekannt, ob das Guthaben ausreicht.` };
-    }
-  }));
-  return { checked_at: new Date().toISOString(), blocked: checks.some(c => !c.optional && c.status === "blocked"), warning: checks.some(c => c.status === "warning" || c.status === "blocked"), checks };
-}
-
 async function personResearchTarget(body: any) {
   const id = String(body.article_id || "");
   const mode = body.mode === "advanced" ? "advanced" : "simple";
@@ -3665,14 +3622,6 @@ async function personResearchTarget(body: any) {
   ]);
   if (article.error || signal.error) throw new Error("Personenkontext konnte nicht geladen werden");
   return resolvePersonTarget(article.data, signal.data, String(body.person_name || "").trim(), mode);
-}
-
-async function personResearchBudget() {
-  const checks = await Promise.all([
-    checkAssetBudget("linkedin", { asset_type: "single", slides: 1 }, PERSON_VERIFY_MODEL),
-    checkAssetBudget("linkedin", { asset_type: "single", slides: 1 }, PERSON_GOOGLE_MODEL),
-  ]);
-  return { blocked: checks.some(c => c.blocked), warning: checks.some(c => c.warning), checks: checks.flatMap(c => c.checks), checked_at: new Date().toISOString() };
 }
 
 // Resolve only the documented Google grounding redirect; never fetch a
@@ -12631,7 +12580,6 @@ Deno.serve(async (req: Request) => {
       }
 
       case "get_person_profile":
-      case "preflight_person_research":
       case "start_person_research": {
         if (!auth || !(await currentSignalLayerAccess(auth.userId))) return errorResponse(origin, "Signal Layer access required", 403);
         let target;
@@ -12640,15 +12588,12 @@ Deno.serve(async (req: Request) => {
           return errorResponse(origin, PERSON_UNCERTAIN, 500);
         }
         const db = getAdminClient().schema("signal_layer");
-        if (action === "preflight_person_research") return corsResponse(origin, await personResearchBudget());
         // Stale jobs are failed closed; a read never starts paid work.
         if (action === "start_person_research") await db.from("person_researches").update({ status: "error", stage: "manuell_pruefen", profile: null, failure_code: "worker_timeout", finished_at: new Date().toISOString() })
           .eq("article_id", target.articleId).eq("person_name", target.name).eq("company", target.company).eq("status", "running").lt("created_at", new Date(Date.now()-5*60000).toISOString());
         const { data: existing, error: lookupError } = await db.from("person_researches").select("id,person_name,company,status,stage,profile,created_at,finished_at").eq("article_id", target.articleId).eq("person_name", target.name).eq("company", target.company).order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (lookupError) return errorResponse(origin, PERSON_UNCERTAIN, 500);
         if (action === "get_person_profile" || existing?.status === "running") return corsResponse(origin, visiblePersonResearch(existing, target));
-        const budget = await personResearchBudget();
-        if (budget.blocked || (budget.warning && body.accept_budget_warning !== true)) return corsResponse(origin, { blocked: "provider_budget", preflight: budget });
         const { count } = await db.from("person_researches").select("id", { count: "exact", head: true }).eq("status", "running").gte("created_at", new Date(Date.now()-5*60000).toISOString());
         if (Number(count) >= 3) return errorResponse(origin, "Es laufen bereits drei Personenrecherchen. Bitte gleich erneut versuchen.", 429);
         const { data: job, error: insertError } = await db.from("person_researches").insert({ article_id: target.articleId, person_name: target.name, company: target.company, signal_role: target.role, mode: target.mode, created_by: auth.userId, prompt_version: PERSON_RESEARCH_VERSION }).select("id,person_name,company,status,stage,created_at").single();
@@ -12661,15 +12606,6 @@ Deno.serve(async (req: Request) => {
         }
         EdgeRuntime.waitUntil(assetUsageContext.run({ personResearchId: job.id, articleId: target.articleId, promptVersion: PERSON_RESEARCH_VERSION }, () => runPersonResearch(job.id, target)));
         return corsResponse(origin, visiblePersonResearch(job, target));
-      }
-
-      case "preflight_asset": {
-        const kind = String(body.kind || "");
-        if (!isAssetKind(kind)) return errorResponse(origin, "Ungültige Asset-Art");
-        const answers = normalizeAssetAnswers(kind, body.answers);
-        const config = await getPipelineConfig();
-        const model = kind === "memo" ? MEMO_DRAFT_MODEL : (config.ai.simple_model || SIMPLE_MODEL);
-        return corsResponse(origin, await checkAssetBudget(kind, answers, model));
       }
 
       case "generate_asset": {
@@ -12735,10 +12671,6 @@ Deno.serve(async (req: Request) => {
         // Das Memo schreibt Claude Opus ueber Perplexity, LinkedIn bleibt beim
         // Modell der Pipeline.
         const assetModel = assetKind === "memo" ? MEMO_DRAFT_MODEL : (assetConfig.ai.simple_model || SIMPLE_MODEL);
-        const budget = await checkAssetBudget(assetKind, assetAnswers, assetModel);
-        if (budget.blocked || (budget.warning && body.accept_budget_warning !== true)) {
-          return corsResponse(origin, { blocked: "provider_budget", preflight: budget });
-        }
         const assetKey = await modelApiKey(assetModel);
         if (!assetKey) return errorResponse(origin, `Für ${modelAnzeigeName(assetModel)} ist kein API-Schlüssel im Supabase Vault hinterlegt.`, 500);
 

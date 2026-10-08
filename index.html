@@ -647,7 +647,7 @@
   .roots-select--grid { position: static; }
   .roots-select--grid .roots-select-menu { left: 0; right: 0; width: auto; max-width: none; transform-origin: top center; }
   .roots-select-menu--grid { padding: 7px; }
-  .roots-select-menu-all { padding-right: 34px; }
+  .roots-select-menu:has(> .roots-select-search) > [role="listbox"] { padding-right: 36px; }
   .company-filter-tabs { padding-right: 36px; }
   .roots-select-search { position: absolute; top: 7px; right: 8px; z-index: 5; display: flex; align-items: center; gap: 0; width: 28px; height: 28px; box-sizing: border-box; padding: 5px; overflow: hidden; border: 1px solid transparent; border-radius: 8px; background: var(--surface, #fff); cursor: pointer; transition: width .26s cubic-bezier(.2,.8,.2,1), border-color .2s, box-shadow .2s, background .2s; }
   .roots-select-search i { order: 1; flex: none; width: 16px; text-align: center; font-size: .75rem; color: var(--brand, #206efb); }
@@ -2590,7 +2590,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261008-8';
+  import { initApp } from './app.js?v=20261008-9';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
