@@ -8,6 +8,13 @@ const sources=[{url:linkedin,title:'Nina Beispiel - Beispiel AG',text:'Nina Beis
 const google={identity_unique:true,current_company_match:true,current_role_verified:true,recent_information_found:true,linkedin_url:linkedin,uncertainties:[]};
 const raw=()=>({status:'verified',confidence:1,identity_unique:true,current_company_match:true,current_role_verified:true,name:target.name,company:target.company,linkedin_url:linkedin,uncertainties:[],facts:[{kind:'current_role',label:'Aktuelle Rolle',value:'CMO bei Beispiel AG',source_url:linkedin,quote:sources[0].text,verified:true},{kind:'recent_activity',label:'Aktuelle Markenstrategie',value:'Neue Markenstrategie vorgestellt',source_url:sources[1].url,quote:sources[1].text,verified:true}]});
 const validate=(r=raw(),g=google,s=sources,urls=[linkedin])=>validatePersonProfile(target,r,g,s,urls,now);
+test('official employer management plus a recent interview verifies Frida without Google or a LinkedIn profile',()=>{
+ const t={...target,name:'Frida Elisson',company:'Immowelt'};
+ const s=[{url:'https://www.immowelt.de/ueberuns/management',title:'immowelt Management',text:'Frida Elisson\n\nChief Marketing Officer',date:null},{url:'https://www.wuv.de/podcast/frida',title:'Immowelt-CMO Frida Elisson',text:'Frida Elisson ist seit Dezember 2025 CMO von Immowelt und dort Teil eines komplett neu aufgesetzten Führungsteams.',date:'2026-07-30'}];
+ const r={...raw(),name:t.name,company:t.company,linkedin_url:'',facts:[{kind:'current_role',label:'Aktuelle Rolle',value:'Chief Marketing Officer',source_url:s[0].url,quote:s[0].text,verified:true},{kind:'recent_activity',label:'Interview',value:'Aktuelles Fachinterview',source_url:s[1].url,quote:s[1].text,verified:true}]};
+ assert.equal(validatePersonProfile(t,r,null,s,[],now).name,'Frida Elisson');
+ assert.throws(()=>validatePersonProfile(t,r,null,s.map((v,i)=>i?{...v,date:'2025-01-01'}:v),[],now),{message:PERSON_UNCERTAIN});
+});
 test('signal supplies the name/company; arbitrary client targets and roles alone are rejected',()=>{
  const a={id:'a'},s={status:'signal',person_name:target.name,company:target.company,person_role:'CMO'};
  assert.deepEqual(resolvePersonTarget(a,s,target.name,'simple'),target);
@@ -42,8 +49,8 @@ test('unverified, expired, wrong-company and stale jobs never expose a profile',
  for(const variant of [{...row,status:'uncertain'},{...row,company:'Other'},{...row,profile:{...profile,expires_at:'2026-01-01'}},{...row,profile:{...profile,version:'old'}}])assert.equal(visiblePersonResearch(variant,target,now.getTime()).profile,null);
  assert.equal(visiblePersonResearch({status:'running',created_at:'2026-10-08T11:50:00Z'},target,now.getTime()).status,'error');
 });
-test('research never queries a bare name and aborts before further paid calls if LinkedIn proof is missing',async()=>{
- let calls=0;await assert.rejects(()=>researchPerson({stage:async()=>{},search:async input=>{calls++;assert(input.query.includes(target.name)&&input.query.includes(target.company));return {results:[]};},google:()=>{throw Error('must not call')},verify:()=>{throw Error('must not call')}},target),{message:PERSON_UNCERTAIN});assert.equal(calls,1);
+test('research always includes the company and checks employer sources when LinkedIn is absent',async()=>{
+ let calls=0;await assert.rejects(()=>researchPerson({stage:async()=>{},search:async input=>{calls++;assert((Array.isArray(input.query)?input.query:[input.query]).every(q=>q.includes(target.name)&&q.includes(target.company)));return {results:[]};},google:()=>{throw Error('must not call')},verify:()=>{throw Error('must not call')}},target),{message:PERSON_UNCERTAIN});assert.equal(calls,2);
 });
 test('full pipeline independently searches Google and then verifies all facts',async()=>{
  let search=0,verified=0;const stages=[];

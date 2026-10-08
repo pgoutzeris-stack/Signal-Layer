@@ -1,4 +1,4 @@
-import { personPillHtml, installPersonProfiles } from "./person-profile-ui.mjs?v=20261008-9";
+import { personPillHtml, installPersonProfiles } from "./person-profile-ui.mjs?v=20261008-10";
 import { matchesDropdownSearch, createDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs?v=20261008-4";
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";

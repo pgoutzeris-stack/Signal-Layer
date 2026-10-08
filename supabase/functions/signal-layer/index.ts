@@ -3646,9 +3646,13 @@ async function personGoogleSourceUrl(uri: string) {
 
 async function runPersonResearch(id: string, target: any) {
   const db = getAdminClient().schema("signal_layer");
+  // A durable start may be picked up by both the request and watchdog.
+  const { data: claimed, error: claimError } = await db.from("person_researches")
+    .update({ stage: "start_claimed", updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running").eq("stage", "start").select("id").maybeSingle();
+  if (claimError || !claimed) return;
   try {
     const [perplexityKey, googleKey] = await Promise.all([getPerplexityKey(), getGeminiKey()]);
-    if (!perplexityKey || !googleKey) throw new PersonUncertain("provider_key_missing");
+    if (!perplexityKey) throw new PersonUncertain("provider_key_missing");
     const stage = async (value: string) => {
       const { error } = await db.from("person_researches").update({ stage: value, updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
       if (error) throw new Error("Recherchefortschritt konnte nicht gespeichert werden");
@@ -3697,12 +3701,12 @@ async function runPersonResearch(id: string, target: any) {
         throw e;
       }
     };
-    const profile = await researchPerson({ stage, search, google, verify }, target);
+    const profile = await researchPerson({ stage, search, google: googleKey ? google : undefined, verify }, target);
     const { error } = await db.from("person_researches").update({ status: "verified", stage: "fertig", profile, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
     if (error) throw new Error("Verifiziertes Profil konnte nicht gespeichert werden");
   } catch (e) {
     const code = e instanceof PersonUncertain ? e.code : "research_unavailable";
-    const { error } = await db.from("person_researches").update({ status: e instanceof PersonUncertain ? "uncertain" : "error", stage: "manuell_pruefen", profile: null, failure_code: code, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
+    const { error } = await db.from("person_researches").update({ status: e instanceof PersonUncertain && !/provider|search_failed|verification_failed/.test(code) ? "uncertain" : "error", stage: "manuell_pruefen", profile: null, failure_code: code, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).eq("status", "running");
     if (error) console.error("Personenrecherche konnte nicht abgeschlossen werden", error.code);
   }
 }
@@ -9851,6 +9855,16 @@ Deno.serve(async (req: Request) => {
         // current Gemini batch before treating a source as truly stalled.
         const WATCHDOG_STALL_SECONDS = 360;
         const admin = getAdminClient();
+        // Resume only manually requested research whose initial dispatch was lost.
+        const { data: pendingPersons } = await admin.schema("signal_layer").from("person_researches")
+          .select("id,article_id,person_name,mode").eq("status", "running").eq("stage", "start").limit(2);
+        for (const row of pendingPersons || []) {
+          try {
+            const target = await personResearchTarget(row);
+            EdgeRuntime.waitUntil(assetUsageContext.run({ personResearchId: row.id, articleId: target.articleId, promptVersion: PERSON_RESEARCH_VERSION }, () => runPersonResearch(row.id, target)));
+          } catch { await admin.schema("signal_layer").from("person_researches").update({ status: "uncertain", failure_code: "missing_signal_context", finished_at: new Date().toISOString() }).eq("id", row.id).eq("stage", "start"); }
+        }
+
 
         // Steckbrief-Warteschlange. Der Worker stoesst sich nach jedem Profil
         // selbst wieder an; faellt ein Aufruf aus - Neustart, Zeitgrenze,

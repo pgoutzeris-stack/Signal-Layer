@@ -261,8 +261,9 @@
   .pr-facts summary{cursor:pointer;color:var(--brand);}
   .pr-facts blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid #bfd5fa;white-space:pre-wrap;}
   .pr-facts a{color:var(--brand);}
-  .pr-actions{margin-top:20px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;}
-  .pr-actions small{font-size:.7rem;color:var(--muted);max-width:360px;line-height:1.5;}
+  .pr-actions{margin-top:24px;display:flex;align-items:center;justify-content:center;}
+  .pr-actions .cp-pill--action{min-width:210px;min-height:46px;justify-content:center;padding:12px 24px;border-radius:999px;background:#fff;color:var(--brand,#206efb);border:1px solid var(--line,#dce6f5);font-size:.85rem;font-weight:700;box-shadow:0 4px 16px #14386b0c;transition:transform .18s,box-shadow .18s,border-color .18s;}
+  .pr-actions .cp-pill--action:hover{background:#fff;border-color:var(--brand,#206efb);box-shadow:0 6px 20px #206efb1a;transform:translateY(-1px);}
   .pr-actions button[disabled]{opacity:.55;cursor:wait;}
   .pr-error{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid #f0d8ae;border-radius:12px;color:#765321;background:#fffaf0;}
   .cp-overlay { position: fixed; inset: 0; background: rgba(13,24,43,.62); backdrop-filter: blur(7px); display: none; z-index: 100100; padding: 2.5vh 2vw; overflow: auto; }
@@ -2590,7 +2591,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261008-9';
+  import { initApp } from './app.js?v=20261008-10';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
