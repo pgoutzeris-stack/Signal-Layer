@@ -100,7 +100,13 @@ export function validatePersonProfile(target: PersonTarget, raw: any, google: an
     const host=new URL(url).hostname.split(".");
     return host.slice(/^(co\.uk|com\.au|co\.jp)$/.test(host.slice(-2).join("."))?-3:-2).join(".");
   }));
-  if(!role)throw new PersonUncertain("current_role_missing");
+  if(!role) {
+    const candidate=raw.facts.find((f:any)=>f.kind==="current_role");
+    const source=candidate&&sources.find(s=>sourceUrl(s.url)===sourceUrl(candidate.source_url));
+    const quote=String(candidate?.quote||"").trim().replace(/\s+/g," ");
+    const reason=!candidate?"kind":!source?"source":!source.text.replace(/\s+/g," ").includes(quote)?"quote":quote.length<20?"short_quote":!roleInQuote(String(candidate.value||""),quote,target.company)?"title":"freshness_or_fields";
+    throw new PersonUncertain("current_role_missing_"+reason);
+  }
   if(!recent)throw new PersonUncertain("recent_information_missing");
   if(domains.size<2)throw new PersonUncertain("independent_sources_missing");
   if(!primaries.some(s=>factSources.has(s.url)))throw new PersonUncertain("primary_fact_missing");
