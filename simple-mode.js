@@ -1,3 +1,4 @@
+import { matchesDropdownSearch } from "./dropdown-search.mjs?v=20261008-1";
 // ---------------------------------------------------------------------------
 // Signal Layer - Frontend des einfachen Modus ("Simple")
 //
@@ -50,6 +51,7 @@ function cacheEls() {
     companyFilterMenu: el("simple-company-filter-menu"),
     companyFilterHelp: el("simple-company-filter-help"),
     companyFilterOptions: el("simple-company-filter-options"),
+    companyFilterSearch: el("simple-company-filter-search"),
     companyFilterReset: el("simple-company-filter-reset"),
     sort: el("simple-sort"),
     version: el("simple-version"),
@@ -193,7 +195,7 @@ function companyMatches(signal) {
 function renderCompanyFilter() {
   if (!els.companyFilterOptions) return;
   const kind = companyFilterState.kind;
-  const options = companyFilterIndex[kind];
+  const options = companyFilterIndex[kind].filter((name) => matchesDropdownSearch(name, els.companyFilterSearch?.value));
   els.companyFilter.querySelectorAll("[data-company-class]").forEach((button) => {
     const active = button.dataset.companyClass === kind;
     button.classList.toggle("active", active);
@@ -218,7 +220,7 @@ function renderCompanyFilter() {
         <span>${esc(name)}</span>
       </button>`;
     }).join("")
-    : `<div class="company-filter-empty">Für diese Klasse wurden im geladenen Bestand noch keine Unternehmen erkannt.</div>`;
+    : `<div class="company-filter-empty">${els.companyFilterSearch?.value ? "Keine Unternehmen gefunden." : "Für diese Klasse wurden im geladenen Bestand noch keine Unternehmen erkannt."}</div>`;
 }
 
 function refreshCompanyFilter(all) {
@@ -461,11 +463,13 @@ function bindUi() {
     renderLane("sales");
   };
   [els.topicFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  els.companyFilterSearch?.addEventListener("input", renderCompanyFilter);
   els.companyFilterTrigger?.addEventListener("click", (event) => {
     event.stopPropagation();
     document.querySelectorAll(".roots-select.open").forEach((item) => item !== els.companyFilter && item.classList.remove("open"));
     const open = els.companyFilter.classList.toggle("open");
     els.companyFilterTrigger.setAttribute("aria-expanded", String(open));
+    if (open) els.companyFilterSearch?.focus();
   });
   els.companyFilterMenu?.addEventListener("click", (event) => {
     event.stopPropagation();

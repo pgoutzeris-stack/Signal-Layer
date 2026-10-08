@@ -256,7 +256,7 @@ export const MEMO_AUFBAU = `Seite 1, Cover: Die Titelseite entscheidet in zehn S
 - Ein Titel, der Potenzial oder Herausforderung des Adressaten in diesem Thema benennt, kurz.
 - Ein Satz darunter, wie der Adressat das Potenzial hebt.
 - Drei Schlüssel in fester Reihenfolge: Herausforderung heute, was Vorreiter richtig machen, Potenzial mit dem ROOTS-Hebel. Sie nehmen die drei Innenseiten vorweg.
-title (Titel (H1)): Potenzial oder Herausforderung des Adressaten in diesem Thema, wie im Deichmann-Memo „Optimierungspotenziale in der Eigenmarkenstrategie“. Kein Ist-Zustand, keine Erfolgsmeldung, nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht.
+title (Titel (H1)): Die zentrale unternehmerische Aufgabe, das Ziel oder die Hürde des Adressaten: etwa Expansion, profitables Wachstum, Kundenbindung, Marktposition oder operative Wirksamkeit. Benenne das konkrete Thema und den Adressaten. Profil, Handschrift oder Sichtbarkeit allein sagen nicht, wozu das Memo dient; verbinde sie mit dem belegten Ziel. Kein Ist-Zustand, keine Erfolgsmeldung, keine nacherzählte Meldung, kein Leistungsname als Titel. Bei einer Wie-Formulierung bleibt das Ziel offen: „Wie [Firma] [konkretes Ziel] erreichen kann“. Keine unbelegten Expansions- oder Ergebnisversprechen. Der Titel steht in 44 px und passt in höchstens zwei Zeilen.
 standfirst (Subtitel (H2)): Ein Satz, der den Titel auflöst: wie der Adressat das Potenzial hebt.
 summary_0 (Feature 1): Die Herausforderung heute: Lage des Adressaten und was im Weg steht. Nimmt Seite 2 vorweg.
 summary_1 (Feature 2): Was die Benchmarks gemeinsam richtig machen. Nimmt Seite 3 vorweg.
@@ -383,7 +383,7 @@ about_fit2: Eigenmarkenstrategie als Teil der Markenpositionierung gehört zu un
  */
 export const MEMO_SCHEMA_TEXTE = {
   felder: {
-    title: "Potenzial oder Herausforderung des Adressaten in diesem Thema, wie im Deichmann-Memo „Optimierungspotenziale in der Eigenmarkenstrategie“. Kein Ist-Zustand, keine Erfolgsmeldung, nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht. 4 bis 12 Wörter, höchstens 50 Zeichen.",
+    title: "Die zentrale unternehmerische Aufgabe, das Ziel oder die Hürde des Adressaten: etwa Expansion, profitables Wachstum, Kundenbindung, Marktposition oder operative Wirksamkeit. Benenne das konkrete Thema und den Adressaten. Profil, Handschrift oder Sichtbarkeit allein sagen nicht, wozu das Memo dient; verbinde sie mit dem belegten Ziel. Kein Ist-Zustand, keine Erfolgsmeldung, keine nacherzählte Meldung, kein Leistungsname als Titel. Bei einer Wie-Formulierung bleibt das Ziel offen: „Wie [Firma] [konkretes Ziel] erreichen kann“. Keine unbelegten Expansions- oder Ergebnisversprechen. Der Titel steht in 44 px und passt in höchstens zwei Zeilen. 4 bis 12 Wörter, höchstens 50 Zeichen.",
     standfirst: "Ein Satz, der den Titel auflöst: wie der Adressat das Potenzial hebt. 5 bis 18 Wörter, höchstens 90 Zeichen.",
     summary_0: "Die Herausforderung heute: Lage des Adressaten und was im Weg steht. Nimmt Seite 2 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
     summary_1: "Was die Benchmarks gemeinsam richtig machen. Nimmt Seite 3 vorweg. 5 bis 14 Wörter, höchstens 105 Zeichen.",
@@ -691,12 +691,21 @@ export function memoQualitaetsBefunde(
   if (frei("title") && String(werte.title || "").includes(":")) {
     befunde.push(`title enthält einen Doppelpunkt („${werte.title}“). Formuliere den Titel als einen Gedanken ohne Doppelpunkt.`);
   }
+  if (frei("title")) {
+    const title = String(werte.title || "").trim();
+    if (/^wie\b/i.test(title) && /\b(?:gibt|gewinnt|erreicht|löst|treibt|führt|stärkt|schafft)\s*[?!.]?$/i.test(title)) {
+      befunde.push(`title beschreibt eine bereits erreichte Lösung („${title}“). Formuliere die offene unternehmerische Aufgabe, etwa „Wie [Firma] [konkretes Ziel] erreichen kann“, oder einen präzisen Thementitel.`);
+    }
+    const vague = /\b(?:eigen(?:es|e|en|em) profil|sichtbarer werden|potenziale nutzen|zukunft gestalten|erfolg gewinnen)\b/i.test(title);
+    const goal = /\b(?:expansion|wachstum\w*|profitab\w*|rendite|marge\w*|kundenbindung|marktposition|marktanteil\w*|differenzierung|positionierung|effizienz|wirksamkeit|produktivitat|produktivität|prozess\w*|lizenz\w*|wettbewerb\w*)\b/i.test(title);
+    if (vague && !goal) befunde.push(`title bleibt bei einem vagen Mittel („${title}“). Benenne die belegte unternehmerische Aufgabe, das konkrete Ziel oder den Zielkonflikt; Profil und Sichtbarkeit gehören als Mechanismus in standfirst.`);
+  }
   if (frei("title") && firma) {
     const titel = String(werte.title || "").trim();
     const name = firma.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // Firma plus kleingeschriebenes Wort ist Firma plus Verb: „Intersport führt …“.
     // Das beschreibt, was schon passiert, nicht was offen ist.
-    if (new RegExp(`^${name}s?\\s+[a-zäöüß]`, "u").test(titel) && !titel.endsWith("?")) {
+    if (new RegExp(`^${name}s?\\s+(?:führt|baut|setzt|holt|ernennt|eröffnet|übernimmt|steigert|gibt|gewinnt|erreicht)\\b`, "iu").test(titel) && !titel.endsWith("?") && !/\b(?:kann|könnte|können|könnten)\b/i.test(titel)) {
       befunde.push(`title beschreibt einen Ist-Zustand („${titel}“). Benenne Potenzial oder Herausforderung von ${firma} in diesem Thema, wie „Optimierungspotenziale in der Eigenmarkenstrategie“ im Deichmann-Memo.`);
     }
     if (!klein(titel).includes(firma.toLowerCase())) {
@@ -3226,17 +3235,19 @@ Das Memo überzeugt eine Entscheiderin oder einen Entscheider, mit ROOTS zu spre
 </ziel>
 <hebel>
 Zuerst roots_anschluss, dann roots_leistung, dann begründung. Das ist die Übersetzung, die ROOTS schon geleistet hat. Daraus entsteht das Memo.
-title sagt die Herausforderung in der Sprache des Falls (Häuser, Profile, Handschrift, Kanal, Portfolio, Positionierung), nicht den Produktnamen (Markenstrategie, Marketing Audit, Brand Audit) und nicht Beratungsjargon wie „Hebel ziehen“.
+title nennt die unternehmerische Aufgabe oder das belegte Ziel des Falls. Häuser, Profile und Handschrift sind Mittel; der Titel sagt, welchem Ziel sie dienen: etwa Expansion, profitables Wachstum, Marktposition, Kundenbindung oder operative Wirksamkeit. Kein Produktname als Subjekt und kein Beratungsjargon wie „Hebel ziehen“.
 Die drei benchmarks zeigen Benchmarks, die denselben ROOTS-Hebel schon gezogen haben — denselben Mechanismus, nicht dieselbe Nachricht (Sanierung, Übernahme, Personalie). Nur Erfolge: die Handlung hat gewirkt. Keine Flops, Rücknahmen oder Sales-Drops.
 Die drei potentials übersetzen genau diese Leistung auf den Adressaten. about_fit nennt roots_leistung erst am Schluss.
 </hebel>
 <titel>
 Das Cover folgt der Logik des Deichmann-Memos, nicht seinem Thema: erst die Chance oder Herausforderung des Adressaten, dann wie sie gehoben wird, dann was ROOTS daran bewegt. Den Stoff hat die Signalprüfung schon hinterlegt: roots_anschluss nennt im ersten Satz das belegte Ziel, Problem, Risiko oder die Chance und im zweiten, was ROOTS konkret tut; anlass nennt die offene Frage oder Hürde.
 ${nennen
-    ? `title benennt das Potenzial oder die Herausforderung von ${firma} in diesem Thema, mit ${firma} im Titel. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung, Thema, Adressat. Nur kürzer, höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema] für ${firma}“, „Wie ${firma} [Ziel] erreicht“, „Wie kann ${firma} [Ziel]?“, „[Thema] zwischen [Hürde] und [Chance] bei ${firma}“, „Vom [heute] zum [Ziel]“, wenn klar bleibt, dass das Ziel noch vor ${firma} liegt. Kein Doppelpunkt im Titel.`
-    : "title benennt das Potenzial oder die Herausforderung in diesem Thema. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung plus Thema. Höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema]“, „Chancen und Hürden in [Thema] für [Branche]“, „Wie [Branche] [Ziel] erreicht“, „Vom [heute] zum [Ziel]“. Kein Doppelpunkt im Titel."}
+    ? `title benennt das Potenzial oder die Herausforderung von ${firma} in diesem Thema, mit ${firma} im Titel. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung, Thema, Adressat. Nur kürzer, höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema] für ${firma}“, „Wie ${firma} [konkretes Ziel] erreichen kann“, „Wie kann ${firma} [Ziel]?“, „[Thema] zwischen [Hürde] und [Chance] bei ${firma}“, „Vom [heute] zum [Ziel]“, wenn klar bleibt, dass das Ziel noch vor ${firma} liegt. Kein Doppelpunkt im Titel.`
+    : "title benennt das Potenzial oder die Herausforderung in diesem Thema. Vorbild ist die Machart von „Optimierungspotenziale in der Eigenmarkenstrategie und ihre strategischen Implikationen für Deichmann“: Potenzial oder Herausforderung plus Thema. Höchstens 50 Zeichen. Formen, nicht abschreiben: „Potenziale in [Thema]“, „Chancen und Hürden in [Thema] für [Branche]“, „Wie [Branche] [konkretes Ziel] erreichen kann“, „Vom [heute] zum [Ziel]“. Kein Doppelpunkt im Titel."}
 Schwach: ein Ist-Zustand oder eine Erfolgsmeldung („${nennen ? firma : "X"} führt …“, „… setzt auf …“, „… baut … aus“). Sie sagt, was schon passiert, nicht was offen ist. Ebenso schwach: eine Pflicht-Schablone („… muss …“, „… braucht …“), die nacherzählte Meldung, die ROOTS-Leistung als Subjekt („Markenstrategie wird zum Hebel …“), Beratungsjargon ohne Thema („Hebel ziehen“), ein Slogan ohne Aufgabe${nennen ? `, ${firma} nur als Briefkopf` : ""}.
 Stark: jemand liest den Titel und weiß, welche Chance oder welche Hürde das Memo behandelt, ohne die Nachricht zu kennen.
+Der Titel benennt das unternehmerische Ziel oder die zentrale Entscheidung, unabhängig von Thema und Branche. „Ein eigenes Profil geben“, „sichtbarer werden“, „Potenziale nutzen“, „Zukunft gestalten“ oder „Erfolg gewinnen“ allein sind zu vage. Benenne wozu: Expansion in einen belegten Markt, profitables Wachstum einer Kategorie, Kundenbindung, eine klare Marktposition, ein effizienterer Prozess oder ein konkreter Zielkonflikt. Verwende nur Ziele, die anlass, roots_anschluss, Marktbelege oder der Memo-Inhalt tragen; erfinde keine Expansionspläne.
+Wenn title mit „Wie“ beginnt, bezeichnet er eine noch offene Aufgabe („Wie [Firma] [konkretes Ziel] erreichen kann“), keine bereits erreichte Lösung („Wie [Firma] … gibt/erreicht/gewinnt“). Ein präziser Thementitel wie „Wachstumspfade für [Firma]s [Kategorie]“ ist ebenfalls möglich. standfirst erläutert danach den Mechanismus; title und standfirst wiederholen nicht dieselbe Aussage.
 standfirst löst den Titel auf: wie der Adressat das Potenzial hebt, in einem Satz, wie „Wie Deichmanns Eigenmarken ihr volles Wachstumspotenzial entfalten.“ Passen die drei Hebel von Seite 4 in Stichworten dazu, gehören sie hinein.
 summary_0 ist die Herausforderung heute (Lage des Adressaten und was im Weg steht), summary_1 der Insight aus Markt und Vorreitern, summary_2 das Potenzial mit dem Hebel, an dem ROOTS ansetzt.
 market_title ist ein Befund mit Verb, kein Etikett: nicht „Sportartikelmarkt im Umbruch“, nicht „Markt: Chancen und Risiken“. Muster: „Eigenmarken stehen vor der nächsten Entwicklungsstufe“, „Die PPWR macht Verpackungsdaten zur Pflichtaufgabe“.

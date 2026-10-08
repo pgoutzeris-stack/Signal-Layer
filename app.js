@@ -1,3 +1,4 @@
+import { matchesDropdownSearch, createDropdownSearch } from "./dropdown-search.mjs?v=20261008-1";
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
@@ -5,11 +6,11 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260930-1";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20260930-1";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261008-2";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20260930-1";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261008-2";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20260830-1330";
@@ -413,6 +414,7 @@ function cacheEls() {
   els.signalCompanyFilterMenu = document.getElementById("signal-company-filter-menu");
   els.signalCompanyFilterHelp = document.getElementById("signal-company-filter-help");
   els.signalCompanyFilterOptions = document.getElementById("signal-company-filter-options");
+  els.signalCompanyFilterSearch = document.getElementById("signal-company-filter-search");
   els.signalCompanyFilterReset = document.getElementById("signal-company-filter-reset");
   els.signalSourceFilter = document.getElementById("signal-source-filter");
   els.signalVersion = document.getElementById("signal-version");
@@ -1502,7 +1504,7 @@ function advancedCompanyMatches(finding) {
 function renderAdvancedCompanyFilter() {
   if (!els.signalCompanyFilterOptions) return;
   const kind = signalCompanyFilterState.kind;
-  const options = signalCompanyFilterIndex[kind];
+  const options = signalCompanyFilterIndex[kind].filter((name) => matchesDropdownSearch(name, els.signalCompanyFilterSearch?.value));
   els.signalCompanyFilter.querySelectorAll("[data-advanced-company-class]").forEach((button) => {
     const active = button.dataset.advancedCompanyClass === kind;
     button.classList.toggle("active", active);
@@ -1523,7 +1525,7 @@ function renderAdvancedCompanyFilter() {
         <span>${escapeHtml(name)}</span>
       </button>`;
     }).join("")
-    : `<div class="company-filter-empty">Für diese Klasse wurden im geladenen Bestand noch keine Unternehmen erkannt.</div>`;
+    : `<div class="company-filter-empty">${els.signalCompanyFilterSearch?.value ? "Keine Unternehmen gefunden." : "Für diese Klasse wurden im geladenen Bestand noch keine Unternehmen erkannt."}</div>`;
 }
 
 function refreshAdvancedCompanyFilter() {
@@ -2301,6 +2303,26 @@ function enhanceHeaderSelects() {
     const isGrid = Boolean(selection);
     menu.classList.toggle("roots-select-menu--grid", isGrid);
     wrapper.classList.toggle("roots-select--grid", isGrid);
+    const searchable = isGrid && /source|topic|company/.test(select.id);
+    const search = searchable ? createDropdownSearch(
+      /source/.test(select.id) ? "Quellen suchen…" : /topic/.test(select.id) ? "Themen suchen…" : "Unternehmen suchen…",
+      () => render(),
+    ) : null;
+    const header = document.createElement("div");
+    header.className = "roots-select-menu-header";
+    const allHost = document.createElement("div");
+    allHost.className = "roots-select-menu-all";
+    const optionsHost = document.createElement("div");
+    if (search) {
+      menu.setAttribute("role", "dialog");
+      trigger.setAttribute("aria-haspopup", "dialog");
+      optionsHost.setAttribute("role", "listbox");
+      optionsHost.setAttribute("aria-multiselectable", "true");
+      header.append(allHost, search.wrap);
+      menu.append(header, optionsHost);
+    }
+    menu.addEventListener("click", (event) => event.stopPropagation());
+
 
     const summaryLabel = () => {
       const values = selection || [];
@@ -2386,20 +2408,34 @@ function enhanceHeaderSelects() {
       fillInfo(info, isGrid ? "" : (gewaehlt?.info || (gewaehlt?.date ? `Stand vom ${gewaehlt.date}` : "")));
       const options = [...select.options];
       if (!isGrid) { menu.replaceChildren(...options.map(makeOption)); return; }
-      menu.replaceChildren();
+      const host = search ? optionsHost : menu;
+      host.replaceChildren();
+      allHost.replaceChildren();
       const allOption = options.find((option) => option.value === "all");
-      const selectable = options.filter((option) => option.value !== "all" && option.dataset.empty !== "1");
-      const emptyOptions = options.filter((option) => option.dataset.empty === "1");
+      const selectable = options.filter((option) => option.value !== "all" && option.dataset.empty !== "1" && matchesDropdownSearch(option.textContent, search?.input.value));
+      const emptyOptions = options.filter((option) => option.dataset.empty === "1" && matchesDropdownSearch(option.textContent, search?.input.value));
       if (allOption) {
         const button = makeOption(allOption);
         button.classList.add("roots-select-option--full");
-        menu.append(button);
+        if (search) {
+          button.removeAttribute("role");
+          button.removeAttribute("aria-selected");
+          button.setAttribute("aria-pressed", String(selection.length === 0));
+          allHost.append(button);
+        } else host.append(button);
+      }
+      if (!selectable.length && !emptyOptions.length && search?.input.value) {
+        const empty = document.createElement("div");
+        empty.className = "company-filter-empty";
+        empty.setAttribute("role", "status");
+        empty.textContent = "Keine Einträge gefunden.";
+        host.append(empty);
       }
       if (selectable.length) {
         const grid = document.createElement("div");
         grid.className = "roots-select-grid";
         grid.append(...selectable.map(makeOption));
-        menu.append(grid);
+        host.append(grid);
       }
       if (emptyOptions.length) {
         const head = document.createElement("div");
@@ -2408,7 +2444,7 @@ function enhanceHeaderSelects() {
         const grid = document.createElement("div");
         grid.className = "roots-select-grid";
         grid.append(...emptyOptions.map(makeOption));
-        menu.append(head, grid);
+        host.append(head, grid);
       }
     };
     trigger.addEventListener("click", (event) => {
@@ -2416,10 +2452,11 @@ function enhanceHeaderSelects() {
       document.querySelectorAll(".roots-select.open").forEach((item) => item !== wrapper && item.classList.remove("open"));
       const open = wrapper.classList.toggle("open");
       trigger.setAttribute("aria-expanded", String(open));
+      if (open) search?.input.focus();
     });
     select.addEventListener("change", render);
     new MutationObserver(render).observe(select, { childList: true, subtree: true });
-    wrapper.addEventListener("keydown", (event) => { if (event.key === "Escape") close(); });
+    wrapper.addEventListener("keydown", (event) => { if (event.key === "Escape") { close(); trigger.focus(); } });
     document.addEventListener("click", close);
     render();
   });
@@ -4350,11 +4387,13 @@ function bindUi() {
   [els.signalArticleTypeFilter, els.signalSourceFilter, els.signalSort].forEach((control) =>
     control.addEventListener("change", updateSignalView)
   );
+  els.signalCompanyFilterSearch?.addEventListener("input", renderAdvancedCompanyFilter);
   els.signalCompanyFilterTrigger?.addEventListener("click", (event) => {
     event.stopPropagation();
     document.querySelectorAll(".roots-select.open").forEach((item) => item !== els.signalCompanyFilter && item.classList.remove("open"));
     const open = els.signalCompanyFilter.classList.toggle("open");
     els.signalCompanyFilterTrigger.setAttribute("aria-expanded", String(open));
+    if (open) els.signalCompanyFilterSearch?.focus();
   });
   els.signalCompanyFilterMenu?.addEventListener("click", (event) => {
     event.stopPropagation();

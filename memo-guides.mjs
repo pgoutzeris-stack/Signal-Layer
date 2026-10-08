@@ -75,7 +75,7 @@ export const MEMO_SECTIONS = [
     fields: [
       {
         key: "title", label: "Titel (H1)", art: "these", rows: 2, min: 4, max: 12, zeichen: 50,
-        hilfe: "Potenzial oder Herausforderung des Adressaten in diesem Thema, wie im Deichmann-Memo „Optimierungspotenziale in der Eigenmarkenstrategie“. Kein Ist-Zustand, keine Erfolgsmeldung, nicht die Meldung, nicht der Name der ROOTS-Leistung. Der Titel steht in 44 px, mehr als zwei Zeilen passen nicht.",
+        hilfe: "Die zentrale unternehmerische Aufgabe, das Ziel oder die Hürde des Adressaten: etwa Expansion, profitables Wachstum, Kundenbindung, Marktposition oder operative Wirksamkeit. Benenne das konkrete Thema und den Adressaten. Profil, Handschrift oder Sichtbarkeit allein sagen nicht, wozu das Memo dient; verbinde sie mit dem belegten Ziel. Kein Ist-Zustand, keine Erfolgsmeldung, keine nacherzählte Meldung, kein Leistungsname als Titel. Bei einer Wie-Formulierung bleibt das Ziel offen: „Wie [Firma] [konkretes Ziel] erreichen kann“. Keine unbelegten Expansions- oder Ergebnisversprechen. Der Titel steht in 44 px und passt in höchstens zwei Zeilen.",
         beispiel: "Vom Preisargument zur eigenständigen Marke",
       },
       {

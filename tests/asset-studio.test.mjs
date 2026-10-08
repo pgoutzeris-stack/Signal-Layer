@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20260930-1");
-  assert.match(indexHtml, /app\.js\?v=20260930-1/);
+  assert.equal(studioVersion, "20261008-2");
+  assert.match(indexHtml, /app\.js\?v=20261008-2/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4825,4 +4825,27 @@ test("Lauf im Hintergrund: angeheftete Meldung mit Balken, Klick oeffnet die Liv
   assert.match(studio, /if \(assetId\) hintergrundLoesen\(assetId\);/);
   // Schliessen, "Im Hintergrund", Fragebogen und Entwuerfe heften den Lauf an.
   assert.equal((studio.match(/inDenHintergrund\(\);/g) || []).length, 3);
+});
+
+test('Memo cover rejects completed Wie stories and unqualified profile language across sectors',()=>{
+  const answers=backend.normalizeAssetAnswers('memo',{company_text:'Aeffe'});
+  const memo=backend.normalizeAssetPayload('memo',JSON.stringify(memoRoh()),answers);
+  for(const title of ['Wie Aeffe seinen Häusern ein eigenes Profil gibt','Wie Aeffe seine Ziele erreicht']){
+    assert.match(backend.memoQualitaetsBefunde({...memo,title},{firma:'Aeffe'}).join('\n'),/title beschreibt eine bereits erreichte Lösung/);
+  }
+  assert.match(backend.memoQualitaetsBefunde({...memo,title:'Wie Aeffe ein eigenes Profil geben kann'},{firma:'Aeffe'}).join('\n'),/title bleibt bei einem vagen Mittel/);
+  for(const title of ['Wachstumspfade für Aeffes Luxusmarken','Wie Aeffe seine China-Expansion vorantreiben kann','Aeffe kann seine Luxusmarken profitabel ausrichten']){
+    assert.doesNotMatch(backend.memoQualitaetsBefunde({...memo,title},{firma:'Aeffe'}).join('\n'),/^title /m);
+  }
+  assert.match(backend.memoQualitaetsBefunde({...memo,title:'Wie Müller seine Ziele erreicht'},{firma:'Müller'}).join('\n'),/title beschreibt eine bereits erreichte Lösung/);
+});
+
+test('Each ROOTS logo SVG resolves its own unique mask and path references',async()=>{
+  const {MEMO_TEMPLATE}=await import('../memo-template.js');
+  const allIds=[];
+  for(const [svg] of MEMO_TEMPLATE.matchAll(/<svg class="em-roots-logo"[\s\S]*?<\/svg>/g)){
+    const ids=[...svg.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);allIds.push(...ids);
+    for(const [,ref]of svg.matchAll(/(?:url\(#|xlink:href="#)([^)"]+)/g))assert.ok(ids.includes(ref),`missing logo reference ${ref}`);
+  }
+  assert.equal(new Set(allIds).size,allIds.length);
 });

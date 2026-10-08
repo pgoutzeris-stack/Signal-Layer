@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "app.js"
+      - "dropdown-search.mjs"
+      - "tests/dropdown-search.test.mjs"
       - "fehler-klartext.mjs"
       - "paywall-pill.mjs"
       - "simple-mode.js"
@@ -17,6 +19,8 @@ on:
   pull_request:
     paths:
       - "app.js"
+      - "dropdown-search.mjs"
+      - "tests/dropdown-search.test.mjs"
       - "fehler-klartext.mjs"
       - "paywall-pill.mjs"
       - "simple-mode.js"
@@ -41,6 +45,7 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check app.js
+          node --check dropdown-search.mjs
           node --check fehler-klartext.mjs
           node --check paywall-pill.mjs
           node --check simple-mode.js
@@ -48,4 +53,4 @@ jobs:
           node --check simple-view-state.mjs
           node --input-type=module -e "import('./simple-mode.js')"
       - name: Test startup status states
-        run: node --test tests/frontend-status.test.mjs tests/frontend-simple-view.test.mjs
+        run: node --test tests/frontend-status.test.mjs tests/frontend-simple-view.test.mjs tests/dropdown-search.test.mjs

@@ -630,6 +630,15 @@
   .roots-select--grid { position: static; }
   .roots-select--grid .roots-select-menu { left: 0; right: 0; width: auto; max-width: none; transform-origin: top center; }
   .roots-select-menu--grid { padding: 7px; }
+  .roots-select-menu-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 2px 7px; border-bottom: 1px solid var(--line); margin-bottom: 5px; }
+  .roots-select-menu-header--company { justify-content: flex-end; }
+  .roots-select-menu-all { min-width: 0; flex: 1; }
+  .roots-select-search { display: flex; align-items: center; gap: 7px; width: 210px; max-width: 55%; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); }
+  .roots-select-search:focus-within { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-light); }
+  .roots-select-search i { font-size: .68rem; }
+  .roots-select-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: .72rem; }
+  @media (max-width: 480px) { .roots-select-menu-header { flex-wrap: wrap; } .roots-select-search { width: 100%; max-width: 100%; } }
+
   .roots-select-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; max-height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--brand) transparent; }
   @media (min-width: 720px) { .roots-select-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (min-width: 1000px) { .roots-select-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -2162,6 +2171,7 @@
                 <span id="signal-company-filter-label">Unternehmen</span><i class="fa-solid fa-chevron-down"></i>
               </button>
               <div class="roots-select-menu roots-select-menu--grid" id="signal-company-filter-menu" role="dialog" aria-label="Unternehmen filtern">
+                <div class="roots-select-menu-header roots-select-menu-header--company"><label class="roots-select-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input id="signal-company-filter-search" type="search" placeholder="Unternehmen suchen…" aria-label="Unternehmen suchen" autocomplete="off"></label></div>
                 <div class="company-filter-tabs" role="tablist" aria-label="Unternehmensklasse">
                   <button type="button" class="company-filter-tab active" data-advanced-company-class="tier1" role="tab" aria-selected="true">Tier 1</button>
                   <button type="button" class="company-filter-tab" data-advanced-company-class="company" role="tab" aria-selected="false">Company</button>
@@ -2248,7 +2258,8 @@
                   <span id="simple-company-filter-label">Unternehmen</span><i class="fa-solid fa-chevron-down"></i>
                 </button>
                 <div class="roots-select-menu roots-select-menu--grid" id="simple-company-filter-menu" role="dialog" aria-label="Unternehmen filtern">
-                  <div class="company-filter-tabs" role="tablist" aria-label="Unternehmensklasse">
+                  <div class="roots-select-menu-header roots-select-menu-header--company"><label class="roots-select-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input id="simple-company-filter-search" type="search" placeholder="Unternehmen suchen…" aria-label="Unternehmen suchen" autocomplete="off"></label></div>
+                <div class="company-filter-tabs" role="tablist" aria-label="Unternehmensklasse">
                     <button type="button" class="company-filter-tab active" data-company-class="tier1" role="tab" aria-selected="true">Tier 1</button>
                     <button type="button" class="company-filter-tab" data-company-class="company" role="tab" aria-selected="false">Company</button>
                   </div>
@@ -2560,7 +2571,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20260930-1';
+  import { initApp } from './app.js?v=20261008-2';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
