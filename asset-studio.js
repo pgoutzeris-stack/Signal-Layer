@@ -1,3 +1,4 @@
+import { confirmAssetBudget } from "./asset-budget-ui.mjs?v=20261008-6";
 import { draftMetadataHtml, bindDraftUsagePopovers } from "./draft-usage.mjs?v=20261008-3";
 // Asset Studio: Fragebogen, Entwurf und Werkbank für LinkedIn-Assets und
 // Ansprachen. Das Modul baut sein Overlay selbst und bringt die Stile
@@ -830,7 +831,10 @@ const CHROME_CSS = `
   box-shadow:0 8px 24px rgba(15,23,42,.16);
   place-items:center;
 }
-#as-overlay.as-fs-open{position:fixed; inset:0; width:100%; height:100%; border-radius:0; grid-template-columns:1fr;}
+#as-overlay.as-fs-open{position:fixed; z-index:100030; inset:0; width:100%; height:100%; border-radius:0; grid-template-columns:1fr;}
+body.as-asset-fullscreen #article-detail-modal,
+body.as-asset-fullscreen #technical-audit-modal,
+body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; pointer-events:none!important;}
 #as-overlay.as-fs-open .as-rail,
 #as-overlay.as-fs-open .as-split2-form,
 #as-overlay.as-fs-open .as-prev-label,
@@ -4358,7 +4362,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     zeichneForm();
   }
 
+  let preflightPending = false;
   async function generate() {
+    if (preflightPending || state.busy) return;
     readForm();
     if (isMemo && state.answers.memo_track === "cmo100") {
       formFehler("memo_track", "Das 100-Tage-CMO-Dokument ist noch in Ausarbeitung. Es ist kein Executive Memo. Bitte das thematische Executive Memo wählen.");
@@ -4398,17 +4404,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         }
       }
     }
-    state.formError = "";
-    state.formErrorKey = "";
-    state.step = "draft";
-    state.busy = true;
-    state.error = "";
-    state.cancelRequested = false;
-    state.leftRunning = false;
-    draftsTaktStop();
-    render();
-    ladeTaktStart(true);
-    try {
+    preflightPending = true;
+    const startButtons = [...shell.querySelectorAll('[data-act="generate"]')];
+    const buttonLabels = startButtons.map(b => b.innerHTML);
+    startButtons.forEach(b => { b.disabled = true; b.textContent = "Guthaben wird geprüft …"; });
       const gewaehlt = state.answers.variant;
       const anzahl = !isMemo && state.answers.asset_type === "carousel" ? carouselRequestedSlides(state.answers) : 1;
       const antworten = { ...state.answers, layout: gewaehlt, slide_count: String(anzahl), slides: anzahl };
@@ -4421,13 +4420,50 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         antworten.slide_content = "";
         antworten.slide_end = "";
       }
+    let acceptBudgetWarning = false;
+    try {
+      const preflight = await api("preflight_asset", { kind: assetKind, answers: antworten });
+      if (!overlay.isConnected) return;
+      if (preflight.blocked || preflight.warning) {
+        acceptBudgetWarning = await confirmAssetBudget(preflight, overlay);
+        if (!acceptBudgetWarning) return;
+      }
+    } catch {
+      if (!overlay.isConnected) return;
+      acceptBudgetWarning = await confirmAssetBudget({ checks: [{ label: "Guthabenprüfung", message: "Die Prüfung ist derzeit nicht erreichbar. Es ist unbekannt, ob das Guthaben ausreicht." }] }, overlay);
+      if (!acceptBudgetWarning) return;
+    } finally {
+      preflightPending = false;
+      startButtons.forEach((b, i) => { b.disabled = false; b.innerHTML = buttonLabels[i]; });
+    }
+    if (!overlay.isConnected) return;
+    state.formError = "";
+    state.formErrorKey = "";
+    state.step = "draft";
+    state.busy = true;
+    state.error = "";
+    state.cancelRequested = false;
+    state.leftRunning = false;
+    draftsTaktStop();
+    render();
+    ladeTaktStart(true);
+    try {
       const res = await api("generate_asset", {
         kind: assetKind,
         article_id: articleId || null,
         answers: antworten,
         image_uploads: isMemo ? state.formImages : undefined,
+        accept_budget_warning: acceptBudgetWarning,
       });
       if (state.cancelRequested) return;
+      if (res?.blocked === "provider_budget") {
+        state.busy = false;
+        state.step = "form";
+        ladeTaktStop();
+        render();
+        await confirmAssetBudget({ ...res.preflight, blocked: true }, overlay);
+        return;
+      }
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       state.assetId = row.id || null;
       state.owned = Boolean(row.owner_id);
@@ -6010,8 +6046,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function leaveFullscreen() {
     if (!overlay.classList.contains("as-fs-open")) return;
     overlay.classList.remove("as-fs-open", "as-fs-tools-hidden");
+    document.body.classList.remove("as-asset-fullscreen");
     fsControls.classList.remove("is-collapsed");
     fsControls.querySelector('[data-act="toggle-fs-controls"]').setAttribute("aria-expanded", "true");
+    fsControls.querySelector('[data-act="toggle-fs-controls"]').setAttribute("aria-label", "Vollbildsteuerung einklappen");
     if (inHost && mount.isConnected) { mount.appendChild(overlay); overlay.classList.add("as-in-host"); }
     if (fsBodyOverflow !== undefined) { document.body.style.overflow = fsBodyOverflow; fsBodyOverflow = undefined; }
     state.viewZoom = 1;
@@ -6026,6 +6064,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     fsBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    document.body.classList.add("as-asset-fullscreen");
     // Move beyond the article modal's clipping and transformed ancestors.
     document.body.appendChild(overlay);
     overlay.classList.remove("as-in-host");
@@ -7904,6 +7943,14 @@ ${stages}${post}
   let memoVorschauTimer = 0;
 
   function onKeyDown(event) {
+    const budgetDialog = overlay.querySelector(".as-budget-dialog[open]");
+    if (budgetDialog) {
+      if (event.key === "Escape") {
+        event.preventDefault(); event.stopImmediatePropagation();
+        budgetDialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+      }
+      return;
+    }
     if (event.key !== "Escape") {
       if (state.step !== "edit" || kontextmenue.offen()) return;
       if (!cropOverlay.hidden || !ownOverlay.hidden || !ciOverlay.hidden || !ciDlOverlay.hidden) return;
