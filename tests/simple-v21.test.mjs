@@ -25,6 +25,22 @@ test('generic agency searches do not create a named-buyer sales rescue', () => {
   assert.equal(pipeline.deterministicAgencyTenderFallback(article,pipeline.prefilterSimpleArticle(article).families),null);
 });
 
+test('Perplexity classification uses the same schema and records actual provider usage', async () => {
+  const article=JSON.parse(readFileSync(new URL('./fixtures/manual-review-examples.json',import.meta.url)))[4];
+  const events=[];
+  const admin={schema:()=>({from:()=>({insert:async row=>{events.push(row);return {error:null};},update:()=>({eq:async()=>({error:null})})})})};
+  const usage={input:800,cachedInput:0,output:400,thinking:200,total:1400};
+  const result=await pipeline.classifySimpleArticle({admin,apiKey:'test',model:'openai/gpt-5.4',request:async(prompt,options)=>{
+    assert.match(options.systemInstruction,/ROOTS Signal Layer/);
+    assert.ok(options.responseSchema.properties);
+    return {ok:true,status:200,error:'',usage,text:JSON.stringify({lane:'sales',signal_id:'agentur_ausschreibung',confidence:.95,score:95,evidence:article.title,company:'Siemens Betriebskrankenkasse',company_evidence:article.title,language:'de',roots_link_de:'Siemens Betriebskrankenkasse sucht Agenturen für konkrete Mandate. ROOTS strukturiert die Agenturbriefings und priorisiert passende Auswahlkriterien.',relevance:{a:90,b:90,c:95,d:95}})};
+  }},article);
+  assert.equal(result.status,'signal');
+  assert.equal(result.signal_id,'agentur_ausschreibung');
+  assert.equal(events[0].model,'openai/gpt-5.4');
+  assert.equal(events[0].total_tokens,1400);
+});
+
 test("the canonical ROOTS match runs as a separate v2.8 ruleset", () => {
   assert.equal(pipeline.SIMPLE_VERSION, "2.8");
   assert.equal(pipeline.SIMPLE_PIPELINE_VERSION, "roots-simple-v2.8");

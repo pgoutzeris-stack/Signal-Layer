@@ -994,7 +994,7 @@ async function callSimpleJson<T>(
   if (option.provider === "perplexity") {
     if (!deps.request) throw new Error("Perplexity classification transport is unavailable");
     const startedAt = Date.now();
-    const result = await deps.request(prompt, options);
+    const result = await deps.request(prompt, { ...options, systemInstruction: options.systemInstruction || SIMPLE_SYSTEM_INSTRUCTION, responseSchema: options.responseSchema || SIMPLE_RESPONSE_SCHEMA });
     if (!result.ok) {
       await recordSimpleUsage(deps, articleId, model, "error", result.usage, Date.now() - startedAt, `http_${result.status || "network"}`, result.error);
       throw new Error(`${option.label} failed: ${result.status} ${result.error.slice(0, 300)}`);
