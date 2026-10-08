@@ -1,4 +1,4 @@
-import { matchesDropdownSearch } from "./dropdown-search.mjs?v=20261008-1";
+import { matchesDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs?v=20261008-4";
 // ---------------------------------------------------------------------------
 // Signal Layer - Frontend des einfachen Modus ("Simple")
 //
@@ -463,13 +463,13 @@ function bindUi() {
     renderLane("sales");
   };
   [els.topicFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  bindDropdownSearch(els.companyFilterSearch?.closest(".roots-select-search"));
   els.companyFilterSearch?.addEventListener("input", renderCompanyFilter);
   els.companyFilterTrigger?.addEventListener("click", (event) => {
     event.stopPropagation();
     document.querySelectorAll(".roots-select.open").forEach((item) => item !== els.companyFilter && item.classList.remove("open"));
     const open = els.companyFilter.classList.toggle("open");
     els.companyFilterTrigger.setAttribute("aria-expanded", String(open));
-    if (open) els.companyFilterSearch?.focus();
   });
   els.companyFilterMenu?.addEventListener("click", (event) => {
     event.stopPropagation();

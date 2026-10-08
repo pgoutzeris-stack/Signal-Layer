@@ -1,4 +1,4 @@
-import { matchesDropdownSearch, createDropdownSearch } from "./dropdown-search.mjs?v=20261008-1";
+import { matchesDropdownSearch, createDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs?v=20261008-4";
 import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
@@ -6,7 +6,7 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260930-1";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261008-2";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261008-4";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
@@ -2308,8 +2308,6 @@ function enhanceHeaderSelects() {
       /source/.test(select.id) ? "Quellen suchen…" : /topic/.test(select.id) ? "Themen suchen…" : "Unternehmen suchen…",
       () => render(),
     ) : null;
-    const header = document.createElement("div");
-    header.className = "roots-select-menu-header";
     const allHost = document.createElement("div");
     allHost.className = "roots-select-menu-all";
     const optionsHost = document.createElement("div");
@@ -2318,8 +2316,7 @@ function enhanceHeaderSelects() {
       trigger.setAttribute("aria-haspopup", "dialog");
       optionsHost.setAttribute("role", "listbox");
       optionsHost.setAttribute("aria-multiselectable", "true");
-      header.append(allHost, search.wrap);
-      menu.append(header, optionsHost);
+      menu.append(search.wrap, allHost, optionsHost);
     }
     menu.addEventListener("click", (event) => event.stopPropagation());
 
@@ -2452,7 +2449,6 @@ function enhanceHeaderSelects() {
       document.querySelectorAll(".roots-select.open").forEach((item) => item !== wrapper && item.classList.remove("open"));
       const open = wrapper.classList.toggle("open");
       trigger.setAttribute("aria-expanded", String(open));
-      if (open) search?.input.focus();
     });
     select.addEventListener("change", render);
     new MutationObserver(render).observe(select, { childList: true, subtree: true });
@@ -4387,13 +4383,13 @@ function bindUi() {
   [els.signalArticleTypeFilter, els.signalSourceFilter, els.signalSort].forEach((control) =>
     control.addEventListener("change", updateSignalView)
   );
+  bindDropdownSearch(els.signalCompanyFilterSearch?.closest(".roots-select-search"));
   els.signalCompanyFilterSearch?.addEventListener("input", renderAdvancedCompanyFilter);
   els.signalCompanyFilterTrigger?.addEventListener("click", (event) => {
     event.stopPropagation();
     document.querySelectorAll(".roots-select.open").forEach((item) => item !== els.signalCompanyFilter && item.classList.remove("open"));
     const open = els.signalCompanyFilter.classList.toggle("open");
     els.signalCompanyFilterTrigger.setAttribute("aria-expanded", String(open));
-    if (open) els.signalCompanyFilterSearch?.focus();
   });
   els.signalCompanyFilterMenu?.addEventListener("click", (event) => {
     event.stopPropagation();
