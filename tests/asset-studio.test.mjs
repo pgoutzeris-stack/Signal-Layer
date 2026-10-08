@@ -1327,7 +1327,7 @@ test("Prompt und Studio kennen Feldkarte, Executive Memo und Überlauf-Gate", ()
   assert.match(edge, /ASSET_CAPACITY_PROBE_MS = 2_500/);
   assert.match(edge, /checkCapacity\("asset"\)/);
   assert.match(edge, /kind !== "asset"/);
-  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.21");
+  assert.equal(backend.ASSET_PROMPT_VERSION, "roots-asset-v1.22");
   assert.ok(backend.ASSET_VISIBLE_FIELDS.B.includes("subtitle"));
   assert.ok(!backend.ASSET_VISIBLE_FIELDS.B.includes("takeaway"));
   assert.equal(backend.ASSET_POINTE_FIELD.B, "subtitle");
@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20261008-2");
-  assert.match(indexHtml, /app\.js\?v=20261008-2/);
+  assert.equal(studioVersion, "20261008-3");
+  assert.match(indexHtml, /app\.js\?v=20261008-3/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -4848,4 +4848,22 @@ test('Each ROOTS logo SVG resolves its own unique mask and path references',asyn
     for(const [,ref]of svg.matchAll(/(?:url\(#|xlink:href="#)([^)"]+)/g))assert.ok(ids.includes(ref),`missing logo reference ${ref}`);
   }
   assert.equal(new Set(allIds).size,allIds.length);
+});
+
+test('Memo title guidance and validation work across technology, regulation, service and organisation', () => {
+  assert.match(backend.ASSET_SYSTEM_TEXT,/themen- und branchenunabhängig/);
+  const cases = [
+    ['Müller', 'Wie Müller KI im Vertrieb wirksam einführen kann'],
+    ['Puma', 'Verpackungsdaten für neue Pflichten bei Puma'],
+    ['Bosch', 'Kundenbindung im digitalen Service für Bosch'],
+    ['Ergo', 'Marketing und Kundenerlebnis bei Ergo verbinden'],
+  ];
+  for (const [firma,title] of cases) {
+    const prompt = backend.buildAssetPrompt('memo', {company:firma}, {title:'Artikel'}, backend.normalizeAssetAnswers('memo',{company_text:firma}));
+    assert.match(prompt,/Personalwechsel, Technologie, Nachhaltigkeit, Regulierung, Organisation und B2B/);
+    assert.match(prompt,/wähle das Ziel aus den Belegen, nicht aus einer festen Liste/);
+    const findings=backend.memoQualitaetsBefunde({title},{firma}).filter(x=>x.startsWith('title '));
+    assert.deepEqual(findings,[],title);
+    assert.match(backend.memoQualitaetsBefunde({title:`Wie ${firma} ein eigenes Profil geben kann`},{firma}).join('\n'),/vagen Mittel/);
+  }
 });

@@ -1,3 +1,4 @@
+import { assetUsageSummary } from "./asset-usage.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.8";
 import {
   hasIndependentEventReportSubstance,
@@ -3515,6 +3516,7 @@ async function recordStandaloneAiUsage(
       costs = {
         ...costs, estimated_cost_usd: measured.usd, estimated_cost_eur: measured.usd * usdEur,
         native_cost: measured.usd, pricing_currency: "USD", usd_to_eur_rate: usdEur, native_to_eur_rate: usdEur,
+        pricing_version: "provider-reported",
       };
       grounding = { grounding_cost_usd: measured.toolUsd };
     } else if (searchQueries > 0 && !isPerplexityModel(model)) {
@@ -3522,10 +3524,10 @@ async function recordStandaloneAiUsage(
     }
     const { error } = await getAdminClient().schema("signal_layer").from("ai_usage_events").insert({
       operation, model, status, attempt: 1, prompt_version: ASSET_PROMPT_VERSION,
-      asset_id: currentUsageAssetId(), step: step || standaloneSchritt(operation), ...grounding,
+      asset_id: currentUsageAssetId(), step: step || standaloneSchritt(operation),
       input_tokens: usage.input + usage.cachedInput, cached_input_tokens: usage.cachedInput,
       output_tokens: usage.output, thinking_tokens: usage.thinking, total_tokens: usage.total,
-      ...costs, error_code: errorCode || null,
+      ...costs, ...grounding, error_code: errorCode || null,
     });
     if (error) console.error(`Kosten für ${operation} (${model}) nicht gebucht:`, error.message);
   } catch (fehler) {
@@ -12979,7 +12981,7 @@ Deno.serve(async (req: Request) => {
         if (listKind && !isAssetKind(listKind)) return errorResponse(origin, "kind muss linkedin oder memo sein");
         let query = getAdminClient().schema("signal_layer")
           .from("generated_assets")
-          .select("id, kind, status, stage, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, owner_id, owned_at, article_id, title:payload->>title, slide_title:payload->slides->0->>title")
+          .select("id, kind, status, stage, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, owner_id, owned_at, article_id, usage_event_id, title:payload->>title, slide_title:payload->slides->0->>title")
           .eq("article_id", listArticleId)
           .order("created_at", { ascending: false })
           .limit(40);
@@ -12987,6 +12989,39 @@ Deno.serve(async (req: Request) => {
         const { data: liste, error: listError } = await query;
         if (listError) return errorResponse(origin, listError.message, 500);
         const adminList = getAdminClient();
+        // All recorded steps, including research, checks and paid failed attempts.
+        // Page the ledger so PostgREST's row limit cannot silently truncate totals.
+        const usageByAsset = new Map<string, Array<Record<string, unknown>>>();
+        const draftIds = (liste || []).map((row) => String(row.id));
+        if (draftIds.length) {
+          for (let offset = 0; ; ) {
+            const { data: events, error: usageError } = await adminList.schema("signal_layer")
+              .from("ai_usage_events")
+              .select("id,asset_id,model,step,operation,status,input_tokens,cached_input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_eur,estimated_cost_usd,search_query_count,pricing_version")
+              .in("asset_id", draftIds).order("id").range(offset, offset + 999);
+            if (usageError) return errorResponse(origin, usageError.message, 500);
+            for (const event of events || []) {
+              const id = String(event.asset_id);
+              if (!usageByAsset.has(id)) usageByAsset.set(id, []);
+              usageByAsset.get(id)!.push(event);
+            }
+            if (!(events || []).length) break;
+            offset += events!.length;
+          }
+        }
+        // Older drafts still have an exact reference to their paid generation call.
+        // Preserve legacy totals; do not invent links to unassigned research calls.
+        const legacyEvents = new Map<string, Record<string, unknown>>();
+        const legacyRefs = (liste || []).filter(row => !usageByAsset.has(String(row.id)) && row.usage_event_id)
+          .map(row => String(row.usage_event_id));
+        if (legacyRefs.length) {
+          const { data: events, error: legacyError } = await adminList.schema("signal_layer")
+            .from("ai_usage_events")
+            .select("id,model,step,operation,status,input_tokens,cached_input_tokens,output_tokens,thinking_tokens,total_tokens,estimated_cost_eur,estimated_cost_usd,search_query_count,pricing_version")
+            .in("id", legacyRefs).is("asset_id", null);
+          if (legacyError) return errorResponse(origin, legacyError.message, 500);
+          for (const event of events || []) legacyEvents.set(String(event.id), event);
+        }
         const autoren = await assetAuthorsByIds((liste || []).map((row) => String(row.created_by || "")));
         const assets = await Promise.all((liste || []).map(async (row) => {
           const gepflegt = await pflegeLaufendesAsset(adminList, row as Record<string, unknown>);
@@ -12994,6 +13029,12 @@ Deno.serve(async (req: Request) => {
           const autor = autoren.get(String(basis.created_by || ""));
           return {
             ...basis,
+            usage_summary: usageByAsset.has(String(basis.id))
+              ? assetUsageSummary(usageByAsset.get(String(basis.id))!)
+              : legacyEvents.has(String(basis.usage_event_id))
+                ? { ...assetUsageSummary([legacyEvents.get(String(basis.usage_event_id))!]), source: "legacy_ledger",
+                  total_tokens: Number(basis.total_tokens || 0), cost_eur: Number(basis.cost_eur || 0) }
+                : { source: "legacy", steps: [] },
             creator_name: autor?.name || "ROOTS Team",
             creator_short_name: autor?.short_name || "ROOTS",
             creator_avatar_url: autor?.avatar_url || null,

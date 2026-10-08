@@ -1,3 +1,4 @@
+import { draftMetadataHtml, bindDraftUsagePopovers } from "./draft-usage.mjs?v=20261008-3";
 // Asset Studio: Fragebogen, Entwurf und Werkbank für LinkedIn-Assets und
 // Ansprachen. Das Modul baut sein Overlay selbst und bringt die Stile
 // der Bühne mit, weil die heruntergeladene HTML-Datei ohne die App auskommen
@@ -1327,6 +1328,24 @@ const CHROME_CSS = `
 #as-overlay .as-draft strong{font-size:13px;}
 #as-overlay .as-draft span{font-size:12px; color:var(--muted,#64748b); line-height:1.4;}
 #as-overlay .as-draft em{font-style:normal; font-size:11px; color:#64748b;}
+#as-overlay .as-draft-body{flex:1;}
+#as-overlay .as-draft-open{display:flex; flex-direction:column; gap:3px; border:0; background:none; padding:0; width:100%; text-align:left; cursor:pointer; color:var(--ink,#17243c); font:inherit;}
+#as-overlay .as-draft-open:focus-visible{outline:2px solid var(--brand,#206efb); outline-offset:4px; border-radius:4px;}
+#as-overlay .as-draft-meta{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;}
+#as-overlay .as-meta-pill{display:inline-flex; align-items:center; gap:5px; border:1px solid #dce6f5; border-radius:999px; background:#f3f7ff; padding:4px 8px; font:500 10px/1.3 var(--font,Inter,sans-serif); color:#405575; white-space:nowrap; font-variant-numeric:tabular-nums;}
+#as-overlay .as-meta-pill i{color:var(--brand,#206efb); font-size:10px;}
+#as-overlay .as-meta-pill--detail{cursor:pointer;}
+#as-overlay .as-meta-pill--detail:hover,#as-overlay .as-meta-pill--detail:focus-visible{background:#e8f0ff; border-color:var(--brand,#206efb); outline:none;}
+#as-overlay .as-meta-chevron{font-size:8px!important; opacity:.6;}
+#as-overlay .as-usage-popover{position:fixed; inset:auto; margin:0; width:420px; max-width:calc(100vw - 24px); max-height:min(560px,75vh); overflow:auto; box-sizing:border-box; border:1px solid #dce6f5; border-radius:16px; padding:16px; background:#fff; color:#263954; box-shadow:0 16px 48px #132c5530; font:12px/1.5 Inter,sans-serif; text-align:left;}
+#as-overlay .as-usage-heading{display:block; font-weight:750; color:#17243c; margin-bottom:10px;}
+#as-overlay .as-usage-table{display:block;}
+#as-overlay .as-usage-row{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; padding:9px 0; border-top:1px solid #edf1f7;}
+#as-overlay .as-usage-row b{font-weight:650; color:#263954;}
+#as-overlay .as-usage-row small{display:block; font-size:10px; color:#64748b; margin-top:2px;}
+#as-overlay .as-usage-row > span:last-child{font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:650; color:#206efb;}
+#as-overlay .as-usage-total{display:flex; justify-content:space-between; padding-top:10px; border-top:1px solid #dce6f5; margin-top:5px; color:#17243c;}
+#as-overlay .as-usage-note{display:block; color:#64748b; font-size:10px; margin-top:10px;}
 #as-overlay .as-draft.is-error{border-color:#fecaca;}
 #as-overlay .as-draft.is-run{border-color:#bfdbfe;}
 #as-overlay .as-load-actions{margin-top:8px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;}
@@ -2165,6 +2184,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   const shell = document.createElement("div");
   shell.style.display = "contents";
   overlay.appendChild(shell);
+  const draftUsage = bindDraftUsagePopovers(shell);
 
   const fileInput = document.createElement("input");
   fileInput.type = "file";
@@ -3633,19 +3653,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const status = String(row.status || "");
     const wann = formatDraftWhen(row.created_at);
     const dauer = formatDraftDauer(row.duration_ms);
-    const tokens = Number(row.total_tokens) > 0 ? `${Number(row.total_tokens).toLocaleString("de-DE")} Token` : "";
-    const kosten = formatDraftEur(row.cost_eur);
-    const meta = [wann, dauer, tokens, kosten].filter(Boolean).join(" · ");
     const klasse = status === "error" ? " is-error" : status === "running" ? " is-run" : "";
     const unter = [draftStatusText(status), draftSettingsText(row)].filter(Boolean).join(" · ");
-    return `<button type="button" class="as-draft${klasse}" data-act="open-draft" data-id="${attr(row.id)}">
+    return `<div class="as-draft${klasse}">
       ${personBildHtml(row.creator_avatar_url, row.creator_name || row.creator_short_name)}
-      <span class="as-draft-body">
-        <strong>${esc(draftTitel(row))}</strong>
-        <span>${esc(unter)}</span>
-        <em>${esc([row.creator_short_name || row.creator_name, meta || modellName(row.model) || ""].filter(Boolean).join(" · "))}</em>
-      </span>
-    </button>`;
+      <div class="as-draft-body">
+        <button type="button" class="as-draft-open" data-act="open-draft" data-id="${attr(row.id)}">
+          <strong>${esc(draftTitel(row))}</strong>
+          <span>${esc(unter)}</span>
+        </button>
+        ${draftMetadataHtml(row, { when: wann, duration: dauer, modelName: modellName })}
+      </div>
+    </div>`;
   }
 
   function formatDraftWhen(value) {
@@ -3665,7 +3684,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function formatDraftEur(value) {
     const n = Number(value);
     if (!Number.isFinite(n) || n <= 0) return "";
-    return n.toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    return n.toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   function draftSettingsText(row) {
@@ -3728,6 +3747,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   async function ladeDrafts() {
     if (!articleId) return;
+    const vorher = JSON.stringify([state.drafts, state.draftsError]);
     try {
       const res = await api("list_assets", { article_id: articleId, kind: assetKind });
       const liste = res && typeof res === "object" ? (res.assets || res) : [];
@@ -3736,7 +3756,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     } catch (err) {
       state.draftsError = err && err.message ? String(err.message) : "Entwürfe konnten nicht geladen werden.";
     }
-    if (state.step === "form" && state.formTab === "drafts") {
+    if (state.step === "form" && state.formTab === "drafts" && vorher !== JSON.stringify([state.drafts, state.draftsError])) {
       const box = shell.querySelector(".as-drafts");
       if (box) box.outerHTML = draftsHtml();
     }
@@ -7836,6 +7856,11 @@ ${stages}${post}
         event.preventDefault();
         event.stopPropagation();
       }
+      return;
+    }
+    if (draftUsage.closeOpenPopover()) {
+      event.stopPropagation();
+      event.preventDefault();
       return;
     }
     // Ohne Stopp würde der Backdrop-Zweig der App das Artikel-Popup mitschließen.
