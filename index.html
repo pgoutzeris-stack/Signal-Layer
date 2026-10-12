@@ -170,6 +170,7 @@
   .mode-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--bg); box-shadow: var(--shadow-dash); }
   .mode-switch-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 13px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--muted); font: inherit; font-size: .74rem; font-weight: 750; cursor: pointer; transition: background .18s ease, color .18s ease; }
   .mode-switch-btn i { font-size: .7rem; }
+  .mode-switch-btn[hidden] { display: none; }
   .mode-switch-btn:hover { color: var(--ink); }
   .mode-switch-btn.is-active { background: var(--brand); color: #fff; }
   .mode-switch-btn.is-active:hover { color: #fff; }
@@ -2089,10 +2090,10 @@
     <main id="main-content">
       <div class="mode-switch-bar">
         <div class="mode-switch" id="mode-switch" role="group" aria-label="Pipeline-Modus">
-          <button type="button" class="mode-switch-btn" data-pipeline-mode="simple" title="Einfache Pipeline über die letzten gespeicherten Artikel">
+          <button type="button" class="mode-switch-btn" data-pipeline-mode="simple" hidden title="Einfache Pipeline über die letzten gespeicherten Artikel">
             <i class="fa-solid fa-wand-magic-sparkles"></i> Simple
           </button>
-          <button type="button" class="mode-switch-btn is-active" data-pipeline-mode="advanced" title="Vollständige Pipeline mit Crawl, Marketing, Sales und Archiv">
+          <button type="button" class="mode-switch-btn is-active" data-pipeline-mode="advanced" hidden title="Vollständige Pipeline mit Crawl, Marketing, Sales und Archiv">
             <i class="fa-solid fa-sliders"></i> Advanced
           </button>
           <button type="button" class="mode-switch-btn" id="manual-signal-btn" title="Signal selbst schreiben und daraus ein Asset erzeugen">
@@ -2393,8 +2394,8 @@
           <h2>Einstellungen</h2>
           <div class="toolbar-spacer"></div>
           <div class="mode-switch" id="settings-mode-switch" role="group" aria-label="Einstellungen für Modus">
-            <button type="button" class="mode-switch-btn" data-pipeline-mode="simple"><i class="fa-solid fa-wand-magic-sparkles"></i> Simple</button>
-            <button type="button" class="mode-switch-btn is-active" data-pipeline-mode="advanced"><i class="fa-solid fa-sliders"></i> Advanced</button>
+            <button type="button" class="mode-switch-btn" data-pipeline-mode="simple" hidden><i class="fa-solid fa-wand-magic-sparkles"></i> Simple</button>
+            <button type="button" class="mode-switch-btn is-active" data-pipeline-mode="advanced" hidden><i class="fa-solid fa-sliders"></i> Advanced</button>
           </div>
           <button type="button" class="close-fs-btn" id="btn-settings-close"><i class="fa-solid fa-xmark"></i></button>
         </div>
@@ -2596,7 +2597,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261012-3';
+  import { initApp } from './app.js?v=20261012-4';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

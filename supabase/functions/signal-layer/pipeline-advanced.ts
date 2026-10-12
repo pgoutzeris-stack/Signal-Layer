@@ -1,6 +1,11 @@
 // ---------------------------------------------------------------------------
 // Signal Layer - ADVANCED pipeline (previous behaviour, unchanged)
 //
+// STILLGELEGT seit 12.10.2026. Die Oberflaeche zeigt nur noch den einfachen
+// Modus (pipeline-simple.ts). Diese Datei bleibt, weil index.ts Teile davon
+// weiter importiert (Crawl-Policy, Konfigurationstyp PipelineConfig, alte
+// Endpunkte). Neue Regeln gehoeren nach pipeline-simple.ts, nicht hierher.
+//
 // Every business rule of the advanced mode lives here: prompt, taxonomy,
 // response schema, deterministic hard gates, non-negotiable guardrails,
 // validation of the model answer, routing/value scoring and the ROOTS offering

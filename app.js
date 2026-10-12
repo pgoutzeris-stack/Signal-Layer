@@ -5,10 +5,10 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261012-3";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261012-4";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261012-3";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261012-4";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
@@ -2031,7 +2031,13 @@ async function loadDashboardSummary() {
 // ---------------------------------------------------------------------------
 const PIPELINE_MODE_KEY = "signal-layer-pipeline-mode";
 
+// Advanced ist seit 12.10.2026 stillgelegt: der Umschalter ist ausgeblendet
+// und die App startet immer im einfachen Modus. Der Advanced-Code bleibt
+// erreichbar, wird aber von der Oberflaeche nicht mehr aufgerufen.
+const ADVANCED_STILLGELEGT = true;
+
 function storedPipelineMode() {
+  if (ADVANCED_STILLGELEGT) return "simple";
   try {
     return localStorage.getItem(PIPELINE_MODE_KEY) === "simple" ? "simple" : "advanced";
   } catch (_) {
@@ -2049,7 +2055,7 @@ function mountStatusBar(simple) {
 }
 
 function applyPipelineMode(mode, { persist = true } = {}) {
-  const simple = mode === "simple";
+  const simple = ADVANCED_STILLGELEGT || mode === "simple";
   document.body.classList.toggle("mode-simple", simple);
   mountStatusBar(simple);
   document.querySelectorAll("[data-pipeline-mode]").forEach((button) => {
