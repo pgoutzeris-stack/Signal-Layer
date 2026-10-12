@@ -10,9 +10,9 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261012-1";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261012-2";
 import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260824-0305";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261012-1";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261012-2";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -68,9 +68,9 @@ const FRAGEN = [
     fehler: "Bitte eine vollständige Adresse eintragen.",
   },
   {
-    key: "headline", label: "Signal", frage: "Wie lautet das Signal in einem Satz?", art: "text",
+    key: "headline", label: "Titel", frage: "Wie heißt das Signal?", art: "text",
     platzhalter: "Handel baut Eigenmarken schneller aus als geplant",
-    pflicht: true, min: 10,
+    pflicht: true, min: 3,
   },
   {
     key: "core", label: "Kern", frage: "Was besagt das Signal im Kern?",
@@ -85,7 +85,8 @@ const FRAGEN = [
     pflicht: true, min: 20,
   },
   {
-    key: "source", label: "Quelle", frage: "Woher stammt die Information?", art: "text",
+    key: "source", label: "Fundstelle", frage: "Woher stammt die Information?", art: "text",
+    when: (a) => a.weg !== "quelle",
     platzhalter: "https://… Link zur Studie oder Meldung",
   },
   {
@@ -95,10 +96,11 @@ const FRAGEN = [
       : "Um welches Unternehmen geht es?"),
   },
   {
-    key: "offering", label: "Leistung", art: "auswahl", platzhalter: "Eigene Leistung eintragen",
+    key: "competitor", label: "Benchmark", art: "text",
     frage: (a) => (a.lane === "sales"
-      ? "Welche ROOTS-Leistung willst du anbieten?"
-      : "Welche ROOTS-Leistung schließt daran an?"),
+      ? "Welche Wettbewerber des Kunden machen es schon vor?"
+      : "Welche Wettbewerber des betroffenen Unternehmens machen es schon vor?"),
+    platzhalter: "Firmennamen, z. B. Aldi Süd, dm, Rossmann",
   },
   {
     key: "territory", label: "Markt", frage: "Für welchen Markt gilt das?", art: "text",
@@ -109,11 +111,10 @@ const FRAGEN = [
     platzhalter: "Messe, Quartalszahlen, Personalie",
   },
   {
-    key: "competitor", label: "Benchmark", art: "text",
+    key: "offering", label: "Leistung", art: "auswahl", platzhalter: "Eigene Leistung eintragen",
     frage: (a) => (a.lane === "sales"
-      ? "Welche Wettbewerber des Kunden machen es schon vor?"
-      : "Welche Wettbewerber des betroffenen Unternehmens machen es schon vor?"),
-    platzhalter: "Firmennamen, z. B. Aldi Süd, dm, Rossmann",
+      ? "Welche ROOTS-Leistung willst du anbieten?"
+      : "Welche ROOTS-Leistung schließt daran an?"),
   },
 ];
 
@@ -841,7 +842,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
         ? "Signal aus der Quelle gezogen."
         : "Quelle gelesen, aber Felder fehlen.", res.draft.verdict === "tragfaehig" ? "success" : "info");
     } catch (fehler) {
-      state.quelleBefund = { fehler: fehler?.message || "Die Quelle war nicht lesbar." };
+      state.quelleBefund = { fehler: fehler?.message ? fehlerKlartext(fehler.message) : "Die Quelle war nicht lesbar." };
     } finally {
       state.quelleLaeuft = false;
       zeichne();
@@ -858,7 +859,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     const a = state.answers;
     return {
       lane: a.lane, mode: a.mode, headline: a.headline, core: a.core, evidence: a.evidence,
-      source: a.source, company: a.company, offering: a.offering,
+      source: a.source || quellenAdresse(), company: a.company, offering: a.offering,
       territory: a.territory, occasion: a.occasion, competitor: a.competitor,
     };
   }
@@ -903,7 +904,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
         : res.check.verdict === "tragfaehig" ? "Signal geprüft, es trägt." : "Signal geprüft, es bleibt dünn.",
       blocker ? "error" : res.check.verdict === "tragfaehig" ? "success" : "info");
     } catch (fehler) {
-      state.pruefFehler = fehler?.message || "Die Prüfung war nicht erreichbar.";
+      state.pruefFehler = fehler?.message ? fehlerKlartext(fehler.message) : "Die Prüfung war nicht erreichbar.";
     } finally {
       state.pruefungLaeuft = false;
       zeichne();
@@ -966,7 +967,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     } catch (fehler) {
       state.busy = false;
       state.error = fehler && fehler.message ? fehler.message : "Das Signal konnte nicht angelegt werden.";
-      melde(state.error, "error");
+      melde(fehlerKlartext(state.error), "error");
       zeichne();
     }
   }

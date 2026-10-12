@@ -27,8 +27,8 @@ test("ein Signal ohne Beleg wird abgewiesen, kein Asset ohne Quelle", () => {
     vollesSignal({ evidence: "" }),
   )), /Beleg fehlt/);
   assert.match(backend.manualSignalIssue(backend.normalizeManualSignal(
-    vollesSignal({ headline: "kurz" }),
-  )), /Überschrift/);
+    vollesSignal({ headline: "" }),
+  )), /Titel des Signals fehlt/);
   assert.match(backend.manualSignalIssue(backend.normalizeManualSignal(
     vollesSignal({ core: "zu kurz" }),
   )), /Kern des Signals/);
@@ -43,9 +43,10 @@ test("Spur und Modus fallen auf sichere Werte zurück", () => {
   assert.equal(backend.normalizeManualSignal({ mode: "manual" }).mode, "manual");
   assert.equal(backend.normalizeManualSignal({ mode: "hybrid" }).mode, "hybrid");
   assert.equal(backend.normalizeManualSignal({ mode: "erfunden" }).mode, "ai");
-  // Grenzen greifen, sonst landet ein ganzer Artikel in der Überschrift.
-  const lang = backend.normalizeManualSignal({ headline: "x".repeat(500) });
-  assert.equal(lang.headline.length, 200);
+  // Der Titel ist nur der Signaltitel, nicht der Titel im Asset: lange Titel
+  // bleiben stehen, erst ein ganzer Artikel wird gekappt.
+  assert.equal(backend.normalizeManualSignal({ headline: "x".repeat(500) }).headline.length, 500);
+  assert.equal(backend.normalizeManualSignal({ headline: "x".repeat(2000) }).headline.length, 600);
 });
 
 test("der Belegkorpus trägt Zahlen und Kontext, den das Modell zitieren darf", () => {

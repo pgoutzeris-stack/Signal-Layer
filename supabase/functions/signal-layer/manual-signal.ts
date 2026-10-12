@@ -32,7 +32,7 @@ export type ManualSignal = {
 };
 
 const GRENZEN: Record<keyof Omit<ManualSignal, "lane" | "mode">, number> = {
-  headline: 200,
+  headline: 600,
   core: 1_200,
   relevance: 800,
   evidence: 2_000,
@@ -68,7 +68,7 @@ export function normalizeManualSignal(raw: unknown): ManualSignal {
 
 /** Ohne Überschrift, Kernaussage und Beleg ist es kein Signal, sondern eine Notiz. */
 export function manualSignalIssue(signal: ManualSignal): string {
-  if (signal.headline.length < 10) return "Die Überschrift des Signals fehlt oder ist zu kurz.";
+  if (signal.headline.length < 3) return "Der Titel des Signals fehlt.";
   if (signal.core.length < 30) return "Der Kern des Signals fehlt oder ist zu kurz. Zwei bis drei Sätze, was das Signal besagt.";
   if (signal.evidence.length < 20) {
     return "Der Beleg fehlt. Ohne Beleg darf im Asset keine Zahl und keine Behauptung stehen: Zitat, Zahl oder Beobachtung eintragen.";

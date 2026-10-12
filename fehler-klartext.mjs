@@ -13,10 +13,11 @@ export function fehlerKlartext(roh) {
   const deutsch = /[äöüß]|\b(die|der|das|nicht|kein|keine|und|ist|wurde|bitte)\b/i;
   const [kopf, ...rest] = text.split("\n\n");
   if (deutsch.test(kopf)) return text;
-  const detail = kopf.slice(0, 240);
   let satz;
   if (/check constraint|violates|duplicate key|foreign key|relation .* does not exist|column .* does not exist/i.test(kopf)) {
-    satz = "Interner Fehler in der Datenbank des Signal Layer. Das liegt nicht an deinen Eingaben. Bitte erneut versuchen. Kommt der Fehler wieder, Pano Bescheid geben.";
+    satz = "Interner Fehler in der Datenbank des Signal Layer. Das liegt nicht an deinen Eingaben. Bitte erneut versuchen.";
+  } else if (/\b402\b|insufficient (balance|credits?|funds)|spending cap|out of credits|guthaben/i.test(kopf)) {
+    return "Beim KI-Anbieter ist kein Guthaben mehr verfügbar. Sobald es aufgeladen ist, erneut versuchen.";
   } else if (/\b(429|rate limit|quota|resource_exhausted)\b/i.test(kopf)) {
     satz = "Der KI-Anbieter drosselt gerade die Anfragen. Eine Minute warten und erneut versuchen.";
   } else if (/\b(5\d\d|unavailable|overloaded|bad gateway|gateway timeout)\b/i.test(kopf)) {
@@ -26,7 +27,7 @@ export function fehlerKlartext(roh) {
   } else if (/jwt|unauthori[sz]ed|not authenticated|permission denied|forbidden/i.test(kopf)) {
     satz = "Die Anmeldung ist abgelaufen oder die Berechtigung fehlt. Seite neu laden und erneut anmelden.";
   } else {
-    satz = "Technischer Fehler im Signal Layer. Bitte erneut versuchen. Kommt der Fehler wieder, Pano Bescheid geben.";
+    satz = "Technischer Fehler im Signal Layer. Bitte erneut versuchen.";
   }
-  return [`${satz}\n\nTechnisches Detail: ${detail}`, ...rest].join("\n\n");
+  return satz;
 }
