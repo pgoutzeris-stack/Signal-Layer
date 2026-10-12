@@ -10,9 +10,9 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261012-4";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261012-5";
 import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260824-0305";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261012-4";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261012-5";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -42,21 +42,30 @@ const ROOTS_PILLARS = [
  * optionale Fragen tragen einen Ueberspringen-Knopf. Reihenfolge ist die
  * Reihenfolge im Fragebogen.
  */
+/** Themen wie oben links auf den Signalkarten, je Spur. Gespeichert wird die
+ *  Beschriftung: sie steht als signal_label auf der Karte. */
+const THEMEN = {
+  marketing: [
+    "Customer & Shopper Insights", "KI im Marketing", "Markenkooperation & Co-Branding",
+    "Markenstrategie", "Marketingstrategie", "Eigenmarkenstrategie",
+    "Social Media & Creator", "Prozess-Know-how", "Virale News",
+  ],
+  sales: [
+    "CMO Wechsel", "Strategiewechsel", "Agentur-Ausschreibung", "Markenstrategie",
+    "Eigenmarkenstrategie", "Marketing-Prozessoptimierung", "Design to Print",
+  ],
+};
+
 const FRAGEN = [
   {
     key: "weg", label: "Weg", frage: "Wie soll das Signal entstehen?", art: "pills",
-    options: [["felder", "Manuell erstellen"], ["quelle", "Durch Transkript erzeugen"]],
+    options: [["felder", "Selbst schreiben"], ["quelle", "Aus einer Quelle ziehen"]],
+    hinweis: "Aus einer Quelle: Artikel, Video oder Beitrag. Die Felder werden vorbefüllt und bleiben änderbar.",
     pflicht: true,
   },
   {
-    key: "lane", label: "Asset", frage: "Was soll aus dem Signal entstehen?", art: "pills",
-    options: [["marketing", "LinkedIn-Beitrag"], ["sales", "Ansprache an einen Kunden"]],
-    pflicht: true,
-  },
-  {
-    key: "profile", label: "Absender", frage: "Wer veröffentlicht den Beitrag?", art: "pills",
-    options: [["roots", "ROOTS"], ["private", "Mein Privatprofil"]],
-    when: (a) => a.lane === "marketing",
+    key: "lane", label: "Spur", frage: "Wofür ist das Signal?", art: "pills",
+    options: [["marketing", "Marketing · LinkedIn-Beitrag"], ["sales", "Sales · Ansprache an ein Unternehmen"]],
     pflicht: true,
   },
   {
@@ -68,32 +77,72 @@ const FRAGEN = [
     fehler: "Bitte eine vollständige Adresse eintragen.",
   },
   {
+    key: "profile", label: "Absender", frage: "Wer veröffentlicht den Beitrag?", art: "pills",
+    options: [["roots", "ROOTS"], ["private", "Mein Privatprofil"]],
+    when: (a) => a.lane === "marketing",
+    pflicht: true,
+  },
+  {
+    key: "signal_label", label: "Thema", frage: "Zu welchem Thema gehört das Signal?", art: "pills",
+    options: (a) => (THEMEN[a.lane] || THEMEN.marketing).map((thema) => [thema, thema]),
+    hinweis: "Steht oben links auf der Karte und entscheidet, unter welchem Filter das Signal auftaucht.",
+  },
+  {
+    key: "company", label: "Unternehmen", art: "text", platzhalter: "Firmenname",
+    frage: (a) => (a.lane === "sales" ? "Welches Unternehmen willst du ansprechen?" : "Um welches Unternehmen geht es?"),
+    hinweis: (a) => (a.lane === "sales"
+      ? "Pflicht für die Ansprache. Tier-1-Namen bringen ihren Steckbrief mit."
+      : "Optional. Tier-1-Namen bringen ihren Steckbrief mit."),
+    pflichtWenn: (a) => a.lane === "sales", min: 2,
+  },
+  {
     key: "headline", label: "Titel", frage: "Wie heißt das Signal?", art: "text",
     platzhalter: "Handel baut Eigenmarken schneller aus als geplant",
+    hinweis: "Eine Aussage, kein Schlagwort. Der Titel im Asset entsteht später eigens.",
     pflicht: true, min: 3,
   },
   {
-    key: "core", label: "Kern", frage: "Was besagt das Signal im Kern?",
+    key: "core", label: "Was passiert", frage: "Was passiert, bei wem, seit wann?",
     art: "textarea", rows: 4,
-    platzhalter: "Zwei bis drei Sätze: was passiert, bei wem, seit wann",
+    platzhalter: "Zwei bis drei Sätze, nüchtern beschrieben",
     pflicht: true, min: 30,
   },
   {
-    key: "evidence", label: "Beleg", frage: "Was belegt diese Beobachtung?",
+    key: "evidence", label: "Beleg", frage: "Welche Zahlen, Zitate oder Namen belegen es?",
     art: "textarea", rows: 5,
-    platzhalter: "Zahlen, Zitate und Namen im Wortlaut",
+    platzhalter: "Im Wortlaut übernehmen",
+    hinweis: "Nur was hier steht, darf im Asset als Zahl oder Zitat auftauchen.",
     pflicht: true, min: 20,
   },
   {
     key: "source", label: "Fundstelle", frage: "Woher stammt die Information?", art: "text",
     when: (a) => a.weg !== "quelle",
-    platzhalter: "https://… Link zur Studie oder Meldung",
+    platzhalter: "Medium und Jahr oder Link, z. B. Handelsblatt, 2026",
   },
   {
-    key: "company", label: "Unternehmen", art: "text", platzhalter: "Firmenname",
-    frage: (a) => (a.lane === "sales"
-      ? "Welches Unternehmen willst du ansprechen?"
-      : "Um welches Unternehmen geht es?"),
+    key: "relevance", label: "Relevanz", frage: (a) => (a.lane === "sales"
+      ? "Warum ist jetzt der richtige Moment für eine Ansprache?"
+      : "Warum ist das für ROOTS-Zielgruppen relevant?"),
+    art: "textarea", rows: 3,
+    platzhalter: "Ein Satz, steht als Begründung auf der Karte",
+  },
+  {
+    key: "offering", label: "Leistung", art: "auswahl", platzhalter: "Eigene Leistung eintragen",
+    frage: (a) => (a.lane === "sales" ? "Welche ROOTS-Leistung willst du anbieten?" : "Welche ROOTS-Leistung schließt daran an?"),
+  },
+  {
+    key: "docking", label: "Andocken", frage: "Wie kann ROOTS konkret andocken?",
+    art: "textarea", rows: 3,
+    when: (a) => Boolean(String(a.offering || "").trim()),
+    platzhalter: "Was ROOTS mit dieser Leistung beim Unternehmen oder Thema tun würde",
+  },
+  {
+    key: "occasion", label: "Anlass", frage: "Gibt es einen konkreten Anlass?", art: "text",
+    platzhalter: "Messe, Quartalszahlen, Personalie",
+  },
+  {
+    key: "territory", label: "Markt", frage: "Für welchen Markt gilt das?", art: "text",
+    platzhalter: "z. B. DACH, Lebensmittelhandel",
   },
   {
     key: "competitor", label: "Benchmark", art: "text",
@@ -101,20 +150,6 @@ const FRAGEN = [
       ? "Welche Wettbewerber des Kunden machen es schon vor?"
       : "Welche Wettbewerber des betroffenen Unternehmens machen es schon vor?"),
     platzhalter: "Firmennamen, z. B. Aldi Süd, dm, Rossmann",
-  },
-  {
-    key: "territory", label: "Markt", frage: "Für welchen Markt gilt das?", art: "text",
-    platzhalter: "z. B. DACH, Lebensmittelhandel",
-  },
-  {
-    key: "occasion", label: "Anlass", frage: "Gibt es einen konkreten Anlass?", art: "text",
-    platzhalter: "Messe, Quartalszahlen, Personalie",
-  },
-  {
-    key: "offering", label: "Leistung", art: "auswahl", platzhalter: "Eigene Leistung eintragen",
-    frage: (a) => (a.lane === "sales"
-      ? "Welche ROOTS-Leistung willst du anbieten?"
-      : "Welche ROOTS-Leistung schließt daran an?"),
   },
 ];
 
@@ -133,7 +168,10 @@ const BEISPIEL = {
     evidence: "Der Eigenmarkenanteil liegt bei 41 Prozent, 2024 waren es 34 Prozent. 68 Prozent der Käufer nennen den Preis als Hauptgrund.",
     source: "Handelsblatt, 2026",
     company: "Beispiel Handel AG",
+    signal_label: "Eigenmarkenstrategie",
+    relevance: "Markenhersteller verlieren Regalfläche und brauchen eine Antwort auf Preis und Profil.",
     offering: "Markenstrategie",
+    docking: "ROOTS schärft mit Markenstrategie die Rolle der Herstellermarke neben den Eigenmarken.",
     territory: "DACH, Lebensmittelhandel",
     occasion: "Quartalszahlen",
     competitor: "Aldi Süd, dm",
@@ -144,7 +182,10 @@ const BEISPIEL = {
     evidence: "Der Eigenmarkenanteil liegt bei 41 Prozent, 2024 waren es 34 Prozent. Der Kunde nennt im Geschäftsbericht 12 Prozent Rückgang bei der Kernmarke.",
     source: "Geschäftsbericht 2026",
     company: "Beispiel Handel AG",
+    signal_label: "Strategiewechsel",
+    relevance: "Der Rückgang der Kernmarke zwingt zu einer Entscheidung über Positionierung und Preis.",
     offering: "Markenstrategie",
+    docking: "ROOTS entwickelt mit Markenstrategie eine Positionierung, die die Kernmarke gegen Eigenmarken verteidigt.",
     territory: "DACH, Lebensmittelhandel",
     occasion: "Quartalszahlen",
     competitor: "Rossmann, dm",
@@ -235,6 +276,15 @@ const EIGENES_CSS = `
 #${OVERLAY_ID} .ms-fund-sprung:hover{background:var(--brand-light,#eff6ff);}
 #${OVERLAY_ID} .ms-fund--blocker > i{color:var(--danger,#dc2626);}
 #${OVERLAY_ID} .ms-pruefkopf{display:flex; align-items:center; gap:8px;}
+#${OVERLAY_ID} .ms-vorschau{flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(240px,300px); gap:16px; align-items:start;}
+#${OVERLAY_ID} .ms-vorschau-karte{cursor:default;}
+#${OVERLAY_ID} .ms-vorschau-aside{overflow:visible; padding:1.25rem; border:0; border-radius:12px;}
+#${OVERLAY_ID} .ms-platzhalter{color:#94a3b8; font-weight:inherit; font-size:inherit;}
+#${OVERLAY_ID} .decision-tags .ms-platzhalter{font-size:.72rem;}
+#${OVERLAY_ID} .ms-tag-leer{color:#94a3b8; background:transparent; border:1px solid var(--line,#e2e8f0);}
+@container (max-width: 1100px){
+  #${OVERLAY_ID} .ms-vorschau{grid-template-columns:1fr;}
+}
 `;
 
 let offeneInstanz = null;
@@ -331,13 +381,17 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     return typeof feld === "function" ? feld(state.answers) : (feld || "");
   }
 
+  function istPflicht(q) {
+    return typeof q.pflichtWenn === "function" ? q.pflichtWenn(state.answers) : Boolean(q.pflicht);
+  }
+
   function erledigt(q) {
     // Eine Karte mit zwei Feldern bringt ihre eigene Pruefung mit: eines von
     // beiden genuegt, und welches, weiss nur die Frage selbst.
     if (typeof q.fertig === "function") return q.fertig(state.answers) || !q.pflicht;
     const v = wert(q).trim();
-    if (q.art === "pills") return Boolean(v);
-    if (!q.pflicht) return true;
+    if (q.art === "pills") return Boolean(v) || !istPflicht(q);
+    if (!istPflicht(q)) return true;
     return v.length >= (q.min || 1);
   }
 
@@ -381,7 +435,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     if (q.art === "quelle") return String(state.answers.quelle_url || "").trim() || "noch keine Quelle";
     const v = wert(q).trim();
     if (q.art === "pills") {
-      const treffer = (q.options || []).find(([value]) => value === v);
+      const treffer = (typeof q.options === "function" ? q.options(state.answers) : q.options || []).find(([value]) => value === v);
       return treffer ? treffer[1] : v || "noch nicht gewählt";
     }
     if (!v) return "übersprungen";
@@ -474,7 +528,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
 
   function koerper(q) {
     if (q.art === "pills") {
-      const pillen = q.options.map(([value, label]) => `
+      const pillen = (typeof q.options === "function" ? q.options(state.answers) : q.options).map(([value, label]) => `
         <button type="button" class="as-opt as-opt--btn${wert(q) === value ? " is-active" : ""}"
           data-act="pick" data-key="${esc(q.key)}" data-value="${esc(value)}"
           aria-pressed="${wert(q) === value ? "true" : "false"}"><span>${esc(label)}</span></button>`).join("");
@@ -594,14 +648,14 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
             <span class="as-step-nr">${index + 1}</span>
             <label>${esc(textVon(offen.frage) || offen.label)}</label>
             ${state.ausQuelle.has(offen.key) ? '<i class="as-tag ms-tag-quelle">aus der Quelle</i>' : ""}
-            ${offen.pflicht ? "" : '<i class="as-tag">Optional</i>'}
+            ${istPflicht(offen) ? "" : '<i class="as-tag">Optional</i>'}
           </div>
-          ${offen.hinweis ? `<p class="as-hint">${esc(offen.hinweis)}</p>` : ""}
+          ${textVon(offen.hinweis) ? `<p class="as-hint">${esc(textVon(offen.hinweis))}</p>` : ""}
           ${koerper(offen)}
           ${state.formError ? `<p class="as-form-error">${esc(state.formError)}</p>` : ""}
           <div class="as-step-fuss">
             ${index > 0 ? '<button type="button" class="as-btn as-step-zurueck" data-act="back"><i class="fa-solid fa-arrow-left"></i>Zurück</button>' : ""}
-            ${offen.pflicht ? "" : '<button type="button" class="as-btn" data-act="skip">Überspringen</button>'}
+            ${istPflicht(offen) ? "" : '<button type="button" class="as-btn" data-act="skip">Überspringen</button>'}
             <button type="button" class="as-btn as-btn--primary as-step-weiter" data-act="next">Weiter<i class="fa-solid fa-arrow-right"></i></button>
           </div>
         </div>`
@@ -621,22 +675,99 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     return `${beantwortet}${karte}`;
   }
 
-  /** Rechts steht das Signal, wie es das Modell lesen wird. */
-  function karteHtml() {
+  /** Text oder Platzhalter: leere Felder stehen grau dort, wo spaeter Inhalt kommt. */
+  function oderLeer(text, platzhalter) {
+    const wertJetzt = String(text || "").trim();
+    return wertJetzt ? esc(wertJetzt) : `<span class="ms-platzhalter">${esc(platzhalter)}</span>`;
+  }
+
+  /** Die Karte, wie sie in der Signalliste steht. Dieselben Klassen wie dort. */
+  function vorschauKarte() {
     const a = state.answers;
-    const chips = [
-      a.lane === "sales" ? "Ansprache" : "LinkedIn",
-      a.lane === "marketing" && a.profile === "private" ? "Privatprofil" : "ROOTS",
-      a.company, a.territory, a.offering,
-    ].filter(Boolean).map((text) => `<span class="ms-chip">${esc(text)}</span>`).join("");
-    return `<div class="ms-karte">
-      <div class="ms-chips">${chips}</div>
-      <h4${a.headline ? "" : ' class="ms-leer"'}>${esc(a.headline || "Überschrift des Signals")}</h4>
-      <p${a.core ? "" : ' class="ms-leer"'}>${esc(a.core || "Kern des Signals")}</p>
-      ${a.evidence ? `<div class="ms-beleg">${esc(a.evidence)}</div>` : ""}
-      ${a.source ? `<p>Quelle: ${esc(a.source)}</p>` : ""}
-      <span class="ms-fueller"></span>
-    </div>`;
+    const sales = a.lane === "sales";
+    const heute = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const quelle = a.source || quellenAdresse();
+    return `<article class="finding-item ms-vorschau-karte">
+      <div class="finding-item-top">
+        <span class="finding-dimension">${oderLeer(a.signal_label, "Thema")}</span>
+        <div class="finding-top-tags">
+          <span class="finding-new-badge">NEU</span>
+          <span class="quality-tag quality-tag--reliable"><i class="fa-solid fa-chart-line"></i> ${sales ? "Sales-Relevanz" : "Marketing-Relevanz"} · manuell</span>
+          <span class="finding-date-tag">${esc(heute)}</span>
+        </div>
+      </div>
+      <span class="finding-title">${oderLeer(a.headline, "Titel des Signals")}</span>
+      <p class="simple-signal-why">${oderLeer(a.relevance || a.core, sales ? "Warum jetzt der richtige Moment ist" : "Warum das Signal für ROOTS zählt")}</p>
+      <div class="finding-offering">
+        <div class="finding-offering-head"><span><i class="fa-solid fa-puzzle-piece"></i> Passende ROOTS-Leistung</span></div>
+        <strong>${oderLeer(a.offering, "Leistung")}</strong>
+        <div class="finding-offering-dock"><span>So kann ROOTS andocken</span><p>${oderLeer(a.docking, "Andockpunkt")}</p></div>
+      </div>
+      <div class="finding-meta">
+        ${a.company ? `<span class="tag tag--company"><i class="fa-solid fa-building"></i> ${esc(a.company)}</span>` : `<span class="tag ms-tag-leer"><i class="fa-solid fa-building"></i> Unternehmen</span>`}
+        <span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${quelle ? esc(quelle.length > 40 ? `${quelle.slice(0, 40)}…` : quelle) : "Manuelles Signal"}</span>
+      </div>
+    </article>`;
+  }
+
+  /** Ergebnis der Pruefung als Pille der Seitenleiste. */
+  function pruefPille() {
+    if (state.pruefungLaeuft) return `<span class="quality-tag quality-tag--uncertain"><i class="fa-solid fa-circle-notch fa-spin"></i> Prüfung läuft</span>`;
+    const befund = state.pruefung;
+    if (!befund || !state.pruefungFrisch) return `<span class="quality-tag ms-tag-leer"><i class="fa-solid fa-circle-info"></i> Noch nicht geprüft</span>`;
+    const art = befund.verdict === "tragfaehig" ? "reliable" : befund.verdict === "untauglich" ? "rejected" : "uncertain";
+    const text = { tragfaehig: "Trägt", duenn: "Dünn", untauglich: "Trägt nicht" }[befund.verdict] || befund.verdict;
+    return `<span class="quality-tag quality-tag--${art}"><i class="fa-solid fa-chart-line"></i> ${esc(text)}</span>`;
+  }
+
+  /** Die Seitenleiste wie im geoeffneten Signal, mit Platzhaltern. */
+  function vorschauLeiste() {
+    const a = state.answers;
+    const sales = a.lane === "sales";
+    const tags = [a.signal_label, a.territory, a.occasion, a.competitor && `Benchmark: ${a.competitor}`]
+      .filter((text) => String(text || "").trim())
+      .map((text) => `<span class="tag">${esc(text)}</span>`).join("");
+    const quelle = a.source || quellenAdresse();
+    return `<aside class="article-detail-aside ms-vorschau-aside">
+      <h3>Warum diese Entscheidung?</h3>
+      <div class="decision-block">
+        <span class="decision-label">Ergebnis</span>
+        ${pruefPille()}
+        ${state.pruefung?.verdictReason && state.pruefungFrisch ? `<p class="decision-rationale">${esc(state.pruefung.verdictReason)}</p>` : ""}
+      </div>
+      <div class="decision-block">
+        <span class="decision-label">Begründung</span>
+        <p class="decision-rationale">${oderLeer(a.relevance || a.core, "Relevanz")}</p>
+      </div>
+      <div class="decision-block decision-block--offering">
+        <span class="decision-label">Passende ROOTS-Leistung</span>
+        <div class="offering-match">
+          <span class="offering-match-name">${oderLeer(a.offering, "Leistung")}</span>
+          <div class="offering-match-dock"><span>So kann ROOTS andocken</span><p class="offering-match-reasoning">${oderLeer(a.docking, "Andockpunkt")}</p></div>
+        </div>
+      </div>
+      <div class="decision-block">
+        <span class="decision-label">${sales ? "Ansprache" : "LinkedIn-Asset"}</span>
+        <p class="decision-rationale">${sales
+          ? oderLeer(a.company && `An ${a.company}`, "Unternehmen")
+          : esc(a.profile === "private" ? "Privatprofil" : "ROOTS")}</p>
+      </div>
+      <div class="decision-block">
+        <span class="decision-label">Tags & Routing</span>
+        <div class="decision-tags">${tags || `<span class="ms-platzhalter">Thema, Markt, Anlass</span>`}</div>
+      </div>
+      <div class="decision-block">
+        <span class="decision-label">Belege</span>
+        <div class="evidence-list">
+          <blockquote class="evidence-item"><strong>Beleg</strong>${oderLeer(a.evidence, "Zahlen und Zitate im Wortlaut")}</blockquote>
+        </div>
+        <p class="decision-rationale">${oderLeer(quelle && `Quelle: ${quelle}`, "Fundstelle")}</p>
+      </div>
+    </aside>`;
+  }
+
+  function karteHtml() {
+    return `<div class="ms-vorschau">${vorschauKarte()}${vorschauLeiste()}</div>`;
   }
 
   /**
@@ -860,6 +991,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     return {
       lane: a.lane, mode: a.mode, headline: a.headline, core: a.core, evidence: a.evidence,
       source: a.source || quellenAdresse(), company: a.company, offering: a.offering,
+      signal_label: a.signal_label, relevance: a.relevance, docking: a.docking,
       territory: a.territory, occasion: a.occasion, competitor: a.competitor,
     };
   }
@@ -984,8 +1116,13 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     if (act === "pick") {
       const key = hit.getAttribute("data-key");
       state.answers[key] = hit.getAttribute("data-value");
+      if (key === "signal_label") state.beruehrt.add(key);
       verwerfePruefung();
-      if (key === "lane") uebernimmBeispiel(state.answers.lane);
+      if (key === "lane") {
+        uebernimmBeispiel(state.answers.lane);
+        // Ein Thema der anderen Spur passt nicht mehr: neu waehlen lassen.
+        if (!(THEMEN[state.answers.lane] || []).includes(state.answers.signal_label)) state.answers.signal_label = "";
+      }
       if (key === "weg" && hit.getAttribute("data-value") !== "felder") {
         for (const feld of Object.keys(BEISPIEL.marketing)) {
           if (!state.beruehrt.has(feld)) state.answers[feld] = "";

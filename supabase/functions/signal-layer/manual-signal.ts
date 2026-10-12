@@ -29,6 +29,7 @@ export type ManualSignal = {
   occasion: string;
   competitor: string;
   tone: string;
+  docking: string;
 };
 
 const GRENZEN: Record<keyof Omit<ManualSignal, "lane" | "mode">, number> = {
@@ -45,6 +46,7 @@ const GRENZEN: Record<keyof Omit<ManualSignal, "lane" | "mode">, number> = {
   occasion: 300,
   competitor: 300,
   tone: 300,
+  docking: 800,
 };
 
 function feld(raw: Record<string, unknown>, key: string, max: number): string {
@@ -93,6 +95,7 @@ export function manualSignalCorpus(signal: ManualSignal): string {
     ["Anlass", signal.occasion],
     ["Wettbewerb", signal.competitor],
     ["ROOTS-Anschluss", signal.offering],
+    ["Andockpunkt", signal.docking],
   ];
   const gefuellt = zusatz.filter(([, wert]) => wert);
   if (gefuellt.length) {
@@ -150,6 +153,7 @@ export function manualSignalRows(signal: ManualSignal, articleId: string, jetzt:
       article_type: MANUAL_ARTICLE_TYPE,
       language: "de",
       roots_offering: signal.offering || null,
+      roots_link_de: signal.docking || null,
       buying_center_roles: signal.audience ? [signal.audience] : [],
       pipeline_version: MANUAL_ARTICLE_TYPE,
       trigger_de: signal.occasion || null,

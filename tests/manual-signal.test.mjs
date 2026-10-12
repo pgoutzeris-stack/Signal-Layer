@@ -137,9 +137,9 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   // Pflichtfelder und Kür klar getrennt: optionale Fragen tragen Überspringen.
   assert.match(frontend, /key: "evidence"[\s\S]*pflicht: true/);
   assert.match(frontend, /data-act="skip"/);
-  // Relevanz, Adressat und Tonalität sind aus dem Fragebogen heraus: der Weg
-  // zum Asset war zu lang, und keine der drei war Pflicht.
-  assert.doesNotMatch(frontend, /key: "relevance"/);
+  // Relevanz ist wieder eine eigene, optionale Frage: sie steht als
+  // Begruendung auf der Karte. Adressat und Tonalitaet bleiben draussen.
+  assert.match(frontend, /key: "relevance", label: "Relevanz"/);
   assert.doesNotMatch(frontend, /key: "audience"/);
   assert.doesNotMatch(frontend, /key: "tone"/);
   assert.match(frontend, /key: "competitor", label: "Benchmark"/);
@@ -154,16 +154,16 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /box\.scrollTop = Math\.max\(0, ziel\);/);
   // Die Karte stellt eine Frage, die Antwortzeile traegt den kurzen Namen:
   // "Wofür" als Frage war keine Frage.
-  assert.match(frontend, /frage: "Was soll aus dem Signal entstehen\?"/);
+  assert.match(frontend, /frage: "Wofür ist das Signal\?"/);
   // Wer die Texte schreibt, entscheidet erst der Asset-Fragebogen: ein manuell
   // getipptes Signal kann die Frage gar nicht beantworten.
   assert.doesNotMatch(frontend, /key: "mode"/);
   assert.doesNotMatch(frontend, /Wer schreibt die Texte/);
   assert.doesNotMatch(frontend, /key: "storyline_text"/);
   assert.doesNotMatch(frontend, /key: "caption_text"/);
-  assert.match(frontend, /frage: "Was belegt diese Beobachtung\?"/);
+  assert.match(frontend, /frage: "Welche Zahlen, Zitate oder Namen belegen es\?"/);
   // Der Kern ist der Inhalt des Signals, die Relevanz eine eigene Frage.
-  assert.match(frontend, /key: "core", label: "Kern", frage: "Was besagt das Signal im Kern\?"/);
+  assert.match(frontend, /key: "core", label: "Was passiert", frage: "Was passiert, bei wem, seit wann\?"/);
   // Relevanz, Adressat, Unternehmen und Leistung lauten je Spur anders:
   // im Feed geht es um Leser, in der Ansprache um das Unternehmen.
   assert.match(frontend, /"Welches Unternehmen willst du ansprechen\?"/);
@@ -188,8 +188,8 @@ test("der Fragebogen sieht aus wie der Asset-Fragebogen und fragt das Signal ab"
   assert.match(frontend, /grid-template-rows:auto 1fr/);
   assert.match(frontend, /class="ms-kopf"/);
   assert.match(frontend, /\.ms-karte\{\n  flex:1; align-self:stretch;/);
-  // Die Quelle bittet um eine URL und sagt, was ohne sie passiert.
-  assert.match(frontend, /key: "source"[\s\S]*platzhalter: "https:\/\/…/);
+  // Die Fundstelle fragt nach Medium und Jahr oder Link.
+  assert.match(frontend, /key: "source"[\s\S]*platzhalter: "Medium und Jahr oder Link/);
   // Der Hinweis ist raus: die Schreibhilfe unter dem Feld sagt es genauer.
   assert.doesNotMatch(frontend, /Am besten die URL einsetzen/);
   // Die Leistung kommt aus dem ROOTS-Katalog, Freitext bleibt möglich.
@@ -220,7 +220,7 @@ test("jedes Feld ist für die Testphase vorbelegt", () => {
   // Spurwechsel tauscht das Beispiel, selbst getippte Felder bleiben stehen.
   assert.match(frontend, /function uebernimmBeispiel\(lane\)/);
   assert.match(frontend, /if \(!state\.beruehrt\.has\(key\)\) state\.answers\[key\] = wert;/);
-  assert.match(frontend, /if \(key === "lane"\) uebernimmBeispiel\(state\.answers\.lane\)/);
+  assert.match(frontend, /if \(key === "lane"\) \{\n\s+uebernimmBeispiel\(state\.answers\.lane\)/);
   assert.match(frontend, /state\.beruehrt\.add\(key\)/);
   // Beide Spuren tragen ein vollständiges Beispiel, sonst bleibt ein Pflichtfeld leer.
   const block = frontend.slice(frontend.indexOf("const BEISPIEL = {"), frontend.indexOf("const EIGENES_CSS"));

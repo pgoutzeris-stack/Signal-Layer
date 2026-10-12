@@ -15,10 +15,10 @@ import { matchesDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs
 // Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
-import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261012-4";
+import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261012-5";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { articleDisplayTitle } from "./article-title.mjs?v=20261012-4";
-import { paywallPillHtml } from "./paywall-pill.mjs?v=20261012-4";
+import { articleDisplayTitle } from "./article-title.mjs?v=20261012-5";
+import { paywallPillHtml } from "./paywall-pill.mjs?v=20261012-5";
 
 let ctx = null;
 let els = {};

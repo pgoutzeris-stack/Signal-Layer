@@ -3391,6 +3391,8 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
   // gebucht, nicht aus dieser Tabelle.
   "anthropic/claude-opus-5-5": { currency: "USD", standard: { input: 4, cachedInput: 4, output: 20 } },
   "anthropic/claude-sonnet-5-5": { currency: "USD", standard: { input: 3, cachedInput: 3, output: 15 } },
+  // Aus usage.cost eines echten Aufrufs am 12.10.2026 zurueckgerechnet.
+  "perplexity/deepseek-v4-pro-0813": { currency: "USD", standard: { input: 1.32, cachedInput: 1.32, output: 3.96 } },
   "anthropic/claude-fable-5-1": { currency: "USD", standard: { input: 10, cachedInput: 10, output: 50 } },
   "openai/gpt-5.4": { currency: "USD", standard: { input: 2.5, cachedInput: 2.5, output: 15 } },
 };
@@ -12404,7 +12406,7 @@ Deno.serve(async (req: Request) => {
         }
 
         const entwurfConfig = await getPipelineConfig();
-        const entwurfModel = entwurfConfig.ai.simple_model || SIMPLE_MODEL;
+        const entwurfModel = entwurfConfig.ai.manual_check_model || entwurfConfig.ai.simple_model || SIMPLE_MODEL;
         const entwurfKey = await modelApiKey(entwurfModel);
         if (!entwurfKey) return errorResponse(origin, `Für ${entwurfModel} ist kein API-Schlüssel hinterlegt`, 500);
         const tarif = deepseekTarifLage(entwurfModel);

@@ -105,7 +105,7 @@ test("Server und Fragebogen sind verdrahtet", () => {
   assert.match(edge, /run-sync-get-dataset-items\?token=\$\{key\}/);
 
   // Fragebogen: zwei Wege, und im Quellenweg genau ein Feld.
-  assert.match(frontend, /\["felder", "Manuell erstellen"\], \["quelle", "Durch Transkript erzeugen"\]/);
+  assert.match(frontend, /\["felder", "Selbst schreiben"\], \["quelle", "Aus einer Quelle ziehen"\]/);
   assert.match(frontend, /key: "quelle", label: "Quelle", frage: "Welche Adresse soll ausgelesen werden\?", art: "quelle"/);
   assert.match(frontend, /data-feld="quelle_url"/);
   assert.doesNotMatch(frontend, /quelle_text/);
