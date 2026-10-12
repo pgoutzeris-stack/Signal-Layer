@@ -3205,7 +3205,7 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
   assert.equal(studioVersion, "20261008-9");
-  assert.match(indexHtml, /app\.js\?v=20261012-2/);
+  assert.match(indexHtml, /app\.js\?v=20261012-3/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3430,7 +3430,7 @@ test("Benchmarks: Websuche recherchiert, eigene Angaben haben Form und Prüfung"
   assert.match(edge, /Im Fragebogen eigene Benchmarks eintragen/);
   assert.match(edge, /function callGeminiWithGoogleSearch/);
   assert.match(edge, /streamGenerateContent\?alt=sse/);
-  assert.match(edge, /const researchModel = MEMO_BENCHMARK_RESEARCH_MODEL;/);
+  assert.match(edge, /const researchModel = await aufgabenModell\("memo_research_model", MEMO_BENCHMARK_RESEARCH_MODEL\);/);
   assert.match(edge, /MEMO_BENCHMARK_RESEARCH_TIMEOUT_MS/);
   assert.match(edge, /thinkingBudget: 0/);
   assert.match(edge, /MEMO_BENCHMARK_RESEARCH_MAX_TOKENS/);
@@ -4210,7 +4210,7 @@ test("Memo-Recherche und Entwurf laufen ueber Perplexity, Kosten kommen aus der 
   assert.equal(leer.ok, false);
   assert.equal(leer.kind, "balance");
 
-  assert.match(edge, /assetKind === "memo" \? MEMO_DRAFT_MODEL/);
+  assert.match(edge, /assetKind === "memo"\s*\? \(assetConfig\.ai\.memo_draft_model \|\| MEMO_DRAFT_MODEL\)/);
   assert.match(edge, /function modelViaPgNet/);
   assert.match(edge, /isPerplexityModel\(options\.model\) \? perplexityRequestBody\(options\)/);
   assert.match(edge, /"anthropic\/claude-opus-5-5": \{ currency: "USD"/);
@@ -4386,7 +4386,7 @@ test("Die Ladeanzeige nennt Modell und Tokens und zeigt Punkte am laufenden Schr
   assert.match(studio, /@keyframes as-dot/);
   assert.doesNotMatch(studio, /· seit \$\{Math\.round/);
   assert.match(studio, /state\.laufModell = String\(row\.model\)/);
-  assert.match(edge, /loggen\("research_start", \{ model: MEMO_BENCHMARK_RESEARCH_MODEL \}\)/);
+  assert.match(edge, /loggen\("research_start", \{ model: researchModel \}\)/);
   assert.match(edge, /tokens: gefunden\.tokens/);
   assert.match(edge, /tokens: markt\?\.tokens \|\| 0/);
 });
@@ -4465,7 +4465,7 @@ test("Bildwahl mit Sicht: Rahmen, Kandidatenfilter und Entscheidung", () => {
   assert.match(edge, /async function waehleMemoBilderMitSicht/);
   assert.match(edge, /MEMO_BILD_RUNDEN/);
   assert.match(edge, /type: "input_image", image_url: kandidat\.url/);
-  assert.match(edge, /"memo_image_check", MEMO_BILD_PRUEFMODELL/);
+  assert.match(edge, /"memo_image_check", \(await aufgabenModell\("verify_model", MEMO_BILD_PRUEFMODELL\)\)/);
   assert.match(edge, /haengeBildAn\(key, src, "50% 50%", fit\)/);
   const sql = readFileSync(new URL("../supabase/migrations/20260929190000_memo_bildwahl.sql", import.meta.url), "utf8");
   assert.match(sql, /p_fit text default null/);
@@ -4724,7 +4724,7 @@ test("Logos: Speicher zuerst, Pruefung mit Sicht, zweite Runde mit Beschreibung"
   assert.match(ablauf, /const hinweis = rueckmeldung\.get\(m\.marke\) \|\|/);
   assert.match(ablauf, /sucheMemoBilder\(memoLogoSuchanfrage\(suchname, hinweis\), "logosuche"\)/);
   assert.match(ablauf, /log\?\.\("logo_abgelehnt"/);
-  assert.match(edge, /recordStandaloneAiUsage\("memo_image_check", MEMO_BILD_PRUEFMODELL, "success", antwort\.usage, 0, undefined, gemessen, "logopruefung"\)/);
+  assert.match(edge, /recordStandaloneAiUsage\("memo_image_check", \(await aufgabenModell\("verify_model", MEMO_BILD_PRUEFMODELL\)\), "success", antwort\.usage, 0, undefined, gemessen, "logopruefung"\)/);
   // Worldvectorlogo raet den Namen und liefert nur SVG: nicht in der Suche mit Sicht.
   const wikimedia = edge.slice(edge.indexOf("async function wikimediaLogoKandidaten("), edge.indexOf("async function ladeLogoZurPruefung("));
   assert.doesNotMatch(wikimedia, /probeWorldvectorlogo/);

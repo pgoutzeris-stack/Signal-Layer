@@ -1910,12 +1910,12 @@ import { MEMO_TEMPLATE, MEMO_TEMPLATE_CSS, MEMO_DEFAULTS, MEMO_PAGE_COUNT } from
 import {
   createFreiform, createKontextmenue, wendeAenderungenAn, bereinigeAenderungen, serialisiereAenderungen,
   zaehleAenderungen, elementAmPfad, pfadVon, bildAus, istTextElement, FREI_FARBEN,
-} from "./asset-freiform.js?v=20261012-2";
+} from "./asset-freiform.js?v=20261012-3";
 // Nur noch für die beiden festen Porträts. Der Referenzinhalt selbst wandert
 // nie in ein erzeugtes Memo.
-import { MEMO_EXAMPLE } from "./memo-example.js?v=20261012-2";
+import { MEMO_EXAMPLE } from "./memo-example.js?v=20261012-3";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261012-2";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261012-3";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 

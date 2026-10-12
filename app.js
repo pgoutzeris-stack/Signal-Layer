@@ -5,10 +5,10 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261012-2";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261012-3";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261012-2";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261012-3";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
@@ -679,6 +679,30 @@ function simpleModelSelect(path, label, description, researchOnly = false) {
   return `<label class="operations-model-field"><span class="operations-model-icon"><i class="fa-solid ${researchOnly ? "fa-magnifying-glass" : "fa-wand-magic-sparkles"}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><small>${escapeHtml(description)} ${escapeHtml(price)}</small><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="${path}" aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
 }
 
+// Modell je Aufgabe. Die Liste kommt aus dem Katalog im Servercode; welche
+// Anbieter eine Aufgabe kann, legt der Filter fest (Websuche und Bildprüfung
+// gehen nur über Perplexity).
+const AUFGABEN_MODELLE = [
+  ["ai.simple_model", "Artikelanalyse", "fa-solid fa-wand-magic-sparkles", () => true],
+  ["ai.translation_model", "Übersetzung", "fa-solid fa-language", () => true],
+  ["ai.manual_check_model", "Prüfung manuelles Signal", "fa-solid fa-clipboard-check", () => true],
+  ["ai.linkedin_model", "LinkedIn-Beitrag", "fa-brands fa-linkedin", (m) => m.provider !== "gemini"],
+  ["ai.memo_draft_model", "Executive Memo", "fa-solid fa-file-lines", (m) => m.provider !== "gemini"],
+  ["ai.memo_research_model", "Memo-Recherche", "fa-solid fa-magnifying-glass-chart", (m) => m.provider === "perplexity"],
+  ["ai.verify_model", "Bild- und Personenprüfung", "fa-solid fa-user-check", (m) => m.provider === "perplexity"],
+  ["ai.simple_research_model", "Tier-1-Steckbrief", "fa-solid fa-building", (m) => m.provider === "gemini"],
+];
+
+function aufgabenModelSelect([path, label, icon, passt]) {
+  const catalog = (pipelineSettings?.simple_models || []).filter(passt);
+  const value = getConfigValue(path);
+  const liste = catalog.some((model) => model.id === value) || !value ? catalog : [{ id: value, label: value }, ...catalog];
+  const options = liste
+    .map((model) => `<option value="${escapeHtml(model.id)}" ${model.id === value ? "selected" : ""}>${escapeHtml(model.label || model.id)}</option>`)
+    .join("");
+  return `<label class="operations-model-field"><span class="operations-model-icon"><i class="${icon}"></i></span><span class="operations-model-copy"><b>${escapeHtml(label)}</b><span class="operations-select-wrap"><select class="pipeline-control signal-toolbar-select" data-pipeline-path="${path}" aria-label="${escapeHtml(label)}">${options}</select><i class="fa-solid fa-chevron-down"></i></span></span></label>`;
+}
+
 function renderOperationsPanel(telemetry) {
   const simpleMode = document.body.classList.contains("mode-simple");
   const euro = formatCostEur;
@@ -709,10 +733,9 @@ function renderOperationsPanel(telemetry) {
     </section>`}
 
     ${!simpleMode ? "" : `<section class="operations-card">
-      <div class="operations-card-head"><div><span>KI-Konfiguration · Einfacher Modus</span><h4>Analyse und Recherche getrennt steuern</h4><p>Das Analysemodell bewertet Artikel in genau einem Aufruf. Das Recherchemodell arbeitet nur bei einem bestätigten Tier-1-Unternehmen ohne vorhandenen Steckbrief. Tokens und Kosten landen im selben Kostenledger.</p></div><i class="fa-solid fa-wand-magic-sparkles operations-card-symbol"></i></div>
+      <div class="operations-card-head"><div><span>KI-Konfiguration</span><h4>Modell je Aufgabe</h4></div><i class="fa-solid fa-wand-magic-sparkles operations-card-symbol"></i></div>
       <div class="operations-model-grid">
-        ${simpleModelSelect("ai.simple_model", "Analysemodell", "Prüft und klassifiziert die gespeicherten Artikel im einzigen Analyseaufruf.")}
-        ${simpleModelSelect("ai.simple_research_model", "Recherchemodell", "Recherchiert ausschließlich einen noch nicht vorhandenen Tier-1-Steckbrief mit Websuche.", true)}
+        ${AUFGABEN_MODELLE.map(aufgabenModelSelect).join("")}
       </div>
     </section>`}
 
