@@ -10,9 +10,9 @@
  * oeffnet mit vorbelegten Antworten: Profil, Modus und die schon geschriebenen
  * Texte stehen dort bereits, bleiben aber veraenderbar.
  */
-import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261012-5";
+import { ASSET_CHROME_CSS, openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261012-6";
 import { feldHinweise, guideMarkup } from "./linkedin-guides.mjs?v=20260824-0305";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261012-5";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261012-6";
 
 const OVERLAY_ID = "ms-overlay";
 const OWN_CSS = ASSET_CHROME_CSS.replace(/#as-overlay/g, `#${OVERLAY_ID}`);
@@ -55,6 +55,25 @@ const THEMEN = {
     "Eigenmarkenstrategie", "Marketing-Prozessoptimierung", "Design to Print",
   ],
 };
+
+/** Die drei Kacheln im Quellen-Popup. Muster wie im Server (source-extract.ts). */
+const QUELLEN_TYPEN = [
+  { typ: "web", titel: "Webseite", zeile: "Artikel, Studie, Pressemitteilung", icon: "fa-solid fa-globe", platzhalter: "https://… Artikel oder Seite" },
+  { typ: "youtube", titel: "YouTube", zeile: "Einzelnes Video, Transkript wird gezogen", icon: "fa-brands fa-youtube", platzhalter: "https://youtube.com/watch?v=… oder youtu.be/…" },
+  { typ: "linkedin", titel: "LinkedIn", zeile: "Einzelner Beitrag", icon: "fa-brands fa-linkedin", platzhalter: "https://linkedin.com/posts/… oder …/feed/update/urn:li:activity:…" },
+];
+const YOUTUBE_VIDEO_MUSTER = /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/)|youtu\.be\/)[\w-]{11}/i;
+const LINKEDIN_BEITRAG_MUSTER = /^https?:\/\/(?:[a-z]{2,3}\.)?(?:www\.)?linkedin\.com\/(?:posts\/[^/?#]+|feed\/update\/urn:li:(?:activity|share|ugcPost):\d+|embed\/feed\/update\/urn:li:(?:activity|share|ugcPost):\d+)/i;
+
+/** Leerer Text heisst: die Adresse passt zur Kachel. */
+export function quellenTypFehler(url, typ) {
+  const adresse = String(url || "").trim();
+  if (!adresse) return "";
+  if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(adresse)) return "Bitte eine vollständige Adresse mit https:// eintragen.";
+  if (typ === "youtube" && !YOUTUBE_VIDEO_MUSTER.test(adresse)) return "Kein einzelnes YouTube-Video. Erwartet: youtube.com/watch?v=… oder youtu.be/….";
+  if (typ === "linkedin" && !LINKEDIN_BEITRAG_MUSTER.test(adresse)) return "Kein LinkedIn-Beitrag. Erwartet: linkedin.com/posts/… oder …/feed/update/urn:li:activity:…, kein Profil, keine Firmenseite.";
+  return "";
+}
 
 const FRAGEN = [
   {
@@ -278,6 +297,30 @@ const EIGENES_CSS = `
 #${OVERLAY_ID} .ms-pruefkopf{display:flex; align-items:center; gap:8px;}
 #${OVERLAY_ID} .ms-vorschau{flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(240px,300px); gap:16px; align-items:start;}
 #${OVERLAY_ID} .ms-vorschau-karte{cursor:default;}
+#${OVERLAY_ID} .ms-dialog-hinter{position:fixed; inset:0; z-index:40; background:rgba(15,23,42,.38); backdrop-filter:blur(3px);}
+#${OVERLAY_ID} .ms-dialog{position:fixed; z-index:41; left:50%; top:50%; transform:translate(-50%,-50%); width:min(720px, calc(100vw - 32px));
+  max-height:calc(100vh - 48px); overflow:auto; padding:28px; border-radius:20px; background:var(--bg,#fff);
+  box-shadow:0 24px 60px rgba(15,23,42,.22); animation:lg-guide-in .2s cubic-bezier(.22,1,.36,1);}
+#${OVERLAY_ID} .ms-dialog h3{margin:0 0 6px; font-size:20px; font-weight:700; color:var(--ink,#0f172a);}
+#${OVERLAY_ID} .ms-dialog-lead{margin:0 0 20px; font-size:14px; line-height:1.5; color:var(--muted,#64748b);}
+#${OVERLAY_ID} .ms-dialog-zu{position:absolute; top:16px; right:16px; width:34px; height:34px; border:0; border-radius:10px; background:var(--tint,#f1f5f9); color:var(--muted,#64748b); cursor:pointer;}
+#${OVERLAY_ID} .ms-dialog-zu:hover{color:var(--ink,#0f172a);}
+#${OVERLAY_ID} .ms-kacheln{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:18px;}
+#${OVERLAY_ID} .ms-kachel{display:flex; flex-direction:column; align-items:flex-start; gap:10px; padding:18px; border:1px solid transparent; border-radius:16px;
+  background:var(--tint,#f7f9fc); font:inherit; text-align:left; cursor:pointer; transition:background .15s, border-color .15s, transform .15s;}
+#${OVERLAY_ID} .ms-kachel:hover{transform:translateY(-1px); background:#eef3fb;}
+#${OVERLAY_ID} .ms-kachel.is-aktiv{background:var(--brand-light,#eff6ff); border-color:var(--brand,#206efb);}
+#${OVERLAY_ID} .ms-kachel b{font-size:15px; color:var(--ink,#0f172a);}
+#${OVERLAY_ID} .ms-kachel small{font-size:12px; line-height:1.4; color:var(--muted,#64748b);}
+#${OVERLAY_ID} .ms-quelle-icon{display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:12px; font-size:20px; background:#fff; color:var(--brand,#206efb);}
+#${OVERLAY_ID} .ms-quelle-icon--youtube{color:#ff0033;}
+#${OVERLAY_ID} .ms-quelle-icon--linkedin{color:#0a66c2;}
+#${OVERLAY_ID} .ms-dialog-feld{width:100%;}
+#${OVERLAY_ID} .ms-dialog-fuss{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
+#${OVERLAY_ID} .ms-quelle-kurz{display:flex; align-items:center; gap:12px; padding:12px; border-radius:12px; background:var(--tint,#f7f9fc);}
+#${OVERLAY_ID} .ms-quelle-kurz .ms-quelle-icon{width:34px; height:34px; font-size:16px;}
+#${OVERLAY_ID} .ms-quelle-adresse{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; color:var(--ink,#0f172a);}
+@media (max-width: 640px){ #${OVERLAY_ID} .ms-kacheln{grid-template-columns:1fr;} }
 #${OVERLAY_ID} .ms-vorschau-aside{overflow:visible; padding:1.25rem; border:0; border-radius:12px;}
 #${OVERLAY_ID} .ms-platzhalter{color:#94a3b8; font-weight:inherit; font-size:inherit;}
 #${OVERLAY_ID} .decision-tags .ms-platzhalter{font-size:.72rem;}
@@ -311,6 +354,7 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
     firmen: [],
     firmenGeladen: false,
     quelleLaeuft: false,
+    quellenDialog: false, quelleTyp: "web",
     quelleBefund: null,
     ausQuelle: new Set(),
     // Pruefung des fertigen Signals. Sie gilt nur fuer die Antworten, mit denen
@@ -424,6 +468,9 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   function setzeSchritt(key) {
     state.stepKey = key;
     state.formError = "";
+    // Am Quellen-Schritt oeffnet das Popup mit den Kacheln, solange noch
+    // nichts gezogen wurde.
+    if (key === "quelle" && !state.quelleBefund?.gefuellt) state.quellenDialog = true;
     zeichne();
     // Am Ende des Fragebogens laeuft die Pruefung von selbst an: der Nutzer
     // soll nicht erst auf einen Knopf klicken muessen, um zu erfahren, dass
@@ -485,15 +532,45 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
    * Artikeltext, bei einer Seite mit Video beides.
    */
   function quelleKoerper(q) {
-    const laeuft = state.quelleLaeuft;
+    const typ = QUELLEN_TYPEN.find((eintrag) => eintrag.typ === state.quelleTyp) || QUELLEN_TYPEN[0];
+    const adresse = String(state.answers.quelle_url || "").trim();
+    return `<div class="ms-quelle-kurz">
+        <span class="ms-quelle-icon ms-quelle-icon--${esc(typ.typ)}"><i class="${esc(typ.icon)}"></i></span>
+        <span class="ms-quelle-adresse">${adresse ? esc(adresse) : '<span class="ms-platzhalter">Noch keine Quelle</span>'}</span>
+      </div>
+      <div class="ms-fuss"><button type="button" class="as-btn" data-act="quelle-dialog"><i class="fa-solid fa-link"></i>${adresse ? "Quelle ändern" : "Quelle wählen"}</button></div>
+      ${befundHtml(state.quelleBefund)}`;
+  }
+
+  /** Popup mit den drei Kacheln: Webseite, YouTube, LinkedIn. */
+  function quellenDialogHtml() {
+    if (!state.quellenDialog) return "";
+    const typ = QUELLEN_TYPEN.find((eintrag) => eintrag.typ === state.quelleTyp) || QUELLEN_TYPEN[0];
     const adresse = String(state.answers.quelle_url || "");
-    const feld = `<input class="as-free" data-feld="quelle_url" aria-label="Adresse"
-      placeholder="${esc(textVon(q.platzhalter))}" value="${esc(adresse)}">`;
-    const knopf = `<button type="button" class="as-btn as-btn--primary ms-ziehen" data-act="quelle-ziehen"${laeuft || adresse.trim().length < 8 ? " disabled" : ""}>
-      ${laeuft
-        ? '<i class="fa-solid fa-circle-notch fa-spin"></i>Quelle wird gelesen'
-        : '<i class="fa-solid fa-wand-magic-sparkles"></i>Signal aus der Quelle ziehen'}</button>`;
-    return `${feld}<div class="ms-fuss">${knopf}</div>${befundHtml(state.quelleBefund)}`;
+    const fehler = quellenTypFehler(adresse, typ.typ);
+    const laeuft = state.quelleLaeuft;
+    const kacheln = QUELLEN_TYPEN.map((eintrag) => `
+      <button type="button" class="ms-kachel${eintrag.typ === typ.typ ? " is-aktiv" : ""}" data-act="quelle-typ" data-value="${esc(eintrag.typ)}" aria-pressed="${eintrag.typ === typ.typ}">
+        <span class="ms-quelle-icon ms-quelle-icon--${esc(eintrag.typ)}"><i class="${esc(eintrag.icon)}"></i></span>
+        <b>${esc(eintrag.titel)}</b>
+        <small>${esc(eintrag.zeile)}</small>
+      </button>`).join("");
+    return `<div class="ms-dialog-hinter" data-act="dialog-zu"></div>
+      <div class="ms-dialog" role="dialog" aria-modal="true" aria-label="Quelle für das Signal">
+        <button type="button" class="ms-dialog-zu" data-act="dialog-zu" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
+        <h3>URL eingeben</h3>
+        <p class="ms-dialog-lead">Füge die URL als Grundlage deines Signals ein. Die KI analysiert den Inhalt und nutzt ihn anschließend als Signalgrundlage.</p>
+        <div class="ms-kacheln">${kacheln}</div>
+        <input class="as-free ms-dialog-feld" data-feld="quelle_url" aria-label="Adresse" placeholder="${esc(typ.platzhalter)}" value="${esc(adresse)}"${laeuft ? " disabled" : ""}>
+        <p class="as-form-error ms-typ-fehler"${fehler ? "" : " hidden"}>${esc(fehler)}</p>
+        ${state.quelleBefund?.fehler ? guideMarkup([{ ton: "warn", text: state.quelleBefund.fehler }], esc) : ""}
+        <div class="ms-dialog-fuss">
+          <button type="button" class="as-btn" data-act="dialog-zu">Abbrechen</button>
+          <button type="button" class="as-btn as-btn--primary" data-act="quelle-ziehen"${laeuft || fehler || adresse.trim().length < 8 ? " disabled" : ""}>
+            ${laeuft ? '<i class="fa-solid fa-circle-notch fa-spin"></i>Inhalt wird gelesen und ausgewertet' : '<i class="fa-solid fa-wand-magic-sparkles"></i>Inhalt analysieren'}
+          </button>
+        </div>
+      </div>`;
   }
 
   /** Was die Quelle hergab und was noch fehlt. Zahlen statt Zuversicht. */
@@ -896,7 +973,8 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
             <div class="ms-rechts">${karteHtml()}</div>
           </div>`}
         </div>
-      </div>`;
+      </div>
+      ${quellenDialogHtml()}`;
     // Nach dem Sprung steht die offene Karte weit unten. Ohne Nachziehen
     // klickt man auf "Weiter" und sieht die naechste Frage nicht. Gerechnet
     // wird der Abstand selbst: scrollIntoView haengt am Kompositor und bleibt
@@ -912,8 +990,9 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       // Die Karte faehrt ohnehin mit ihrer eigenen Bewegung ein.
       box.scrollTop = Math.max(0, ziel);
     }
-    const feld = karte && karte.querySelector("[data-feld]");
-    if (feld && index < fragen.length) feld.focus({ preventScroll: true });
+    const dialogFeld = state.quellenDialog && shell.querySelector(".ms-dialog-feld");
+    const feld = dialogFeld || (karte && karte.querySelector("[data-feld]"));
+    if (feld && (dialogFeld || index < fragen.length)) feld.focus({ preventScroll: true });
   }
 
   function pruefeOffen() {
@@ -941,11 +1020,16 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   async function zieheQuelle() {
     const adresse = String(state.answers.quelle_url || "").trim();
     if (state.quelleLaeuft || adresse.length < 8) return;
+    const typFehler = quellenTypFehler(adresse, state.quelleTyp);
+    if (typFehler) { state.quelleBefund = { fehler: typFehler }; zeichne(); return; }
     state.quelleLaeuft = true;
     state.quelleBefund = null;
     zeichne();
     try {
-      const res = await api("draft_manual_signal_from_url", { url: adresse, lane: state.answers.lane });
+      const res = await api("draft_manual_signal_from_url", {
+        url: adresse, lane: state.answers.lane, quelle_typ: state.quelleTyp,
+        themen: THEMEN[state.answers.lane] || THEMEN.marketing,
+      });
       const quelle = res?.source || {};
       if (!res?.draft) {
         state.quelleBefund = { fehler: quelle.grund || res?.message || "Die Quelle gab keinen brauchbaren Text her." };
@@ -969,6 +1053,9 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
         verdict: res.draft.verdict, verdictReason: res.draft.verdictReason,
         missing: res.draft.missing || [], gefuellt,
       };
+      // Gezogen: Popup zu, weiter im Fragebogen. Jedes Feld bleibt aenderbar.
+      state.quellenDialog = false;
+      if (state.stepKey === "quelle") state.stepKey = naechsterSchritt();
       melde(res.draft.verdict === "tragfaehig"
         ? "Signal aus der Quelle gezogen."
         : "Quelle gelesen, aber Felder fehlen.", res.draft.verdict === "tragfaehig" ? "success" : "info");
@@ -1105,6 +1192,10 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
   }
 
   function onKey(event) {
+    if (event.key === "Escape" && state.quellenDialog) {
+      if (!state.quelleLaeuft) { state.quellenDialog = false; zeichne(); }
+      return;
+    }
     if (event.key === "Escape") instanz.close();
   }
 
@@ -1161,6 +1252,15 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       return;
     }
     if (act === "quelle-ziehen") { void zieheQuelle(); return; }
+    if (act === "quelle-dialog") { state.quellenDialog = true; zeichne(); return; }
+    if (act === "dialog-zu") { if (!state.quelleLaeuft) { state.quellenDialog = false; zeichne(); } return; }
+    if (act === "quelle-typ") {
+      state.quelleTyp = hit.getAttribute("data-value") || "web";
+      state.quelleBefund = null;
+      zeichne();
+      shell.querySelector(".ms-dialog-feld")?.focus();
+      return;
+    }
     if (act === "pruefen") { void pruefeSignal({ spitzentarif: Boolean(state.pruefTarif) }); return; }
     if (act === "freigeben") {
       // Ausdrueckliche Uebernahme trotz Fund. Sie steht danach als Merkmal in
@@ -1205,7 +1305,10 @@ export function openManualSignal({ callApi, escapeHtml, openSettingsPanel, notif
       // Der Knopf haengt am Inhalt des Feldes. Ohne dieses Nachziehen bleibt er
       // gesperrt, bis irgendetwas anderes die Karte neu zeichnet.
       const knopf = shell.querySelector('[data-act="quelle-ziehen"]');
-      if (knopf) knopf.disabled = state.quelleLaeuft || String(feld.value).trim().length < 8;
+      const typFehler = quellenTypFehler(feld.value, state.quelleTyp);
+      if (knopf) knopf.disabled = state.quelleLaeuft || Boolean(typFehler) || String(feld.value).trim().length < 8;
+      const hinweis = shell.querySelector(".ms-typ-fehler");
+      if (hinweis) { hinweis.textContent = typFehler; hinweis.hidden = !typFehler; }
     }
     if (key === "competitor" || key === "company") {
       const firmen = shell.querySelector(".ms-firmen");

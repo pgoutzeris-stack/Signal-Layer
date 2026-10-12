@@ -293,6 +293,7 @@ import {
   normalizeManualCheck,
   normalizeManualDraft,
   pruefeOeffentlicheUrl,
+  pruefeQuellenTyp,
   transkriptQuelle,
   ziehteQuelle,
 } from "./source-extract.ts";
@@ -12395,8 +12396,14 @@ Deno.serve(async (req: Request) => {
         if (quelleUrl) {
           const gepruef = pruefeOeffentlicheUrl(quelleUrl);
           if (!gepruef.ok) return errorResponse(origin, gepruef.grund);
+          const typ = String(body.quelle_typ || "web");
+          const typFehler = typ === "youtube" || typ === "linkedin" ? pruefeQuellenTyp(gepruef.url, typ) : "";
+          if (typFehler) return errorResponse(origin, typFehler);
         }
         const lane = String(body.lane || "") === "sales" ? "sales" as const : "marketing" as const;
+        const entwurfThemen = Array.isArray(body.themen)
+          ? body.themen.map((thema: unknown) => String(thema).slice(0, 60)).filter(Boolean).slice(0, 12)
+          : [];
 
         const quelle = quelleUrl
           ? await ziehteQuelle(quelleUrl, quellenNetz())
@@ -12420,7 +12427,7 @@ Deno.serve(async (req: Request) => {
         const begonnen = Date.now();
         const antwort = await callJsonModel({
           model: entwurfModel, apiKey: entwurfKey,
-          prompt: manualDraftPrompt(quelle, lane),
+          prompt: manualDraftPrompt(quelle, lane, entwurfThemen),
           schema: MANUAL_DRAFT_SCHEMA,
           maxOutputTokens: 2_000, temperature: 0, timeoutMs: 90_000, attempts: 2,
         });

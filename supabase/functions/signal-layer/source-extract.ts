@@ -65,6 +65,55 @@ export function pruefeOeffentlicheUrl(rohwert: string): { ok: boolean; url: stri
   return { ok: true, url: url.toString(), grund: "" };
 }
 
+/** Die drei Kacheln im Fragebogen. */
+export type QuellenTyp = "web" | "youtube" | "linkedin";
+
+/** YouTube: ein Video, kein Kanal und keine Playlist. */
+export const YOUTUBE_VIDEO_MUSTER = /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/)|youtu\.be\/)[\w-]{11}/i;
+/** LinkedIn: ein Beitrag (posts/… oder feed/update/urn:li:…), kein Profil und keine Firmenseite. */
+export const LINKEDIN_BEITRAG_MUSTER = /^https?:\/\/(?:[a-z]{2,3}\.)?(?:www\.)?linkedin\.com\/(?:posts\/[^/?#]+|feed\/update\/urn:li:(?:activity|share|ugcPost):\d+|embed\/feed\/update\/urn:li:(?:activity|share|ugcPost):\d+)/i;
+
+/** Passt die Adresse zur gewaehlten Kachel? Leerer Grund heisst ja. */
+export function pruefeQuellenTyp(url: string, typ: QuellenTyp): string {
+  const adresse = String(url || "").trim();
+  if (typ === "youtube" && !YOUTUBE_VIDEO_MUSTER.test(adresse)) {
+    return "Das ist keine YouTube-Videoadresse. Erwartet wird ein Link auf ein einzelnes Video, etwa youtube.com/watch?v=… oder youtu.be/….";
+  }
+  if (typ === "linkedin" && !LINKEDIN_BEITRAG_MUSTER.test(adresse)) {
+    return "Das ist kein LinkedIn-Beitrag. Erwartet wird der Link eines Posts, etwa linkedin.com/posts/… oder linkedin.com/feed/update/urn:li:activity:…, kein Profil und keine Firmenseite.";
+  }
+  return "";
+}
+
+/** Text eines LinkedIn-Beitrags aus der oeffentlichen Seite: JSON-LD zuerst, dann og:description. */
+export function linkedinBeitrag(html: string): { titel: string; text: string; autor: string } {
+  const roh = String(html || "");
+  let text = "";
+  let autor = "";
+  for (const block of roh.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      const daten = JSON.parse(block[1]);
+      for (const eintrag of [daten, ...(Array.isArray(daten?.["@graph"]) ? daten["@graph"] : [])]) {
+        const koerper = eintrag?.articleBody || eintrag?.text || "";
+        if (String(koerper).length > text.length) {
+          text = String(koerper);
+          autor = String(eintrag?.author?.name || (Array.isArray(eintrag?.author) ? eintrag.author[0]?.name : "") || "");
+        }
+      }
+    } catch { /* kaputtes JSON-LD: weiter mit dem naechsten Block */ }
+  }
+  if (text.length < 80) {
+    const og = roh.match(/<meta[^>]+(?:property|name)=["'](?:og:description|description)["'][^>]+content=["']([^"']+)/i);
+    if (og && og[1].length > text.length) text = og[1];
+  }
+  const titel = (roh.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i) || ["", ""])[1];
+  return {
+    titel: entschaerfe(titel),
+    text: entschaerfe(text).replace(/\s+/g, " ").trim().slice(0, MAX_ZEICHEN),
+    autor: entschaerfe(autor),
+  };
+}
+
 export function erkennePlattform(url: string): string {
   const host = (() => {
     try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; }
@@ -428,6 +477,23 @@ export async function ziehteQuelle(rohwert: string, netz: Netz): Promise<Quellen
     };
   }
 
+  // --- Fall LinkedIn-Beitrag: der Text steht im JSON-LD der Seite ----------
+  if (plattform === "linkedin" && LINKEDIN_BEITRAG_MUSTER.test(url)) {
+    const seiteLi = await netz.holen(url).catch(() => null);
+    const beitrag = seiteLi && seiteLi.ok ? linkedinBeitrag(seiteLi.text) : null;
+    if (!beitrag || beitrag.text.length < 80) {
+      return {
+        ok: false, art: null, plattform, titel: beitrag?.titel || "", text: beitrag?.text || "", zeichen: beitrag?.text.length || 0, sprache: null,
+        grund: "LinkedIn hat den Beitrag nicht öffentlich ausgeliefert. Beitrag auf öffentlich stellen oder den Text als Transkript einfügen.",
+      };
+    }
+    const mitAutor = beitrag.autor ? `Beitrag von ${beitrag.autor}:\n${beitrag.text}` : beitrag.text;
+    return {
+      ok: true, art: "article", plattform, titel: beitrag.titel, text: mitAutor, zeichen: mitAutor.length, sprache: null,
+      weg: "LinkedIn-Beitrag", grund: "",
+    };
+  }
+
   // --- Fall 2 und 3: eine Seite, vielleicht mit Video ---------------------
   const seite = await netz.holen(url).catch(() => null);
   if (!seite || !seite.ok) {
@@ -516,7 +582,7 @@ function safeJson(text: string): unknown {
 }
 
 /** Die Felder, die ein manuelles Signal braucht, in der Reihenfolge des Fragebogens. */
-export const MANUAL_DRAFT_FIELDS = ["headline", "core", "evidence", "source", "company", "offering", "territory", "occasion", "competitor"] as const;
+export const MANUAL_DRAFT_FIELDS = ["headline", "core", "evidence", "source", "company", "signal_label", "relevance", "offering", "docking", "territory", "occasion", "competitor"] as const;
 
 export const MANUAL_DRAFT_SCHEMA = {
   type: "OBJECT",
@@ -526,7 +592,10 @@ export const MANUAL_DRAFT_SCHEMA = {
     evidence: { type: "STRING", description: "Zahlen, Zitate und Namen wortgleich aus der Quelle. Nichts hinzufügen." },
     source: { type: "STRING", description: "Herausgeber, Titel und Jahr der Quelle." },
     company: { type: "STRING", description: "Das Unternehmen, um das es geht. Leer, wenn keines genannt ist." },
+    signal_label: { type: "STRING", description: "Genau eines der erlaubten Themen aus <themen>, sonst leer." },
+    relevance: { type: "STRING", description: "Ein Satz, warum das Signal für ROOTS-Zielgruppen zählt. Leer, wenn die Quelle es nicht trägt." },
     offering: { type: "STRING", description: "Passende ROOTS-Leistung oder leer." },
+    docking: { type: "STRING", description: "Ein Satz, wie ROOTS mit der Leistung andocken kann. Leer ohne Leistung." },
     territory: { type: "STRING", description: "Markt oder Branche oder leer." },
     occasion: { type: "STRING", description: "Konkreter Anlass oder leer." },
     competitor: { type: "STRING", description: "Genannte Wettbewerber als Firmennamen oder leer." },
@@ -538,7 +607,7 @@ export const MANUAL_DRAFT_SCHEMA = {
 } as const;
 
 /** Der Auftrag an das Modell. Erfundene Zahlen sind schlimmer als leere Felder. */
-export function manualDraftPrompt(quelle: QuellenText, lane: "marketing" | "sales"): string {
+export function manualDraftPrompt(quelle: QuellenText, lane: "marketing" | "sales", themen: string[] = []): string {
   return `Du liest eine Quelle und füllst daraus ein Signal für ROOTS Brand Strategy Consultants.
 
 <regeln>
@@ -549,8 +618,9 @@ verdict ist "tragfaehig", wenn Überschrift, Kern und mindestens ein belegter Au
 ${lane === "sales"
     ? "Spur Sales: das Signal soll den Anlass für die Ansprache eines Unternehmens tragen. company ist wichtig."
     : "Spur Marketing: das Signal soll einen LinkedIn-Beitrag tragen. Eine belegte Zahl ist wichtiger als ein Firmenname."}
+relevance und docking sind Einordnung, keine Belege: sie dürfen keine Zahl enthalten, die nicht in der Quelle steht.
 </regeln>
-
+${themen.length ? `\n<themen>\n${themen.map((thema) => `- ${thema.replace(/[<>]/g, "")}`).join("\n")}\n</themen>\n` : ""}
 <quelle art="${quelle.art || "unbekannt"}" plattform="${quelle.plattform}" titel="${quelle.titel.replace(/"/g, "'")}">
 ${quelle.text.slice(0, 24_000)}
 </quelle>`;

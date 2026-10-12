@@ -110,7 +110,7 @@ test("Server und Fragebogen sind verdrahtet", () => {
   assert.match(frontend, /data-feld="quelle_url"/);
   assert.doesNotMatch(frontend, /quelle_text/);
   assert.match(frontend, /async function zieheQuelle\(\)/);
-  assert.match(frontend, /api\("draft_manual_signal_from_url", \{ url: adresse, lane: state\.answers\.lane \}\)/);
+  assert.match(frontend, /api\("draft_manual_signal_from_url", \{\n\s+url: adresse, lane: state\.answers\.lane, quelle_typ: state\.quelleTyp,/);
   // Selbst getippte Felder überschreibt die Quelle nicht.
   assert.match(frontend, /if \(state\.beruehrt\.has\(key\)\) continue;/);
   // Lücken werden benannt, nicht verschwiegen.
