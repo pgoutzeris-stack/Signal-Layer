@@ -71,6 +71,9 @@ import {
   SIMPLE_MODEL,
   SIMPLE_MIN_TEXT_CHARS,
   SIMPLE_MODEL_CATALOG,
+  ROOTS_LINK_SCHEMA,
+  isUsableRootsLink,
+  rootsLinkPrompt,
   SIMPLE_PIPELINE_VERSION,
   SIMPLE_ALL_REJECT_REASONS,
   SIMPLE_REJECT_LABELS,
@@ -7992,7 +7995,7 @@ Deno.serve(async (req: Request) => {
     if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return unauthorizedResponse(req, origin);
   } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs", "finish_asset", "retry_asset_model", "await_asset_model"].includes(action)) {
     if (!isInternalCall(req)) return unauthorizedResponse(req, origin);
-  } else if (["process_analysis_worker", "process_analysis_batches"].includes(action)) {
+  } else if (["process_analysis_worker", "process_analysis_batches", "fill_roots_links"].includes(action)) {
     // Queue recovery may be started by the protected pg_cron/watchdog path;
     // every subsequent hop still self-authenticates with the service role.
     if (!isInternalCall(req)) {
@@ -10176,6 +10179,13 @@ Deno.serve(async (req: Request) => {
           triggerSelf({ action: "process_analysis_batches" });
         }
 
+        // Signale mit Leistung, aber ohne Andocktext: nachfuellen lassen.
+        const { count: ohneAndock } = await admin.schema("signal_layer").from("simple_signals")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "signal").not("roots_offering", "is", null).is("roots_link_de", null)
+          .neq("pipeline_version", "manual");
+        if (Number(ohneAndock || 0) > 0) triggerSelf({ action: "fill_roots_links" });
+
         // Ein Auftrag, den niemand mehr abfragt, blieb fuer immer auf "laeuft".
         // Der Wachhund lief nur mit, wenn das Studio nachfragte; nach dem
         // Schliessen des Fensters fragte niemand mehr. Zwei Zeilen standen so
@@ -10202,6 +10212,55 @@ Deno.serve(async (req: Request) => {
           closed_assets: geschlossen,
           model_waits: modellWarten,
         });
+      }
+
+      case "fill_roots_links": {
+        // Fehlender "So kann ROOTS andocken"-Text bei Signalen mit Leistung.
+        // Hoechstens 15 je Aufruf, nacheinander: Perplexity lehnt Parallelitaet ab.
+        const admin = getAdminClient();
+        const { data: offen } = await admin.schema("signal_layer").from("simple_signals")
+          .select("id, lane, company, headline_de, summary_de, why_de, evidence, roots_offering")
+          .eq("status", "signal").not("roots_offering", "is", null).is("roots_link_de", null)
+          .neq("pipeline_version", "manual")
+          .order("created_at", { ascending: false }).limit(15);
+        const fuellConfig = await getPipelineConfig();
+        const fuellModel = fuellConfig.ai.manual_check_model || fuellConfig.ai.simple_model || SIMPLE_MODEL;
+        const fuellKey = await modelApiKey(fuellModel);
+        if (!fuellKey) return errorResponse(origin, "Kein API-Schlüssel für das Nachfüllen hinterlegt", 500);
+        let gefuellt = 0;
+        for (const zeile of offen || []) {
+          const start = Date.now();
+          const antwort = await callJsonModel({
+            model: fuellModel, apiKey: fuellKey,
+            prompt: rootsLinkPrompt({
+              lane: String(zeile.lane || ""), company: String(zeile.company || ""),
+              headline: String(zeile.headline_de || ""), summary: String(zeile.summary_de || ""),
+              evidence: String(zeile.evidence || ""), why: String(zeile.why_de || ""), offering: String(zeile.roots_offering || ""),
+            }),
+            schema: ROOTS_LINK_SCHEMA,
+            maxOutputTokens: 600, temperature: 0, timeoutMs: 60_000, attempts: 2,
+          });
+          const kosten = await modelCostFields(fuellModel, antwort.usage).catch(() => zeroCostFields(fuellModel));
+          await admin.schema("signal_layer").from("ai_usage_events").insert({
+            operation: "offering_match", model: fuellModel, status: antwort.ok ? "success" : "error",
+            prompt_version: "roots-link-fill-v1", step: "andocktext",
+            input_tokens: antwort.usage.input + antwort.usage.cachedInput, output_tokens: antwort.usage.output,
+            thinking_tokens: antwort.usage.thinking, total_tokens: antwort.usage.total, ...kosten,
+            duration_ms: Date.now() - start,
+            error_code: antwort.ok ? null : `http_${antwort.status || "network"}`,
+            error_message: antwort.ok ? null : antwort.error.slice(0, 500),
+          });
+          if (!antwort.ok) {
+            if (/insufficient|balance|spending cap|\b402\b|\b429\b/i.test(antwort.error)) break;
+            continue;
+          }
+          const text = String((parseLooseJsonObject(antwort.text) as Record<string, unknown>)?.roots_link_de || "").trim();
+          if (!isUsableRootsLink(text)) continue;
+          await admin.schema("signal_layer").from("simple_signals")
+            .update({ roots_link_de: text.slice(0, 700) }).eq("id", zeile.id).is("roots_link_de", null);
+          gefuellt += 1;
+        }
+        return corsResponse(origin, { offen: (offen || []).length, gefuellt });
       }
 
       // ---------------------------------------------------------------------

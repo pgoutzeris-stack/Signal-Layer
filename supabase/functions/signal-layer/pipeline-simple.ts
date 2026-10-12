@@ -1154,6 +1154,48 @@ function isStrongSimpleTrigger(trigger: string, company: string): boolean {
   return companyTokens.length === 0 || companyTokens.some((token) => normalizeMatchText(trigger).includes(token));
 }
 
+/**
+ * Fuer die Anzeige reicht ein nicht-generischer Text. Die strenge Pruefung
+ * (Firmenname, zwei Saetze, Taetigkeitsverb) hat bis zu einem Fuenftel guter
+ * Andocktexte verworfen; die Karte stand dann ohne "So kann ROOTS andocken" da.
+ * Sie gilt weiter fuer die virale Spur, wo der Bezug das einzige Kriterium ist.
+ */
+/** Auftrag zum Nachfuellen eines fehlenden Andocktexts. */
+export function rootsLinkPrompt(signal: {
+  lane: string; company: string; headline: string; summary: string; evidence: string; why: string; offering: string;
+}): string {
+  const sales = signal.lane === "sales";
+  return `Schreibe den Text "So kann ROOTS andocken" fuer ein Signal von ROOTS Brand Strategy Consultants.
+
+<regeln>
+${sales
+    ? `Zwei Saetze. Erstens: welches im Signal belegte Ziel, Problem, Mandat oder welche Chance ${signal.company || "das Unternehmen"} gerade hat. Zweitens: was ROOTS mit "${signal.offering}" dafuer konkret analysiert, entwickelt, priorisiert oder umsetzt. Nenne das Unternehmen.`
+    : `Ein bis zwei Saetze: welches belegte Fachwissen aus dem Signal zu "${signal.offering}" passt und wie ROOTS es als fachliche Grundlage nutzt.`}
+Nur Fakten aus dem Signal, keine neuen Zahlen. Keine Formeln wie "ROOTS kann unterstuetzen" oder "ROOTS kann mit X andocken". Deutsch, sachlich.
+</regeln>
+
+<signal>
+Ueberschrift: ${signal.headline}
+Kern: ${signal.summary}
+Begruendung: ${signal.why}
+Beleg: ${signal.evidence.slice(0, 1500)}
+Unternehmen: ${signal.company}
+ROOTS-Leistung: ${signal.offering}
+</signal>`;
+}
+
+export const ROOTS_LINK_SCHEMA = {
+  type: "OBJECT",
+  properties: { roots_link_de: { type: "STRING", description: "Der Andocktext." } },
+  required: ["roots_link_de"],
+} as const;
+
+export function isUsableRootsLink(link: string): boolean {
+  const text = String(link || "").trim();
+  if (text.length < 40 || text.length > 700) return false;
+  return !/roots kann mit .{0,80} andocken|roots kann (?:hier )?unterst(?:u|ü)tzen/i.test(text);
+}
+
 function isConcreteRootsLink(link: string, lane: SimpleLane, company = ""): boolean {
   if (link.length < 70 || link.length > 700) return false;
   if (/roots kann mit .{0,80} andocken|roots kann (?:hier )?unterst(?:u|ü)tzen/i.test(link)) return false;
@@ -1748,7 +1790,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
   if (family.lane === "sales" && !company) {
     return { ...rejected(article, "zielunternehmen_nicht_belegt", prefilter.families, model), ...answerContext };
   }
-  const rootsLink = rootsOffering && isConcreteRootsLink(rootsLinkCandidate, family.lane, company || "")
+  const rootsLink = rootsOffering && isUsableRootsLink(rootsLinkCandidate)
     ? rootsLinkCandidate
     : "";
   const targetTier1 = company ? tier1Decisions.find((entry) => entry.name === company)?.name || null : null;
@@ -1778,7 +1820,7 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
         ? String(answer.article_type) : "other",
     language: ["de", "en", "other"].includes(String(answer.language)) ? String(answer.language) : null,
     roots_offering: rootsOffering.slice(0, 200) || null,
-    roots_link_de: rootsLink.length >= 20 ? rootsLink.slice(0, 500) : null,
+    roots_link_de: rootsLink.length >= 20 ? rootsLink.slice(0, 700) : null,
     score_details: {
       lane: family.lane,
       komponenten: family.lane === "sales"
