@@ -2306,6 +2306,7 @@ function quellenNetz(): Netz {
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(eingabe) },
         110_000,
       );
+      await bucheApifyLauf(antwort.headers.get("x-apify-run-id"), "crawl_apify", actor, "transkript");
       if (!antwort.ok) return null;
       const zeilen = await antwort.json().catch(() => null);
       return Array.isArray(zeilen) ? zeilen : null;
@@ -2754,6 +2755,7 @@ async function fetchAuthenticatedArticleViaApify(
       }) },
       115_000,
     );
+    await bucheApifyLauf(response.headers.get("x-apify-run-id"), "crawl_apify", "apify~web-scraper", "login_quelle");
     if (!response.ok) {
       const message = (await response.text()).replace(/\s+/g, " ").slice(0, 500);
       await recordDiagnostic(`Apify HTTP ${response.status}: ${message}`);
@@ -3176,6 +3178,7 @@ async function runApifySourceCrawl(sourceUrl: string, policy: CrawlPolicy): Prom
     },
     115_000,
   );
+  await bucheApifyLauf(runRes.headers.get("x-apify-run-id"), "crawl_apify", "apify~web-scraper", "link_suche");
   if (!runRes.ok) {
     // Surface this instead of silently returning [] — a misconfigured/
     // unapproved Apify actor otherwise looks identical to "this source has
@@ -3496,6 +3499,30 @@ function standaloneSchritt(operation: string): string | null {
     memo_field_sharpen: "feld_schaerfen",
     memo_section_draft: "abschnitt_entwurf",
   } as Record<string, string>)[operation] || null;
+}
+
+/**
+ * Apify-Kosten buchen. run-sync liefert die Lauf-ID im Header; Apify nennt den
+ * Preis des Laufs selbst (usageTotalUsd). Er landet wie ein KI-Aufruf in
+ * ai_usage_events, damit das Scraping im Kostenblock steht. Scheitert die
+ * Abfrage, bleibt der Lauf ungebucht, der Crawl laeuft weiter.
+ */
+async function bucheApifyLauf(runId: string | null, operation: string, actor: string, step?: string) {
+  if (!runId) return;
+  try {
+    const key = await getApifyKey();
+    if (!key) return;
+    const antwort = await fetchWithTimeout(`https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}?token=${key}`, {}, 15_000);
+    if (!antwort.ok) return;
+    const lauf = (await antwort.json().catch(() => null))?.data;
+    const usd = Number(lauf?.usageTotalUsd || 0);
+    const status = lauf?.status === "SUCCEEDED" ? "success" : "error";
+    await recordStandaloneAiUsage(operation, `apify/${actor}`, status, undefined, 0,
+      status === "success" ? undefined : `apify_${String(lauf?.status || "unknown").toLowerCase()}`,
+      usd > 0 ? { usd, toolUsd: 0 } : undefined, step);
+  } catch (fehler) {
+    console.warn(`Apify-Kosten nicht gebucht (${runId}): ${fehler instanceof Error ? fehler.message : fehler}`);
+  }
 }
 
 async function recordStandaloneAiUsage(
