@@ -5,10 +5,10 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20260930-1";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261012-1";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261008-7";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261012-1";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
@@ -418,6 +418,7 @@ function cacheEls() {
   els.signalCompanyFilterOptions = document.getElementById("signal-company-filter-options");
   els.signalCompanyFilterSearch = document.getElementById("signal-company-filter-search");
   els.signalCompanyFilterReset = document.getElementById("signal-company-filter-reset");
+  els.signalCompanyFilterAll = document.getElementById("signal-company-filter-all");
   els.signalSourceFilter = document.getElementById("signal-source-filter");
   els.signalVersion = document.getElementById("signal-version");
   els.signalSort = document.getElementById("signal-sort");
@@ -2119,7 +2120,13 @@ function pinRootsSelectInfoTip(host) {
   const text = host.querySelector(".roots-select-info-tip")?.textContent.trim() || "";
   if (host.hidden || !text) return;
   const tip = rootsTipFloat();
-  tip.textContent = text;
+  const zeilen = text.split("\n").map((zeile) => zeile.trim()).filter(Boolean);
+  tip.replaceChildren(...zeilen.map((zeile) => {
+    const pill = document.createElement("span");
+    pill.className = "roots-tip-pill";
+    pill.textContent = zeile;
+    return pill;
+  }));
   tip.classList.add("is-visible");
   const rect = host.getBoundingClientRect();
   const gap = 8;
@@ -2312,12 +2319,41 @@ function enhanceHeaderSelects() {
       () => render(),
     ) : null;
     const optionsHost = document.createElement("div");
+    // Gleiche Kopfzeile wie der Unternehmensfilter: abgesetzte Leiste mit der
+    // Suche rechts, darunter Alle auswählen und Auswahl löschen.
+    const actionBar = isGrid ? document.createElement("div") : null;
+    if (actionBar) {
+      actionBar.className = "company-filter-help roots-select-bar";
+      const actions = document.createElement("span");
+      actions.className = "roots-select-bar-actions";
+      const action = (text, apply) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "company-filter-reset";
+        button.textContent = text;
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          apply();
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          render();
+        });
+        return button;
+      };
+      actions.append(
+        action("Alle auswählen", () => selection.splice(0, selection.length,
+          ...[...select.options].filter((option) => option.value !== "all" && option.dataset.empty !== "1").map((option) => option.value))),
+        action("Auswahl löschen", () => { selection.length = 0; }),
+      );
+      actionBar.append(document.createElement("span"), actions);
+    }
     if (search) {
       menu.setAttribute("role", "dialog");
       trigger.setAttribute("aria-haspopup", "dialog");
       optionsHost.setAttribute("role", "listbox");
       optionsHost.setAttribute("aria-multiselectable", "true");
-      menu.append(search.wrap, optionsHost);
+      const head = document.createElement("div");
+      head.className = "company-filter-tabs roots-select-head";
+      menu.append(search.wrap, head, actionBar, optionsHost);
     }
     menu.addEventListener("click", (event) => event.stopPropagation());
 
@@ -2408,14 +2444,9 @@ function enhanceHeaderSelects() {
       if (!isGrid) { menu.replaceChildren(...options.map(makeOption)); return; }
       const host = search ? optionsHost : menu;
       host.replaceChildren();
-      const allOption = options.find((option) => option.value === "all");
       const selectable = options.filter((option) => option.value !== "all" && option.dataset.empty !== "1" && matchesDropdownSearch(option.textContent, search?.input.value));
       const emptyOptions = options.filter((option) => option.dataset.empty === "1" && matchesDropdownSearch(option.textContent, search?.input.value));
-      if (allOption && !search) {
-        const button = makeOption(allOption);
-        button.classList.add("roots-select-option--full");
-        host.append(button);
-      }
+      if (!search) host.append(actionBar);
       if (!selectable.length && !emptyOptions.length && search?.input.value) {
         const empty = document.createElement("div");
         empty.className = "company-filter-empty";
@@ -2423,10 +2454,9 @@ function enhanceHeaderSelects() {
         empty.textContent = "Keine Einträge gefunden.";
         host.append(empty);
       }
-      if (selectable.length || (search && allOption)) {
+      if (selectable.length) {
         const grid = document.createElement("div");
         grid.className = "roots-select-grid";
-        if (search && allOption) grid.append(makeOption(allOption));
         grid.append(...selectable.map(makeOption));
         host.append(grid);
       }
@@ -4407,6 +4437,12 @@ function bindUi() {
     const index = signalCompanyFilterState.selected.indexOf(name);
     if (index >= 0) signalCompanyFilterState.selected.splice(index, 1);
     else signalCompanyFilterState.selected.push(name);
+    renderAdvancedCompanyFilter();
+    updateSignalView();
+  });
+  els.signalCompanyFilterAll?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    signalCompanyFilterState.selected = [...signalCompanyFilterIndex[signalCompanyFilterState.kind]];
     renderAdvancedCompanyFilter();
     updateSignalView();
   });

@@ -15,10 +15,10 @@ import { matchesDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs
 // Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
-import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20260930-1";
+import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261012-1";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { articleDisplayTitle } from "./article-title.mjs?v=20260930-1";
-import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
+import { articleDisplayTitle } from "./article-title.mjs?v=20261012-1";
+import { paywallPillHtml } from "./paywall-pill.mjs?v=20261012-1";
 
 let ctx = null;
 let els = {};
@@ -54,6 +54,7 @@ function cacheEls() {
     companyFilterOptions: el("simple-company-filter-options"),
     companyFilterSearch: el("simple-company-filter-search"),
     companyFilterReset: el("simple-company-filter-reset"),
+    companyFilterAll: el("simple-company-filter-all"),
     sort: el("simple-sort"),
     version: el("simple-version"),
     marketingList: el("simple-list-marketing"),
@@ -491,6 +492,12 @@ function bindUi() {
     const index = companyFilterState.selected.indexOf(name);
     if (index >= 0) companyFilterState.selected.splice(index, 1);
     else companyFilterState.selected.push(name);
+    renderCompanyFilter();
+    rerender();
+  });
+  els.companyFilterAll?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    companyFilterState.selected = [...companyFilterIndex[companyFilterState.kind]];
     renderCompanyFilter();
     rerender();
   });

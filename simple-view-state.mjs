@@ -83,18 +83,25 @@ function datumDe(iso) {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("de-DE");
 }
 
-/** Inhalt des Info-Symbols im Versionsmenue: wann gelaufen, womit, wie viele Signale. */
+function datumLang(iso) {
+  const date = new Date(iso || "");
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+/** Inhalt des Info-Symbols im Versionsmenue: Scraping-Zeitraum und Signale je geprueftem Artikel. Eine Zeile je Pill. */
 export function simpleVersionInfo(entry) {
   if (!entry) return "";
   const zeilen = [];
-  const erster = datumDe(entry.first_seen_at);
-  const letzter = datumDe(entry.last_run_at || entry.last_seen_at);
-  if (erster) zeilen.push(`Erster Lauf ${erster}`);
-  if (letzter && letzter !== erster) zeilen.push(`Letzter Lauf ${letzter}`);
-  if (entry.model) zeilen.push(`Modell ${entry.model}`);
+  const von = datumLang(entry.first_seen_at);
+  const bis = datumLang(entry.last_run_at || entry.last_seen_at);
+  if (von && bis && von !== bis) zeilen.push(`${von} bis ${bis}`);
+  else if (von || bis) zeilen.push(von || bis);
   const signale = Number(entry.signals || 0);
-  zeilen.push(signale > 0 ? signalCountText(signale) : "Noch keine Signale");
-  const archiviert = Number(entry.archived_signals || 0);
-  if (archiviert > 0) zeilen.push(`${archiviert.toLocaleString("de-DE")} archivierte Signale`);
+  const geprueft = signale + Number(entry.rejected || 0);
+  if (signale <= 0) zeilen.push("Noch keine Signale");
+  else if (geprueft > signale) zeilen.push(`${signale.toLocaleString("de-DE")} von ${geprueft.toLocaleString("de-DE")}`);
+  else zeilen.push(signalCountText(signale));
   return zeilen.join("\n");
 }

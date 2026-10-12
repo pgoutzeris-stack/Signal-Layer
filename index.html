@@ -243,6 +243,11 @@
   .company-filter-help { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 5px; color: var(--muted); font-size: .6rem; }
   .company-filter-reset { border: 0; background: transparent; color: var(--brand); font: inherit; font-size: .63rem; font-weight: 750; cursor: pointer; }
   .company-filter-reset:hover { text-decoration: underline; }
+  .roots-select-bar-actions { display: inline-flex; align-items: center; gap: 14px; margin-left: auto; }
+  .roots-select-bar { margin-bottom: 2px; }
+  .roots-select-head { min-height: 29px; box-sizing: content-box; }
+  .roots-tip-float { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; max-width: 280px; }
+  .roots-tip-pill { display: inline-flex; align-items: center; min-height: 22px; padding: 0 9px; border-radius: 999px; background: var(--brand-light, #eff6ff); color: var(--brand-dark); font-size: .66rem; font-weight: 700; white-space: nowrap; }
   .company-filter-grid { max-height: 290px; }
   .company-filter-grid .roots-select-option { white-space: normal; }
   .company-filter-empty { grid-column: 1 / -1; padding: 1.2rem; color: var(--muted); font-size: .72rem; text-align: center; }
@@ -2196,7 +2201,7 @@
                   <button type="button" class="company-filter-tab active" data-advanced-company-class="tier1" role="tab" aria-selected="true">Tier 1</button>
                   <button type="button" class="company-filter-tab" data-advanced-company-class="company" role="tab" aria-selected="false">Company</button>
                 </div>
-                <div class="company-filter-help"><span id="signal-company-filter-help">Tier-1-Unternehmen mehrfach auswählen</span><button type="button" class="company-filter-reset" id="signal-company-filter-reset">Auswahl löschen</button></div>
+                <div class="company-filter-help"><span id="signal-company-filter-help">Tier-1-Unternehmen mehrfach auswählen</span><span class="roots-select-bar-actions"><button type="button" class="company-filter-reset" id="signal-company-filter-all">Alle auswählen</button><button type="button" class="company-filter-reset" id="signal-company-filter-reset">Auswahl löschen</button></span></div>
                 <div class="company-filter-grid roots-select-grid" id="signal-company-filter-options"></div>
               </div>
             </div>
@@ -2283,7 +2288,7 @@
                     <button type="button" class="company-filter-tab active" data-company-class="tier1" role="tab" aria-selected="true">Tier 1</button>
                     <button type="button" class="company-filter-tab" data-company-class="company" role="tab" aria-selected="false">Company</button>
                   </div>
-                  <div class="company-filter-help"><span id="simple-company-filter-help">Tier-1-Unternehmen mehrfach auswählen</span><button type="button" class="company-filter-reset" id="simple-company-filter-reset">Auswahl löschen</button></div>
+                  <div class="company-filter-help"><span id="simple-company-filter-help">Tier-1-Unternehmen mehrfach auswählen</span><span class="roots-select-bar-actions"><button type="button" class="company-filter-reset" id="simple-company-filter-all">Alle auswählen</button><button type="button" class="company-filter-reset" id="simple-company-filter-reset">Auswahl löschen</button></span></div>
                   <div class="company-filter-grid roots-select-grid" id="simple-company-filter-options"></div>
                 </div>
               </div>
@@ -2591,7 +2596,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261008-11';
+  import { initApp } from './app.js?v=20261012-1';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
