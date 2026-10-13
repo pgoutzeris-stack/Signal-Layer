@@ -1,4 +1,5 @@
 import { articleReadingText } from "./article-reading-text.mjs";
+import { baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.8";
@@ -8061,7 +8062,7 @@ Deno.serve(async (req: Request) => {
       isScheduled = await isScheduledTrigger(req);
       if (!isScheduled) return unauthorizedResponse(req, origin);
     }
-  } else if (action === "repair_article_encoding" || action === "reformat_recent_articles" || action === "paywall_nachpruefen" || action === "volltext_nachholen") {
+  } else if (action === "repair_article_encoding" || action === "reformat_recent_articles" || action === "paywall_nachpruefen" || action === "volltext_nachholen" || action === "send_signal_digest") {
     // Self-refires via the service-role bearer; a user may also kick it off.
     if (!isInternalCall(req)) {
       auth = await requireAuth(req);
@@ -10273,6 +10274,57 @@ Deno.serve(async (req: Request) => {
           closed_assets: geschlossen,
           model_waits: modellWarten,
         });
+      }
+
+      case "send_signal_digest": {
+        // Wochenmail ueber Resend. Test: nur an test_to. Ohne Schluessel im
+        // Vault verschickt nichts. Jeder Versand steht in signal_digest_log.
+        const admin = getAdminClient();
+        const tage = Math.max(1, Math.min(31, Number(body.days || 7)));
+        const testAn = String(body.test_to || "").trim();
+        const empfaenger = testAn
+          ? [testAn]
+          : (Array.isArray(body.to) ? body.to.map((adresse: unknown) => String(adresse).trim()).filter(Boolean) : []);
+        if (!empfaenger.length || empfaenger.some((adresse: string) => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(adresse))) {
+          return errorResponse(origin, "Keine gültigen Empfänger angegeben");
+        }
+        const { data: schluessel } = await admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_resend_api_key" });
+        if (!schluessel) return errorResponse(origin, "Resend-Schlüssel fehlt im Vault (signal_layer_resend_api_key)", 412);
+        const { data: absenderWert } = await admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_digest_from" });
+        const absender = String(absenderWert || "Signal Layer <onboarding@resend.dev>");
+        const seit = new Date(Date.now() - tage * 86_400_000).toISOString();
+        const { data: zeilen, error: digestFehler } = await admin.schema("signal_layer").from("simple_signals")
+          .select("article_id, lane, signal_label, headline_de, why_de, company, roots_offering, score, tier1_companies, tier2_companies, created_at, article:articles(published_at, source:sources(company))")
+          .eq("status", "signal").or(MANUAL_SIGNAL_EXCLUDE).gte("created_at", seit)
+          .order("score", { ascending: false }).limit(200);
+        if (digestFehler) return errorResponse(origin, digestFehler.message, 500);
+        const signale: DigestSignal[] = (zeilen || []).map((zeile: Record<string, any>) => {
+          const artikel = Array.isArray(zeile.article) ? zeile.article[0] : zeile.article;
+          const quelle = Array.isArray(artikel?.source) ? artikel.source[0] : artikel?.source;
+          return {
+            lane: zeile.lane, signal_label: zeile.signal_label, headline_de: zeile.headline_de, why_de: zeile.why_de,
+            company: zeile.company, roots_offering: zeile.roots_offering, score: zeile.score,
+            tier1_companies: zeile.tier1_companies, tier2_companies: zeile.tier2_companies,
+            article_id: zeile.article_id, quelle: quelle?.company || null, datum: artikel?.published_at || zeile.created_at,
+          };
+        });
+        if (!signale.length) return corsResponse(origin, { sent: false, reason: "keine neuen Signale" });
+        const tag = (iso: string) => new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" });
+        const { betreff, html } = baueDigest(signale, `${tag(seit)} bis ${tag(new Date().toISOString())}`, Boolean(testAn));
+        const antwort = await fetchWithTimeout("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${schluessel}` },
+          body: JSON.stringify({ from: absender, to: empfaenger, subject: betreff, html }),
+        }, 30_000);
+        const roh = await antwort.text();
+        let resendId: string | null = null;
+        try { resendId = JSON.parse(roh)?.id || null; } catch { /* Antwort ohne JSON */ }
+        await admin.schema("signal_layer").from("signal_digest_log").insert({
+          recipients: empfaenger, signal_count: signale.length, test: Boolean(testAn),
+          resend_id: resendId, error: antwort.ok ? null : roh.slice(0, 500),
+        });
+        if (!antwort.ok) return errorResponse(origin, `Resend lehnt ab (${antwort.status}): ${roh.slice(0, 300)}`, 502);
+        return corsResponse(origin, { sent: true, signals: signale.length, resend_id: resendId });
       }
 
       case "fill_roots_links": {
