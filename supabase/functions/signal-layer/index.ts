@@ -10291,7 +10291,7 @@ Deno.serve(async (req: Request) => {
         const { data: schluessel } = await admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_resend_api_key" });
         if (!schluessel) return errorResponse(origin, "Resend-Schlüssel fehlt im Vault (signal_layer_resend_api_key)", 412);
         const { data: absenderWert } = await admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_digest_from" });
-        const absender = String(absenderWert || "Signal Layer <onboarding@resend.dev>");
+        const absender = String(absenderWert || "ROOTS Signal Layer <onboarding@resend.dev>");
         const seit = new Date(Date.now() - tage * 86_400_000).toISOString();
         const { data: zeilen, error: digestFehler } = await admin.schema("signal_layer").from("simple_signals")
           .select("article_id, lane, signal_label, headline_de, why_de, company, roots_offering, score, tier1_companies, tier2_companies, created_at, article:articles(url, published_at, source:sources(company))")
