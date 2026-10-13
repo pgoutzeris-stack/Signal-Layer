@@ -48,24 +48,40 @@ function linkVon(signal: DigestSignal): string {
 }
 
 function metaVon(signal: DigestSignal): string {
-  return [signal.lane === "sales" ? "Sales" : "Marketing", signal.signal_label, signal.quelle].filter(Boolean).join(" · ");
+  return [signal.lane === "sales" ? "Sales" : "Marketing", signal.quelle].filter(Boolean).join(" · ");
 }
 
-/** Die ersten fuenf: groesserer Titel, eine Zeile Begruendung. */
-function grosseZeile(signal: DigestSignal): string {
-  return `<tr><td style="padding:18px 0;border-bottom:1px solid ${LINIE};">
-    <div style="font:500 11px/1.4 ${SCHRIFT};letter-spacing:.04em;color:${HELLBLAU};">${esc(metaVon(signal))}</div>
-    <a href="${esc(linkVon(signal))}" style="display:block;margin-top:4px;font:600 17px/1.35 ${SCHRIFT};color:${TINTE};text-decoration:none;">${esc(signal.headline_de)}</a>
-    ${signal.why_de ? `<div style="margin-top:5px;font:400 13px/1.5 ${SCHRIFT};color:${GRAU};">${esc(signal.why_de)}</div>` : ""}
+function firmaVon(signal: DigestSignal): string {
+  return signal.company || (signal.tier1_companies || [])[0] || (signal.tier2_companies || [])[0] || "";
+}
+
+/** Kleine Pille: Thema hellblau, Unternehmen grau. */
+function pille(text: string, art: "thema" | "firma"): string {
+  if (!text) return "";
+  const farbe = art === "thema" ? `background:#eef4ff;color:#3b82f6;` : `background:#f3f4f6;color:${GRAU};`;
+  return `<span style="display:inline-block;margin:0 0 4px 4px;padding:3px 9px;border-radius:999px;${farbe}font:500 10px/1.4 ${SCHRIFT};white-space:nowrap;">${esc(text)}</span>`;
+}
+
+/** Eine Zeile: links Titel und Unterzeile, rechts Thema und Unternehmen als Pillen. */
+function zeile(signal: DigestSignal, gross: boolean): string {
+  return `<tr><td style="padding:${gross ? "16px" : "11px"} 0;border-bottom:1px solid ${LINIE};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="vertical-align:top;">
+        <a href="${esc(linkVon(signal))}" style="font:${gross ? "600 16px/1.35" : "500 14px/1.4"} ${SCHRIFT};color:${TINTE};text-decoration:none;">${esc(signal.headline_de)}</a>
+        <div style="margin-top:3px;font:400 11px/1.4 ${SCHRIFT};color:${HELLGRAU};">${esc(metaVon(signal))}</div>
+      </td>
+      <td align="right" style="vertical-align:top;width:170px;padding-left:12px;">${pille(signal.signal_label || "", "thema")}${pille(firmaVon(signal), "firma")}</td>
+    </tr></table>
   </td></tr>`;
 }
 
-/** Die weiteren: nur Titel und eine kleine Zeile. */
-function kleineZeile(signal: DigestSignal): string {
-  return `<tr><td style="padding:10px 0;border-bottom:1px solid ${LINIE};">
-    <a href="${esc(linkVon(signal))}" style="font:500 14px/1.4 ${SCHRIFT};color:${TINTE};text-decoration:none;">${esc(signal.headline_de)}</a>
-    <div style="margin-top:2px;font:400 11px/1.4 ${SCHRIFT};color:${HELLGRAU};">${esc(metaVon(signal))}</div>
-  </td></tr>`;
+function grosseZeile(signal: DigestSignal): string { return zeile(signal, true); }
+function kleineZeile(signal: DigestSignal): string { return zeile(signal, false); }
+
+/** Kleiner Knopf mit Zeichen davor. */
+function knopf(text: string, href: string, voll: boolean): string {
+  const farbe = voll ? "background:#206efb;color:#ffffff;" : "background:#eef4ff;color:#206efb;";
+  return `<a href="${esc(href)}" style="display:inline-block;margin:0 4px 8px;padding:8px 16px;border-radius:999px;${farbe}font:600 12px/1 ${SCHRIFT};text-decoration:none;">${text}</a>`;
 }
 
 /** Betreff und HTML der Mail. Hoechstens 15 Signale: fuenf gross, zehn klein. */
@@ -87,9 +103,13 @@ export function baueDigest(signale: DigestSignal[], zeitraum: string, test = fal
     <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${gross.map(grosseZeile).join("")}</table></td></tr>
     ${klein.length ? `<tr><td style="padding:28px 0 2px;font:500 11px/1.4 ${SCHRIFT};letter-spacing:.06em;color:${HELLGRAU};">WEITERE</td></tr>
     <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${klein.map(kleineZeile).join("")}</table></td></tr>` : ""}
-    <tr><td style="padding:24px 0 0;font:500 13px/1.4 ${SCHRIFT};">
-      <a href="${DIGEST_APP_URL}" style="color:${HELLBLAU};text-decoration:none;">${rest ? `${rest} weitere im Signal Layer` : "Alle Signale im Signal Layer"} →</a>
+    <tr><td align="center" style="padding:30px 0 6px;">
+      ${knopf("&#9656;&nbsp; Signal Layer öffnen", DIGEST_APP_URL, true)}${rest ? knopf(`&#9776;&nbsp; ${rest} weitere Signale`, DIGEST_APP_URL, false) : ""}
     </td></tr>
+    <tr><td align="center" style="padding:18px 0 0;">
+      <img src="${LOGO_URL}" width="84" height="13" alt="ROOTS" style="display:inline-block;border:0;width:84px;height:auto;opacity:.7;">
+    </td></tr>
+    <tr><td align="center" style="padding:6px 0 0;font:400 10px/1.5 ${SCHRIFT};color:${HELLGRAU};">Täglich um 8:30 Uhr · neue Signale der letzten 24 Stunden</td></tr>
   </table>
 </td></tr></table>
 </body></html>`;

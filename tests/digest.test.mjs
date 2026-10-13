@@ -10,7 +10,9 @@ test("Wochenmail: Betreff, Abschnitte, Escaping", () => {
   });
   const { betreff, html } = baueDigest([signal("sales", 80, "A <b>"), signal("marketing", 70, "B")], "12.10.2026 bis 13.10.2026", true);
   assert.equal(betreff, "[Test] 2 neue Signale");
-  assert.match(html, /Sales · Markenstrategie · LZ/);
+  assert.match(html, /Sales · LZ/);
+  assert.match(html, />Markenstrategie<\/span>/);
+  assert.doesNotMatch(html, /Weil\./);
   assert.match(html, /A &lt;b&gt;/);
   assert.doesNotMatch(html, /border-left/);
 });
