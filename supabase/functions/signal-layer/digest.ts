@@ -95,11 +95,17 @@ export function baueDigest(signale: DigestSignal[], zeitraum: string, test = fal
 <body style="margin:0;padding:0;background:#ffffff;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;"><tr><td align="center" style="padding:32px 18px;">
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
-    <tr><td style="padding-bottom:30px;">
-      <img src="${LOGO_URL}" width="110" height="17" alt="ROOTS Brand Strategy Consultants" style="display:block;border:0;width:110px;height:auto;">
-    </td></tr>
-    <tr><td style="padding-bottom:6px;">
-      <span style="display:inline-block;margin:0 4px 4px 0;padding:4px 10px;border-radius:999px;background:#f3f4f6;color:${GRAU};font:600 10px/1.4 ${SCHRIFT};letter-spacing:.05em;">SIGNAL LAYER</span><span style="display:inline-block;margin:0 4px 4px 0;padding:4px 10px;border-radius:999px;background:#f3f4f6;color:${GRAU};font:500 10px/1.4 ${SCHRIFT};">${esc(zeitraum)}</span><span style="display:inline-block;margin:0 4px 4px 0;padding:4px 10px;border-radius:999px;background:#eef4ff;color:#206efb;font:600 10px/1.4 ${SCHRIFT};">${signale.length} neue Signale</span>
+    <tr><td style="padding-bottom:10px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:14px;">
+        <tr>
+          <td style="padding:12px 16px;vertical-align:middle;">
+            <img src="${LOGO_URL}" width="92" height="22" alt="ROOTS Brand Strategy Consultants" style="display:block;border:0;width:92px;height:auto;">
+          </td>
+          <td align="right" style="padding:12px 16px;vertical-align:middle;">
+            <span style="display:inline-block;margin:2px 0 2px 4px;padding:5px 11px;border-radius:999px;background:#ffffff;border:1px solid #e8edf3;color:${GRAU};font:500 11px/1.3 ${SCHRIFT};white-space:nowrap;">${esc(zeitraum)}</span><span style="display:inline-block;margin:2px 0 2px 4px;padding:5px 11px;border-radius:999px;background:#206efb;color:#ffffff;font:600 11px/1.3 ${SCHRIFT};white-space:nowrap;">${signale.length} neue Signale</span>
+          </td>
+        </tr>
+      </table>
     </td></tr>
     <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${gross.map(grosseZeile).join("")}</table></td></tr>
     ${klein.length ? `<tr><td style="padding:28px 0 2px;font:500 11px/1.4 ${SCHRIFT};letter-spacing:.06em;color:${HELLGRAU};">WEITERE</td></tr>
