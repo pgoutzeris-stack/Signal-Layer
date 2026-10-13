@@ -35,7 +35,7 @@ function datumDe(iso: string | null): string {
     : datum.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" });
 }
 
-const ICON_URL = "https://pgoutzeris-stack.github.io/ROOTS_Intranet/assets/favicon/favicon-32.png";
+const LOGO_URL = "https://pgoutzeris-stack.github.io/Signal-Layer/assets/roots-logo-mail.png";
 const SCHRIFT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
 const TINTE = "#1f2937";
 const GRAU = "#6b7280";
@@ -79,13 +79,10 @@ export function baueDigest(signale: DigestSignal[], zeitraum: string, test = fal
 <body style="margin:0;padding:0;background:#ffffff;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;"><tr><td align="center" style="padding:32px 18px;">
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
-    <tr><td style="padding-bottom:28px;">
-      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-        <td style="padding-right:8px;vertical-align:middle;"><img src="${ICON_URL}" width="16" height="16" alt="ROOTS" style="display:block;border:0;"></td>
-        <td style="vertical-align:middle;font:500 12px/1 ${SCHRIFT};letter-spacing:.06em;color:${HELLGRAU};">SIGNAL LAYER</td>
-      </tr></table>
+    <tr><td style="padding-bottom:30px;">
+      <img src="${LOGO_URL}" width="110" height="17" alt="ROOTS Brand Strategy Consultants" style="display:block;border:0;width:110px;height:auto;">
     </td></tr>
-    <tr><td style="font:400 12px/1.4 ${SCHRIFT};color:${HELLGRAU};">${esc(zeitraum)}</td></tr>
+    <tr><td style="font:500 11px/1.4 ${SCHRIFT};letter-spacing:.06em;color:${HELLGRAU};">SIGNAL LAYER · ${esc(zeitraum)}</td></tr>
     <tr><td style="padding:4px 0 8px;font:600 24px/1.25 ${SCHRIFT};color:${TINTE};">${signale.length} neue Signale</td></tr>
     <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${gross.map(grosseZeile).join("")}</table></td></tr>
     ${klein.length ? `<tr><td style="padding:28px 0 2px;font:500 11px/1.4 ${SCHRIFT};letter-spacing:.06em;color:${HELLGRAU};">WEITERE</td></tr>
@@ -93,7 +90,6 @@ export function baueDigest(signale: DigestSignal[], zeitraum: string, test = fal
     <tr><td style="padding:24px 0 0;font:500 13px/1.4 ${SCHRIFT};">
       <a href="${DIGEST_APP_URL}" style="color:${HELLBLAU};text-decoration:none;">${rest ? `${rest} weitere im Signal Layer` : "Alle Signale im Signal Layer"} →</a>
     </td></tr>
-    <tr><td style="padding:36px 0 0;font:400 11px/1.5 ${SCHRIFT};color:${HELLGRAU};">ROOTS Brand Strategy Consultants</td></tr>
   </table>
 </td></tr></table>
 </body></html>`;
