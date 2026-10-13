@@ -79,6 +79,7 @@ export type SimpleModelOption = SimpleModelRates & {
 
 export const SIMPLE_MODEL_CATALOG: SimpleModelOption[] = [
   { id: "perplexity/deepseek-v4-pro-0813", provider: "perplexity", label: "DeepSeek V4 Pro (Perplexity)", input_usd: 1.32, cached_input_usd: 1.32, output_usd: 3.96 },
+  { id: "openai/gpt-5.4-mini", provider: "perplexity", label: "GPT-5.4 mini (Perplexity)", input_usd: 0.75, cached_input_usd: 0.75, output_usd: 4.5 },
   { id: "openai/gpt-5.4", provider: "perplexity", label: "GPT-5.4 (Perplexity)", input_usd: 2.5, cached_input_usd: 2.5, output_usd: 15 },
   { id: "anthropic/claude-opus-5-5", provider: "perplexity", label: "Claude Opus 5.5 (Perplexity)", input_usd: 4, cached_input_usd: 4, output_usd: 20 },
   { id: "anthropic/claude-sonnet-5-5", provider: "perplexity", label: "Claude Sonnet 5.5 (Perplexity)", input_usd: 3, cached_input_usd: 3, output_usd: 15 },

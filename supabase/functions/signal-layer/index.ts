@@ -3452,6 +3452,8 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
   // gebucht, nicht aus dieser Tabelle.
   "anthropic/claude-opus-5-5": { currency: "USD", standard: { input: 4, cachedInput: 4, output: 20 } },
   "anthropic/claude-sonnet-5-5": { currency: "USD", standard: { input: 3, cachedInput: 3, output: 15 } },
+  // Rueckfallpreis; gebucht wird, was Perplexity je Aufruf meldet.
+  "openai/gpt-5.4-mini": { currency: "USD", standard: { input: 0.75, cachedInput: 0.75, output: 4.5 } },
   // Aus usage.cost eines echten Aufrufs am 12.10.2026 zurueckgerechnet.
   "perplexity/deepseek-v4-pro-0813": { currency: "USD", standard: { input: 1.32, cachedInput: 1.32, output: 3.96 } },
   "anthropic/claude-fable-5-1": { currency: "USD", standard: { input: 10, cachedInput: 10, output: 50 } },
