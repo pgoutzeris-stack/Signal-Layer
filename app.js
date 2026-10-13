@@ -5,10 +5,10 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-4";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261013-4";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261013-5";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
@@ -4095,6 +4095,23 @@ function renderSimpleLaufKurz(run) {
     </div>`).join("");
 }
 
+/**
+ * Link aus der Tagesmail: ?signal=<article_id> oeffnet direkt das Signal-Popup.
+ * Der Parameter verschwindet danach aus der Adresse, damit ein Neuladen das
+ * Popup nicht erneut oeffnet.
+ */
+function oeffneSignalAusLink() {
+  let id = "";
+  try { id = new URLSearchParams(window.location.search).get("signal") || ""; } catch { return; }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return;
+  try {
+    const adresse = new URL(window.location.href);
+    adresse.searchParams.delete("signal");
+    window.history.replaceState(null, "", adresse.toString());
+  } catch { /* Adresse bleibt, Popup oeffnet trotzdem */ }
+  void openArticleDetail(id, { action: "get_simple_article_detail" });
+}
+
 export function setSimpleRunStatus(run, forecast = null, triggerBackfill = null, costSummary = undefined, extras = undefined) {
   simpleRunStatus = run || null;
   simpleForecast = forecast || null;
@@ -5003,6 +5020,7 @@ export function initApp(client) {
       articleTypeLabels: ARTICLE_TYPE_LABELS, viewState: simpleViewState,
     });
     applyPipelineMode(storedPipelineMode(), { persist: false });
+    oeffneSignalAusLink();
   }
   void loadLastRun();
   void loadAdvancedVersions();

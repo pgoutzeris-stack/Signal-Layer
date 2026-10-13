@@ -43,8 +43,9 @@ const HELLGRAU = "#9ca3af";
 const LINIE = "#eef1f5";
 const HELLBLAU = "#5b9bff";
 
+/** Link ins Signal-Popup des Tools, nicht zum Originalartikel. */
 function linkVon(signal: DigestSignal): string {
-  return signal.url && /^https?:\/\//.test(signal.url) ? signal.url : DIGEST_APP_URL;
+  return /^[0-9a-f-]{36}$/i.test(signal.article_id) ? `${DIGEST_APP_URL}?signal=${signal.article_id}` : DIGEST_APP_URL;
 }
 
 function metaVon(signal: DigestSignal): string {

@@ -16,3 +16,13 @@ test("Wochenmail: Betreff, Abschnitte, Escaping", () => {
   assert.match(html, /A &lt;b&gt;/);
   assert.doesNotMatch(html, /border-left/);
 });
+
+test("Mail verlinkt ins Signal-Popup, App oeffnet ?signal=", async () => {
+  const { readFileSync } = await import("node:fs");
+  const id = "11111111-2222-3333-4444-555555555555";
+  const { html } = baueDigest([{ lane: "sales", score: 1, headline_de: "X", signal_label: "", why_de: "", company: "", roots_offering: "", tier1_companies: [], tier2_companies: [], article_id: id, quelle: "", datum: null, url: "https://extern.example/artikel" }], "z", false);
+  assert.match(html, new RegExp(`Signal-Layer/\\?signal=${id}`));
+  assert.doesNotMatch(html, /extern\.example/);
+  const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  assert.match(app, /oeffneSignalAusLink\(\);/);
+});
