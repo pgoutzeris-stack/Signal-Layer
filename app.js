@@ -5,10 +5,10 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261012-6";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-1";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261012-6";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261013-1";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
@@ -3688,6 +3688,7 @@ function renderSimpleHeaderStatusContent() {
   }
 
   renderSimplePricingNote();
+  renderSimpleLaufKurz(run);
   const activeSimpleRun = Boolean(run && ["queued", "running"].includes(run.status));
   byId("simple-cost-summary").textContent = formatSimpleTotalEur(simpleCostSummary?.total_eur);
   byId("simple-cost-today").textContent = formatCostEur(simpleCostSummary?.today_eur);
@@ -4036,6 +4037,71 @@ if (typeof document !== "undefined") document.addEventListener("click", (event) 
   });
 }, { capture: true });
 
+let simpleLastCrawl = null;
+let simpleCrawlSchedule = null;
+
+/** Naechster Termin eines taeglichen Cron-Ausdrucks "m h * * *" (UTC), sonst null. */
+export function naechsterCronTermin(schedule, jetzt = new Date()) {
+  const teile = String(schedule || "").trim().split(/\s+/);
+  if (teile.length !== 5 || teile.slice(2).some((teil) => teil !== "*")) return null;
+  const minute = Number(teile[0]);
+  const stunde = Number(teile[1]);
+  if (!Number.isInteger(minute) || !Number.isInteger(stunde)) return null;
+  const termin = new Date(Date.UTC(jetzt.getUTCFullYear(), jetzt.getUTCMonth(), jetzt.getUTCDate(), stunde, minute));
+  if (termin <= jetzt) termin.setUTCDate(termin.getUTCDate() + 1);
+  return termin;
+}
+
+function kurzDatum(iso) {
+  return new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+}
+
+/** Drei Zeilen oben im Status: letztes Scraping, letzte Analyse, naechster Termin. */
+function renderSimpleLaufKurz(run) {
+  const host = document.getElementById("simple-lauf-kurz");
+  if (!host) return;
+  const zahl = (wert) => Number(wert || 0).toLocaleString("de-DE");
+  const zeilen = [];
+  const crawl = simpleLastCrawl;
+  if (crawl) {
+    const laeuft = ["running", "queued"].includes(crawl.status);
+    const fehler = crawl.status === "error";
+    const wann = kurzDatum(crawl.finished_at || crawl.last_progress_at || crawl.started_at);
+    const text = laeuft
+      ? `läuft · ${zahl(crawl.fertig)} von ${zahl(crawl.quellen)} Quellen · ${zahl(crawl.neue_artikel)} neue Artikel`
+      : fehler
+        ? `Fehler · ${zahl(crawl.fertig)} von ${zahl(crawl.quellen)} Quellen`
+        : `abgeschlossen · ${zahl(crawl.neue_artikel)} neue Artikel aus ${zahl(crawl.quellen)} Quellen${crawl.fehler ? ` · ${zahl(crawl.fehler)} Quellen mit Fehler` : ""}`;
+    zeilen.push({ titel: "Scraping", wann, text, ton: fehler ? "error" : laeuft ? "working" : crawl.fehler ? "warn" : "ok" });
+  }
+  if (run) {
+    const laeuft = ["running", "queued"].includes(run.status);
+    const fehler = run.status === "error";
+    const wann = kurzDatum(run.finished_at || run.last_progress_at || run.started_at);
+    const text = laeuft
+      ? `läuft · ${zahl(run.processed_count)} von ${zahl(run.total_count)} Artikeln · ${zahl(run.signal_count)} Signale`
+      : fehler
+        ? `Fehler · ${simpleRunErrorPresentation(run.ai_error_detail || null, String(run.error_message || "")).shortLabel}`
+        : `abgeschlossen · ${zahl(run.signal_count)} von ${zahl(run.processed_count)} Artikeln als Signal erkannt`;
+    zeilen.push({ titel: "Analyse", wann, text, ton: fehler ? "error" : laeuft ? "working" : "ok" });
+  }
+  const naechster = simpleCrawlSchedule?.active ? naechsterCronTermin(simpleCrawlSchedule.schedule) : null;
+  zeilen.push({
+    titel: "Nächstes Scraping", wann: naechster ? kurzDatum(naechster.toISOString()) : "",
+    text: naechster ? "täglich, danach Analyse" : "nicht geplant", ton: naechster ? "ok" : "idle",
+  });
+  if (simpleSchedule?.planned_for) {
+    zeilen.push({ titel: "Geplante Analyse", wann: kurzDatum(simpleSchedule.planned_for), text: simpleSchedule.reason || "", ton: "ok" });
+  }
+  host.hidden = false;
+  host.innerHTML = zeilen.map((zeile) => `<div class="lauf-kurz-zeile lauf-kurz-zeile--${zeile.ton}">
+      <span class="lauf-kurz-punkt"></span>
+      <b>${escapeHtml(zeile.titel)}</b>
+      ${zeile.wann ? `<span class="lauf-kurz-wann">${escapeHtml(zeile.wann)}</span>` : ""}
+      <span class="lauf-kurz-text">${escapeHtml(zeile.text)}</span>
+    </div>`).join("");
+}
+
 export function setSimpleRunStatus(run, forecast = null, triggerBackfill = null, costSummary = undefined, extras = undefined) {
   simpleRunStatus = run || null;
   simpleForecast = forecast || null;
@@ -4043,6 +4109,8 @@ export function setSimpleRunStatus(run, forecast = null, triggerBackfill = null,
   if (extras !== undefined) {
     simplePricing = extras?.pricing || null;
     simpleSchedule = extras?.schedule || null;
+    simpleLastCrawl = extras?.lastCrawl || null;
+    simpleCrawlSchedule = extras?.crawlSchedule || null;
   }
   simpleTriggerBackfill = triggerBackfill || null;
   renderSimpleHeaderStatus();

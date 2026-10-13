@@ -11212,8 +11212,31 @@ Deno.serve(async (req: Request) => {
         const toolTotalEur = (allCostRows || [])
           .reduce((sum: number, row: { estimated_cost_eur?: number }) => sum + Number(row.estimated_cost_eur || 0), 0);
         const runWithError = run ? { ...run, ai_error_detail: await buildSimpleRunAiErrorDetail(run) } : null;
+        // Kurzfassung des letzten Scrapings und der Zeitplan fuer das Status-Popup.
+        const { data: letzterCrawl } = await admin.schema("signal_layer").from("crawl_runs")
+          .select("id, status, started_at, finished_at, last_progress_at, current_index, source_ids")
+          .order("started_at", { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
+        let crawlKurz: Record<string, unknown> | null = null;
+        if (letzterCrawl) {
+          const [{ data: jobZeilen }, { count: neueArtikel }] = await Promise.all([
+            admin.schema("signal_layer").from("source_crawl_jobs").select("status").eq("crawl_run_id", letzterCrawl.id),
+            admin.schema("signal_layer").from("articles").select("id", { count: "exact", head: true })
+              .gte("crawled_at", letzterCrawl.started_at),
+          ]);
+          const zaehle = (status: string) => (jobZeilen || []).filter((zeile: { status: string }) => zeile.status === status).length;
+          crawlKurz = {
+            status: letzterCrawl.status, started_at: letzterCrawl.started_at,
+            finished_at: letzterCrawl.finished_at, last_progress_at: letzterCrawl.last_progress_at,
+            quellen: Array.isArray(letzterCrawl.source_ids) ? letzterCrawl.source_ids.length : 0,
+            fertig: zaehle("success") + zaehle("empty") + zaehle("error"),
+            fehler: zaehle("error"), neue_artikel: neueArtikel || 0,
+          };
+        }
+        const { data: crawlZeitplan } = await admin.schema("signal_layer").rpc("crawl_zeitplan");
         return corsResponse(origin, {
           run: runWithError,
+          last_crawl: crawlKurz,
+          crawl_schedule: crawlZeitplan || null,
           trigger_backfill: triggerBackfill || null,
           batch_size: SIMPLE_BATCH_SIZE,
           totals: { signals: signalCount || 0, rejected: rejectedCount || 0 },

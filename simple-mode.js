@@ -15,10 +15,10 @@ import { matchesDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs
 // Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
-import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261012-6";
+import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261013-1";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { articleDisplayTitle } from "./article-title.mjs?v=20261012-6";
-import { paywallPillHtml } from "./paywall-pill.mjs?v=20261012-6";
+import { articleDisplayTitle } from "./article-title.mjs?v=20261013-1";
+import { paywallPillHtml } from "./paywall-pill.mjs?v=20261013-1";
 
 let ctx = null;
 let els = {};
@@ -413,6 +413,7 @@ async function loadResults({ keepStatus = false } = {}) {
       running = lastRun?.status === "running" || triggerBackfill?.status === "running";
       ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill, status.cost_summary || null, {
       pricing: status.pricing || null, schedule: status.schedule || null,
+      lastCrawl: status.last_crawl || null, crawlSchedule: status.crawl_schedule || null,
     });
     }
   } catch (error) {
@@ -443,6 +444,7 @@ async function pollStatus() {
     running = lastRun?.status === "running" || triggerBackfill?.status === "running";
     ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill, status.cost_summary || null, {
       pricing: status.pricing || null, schedule: status.schedule || null,
+      lastCrawl: status.last_crawl || null, crawlSchedule: status.crawl_schedule || null,
     });
     const advanced = Number(lastRun?.processed_count || 0) !== Number(previous?.processed_count || 0)
       || Number(triggerBackfill?.cursor || 0) !== Number(previousTrigger?.cursor || 0);

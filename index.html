@@ -244,6 +244,17 @@
   .company-filter-help { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 5px; color: var(--muted); font-size: .6rem; }
   .company-filter-reset { border: 0; background: transparent; color: var(--brand); font: inherit; font-size: .63rem; font-weight: 750; cursor: pointer; }
   .company-filter-reset:hover { text-decoration: underline; }
+  .lauf-kurz { display: grid; gap: 6px; margin: 2px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); }
+  .lauf-kurz-zeile { display: grid; grid-template-columns: 8px auto auto 1fr; align-items: baseline; column-gap: 8px; font-size: .7rem; line-height: 1.4; color: var(--ink); }
+  .lauf-kurz-zeile b { font-weight: 700; white-space: nowrap; }
+  .lauf-kurz-wann { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .lauf-kurz-text { color: var(--status-text, var(--muted)); min-width: 0; }
+  .lauf-kurz-punkt { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; align-self: center; }
+  .lauf-kurz-zeile--ok .lauf-kurz-punkt { background: #16a34a; }
+  .lauf-kurz-zeile--working .lauf-kurz-punkt { background: var(--brand); }
+  .lauf-kurz-zeile--warn .lauf-kurz-punkt { background: #d97706; }
+  .lauf-kurz-zeile--error .lauf-kurz-punkt { background: #dc2626; }
+  .lauf-kurz-zeile--error .lauf-kurz-text { color: #b91c1c; }
   .roots-select-bar-actions { display: inline-flex; align-items: center; gap: 14px; margin-left: auto; }
   .roots-select-bar { margin-bottom: 2px; }
   .roots-select-head { min-height: 29px; box-sizing: content-box; }
@@ -2314,6 +2325,7 @@
                   <div><span class="crawl-status-kicker">Letzte Simple-Analyse</span><strong id="simple-status-time">--:--</strong></div>
                   <span class="crawl-live-state" id="simple-live-state">Kein Lauf aktiv</span>
                 </div>
+                <div class="lauf-kurz" id="simple-lauf-kurz" hidden></div>
                 <div class="backfill-status">
                   <div class="article-live-progress" id="simple-article-progress" hidden>
                     <div class="backfill-status-row"><span>Artikelprüfung</span><b id="simple-progress-text">0 / 0</b></div>
@@ -2597,7 +2609,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261012-6';
+  import { initApp } from './app.js?v=20261013-1';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
