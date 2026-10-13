@@ -5,10 +5,10 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-3";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-4";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261013-3";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261013-4";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
@@ -4045,11 +4045,12 @@ export function naechsterCronTermin(schedule, jetzt = new Date()) {
   const teile = String(schedule || "").trim().split(/\s+/);
   if (teile.length !== 5 || teile.slice(2).some((teil) => teil !== "*")) return null;
   const minute = Number(teile[0]);
-  const stunde = Number(teile[1]);
-  if (!Number.isInteger(minute) || !Number.isInteger(stunde)) return null;
-  const termin = new Date(Date.UTC(jetzt.getUTCFullYear(), jetzt.getUTCMonth(), jetzt.getUTCDate(), stunde, minute));
-  if (termin <= jetzt) termin.setUTCDate(termin.getUTCDate() + 1);
-  return termin;
+  const stunden = teile[1].split(",").map(Number);
+  if (!Number.isInteger(minute) || !stunden.length || stunden.some((stunde) => !Number.isInteger(stunde))) return null;
+  const termine = stunden.flatMap((stunde) => [0, 1].map((tag) => new Date(Date.UTC(
+    jetzt.getUTCFullYear(), jetzt.getUTCMonth(), jetzt.getUTCDate() + tag, stunde, minute,
+  ))));
+  return termine.filter((termin) => termin > jetzt).sort((a, b) => a - b)[0] || null;
 }
 
 function kurzDatum(iso) {

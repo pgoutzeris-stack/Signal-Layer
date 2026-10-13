@@ -13,6 +13,8 @@ test("naechster Termin aus dem taeglichen Cron-Ausdruck", () => {
   const nachher = naechsterCronTermin("0 4 * * *", new Date("2026-10-13T18:00:00Z"));
   assert.equal(nachher.toISOString(), "2026-10-14T04:00:00.000Z");
   assert.equal(naechsterCronTermin("*/5 * * * *"), null);
+  assert.equal(naechsterCronTermin("0 10,15 * * *", new Date("2026-10-13T12:00:00Z")).toISOString(), "2026-10-13T15:00:00.000Z");
+  assert.equal(naechsterCronTermin("0 10,15 * * *", new Date("2026-10-13T16:00:00Z")).toISOString(), "2026-10-14T10:00:00.000Z");
 });
 
 test("Status-Popup traegt die Kurzfassung", () => {
