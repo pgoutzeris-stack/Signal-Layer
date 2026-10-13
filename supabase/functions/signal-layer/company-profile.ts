@@ -690,14 +690,20 @@ function groundingSearchCount(candidate: Record<string, unknown>): number {
   return Array.isArray(meta?.groundingChunks) && meta!.groundingChunks.length ? 1 : 0;
 }
 
+/** Websuche ueber Perplexity, vom Aufrufer gestellt. Modelle mit "/" laufen darueber. */
+export type PerplexitySuche = (model: string, prompt: string, maxTokens: number) => Promise<{
+  text: string; quellen: CompanyProfileSource[]; usage: Record<string, number>;
+}>;
+
 export type CompanyProfileDeps = {
   apiKey: string;
   model?: string;
   rootsPortfolio: string;
+  perplexity?: PerplexitySuche;
 };
 
 export async function researchCompanyLogo(
-  deps: Pick<CompanyProfileDeps, "apiKey" | "model">,
+  deps: Pick<CompanyProfileDeps, "apiKey" | "model" | "perplexity">,
   company: string,
 ): Promise<{ logo: VerifiedLogo | null; usage: Record<string, number> }> {
   const model = deps.model || COMPANY_PROFILE_MODEL;
@@ -716,6 +722,10 @@ Antworte ausschließlich als JSON:
 {"website":"hauptdomain.de","logo_url":"https://...","logo_source_url":"https://...","logo_source_kind":"official_media | official_structured_data | wikimedia_commons | worldvectorlogo","logo_format":"svg | png | webp | jpg"}
 
 Wenn kein aktuelles Logo eindeutig belegt ist, setze alle Logo-Felder auf null.`;
+  if (model.includes("/") && deps.perplexity) {
+    const antwort = await deps.perplexity(model, prompt, 1_200);
+    return { logo: await verifyLogoCandidate(company, extractJson(antwort.text) as Record<string, unknown>), usage: antwort.usage };
+  }
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(deps.apiKey)}`,
     {
@@ -756,6 +766,28 @@ export async function researchCompanyProfile(
   articles: CompanyArticleHint[],
 ): Promise<{ profile: CompanyProfile; usage: Record<string, number> }> {
   const model = deps.model || COMPANY_PROFILE_MODEL;
+  // Websuche ueber Perplexity: seit der Google-Schluessel fehlt der einzige Weg.
+  if (model.includes("/") && deps.perplexity) {
+    const antwort = await deps.perplexity(model, buildCompanyProfilePrompt(company, deps.rootsPortfolio, articles), COMPANY_PROFILE_MAX_OUTPUT_TOKENS);
+    const parsedP = extractJson(antwort.text) as Record<string, unknown>;
+    const logoP = await verifyLogoCandidate(company, parsedP);
+    return {
+      profile: {
+        company,
+        website: clean(parsedP.website, 120) || null,
+        logo_url: logoP?.logo_url || null,
+        logo_source_url: logoP?.logo_source_url || null,
+        logo_source_kind: logoP?.logo_source_kind || null,
+        logo_format: logoP?.logo_format || null,
+        headline: clean(parsedP.headline, 160) || null,
+        kpis: normalizeKpis(parsedP.kpis),
+        sections: normalizeSections(parsedP.sections),
+        sources: antwort.quellen,
+        unverified_note: clean(parsedP.unverified_note, 400) || null,
+      },
+      usage: antwort.usage,
+    };
+  }
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(deps.apiKey)}`,
     {

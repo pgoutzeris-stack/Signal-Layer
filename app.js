@@ -5,10 +5,10 @@ import { SIGNAL_LAYER_API_URL } from "./config.js";
 import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentation } from "./status-state.mjs?v=20260824-0305";
 // Der einfache Modus lebt komplett in simple-mode.js. app.js bleibt der
 // Advanced-Modus und übergibt nur ein paar geteilte Helfer.
-import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-2";
+import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-3";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261013-2";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261013-3";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
@@ -690,7 +690,7 @@ const AUFGABEN_MODELLE = [
   ["ai.memo_draft_model", "Executive Memo", "fa-solid fa-file-lines", (m) => m.provider !== "gemini"],
   ["ai.memo_research_model", "Memo-Recherche", "fa-solid fa-magnifying-glass-chart", (m) => m.provider === "perplexity"],
   ["ai.verify_model", "Bild- und Personenprüfung", "fa-solid fa-user-check", (m) => m.provider === "perplexity"],
-  ["ai.simple_research_model", "Tier-1-Steckbrief", "fa-solid fa-building", (m) => m.provider === "gemini"],
+  ["ai.simple_research_model", "Unternehmenssteckbrief", "fa-solid fa-building", (m) => m.provider === "gemini" || m.provider === "perplexity"],
 ];
 
 function aufgabenModelSelect([path, label, icon, passt]) {
@@ -4053,10 +4053,10 @@ export function naechsterCronTermin(schedule, jetzt = new Date()) {
 }
 
 function kurzDatum(iso) {
-  return new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+  return new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" }).replace(",", "");
 }
 
-/** Drei Zeilen oben im Status: letztes Scraping, letzte Analyse, naechster Termin. */
+/** Kurzfassung oben im Status: je Zeile Titel, Zeitpunkt, ein knapper Befund. */
 function renderSimpleLaufKurz(run) {
   const host = document.getElementById("simple-lauf-kurz");
   if (!host) return;
@@ -4066,39 +4066,31 @@ function renderSimpleLaufKurz(run) {
   if (crawl) {
     const laeuft = ["running", "queued"].includes(crawl.status);
     const fehler = crawl.status === "error";
-    const wann = kurzDatum(crawl.finished_at || crawl.last_progress_at || crawl.started_at);
-    const text = laeuft
-      ? `läuft · ${zahl(crawl.fertig)} von ${zahl(crawl.quellen)} Quellen · ${zahl(crawl.neue_artikel)} neue Artikel`
-      : fehler
-        ? `Fehler · ${zahl(crawl.fertig)} von ${zahl(crawl.quellen)} Quellen`
-        : `abgeschlossen · ${zahl(crawl.neue_artikel)} neue Artikel aus ${zahl(crawl.quellen)} Quellen${crawl.fehler ? ` · ${zahl(crawl.fehler)} Quellen mit Fehler` : ""}`;
-    zeilen.push({ titel: "Scraping", wann, text, ton: fehler ? "error" : laeuft ? "working" : crawl.fehler ? "warn" : "ok" });
+    zeilen.push({
+      titel: "Scraping", wann: kurzDatum(crawl.finished_at || crawl.last_progress_at || crawl.started_at),
+      text: laeuft ? `läuft · ${zahl(crawl.fertig)}/${zahl(crawl.quellen)} Quellen`
+        : fehler ? "Fehler"
+          : `${zahl(crawl.neue_artikel)} Artikel${crawl.fehler ? ` · ${zahl(crawl.fehler)} Fehler` : ""}`,
+      ton: fehler ? "error" : laeuft ? "working" : crawl.fehler ? "warn" : "ok",
+    });
   }
   if (run) {
     const laeuft = ["running", "queued"].includes(run.status);
     const fehler = run.status === "error";
-    const wann = kurzDatum(run.finished_at || run.last_progress_at || run.started_at);
-    const text = laeuft
-      ? `läuft · ${zahl(run.processed_count)} von ${zahl(run.total_count)} Artikeln · ${zahl(run.signal_count)} Signale`
-      : fehler
-        ? `Fehler · ${simpleRunErrorPresentation(run.ai_error_detail || null, String(run.error_message || "")).shortLabel}`
-        : `abgeschlossen · ${zahl(run.signal_count)} von ${zahl(run.processed_count)} Artikeln als Signal erkannt`;
-    zeilen.push({ titel: "Analyse", wann, text, ton: fehler ? "error" : laeuft ? "working" : "ok" });
+    zeilen.push({
+      titel: "Analyse", wann: kurzDatum(run.finished_at || run.last_progress_at || run.started_at),
+      text: laeuft ? `läuft · ${zahl(run.processed_count)}/${zahl(run.total_count)}`
+        : fehler ? simpleRunErrorPresentation(run.ai_error_detail || null, String(run.error_message || "")).shortLabel
+          : `${zahl(run.signal_count)} von ${zahl(run.processed_count)} Signale`,
+      ton: fehler ? "error" : laeuft ? "working" : "ok",
+    });
   }
   const naechster = simpleCrawlSchedule?.active ? naechsterCronTermin(simpleCrawlSchedule.schedule) : null;
-  zeilen.push({
-    titel: "Nächstes Scraping", wann: naechster ? kurzDatum(naechster.toISOString()) : "",
-    text: naechster ? "täglich" : "nicht geplant", ton: naechster ? "ok" : "idle",
-  });
-  if (simpleSchedule?.planned_for) {
-    zeilen.push({ titel: "Geplante Analyse", wann: kurzDatum(simpleSchedule.planned_for), text: simpleSchedule.reason || "", ton: "ok" });
-  }
+  zeilen.push({ titel: "Nächster Lauf", wann: naechster ? kurzDatum(naechster.toISOString()) : "", text: naechster ? "" : "nicht geplant", ton: naechster ? "ok" : "idle" });
   host.hidden = false;
   host.innerHTML = zeilen.map((zeile) => `<div class="lauf-kurz-zeile lauf-kurz-zeile--${zeile.ton}">
-      <span class="lauf-kurz-punkt"></span>
-      <b>${escapeHtml(zeile.titel)}</b>
-      ${zeile.wann ? `<span class="lauf-kurz-wann">${escapeHtml(zeile.wann)}</span>` : ""}
-      <span class="lauf-kurz-text">${escapeHtml(zeile.text)}</span>
+      <span class="lauf-kurz-punkt"></span><b>${escapeHtml(zeile.titel)}</b>
+      <span class="lauf-kurz-text">${zeile.wann ? `<span class="lauf-kurz-wann">${escapeHtml(zeile.wann)}</span>` : ""}${escapeHtml(zeile.text)}</span>
     </div>`).join("");
 }
 

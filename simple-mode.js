@@ -15,10 +15,10 @@ import { matchesDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs
 // Bedienelement dafür und zeigt den laufenden Fortschritt nur an.
 // ---------------------------------------------------------------------------
 
-import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261013-2";
+import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261013-3";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { articleDisplayTitle } from "./article-title.mjs?v=20261013-2";
-import { paywallPillHtml } from "./paywall-pill.mjs?v=20261013-2";
+import { articleDisplayTitle } from "./article-title.mjs?v=20261013-3";
+import { paywallPillHtml } from "./paywall-pill.mjs?v=20261013-3";
 
 let ctx = null;
 let els = {};
@@ -35,7 +35,7 @@ let selectedVersion = "";
 let currentVersionLabel = "";
 let versionList = [];
 const companyFilterState = { kind: "tier1", selected: [] };
-const companyFilterIndex = { tier1: [], company: [] };
+const companyFilterIndex = { tier1: [], tier2: [], company: [] };
 
 function el(id) {
   return document.getElementById(id);
@@ -163,7 +163,11 @@ function signalCard(signal) {
           const isTarget = sameCompany(signal.company, name);
           return `<span class="tag tag--kunde" data-company-profile="${esc(name)}" data-company-trigger="${esc(isTarget ? signal.trigger_de || "" : "")}" data-company-trigger-state="${isTarget ? "target" : "mention"}" data-pill-info="Tier 1 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${esc(name)}</span>`;
         }).join("")}
-        ${signal.company && !(signal.tier1_companies || []).includes(signal.company) ? `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
+        ${(signal.tier2_companies || []).filter((name) => !(signal.tier1_companies || []).includes(name)).map((name) => {
+          const isTarget = sameCompany(signal.company, name);
+          return `<span class="tag tag--kunde tag--tier2" data-company-profile="${esc(name)}" data-company-trigger="${esc(isTarget ? signal.trigger_de || "" : "")}" data-company-trigger-state="${isTarget ? "target" : "mention"}" data-pill-info="Tier 2 Company" tabindex="0" role="button"><i class="fa-solid fa-building"></i> ${esc(name)}</span>`;
+        }).join("")}
+        ${signal.company && !(signal.tier1_companies || []).includes(signal.company) && !(signal.tier2_companies || []).some((name) => sameCompany(signal.company, name)) ? `<span class="tag tag--company" data-pill-info="Company" tabindex="0"><i class="fa-solid fa-building"></i> ${esc(signal.company)}</span>` : ""}
         ${personPillHtml({name:signal.person_name,role:signal.person_role||"",company:signal.company||"",articleId:article.id||signal.article_id,mode:"simple"})}
         ${source?.company ? `<span class="tag tag--source"><i class="fa-solid fa-newspaper"></i> ${esc(source.company)}</span>` : ""}
         ${paywallPillHtml(article, esc)}
@@ -191,6 +195,9 @@ function companyMatches(signal) {
   if (companyFilterState.kind === "tier1") {
     return (signal.tier1_companies || []).some((name) => selected.includes(name));
   }
+  if (companyFilterState.kind === "tier2") {
+    return (signal.tier2_companies || []).some((name) => selected.includes(name));
+  }
   return Boolean(signal.company && selected.includes(signal.company));
 }
 
@@ -206,7 +213,9 @@ function renderCompanyFilter() {
   if (els.companyFilterHelp) {
     els.companyFilterHelp.textContent = kind === "tier1"
       ? "Tier-1-Unternehmen mehrfach auswählen"
-      : "Weitere erkannte Unternehmen mehrfach auswählen";
+      : kind === "tier2"
+        ? "Tier-2-Unternehmen mehrfach auswählen"
+        : "Weitere erkannte Unternehmen mehrfach auswählen";
   }
   if (els.companyFilterLabel) {
     els.companyFilterLabel.textContent = companyFilterState.selected.length === 0
@@ -229,6 +238,9 @@ function refreshCompanyFilter(all) {
   companyFilterIndex.tier1 = [...new Set(all.flatMap((signal) => signal.tier1_companies || []).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "de"));
   const tier1 = new Set(companyFilterIndex.tier1);
+  companyFilterIndex.tier2 = [...new Set(all.flatMap((signal) => signal.tier2_companies || []).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "de"));
+  // Company bleibt wie bisher: alles ausser Tier 1. Tier 2 ist eine Zusatzsicht.
   companyFilterIndex.company = [...new Set(all.map((signal) => signal.company).filter((name) => name && !tier1.has(name)))]
     .sort((a, b) => a.localeCompare(b, "de"));
   const allowed = new Set(companyFilterIndex[companyFilterState.kind]);

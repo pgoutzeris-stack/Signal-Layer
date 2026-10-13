@@ -244,12 +244,12 @@
   .company-filter-help { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 5px; color: var(--muted); font-size: .6rem; }
   .company-filter-reset { border: 0; background: transparent; color: var(--brand); font: inherit; font-size: .63rem; font-weight: 750; cursor: pointer; }
   .company-filter-reset:hover { text-decoration: underline; }
-  .lauf-kurz { display: grid; gap: 6px; margin: 2px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); }
-  .lauf-kurz-zeile { display: grid; grid-template-columns: 8px auto auto 1fr; align-items: baseline; column-gap: 8px; font-size: .7rem; line-height: 1.4; color: var(--ink); }
+  .lauf-kurz { display: grid; gap: 5px; margin: 2px 0 12px; padding: 9px 11px; border-radius: 10px; background: var(--surface); }
+  .lauf-kurz-zeile { display: grid; grid-template-columns: 7px 92px minmax(0, 1fr); align-items: center; column-gap: 8px; font-size: .68rem; line-height: 1.35; color: var(--ink); }
   .lauf-kurz-zeile b { font-weight: 700; white-space: nowrap; }
-  .lauf-kurz-wann { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .lauf-kurz-text { color: var(--status-text, var(--muted)); min-width: 0; }
-  .lauf-kurz-punkt { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; align-self: center; }
+  .lauf-kurz-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--status-text, var(--muted)); }
+  .lauf-kurz-wann { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .lauf-kurz-punkt { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; }
   .lauf-kurz-zeile--ok .lauf-kurz-punkt { background: #16a34a; }
   .lauf-kurz-zeile--working .lauf-kurz-punkt { background: var(--brand); }
   .lauf-kurz-zeile--warn .lauf-kurz-punkt { background: #d97706; }
@@ -1977,6 +1977,7 @@
     display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   }
   .tag--kunde { background: var(--brand-light); border-color: var(--brand); color: var(--brand-dark); }
+  .tag--kunde.tag--tier2 { background: var(--bg); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
   .tag--source { color: var(--status-text); text-decoration: none; }
   .tag--source:hover { border-color: var(--brand); color: var(--brand-dark); }
   .tag--person { background: var(--warning-bg); border-color: #fbbf24; color: var(--warning-text); }
@@ -2298,6 +2299,7 @@
                   <label class="roots-select-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input id="simple-company-filter-search" type="search" placeholder="Unternehmen suchen…" aria-label="Unternehmen suchen" autocomplete="off"></label>
                 <div class="company-filter-tabs" role="tablist" aria-label="Unternehmensklasse">
                     <button type="button" class="company-filter-tab active" data-company-class="tier1" role="tab" aria-selected="true">Tier 1</button>
+                    <button type="button" class="company-filter-tab" data-company-class="tier2" role="tab" aria-selected="false">Tier 2</button>
                     <button type="button" class="company-filter-tab" data-company-class="company" role="tab" aria-selected="false">Company</button>
                   </div>
                   <div class="company-filter-help"><span id="simple-company-filter-help">Tier-1-Unternehmen mehrfach auswählen</span><span class="roots-select-bar-actions"><button type="button" class="company-filter-reset" id="simple-company-filter-all">Alle auswählen</button><button type="button" class="company-filter-reset" id="simple-company-filter-reset">Auswahl löschen</button></span></div>
@@ -2609,7 +2611,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261013-2';
+  import { initApp } from './app.js?v=20261013-3';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

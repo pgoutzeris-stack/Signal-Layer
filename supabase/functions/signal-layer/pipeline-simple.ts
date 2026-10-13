@@ -1160,6 +1160,30 @@ function isStrongSimpleTrigger(trigger: string, company: string): boolean {
  * Andocktexte verworfen; die Karte stand dann ohne "So kann ROOTS andocken" da.
  * Sie gilt weiter fuer die virale Spur, wo der Bezug das einzige Kriterium ist.
  */
+export type SimpleTier2Company = { name: string; aliases: string[] | null; nur_firma: boolean };
+
+/**
+ * Tier 2: zusaetzliche, kostenlose Erkennung nach der Analyse. Gesucht wird im
+ * erkannten Unternehmen, im Titel und im Kern des Signals, nicht im Beleg: dort
+ * stehen frueher Arbeitgeber aus Personalmeldungen. nur_firma heisst, nur das
+ * erkannte Unternehmen zaehlt (Roller, Expert, Douglas). Gleiche Regel wie
+ * signal_layer.tier2_treffer() in der Datenbank.
+ */
+export function tier2Treffer(company: string, text: string, liste: SimpleTier2Company[]): string[] {
+  const treffer = new Set<string>();
+  const passt = (heuhaufen: string, name: string) => {
+    const muster = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${muster}($|[^\\p{L}\\p{N}])`, "u").test(heuhaufen);
+  };
+  for (const firma of liste) {
+    const namen = [firma.name, ...(firma.aliases || [])].filter(Boolean);
+    if (namen.some((name) => passt(company || "", name) || (!firma.nur_firma && passt(text || "", name)))) {
+      treffer.add(firma.name);
+    }
+  }
+  return [...treffer].sort((a, b) => a.localeCompare(b, "de"));
+}
+
 /** Auftrag zum Nachfuellen eines fehlenden Andocktexts. */
 export function rootsLinkPrompt(signal: {
   lane: string; company: string; headline: string; summary: string; evidence: string; why: string; offering: string;

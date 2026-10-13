@@ -72,6 +72,8 @@ import {
   SIMPLE_MIN_TEXT_CHARS,
   SIMPLE_MODEL_CATALOG,
   ROOTS_LINK_SCHEMA,
+  tier2Treffer,
+  type SimpleTier2Company,
   isUsableRootsLink,
   rootsLinkPrompt,
   SIMPLE_PIPELINE_VERSION,
@@ -1421,15 +1423,16 @@ async function ensureCompanyProfile(
   // Die Steckbrief-Implementierung braucht natives Google-Search-Grounding.
   // Eine alte oder manipulierte Konfiguration darf hier kein Analysemodell
   // ohne Websuche einschleusen.
-  const researchModel = configuredResearchModel.startsWith("gemini-")
+  // Gemini mit Google-Grounding oder ein Perplexity-Modell mit Websuche.
+  const researchModel = configuredResearchModel.startsWith("gemini-") || isPerplexityModel(configuredResearchModel)
     ? configuredResearchModel
     : COMPANY_PROFILE_MODEL;
 
   let apiKey = "";
   try {
-    apiKey = await getGeminiKey();
+    apiKey = isPerplexityModel(researchModel) ? await getPerplexityKey() : await getGeminiKey();
   } catch { /* Schluessel fehlt: still ueberspringen, der Lauf ist wichtiger */ }
-  if (!apiKey) return "skipped: kein Gemini-Schluessel";
+  if (!apiKey) return `skipped: kein Schluessel fuer ${researchModel}`;
 
   // Belegartikel aus dem eigenen Bestand, mit Wortgrenzen - ein einfaches
   // ilike '%Action%' trifft auch "Aktion" und macht die Liste unbrauchbar.
@@ -1438,7 +1441,7 @@ async function ensureCompanyProfile(
 
   try {
     const { profile, usage } = await researchCompanyProfile(
-      { apiKey, model: researchModel, rootsPortfolio: await getSimpleRootsPortfolio() },
+      { apiKey, model: researchModel, rootsPortfolio: await getSimpleRootsPortfolio(), perplexity: perplexityProfilSuche },
       name,
       Array.isArray(hints) ? hints as never[] : [],
     );
@@ -1453,7 +1456,7 @@ async function ensureCompanyProfile(
         const commonsLogo = await researchWikimediaLogo(name);
         const focused = commonsLogo
           ? { logo: commonsLogo, usage: { prompt_tokens: 0, output_tokens: 0, total_tokens: 0 } }
-          : await researchCompanyLogo({ apiKey, model: researchModel }, name);
+          : await researchCompanyLogo({ apiKey, model: researchModel, perplexity: perplexityProfilSuche }, name);
         if (focused.logo) {
           profile.logo_url = focused.logo.logo_url;
           profile.logo_source_url = focused.logo.logo_source_url;
@@ -1514,7 +1517,8 @@ async function ensureCompanyProfile(
     const profileCostFields = await modelCostFields(researchModel, {
       input: Math.max(usage.prompt_tokens - profileCachedInput, 0), cachedInput: profileCachedInput,
       output: usage.output_tokens, thinking: profileThinking, total: usage.total_tokens,
-    }, "standard", Number(usage.search_queries || 0));
+      ...(Number(usage.cost_usd || 0) > 0 ? { costUsd: Number(usage.cost_usd) } : {}),
+    }, "standard", isPerplexityModel(researchModel) ? 0 : Number(usage.search_queries || 0));
     await admin.schema("signal_layer").from("ai_usage_events").insert({
       operation: "company_profile",
       simple_run_id: runContext.simpleRunId || null,
@@ -1632,7 +1636,7 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
   if (!existing || existing.logo_lookup_version === COMPANY_LOGO_LOOKUP_VERSION) return "fresh";
   try {
     const configuredResearchModel = (await getPipelineConfig()).ai.simple_research_model || COMPANY_PROFILE_MODEL;
-    const researchModel = configuredResearchModel.startsWith("gemini-")
+    const researchModel = configuredResearchModel.startsWith("gemini-") || isPerplexityModel(configuredResearchModel)
       ? configuredResearchModel
       : COMPANY_PROFILE_MODEL;
     let logo = await getTier1CompanyLogo(name);
@@ -1645,9 +1649,9 @@ async function ensureCompanyProfileLogo(company: string): Promise<string> {
     }
     if (!logo) {
       let apiKey = "";
-      try { apiKey = await getGeminiKey(); } catch { /* Commons bleibt auch ohne Schlüssel nutzbar */ }
+      try { apiKey = isPerplexityModel(researchModel) ? await getPerplexityKey() : await getGeminiKey(); } catch { /* Commons bleibt auch ohne Schlüssel nutzbar */ }
       if (apiKey) {
-        const focused = await researchCompanyLogo({ apiKey, model: researchModel }, name);
+        const focused = await researchCompanyLogo({ apiKey, model: researchModel, perplexity: perplexityProfilSuche }, name);
         logo = focused.logo;
         usage = focused.usage;
       }
@@ -1696,6 +1700,55 @@ async function companyProfileVersions(company: string) {
   return data || [];
 }
 
+/** Steckbrief-Recherche ueber Perplexity mit Websuche. Preis meldet Perplexity selbst. */
+async function perplexityProfilSuche(model: string, prompt: string, maxTokens: number) {
+  const key = await getPerplexityKey();
+  const antwort = await fetchMitLimit(PERPLEXITY_RESPONSES_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model, tools: [{ type: "web_search" }],
+      instructions: "Du recherchierst einen Unternehmenssteckbrief. Nutze die Websuche fuer jede Angabe und antworte ausschliesslich mit dem verlangten JSON.",
+      input: prompt, max_output_tokens: Math.max(maxTokens, 6_000),
+    }),
+  }, 150_000);
+  const roh = await antwort.text();
+  if (!antwort.ok) throw new Error(`perplexity ${antwort.status}: ${roh.slice(0, 200)}`);
+  const gelesen = parsePerplexityAntwort(roh);
+  if (!gelesen.content.trim()) throw new Error(`perplexity ohne Antwort (${gelesen.finish || gelesen.error || "leer"})`);
+  const gesehen = new Set<string>();
+  const quellen: Array<{ title: string; uri: string }> = [];
+  gelesen.urls.forEach((uri, index) => {
+    if (!/^https?:\/\//.test(uri) || gesehen.has(uri) || quellen.length >= 12) return;
+    gesehen.add(uri);
+    let titel = gelesen.titles[index] || "";
+    try { titel = titel || new URL(uri).hostname; } catch { /* Titel bleibt leer */ }
+    quellen.push({ title: titel.slice(0, 80), uri });
+  });
+  return {
+    text: gelesen.content,
+    quellen,
+    usage: {
+      prompt_tokens: gelesen.usage.input + gelesen.usage.cachedInput,
+      cached_input_tokens: gelesen.usage.cachedInput,
+      output_tokens: gelesen.usage.output,
+      thinking_tokens: gelesen.usage.thinking,
+      total_tokens: gelesen.usage.total,
+      search_queries: gelesen.searchQueries,
+      cost_usd: gelesen.costUsd,
+    },
+  };
+}
+
+let tier2Cache: { at: number; liste: SimpleTier2Company[] } | null = null;
+async function tier2Liste(): Promise<SimpleTier2Company[]> {
+  if (tier2Cache && Date.now() - tier2Cache.at < 5 * 60_000) return tier2Cache.liste;
+  const { data } = await getAdminClient().schema("signal_layer").from("tier2_companies")
+    .select("name, aliases, nur_firma").eq("active", true);
+  tier2Cache = { at: Date.now(), liste: (data || []) as SimpleTier2Company[] };
+  return tier2Cache.liste;
+}
+
 async function enqueueCompanyProfiles(
   rows: Array<Record<string, unknown>>,
   researchModel: string,
@@ -1706,7 +1759,11 @@ async function enqueueCompanyProfiles(
 ): Promise<number> {
   const companies = new Set<string>();
   for (const row of rows) {
-    const list = Array.isArray(row.tier1_companies) ? row.tier1_companies as unknown[] : [];
+    // Tier 1 und Tier 2 bekommen beide einen Steckbrief.
+    const list = [
+      ...(Array.isArray(row.tier1_companies) ? row.tier1_companies as unknown[] : []),
+      ...(Array.isArray(row.tier2_companies) ? row.tier2_companies as unknown[] : []),
+    ];
     for (const entry of list) {
       const name = String(entry || "").trim();
       if (name) companies.add(name);
@@ -8653,7 +8710,8 @@ Deno.serve(async (req: Request) => {
             || !TOPIC_IDS.every((topic) => relevanceModes.has(String(requested.relevance[topic])))) {
           return errorResponse(origin, "Ungültiges Relevanz- oder Qualitätsprofil");
         }
-        const availableGeminiModels = await getAvailableGeminiModels();
+        // Ohne Google-Schluessel liefert die Modellliste nichts; Speichern muss trotzdem gehen.
+        const availableGeminiModels = await getAvailableGeminiModels().catch(() => []);
         const allowedModels = new Set([
           ...availableGeminiModels.map((model) => model.id),
           ...SIMPLE_MODEL_CATALOG.map((model) => model.id),
@@ -8680,8 +8738,9 @@ Deno.serve(async (req: Request) => {
             return errorResponse(origin, "Dieses Modell kann die gewählte Aufgabe nicht übernehmen");
           }
         }
-        if (!requested.ai.simple_research_model.startsWith("gemini-")
-            || !availableGeminiModels.some((model) => model.id === requested.ai.simple_research_model)) {
+        if (!nurPerplexity.has(requested.ai.simple_research_model)
+            && (!requested.ai.simple_research_model.startsWith("gemini-")
+              || !availableGeminiModels.some((model) => model.id === requested.ai.simple_research_model))) {
           return errorResponse(origin, "Das Recherchemodell muss ein für Google Search freigeschaltetes Gemini-Modell sein");
         }
         const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Number(value)));
@@ -10754,6 +10813,9 @@ Deno.serve(async (req: Request) => {
             roots_offering: result.roots_offering,
             roots_link_de: result.roots_link_de,
             tier1_companies: result.tier1_companies,
+            tier2_companies: result.status === "signal"
+              ? tier2Treffer(String(result.company || ""), [result.headline_de, result.summary_de].filter(Boolean).join(" "), await tier2Liste())
+              : [],
             person_name: result.person_name,
             person_role: result.person_role,
             buying_center_roles: result.buying_center_roles,
@@ -11261,7 +11323,7 @@ Deno.serve(async (req: Request) => {
         const { lane, limit, pipeline_version: pipelineVersion } = body as { lane?: string; limit?: number; pipeline_version?: string };
         if (lane && !["marketing", "sales"].includes(lane)) return errorResponse(origin, "invalid lane");
         const admin = getAdminClient();
-        const signalColumns = "article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, trigger_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, person_name, person_role, buying_center_roles, score_details, pipeline_version, matched_families, model, prompt_version, article:articles(id, title, title_de, url, published_at, article_type, paywall_detected, paywall_evidence, source:sources(company, url, category))";
+        const signalColumns = "article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, trigger_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, tier2_companies, person_name, person_role, buying_center_roles, score_details, pipeline_version, matched_families, model, prompt_version, article:articles(id, title, title_de, url, published_at, article_type, paywall_detected, paywall_evidence, source:sources(company, url, category))";
         const fromHistory = Boolean(pipelineVersion);
         let query = fromHistory
           ? admin.schema("signal_layer").from("simple_signal_history")

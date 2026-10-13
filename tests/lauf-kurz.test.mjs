@@ -18,5 +18,5 @@ test("naechster Termin aus dem taeglichen Cron-Ausdruck", () => {
 test("Status-Popup traegt die Kurzfassung", () => {
   assert.match(html, /id="simple-lauf-kurz"/);
   assert.match(app, /renderSimpleLaufKurz\(run\);/);
-  assert.match(app, /als Signal erkannt/);
+  assert.match(app, /Signale`/);
 });

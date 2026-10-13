@@ -12,3 +12,15 @@ test("Andocktext: gute Texte bleiben, Floskeln fliegen raus", () => {
   assert.match(prompt, /Mondelez/);
   assert.match(prompt, /Die ersten 100 Tage als CMO/);
 });
+
+test("Tier 2: Treffer in Unternehmen, Titel und Kern, nur_firma nur im Unternehmen", () => {
+  const liste = [
+    { name: "Galeria", aliases: [], nur_firma: false },
+    { name: "Roller", aliases: [], nur_firma: true },
+    { name: "s.Oliver Group", aliases: ["s.Oliver"], nur_firma: false },
+  ];
+  assert.deepEqual(simple.tier2Treffer("", "Galeria prüft Filialen, der Roller steht", liste), ["Galeria"]);
+  assert.deepEqual(simple.tier2Treffer("Roller GmbH", "", liste), ["Roller"]);
+  assert.deepEqual(simple.tier2Treffer("", "s.Oliver wächst", liste), ["s.Oliver Group"]);
+  assert.deepEqual(simple.tier2Treffer("", "Galerias", liste), []);
+});
