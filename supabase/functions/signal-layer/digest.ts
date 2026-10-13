@@ -17,6 +17,7 @@ export type DigestSignal = {
   article_id: string;
   quelle: string | null;
   datum: string | null;
+  url?: string | null;
 };
 
 export const DIGEST_APP_URL = "https://pgoutzeris-stack.github.io/Signal-Layer/";
@@ -34,29 +35,19 @@ function datumDe(iso: string | null): string {
     : datum.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" });
 }
 
+/** Eine Zeile je Signal: Titel als Link, darunter Thema und Quelle. */
 function karte(signal: DigestSignal): string {
-  const sales = signal.lane === "sales";
-  const firmen = [...new Set([...(signal.tier1_companies || []), ...(signal.tier2_companies || []), signal.company || ""].filter(Boolean))];
-  const meta = [signal.quelle, datumDe(signal.datum)].filter(Boolean).join(" · ");
-  return `<tr><td style="padding:0 0 14px 0;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
-      <tr><td style="padding:18px 20px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          <td style="font:700 11px/1.4 Arial,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#206efb;">${esc(signal.signal_label || "Signal")}</td>
-          <td align="right" style="font:700 11px/1.4 Arial,Helvetica,sans-serif;color:#15803d;">${sales ? "Sales" : "Marketing"}-Relevanz · ${esc(signal.score ?? 0)} %</td>
-        </tr></table>
-        <a href="${DIGEST_APP_URL}" style="display:block;margin:8px 0 6px;font:700 17px/1.35 Arial,Helvetica,sans-serif;color:#0f172a;text-decoration:none;">${esc(signal.headline_de)}</a>
-        ${signal.why_de ? `<p style="margin:0 0 10px;font:400 14px/1.5 Arial,Helvetica,sans-serif;color:#475569;">${esc(signal.why_de)}</p>` : ""}
-        ${signal.roots_offering ? `<p style="margin:0 0 10px;padding:10px 12px;background:#eff6ff;border-radius:8px;font:400 13px/1.45 Arial,Helvetica,sans-serif;color:#165fd9;"><b>Passende ROOTS-Leistung:</b> ${esc(signal.roots_offering)}</p>` : ""}
-        <p style="margin:0;font:400 12px/1.4 Arial,Helvetica,sans-serif;color:#64748b;">${esc([firmen.join(", "), meta].filter(Boolean).join(" · "))}</p>
-      </td></tr>
-    </table>
+  const link = signal.url && /^https?:\/\//.test(signal.url) ? signal.url : DIGEST_APP_URL;
+  const meta = [signal.signal_label, signal.quelle].filter(Boolean).join(" · ");
+  return `<tr><td style="padding:12px 0;border-bottom:1px solid #e2e8f0;">
+    <a href="${esc(link)}" style="font:700 15px/1.4 Arial,Helvetica,sans-serif;color:#0f172a;text-decoration:none;">${esc(signal.headline_de)}</a>
+    ${meta ? `<div style="margin-top:3px;font:400 12px/1.4 Arial,Helvetica,sans-serif;color:#64748b;">${esc(meta)}</div>` : ""}
   </td></tr>`;
 }
 
 function abschnitt(titel: string, signale: DigestSignal[]): string {
   if (!signale.length) return "";
-  return `<tr><td style="padding:22px 0 10px;font:700 13px/1.4 Arial,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#0f172a;">${esc(titel)} · ${signale.length}</td></tr>
+  return `<tr><td style="padding:22px 0 4px;font:700 12px/1.4 Arial,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#206efb;">${esc(titel)} · ${signale.length}</td></tr>
   ${signale.map(karte).join("")}`;
 }
 
@@ -75,12 +66,14 @@ export function baueDigest(signale: DigestSignal[], zeitraum: string, test = fal
         <tr><td style="padding:24px 26px;">
           <div style="font:700 13px/1.4 Arial,Helvetica,sans-serif;letter-spacing:.12em;color:#93b8fb;">ROOTS · SIGNAL LAYER</div>
           <div style="margin-top:6px;font:700 24px/1.25 Arial,Helvetica,sans-serif;color:#ffffff;">${signale.length} neue Signale</div>
-          <div style="margin-top:4px;font:400 14px/1.4 Arial,Helvetica,sans-serif;color:#cbd5e1;">${esc(zeitraum)} · ${marketing.length} Marketing · ${sales.length} Sales</div>
+          <div style="margin-top:4px;font:400 14px/1.4 Arial,Helvetica,sans-serif;color:#cbd5e1;">${esc(zeitraum)}</div>
         </td></tr>
       </table>
     </td></tr>
+    <tr><td style="background:#ffffff;border-radius:14px;padding:4px 24px 14px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">
     ${abschnitt("Sales", sales)}
     ${abschnitt("Marketing", marketing)}
+    </table></td></tr>
     <tr><td align="center" style="padding:18px 0 6px;">
       <a href="${DIGEST_APP_URL}" style="display:inline-block;padding:12px 22px;background:#206efb;border-radius:999px;font:700 14px/1 Arial,Helvetica,sans-serif;color:#ffffff;text-decoration:none;">Alle Signale im Signal Layer</a>
     </td></tr>

@@ -10280,7 +10280,7 @@ Deno.serve(async (req: Request) => {
         // Wochenmail ueber Resend. Test: nur an test_to. Ohne Schluessel im
         // Vault verschickt nichts. Jeder Versand steht in signal_digest_log.
         const admin = getAdminClient();
-        const tage = Math.max(1, Math.min(31, Number(body.days || 7)));
+        const tage = Math.max(1, Math.min(31, Number(body.days || 1)));
         const testAn = String(body.test_to || "").trim();
         const empfaenger = testAn
           ? [testAn]
@@ -10294,7 +10294,7 @@ Deno.serve(async (req: Request) => {
         const absender = String(absenderWert || "Signal Layer <onboarding@resend.dev>");
         const seit = new Date(Date.now() - tage * 86_400_000).toISOString();
         const { data: zeilen, error: digestFehler } = await admin.schema("signal_layer").from("simple_signals")
-          .select("article_id, lane, signal_label, headline_de, why_de, company, roots_offering, score, tier1_companies, tier2_companies, created_at, article:articles(published_at, source:sources(company))")
+          .select("article_id, lane, signal_label, headline_de, why_de, company, roots_offering, score, tier1_companies, tier2_companies, created_at, article:articles(url, published_at, source:sources(company))")
           .eq("status", "signal").or(MANUAL_SIGNAL_EXCLUDE).gte("created_at", seit)
           .order("score", { ascending: false }).limit(200);
         if (digestFehler) return errorResponse(origin, digestFehler.message, 500);
@@ -10306,6 +10306,7 @@ Deno.serve(async (req: Request) => {
             company: zeile.company, roots_offering: zeile.roots_offering, score: zeile.score,
             tier1_companies: zeile.tier1_companies, tier2_companies: zeile.tier2_companies,
             article_id: zeile.article_id, quelle: quelle?.company || null, datum: artikel?.published_at || zeile.created_at,
+            url: artikel?.url || null,
           };
         });
         if (!signale.length) return corsResponse(origin, { sent: false, reason: "keine neuen Signale" });
