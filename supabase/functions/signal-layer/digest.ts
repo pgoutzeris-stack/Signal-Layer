@@ -122,3 +122,26 @@ export function baueDigest(signale: DigestSignal[], zeitraum: string, test = fal
 </body></html>`;
   return { betreff, html };
 }
+
+/** Debug-Mail nur an den Betreiber: warum heute keine Tagesmail ans Team ging. */
+export function baueDebugMail(befunde: string[], kennzahlen: Record<string, string>): { betreff: string; html: string } {
+  const betreff = "Signal Layer: keine Tagesmail verschickt";
+  const zeilen = befunde.map((befund) => `<tr><td style="padding:8px 0;border-bottom:1px solid ${LINIE};font:500 14px/1.45 ${SCHRIFT};color:${TINTE};">${esc(befund)}</td></tr>`).join("");
+  const zahlen = Object.entries(kennzahlen).map(([name, wert]) => `<tr><td style="padding:4px 0;font:400 12px/1.4 ${SCHRIFT};color:${GRAU};">${esc(name)}</td><td align="right" style="padding:4px 0;font:500 12px/1.4 ${SCHRIFT};color:${TINTE};">${esc(wert)}</td></tr>`).join("");
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(betreff)}</title></head>
+<body style="margin:0;padding:0;background:#ffffff;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 18px;">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+    <tr><td style="padding-bottom:18px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f9fc;border:1px solid #e8edf3;border-radius:14px;"><tr>
+        <td style="padding:12px 16px;"><img src="${LOGO_URL}" width="92" height="22" alt="ROOTS" style="display:block;border:0;width:92px;height:auto;"></td>
+        <td align="right" style="padding:12px 16px;"><span style="display:inline-block;padding:5px 11px;border-radius:999px;background:#fdecec;color:#b91c1c;font:600 11px/1.3 ${SCHRIFT};">Nur an dich</span></td>
+      </tr></table>
+    </td></tr>
+    <tr><td style="padding-bottom:6px;font:600 20px/1.3 ${SCHRIFT};color:${TINTE};">Heute keine Tagesmail ans Team</td></tr>
+    <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${zeilen}</table></td></tr>
+    <tr><td style="padding-top:18px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${zahlen}</table></td></tr>
+  </table>
+</td></tr></table></body></html>`;
+  return { betreff, html };
+}

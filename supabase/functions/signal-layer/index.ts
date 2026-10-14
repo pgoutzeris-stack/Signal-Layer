@@ -1,5 +1,5 @@
 import { articleReadingText } from "./article-reading-text.mjs";
-import { baueDigest, type DigestSignal } from "./digest.ts";
+import { baueDebugMail, baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.8";
@@ -10309,23 +10309,71 @@ Deno.serve(async (req: Request) => {
             url: artikel?.url || null,
           };
         });
+        // Einzeln verschicken: lehnt Resend eine Adresse ab, bekommen die
+        // anderen ihre Mail trotzdem. Jede Zeile steht im Protokoll.
+        const verschicke = async (an: string[], betreffText: string, htmlText: string, istTest: boolean, anzahl: number) => {
+          const ergebnisse: Array<{ an: string; ok: boolean; fehler?: string }> = [];
+          for (const adresse of an) {
+            const antwort = await fetchWithTimeout("https://api.resend.com/emails", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${schluessel}` },
+              body: JSON.stringify({ from: absender, to: [adresse], subject: betreffText, html: htmlText }),
+            }, 30_000);
+            const roh = await antwort.text();
+            let resendId: string | null = null;
+            try { resendId = JSON.parse(roh)?.id || null; } catch { /* Antwort ohne JSON */ }
+            await admin.schema("signal_layer").from("signal_digest_log").insert({
+              recipients: [adresse], signal_count: anzahl, test: istTest,
+              resend_id: resendId, error: antwort.ok ? null : roh.slice(0, 500),
+            });
+            ergebnisse.push({ an: adresse, ok: antwort.ok, ...(antwort.ok ? {} : { fehler: roh.slice(0, 200) }) });
+            // Resend erlaubt zwei Anfragen je Sekunde.
+            await new Promise((weiter) => setTimeout(weiter, 600));
+          }
+          return ergebnisse;
+        };
+
+        // Tagesbetrieb: erst pruefen, ob Scraping und Analyse sauber liefen.
+        // Bei Fehlern oder ohne neue Signale geht nur eine Debug-Mail raus.
+        const debugAn = String(body.debug_to || "").trim();
+        if (body.taeglich === true && debugAn) {
+          const befunde: string[] = [];
+          const grenze = new Date(Date.now() - 30 * 3_600_000).toISOString();
+          const { data: crawl } = await admin.schema("signal_layer").from("crawl_runs")
+            .select("id, status, started_at, finished_at").order("started_at", { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
+          if (!crawl || String(crawl.started_at) < grenze) befunde.push("Seit über 30 Stunden kein Scraping gestartet.");
+          else if (crawl.status === "error") befunde.push("Das letzte Scraping ist mit einem Fehler abgebrochen.");
+          else if (crawl.status !== "done") befunde.push(`Das Scraping von ${new Date(crawl.started_at).toLocaleString("de-DE", { timeZone: "Europe/Berlin" })} ist noch nicht fertig.`);
+          let crawlFehler = 0;
+          if (crawl) {
+            const { count } = await admin.schema("signal_layer").from("source_crawl_jobs")
+              .select("id", { count: "exact", head: true }).eq("crawl_run_id", crawl.id).eq("status", "error");
+            crawlFehler = count || 0;
+          }
+          const { data: lauf } = await admin.schema("signal_layer").from("simple_runs")
+            .select("status, error_message, started_at, processed_count, total_count").order("started_at", { ascending: false }).limit(1).maybeSingle();
+          if (lauf && String(lauf.started_at) >= grenze && lauf.status === "error") {
+            befunde.push(`Die Analyse ist abgebrochen: ${String(lauf.error_message || "ohne Meldung").slice(0, 160)}`);
+          }
+          if (lauf && ["running", "queued"].includes(String(lauf.status))) befunde.push("Die Analyse läuft noch.");
+          if (!signale.length) befunde.push("Keine neuen Signale in den letzten 24 Stunden.");
+          if (befunde.length) {
+            const { betreff: dBetreff, html: dHtml } = baueDebugMail(befunde, {
+              "Neue Signale": String(signale.length),
+              "Letztes Scraping": crawl ? `${String(crawl.status)} · ${new Date(crawl.started_at).toLocaleString("de-DE", { timeZone: "Europe/Berlin" })}` : "keins",
+              "Quellen mit Fehler": String(crawlFehler),
+              "Letzte Analyse": lauf ? `${String(lauf.status)} · ${Number(lauf.processed_count || 0)} von ${Number(lauf.total_count || 0)}` : "keine",
+            });
+            const ergebnis = await verschicke([debugAn], dBetreff, dHtml, true, signale.length);
+            return corsResponse(origin, { sent: false, debug: true, befunde, ergebnis });
+          }
+        }
+
         if (!signale.length) return corsResponse(origin, { sent: false, reason: "keine neuen Signale" });
         const tag = (iso: string) => new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" });
         const { betreff, html } = baueDigest(signale, `${tag(seit)} bis ${tag(new Date().toISOString())}`, Boolean(testAn));
-        const antwort = await fetchWithTimeout("https://api.resend.com/emails", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${schluessel}` },
-          body: JSON.stringify({ from: absender, to: empfaenger, subject: betreff, html }),
-        }, 30_000);
-        const roh = await antwort.text();
-        let resendId: string | null = null;
-        try { resendId = JSON.parse(roh)?.id || null; } catch { /* Antwort ohne JSON */ }
-        await admin.schema("signal_layer").from("signal_digest_log").insert({
-          recipients: empfaenger, signal_count: signale.length, test: Boolean(testAn),
-          resend_id: resendId, error: antwort.ok ? null : roh.slice(0, 500),
-        });
-        if (!antwort.ok) return errorResponse(origin, `Resend lehnt ab (${antwort.status}): ${roh.slice(0, 300)}`, 502);
-        return corsResponse(origin, { sent: true, signals: signale.length, resend_id: resendId });
+        const ergebnis = await verschicke(empfaenger, betreff, html, Boolean(testAn), signale.length);
+        return corsResponse(origin, { sent: ergebnis.some((zeile) => zeile.ok), signals: signale.length, ergebnis });
       }
 
       case "fill_roots_links": {
