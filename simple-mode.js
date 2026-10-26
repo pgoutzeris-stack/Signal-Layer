@@ -258,7 +258,8 @@ function visibleSignals(lane) {
   });
   return [...filtered].sort((a, b) => {
     if (state.sort === "newest") return signalDate(b) - signalDate(a) || Number(b.score || 0) - Number(a.score || 0);
-    if (state.sort === "confidence") return Number(b.confidence || 0) - Number(a.confidence || 0) || Number(b.score || 0) - Number(a.score || 0);
+    // Die Karte zeigt den Score als Relevanz, also sortiert "Hoechste Relevanz" nach ihm.
+    if (state.sort === "confidence") return Number(b.score || 0) - Number(a.score || 0) || Number(b.confidence || 0) - Number(a.confidence || 0) || signalDate(b) - signalDate(a);
     const today = new Date();
     const isToday = (signal) => {
       const date = new Date(signal.article?.published_at || 0);
