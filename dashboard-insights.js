@@ -636,6 +636,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     summary: null,
     loading: false,
     loaded: false,
+    countsLoaded: false,
     realtimeStatus: "connecting",
     kpiLane: "marketing",
     kpiSearch: "",
@@ -688,6 +689,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
 
   /** Zahlen aus der Signalansicht. Der einfache Modus laedt sie ohnehin. */
   const setSignalCounts = (counts) => {
+    state.countsLoaded = true;
     state.payload = {
       ...state.payload,
       signalCounts: {
@@ -720,7 +722,15 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
             </div>
           </div>
         </div>
-        <div class="pi-grid">${preferences.widgets.map((preference) => renderWidget(DASHBOARD_WIDGETS.find((item) => item.id === preference.id), preference, state.summary, escapeHtml, { hideRejected: state.hideRejected })).join("")}</div>`;
+        <div class="pi-grid">${preferences.widgets.map((preference) => {
+          const definition = DASHBOARD_WIDGETS.find((item) => item.id === preference.id);
+          // Jede Kachel steht sofort da; was noch fehlt, zeigt nur in seiner
+          // Kachel eine Ladeanimation.
+          const wartet = !state.loaded || (definition?.id === "data_quality" && !state.countsLoaded);
+          return wartet && definition
+            ? widgetShell(definition, preference, '<div class="pi-skeleton" aria-label="Lädt"><span></span><span></span><span></span></div>')
+            : renderWidget(definition, preference, state.summary, escapeHtml, { hideRejected: state.hideRejected });
+        }).join("")}</div>`;
       bindBestandRing(host, escapeHtml);
     }
     updateLiveLabels();
@@ -783,42 +793,64 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     });
   };
 
+  const CACHE_KEY = "signal-layer-dashboard-v1";
+  const merkeCache = () => {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(state.payload)); } catch { /* Speicher voll oder gesperrt */ }
+  };
+  const ladeCache = () => {
+    try {
+      const roh = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+      if (!roh || !Array.isArray(roh.assets)) return false;
+      state.payload = { ...state.payload, ...roh, preferences: normalizeDashboardPreferences(roh.preferences) };
+      state.loaded = true;
+      state.countsLoaded = Boolean(roh.signalCounts);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const load = async ({ announce = false } = {}) => {
     if (state.loading) return;
     state.loading = true;
-    try {
-      // Die Signalzahlen holt das Dashboard selbst. Frueher reichte sie nur
-      // der einfache Modus herein - wer die Ansicht ohne ihn oeffnete, sah
-      // Nullen, obwohl die Zahlen laengst in der Datenbank standen.
-      const [payload, bestand] = await Promise.all([
-        callApi("get_dashboard_insights"),
-        callApi("get_simple_dashboard").catch(() => null),
-      ]);
+    // Beide Anfragen getrennt: die Kacheln zeigen, was zuerst da ist, statt
+    // auf die langsamere zu warten.
+    const bestandFertig = callApi("get_simple_dashboard").then((bestand) => {
+      if (!bestand?.counts) return;
+      state.countsLoaded = true;
       state.payload = {
+        ...state.payload,
+        signalCounts: {
+          marketing: numberValue(bestand.counts.marketing),
+          sales: numberValue(bestand.counts.sales),
+          rejected: numberValue(bestand.counts.rejected),
+          review: numberValue(bestand.counts.review),
+          crawled: numberValue(bestand.counts.crawled),
+        },
+      };
+      if (state.loaded) { renderDashboards(); merkeCache(); }
+    }).catch(() => null);
+    try {
+      const payload = await callApi("get_dashboard_insights");
+      state.payload = {
+        ...state.payload,
         preferences: normalizeDashboardPreferences(payload.preferences),
         assets: Array.isArray(payload.assets) ? payload.assets : [],
         creators: Array.isArray(payload.creators) ? payload.creators : [],
         performance: Array.isArray(payload.performance) ? payload.performance : [],
-        signalCounts: bestand?.counts
-          ? {
-            marketing: numberValue(bestand.counts.marketing),
-            sales: numberValue(bestand.counts.sales),
-            rejected: numberValue(bestand.counts.rejected),
-            review: numberValue(bestand.counts.review),
-            crawled: numberValue(bestand.counts.crawled),
-          }
-          : state.payload.signalCounts,
       };
       state.savedPreferences = state.payload.preferences;
       state.loaded = true;
       state.realtimeStatus = announce ? "refreshing" : state.realtimeStatus;
       renderDashboards();
       renderSettings();
+      merkeCache();
       if (announce) setTimeout(() => { state.realtimeStatus = "live"; updateLiveLabels(); }, 900);
     } catch (error) {
-      for (const host of hosts) host.innerHTML = `<div class="pi-load-error"><i class="fa-solid fa-triangle-exclamation"></i> Dashboard-Insights konnten nicht geladen werden.</div>`;
+      if (!state.loaded) for (const host of hosts) host.innerHTML = `<div class="pi-load-error"><i class="fa-solid fa-triangle-exclamation"></i> Dashboard-Insights konnten nicht geladen werden.</div>`;
       if (announce) toast(error.message, "err");
     } finally {
+      await bestandFertig;
       state.loading = false;
     }
   };
@@ -965,7 +997,11 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     }
   };
 
-  for (const host of hosts) host.innerHTML = '<div class="pi-dashboard-loader"><span></span><span></span><span></span></div>';
+  // Sofort zeichnen: mit dem letzten Stand aus diesem Browser, sonst als
+  // Geruest mit Ladeanimation je Kachel. Danach frisch laden.
+  ladeCache();
+  renderDashboards();
+  if (state.loaded) renderSettings();
   void load();
   void connectRealtime();
   return { reload: load, state, setSignalCounts };

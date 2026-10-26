@@ -3205,7 +3205,7 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
   assert.equal(studioVersion, "20261026-1");
-  assert.match(indexHtml, /app\.js\?v=20261026-2/);
+  assert.match(indexHtml, /app\.js\?v=20261026-3/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3524,8 +3524,9 @@ test("Fragebogen, Cropper, Abbrechen und Entwürfe liegen im Popup", () => {
   assert.doesNotMatch(studio, /toggle-drafts/);
   assert.match(studio, /function ladeDrafts/);
   assert.match(studio, /data-act="open-draft"/);
-  assert.match(edge, /title:payload->>title/);
-  assert.match(edge, /slide_title:payload->slides->0->>title/);
+  // Titel aus eigener Spalte: payload->>title entpackt je Zeile ~500 kB JSON.
+  assert.match(edge, /title:payload_title/);
+  assert.match(edge, /slide_title:payload_slide_title/);
   assert.match(studio, /state\.step !== "form"/);
   assert.match(edge, /Vom Nutzer abgebrochen/);
   assert.match(edge, /const nochAktiv = async/);

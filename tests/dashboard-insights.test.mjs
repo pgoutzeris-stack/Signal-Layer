@@ -324,8 +324,15 @@ test("das Dashboard holt die Signalzahlen selbst", async () => {
   const js = await readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8");
   // Frueher reichte sie nur der einfache Modus herein - wer die Ansicht ohne
   // ihn oeffnete, sah Nullen.
-  assert.match(js, /callApi\("get_simple_dashboard"\)\.catch\(\(\) => null\)/);
-  assert.match(js, /signalCounts: bestand\?\.counts/);
+  assert.match(js, /callApi\("get_simple_dashboard"\)\.then\(/);
+  assert.match(js, /signalCounts: \{\n\s*marketing: numberValue\(bestand\.counts\.marketing\)/);
+});
+
+test("Dashboard zeichnet sofort, Ladeanimation je Kachel", async () => {
+  const js = await readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8");
+  assert.doesNotMatch(js, /host\.innerHTML = '<div class="pi-dashboard-loader">/);
+  assert.match(js, /ladeCache\(\);\n\s*renderDashboards\(\);/);
+  assert.match(js, /pi-skeleton/);
 });
 
 test("die Laufmeldung steht nicht mehr unter dem Dashboard", async () => {

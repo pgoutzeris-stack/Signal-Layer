@@ -8504,7 +8504,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("user_dashboard_settings")
             .select("preferences,updated_at").eq("user_id", auth.userId).maybeSingle(),
           admin.schema("signal_layer").from("generated_assets")
-            .select("id,kind,company,created_by,created_at,updated_at,status,answers,title:payload->>title,slide_title:payload->slides->0->>title,article:articles(article_type)")
+            .select("id,kind,company,created_by,created_at,updated_at,status,answers,title:payload_title,slide_title:payload_slide_title,article:articles(article_type)")
             .eq("status", "done").order("created_at", { ascending: false }).limit(500),
           admin.schema("users").from("profiles").select("id,email,full_name,kuerzel,avatar_url").limit(250),
         ]);
@@ -13477,7 +13477,7 @@ Deno.serve(async (req: Request) => {
         if (listKind && !isAssetKind(listKind)) return errorResponse(origin, "kind muss linkedin oder memo sein");
         let query = getAdminClient().schema("signal_layer")
           .from("generated_assets")
-          .select("id, kind, status, stage, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, owner_id, owned_at, article_id, usage_event_id, title:payload->>title, slide_title:payload->slides->0->>title")
+          .select("id, kind, status, stage, company, answers, model, prompt_version, created_at, updated_at, duration_ms, total_tokens, input_tokens, output_tokens, thinking_tokens, cost_eur, cost_usd, error_message, created_by, owner_id, owned_at, article_id, usage_event_id, title:payload_title, slide_title:payload_slide_title")
           .eq("article_id", listArticleId)
           .order("created_at", { ascending: false })
           .limit(40);
