@@ -9,7 +9,8 @@ test("Wochenmail: Betreff, Abschnitte, Escaping", () => {
     roots_offering: "Markenstrategie", tier1_companies: [], tier2_companies: ["Galeria"], article_id: "a", quelle: "LZ", datum: "2026-10-12T08:00:00Z",
   });
   const { betreff, html } = baueDigest([signal("sales", 80, "A <b>"), signal("marketing", 70, "B")], "12.10.2026 bis 13.10.2026", true);
-  assert.equal(betreff, "[Test] 2 neue Signale verfügbar · ROOTS Signal Layer");
+  assert.equal(betreff, "[Test] 2 Signale · ROOTS Signal Layer");
+  assert.doesNotMatch(betreff, /neue Signale verfügbar/);
   assert.match(html, />Sales<\/td>/);
   assert.match(html, />Marketing<\/td>/);
   assert.ok(html.indexOf(">Marketing<") < html.indexOf(">Sales<"));

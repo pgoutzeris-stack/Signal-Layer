@@ -10296,8 +10296,9 @@ Deno.serve(async (req: Request) => {
         // Wochenmail ueber Resend. Test: nur an test_to. Ohne Schluessel im
         // Vault verschickt nichts. Jeder Versand steht in signal_digest_log.
         const admin = getAdminClient();
-        const tage = Math.max(1, Math.min(31, Number(body.days || 1)));
         const testAn = String(body.test_to || "").trim();
+        // Testmails duerfen weiter zurueckschauen, bis zum gesamten Bestand.
+        const tage = Math.max(1, Math.min(testAn ? 3650 : 31, Number(body.days || 1)));
         const empfaenger = testAn
           ? [testAn]
           : (Array.isArray(body.to) ? body.to.map((adresse: unknown) => String(adresse).trim()).filter(Boolean) : []);

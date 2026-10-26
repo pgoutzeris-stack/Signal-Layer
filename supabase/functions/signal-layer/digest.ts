@@ -94,7 +94,9 @@ export function baueDigest(signale: DigestSignal[], _zeitraum: string, test = fa
   const gezeigtMarketing = marketing.slice(0, JE_BEREICH);
   const gezeigtSales = sales.slice(0, JE_BEREICH);
   const rest = Math.max(0, sortiert.length - gezeigtMarketing.length - gezeigtSales.length);
-  const betreff = `${test ? "[Test] " : ""}${signale.length} neue Signale verfügbar · ROOTS Signal Layer`;
+  // Testmails tragen bewusst nicht "neue Signale verfügbar": darauf reagiert
+  // der Power-Automate-Flow, der die Tagesmail ans Team weiterleitet.
+  const betreff = test ? `[Test] ${signale.length} Signale · ROOTS Signal Layer` : `${signale.length} neue Signale verfügbar · ROOTS Signal Layer`;
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(betreff)}</title></head>
 <body style="margin:0;padding:0;background:#ffffff;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;"><tr><td align="center" style="padding:32px 18px;">
