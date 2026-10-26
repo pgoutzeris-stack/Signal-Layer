@@ -10298,7 +10298,10 @@ Deno.serve(async (req: Request) => {
         const admin = getAdminClient();
         const testAn = String(body.test_to || "").trim();
         // Testmails duerfen weiter zurueckschauen, bis zum gesamten Bestand.
-        const tage = Math.max(1, Math.min(testAn ? 3650 : 31, Number(body.days || 1)));
+        // Probelauf ueber den echten Weg (Flow ans Team): normaler Betreff,
+        // aber mit Hinweis oben in der Mail.
+        const probeHinweis = body.probe_hinweis === true ? "Dies ist eine Testmail." : "";
+        const tage = Math.max(1, Math.min(testAn || probeHinweis ? 3650 : 31, Number(body.days || 1)));
         const empfaenger = testAn
           ? [testAn]
           : (Array.isArray(body.to) ? body.to.map((adresse: unknown) => String(adresse).trim()).filter(Boolean) : []);
@@ -10388,7 +10391,7 @@ Deno.serve(async (req: Request) => {
 
         if (!signale.length) return corsResponse(origin, { sent: false, reason: "keine neuen Signale" });
         const tag = (iso: string) => new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" });
-        const { betreff, html } = baueDigest(signale, `${tag(seit)} bis ${tag(new Date().toISOString())}`, Boolean(testAn));
+        const { betreff, html } = baueDigest(signale, `${tag(seit)} bis ${tag(new Date().toISOString())}`, Boolean(testAn), probeHinweis);
         const ergebnis = await verschicke(empfaenger, betreff, html, Boolean(testAn), signale.length);
         return corsResponse(origin, { sent: ergebnis.some((zeile) => zeile.ok), signals: signale.length, ergebnis });
       }

@@ -85,7 +85,7 @@ function knopf(text: string, href: string, voll: boolean): string {
 const JE_BEREICH = 5;
 
 /** Betreff und HTML der Mail: je Bereich die fuenf Signale mit dem hoechsten Score. */
-export function baueDigest(signale: DigestSignal[], _zeitraum: string, test = false): { betreff: string; html: string } {
+export function baueDigest(signale: DigestSignal[], _zeitraum: string, test = false, hinweis = ""): { betreff: string; html: string } {
   // Gleicher Score: neueres Signal zuerst, damit die Reihenfolge fest ist.
   const sortiert = [...signale].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)
     || String(b.datum || "").localeCompare(String(a.datum || "")));
@@ -107,6 +107,7 @@ export function baueDigest(signale: DigestSignal[], _zeitraum: string, test = fa
         <td align="right" style="vertical-align:middle;"><span style="display:inline-block;padding:3px 9px;border-radius:999px;background:#f3f6fb;color:#5b8def;font:600 10px/1.4 ${SCHRIFT};letter-spacing:.04em;white-space:nowrap;">${signale.length} NEU</span></td>
       </tr></table>
     </td></tr>
+    ${hinweis ? `<tr><td style="padding:24px 0 0;font:600 14px/1.5 ${SCHRIFT};color:${TINTE};">${esc(hinweis)}</td></tr>` : ""}
     ${abschnitt("Marketing", marketing, gezeigtMarketing)}
     ${abschnitt("Sales", sales, gezeigtSales)}
     <tr><td align="center" style="padding:32px 0 6px;">
