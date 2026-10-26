@@ -13568,6 +13568,64 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { asset: geaendert });
       }
 
+      case "list_memo_senders": {
+        // Auswahl "Abgeschickt von": alle mit Zugang zum Signal Layer,
+        // vorbelegt mit dem Verantwortlichen fuer das Monatsziel.
+        const admin = getAdminClient();
+        const { data: profile, error: profilFehler } = await admin.schema("users").from("profiles")
+          .select("id,email,full_name,first_name,app_role,app_settings");
+        if (profilFehler) return errorResponse(origin, profilFehler.message, 500);
+        const personen = ((profile || []) as ToolAccessProfile[])
+          .filter((profil) => !String(profil.email || "").toLowerCase().startsWith("claude-debug@") && profileCanAccessSignalLayer(profil))
+          .map((profil) => ({ id: profil.id, name: String(profil.full_name || profil.email || "").trim(), email: String(profil.email || "") }))
+          .sort((a, b) => a.name.localeCompare(b.name, "de"));
+        const { data: ziel } = await admin.schema("signal_layer").from("memo_ziel").select("verantwortlich_email, pro_monat").maybeSingle();
+        const vorbelegt = personen.find((person) => person.email.toLowerCase() === String(ziel?.verantwortlich_email || "").toLowerCase());
+        return corsResponse(origin, { senders: personen.map(({ id, name }) => ({ id, name })), default_sender_id: vorbelegt?.id || null });
+      }
+
+      case "mark_memo_sent": {
+        // Ein Memo gilt als abgeschickt, wenn Kanal, Datum, Empfaenger und
+        // Absender angegeben sind. Erneutes Markieren ueberschreibt.
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const eingabe = body as Record<string, unknown>;
+        const memoId = String(eingabe.asset_id || "");
+        const kanal = String(eingabe.channel || "");
+        const kanalFrei = String(eingabe.channel_other || "").trim();
+        const datum = String(eingabe.sent_on || "");
+        const empfaengerText = String(eingabe.recipient || "").trim();
+        const absenderId = String(eingabe.sent_by || "");
+        if (!isUuid(memoId)) return errorResponse(origin, "asset_id fehlt", 400);
+        if (!["mail", "linkedin", "sonstiges"].includes(kanal)) return errorResponse(origin, "Kanal fehlt", 400);
+        if (kanal === "sonstiges" && !kanalFrei) return errorResponse(origin, "Bitte den Kanal angeben", 400);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(datum) || Number.isNaN(Date.parse(datum))) return errorResponse(origin, "Datum fehlt", 400);
+        if (datum > new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" })) return errorResponse(origin, "Das Datum liegt in der Zukunft", 400);
+        if (!empfaengerText) return errorResponse(origin, "Empfänger fehlt", 400);
+        if (!isUuid(absenderId)) return errorResponse(origin, "Absender fehlt", 400);
+        const admin = getAdminClient();
+        const { data: memo } = await admin.schema("signal_layer").from("generated_assets").select("id, kind").eq("id", memoId).maybeSingle();
+        if (!memo) return errorResponse(origin, "Memo nicht gefunden", 404);
+        if (memo.kind !== "memo") return errorResponse(origin, "Nur Executive Memos lassen sich als abgeschickt markieren", 400);
+        const { data: gespeichert, error: sendFehler } = await admin.schema("signal_layer").from("memo_sends")
+          .upsert({
+            asset_id: memoId, channel: kanal, channel_other: kanal === "sonstiges" ? kanalFrei.slice(0, 120) : null,
+            sent_on: datum, recipient: empfaengerText.slice(0, 300), sent_by: absenderId,
+            marked_by: auth.userId, updated_at: new Date().toISOString(),
+          }, { onConflict: "asset_id" })
+          .select("asset_id, channel, channel_other, sent_on, recipient, sent_by").maybeSingle();
+        if (sendFehler) return errorResponse(origin, sendFehler.message, 500);
+        return corsResponse(origin, { memo_send: gespeichert });
+      }
+
+      case "unmark_memo_sent": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const memoId = String((body as { asset_id?: unknown }).asset_id || "");
+        if (!isUuid(memoId)) return errorResponse(origin, "asset_id fehlt", 400);
+        const { error: loeschFehler } = await getAdminClient().schema("signal_layer").from("memo_sends").delete().eq("asset_id", memoId);
+        if (loeschFehler) return errorResponse(origin, loeschFehler.message, 500);
+        return corsResponse(origin, { memo_send: null });
+      }
+
       case "list_asset_authors": {
         // Wer hat zu welchem Artikel schon einen Entwurf gemacht. Die Ansicht
         // fragt einmal fuer alle sichtbaren Artikel, statt je Karte einmal.
@@ -13647,7 +13705,11 @@ Deno.serve(async (req: Request) => {
         if (ladeFehler) return errorResponse(origin, ladeFehler.message, 500);
         if (!geladen) return errorResponse(origin, "Asset nicht gefunden", 404);
         const gepflegt = await pflegeLaufendesAsset(admin, geladen as Record<string, unknown>);
-        return corsResponse(origin, { asset: gepflegt || geladen });
+        const { data: memoSend } = geladen.kind === "memo"
+          ? await admin.schema("signal_layer").from("memo_sends")
+            .select("asset_id, channel, channel_other, sent_on, recipient, sent_by").eq("asset_id", gefragteId).maybeSingle()
+          : { data: null };
+        return corsResponse(origin, { asset: gepflegt || geladen, memo_send: memoSend || null });
       }
 
       case "save_asset": {

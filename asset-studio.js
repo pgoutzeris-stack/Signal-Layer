@@ -1632,6 +1632,20 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-own-card{width:min(460px,100%);}
 #as-overlay .as-own-card p{margin:0; font-size:13px; line-height:1.55; color:#64748b;}
 #as-overlay .as-own-actions{display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;}
+#as-overlay .as-send-card{width:min(440px,100%);}
+#as-overlay .as-send-form{display:grid; gap:12px;}
+#as-overlay .as-send-form label{display:grid; gap:5px; font-size:12px; font-weight:600; color:#334155;}
+#as-overlay .as-send-form input,
+#as-overlay .as-send-form select{
+  font:inherit; font-size:13px; font-weight:400; color:#0f172a; background:#fff;
+  border:1px solid #e2e8f0; border-radius:10px; padding:9px 11px; width:100%; box-sizing:border-box;
+}
+#as-overlay .as-send-form input:focus,
+#as-overlay .as-send-form select:focus{outline:none; border-color:#206efb; box-shadow:0 0 0 3px rgba(32,110,251,.12);}
+#as-overlay .as-send-form [hidden]{display:none;}
+#as-overlay .as-send-fehler{margin:0; font-size:12px; color:#b91c1c; min-height:1em;}
+#as-overlay .as-send-actions{display:flex; align-items:center; gap:8px;}
+#as-overlay .as-send-actions .as-send-weg{margin-right:auto;}
 #as-overlay .as-crop-zoom{display:flex; align-items:center; gap:12px; font-size:13px; color:#475569;}
 #as-overlay .as-crop-zoom input{flex:1; accent-color:#206efb;}
 
@@ -2127,6 +2141,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     answers: { ...defaultAnswers(questions), ...vorbelegung(questions, prefill) },
     payload: null,
     assetId: null,
+    memoSend: null,
     error: "",
     formError: "",
     busy: false,
@@ -2270,6 +2285,44 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </div>
     </div>`;
   overlay.appendChild(ownOverlay);
+
+  // Executive Memo als abgeschickt markieren: Kanal, Datum, Empfaenger und
+  // Absender sind Pflicht. Das zaehlt fuer das Monatsziel im Intranet.
+  const sendOverlay = document.createElement("div");
+  sendOverlay.className = "as-crop";
+  sendOverlay.hidden = true;
+  sendOverlay.innerHTML = `
+    <div class="as-crop-card as-send-card" role="dialog" aria-modal="true" aria-labelledby="as-send-titel">
+      <h3 id="as-send-titel">Als abgeschickt markieren</h3>
+      <form class="as-send-form" data-send-form novalidate>
+        <label>Kanal
+          <select data-send-kanal required>
+            <option value="mail">Mail</option>
+            <option value="linkedin">LinkedIn</option>
+            <option value="sonstiges">Sonstiges</option>
+          </select>
+        </label>
+        <label data-send-frei-feld hidden>Welcher Kanal
+          <input type="text" data-send-frei maxlength="120">
+        </label>
+        <label>Datum
+          <input type="date" data-send-datum required>
+        </label>
+        <label>Empfänger
+          <input type="text" data-send-empfaenger maxlength="300" required>
+        </label>
+        <label>Abgeschickt von
+          <select data-send-von required></select>
+        </label>
+        <p class="as-send-fehler" data-send-fehler></p>
+      </form>
+      <div class="as-send-actions">
+        <button type="button" class="as-btn as-send-weg" data-act="send-weg" data-send-weg hidden>Markierung entfernen</button>
+        <button type="button" class="as-btn" data-act="send-abbrechen">Abbrechen</button>
+        <button type="button" class="as-btn as-btn--primary" data-act="send-ok">Speichern</button>
+      </div>
+    </div>`;
+  overlay.appendChild(sendOverlay);
 
   // Wer ein CI-Element anfasst, bestaetigt ausdruecklich. Danach ist alles frei,
   // und das Dokument traegt sichtbar den Vermerk.
@@ -3868,6 +3921,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (!row.id) throw new Error("Entwurf nicht gefunden.");
       state.assetId = row.id;
       state.owned = Boolean(row.owner_id);
+      state.memoSend = res && typeof res === "object" ? (res.memo_send || null) : null;
       state.answers = answersToForm(row.answers, row);
       state.forecastMs = Number(row.forecast_ms) || 0;
       if (row.status === "running") {
@@ -4436,6 +4490,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       state.assetId = row.id || null;
       state.owned = Boolean(row.owner_id);
+      state.memoSend = null;
       uebernehmeLaufstand(row);
       const fertig = row.status === "running" ? await warteAufAsset(row.id) : row;
       if (state.cancelRequested) return;
@@ -5846,6 +5901,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         ${state.assetId ? `<button type="button" class="as-btn${state.owned ? " as-btn--owned" : ""}" data-act="own">
           <i class="fa-solid fa-${state.owned ? "user-check" : "user-plus"}"></i>${state.owned ? "Übernommen - freigeben" : "Ownerschaft übernehmen"}
         </button>` : ""}
+        ${isMemo && state.assetId ? `<button type="button" class="as-btn${state.memoSend ? " as-btn--owned" : ""}" data-act="send">
+          <i class="fa-solid fa-${state.memoSend ? "circle-check" : "paper-plane"}"></i>${state.memoSend ? esc(versandText(state.memoSend)) : "Als abgeschickt markieren"}
+        </button>` : ""}
         <p class="as-savehint" data-savehint></p>
       </div>
     </aside>`;
@@ -5930,7 +5988,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function updateFormatBar() {
     if (!fmtBar) return;
-    if (state.step !== "edit" || !cropOverlay.hidden || !ownOverlay.hidden) {
+    if (state.step !== "edit" || !cropOverlay.hidden || !ownOverlay.hidden || !sendOverlay.hidden) {
       fmtBar.setAttribute("data-open", "0");
       return;
     }
@@ -7323,6 +7381,92 @@ ${stages}${post}
     }
   }
 
+  const KANAL_NAMEN = { mail: "Mail", linkedin: "LinkedIn" };
+
+  function versandText(versand) {
+    const kanal = versand.channel === "sonstiges" ? String(versand.channel_other || "Sonstiges") : (KANAL_NAMEN[versand.channel] || "");
+    const [jahr, monat, tag] = String(versand.sent_on || "").split("-");
+    return `Abgeschickt · ${kanal} · ${tag}.${monat}.${jahr}`;
+  }
+
+  function heuteIso() {
+    return new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  }
+
+  let absenderListe = null;
+
+  /** Dialog oeffnen, vorhandene Angaben oder Vorbelegung eintragen. */
+  async function oeffneVersand() {
+    if (!state.assetId) return;
+    const q = (sel) => sendOverlay.querySelector(sel);
+    q("[data-send-fehler]").textContent = "";
+    if (!absenderListe) {
+      try {
+        absenderListe = await api("list_memo_senders", {});
+      } catch (err) {
+        showSaveHint(err && err.message ? String(err.message) : "Nutzerliste konnte nicht geladen werden.");
+        return;
+      }
+    }
+    const v = state.memoSend;
+    const von = q("[data-send-von]");
+    von.innerHTML = (absenderListe.senders || []).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+    von.value = v ? v.sent_by : (absenderListe.default_sender_id || "");
+    q("[data-send-kanal]").value = v ? v.channel : "mail";
+    q("[data-send-frei]").value = v && v.channel === "sonstiges" ? String(v.channel_other || "") : "";
+    q("[data-send-frei-feld]").hidden = q("[data-send-kanal]").value !== "sonstiges";
+    const datum = q("[data-send-datum]");
+    datum.max = heuteIso();
+    datum.value = v ? v.sent_on : heuteIso();
+    q("[data-send-empfaenger]").value = v ? String(v.recipient || "") : "";
+    q("[data-send-weg]").hidden = !v;
+    sendOverlay.hidden = false;
+    q("[data-send-empfaenger]").focus();
+  }
+
+  async function speichereVersand() {
+    const q = (sel) => sendOverlay.querySelector(sel);
+    const angaben = {
+      asset_id: state.assetId,
+      channel: q("[data-send-kanal]").value,
+      channel_other: q("[data-send-frei]").value.trim(),
+      sent_on: q("[data-send-datum]").value,
+      recipient: q("[data-send-empfaenger]").value.trim(),
+      sent_by: q("[data-send-von]").value,
+    };
+    const fehlt = angaben.channel === "sonstiges" && !angaben.channel_other ? "Bitte den Kanal angeben."
+      : !angaben.sent_on ? "Bitte das Datum angeben."
+      : angaben.sent_on > heuteIso() ? "Das Datum liegt in der Zukunft."
+      : !angaben.recipient ? "Bitte den Empfänger angeben."
+      : !angaben.sent_by ? "Bitte angeben, wer es abgeschickt hat."
+      : "";
+    if (fehlt) { q("[data-send-fehler]").textContent = fehlt; return; }
+    const knopf = q('[data-act="send-ok"]');
+    knopf.disabled = true;
+    try {
+      const antwort = await api("mark_memo_sent", angaben);
+      state.memoSend = antwort?.memo_send || null;
+      sendOverlay.hidden = true;
+      render();
+    } catch (err) {
+      q("[data-send-fehler]").textContent = err && err.message ? String(err.message) : "Speichern fehlgeschlagen.";
+    } finally {
+      knopf.disabled = false;
+    }
+  }
+
+  async function entferneVersand() {
+    const q = (sel) => sendOverlay.querySelector(sel);
+    try {
+      await api("unmark_memo_sent", { asset_id: state.assetId });
+      state.memoSend = null;
+      sendOverlay.hidden = true;
+      render();
+    } catch (err) {
+      q("[data-send-fehler]").textContent = err && err.message ? String(err.message) : "Entfernen fehlgeschlagen.";
+    }
+  }
+
   /** Entwurf uebernehmen oder wieder freigeben. */
   async function uebernehmen() {
     if (!state.assetId) return;
@@ -7505,6 +7649,10 @@ ${stages}${post}
       void uebernehmen();
       return;
     }
+    if (act === "send") { void oeffneVersand(); return; }
+    if (act === "send-abbrechen") { sendOverlay.hidden = true; return; }
+    if (act === "send-ok") { void speichereVersand(); return; }
+    if (act === "send-weg") { void entferneVersand(); return; }
     if (act === "form-img-pick") {
       pickFormImage(hit.getAttribute("data-imgkey") || "image");
       return;
@@ -7923,7 +8071,7 @@ ${stages}${post}
     }
     if (event.key !== "Escape") {
       if (state.step !== "edit" || kontextmenue.offen()) return;
-      if (!cropOverlay.hidden || !ownOverlay.hidden || !ciOverlay.hidden || !ciDlOverlay.hidden) return;
+      if (!cropOverlay.hidden || !ownOverlay.hidden || !sendOverlay.hidden || !ciOverlay.hidden || !ciDlOverlay.hidden) return;
       const tippt = event.target?.isContentEditable || /^(input|textarea|select)$/i.test(event.target?.tagName || "");
       const mod = event.metaKey || event.ctrlKey;
       if (mod && !tippt && /^[zy]$/i.test(event.key)) {
@@ -8007,6 +8155,12 @@ ${stages}${post}
   }
 
   on(overlay, "click", onClick);
+  on(sendOverlay, "change", (event) => {
+    if (!event.target.matches("[data-send-kanal]")) return;
+    const frei = sendOverlay.querySelector("[data-send-frei-feld]");
+    frei.hidden = event.target.value !== "sonstiges";
+    if (!frei.hidden) sendOverlay.querySelector("[data-send-frei]").focus();
+  });
   // Nach der eigenen Auswertung darf das Ereignis die App nicht mehr erreichen.
   on(overlay, "click", (event) => event.stopPropagation());
   on(overlay, "change", onChange);
