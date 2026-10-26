@@ -696,6 +696,10 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
         marketing: numberValue(counts?.marketing),
         sales: numberValue(counts?.sales),
         rejected: numberValue(counts?.rejected),
+        // Gleiche Felder wie beim eigenen Laden, sonst springt die Summe je
+        // nachdem, welche Antwort zuletzt kam.
+        review: numberValue(counts?.review),
+        crawled: numberValue(counts?.crawled),
       },
     };
     if (state.payload.assets) renderDashboards();
