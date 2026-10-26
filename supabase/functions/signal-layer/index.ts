@@ -8560,12 +8560,28 @@ Deno.serve(async (req: Request) => {
             asset_count: creatorCounts.get(id) || 0,
           };
         }).filter((creator) => isUuid(creator.id)).sort((a, b) => a.name.localeCompare(b.name, "de"));
+        // Abgeschickte Executive Memos: fuer alle sichtbar, neueste zuerst.
+        const { data: versendet } = await admin.schema("signal_layer").from("memo_sends")
+          .select("asset_id, channel, channel_other, sent_on, recipient, sent_by, created_at, asset:generated_assets(company, payload_title)")
+          .order("sent_on", { ascending: false }).order("created_at", { ascending: false }).limit(20);
+        const memoSends = ((versendet || []) as Array<Record<string, any>>).map((zeile) => {
+          const memo = Array.isArray(zeile.asset) ? zeile.asset[0] : zeile.asset;
+          const absender = profileById.get(String(zeile.sent_by || ""));
+          const name = String(absender?.full_name || absender?.kuerzel || "ROOTS Team").trim();
+          return {
+            asset_id: zeile.asset_id, channel: zeile.channel, channel_other: zeile.channel_other,
+            sent_on: zeile.sent_on, recipient: zeile.recipient,
+            title: String(memo?.payload_title || "Executive Memo"), company: memo?.company || null,
+            sender_id: zeile.sent_by, sender_name: name, sender_avatar_url: String(absender?.avatar_url || "") || null,
+          };
+        });
         return corsResponse(origin, {
           preferences: normalizeDashboardPreferences(setting?.preferences),
           preferences_updated_at: setting?.updated_at || null,
           assets,
           creators,
           performance: performance || [],
+          memo_sends: memoSends,
           realtime_tables: ["user_dashboard_settings", "asset_performance"],
         });
       }
@@ -13573,15 +13589,15 @@ Deno.serve(async (req: Request) => {
         // vorbelegt mit dem Verantwortlichen fuer das Monatsziel.
         const admin = getAdminClient();
         const { data: profile, error: profilFehler } = await admin.schema("users").from("profiles")
-          .select("id,email,full_name,first_name,app_role,app_settings");
+          .select("id,email,full_name,first_name,avatar_url,app_role,app_settings");
         if (profilFehler) return errorResponse(origin, profilFehler.message, 500);
         const personen = ((profile || []) as ToolAccessProfile[])
           .filter((profil) => !String(profil.email || "").toLowerCase().startsWith("claude-debug@") && profileCanAccessSignalLayer(profil))
-          .map((profil) => ({ id: profil.id, name: String(profil.full_name || profil.email || "").trim(), email: String(profil.email || "") }))
+          .map((profil) => ({ id: profil.id, name: String(profil.full_name || profil.email || "").trim(), email: String(profil.email || ""), avatar_url: String((profil as Record<string, unknown>).avatar_url || "") || null }))
           .sort((a, b) => a.name.localeCompare(b.name, "de"));
         const { data: ziel } = await admin.schema("signal_layer").from("memo_ziel").select("verantwortlich_email, pro_monat").maybeSingle();
         const vorbelegt = personen.find((person) => person.email.toLowerCase() === String(ziel?.verantwortlich_email || "").toLowerCase());
-        return corsResponse(origin, { senders: personen.map(({ id, name }) => ({ id, name })), default_sender_id: vorbelegt?.id || null });
+        return corsResponse(origin, { senders: personen.map(({ id, name, avatar_url }) => ({ id, name, avatar_url })), default_sender_id: vorbelegt?.id || null });
       }
 
       case "mark_memo_sent": {

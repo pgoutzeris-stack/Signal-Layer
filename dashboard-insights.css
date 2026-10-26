@@ -264,3 +264,13 @@
 
 /* Ladezustand je Kachel: derselbe Kreis wie auf der Ergebnisseite. */
 .pi-widget .pi-widget-loader { min-height: 140px; padding: 1.5rem 0; }
+
+.pi-memo-sends { display: grid; padding: 6px 14px 12px; }
+.pi-memo-sends > div { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.pi-memo-sends > div:last-child { border-bottom: 0; }
+.pi-memo-sends .pi-avatar { width: 32px; height: 32px; }
+.pi-memo-sends span { min-width: 0; display: grid; gap: 2px; }
+.pi-memo-sends b { overflow: hidden; color: var(--ink); font-size: .82rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.pi-memo-sends small { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.pi-memo-sends em { color: var(--muted); font-size: .72rem; font-style: normal; white-space: nowrap; }
+.pi-memo-sends .pi-avatar--initials { font-size: .7rem; }

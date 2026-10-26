@@ -1643,6 +1643,23 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-send-form input:focus,
 #as-overlay .as-send-form select:focus{outline:none; border-color:#206efb; box-shadow:0 0 0 3px rgba(32,110,251,.12);}
 #as-overlay .as-send-form [hidden]{display:none;}
+#as-overlay .as-send-feld{display:grid; gap:5px; font-size:12px; font-weight:600; color:#334155;}
+#as-overlay .as-send-form .as-ddhead{padding:9px 11px; border-radius:10px; font-size:13px; font-weight:500; text-align:left;}
+#as-overlay .as-send-form .as-ddhead > span{display:flex; align-items:center; gap:8px; min-width:0;}
+#as-overlay .as-send-form .as-ddlist{max-height:260px;}
+#as-overlay .as-send-ava{width:24px; height:24px; flex:none; border-radius:50%; object-fit:cover; background:#eff6ff;
+  display:inline-grid; place-items:center; color:#165fd9; font-size:10px; font-weight:700;}
+#as-overlay .as-kal{padding:10px; max-height:none;}
+#as-overlay .as-kal-kopf{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; font-size:13px; font-weight:700; color:#0f172a;}
+#as-overlay .as-kal-kopf button{width:28px; height:28px; border:0; border-radius:8px; background:transparent; color:#475569;}
+#as-overlay .as-kal-kopf button:hover{background:#f1f5f9;}
+#as-overlay .as-kal-raster{display:grid; grid-template-columns:repeat(7,1fr); gap:2px; text-align:center;}
+#as-overlay .as-kal-raster small{padding:4px 0; font-size:10px; font-weight:700; color:#94a3b8;}
+#as-overlay .as-kal-raster button{height:32px; border:0; border-radius:8px; background:transparent; font-size:12px; font-weight:500; color:#0f172a;}
+#as-overlay .as-kal-raster button:hover:not(:disabled){background:#f1f5f9;}
+#as-overlay .as-kal-raster button.is-heute{color:#206efb; font-weight:700;}
+#as-overlay .as-kal-raster button.is-active{background:#206efb; color:#fff;}
+#as-overlay .as-kal-raster button:disabled{color:#cbd5e1;}
 #as-overlay .as-send-fehler{margin:0; font-size:12px; color:#b91c1c; min-height:1em;}
 #as-overlay .as-send-actions{display:flex; align-items:center; gap:8px;}
 #as-overlay .as-send-actions .as-send-weg{margin-right:auto;}
@@ -2295,25 +2312,30 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     <div class="as-crop-card as-send-card" role="dialog" aria-modal="true" aria-labelledby="as-send-titel">
       <h3 id="as-send-titel">Als abgeschickt markieren</h3>
       <form class="as-send-form" data-send-form novalidate>
-        <label>Kanal
-          <select data-send-kanal required>
-            <option value="mail">Mail</option>
-            <option value="linkedin">LinkedIn</option>
-            <option value="sonstiges">Sonstiges</option>
-          </select>
-        </label>
+        <div class="as-send-feld"><span>Kanal</span>
+          <div class="as-dd" data-send-dd="kanal">
+            <button type="button" class="as-ddhead" data-send-toggle="kanal" aria-expanded="false"><span data-send-wert="kanal"></span><i class="fa-solid fa-chevron-down"></i></button>
+            <div class="as-ddlist" data-send-liste="kanal"></div>
+          </div>
+        </div>
         <label data-send-frei-feld hidden>Welcher Kanal
           <input type="text" data-send-frei maxlength="120">
         </label>
-        <label>Datum
-          <input type="date" data-send-datum required>
-        </label>
+        <div class="as-send-feld"><span>Datum</span>
+          <div class="as-dd" data-send-dd="datum">
+            <button type="button" class="as-ddhead" data-send-toggle="datum" aria-expanded="false"><span data-send-wert="datum"></span><i class="fa-regular fa-calendar"></i></button>
+            <div class="as-ddlist as-kal" data-send-liste="datum"></div>
+          </div>
+        </div>
         <label>Empfänger
           <input type="text" data-send-empfaenger maxlength="300" required>
         </label>
-        <label>Abgeschickt von
-          <select data-send-von required></select>
-        </label>
+        <div class="as-send-feld"><span>Abgeschickt von</span>
+          <div class="as-dd" data-send-dd="von">
+            <button type="button" class="as-ddhead" data-send-toggle="von" aria-expanded="false"><span data-send-wert="von"></span><i class="fa-solid fa-chevron-down"></i></button>
+            <div class="as-ddlist" data-send-liste="von"></div>
+          </div>
+        </div>
         <p class="as-send-fehler" data-send-fehler></p>
       </form>
       <div class="as-send-actions">
@@ -7394,6 +7416,85 @@ ${stages}${post}
   }
 
   let absenderListe = null;
+  const sendWahl = { kanal: "mail", datum: "", von: "", monat: "" };
+  const KANAELE = [["mail", "Mail", "fa-regular fa-envelope"], ["linkedin", "LinkedIn", "fa-brands fa-linkedin"], ["sonstiges", "Sonstiges", "fa-solid fa-ellipsis"]];
+  const MONATE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+
+  function avatarHtml(person) {
+    const initialen = String(person?.name || "R").split(/\s+/).filter(Boolean).slice(0, 2).map((teil) => teil[0]).join("").toLocaleUpperCase("de");
+    return person?.avatar_url
+      ? `<img class="as-send-ava" src="${esc(person.avatar_url)}" alt="" referrerpolicy="no-referrer">`
+      : `<span class="as-send-ava" aria-hidden="true">${esc(initialen)}</span>`;
+  }
+
+  function datumDe(iso) {
+    const [jahr, monat, tag] = String(iso || "").split("-");
+    return tag ? `${tag}.${monat}.${jahr}` : "";
+  }
+
+  /** Kalender im ROOTS-Stil: Monatsraster, Zukunft gesperrt. */
+  function kalenderHtml() {
+    const [jahr, monat] = sendWahl.monat.split("-").map(Number);
+    const heute = heuteIso();
+    const ersterWochentag = (new Date(jahr, monat - 1, 1).getDay() + 6) % 7;
+    const tage = new Date(jahr, monat, 0).getDate();
+    const zellen = [];
+    for (let i = 0; i < ersterWochentag; i++) zellen.push("<span></span>");
+    for (let tag = 1; tag <= tage; tag++) {
+      const iso = `${jahr}-${String(monat).padStart(2, "0")}-${String(tag).padStart(2, "0")}`;
+      const klasse = [iso === sendWahl.datum ? "is-active" : "", iso === heute ? "is-heute" : ""].filter(Boolean).join(" ");
+      zellen.push(`<button type="button" data-send-tag="${iso}" class="${klasse}"${iso > heute ? " disabled" : ""}>${tag}</button>`);
+    }
+    const naechsterGesperrt = `${jahr}-${String(monat).padStart(2, "0")}` >= heute.slice(0, 7);
+    return `<div class="as-kal-kopf"><button type="button" data-send-monat="-1" aria-label="Voriger Monat"><i class="fa-solid fa-chevron-left"></i></button><span>${MONATE[monat - 1]} ${jahr}</span><button type="button" data-send-monat="1" aria-label="Nächster Monat"${naechsterGesperrt ? " disabled" : ""}><i class="fa-solid fa-chevron-right"></i></button></div>
+      <div class="as-kal-raster">${["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((t) => `<small>${t}</small>`).join("")}${zellen.join("")}</div>`;
+  }
+
+  function zeichneVersand() {
+    const q = (sel) => sendOverlay.querySelector(sel);
+    const kanal = KANAELE.find(([wert]) => wert === sendWahl.kanal) || KANAELE[0];
+    q('[data-send-wert="kanal"]').innerHTML = `<i class="${kanal[2]}"></i>${esc(kanal[1])}`;
+    q('[data-send-liste="kanal"]').innerHTML = KANAELE.map(([wert, name, icon]) =>
+      `<button type="button" class="as-ddrow${wert === sendWahl.kanal ? " is-active" : ""}" data-send-kanal="${wert}"><i class="${icon}"></i>${esc(name)}</button>`).join("");
+    q("[data-send-frei-feld]").hidden = sendWahl.kanal !== "sonstiges";
+    q('[data-send-wert="datum"]').textContent = datumDe(sendWahl.datum);
+    q('[data-send-liste="datum"]').innerHTML = kalenderHtml();
+    const personen = absenderListe?.senders || [];
+    const gewaehlt = personen.find((person) => person.id === sendWahl.von);
+    q('[data-send-wert="von"]').innerHTML = gewaehlt ? `${avatarHtml(gewaehlt)}${esc(gewaehlt.name)}` : "Bitte wählen";
+    q('[data-send-liste="von"]').innerHTML = personen.map((person) =>
+      `<button type="button" class="as-ddrow${person.id === sendWahl.von ? " is-active" : ""}" data-send-von="${esc(person.id)}">${avatarHtml(person)}${esc(person.name)}</button>`).join("");
+  }
+
+  function schliesseVersandListen(ausser = "") {
+    sendOverlay.querySelectorAll("[data-send-dd]").forEach((dd) => {
+      const offen = dd.getAttribute("data-send-dd") === ausser && !dd.classList.contains("is-open");
+      dd.classList.toggle("is-open", offen);
+      dd.querySelector(".as-ddhead").setAttribute("aria-expanded", String(offen));
+    });
+  }
+
+  on(sendOverlay, "click", (event) => {
+    const ziel = event.target.closest("[data-send-toggle],[data-send-kanal],[data-send-von],[data-send-tag],[data-send-monat]");
+    if (!ziel) {
+      if (!event.target.closest("[data-send-dd]")) schliesseVersandListen();
+      return;
+    }
+    if (ziel.hasAttribute("data-send-toggle")) { schliesseVersandListen(ziel.getAttribute("data-send-toggle")); return; }
+    if (ziel.hasAttribute("data-send-monat")) {
+      const [jahr, monat] = sendWahl.monat.split("-").map(Number);
+      const neu = new Date(jahr, monat - 1 + Number(ziel.getAttribute("data-send-monat")), 1);
+      sendWahl.monat = `${neu.getFullYear()}-${String(neu.getMonth() + 1).padStart(2, "0")}`;
+      sendOverlay.querySelector('[data-send-liste="datum"]').innerHTML = kalenderHtml();
+      return;
+    }
+    if (ziel.hasAttribute("data-send-kanal")) sendWahl.kanal = ziel.getAttribute("data-send-kanal");
+    if (ziel.hasAttribute("data-send-von")) sendWahl.von = ziel.getAttribute("data-send-von");
+    if (ziel.hasAttribute("data-send-tag")) sendWahl.datum = ziel.getAttribute("data-send-tag");
+    schliesseVersandListen();
+    zeichneVersand();
+    if (sendWahl.kanal === "sonstiges" && ziel.hasAttribute("data-send-kanal")) sendOverlay.querySelector("[data-send-frei]").focus();
+  });
 
   /** Dialog oeffnen, vorhandene Angaben oder Vorbelegung eintragen. */
   async function oeffneVersand() {
@@ -7409,17 +7510,15 @@ ${stages}${post}
       }
     }
     const v = state.memoSend;
-    const von = q("[data-send-von]");
-    von.innerHTML = (absenderListe.senders || []).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
-    von.value = v ? v.sent_by : (absenderListe.default_sender_id || "");
-    q("[data-send-kanal]").value = v ? v.channel : "mail";
+    sendWahl.kanal = v ? v.channel : "mail";
+    sendWahl.datum = v ? v.sent_on : heuteIso();
+    sendWahl.monat = sendWahl.datum.slice(0, 7);
+    sendWahl.von = v ? v.sent_by : (absenderListe.default_sender_id || "");
     q("[data-send-frei]").value = v && v.channel === "sonstiges" ? String(v.channel_other || "") : "";
-    q("[data-send-frei-feld]").hidden = q("[data-send-kanal]").value !== "sonstiges";
-    const datum = q("[data-send-datum]");
-    datum.max = heuteIso();
-    datum.value = v ? v.sent_on : heuteIso();
     q("[data-send-empfaenger]").value = v ? String(v.recipient || "") : "";
     q("[data-send-weg]").hidden = !v;
+    schliesseVersandListen();
+    zeichneVersand();
     sendOverlay.hidden = false;
     q("[data-send-empfaenger]").focus();
   }
@@ -7428,11 +7527,11 @@ ${stages}${post}
     const q = (sel) => sendOverlay.querySelector(sel);
     const angaben = {
       asset_id: state.assetId,
-      channel: q("[data-send-kanal]").value,
+      channel: sendWahl.kanal,
       channel_other: q("[data-send-frei]").value.trim(),
-      sent_on: q("[data-send-datum]").value,
+      sent_on: sendWahl.datum,
       recipient: q("[data-send-empfaenger]").value.trim(),
-      sent_by: q("[data-send-von]").value,
+      sent_by: sendWahl.von,
     };
     const fehlt = angaben.channel === "sonstiges" && !angaben.channel_other ? "Bitte den Kanal angeben."
       : !angaben.sent_on ? "Bitte das Datum angeben."
@@ -8155,12 +8254,6 @@ ${stages}${post}
   }
 
   on(overlay, "click", onClick);
-  on(sendOverlay, "change", (event) => {
-    if (!event.target.matches("[data-send-kanal]")) return;
-    const frei = sendOverlay.querySelector("[data-send-frei-feld]");
-    frei.hidden = event.target.value !== "sonstiges";
-    if (!frei.hidden) sendOverlay.querySelector("[data-send-frei]").focus();
-  });
   // Nach der eigenen Auswertung darf das Ereignis die App nicht mehr erreichen.
   on(overlay, "click", (event) => event.stopPropagation());
   on(overlay, "change", onChange);

@@ -12,10 +12,10 @@ import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleS
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261026-1";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261026-7";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261026-6";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261026-7";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
 let sb = null;

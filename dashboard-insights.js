@@ -6,6 +6,7 @@ const WIDGET_DEFINITIONS = [
   { id: "sales_funnel", title: "Sales Funnel", icon: "fa-solid fa-arrow-down-wide-short", defaultSize: "compact" },
   { id: "performance_trend", title: "Performance-Trend", icon: "fa-solid fa-chart-column", defaultSize: "wide" },
   { id: "top_assets", title: "Top-Assets", icon: "fa-solid fa-trophy", defaultSize: "wide" },
+  { id: "memo_sends", title: "Abgeschickte Executive Memos", icon: "fa-solid fa-paper-plane", defaultSize: "wide" },
   { id: "smart_insights", title: "Insight Radar", icon: "fa-solid fa-wand-magic-sparkles", defaultSize: "wide" },
   { id: "data_quality", title: "Bestand", icon: "fa-solid fa-chart-pie", defaultSize: "compact" },
   { id: "recent_activity", title: "Letzte Updates", icon: "fa-solid fa-clock-rotate-left", defaultSize: "compact" },
@@ -182,6 +183,7 @@ export function summarizeDashboardData(payload = {}, nowMs = Date.now()) {
     // Die Zahlen der Signalansicht: sie standen als eigene Kacheln unter dem
     // Dashboard und gehoeren in dieselbe Uebersicht wie die Wirkung.
     signalCounts: payload.signalCounts || { marketing: 0, sales: 0, rejected: 0 },
+    memoSends: Array.isArray(payload.memo_sends) ? payload.memo_sends : [],
     trend: trendBuckets(current, preferences.period_days, nowMs),
     recent: [...performance].sort((a, b) => performanceDate(b) - performanceDate(a)).slice(0, 5)
       .map((row) => ({ ...row, asset: assetById.get(row.asset_id) || {}, title: assetTitle(assetById.get(row.asset_id)) })),
@@ -597,6 +599,21 @@ function renderWidget(definition, preference, summary, escapeHtml, optionen = {}
     }).join("") || `<div class="pi-inline-empty">Keine Assets im aktuellen Filter</div>`}</div>`;
     return widgetShell(definition, preference, body);
   }
+  if (definition.id === "memo_sends") {
+    const kanal = (row) => row.channel === "sonstiges" ? String(row.channel_other || "Sonstiges") : row.channel === "linkedin" ? "LinkedIn" : "Mail";
+    const datum = (iso) => { const [j, m, t] = String(iso || "").split("-"); return t ? `${t}.${m}.${j}` : ""; };
+    const avatar = (row) => {
+      const initialen = String(row.sender_name || "R").split(/\s+/).filter(Boolean).slice(0, 2).map((teil) => teil[0]).join("").toLocaleUpperCase("de");
+      return row.sender_avatar_url
+        ? `<img class="pi-avatar" src="${escapeHtml(row.sender_avatar_url)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : `<span class="pi-avatar pi-avatar--initials" aria-hidden="true">${escapeHtml(initialen)}</span>`;
+    };
+    const rows = summary.memoSends || [];
+    const body = rows.length
+      ? `<div class="pi-memo-sends">${rows.map((row) => `<div>${avatar(row)}<span><b>${escapeHtml([row.company, row.title].filter(Boolean).join(" · "))}</b><small>${escapeHtml(`${kanal(row)} · an ${row.recipient} · ${row.sender_name}`)}</small></span><em>${escapeHtml(datum(row.sent_on))}</em></div>`).join("")}</div>`
+      : `<div class="pi-inline-empty">Noch keine Executive Memos abgeschickt</div>`;
+    return widgetShell(definition, preference, body);
+  }
   if (definition.id === "smart_insights") {
     const body = `<div class="pi-insight-list">${deriveDashboardInsights(summary).map((item) => `<div class="is-${item.tone}"><i class="fa-solid ${item.tone === "positive" ? "fa-arrow-trend-up" : item.tone === "attention" ? "fa-lightbulb" : "fa-circle-info"}"></i><span><b>${escapeHtml(item.title)}</b><p>${escapeHtml(item.text)}</p></span></div>`).join("")}</div>`;
     return widgetShell(definition, preference, body);
@@ -842,6 +859,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
         assets: Array.isArray(payload.assets) ? payload.assets : [],
         creators: Array.isArray(payload.creators) ? payload.creators : [],
         performance: Array.isArray(payload.performance) ? payload.performance : [],
+        memo_sends: Array.isArray(payload.memo_sends) ? payload.memo_sends : [],
       };
       state.savedPreferences = state.payload.preferences;
       state.loaded = true;
