@@ -49,30 +49,26 @@ function linkVon(signal: DigestSignal): string {
 }
 
 function metaVon(signal: DigestSignal): string {
-  return [signal.lane === "sales" ? "Sales" : "Marketing", signal.quelle].filter(Boolean).join(" · ");
+  return [firmaVon(signal), signal.signal_label, signal.quelle].filter(Boolean).join(" · ");
 }
 
 function firmaVon(signal: DigestSignal): string {
   return signal.company || (signal.tier1_companies || [])[0] || (signal.tier2_companies || [])[0] || "";
 }
 
-/** Kleine Pille: Thema hellblau, Unternehmen grau. */
-function pille(text: string, art: "thema" | "firma"): string {
-  if (!text) return "";
-  const farbe = art === "thema" ? `background:#eef4ff;color:#3b82f6;` : `background:#f3f4f6;color:${GRAU};`;
-  return `<span style="display:inline-block;margin:0 0 3px 3px;padding:2px 7px;border-radius:999px;${farbe}font:500 9px/1.4 ${SCHRIFT};white-space:nowrap;">${esc(text)}</span>`;
+/** Bereich als kleines Etikett ueber dem Titel: Marketing blau, Sales gruen. */
+function bereich(signal: DigestSignal): string {
+  const sales = signal.lane === "sales";
+  const farbe = sales ? "background:#e8f7ef;color:#127a46;" : "background:#eef4ff;color:#206efb;";
+  return `<span style="display:inline-block;padding:3px 8px;border-radius:6px;${farbe}font:600 10px/1.2 ${SCHRIFT};letter-spacing:.04em;text-transform:uppercase;">${sales ? "Sales" : "Marketing"}</span>`;
 }
 
-/** Eine Zeile: links Titel und Unterzeile, rechts Thema und Unternehmen als Pillen. */
+/** Eine Zeile: Bereich, Titel, darunter Unternehmen, Thema und Quelle. */
 function zeile(signal: DigestSignal, gross: boolean): string {
-  return `<tr><td style="padding:${gross ? "16px" : "11px"} 0;border-bottom:1px solid ${LINIE};">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-      <td style="vertical-align:top;">
-        <a href="${esc(linkVon(signal))}" style="font:${gross ? "600 16px/1.35" : "500 14px/1.4"} ${SCHRIFT};color:${TINTE};text-decoration:none;">${esc(signal.headline_de)}</a>
-        <div style="margin-top:3px;font:400 11px/1.4 ${SCHRIFT};color:${HELLGRAU};">${esc(metaVon(signal))}</div>
-      </td>
-      <td align="right" style="vertical-align:top;width:150px;padding-left:12px;">${pille(signal.signal_label || "", "thema")}${pille(firmaVon(signal), "firma")}</td>
-    </tr></table>
+  return `<tr><td style="padding:${gross ? "18px" : "14px"} 0;border-bottom:1px solid ${LINIE};">
+    <div style="margin-bottom:${gross ? "8px" : "6px"};">${bereich(signal)}</div>
+    <a href="${esc(linkVon(signal))}" style="font:${gross ? "600 16px/1.4" : "500 14px/1.45"} ${SCHRIFT};color:${TINTE};text-decoration:none;">${esc(signal.headline_de)}</a>
+    <div style="margin-top:4px;font:400 12px/1.5 ${SCHRIFT};color:${GRAU};">${esc(metaVon(signal))}</div>
   </td></tr>`;
 }
 
@@ -87,7 +83,9 @@ function knopf(text: string, href: string, voll: boolean): string {
 
 /** Betreff und HTML der Mail. Hoechstens 15 Signale: fuenf gross, zehn klein. */
 export function baueDigest(signale: DigestSignal[], zeitraum: string, test = false): { betreff: string; html: string } {
-  const sortiert = [...signale].sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+  // Gleicher Score: neueres Signal zuerst, damit die Reihenfolge fest ist.
+  const sortiert = [...signale].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)
+    || String(b.datum || "").localeCompare(String(a.datum || "")));
   const gross = sortiert.slice(0, 5);
   const klein = sortiert.slice(5, 15);
   const rest = Math.max(0, sortiert.length - 15);
