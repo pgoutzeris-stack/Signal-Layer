@@ -262,11 +262,5 @@
   .pi-funnel-row > div > i { transition: none; }
 }
 
-/* Ladezustand je Kachel: drei Balken mit leichtem Schimmer. */
-.pi-skeleton { display: grid; gap: 10px; padding: 6px 0 4px; }
-.pi-skeleton span { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #eef1f5 0%, #f7f9fc 50%, #eef1f5 100%); background-size: 200% 100%; animation: piSkeleton 1.2s ease-in-out infinite; }
-.pi-skeleton span:nth-child(1) { width: 55%; height: 22px; }
-.pi-skeleton span:nth-child(2) { width: 85%; }
-.pi-skeleton span:nth-child(3) { width: 70%; }
-@keyframes piSkeleton { from { background-position: 100% 0; } to { background-position: -100% 0; } }
-@media (prefers-reduced-motion: reduce) { .pi-skeleton span { animation: none; } }
+/* Ladezustand je Kachel: derselbe Kreis wie auf der Ergebnisseite. */
+.pi-widget .pi-widget-loader { min-height: 140px; padding: 1.5rem 0; }

@@ -732,7 +732,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
           // Kachel eine Ladeanimation.
           const wartet = !state.loaded || (["data_quality", "performance_pulse"].includes(definition?.id) && !state.countsLoaded);
           return wartet && definition
-            ? widgetShell(definition, preference, '<div class="pi-skeleton" aria-label="Lädt"><span></span><span></span><span></span></div>')
+            ? widgetShell(definition, preference, '<div class="roots-loader pi-widget-loader" aria-label="Lädt"></div>')
             : renderWidget(definition, preference, state.summary, escapeHtml, { hideRejected: state.hideRejected });
         }).join("")}</div>`;
       bindBestandRing(host, escapeHtml);

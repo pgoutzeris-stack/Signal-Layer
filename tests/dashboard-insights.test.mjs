@@ -332,7 +332,7 @@ test("Dashboard zeichnet sofort, Ladeanimation je Kachel", async () => {
   const js = await readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8");
   assert.doesNotMatch(js, /host\.innerHTML = '<div class="pi-dashboard-loader">/);
   assert.match(js, /ladeCache\(\);\n\s*renderDashboards\(\);/);
-  assert.match(js, /pi-skeleton/);
+  assert.match(js, /roots-loader pi-widget-loader/);
 });
 
 test("die Laufmeldung steht nicht mehr unter dem Dashboard", async () => {
