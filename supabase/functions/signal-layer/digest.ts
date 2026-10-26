@@ -110,6 +110,9 @@ export function baueDigest(signale: DigestSignal[], _zeitraum: string, test = fa
     <tr><td align="center" style="padding:32px 0 6px;">
       ${knopf("Signal Layer öffnen", DIGEST_APP_URL, true)}${rest ? knopf(`${rest} weitere`, DIGEST_APP_URL, false) : ""}
     </td></tr>
+    <tr><td align="center" style="padding:18px 0 0;">
+      <img src="${LOGO_URL}" width="84" height="13" alt="ROOTS" style="display:inline-block;border:0;width:84px;height:auto;">
+    </td></tr>
   </table>
 </td></tr></table>
 </body></html>`;
