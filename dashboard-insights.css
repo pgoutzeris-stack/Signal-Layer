@@ -2,9 +2,9 @@
 /* Eine Leiste statt Kopfzeile plus Filterkasten. Alles auf einer Hoehe, feste
    Reihenfolge, kein Element ueber dem anderen. Die Auswahlfelder tragen den
    ROOTS-Rahmen statt der Browservorgabe: appearance:none plus eigener Pfeil. */
-.pi-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 0 0 12px; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); background: color-mix(in srgb, var(--bg) 92%, var(--surface)); box-shadow: var(--shadow-dash); }
-.pi-bar h2 { min-width: 0; margin: 0 0 0 .5rem; display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: .82rem; font-weight: 750; letter-spacing: -.01em; white-space: nowrap; }
-.pi-bar h2 i { color: var(--brand); font-size: .78rem; }
+.pi-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 0 0 1rem; padding: .6rem; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 92%, var(--surface)); box-shadow: var(--shadow-dash); }
+.pi-bar h2 { min-width: 0; margin: 0 0 0 .3rem; display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-size: .78rem; font-weight: 700; white-space: nowrap; }
+.pi-bar h2 i { color: var(--brand); }
 .pi-bar-filters { min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
 .pi-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -91,14 +91,14 @@
 }
 
 .pi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
-.pi-widget { container: pi-widget / inline-size; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--shadow-dash); animation: piWidgetIn .42s both; }
+.pi-widget { container: pi-widget / inline-size; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); box-shadow: var(--shadow); animation: piWidgetIn .42s both; }
 .pi-widget:nth-child(2) { animation-delay: .035s; }
 .pi-widget:nth-child(3) { animation-delay: .07s; }
 .pi-widget:nth-child(4) { animation-delay: .105s; }
 .pi-widget:nth-child(5) { animation-delay: .14s; }
 .pi-widget--wide { grid-column: 1 / -1; }
 .pi-widget-head { min-height: 46px; padding: 11px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); }
-.pi-widget-head > span { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: .7rem; font-weight: 850; }
+.pi-widget-head > span { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: .9rem; font-weight: 700; }
 .pi-widget-head > span > i { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 8px; color: var(--brand); background: var(--brand-light); font-size: .66rem; }
 .pi-widget-head em { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: .53rem; font-style: normal; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .pi-widget-head em::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #94a3b8; }
