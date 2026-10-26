@@ -726,7 +726,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
           const definition = DASHBOARD_WIDGETS.find((item) => item.id === preference.id);
           // Jede Kachel steht sofort da; was noch fehlt, zeigt nur in seiner
           // Kachel eine Ladeanimation.
-          const wartet = !state.loaded || (definition?.id === "data_quality" && !state.countsLoaded);
+          const wartet = !state.loaded || (["data_quality", "performance_pulse"].includes(definition?.id) && !state.countsLoaded);
           return wartet && definition
             ? widgetShell(definition, preference, '<div class="pi-skeleton" aria-label="Lädt"><span></span><span></span><span></span></div>')
             : renderWidget(definition, preference, state.summary, escapeHtml, { hideRejected: state.hideRejected });
