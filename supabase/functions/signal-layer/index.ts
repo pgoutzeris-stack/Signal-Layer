@@ -596,6 +596,9 @@ async function ladeReferenzVisual(post: Record<string, unknown>): Promise<string
     const html = await seite.text();
     const bildUrl = (html.match(/property="og:image"\s+content="([^"]+)"/) || html.match(/content="([^"]+)"\s+property="og:image"/) || [])[1]?.replace(/&amp;/g, "&") || "";
     if (!/^https:\/\/(media|dms)\.licdn\.com\//.test(bildUrl)) fehler = `kein Bild (${seite.status})`;
+    // Video-Posts liefern ein Vorschaubild mit Play-Knopf; das Modell baut
+    // den Knopf sonst als Deko nach.
+    else if (/playlist\/vid|play-button|videocover/i.test(bildUrl)) fehler = "Video-Vorschau, kein Vorbild";
     else {
       const bild = await fetchMitLimit(bildUrl, { headers: kopf }, 20_000);
       const typ = String(bild.headers.get("content-type") || "").split(";")[0];
