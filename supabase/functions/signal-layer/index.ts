@@ -8188,6 +8188,14 @@ Deno.serve(async (req: Request) => {
         if (!isScheduled) return unauthorizedResponse(req, origin);
       }
     }
+  } else if (action === "ki_visual_slide") {
+    // Neben dem User-JWT auch per Cron-Secret, damit der Betrieb ein Visual
+    // fuer den Eigentuemer des Assets nachbauen und pruefen kann.
+    isScheduled = await isScheduledTrigger(req);
+    if (!isScheduled) {
+      auth = await requireAuth(req);
+      if (!auth) return unauthorizedResponse(req, origin);
+    }
   } else if (action === "get_company_profile") {
     // Liest nur und stoesst hoechstens eine Recherche an, die die Pipeline
     // ohnehin machen wuerde. Neben dem User-JWT auch per Cron-Secret bedienbar,
@@ -8827,13 +8835,14 @@ Deno.serve(async (req: Request) => {
       // Der Browser ruft Folie fuer Folie auf: ein ganzes Carousel in einem
       // Aufruf saehe die Zeitgrenze der Edge Function.
       case "ki_visual_slide": {
-        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        if (!auth?.userId && !isScheduled) return errorResponse(origin, "Nicht angemeldet", 401);
         const kiAssetId = String(body.asset_id || "");
         const kiIndex = Math.max(0, Math.floor(Number(body.index) || 0));
         const { data: kiAsset, error: kiFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
           .select("id, kind, created_by, answers, payload").eq("id", kiAssetId).maybeSingle();
         if (kiFehler) return errorResponse(origin, kiFehler.message, 500);
-        if (!kiAsset || kiAsset.created_by !== auth.userId) return errorResponse(origin, "Asset nicht gefunden", 404);
+        if (!kiAsset || (!isScheduled && kiAsset.created_by !== auth?.userId)) return errorResponse(origin, "Asset nicht gefunden", 404);
+        const kiNutzer = String(isScheduled ? kiAsset.created_by : auth?.userId);
         if (kiAsset.kind !== "linkedin" || (kiAsset.answers as Record<string, unknown>)?.profile !== "private") {
           return errorResponse(origin, "KI-Visuals gibt es nur für Assets im Privatprofil.");
         }
@@ -8841,9 +8850,9 @@ Deno.serve(async (req: Request) => {
         const kiSlides = Array.isArray(kiPayload.slides) ? [...kiPayload.slides as Record<string, unknown>[]] : [];
         const kiSlide = kiSlides[kiIndex];
         if (!kiSlide) return errorResponse(origin, "Folie nicht gefunden", 404);
-        const vorbilder = await referenzVorbildVisuals(auth.userId);
+        const vorbilder = await referenzVorbildVisuals(kiNutzer);
         if (!vorbilder.length) return errorResponse(origin, "Kein eigener Post mit Bild hinterlegt. Bitte unter Tone of Voice eigene Posts importieren.", 409);
-        const kiStil = await meinStil(auth.userId);
+        const kiStil = await meinStil(kiNutzer);
         const basis = String(kiSlide.ki_basis || kiSlide.variant || "B");
         const rolle = kiSlides.length <= 1 ? "single" : basis.match(/^U[1256]$/) ? "cover" : basis.match(/^U[3478]$/) ? "end" : kiIndex === 0 ? "cover" : kiIndex === kiSlides.length - 1 ? "end" : "content";
         const titelLayout = kiIndex > 0 ? String(kiSlides[0]?.ki_layout || "") : "";

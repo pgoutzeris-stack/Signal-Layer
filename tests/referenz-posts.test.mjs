@@ -83,7 +83,7 @@ test("Privatprofil: keine Vorlage, Visual Folie fuer Folie", async () => {
     readFile(new URL("../asset-studio.js", import.meta.url), "utf8"),
   ]);
   assert.match(edge, /case "ki_visual_slide"/);
-  assert.match(edge, /kiAsset\.created_by !== auth\.userId/);
+  assert.match(edge, /!isScheduled && kiAsset\.created_by !== auth\?\.userId/);
   assert.match(edge, /id: "mein-stil", name: "Mein Stil", theme: "light"/);
   assert.match(studio, /when: \(answers\) => answers\.profile !== "private" \}/);
   assert.match(studio, /api\("ki_visual_slide", \{ asset_id: state\.assetId, index: i \}\)/);
