@@ -7592,6 +7592,11 @@ export function bereinigeKiLayout(roh: string): string {
       attribute.push(`${original}="${wert.replace(/"/g, "&quot;")}"`);
     }
     const name2 = tag === "lineargradient" ? "linearGradient" : tag === "radialgradient" ? "radialGradient" : tag;
+    // Sehr dicke Linien sind in den Vorbildern dezente Boegen im Hintergrund.
+    // Deckend gemalt liegen sie ueber dem Text; ohne eigene Deckkraft werden
+    // sie deshalb halbtransparent.
+    const breite = Number((attribute.find((a) => a.startsWith("stroke-width=")) || "").replace(/\D+/g, "") || 0);
+    if (breite >= 40 && !attribute.some((a) => /^(opacity|stroke-opacity)=/.test(a))) attribute.push('stroke-opacity="0.14"');
     // SVG-Formen brauchen den Selbstschluss: ohne ihn verschachtelt der
     // HTML-Parser die folgenden Formen hinein, und sie bleiben unsichtbar.
     const svgLeer = KI_LEERE_TAGS.has(tag) && tag !== "br" && tag !== "img";

@@ -117,3 +117,9 @@ test("KI-Visual: Inhaltstyp nach fester Regel", () => {
   // Jahreszahlen sind kein Zahlenvergleich.
   assert.equal(typ({ title: "Seit 2019 bei uns", subtitle: "Nur Wachstum seit 2020." }), "these");
 });
+
+test("KI-Visual: dicke Deko-Linien werden halbtransparent", () => {
+  const html = backend.bereinigeKiLayout('<div class="li"><svg><circle r="400" stroke="#fff" stroke-width="150" fill="none"></circle><path d="M0 0" stroke-width="3"></path></svg></div>');
+  assert.match(html, /<circle r="400" stroke="#fff" stroke-width="150" fill="none" stroke-opacity="0\.14" \/>/);
+  assert.match(html, /<path d="M0 0" stroke-width="3" \/>/);
+});
