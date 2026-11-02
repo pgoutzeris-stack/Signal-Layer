@@ -7613,10 +7613,42 @@ export type KiVisualEingabe = {
   mitPortraet: boolean;
   mitLogo: boolean;
   titelLayout: string;
-  /** Impressions der Vorbilder in Bildreihenfolge, staerkstes zuerst. */
+  /** Impressions der Vorbilder in Bildreihenfolge; Bild 1 ist die Kompositionsvorlage. */
   vorbildImpressions: number[];
+  typ: KiInhaltsTyp;
+  /** Ob Bild 1 wirklich den passenden Stil-Typ zeigt. */
+  typTreffer: boolean;
   postText: string;
 };
+
+/** Welche Komposition der Inhalt einer Folie traegt. */
+export type KiInhaltsTyp = "zahlenvergleich" | "duell" | "these" | "infografik";
+export const KI_STIL_TYPEN = ["zahlenvergleich", "duell", "these", "infografik", "illustration"] as const;
+
+export const KI_TYP_AUFTRAG: Record<KiInhaltsTyp, string> = {
+  zahlenvergleich: "Zahlenvergleich: zwei Werte gross gegenueberstellen, wie im Vorbild",
+  duell: "Duell: zwei Seiten gegenueberstellen, mit der Buehne, Stimmung und Dramatik des Vorbilds; die Seiten tragen Worte statt Logos oder Flaggen",
+  these: "These: eine Aussage gross und allein, im Stil des Vorbilds (Portraet, Anfuehrungszeichen, Flaeche)",
+  infografik: "Infografik: Punkte oder Schritte geordnet in Kacheln oder Zeilen, wie im Vorbild",
+};
+
+/**
+ * Feste Regel statt Modellwahl: der Zahlenvergleich nur, wenn der Inhalt zwei
+ * Zahlen gegenueberstellt; ein Duell, wenn der Titel zwei Seiten nennt; eine
+ * Infografik ab drei Punkten; sonst eine These.
+ */
+export function kiInhaltsTyp(slide: Record<string, unknown>): KiInhaltsTyp {
+  const s = slide || {};
+  const liste = (name: string) => Array.isArray(s[name]) ? s[name] as unknown[] : [];
+  const titel = String(s.title || "");
+  const text = [titel, s.subtitle, s.kicker, s.quote, (s.stat as Record<string, unknown> | undefined)?.value,
+    ...liste("bullets"), ...liste("stats").map((x) => JSON.stringify(x))].map((v) => String(v ?? "")).join(" ");
+  const zahlen = new Set((text.match(/\d+(?:[.,]\d+)?/g) || []).filter((z) => !/^(19|20)\d\d$/.test(z)));
+  if (liste("stats").length === 2 || (zahlen.size >= 2 && /\b(vs\.?|versus|gegen|statt|nur|während|waehrend|bei)\b/i.test(text))) return "zahlenvergleich";
+  if (/\b(vs\.?|versus|gegen|schlägt|schlaegt)\b/i.test(titel)) return "duell";
+  if (liste("bullets").length + liste("stats").length + liste("steps").length >= 3) return "infografik";
+  return "these";
+}
 
 /** Alles, was die Folie an Text und Zahlen tragen darf. */
 export function kiBelegText(slide: Record<string, unknown>, postText: string): string {
@@ -7650,9 +7682,12 @@ export function buildKiVisualPrompt(e: KiVisualEingabe): string {
   ].filter(Boolean).join("\n");
   const rolle = { cover: "Titelfolie eines Carousels", content: "Inhaltsfolie eines Carousels", end: "Endfolie eines Carousels", single: "Einzelbild-Post" }[e.rolle];
   const bilder = e.vorbildImpressions.map((imp, i) => `Bild ${i + 1}: ${imp.toLocaleString("de-DE")} Impressions`).join(", ");
-  return `Gestalte eine LinkedIn-Folie (1080 x 1350 px) als HTML in der Bildsprache dieser Person. Die Bilder sind ihre eigenen Posts mit den meisten Impressions (${bilder}); Bild 1 zaehlt am meisten.
+  return `Gestalte eine LinkedIn-Folie (1080 x 1350 px) als HTML in der Bildsprache dieser Person. Die Bilder sind ihre eigenen Posts (${bilder}).
 
-Leite zuerst die gemeinsame Bildsprache ab: Farbwelt, Flaechen und Verlaeufe, Typografie (Schnitt, Gewicht, Versalien, Groessenverhaeltnisse), wiederkehrende Elemente (Rahmen, Anfuehrungszeichen, Pinselstriche, Trennlinien, Portraet) und typische Kompositionen (etwa Zwei-Spalten-Vergleich mit grossen Zahlen, Zitat mit Portraet, Infografik mit Kacheln). Waehle dann die Komposition, die am besten zu diesem Inhalt passt: steckt im Inhalt ein Vergleich zweier Zahlen, baue ihn als Vergleich wie im Vorbild, nicht als Fliesstext.
+Inhaltstyp dieser Folie: ${KI_TYP_AUFTRAG[e.typ]}.
+${e.typTreffer
+    ? "Bild 1 ist ein eigener Post genau dieses Typs und deine Kompositionsvorlage: Aufbau, Buehne, Stimmung, Farben und Typografie so nah wie moeglich an Bild 1. Die weiteren Bilder nur als Gegenprobe fuer Schrift und Farben der Person."
+    : "Kein eigener Post zeigt genau diesen Typ. Baue die Komposition fuer den Inhaltstyp selbst, aber in Farbwelt, Typografie und wiederkehrenden Elementen der Bilder, Bild 1 zaehlt am meisten."}
 
 Inhalt dieser Folie (${rolle}, Folie ${e.nummer} von ${e.gesamt}):
 ${inhalt || "title: (leer)"}

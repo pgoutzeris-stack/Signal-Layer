@@ -62,9 +62,11 @@ test("KI-Visual: Prompt mit mehreren Vorbildern, Begleittext und Titelfolie", ()
     slide: { title: "Spontankäufe sind nie spontan", subtitle: "43 Kontakte bei Spontankäufen, 19 bei Bedarfskäufen.", bullets: ["Eins", "Zwei"] },
     rolle: "content", nummer: 2, gesamt: 8, mitPortraet: true, mitLogo: false,
     titelLayout: '<div class="li">TITEL</div>', vorbildImpressions: [229881, 1237, 1064], postText: "Begleittext mit 43.",
+    typ: "zahlenvergleich", typTreffer: true,
   });
   assert.match(prompt, /Bild 1: 229\.881 Impressions, Bild 2: 1\.237 Impressions, Bild 3: 1\.064 Impressions/);
-  assert.match(prompt, /Vergleich zweier Zahlen/);
+  assert.match(prompt, /Inhaltstyp dieser Folie: Zahlenvergleich/);
+  assert.match(prompt, /Bild 1 ist ein eigener Post genau dieses Typs/);
   assert.match(prompt, /keine leeren Ersatzformen/);
   assert.match(prompt, /Begleittext des Posts/);
   assert.match(prompt, /\{\{portraet\}\}/);
@@ -102,4 +104,14 @@ test("Privatprofil: keine Tool-Layouts, Vorschau zeigt das Vorbild", async () =>
   assert.match(edge, /vorbild_visual: posts\.length \? await gespeichertesVorbild\(auth\.userId\) : ""/);
   // Scrollbalken: Chrome soll die feste, filigrane Leiste nehmen.
   assert.match(html, /@supports not selector\(::-webkit-scrollbar\) \{\s*\.track-findings-list/);
+});
+
+test("KI-Visual: Inhaltstyp nach fester Regel", () => {
+  const typ = backend.kiInhaltsTyp;
+  assert.equal(typ({ title: "Spontankäufe sind nie spontan", subtitle: "43 Kontakte bei Spontankäufen, bei Bedarfskäufen nur 19." }), "zahlenvergleich");
+  assert.equal(typ({ title: "Deutschland schlägt die Niederlande", subtitle: "Zumindest als Marke." }), "duell");
+  assert.equal(typ({ title: "Drei Gründe", bullets: ["a", "b", "c"] }), "infografik");
+  assert.equal(typ({ title: "Marke ist kein Logo", subtitle: "Sondern ein Versprechen." }), "these");
+  // Jahreszahlen sind kein Zahlenvergleich.
+  assert.equal(typ({ title: "Seit 2019 bei uns", subtitle: "Nur Wachstum seit 2020." }), "these");
 });

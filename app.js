@@ -8,11 +8,11 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261102-9";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261102-10";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-9";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-10";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261102-1";
@@ -2262,7 +2262,8 @@ function referenzPostHtml(post, index) {
       <span>${escapeHtml(datum)}</span>
       <span><b>${zahl(post.impressions)}</b> Impressions</span>
       <span>${zahl(post.reaktionen)} Reaktionen · ${zahl(post.kommentare)} Kommentare</span>
-      ${index === 0 ? `<span>${post.hat_visual ? "Bild ist Stil-Vorbild" : post.visual_fehler ? "Bild nicht ladbar" : "Bild wird geladen"}</span>` : ""}
+      <select data-referenz-typ="${escapeHtml(post.id)}" aria-label="Aufbau dieses Posts">${[["", "Aufbau offen"], ["zahlenvergleich", "Zahlenvergleich"], ["duell", "Duell"], ["these", "These"], ["infografik", "Infografik"], ["illustration", "Illustration"]].map(([wert, text]) => `<option value="${wert}"${(post.stil_typ || "") === wert ? " selected" : ""}>${text}</option>`).join("")}</select>
+      ${post.visual_fehler ? "<span>Bild nicht ladbar</span>" : ""}
     </div>
   </article>`;
 }
@@ -4839,13 +4840,13 @@ function bindUi() {
   els.btnSettings.addEventListener("click", openSettings);
   els.btnToneSave?.addEventListener("click", () => void saveToneOfVoice());
   els.referenzListe?.addEventListener("change", async (event) => {
-    const auswahl = event.target.closest("[data-referenz-vorlage]");
+    const auswahl = event.target.closest("[data-referenz-typ]");
     if (!auswahl) return;
     try {
-      await callApi("save_referenz_post", { id: auswahl.dataset.referenzVorlage, vorlage_id: auswahl.value });
-      const post = referenzPosts.find((p) => p.id === auswahl.dataset.referenzVorlage);
-      if (post) post.vorlage_id = auswahl.value || null;
-      toast("Vorlage zugeordnet");
+      await callApi("save_referenz_post", { id: auswahl.dataset.referenzTyp, stil_typ: auswahl.value });
+      const post = referenzPosts.find((p) => p.id === auswahl.dataset.referenzTyp);
+      if (post) post.stil_typ = auswahl.value || null;
+      toast("Aufbau gespeichert");
     } catch (error) {
       toast(error.message, "err");
     }

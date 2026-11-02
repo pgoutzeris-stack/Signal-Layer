@@ -234,6 +234,8 @@ import {
   bereinigeKiLayout,
   kiBelegText,
   kiFremdeZahlen,
+  kiInhaltsTyp,
+  KI_STIL_TYPEN,
   buildKiVisualPrompt,
   KI_VISUAL_MODELL,
   normalizeAssetPayload,
@@ -559,7 +561,7 @@ async function darfRootsAssets(userId: string | null | undefined): Promise<boole
 /** Eigene LinkedIn-Posts des Nutzers, staerkste zuerst. */
 async function referenzPosts(userId: string): Promise<Array<Record<string, unknown>>> {
   const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
-    .select("id, quelle, extern_id, veroeffentlicht_am, text, impressions, reaktionen, kommentare, reposts, vorlage_id, aktualisiert_am, visual_geladen_am, visual_fehler, hat_visual")
+    .select("id, quelle, extern_id, veroeffentlicht_am, text, impressions, reaktionen, kommentare, reposts, vorlage_id, aktualisiert_am, visual_geladen_am, visual_fehler, hat_visual, stil_typ")
     .eq("user_id", userId).order("impressions", { ascending: false }).order("veroeffentlicht_am", { ascending: false }).limit(200);
   if (error) throw new Error(`Eigene Posts konnten nicht gelesen werden: ${error.message}`);
   return data || [];
@@ -623,16 +625,19 @@ async function gespeichertesVorbild(userId: string): Promise<string> {
  * zuerst. Ein einzelner Post ist ein Ausreisser; erst mehrere zeigen die
  * wiederkehrende Bildsprache. Fehlende Bilder werden nachgeladen.
  */
-async function referenzVorbildVisuals(userId: string, anzahl = 3): Promise<Array<{ visual: string; impressions: number }>> {
+async function referenzVorbildVisuals(userId: string, typ = "", anzahl = 3): Promise<Array<{ visual: string; impressions: number; typ: string }>> {
   const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
-    .select("id, extern_id, impressions, visual, visual_geladen_am")
-    .eq("user_id", userId).order("impressions", { ascending: false }).limit(6);
+    .select("id, extern_id, impressions, visual, visual_geladen_am, stil_typ")
+    .eq("user_id", userId).order("impressions", { ascending: false }).limit(12);
   if (error) throw new Error(`Eigene Posts konnten nicht gelesen werden: ${error.message}`);
-  const out: Array<{ visual: string; impressions: number }> = [];
-  for (const post of data || []) {
+  // Der staerkste Post des passenden Typs zuerst, dann die staerksten uebrigen.
+  const posts = [...(data || [])].sort((a, b) => Number(b.stil_typ === typ) - Number(a.stil_typ === typ));
+  const out: Array<{ visual: string; impressions: number; typ: string }> = [];
+  for (const post of posts) {
     if (out.length >= anzahl) break;
+    if (post.stil_typ === "illustration" && post.stil_typ !== typ) continue;
     const visual = post.visual || (post.visual_geladen_am ? "" : await ladeReferenzVisual(post));
-    if (visual) out.push({ visual, impressions: Number(post.impressions) || 0 });
+    if (visual) out.push({ visual, impressions: Number(post.impressions) || 0, typ: String(post.stil_typ || "") });
   }
   return out;
 }
@@ -8850,7 +8855,9 @@ Deno.serve(async (req: Request) => {
         const kiSlides = Array.isArray(kiPayload.slides) ? [...kiPayload.slides as Record<string, unknown>[]] : [];
         const kiSlide = kiSlides[kiIndex];
         if (!kiSlide) return errorResponse(origin, "Folie nicht gefunden", 404);
-        const vorbilder = await referenzVorbildVisuals(kiNutzer);
+        // Carousel: die Titelfolie bestimmt den Stil, Folgefolien erben ihn.
+        const kiTyp = kiInhaltsTyp(kiIndex > 0 && kiSlides[0] ? kiSlides[0] : kiSlide);
+        const vorbilder = await referenzVorbildVisuals(kiNutzer, kiTyp);
         if (!vorbilder.length) return errorResponse(origin, "Kein eigener Post mit Bild hinterlegt. Bitte unter Tone of Voice eigene Posts importieren.", 409);
         const kiStil = await meinStil(kiNutzer);
         const basis = String(kiSlide.ki_basis || kiSlide.variant || "B");
@@ -8860,6 +8867,7 @@ Deno.serve(async (req: Request) => {
           slide: kiSlide, rolle, nummer: kiIndex + 1, gesamt: kiSlides.length,
           mitPortraet: Boolean(kiStil.portraet), mitLogo: Boolean(kiStil.logo),
           titelLayout, vorbildImpressions: vorbilder.map((v) => v.impressions),
+          typ: kiTyp, typTreffer: vorbilder[0]?.typ === kiTyp,
           postText: String(kiPayload.post_text || ""),
         });
         const belegQuelle = kiBelegText(kiSlide, String(kiPayload.post_text || ""));
@@ -8929,6 +8937,7 @@ Deno.serve(async (req: Request) => {
           aenderung.vorlage_id = /^[a-z0-9-]{1,40}$/.test(vorlage) ? vorlage : null;
         }
         if ("impressions" in body) aenderung.impressions = zahlFeld(body.impressions);
+        if ("stil_typ" in body) aenderung.stil_typ = (KI_STIL_TYPEN as readonly string[]).includes(String(body.stil_typ)) ? String(body.stil_typ) : null;
         const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
           .update(aenderung).eq("id", postId).eq("user_id", auth.userId).select("id").maybeSingle();
         if (error) return errorResponse(origin, error.message, 500);
