@@ -57,18 +57,24 @@ test("KI-Visual: Bereinigung laesst nur Folien-HTML durch", () => {
   assert.match(backend.bereinigeKiLayout("<p>{{title}}</p>"), /^<div class="li li-ki"/);
 });
 
-test("KI-Visual: Prompt traegt Inhalt, Platzhalter und Titelfolie fuer Folgefolien", () => {
+test("KI-Visual: Prompt mit mehreren Vorbildern, Begleittext und Titelfolie", () => {
   const prompt = backend.buildKiVisualPrompt({
-    slide: { title: "Marke schlägt Preis", subtitle: "Drei Gründe", bullets: ["Eins", "Zwei"] },
+    slide: { title: "Spontankäufe sind nie spontan", subtitle: "43 Kontakte bei Spontankäufen, 19 bei Bedarfskäufen.", bullets: ["Eins", "Zwei"] },
     rolle: "content", nummer: 2, gesamt: 8, mitPortraet: true, mitLogo: false,
-    titelLayout: '<div class="li">TITEL</div>', vorbildText: "", vorbildImpressions: 229881,
+    titelLayout: '<div class="li">TITEL</div>', vorbildImpressions: [229881, 1237, 1064], postText: "Begleittext mit 43.",
   });
-  assert.match(prompt, /229\.881/);
-  assert.match(prompt, /title: Marke schlägt Preis/);
-  assert.match(prompt, /bullets \(2\): Eins \| Zwei/);
+  assert.match(prompt, /Bild 1: 229\.881 Impressions, Bild 2: 1\.237 Impressions, Bild 3: 1\.064 Impressions/);
+  assert.match(prompt, /Vergleich zweier Zahlen/);
+  assert.match(prompt, /keine leeren Ersatzformen/);
+  assert.match(prompt, /Begleittext des Posts/);
   assert.match(prompt, /\{\{portraet\}\}/);
   assert.match(prompt, /<div class="li">TITEL<\/div>/);
-  assert.match(prompt, /Folie 2 von 8/);
+});
+
+test("KI-Visual: Zahlen im Visual muessen im Inhalt stehen", () => {
+  const beleg = backend.kiBelegText({ subtitle: "43 Kontakte bei Spontankäufen, 19 bei Bedarfskäufen, 22,5 % mehr." }, "Begleittext.");
+  assert.deepEqual(backend.kiFremdeZahlen('<div class="li"><b data-field="wert_links">43</b><b>19</b><span>22,5 %</span><p style="font-size:90px">{{title}}</p></div>', beleg), []);
+  assert.deepEqual(backend.kiFremdeZahlen('<div class="li"><b>43</b><b>87</b></div>', beleg), ["87"]);
 });
 
 test("Privatprofil: keine Vorlage, Visual Folie fuer Folie", async () => {

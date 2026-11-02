@@ -232,6 +232,8 @@ import {
   REFERENZ_VORBILDER,
   normalizeMeinStil,
   bereinigeKiLayout,
+  kiBelegText,
+  kiFremdeZahlen,
   buildKiVisualPrompt,
   KI_VISUAL_MODELL,
   normalizeAssetPayload,
@@ -616,17 +618,23 @@ async function gespeichertesVorbild(userId: string): Promise<string> {
   return String(data?.visual || "");
 }
 
-/** Vorbild-Visual: der staerkste eigene Post mit Bild. Fehlende Bilder werden nachgeladen. */
-async function referenzVorbildVisual(userId: string): Promise<{ visual: string; impressions: number; text: string } | null> {
+/**
+ * Vorbilder: die Bilder der drei staerksten eigenen Posts mit Bild, staerkstes
+ * zuerst. Ein einzelner Post ist ein Ausreisser; erst mehrere zeigen die
+ * wiederkehrende Bildsprache. Fehlende Bilder werden nachgeladen.
+ */
+async function referenzVorbildVisuals(userId: string, anzahl = 3): Promise<Array<{ visual: string; impressions: number }>> {
   const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
-    .select("id, extern_id, text, impressions, visual, visual_geladen_am")
-    .eq("user_id", userId).order("impressions", { ascending: false }).limit(5);
+    .select("id, extern_id, impressions, visual, visual_geladen_am")
+    .eq("user_id", userId).order("impressions", { ascending: false }).limit(6);
   if (error) throw new Error(`Eigene Posts konnten nicht gelesen werden: ${error.message}`);
+  const out: Array<{ visual: string; impressions: number }> = [];
   for (const post of data || []) {
+    if (out.length >= anzahl) break;
     const visual = post.visual || (post.visual_geladen_am ? "" : await ladeReferenzVisual(post));
-    if (visual) return { visual, impressions: Number(post.impressions) || 0, text: String(post.text || "") };
+    if (visual) out.push({ visual, impressions: Number(post.impressions) || 0 });
   }
-  return null;
+  return out;
 }
 
 /** Die Texte der staerksten Posts fuer den Begleittext. */
@@ -8833,8 +8841,8 @@ Deno.serve(async (req: Request) => {
         const kiSlides = Array.isArray(kiPayload.slides) ? [...kiPayload.slides as Record<string, unknown>[]] : [];
         const kiSlide = kiSlides[kiIndex];
         if (!kiSlide) return errorResponse(origin, "Folie nicht gefunden", 404);
-        const vorbild = await referenzVorbildVisual(auth.userId);
-        if (!vorbild) return errorResponse(origin, "Kein eigener Post mit Bild hinterlegt. Bitte unter Tone of Voice eigene Posts importieren.", 409);
+        const vorbilder = await referenzVorbildVisuals(auth.userId);
+        if (!vorbilder.length) return errorResponse(origin, "Kein eigener Post mit Bild hinterlegt. Bitte unter Tone of Voice eigene Posts importieren.", 409);
         const kiStil = await meinStil(auth.userId);
         const basis = String(kiSlide.ki_basis || kiSlide.variant || "B");
         const rolle = kiSlides.length <= 1 ? "single" : basis.match(/^U[1256]$/) ? "cover" : basis.match(/^U[3478]$/) ? "end" : kiIndex === 0 ? "cover" : kiIndex === kiSlides.length - 1 ? "end" : "content";
@@ -8842,8 +8850,10 @@ Deno.serve(async (req: Request) => {
         const prompt = buildKiVisualPrompt({
           slide: kiSlide, rolle, nummer: kiIndex + 1, gesamt: kiSlides.length,
           mitPortraet: Boolean(kiStil.portraet), mitLogo: Boolean(kiStil.logo),
-          titelLayout, vorbildText: vorbild.text, vorbildImpressions: vorbild.impressions,
+          titelLayout, vorbildImpressions: vorbilder.map((v) => v.impressions),
+          postText: String(kiPayload.post_text || ""),
         });
+        const belegQuelle = kiBelegText(kiSlide, String(kiPayload.post_text || ""));
         const apiKey = await getPerplexityKey().catch(() => "");
         if (!apiKey) return errorResponse(origin, "Perplexity-Schlüssel fehlt im Vault.", 500);
         let html = "";
@@ -8858,7 +8868,7 @@ Deno.serve(async (req: Request) => {
               reasoning: { effort: "low" },
               input: [{ role: "user", content: [
                 { type: "input_text", text: prompt },
-                { type: "input_image", image_url: vorbild.visual },
+                ...vorbilder.map((v) => ({ type: "input_image", image_url: v.visual })),
               ] }],
             }),
           }, 140_000).catch((error) => { letzterFehler = error instanceof Error ? error.message : String(error); return null; });
@@ -8876,6 +8886,9 @@ Deno.serve(async (req: Request) => {
           const objekt = parseLooseJsonObject(geparst.content) as Record<string, unknown> | null;
           html = bereinigeKiLayout(String(objekt?.html || geparst.content));
           if (!html) letzterFehler = "Antwort ohne verwertbares HTML";
+          // Zahlen im Visual muessen im Inhalt stehen, sonst neu bauen.
+          const fremd = html ? kiFremdeZahlen(html, belegQuelle) : [];
+          if (fremd.length) { letzterFehler = `unbelegte Zahl ${fremd.slice(0, 3).join(", ")}`; html = ""; }
         }
         if (!html) return errorResponse(origin, `Visual konnte nicht gebaut werden: ${letzterFehler}`, 502);
         kiSlides[kiIndex] = { ...kiSlide, ki_basis: basis, variant: "KI", ki_layout: html };

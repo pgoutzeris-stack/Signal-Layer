@@ -7613,9 +7613,23 @@ export type KiVisualEingabe = {
   mitPortraet: boolean;
   mitLogo: boolean;
   titelLayout: string;
-  vorbildText: string;
-  vorbildImpressions: number;
+  /** Impressions der Vorbilder in Bildreihenfolge, staerkstes zuerst. */
+  vorbildImpressions: number[];
+  postText: string;
 };
+
+/** Alles, was die Folie an Text und Zahlen tragen darf. */
+export function kiBelegText(slide: Record<string, unknown>, postText: string): string {
+  return [JSON.stringify(slide ?? {}), postText].join("\n");
+}
+
+/** Zahlen im sichtbaren Text des Visuals, die im Inhalt nicht vorkommen. */
+export function kiFremdeZahlen(html: string, beleg: string): string[] {
+  const sichtbar = String(html || "").replace(/<[^>]+>/g, " ").replace(/\{\{[a-z0-9_]+\}\}/g, " ");
+  const norm = (z: string) => z.replace(/[.\s\u00a0\u202f]/g, "").replace(",", ".");
+  const belegt = new Set((String(beleg).match(/\d[\d.,]*/g) || []).map(norm));
+  return [...new Set((sichtbar.match(/\d[\d.,]*/g) || []).map(norm))].filter((z) => z.length && !belegt.has(z));
+}
 
 /** Auftrag an das Bildmodell: neue Folie im Stil des staerksten eigenen Posts. */
 export function buildKiVisualPrompt(e: KiVisualEingabe): string {
@@ -7635,19 +7649,22 @@ export function buildKiVisualPrompt(e: KiVisualEingabe): string {
     liste("steps").length ? `steps (${liste("steps").length}): ${liste("steps").map((x) => `${(x as Record<string, unknown>)?.title}: ${(x as Record<string, unknown>)?.text}`).join(" | ")}` : "",
   ].filter(Boolean).join("\n");
   const rolle = { cover: "Titelfolie eines Carousels", content: "Inhaltsfolie eines Carousels", end: "Endfolie eines Carousels", single: "Einzelbild-Post" }[e.rolle];
-  return `Gestalte eine LinkedIn-Folie (1080 x 1350 px) als HTML im Stil des Vorbild-Visuals im Bild. Das Vorbild ist der eigene Post mit den meisten Impressions (${e.vorbildImpressions.toLocaleString("de-DE")}).
+  const bilder = e.vorbildImpressions.map((imp, i) => `Bild ${i + 1}: ${imp.toLocaleString("de-DE")} Impressions`).join(", ");
+  return `Gestalte eine LinkedIn-Folie (1080 x 1350 px) als HTML in der Bildsprache dieser Person. Die Bilder sind ihre eigenen Posts mit den meisten Impressions (${bilder}); Bild 1 zaehlt am meisten.
 
-Uebernimm aus dem Vorbild: Farbwelt, Hintergrund (Flaeche oder Verlauf), Charakter der Typografie (Gewicht, Groessenverhaeltnisse, Versalien), Bildaufbau und Raumaufteilung, Dekorationen (Linien, Rahmen, Anfuehrungszeichen, Pinselstriche, Formen, Trennlinien). Fotos und Logos im Vorbild baust du nicht nach; an ihre Stelle treten Flaechen, Formen oder Verlaeufe in den Farben des Vorbilds.
+Leite zuerst die gemeinsame Bildsprache ab: Farbwelt, Flaechen und Verlaeufe, Typografie (Schnitt, Gewicht, Versalien, Groessenverhaeltnisse), wiederkehrende Elemente (Rahmen, Anfuehrungszeichen, Pinselstriche, Trennlinien, Portraet) und typische Kompositionen (etwa Zwei-Spalten-Vergleich mit grossen Zahlen, Zitat mit Portraet, Infografik mit Kacheln). Waehle dann die Komposition, die am besten zu diesem Inhalt passt: steckt im Inhalt ein Vergleich zweier Zahlen, baue ihn als Vergleich wie im Vorbild, nicht als Fliesstext.
 
 Inhalt dieser Folie (${rolle}, Folie ${e.nummer} von ${e.gesamt}):
 ${inhalt || "title: (leer)"}
-
+${e.postText ? `\nBegleittext des Posts (Quelle fuer Zahlen und kurze Beschriftungen):\n${e.postText.slice(0, 2_000)}\n` : ""}
 Regeln:
 - Wurzel: <div class="li" style="width:1080px;height:1350px;position:relative;overflow:hidden;font-family:'Circular Std',system-ui,sans-serif;...">. Nur Inline-Styles, keine Klassen ausser li. Mindestens 72 px Innenabstand.
-- Texte stehen nur als Platzhalter in Elementen mit data-field, zum Beispiel <h1 data-field="title" style="...">{{title}}</h1>. Erlaubte Platzhalter: {{kicker}} {{title}} {{subtitle}} {{quote}} {{attribution}} {{takeaway}} {{stat_value}} {{stat_label}} {{footer_left}}. Nur die nutzen, die oben einen Inhalt haben.
-- Listen als Wiederholblock, genau so: <!--repeat:bullets--><div data-field="item" style="...">{{item}}</div><!--/repeat-->. Fuer stats {{value}} und {{label}} in <!--repeat:stats-->...<!--/repeat-->, fuer steps {{n}} {{title}} {{text}} in <!--repeat:steps-->...<!--/repeat-->. Den Block nur einmal schreiben, er wird je Eintrag wiederholt.
-- Groessen: Titel 60 bis 110 px, Fliesstext mindestens 26 px. Plane Platz fuer die tatsaechliche Textmenge oben, nichts darf ueberlaufen.
-${e.mitPortraet ? "- Ein freigestelltes Portraet der Person steht als <img src=\"{{portraet}}\"> zur Verfuegung. Setze es ein, wenn das Vorbild eine Person zeigt, freigestellt am unteren Rand, Text daneben, nie ueber dem Gesicht.\n" : ""}${e.mitLogo ? "- Ein Logo steht als <img src=\"{{logo}}\"> zur Verfuegung, nur einsetzen, wenn das Vorbild ein Zeichen traegt.\n" : ""}- Dekoration als Inline-SVG ist erlaubt. Keine Bilder aus dem Netz, keine Links, keine Skripte, keine erfundenen Zahlen oder Texte.
+- Die Felder oben stehen als Platzhalter in Elementen mit data-field, zum Beispiel <h1 data-field="title" style="...">{{title}}</h1>. Erlaubte Platzhalter: {{kicker}} {{title}} {{subtitle}} {{quote}} {{attribution}} {{takeaway}} {{stat_value}} {{stat_label}} {{footer_left}}.
+- Fuer die Komposition darfst du zusaetzlich kurze Texte direkt setzen (Zahlen, Einheiten, Spaltenkoepfe bis vier Woerter). Jede Zahl und jede Aussage muss woertlich aus dem Inhalt oder dem Begleittext stammen; erfinde nichts. Setze solche Texte in Elemente mit data-field (frei benannt, etwa data-field="wert_links").
+- Listen als Wiederholblock: <!--repeat:bullets--><div data-field="item" style="...">{{item}}</div><!--/repeat-->; stats mit {{value}} {{label}} in <!--repeat:stats-->...<!--/repeat-->, steps mit {{n}} {{title}} {{text}} in <!--repeat:steps-->...<!--/repeat-->.
+- Fotos, Logos und Wappen der Vorbilder baust du nicht nach und setzt keine leeren Ersatzformen (keine bunten Kreise oder Kaesten als Logo-Ersatz). Was kein Inhalt hat, faellt weg.
+- Groessen: Titel 60 bis 110 px, Fliesstext mindestens 26 px. Plane Platz fuer die tatsaechliche Textmenge, nichts darf ueberlaufen.
+${e.mitPortraet ? "- Ein freigestelltes Portraet der Person steht als <img src=\"{{portraet}}\"> zur Verfuegung. Setze es ein, wenn die Vorbilder die Person zeigen, freigestellt am unteren Rand, Text daneben, nie ueber dem Gesicht.\n" : ""}${e.mitLogo ? "- Ein Logo steht als <img src=\"{{logo}}\"> zur Verfuegung, nur einsetzen, wenn die Vorbilder ein Zeichen tragen.\n" : ""}- Dekoration als Inline-SVG ist erlaubt. Keine Bilder aus dem Netz, keine Links, keine Skripte.
 ${e.titelLayout ? `- Dies ist eine Folge-Folie: Hintergrund, Farben, Schriften, Rahmen und Dekoration exakt wie in dieser bereits gebauten Titelfolie, nur der Inhaltsbereich passt sich an:\n${e.titelLayout.slice(0, 12_000)}\n` : ""}
 Antworte nur mit JSON: {"html": "<div class=\\"li\\" ...>...</div>"}`;
 }
