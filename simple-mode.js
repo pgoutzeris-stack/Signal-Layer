@@ -35,13 +35,6 @@ let selectedVersion = "";
 let currentVersionLabel = "";
 let versionList = [];
 const companyFilterState = { kind: "tier1", selected: [] };
-// Ergebnisseite: Zeitraum wie im Dashboard. Der Browser merkt ihn sich.
-const ERGEBNIS_ZEITRAEUME = [7, 30, 90, 365];
-const ergebnisAnsicht = { tage: 30 };
-try {
-  const gemerkt = JSON.parse(localStorage.getItem("signal-layer-ergebnis-ansicht") || "null");
-  if (ERGEBNIS_ZEITRAEUME.includes(Number(gemerkt?.tage))) ergebnisAnsicht.tage = Number(gemerkt.tage);
-} catch { /* Speicher gesperrt: Standard bleibt */ }
 const companyFilterIndex = { tier1: [], tier2: [], company: [] };
 
 function el(id) {
@@ -255,16 +248,9 @@ function refreshCompanyFilter(all) {
   renderCompanyFilter();
 }
 
-/** Beginn des gewaehlten Zeitraums; verglichen wird mit dem Datum auf der Karte. */
-function zeitraumBeginn() {
-  return Date.now() - ergebnisAnsicht.tage * 86_400_000;
-}
-
 function visibleSignals(lane) {
   const state = ctx.viewState;
-  const beginn = zeitraumBeginn();
   const filtered = signalsByLane[lane].filter((signal) => {
-    if (signalDate(signal) < beginn) return false;
     const topicOk = state.topics.length === 0 || state.topics.includes(signalThema(signal).id);
     const sourceOk = state.sources.length === 0 || state.sources.includes(signalSourceName(signal));
     const companyOk = companyMatches(signal);
@@ -331,9 +317,7 @@ function renderLane(lane) {
   const count = lane === "sales" ? els.salesCount : els.marketingCount;
   if (!list) return;
   const signals = visibleSignals(lane);
-  // Bezugsgroesse ist der gewaehlte Zeitraum, nicht alles Geladene.
-  const beginn = zeitraumBeginn();
-  const total = signalsByLane[lane].filter((signal) => signalDate(signal) >= beginn).length;
+  const total = signalsByLane[lane].length;
   const filtersActive = resultFiltersActive();
   count.textContent = simpleLaneCountLabel(signals.length, total, filtersActive);
   count.title = filtersActive && signals.length !== total
@@ -345,10 +329,8 @@ function renderLane(lane) {
   if (signals.length) void paintAssetAuthors(list, ctx.callApi, esc);
 }
 
-function renderRejected(alle, rejectLabels) {
+function renderRejected(articles, rejectLabels) {
   if (!els.rejectedList) return;
-  const beginn = zeitraumBeginn();
-  const articles = alle.filter((row) => (new Date(row.article?.published_at || row.updated_at || row.classified_at || 0).getTime() || 0) >= beginn);
   els.rejectedCount.textContent = articles.length.toLocaleString("de-DE");
   els.rejectedList.innerHTML = articles.length
     ? articles.map((row) => {
@@ -426,8 +408,8 @@ async function loadResults({ keepStatus = false } = {}) {
   const versionFilter = selectedVersion ? { pipeline_version: selectedVersion } : {};
   try {
     const [marketing, sales, rejected, status] = await Promise.all([
-      ctx.callApi("list_simple_signals", { lane: "marketing", limit: 200, days: ergebnisAnsicht.tage, ...versionFilter }),
-      ctx.callApi("list_simple_signals", { lane: "sales", limit: 200, days: ergebnisAnsicht.tage, ...versionFilter }),
+      ctx.callApi("list_simple_signals", { lane: "marketing", limit: 200, ...versionFilter }),
+      ctx.callApi("list_simple_signals", { lane: "sales", limit: 200, ...versionFilter }),
       ctx.callApi("list_simple_rejected", { limit: 60, reasons: ["zu_unsicher", "evidenz_fehlt", "familie_nicht_erlaubt"], ...versionFilter }),
       ctx.callApi("get_simple_run_status"),
     ]);
@@ -489,34 +471,9 @@ async function pollStatus() {
   scheduleStatusPoll();
 }
 
-/** Zeitraum auf der Ergebnisseite anzeigen. */
-function zeichneErgebnisAnsicht() {
-  document.querySelectorAll("[data-ergebnis-zeitraum]").forEach((knopf) => {
-    const aktiv = Number(knopf.dataset.ergebnisZeitraum) === ergebnisAnsicht.tage;
-    knopf.classList.toggle("is-active", aktiv);
-    knopf.setAttribute("aria-pressed", String(aktiv));
-  });
-  try { localStorage.setItem("signal-layer-ergebnis-ansicht", JSON.stringify(ergebnisAnsicht)); } catch { /* nur Komfort */ }
-}
-
-function setzeErgebnisAnsicht({ tage } = {}) {
-  const neuerZeitraum = ERGEBNIS_ZEITRAEUME.includes(Number(tage)) && Number(tage) !== ergebnisAnsicht.tage;
-  if (neuerZeitraum) ergebnisAnsicht.tage = Number(tage);
-  zeichneErgebnisAnsicht();
-  return neuerZeitraum;
-}
-
 function bindUi() {
   if (bound) return;
   bound = true;
-  zeichneErgebnisAnsicht();
-  document.querySelectorAll("[data-ergebnis-zeitraum]").forEach((knopf) => knopf.addEventListener("click", () => {
-    if (!setzeErgebnisAnsicht({ tage: Number(knopf.dataset.ergebnisZeitraum) })) return;
-    // Der Server liefert je Bahn nur 200; fuer den neuen Zeitraum neu holen.
-    els.marketingList.innerHTML = LOADER;
-    els.salesList.innerHTML = LOADER;
-    void loadResults({ keepStatus: true });
-  }));
   const rerender = () => {
     ctx.viewState.sort = els.sort?.value || "recommended";
     renderLane("marketing");
@@ -814,14 +771,6 @@ function renderSimpleStagePopup() {
       ${next ? `<button type="button" class="btn-primary" data-simple-stage-next>Nächste Station<i class="fa-solid fa-arrow-right"></i></button>` : `<button type="button" class="btn-primary" data-simple-stage-close>Schließen<i class="fa-solid fa-xmark"></i></button>`}
     </footer>
   </div>`;
-}
-
-/**
- * Sprung aus dem Dashboard: Ergebnisseite im Zeitraum des Dashboards.
- * Die Ansicht selbst schaltet app.js um; diese Funktion stellt nur den Filter.
- */
-export function zeigeSimpleSignale({ period_days: tage } = {}) {
-  setzeErgebnisAnsicht({ tage });
 }
 
 export function showSimpleView(view) {

@@ -765,8 +765,6 @@
   .stats-part--error { color: var(--danger); font-weight: 600; }
   .review-card { margin-top: 1.2rem; }
   .results-review-section { margin-top: 1.2rem; }
-  /* Zeitraum auf der Ergebnisseite, gleiche Segmente wie im Dashboard. */
-  .signal-toolbar-controls > .pi-seg { flex: 0 0 auto; align-self: center; }
   .review-list { display: flex; flex-direction: column; gap: 8px; max-height: 520px; overflow-y: auto; }
   .review-reasons { display: flex; flex-wrap: wrap; gap: 4px; margin: .5rem 0; }
   .review-reasons span { font-size: .68rem; color: var(--danger); background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 2px 6px; }
@@ -2290,12 +2288,6 @@
           <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
             <span class="signal-toolbar-label"><i class="fa-solid fa-broadcast-tower"></i> Signal Layer</span>
             <div class="signal-toolbar-controls">
-              <div class="pi-seg" role="group" aria-label="Zeitraum">
-                <button type="button" data-ergebnis-zeitraum="7" aria-pressed="false">7 T</button>
-                <button type="button" data-ergebnis-zeitraum="30" class="is-active" aria-pressed="true">30 T</button>
-                <button type="button" data-ergebnis-zeitraum="90" aria-pressed="false">90 T</button>
-                <button type="button" data-ergebnis-zeitraum="365" aria-pressed="false">12 M</button>
-              </div>
               <select class="signal-toolbar-select" id="simple-topic-filter" aria-label="Thema filtern">
                 <option value="all">Alle Themen</option>
               </select>
@@ -2628,7 +2620,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261102-2';
+  import { initApp } from './app.js?v=20261102-3';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

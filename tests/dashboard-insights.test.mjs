@@ -508,8 +508,8 @@ test("Signalkacheln fuehren zur Ergebnisseite", async () => {
   assert.match(js, /statLink\("Marketing-Signale"/);
   assert.match(js, /statLink\("Sales-Signale"/);
   assert.match(js, /signal-layer:signale-oeffnen/);
-  assert.match(app, /addEventListener\("signal-layer:signale-oeffnen"[\s\S]{0,200}switchAppView\("results"\)/);
-  assert.match(simple, /export function zeigeSimpleSignale/);
+  assert.match(app, /addEventListener\("signal-layer:signale-oeffnen", \(\) => switchAppView\("results"\)\)/);
+  assert.ok(!simple.includes("data-ergebnis-zeitraum"), "die Ergebnisseite bleibt wie vor dem 2.11.");
 });
 
 test("die Kopfzeile laeuft nur einmal ein", async () => {
