@@ -13033,6 +13033,7 @@ Deno.serve(async (req: Request) => {
           linkedinAnswers.design_footer_left = vorlage.footer_left;
           linkedinAnswers.design_domain = vorlage.domain;
           linkedinAnswers.design_logo = vorlage.logo;
+          linkedinAnswers.design_stil = vorlage.stil;
           linkedinAnswers.theme = vorlage.theme;
           const auswahlFehler = linkedinAnswers.asset_type === "carousel"
             ? manualCarouselSelectionError(linkedinAnswers)

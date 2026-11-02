@@ -1902,6 +1902,10 @@
   .design-row-del { border: 0; background: none; color: var(--danger); cursor: pointer; font-size: .95rem; padding: 4px; }
   .design-logo { grid-column: 1 / -1; display: flex; align-items: center; gap: .75rem; font-size: .8rem; color: var(--muted); }
   .design-logo img { height: 28px; width: auto; }
+  .design-stil { grid-column: 1 / -1; display: flex; flex-direction: column; gap: .6rem; padding-top: .75rem; border-top: 1px solid var(--line); }
+  .design-stil-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.1rem; }
+  .design-stil input[type="color"] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+  .design-logo img.design-portraet { height: 56px; border-radius: 8px; background: repeating-conic-gradient(#e2e8f0 0 25%, #fff 0 50%) 0 0 / 12px 12px; }
   .design-empty { font-size: .85rem; color: var(--muted); }
   .tone-editor { display: flex; flex-direction: column; gap: .75rem; max-width: 720px; }
   .tone-editor textarea { resize: vertical; min-height: 220px; line-height: 1.5; margin-bottom: 0; }
@@ -2620,7 +2624,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261102-3';
+  import { initApp } from './app.js?v=20261102-4';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

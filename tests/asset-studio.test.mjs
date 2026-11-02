@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20261102-3");
-  assert.match(indexHtml, /app\.js\?v=20261102-3/);
+  assert.equal(studioVersion, "20261102-4");
+  assert.match(indexHtml, /app\.js\?v=20261102-4/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3658,6 +3658,7 @@ test("Profil entscheidet ueber Vorlage, Fusszeile und ROOTS-Rahmen", () => {
   }), privat, { articleText: "Der Artikel." });
   assert.deepEqual(payload.chrome, {
     footer_left: "Pano Goutzeris", domain: "linkedin.com/in/pano", logo: "", custom: true,
+    stil: backend.normalizeDesignStil({}),
   });
   // Ohne eigene Quelle traegt die Fusszeile den Absender der Vorlage.
   assert.equal(payload.slides[0].footer_left, "Pano Goutzeris");

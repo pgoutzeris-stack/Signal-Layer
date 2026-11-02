@@ -130,6 +130,23 @@ export type LinkedinAnswers = {
   design_footer_left: string;
   design_domain: string;
   design_logo: string;
+  design_stil: DesignStil;
+};
+
+/**
+ * Gestaltung ueber Hell/Dunkel hinaus, damit eine Vorlage den Look eigener
+ * Posts tragen kann: Verlauf statt Flaeche, eigene Akzentfarbe, Rahmen,
+ * Anfuehrungszeichen, Pinselstrich und ein freigestelltes Portraet auf Titel-
+ * und Endfolie. Alles optional; leer heisst, die Vorlage sieht aus wie bisher.
+ */
+export type DesignStil = {
+  verlauf_von: string;
+  verlauf_bis: string;
+  akzent: string;
+  rahmen: boolean;
+  zitatzeichen: boolean;
+  pinsel: boolean;
+  portraet: string;
 };
 
 /** Eine Design-Vorlage des Privatprofils. Die ROOTS-Vorlagen stehen im Code. */
@@ -140,6 +157,7 @@ export type DesignTemplate = {
   footer_left: string;
   domain: string;
   logo: string;
+  stil: DesignStil;
 };
 
 export const DESIGN_TEMPLATE_LIMIT = 12;
@@ -148,10 +166,38 @@ export const DESIGN_FOOTER_LIMIT = 80;
 export const DESIGN_DOMAIN_LIMIT = 60;
 /** Ein Logo als Data-URI. Grosszuegig fuer SVG, zu klein fuer ein Foto. */
 export const DESIGN_LOGO_LIMIT = 48_000;
+/** Freigestelltes Portraet als PNG oder WebP mit Transparenz. Der Browser
+ *  verkleinert vor dem Speichern, damit jede Zeile handlich bleibt. */
+export const DESIGN_PORTRAET_LIMIT = 260_000;
+
+export const LEERER_STIL: DesignStil = {
+  verlauf_von: "", verlauf_bis: "", akzent: "", rahmen: false, zitatzeichen: false, pinsel: false, portraet: "",
+};
+
+function hexFarbe(wert: unknown): string {
+  const text = String(wert ?? "").trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(text) ? text : "";
+}
+
+/** Der Browser darf einen Stil schicken, aber nur Farben, Schalter und ein
+ *  eingebettetes Bild. Eine fremde URL wuerde beim Oeffnen nachgeladen. */
+export function normalizeDesignStil(raw: unknown): DesignStil {
+  const quelle = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const portraet = String(quelle.portraet || "").trim();
+  return {
+    verlauf_von: hexFarbe(quelle.verlauf_von),
+    verlauf_bis: hexFarbe(quelle.verlauf_bis),
+    akzent: hexFarbe(quelle.akzent),
+    rahmen: quelle.rahmen === true,
+    zitatzeichen: quelle.zitatzeichen === true,
+    pinsel: quelle.pinsel === true,
+    portraet: /^data:image\/(png|webp);base64,/.test(portraet) && portraet.length <= DESIGN_PORTRAET_LIMIT ? portraet : "",
+  };
+}
 
 export const ROOTS_DESIGNS: Record<string, DesignTemplate> = {
-  "roots-hell": { id: "roots-hell", name: "ROOTS Hell", theme: "light", footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "" },
-  "roots-dunkel": { id: "roots-dunkel", name: "ROOTS Dunkel", theme: "dark", footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "" },
+  "roots-hell": { id: "roots-hell", name: "ROOTS Hell", theme: "light", footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "", stil: LEERER_STIL },
+  "roots-dunkel": { id: "roots-dunkel", name: "ROOTS Dunkel", theme: "dark", footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "", stil: LEERER_STIL },
 };
 
 /** Der Browser darf Vorlagen schicken, aber nicht ihre Form bestimmen. */
@@ -176,6 +222,7 @@ export function normalizeDesignTemplates(raw: unknown): DesignTemplate[] {
       // Nur eingebettete Bilder: eine fremde URL wuerde beim Oeffnen des Assets
       // eine Anfrage an einen fremden Server ausloesen.
       logo: /^data:image\/(png|jpeg|svg\+xml|webp);base64,/.test(logo) && logo.length <= DESIGN_LOGO_LIMIT ? logo : "",
+      stil: normalizeDesignStil(quelle.stil),
     });
   }
   return out;
@@ -1673,6 +1720,7 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
       design_domain: freeText(pick(source, "design_domain"), DESIGN_DOMAIN_LIMIT)
         || (profile === "private" ? "" : "roots-consultants.com"),
       design_logo: String(record(source).design_logo || "").slice(0, DESIGN_LOGO_LIMIT),
+      design_stil: profile === "private" ? normalizeDesignStil(record(source).design_stil) : LEERER_STIL,
       caption_mode: captionMode(source),
       // LinkedIn kappt den Beitragstext bei 3000 Zeichen; ein selbst
       // geschriebener Text darf diesen Rahmen ausschoepfen.
@@ -4198,6 +4246,7 @@ function normalizeLinkedin(
       domain: answers.design_domain,
       logo: answers.design_logo,
       custom: answers.profile === "private",
+      stil: answers.profile === "private" ? answers.design_stil : LEERER_STIL,
     },
     slides: applyLinkedinChrome(kept, context, answers),
   };

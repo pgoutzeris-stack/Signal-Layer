@@ -357,6 +357,29 @@ const FORM_MEMO = memoQuestions("");
 
 // Diese Regeln reisen mit in den Download, deshalb ausschließlich feste
 // Markenwerte und keine Variablen der App.
+/**
+ * Eigener Stil einer Privatvorlage: Verlauf, Akzent, Rahmen, Anfuehrungs-
+ * zeichen, Pinselstrich und Portraet. Steht im selben Stilblock wie die
+ * Vorlagen, damit Vorschau und exportierte Datei gleich aussehen.
+ */
+const STIL_PINSEL_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 24' preserveAspectRatio='none'%3E%3Cpath d='M6 15C70 7 170 4 292 6c6 1 7 6 1 8C210 17 120 20 10 21c-7 0-9-5-4-6z'/%3E%3C/svg%3E";
+const STIL_CSS = `
+#as-overlay .as-stage--tpl .li.as-stil.stil-verlauf{background:linear-gradient(135deg,var(--stil-von) 0%,var(--stil-bis) 100%) !important;}
+#as-overlay .as-stage--tpl .li.as-stil.mit-akzent .kick,
+#as-overlay .as-stage--tpl .li.as-stil.mit-akzent .foot .dom{color:var(--stil-akzent) !important;}
+#as-overlay .as-stage--tpl .li.as-stil.mit-akzent .rule{background:var(--stil-akzent) !important;}
+#as-overlay .as-stage--tpl .li.as-stil.ohne-linie .rule{display:none !important;}
+#as-overlay .as-stage--tpl .li.as-stil .stil-rahmen{position:absolute;inset:40px;border:2px solid var(--stil-rahmen,rgba(255,255,255,.85));z-index:1;pointer-events:none;}
+#as-overlay .as-stage--tpl .li.as-stil .stil-portraet{position:absolute;right:-24px;bottom:0;height:58%;width:auto;max-width:none;z-index:1;pointer-events:none;}
+#as-overlay .as-stage--tpl .li.as-stil.mit-portraet .mid{max-width:50%;align-items:flex-start !important;text-align:left !important;}
+/* Neben dem Portraet keine Silbentrennung: lieber schrumpft die Schrift. */
+#as-overlay .as-stage--tpl .li.as-stil.mit-portraet [data-field="title"],
+#as-overlay .as-stage--tpl .li.as-stil.mit-portraet [data-field="quote"]{hyphens:manual !important;}
+#as-overlay .as-stage--tpl .li.as-stil.mit-portraet .mid > *{max-width:100% !important;}
+#as-overlay .as-stage--tpl .li.as-stil .stil-zitat{font-size:150px;line-height:.6;height:72px;font-weight:700;color:var(--stil-akzent,#fff);margin-bottom:26px;}
+#as-overlay .as-stage--tpl .li.as-stil .stil-pinsel{width:300px;height:22px;margin-top:34px;background:var(--stil-akzent,#fff);-webkit-mask:url("${STIL_PINSEL_SVG}") no-repeat center / 100% 100%;mask:url("${STIL_PINSEL_SVG}") no-repeat center / 100% 100%;}
+`;
+
 const STAGE_CSS = `
 .as-stage{
   --b:#206efb; --bd:#165fd9; --bl:#eff6ff;
@@ -2229,7 +2252,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   overlay.setAttribute("aria-label", isMemo ? "Ansprache" : "LinkedIn-Asset");
 
   const styleIsland = document.createElement("style");
-  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}\n${FREI_CSS}\n${printCss(isMemo)}`;
+  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${STIL_CSS}\n${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}\n${FREI_CSS}\n${printCss(isMemo)}`;
   overlay.appendChild(styleIsland);
 
   const shell = document.createElement("div");
@@ -2463,6 +2486,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       domain: design.domain || "",
       logo: design.logo || "",
       custom: state.answers.profile === "private",
+      stil: state.answers.profile === "private" ? (design.stil || null) : null,
     };
     // Bei "Selbst auswählen" faellt die Vorlage auf die erste passende zurueck,
     // nicht auf "auto": sonst stuende dort wieder die Wahl, die der Nutzer
@@ -3838,6 +3862,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           footer: String(eintrag.footer_left || ""),
           domain: String(eintrag.domain || ""),
           logo: String(eintrag.logo || ""),
+          stil: eintrag.stil && typeof eintrag.stil === "object" ? eintrag.stil : null,
         }));
     } catch (_err) {
       state.designs = [];
@@ -4604,6 +4629,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         domain: String(data.chrome.domain || ""),
         logo: String(data.chrome.logo || ""),
         custom: Boolean(data.chrome.custom),
+        stil: data.chrome.stil && typeof data.chrome.stil === "object" ? data.chrome.stil : null,
       };
     }
     state.stage.theme = data.theme === "dark" ? "dark" : (state.answers.theme === "dark" ? "dark" : "light");
@@ -4818,6 +4844,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     html = fillTemplate(html, slide);
     html = ergaenzeZitatQuelle(html, slide);
     html = wrapImageSlots(html, slide, editable);
+    html = wendeStilAn(html, slide);
     if (editable) {
       html = html.replace(/data-field="([a-z0-9_.]+)"/g, 'data-field="$1" contenteditable="true" spellcheck="false"');
     }
@@ -4827,6 +4854,61 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // lang="de" ist die Bedingung für hyphens:auto. Ohne sie trennt der Browser
     // lange Komposita nicht und der Titel läuft aus der Kachel.
     return `<div class="as-stage as-stage--tpl" lang="de" data-stage data-uid="${attr(slide.uid)}" data-variant="${attr(slide.variant)}">${html}</div>`;
+  }
+
+  /**
+   * Eigener Stil der Privatvorlage. Titel- und Endfolien (und die Einzelbilder
+   * Titel, Zitat, Titel dunkel) bekommen Portraet, Anfuehrungszeichen und
+   * Pinselstrich; alle Folien Verlauf, Akzent und Rahmen. Die Akzentblaus der
+   * dunklen Vorlagen stehen als Farbwert im Markup und werden dort ersetzt.
+   */
+  function wendeStilAn(html, slide) {
+    const stil = state.chrome?.custom ? state.chrome.stil : null;
+    if (!stil) return html;
+    const farbe = (wert) => /^#[0-9a-f]{6}$/i.test(String(wert || "")) ? String(wert) : "";
+    const von = farbe(stil.verlauf_von);
+    const bis = farbe(stil.verlauf_bis);
+    const akzent = farbe(stil.akzent);
+    const verlauf = Boolean(von && bis);
+    const portraet = /^data:image\/(png|webp);base64,/.test(String(stil.portraet || "")) ? String(stil.portraet) : "";
+    if (!verlauf && !akzent && !stil.rahmen && !stil.zitatzeichen && !stil.pinsel && !portraet) return html;
+    const variante = String(slide.variant || "");
+    const titel = ["A", "B", "M", "U1", "U2", "U5", "U6"].includes(variante);
+    const ende = ["U3", "U4", "U7", "U8"].includes(variante);
+    const dunkel = verlauf || LOOK[variante] === "dunkel";
+    const mitPortraet = Boolean(portraet) && (titel || ende);
+    const klassen = ["as-stil",
+      verlauf ? "stil-verlauf" : "",
+      akzent ? "mit-akzent" : "",
+      mitPortraet ? "mit-portraet" : "",
+      (titel || ende) && (stil.zitatzeichen || stil.pinsel) ? "ohne-linie" : "",
+    ].filter(Boolean).join(" ");
+    const variablen = [
+      verlauf ? `--stil-von:${von};--stil-bis:${bis}` : "",
+      akzent ? `--stil-akzent:${akzent}` : "",
+      `--stil-rahmen:${dunkel ? "rgba(255,255,255,.85)" : (akzent || "#0f172a")}`,
+    ].filter(Boolean).join(";");
+    if (akzent) html = html.replace(/#5a9bff|#6ea3ff/gi, "var(--stil-akzent)");
+    if (verlauf) html = html.replace(/#c3d3f0|#dbe6fb|#b9c9e8/gi, "rgba(255,255,255,.84)");
+    if (mitPortraet) {
+      // Neben dem Portraet ist die Spalte halb so breit; die Startgroesse
+      // sinkt mit, den Rest regelt die Schriftanpassung.
+      html = html.replace(/(<(?:h1|p)\b[^>]*?font-size:)(\d+)px([^>]*data-field="(?:title|quote)")/g,
+        (_m, a, px, b) => `${a}${Math.round(Number(px) * 0.68)}px${b}`);
+      html = html.replace(/(<p\b[^>]*?font-size:)(\d+)px([^>]*data-field="subtitle")/g,
+        (_m, a, px, b) => `${a}${Math.round(Number(px) * 0.9)}px${b}`);
+    }
+    if (titel && stil.zitatzeichen && variante !== "A") {
+      html = html.replace(/<h1\b[^>]*data-field="title"/, (treffer) => `<div class="stil-zitat" aria-hidden="true">&rdquo;</div>${treffer}`);
+    }
+    if (titel && stil.pinsel) {
+      const feld = variante === "A" ? "quote" : "subtitle";
+      html = html.replace(new RegExp(`(<p\\b[^>]*data-field="${feld}"[^>]*>[\\s\\S]*?<\\/p>)`), '$1<div class="stil-pinsel" aria-hidden="true"></div>');
+    }
+    const deko = `${stil.rahmen ? '<div class="stil-rahmen" aria-hidden="true"></div>' : ""}${mitPortraet ? `<img class="stil-portraet" src="${attr(portraet)}" alt="">` : ""}`;
+    html = html.replace(/^(\s*<div class="li)([^"]*)"/, (_m, a, b) => `${a}${b} ${klassen}" style="${variablen}"`);
+    if (deko) html = html.replace(/<\/div>\s*$/, `${deko}</div>`);
+    return html;
   }
 
   /** Ein Zitat ohne sichtbare Person wirkt wie eine unbelegte Werbeaussage.
@@ -7295,7 +7377,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       : "";
     const css = isMemo
       ? `${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}`
-      : `${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${STAGE_CSS}`;
+      : `${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${STIL_CSS}\n${STAGE_CSS}`;
     const printBreak = isMemo
       ? `.as-stage--memo{break-after:auto; page-break-after:auto;} .as-stage--memo .em-page{break-after:page; page-break-after:always;} .as-stage--memo .em-page:last-child{break-after:auto; page-break-after:auto;}`
       : `.as-stage{break-after:page; page-break-after:always;} .as-stage:last-of-type{break-after:auto; page-break-after:auto;}`;

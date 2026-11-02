@@ -8,11 +8,11 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261102-3";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261102-4";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-3";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-4";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261102-1";
@@ -2219,6 +2219,61 @@ let designTemplates = [];
 let designLoaded = false;
 
 const DESIGN_LOGO_LIMIT = 48_000;
+const DESIGN_PORTRAET_LIMIT = 260_000;
+const STIL_STANDARD = { verlauf_von: "", verlauf_bis: "", akzent: "", rahmen: false, zitatzeichen: false, pinsel: false, portraet: "" };
+
+function stilVon(entry) {
+  return { ...STIL_STANDARD, ...(entry.stil && typeof entry.stil === "object" ? entry.stil : {}) };
+}
+
+/** Verlauf, Akzent, Schalter und Portraet: der Look eigener Posts. */
+function designStilHtml(entry, index) {
+  const stil = stilVon(entry);
+  const verlauf = Boolean(stil.verlauf_von && stil.verlauf_bis);
+  const schalter = (feld, text) => `<label class="design-row-drop"><input type="checkbox" data-design-stil="${feld}" data-design-index="${index}"${stil[feld] ? " checked" : ""}> ${text}</label>`;
+  const portraet = String(stil.portraet || "");
+  return `<div class="design-stil">
+    <div class="design-stil-zeile">
+      <label class="design-row-drop"><input type="checkbox" data-design-stil-an="verlauf" data-design-index="${index}"${verlauf ? " checked" : ""}> Verlauf</label>
+      ${verlauf ? `<input type="color" data-design-stil="verlauf_von" data-design-index="${index}" value="${escapeHtml(stil.verlauf_von)}" aria-label="Verlauf von"><input type="color" data-design-stil="verlauf_bis" data-design-index="${index}" value="${escapeHtml(stil.verlauf_bis)}" aria-label="Verlauf bis">` : ""}
+      <label class="design-row-drop"><input type="checkbox" data-design-stil-an="akzent" data-design-index="${index}"${stil.akzent ? " checked" : ""}> Akzentfarbe</label>
+      ${stil.akzent ? `<input type="color" data-design-stil="akzent" data-design-index="${index}" value="${escapeHtml(stil.akzent)}" aria-label="Akzentfarbe">` : ""}
+    </div>
+    <div class="design-stil-zeile">
+      ${schalter("rahmen", "Rahmen")}
+      ${schalter("zitatzeichen", "Anführungszeichen")}
+      ${schalter("pinsel", "Pinselstrich")}
+    </div>
+    <div class="design-logo">
+      ${portraet ? `<img class="design-portraet" src="${escapeHtml(portraet)}" alt="">` : "<span>Kein Porträt</span>"}
+      <input type="file" accept="image/png,image/webp" data-design-portraet="${index}" aria-label="Freigestelltes Porträt">
+      ${portraet ? `<button type="button" class="design-row-del" data-design-portraet-clear="${index}" aria-label="Porträt entfernen"><i class="fa-solid fa-xmark"></i></button>` : ""}
+    </div>
+  </div>`;
+}
+
+/** Portraet verkleinern: hoechstens 1000 px hoch, WebP mit Transparenz. */
+function portraetVerkleinern(datei) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(datei);
+    const bild = new Image();
+    bild.onload = () => {
+      URL.revokeObjectURL(url);
+      const faktor = Math.min(1, 1000 / bild.naturalHeight);
+      const leinwand = document.createElement("canvas");
+      leinwand.width = Math.round(bild.naturalWidth * faktor);
+      leinwand.height = Math.round(bild.naturalHeight * faktor);
+      leinwand.getContext("2d").drawImage(bild, 0, 0, leinwand.width, leinwand.height);
+      for (const qualitaet of [0.86, 0.76, 0.66]) {
+        const wert = leinwand.toDataURL("image/webp", qualitaet);
+        if (wert.startsWith("data:image/webp") && wert.length <= DESIGN_PORTRAET_LIMIT) { resolve(wert); return; }
+      }
+      reject(new Error("Das Porträt ist auch verkleinert zu groß."));
+    };
+    bild.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Das Bild ließ sich nicht lesen.")); };
+    bild.src = url;
+  });
+}
 
 function designRowHtml(entry, index) {
   const logo = String(entry.logo || "");
@@ -2242,6 +2297,7 @@ function designRowHtml(entry, index) {
       <input type="file" accept="image/png,image/svg+xml,image/webp,image/jpeg" data-design-logo="${index}">
       ${logo ? `<button type="button" class="design-row-del" data-design-logo-clear="${index}"><i class="fa-solid fa-xmark"></i></button>` : ""}
     </div>
+    ${designStilHtml(entry, index)}
   </div>`;
 }
 
@@ -2294,6 +2350,7 @@ function addDesignTemplate() {
     footer_left: "",
     domain: "",
     logo: "",
+    stil: { ...STIL_STANDARD },
   });
   renderDesignTemplates();
 }
@@ -4702,11 +4759,53 @@ function bindUi() {
     if (feld.type === "radio" && !feld.checked) return;
     eintrag[feld.dataset.designField] = feld.value;
   });
+  els.designList?.addEventListener("input", (event) => {
+    const feld = event.target.closest('[data-design-stil][type="color"]');
+    if (!feld) return;
+    const eintrag = designTemplates[Number(feld.dataset.designIndex)];
+    if (eintrag) eintrag.stil = { ...stilVon(eintrag), [feld.dataset.designStil]: feld.value };
+  });
   els.designList?.addEventListener("change", (event) => {
     const feld = event.target.closest("[data-design-field]");
     if (feld && feld.type === "radio" && feld.checked) {
       const eintrag = designTemplates[Number(feld.dataset.designIndex)];
       if (eintrag) eintrag.theme = feld.value;
+      return;
+    }
+    const schalter = event.target.closest('[data-design-stil][type="checkbox"]');
+    if (schalter) {
+      const eintrag = designTemplates[Number(schalter.dataset.designIndex)];
+      if (eintrag) eintrag.stil = { ...stilVon(eintrag), [schalter.dataset.designStil]: schalter.checked };
+      return;
+    }
+    const farbeAn = event.target.closest("[data-design-stil-an]");
+    if (farbeAn) {
+      const eintrag = designTemplates[Number(farbeAn.dataset.designIndex)];
+      if (!eintrag) return;
+      const stil = stilVon(eintrag);
+      if (farbeAn.dataset.designStilAn === "verlauf") {
+        stil.verlauf_von = farbeAn.checked ? "#061a47" : "";
+        stil.verlauf_bis = farbeAn.checked ? "#574872" : "";
+      } else {
+        stil.akzent = farbeAn.checked ? "#206efb" : "";
+      }
+      eintrag.stil = stil;
+      renderDesignTemplates();
+      return;
+    }
+    const bild = event.target.closest("[data-design-portraet]");
+    if (bild?.files?.[0]) {
+      const eintrag = designTemplates[Number(bild.dataset.designPortraet)];
+      const datei = bild.files[0];
+      if (!eintrag) return;
+      if (!/^image\/(png|webp)$/.test(datei.type)) {
+        toast("Bitte ein freigestelltes PNG oder WebP mit transparentem Hintergrund.", "err");
+        return;
+      }
+      portraetVerkleinern(datei).then((wert) => {
+        eintrag.stil = { ...stilVon(eintrag), portraet: wert };
+        renderDesignTemplates();
+      }).catch((error) => toast(error.message, "err"));
       return;
     }
     const datei = event.target.closest("[data-design-logo]");
@@ -4731,6 +4830,13 @@ function bindUi() {
     const weg = event.target.closest("[data-design-remove]");
     if (weg) {
       designTemplates.splice(Number(weg.dataset.designRemove), 1);
+      renderDesignTemplates();
+      return;
+    }
+    const portraetWeg = event.target.closest("[data-design-portraet-clear]");
+    if (portraetWeg) {
+      const eintrag = designTemplates[Number(portraetWeg.dataset.designPortraetClear)];
+      if (eintrag) eintrag.stil = { ...stilVon(eintrag), portraet: "" };
       renderDesignTemplates();
       return;
     }
