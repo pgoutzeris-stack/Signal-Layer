@@ -380,6 +380,11 @@ const STIL_CSS = `
 #as-overlay .as-stage--tpl .li.as-stil .stil-pinsel{width:300px;height:22px;margin-top:34px;background:var(--stil-akzent,#fff);-webkit-mask:url("${STIL_PINSEL_SVG}") no-repeat center / 100% 100%;mask:url("${STIL_PINSEL_SVG}") no-repeat center / 100% 100%;}
 `;
 
+const TIPP_CSS = `
+#as-overlay .as-design{position:relative;}
+#as-overlay .as-design-tipp{display:block;margin-top:4px;font-size:11px;font-weight:600;color:var(--brand,#206efb);}
+`;
+
 const STAGE_CSS = `
 .as-stage{
   --b:#206efb; --bd:#165fd9; --bl:#eff6ff;
@@ -2200,6 +2205,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     designsGeladen: false,
     // Recht auf LinkedIn-Assets unter dem Absender ROOTS (Admin-Center).
     rootsAssets: false,
+    // Vorlage des staerksten eigenen Posts, vorausgewaehlt im Fragebogen.
+    vorlageEmpfehlung: null,
     // Fusszeile, Domain und Logo der gewaehlten Vorlage. Was hier steht, steht
     // auch auf der Kachel.
     chrome: { footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "", custom: false },
@@ -2254,7 +2261,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   overlay.setAttribute("aria-label", isMemo ? "Ansprache" : "LinkedIn-Asset");
 
   const styleIsland = document.createElement("style");
-  styleIsland.textContent = `${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${STIL_CSS}\n${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}\n${FREI_CSS}\n${printCss(isMemo)}`;
+  styleIsland.textContent = `${TIPP_CSS}\n${CHROME_CSS}\n${ASSET_TEMPLATE_CSS}\n${ASSET_LAYOUT_CSS}\n${STIL_CSS}\n${MEMO_TEMPLATE_CSS}\n${STAGE_CSS}\n${FREI_CSS}\n${printCss(isMemo)}`;
   overlay.appendChild(styleIsland);
 
   const shell = document.createElement("div");
@@ -2482,7 +2489,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     const liste = designListe();
     if (!liste.some((d) => d.id === state.answers.design)) {
-      state.answers.design = liste[0].id;
+      // Ohne eigene Wahl: die Vorlage des staerksten eigenen Posts.
+      const empfohlen = state.answers.profile === "private" ? liste.find((d) => d.id === state.vorlageEmpfehlung?.id) : null;
+      state.answers.design = (empfohlen || liste[0]).id;
     }
     const design = aktivesDesign();
     state.answers.look = design.theme === "dunkel" ? "dunkel" : "hell";
@@ -3859,6 +3868,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const res = await api("get_asset_design_templates", {});
       const liste = Array.isArray(res?.design_templates) ? res.design_templates : [];
       state.rootsAssets = res?.roots_assets === true;
+      state.vorlageEmpfehlung = res?.vorlage_empfehlung && typeof res.vorlage_empfehlung === "object" ? res.vorlage_empfehlung : null;
       // Der Server spricht light/dark und footer_left, der Fragebogen hell/dunkel
       // und footer. Ohne diese Uebersetzung stand eine dunkle Vorlage hell da
       // und die Layoutliste zeigte die falschen Kacheln.
@@ -4184,6 +4194,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     const liste = designListe();
     const aktiv = aktivesDesign().id;
+    // Vorlage des eigenen Posts mit den meisten Impressions.
+    const empfohlen = state.answers.profile === "private" ? String(state.vorlageEmpfehlung?.id || "") : "";
     const karten = liste.map((design) => `
       <button type="button" class="as-design${design.id === aktiv ? " is-active" : ""}" data-act="pick-design" data-value="${attr(design.id)}" aria-pressed="${design.id === aktiv ? "true" : "false"}">
         <span class="as-design-probe" data-theme="${attr(design.theme)}">
@@ -4192,6 +4204,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           <span class="as-design-zeile as-design-zeile--kurz"></span>
         </span>
         <span class="as-design-name">${esc(design.name)}</span>
+        ${empfohlen === design.id ? `<span class="as-design-tipp">${esc(Number(state.vorlageEmpfehlung.impressions || 0).toLocaleString("de-DE"))} Impressions</span>` : ""}
       </button>`).join("");
     const eigene = state.answers.profile === "private"
       ? `<button type="button" class="as-linkbtn" data-act="open-designs"><i class="fa-solid fa-sliders"></i>Vorlagen verwalten</button>`

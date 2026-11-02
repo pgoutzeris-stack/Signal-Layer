@@ -228,6 +228,7 @@ import {
   normalizeDesignTemplates,
   ROOTS_DESIGNS,
   TONE_OF_VOICE_LIMIT,
+  REFERENZ_VORBILDER,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
   parseCommonsSceneHits,
@@ -546,6 +547,27 @@ async function darfRootsAssets(userId: string | null | undefined): Promise<boole
     .from("profiles").select("app_settings").eq("id", userId).maybeSingle();
   if (error) throw new Error(`Rechte konnten nicht gelesen werden: ${error.message}`);
   return (data?.app_settings as Record<string, unknown> | null)?.signal_layer_roots_assets === true;
+}
+
+/** Eigene LinkedIn-Posts des Nutzers, staerkste zuerst. */
+async function referenzPosts(userId: string): Promise<Array<Record<string, unknown>>> {
+  const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
+    .select("id, quelle, extern_id, veroeffentlicht_am, text, impressions, reaktionen, kommentare, reposts, vorlage_id, aktualisiert_am")
+    .eq("user_id", userId).order("impressions", { ascending: false }).order("veroeffentlicht_am", { ascending: false }).limit(200);
+  if (error) throw new Error(`Eigene Posts konnten nicht gelesen werden: ${error.message}`);
+  return data || [];
+}
+
+/** Die Texte der staerksten Posts fuer den Begleittext. */
+async function referenzVorbilder(userId: string): Promise<string[]> {
+  return (await referenzPosts(userId)).slice(0, REFERENZ_VORBILDER).map((post) => String(post.text || "")).filter(Boolean);
+}
+
+/** Vorlage des staerksten Posts, dem eine noch vorhandene Vorlage zugeordnet ist. */
+function vorlagenEmpfehlung(posts: Array<Record<string, unknown>>, vorlagen: DesignTemplate[]): { id: string; impressions: number } | null {
+  const ids = new Set(vorlagen.map((vorlage) => vorlage.id));
+  const treffer = posts.find((post) => post.vorlage_id && ids.has(String(post.vorlage_id)));
+  return treffer ? { id: String(treffer.vorlage_id), impressions: Number(treffer.impressions) || 0 } : null;
 }
 
 export const ROOTS_ASSETS_GESPERRT =
@@ -8699,8 +8721,43 @@ Deno.serve(async (req: Request) => {
 
       case "get_asset_design_templates": {
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
-        const [vorlagen, rootsAssets] = await Promise.all([assetDesignTemplates(auth.userId), darfRootsAssets(auth.userId)]);
-        return corsResponse(origin, { design_templates: vorlagen, roots_assets: rootsAssets });
+        const [vorlagen, rootsAssets, posts] = await Promise.all([assetDesignTemplates(auth.userId), darfRootsAssets(auth.userId), referenzPosts(auth.userId)]);
+        return corsResponse(origin, { design_templates: vorlagen, roots_assets: rootsAssets, vorlage_empfehlung: vorlagenEmpfehlung(posts, vorlagen) });
+      }
+
+      // Eigene LinkedIn-Posts: lesen, Vorlage oder Zahlen nachtragen, entfernen.
+      // Angelegt werden sie per Import; hier nur Pflege durch den Eigentuemer.
+      case "list_referenz_posts": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        return corsResponse(origin, { posts: await referenzPosts(auth.userId) });
+      }
+
+      case "save_referenz_post": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const postId = String(body.id || "");
+        if (!/^[0-9a-f-]{36}$/i.test(postId)) return errorResponse(origin, "Ungültige Post-ID");
+        const zahlFeld = (wert: unknown) => Math.max(0, Math.min(2_000_000_000, Math.round(Number(wert) || 0)));
+        const aenderung: Record<string, unknown> = { aktualisiert_am: new Date().toISOString() };
+        if ("vorlage_id" in body) {
+          const vorlage = String(body.vorlage_id || "").trim().toLowerCase();
+          aenderung.vorlage_id = /^[a-z0-9-]{1,40}$/.test(vorlage) ? vorlage : null;
+        }
+        if ("impressions" in body) aenderung.impressions = zahlFeld(body.impressions);
+        const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
+          .update(aenderung).eq("id", postId).eq("user_id", auth.userId).select("id").maybeSingle();
+        if (error) return errorResponse(origin, error.message, 500);
+        if (!data) return errorResponse(origin, "Post nicht gefunden", 404);
+        return corsResponse(origin, { ok: true });
+      }
+
+      case "delete_referenz_post": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const postId = String(body.id || "");
+        if (!/^[0-9a-f-]{36}$/i.test(postId)) return errorResponse(origin, "Ungültige Post-ID");
+        const { error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
+          .delete().eq("id", postId).eq("user_id", auth.userId);
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { ok: true });
       }
 
       // Ganze Liste in einem Zug: die Reihenfolge im Fragebogen ist die
@@ -13035,6 +13092,11 @@ Deno.serve(async (req: Request) => {
           if (linkedinAnswers.caption_mode === "ai_tone" && !linkedinAnswers.tone_of_voice) {
             return errorResponse(origin, TONE_OF_VOICE_MISSING);
           }
+          // Die staerksten eigenen Posts werden mit eingefroren: ein spaeterer
+          // Lauf schreibt mit denselben Vorbildern.
+          linkedinAnswers.tone_vorbilder = linkedinAnswers.caption_mode === "ai_tone" && auth?.userId
+            ? await referenzVorbilder(auth.userId)
+            : [];
           if (linkedinAnswers.caption_mode === "custom" && !linkedinAnswers.caption) {
             return errorResponse(origin, "Für eine selbst geschriebene Caption fehlt der Text.");
           }

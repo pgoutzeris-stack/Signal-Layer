@@ -8,11 +8,11 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261102-5";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261102-6";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-5";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-6";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261102-1";
@@ -339,6 +339,8 @@ function cacheEls() {
   els.toneInput = document.getElementById("tone-of-voice-input");
   els.toneStatus = document.getElementById("tone-of-voice-status");
   els.btnToneSave = document.getElementById("btn-tone-save");
+  els.referenzListe = document.getElementById("referenz-posts-liste");
+  els.referenzAnzahl = document.getElementById("referenz-posts-anzahl");
   els.sourceSearch = document.getElementById("source-search");
   els.sourceCategoryFilter = document.getElementById("source-category-filter");
   els.sourceStatusFilter = document.getElementById("source-status-filter");
@@ -2194,6 +2196,51 @@ async function loadToneOfVoice(force = false) {
     if (els.toneStatus) els.toneStatus.textContent = String(tone || "").trim() ? "" : "Noch nicht hinterlegt";
   } catch (error) {
     if (els.toneStatus) els.toneStatus.textContent = error.message || "Konnte nicht geladen werden";
+  }
+}
+
+// Eigene LinkedIn-Posts: die drei mit den meisten Impressions schreiben beim
+// Begleittext mit, die Vorlage des staerksten wird im Fragebogen vorgeschlagen.
+let referenzPosts = [];
+
+function referenzPostHtml(post, index) {
+  const text = String(post.text || "");
+  const erste = text.split("\n").find((zeile) => zeile.trim()) || text;
+  const datum = post.veroeffentlicht_am ? new Date(post.veroeffentlicht_am).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
+  const zahl = (wert) => Number(wert || 0).toLocaleString("de-DE");
+  const vorlagen = designTemplates.length ? designTemplates : [];
+  const optionen = [`<option value="">Keine Vorlage</option>`, ...vorlagen.map((v) => `<option value="${escapeHtml(v.id)}"${v.id === post.vorlage_id ? " selected" : ""}>${escapeHtml(v.name)}</option>`)];
+  if (post.vorlage_id && !vorlagen.some((v) => v.id === post.vorlage_id)) optionen.push(`<option value="${escapeHtml(post.vorlage_id)}" selected>${escapeHtml(post.vorlage_id)}</option>`);
+  return `<article class="referenz-post" data-referenz="${escapeHtml(post.id)}">
+    <details class="referenz-post-text"><summary>${escapeHtml(erste)}</summary><p>${escapeHtml(text)}</p></details>
+    <div class="referenz-post-zahlen">${index < 3 ? '<span class="pill-vorbild">Vorbild</span>' : ""}
+      <button type="button" class="design-row-del" data-referenz-weg="${escapeHtml(post.id)}" aria-label="Post entfernen"><i class="fa-solid fa-trash"></i></button></div>
+    <div class="referenz-post-meta">
+      <span>${escapeHtml(datum)}</span>
+      <span><b>${zahl(post.impressions)}</b> Impressions</span>
+      <span>${zahl(post.reaktionen)} Reaktionen · ${zahl(post.kommentare)} Kommentare</span>
+      <select data-referenz-vorlage="${escapeHtml(post.id)}" aria-label="Design-Vorlage dieses Posts">${optionen.join("")}</select>
+    </div>
+  </article>`;
+}
+
+function renderReferenzPosts() {
+  if (!els.referenzListe) return;
+  if (els.referenzAnzahl) els.referenzAnzahl.textContent = referenzPosts.length ? `${referenzPosts.length} Posts` : "";
+  els.referenzListe.innerHTML = referenzPosts.length
+    ? referenzPosts.map(referenzPostHtml).join("")
+    : `<p class="referenz-post-leer">Noch keine Posts importiert.</p>`;
+}
+
+async function loadReferenzPosts() {
+  if (!els.referenzListe) return;
+  try {
+    await loadDesignTemplates();
+    const { posts } = await callApi("list_referenz_posts");
+    referenzPosts = Array.isArray(posts) ? posts : [];
+    renderReferenzPosts();
+  } catch (error) {
+    els.referenzListe.innerHTML = `<p class="referenz-post-leer">${escapeHtml(error.message || "Konnte nicht geladen werden")}</p>`;
   }
 }
 
@@ -4749,6 +4796,29 @@ function bindUi() {
 
   els.btnSettings.addEventListener("click", openSettings);
   els.btnToneSave?.addEventListener("click", () => void saveToneOfVoice());
+  els.referenzListe?.addEventListener("change", async (event) => {
+    const auswahl = event.target.closest("[data-referenz-vorlage]");
+    if (!auswahl) return;
+    try {
+      await callApi("save_referenz_post", { id: auswahl.dataset.referenzVorlage, vorlage_id: auswahl.value });
+      const post = referenzPosts.find((p) => p.id === auswahl.dataset.referenzVorlage);
+      if (post) post.vorlage_id = auswahl.value || null;
+      toast("Vorlage zugeordnet");
+    } catch (error) {
+      toast(error.message, "err");
+    }
+  });
+  els.referenzListe?.addEventListener("click", async (event) => {
+    const weg = event.target.closest("[data-referenz-weg]");
+    if (!weg || !window.confirm("Diesen Post aus den Vorbildern entfernen?")) return;
+    try {
+      await callApi("delete_referenz_post", { id: weg.dataset.referenzWeg });
+      referenzPosts = referenzPosts.filter((p) => p.id !== weg.dataset.referenzWeg);
+      renderReferenzPosts();
+    } catch (error) {
+      toast(error.message, "err");
+    }
+  });
   els.btnDesignAdd?.addEventListener("click", addDesignTemplate);
   els.btnDesignSave?.addEventListener("click", () => void saveDesignTemplates());
   els.designList?.addEventListener("input", (event) => {
@@ -4878,7 +4948,7 @@ function bindUi() {
           .catch((error) => toast(error.message, "err"));
       }
       if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
-      if (panel === "tone") void loadToneOfVoice();
+      if (panel === "tone") { void loadToneOfVoice(); void loadReferenzPosts(); }
       if (panel === "design") void loadDesignTemplates();
     });
   });

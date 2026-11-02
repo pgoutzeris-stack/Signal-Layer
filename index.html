@@ -1910,6 +1910,21 @@
   .tone-editor { display: flex; flex-direction: column; gap: .75rem; max-width: 720px; }
   .tone-editor textarea { resize: vertical; min-height: 220px; line-height: 1.5; margin-bottom: 0; }
   .tone-editor-bar { display: flex; align-items: center; gap: 1rem; }
+  .referenz-posts { max-width: 720px; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+  .referenz-posts-kopf { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .75rem; }
+  .referenz-posts-kopf h4 { margin: 0; font-size: .95rem; font-weight: 700; color: var(--ink); }
+  .referenz-posts-kopf span { font-size: .75rem; color: var(--muted); }
+  .referenz-post { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem 1rem; padding: .85rem 1rem; border-radius: 12px; background: var(--status-bg); margin-bottom: .5rem; }
+  .referenz-post-text { min-width: 0; font-size: .85rem; line-height: 1.45; color: var(--ink); }
+  .referenz-post-text summary { cursor: pointer; font-weight: 600; list-style: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .referenz-post-text summary::-webkit-details-marker { display: none; }
+  .referenz-post-text p { margin: .5rem 0 0; white-space: pre-line; color: var(--muted); font-size: .8rem; }
+  .referenz-post-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; font-size: .75rem; color: var(--muted); }
+  .referenz-post-meta b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .referenz-post-zahlen { display: flex; align-items: flex-start; gap: .5rem; }
+  .referenz-post-zahlen .pill-vorbild { padding: 2px 8px; border-radius: 999px; background: var(--brand-light, #eff6ff); color: var(--brand); font-size: .7rem; font-weight: 700; white-space: nowrap; }
+  .referenz-post select { font: inherit; font-size: .75rem; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .referenz-post-leer { font-size: .85rem; color: var(--muted); }
   .tone-editor-bar span { font-size: .8rem; color: var(--muted); }
   .settings-panel { display: none; flex: 1; flex-direction: column; min-height: 0; }
   .settings-panel.show { display: flex; }
@@ -2518,6 +2533,10 @@
                 <button type="button" class="btn-primary" id="btn-tone-save"><i class="fa-regular fa-floppy-disk"></i> Speichern</button>
               </div>
             </div>
+            <section class="referenz-posts" aria-labelledby="referenz-posts-titel">
+              <div class="referenz-posts-kopf"><h4 id="referenz-posts-titel">Eigene LinkedIn-Posts</h4><span id="referenz-posts-anzahl"></span></div>
+              <div id="referenz-posts-liste"></div>
+            </section>
           </div>
         </div>
 
@@ -2624,7 +2643,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261102-5';
+  import { initApp } from './app.js?v=20261102-6';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

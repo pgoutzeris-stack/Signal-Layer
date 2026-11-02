@@ -119,6 +119,8 @@ export type LinkedinAnswers = {
   /** Nur bei caption_mode "ai_tone": aus den Nutzereinstellungen geladen.
    *  Der Server setzt das Feld, nie der Browser. */
   tone_of_voice: string;
+  /** Die eigenen Posts mit den meisten Impressions, als Schreibvorbild. */
+  tone_vorbilder: string[];
   /** Fuer wen das Asset entsteht. Steuert ROOTS-Rahmen und Fusszeile. */
   profile: "roots" | "private";
   /** Kennung der gewaehlten Design-Vorlage. */
@@ -1662,6 +1664,9 @@ function choiceText(
 /** Laenge des hinterlegten Tonfalls. Genug fuer eine Handvoll Regeln und
  *  Beispielsaetze, zu wenig, um einen ganzen Beitrag zu schmuggeln. */
 export const TONE_OF_VOICE_LIMIT = 2_000;
+/** Eigene LinkedIn-Posts: so lang wie LinkedIn erlaubt, drei als Vorbild. */
+export const REFERENZ_POST_LIMIT = 3_000;
+export const REFERENZ_VORBILDER = 3;
 
 /** Standard ist das Modell ohne Tonfall: die bisherige Ausgabe. */
 function captionMode(source: Record<string, unknown>): "ai" | "ai_tone" | "custom" {
@@ -1728,6 +1733,8 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
         ? freeText(pick(source, "caption_text", "caption", "begleittext"), 3_000)
         : "",
       tone_of_voice: freeText(pick(source, "tone_of_voice", "tonfall"), TONE_OF_VOICE_LIMIT),
+      tone_vorbilder: (Array.isArray(record(source).tone_vorbilder) ? record(source).tone_vorbilder as unknown[] : [])
+        .map((eintrag) => String(eintrag ?? "").trim().slice(0, REFERENZ_POST_LIMIT)).filter(Boolean).slice(0, REFERENZ_VORBILDER),
     };
   }
   const images = pick(source, "images", "bilder");
@@ -3007,7 +3014,11 @@ function captionAuftrag(answers: LinkedinAnswers): string {
     return `post_text ist vorgegeben und wird wortgleich uebernommen, ohne Kuerzung und ohne Umformulierung:\n${answers.caption}`;
   }
   if (answers.caption_mode === "ai_tone" && answers.tone_of_voice) {
-    return `Caption im hinterlegten Tonfall schreiben. Der Tonfall gilt fuer post_text, nicht fuer die Slides:\n${answers.tone_of_voice}`;
+    const vorbilder = (answers.tone_vorbilder || []).filter(Boolean);
+    const vorbildBlock = vorbilder.length
+      ? `\n\n<vorbilder>\nDie eigenen Beitraege mit den meisten Impressions. Hook, Aufbau, Satzrhythmus, Absatzlaenge und Fettungen daran ausrichten. Thema, Zahlen, Namen und Formulierungen daraus nicht uebernehmen; Inhalt kommt nur aus signal und artikel.\n${vorbilder.map((text, i) => `--- Vorbild ${i + 1} ---\n${text}`).join("\n")}\n</vorbilder>`
+      : "";
+    return `Caption im hinterlegten Tonfall schreiben. Der Tonfall gilt fuer post_text, nicht fuer die Slides:\n${answers.tone_of_voice}${vorbildBlock}`;
   }
   return "Caption: sachlich, ohne Werbeton.";
 }
