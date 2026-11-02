@@ -35,14 +35,11 @@ let selectedVersion = "";
 let currentVersionLabel = "";
 let versionList = [];
 const companyFilterState = { kind: "tier1", selected: [] };
-// Ergebnisseite: eine Bahn zur Zeit, Zeitraum wie im Dashboard. Beides merkt
-// sich der Browser.
-const ERGEBNIS_BAHNEN = ["marketing", "sales", "review"];
+// Ergebnisseite: Zeitraum wie im Dashboard. Der Browser merkt ihn sich.
 const ERGEBNIS_ZEITRAEUME = [7, 30, 90, 365];
-const ergebnisAnsicht = { bahn: "marketing", tage: 30 };
+const ergebnisAnsicht = { tage: 30 };
 try {
   const gemerkt = JSON.parse(localStorage.getItem("signal-layer-ergebnis-ansicht") || "null");
-  if (ERGEBNIS_BAHNEN.includes(gemerkt?.bahn)) ergebnisAnsicht.bahn = gemerkt.bahn;
   if (ERGEBNIS_ZEITRAEUME.includes(Number(gemerkt?.tage))) ergebnisAnsicht.tage = Number(gemerkt.tage);
 } catch { /* Speicher gesperrt: Standard bleibt */ }
 const companyFilterIndex = { tier1: [], tier2: [], company: [] };
@@ -492,27 +489,18 @@ async function pollStatus() {
   scheduleStatusPoll();
 }
 
-/** Bahn und Zeitraum auf der Ergebnisseite anzeigen. */
+/** Zeitraum auf der Ergebnisseite anzeigen. */
 function zeichneErgebnisAnsicht() {
-  document.querySelectorAll("[data-ergebnis-bahn]").forEach((knopf) => {
-    const aktiv = knopf.dataset.ergebnisBahn === ergebnisAnsicht.bahn;
-    knopf.classList.toggle("is-active", aktiv);
-    knopf.setAttribute("aria-pressed", String(aktiv));
-  });
   document.querySelectorAll("[data-ergebnis-zeitraum]").forEach((knopf) => {
     const aktiv = Number(knopf.dataset.ergebnisZeitraum) === ergebnisAnsicht.tage;
     knopf.classList.toggle("is-active", aktiv);
     knopf.setAttribute("aria-pressed", String(aktiv));
   });
-  document.querySelectorAll("[data-bahn-karte]").forEach((karte) => {
-    karte.hidden = karte.dataset.bahnKarte !== ergebnisAnsicht.bahn;
-  });
   try { localStorage.setItem("signal-layer-ergebnis-ansicht", JSON.stringify(ergebnisAnsicht)); } catch { /* nur Komfort */ }
 }
 
-function setzeErgebnisAnsicht({ bahn, tage } = {}) {
+function setzeErgebnisAnsicht({ tage } = {}) {
   const neuerZeitraum = ERGEBNIS_ZEITRAEUME.includes(Number(tage)) && Number(tage) !== ergebnisAnsicht.tage;
-  if (ERGEBNIS_BAHNEN.includes(bahn)) ergebnisAnsicht.bahn = bahn;
   if (neuerZeitraum) ergebnisAnsicht.tage = Number(tage);
   zeichneErgebnisAnsicht();
   return neuerZeitraum;
@@ -522,9 +510,6 @@ function bindUi() {
   if (bound) return;
   bound = true;
   zeichneErgebnisAnsicht();
-  document.querySelectorAll("[data-ergebnis-bahn]").forEach((knopf) => knopf.addEventListener("click", () => {
-    setzeErgebnisAnsicht({ bahn: knopf.dataset.ergebnisBahn });
-  }));
   document.querySelectorAll("[data-ergebnis-zeitraum]").forEach((knopf) => knopf.addEventListener("click", () => {
     if (!setzeErgebnisAnsicht({ tage: Number(knopf.dataset.ergebnisZeitraum) })) return;
     // Der Server liefert je Bahn nur 200; fuer den neuen Zeitraum neu holen.
@@ -832,11 +817,11 @@ function renderSimpleStagePopup() {
 }
 
 /**
- * Sprung aus dem Dashboard: Ergebnisseite mit Bahn und Zeitraum der Kachel.
+ * Sprung aus dem Dashboard: Ergebnisseite im Zeitraum des Dashboards.
  * Die Ansicht selbst schaltet app.js um; diese Funktion stellt nur den Filter.
  */
-export function zeigeSimpleSignale({ lane, period_days: tage } = {}) {
-  setzeErgebnisAnsicht({ bahn: lane, tage });
+export function zeigeSimpleSignale({ period_days: tage } = {}) {
+  setzeErgebnisAnsicht({ tage });
 }
 
 export function showSimpleView(view) {

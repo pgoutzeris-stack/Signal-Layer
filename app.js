@@ -8,11 +8,11 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView, zeigeSimpleSignale } from "./simple-mode.js?v=20261102-1";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView, zeigeSimpleSignale } from "./simple-mode.js?v=20261102-2";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-1";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-2";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261102-1";
@@ -5016,8 +5016,8 @@ export function initApp(client) {
       openArticleDetail, technicalAuditPill,
       articleTypeLabels: ARTICLE_TYPE_LABELS, viewState: simpleViewState,
     });
-    // Kachel "Marketing-Signale" oder "Sales-Signale" im Dashboard: zu den
-    // Signalen dieser Bahn, im Zeitraum des Dashboards.
+    // Kachel "Marketing-Signale" oder "Sales-Signale" im Dashboard: zur
+    // Ergebnisseite, im Zeitraum des Dashboards.
     window.addEventListener("signal-layer:signale-oeffnen", (event) => {
       if (document.body.classList.contains("mode-simple")) zeigeSimpleSignale(event.detail || {});
       switchAppView("results");
