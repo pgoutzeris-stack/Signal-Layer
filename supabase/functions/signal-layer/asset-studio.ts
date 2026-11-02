@@ -7592,7 +7592,10 @@ export function bereinigeKiLayout(roh: string): string {
       attribute.push(`${original}="${wert.replace(/"/g, "&quot;")}"`);
     }
     const name2 = tag === "lineargradient" ? "linearGradient" : tag === "radialgradient" ? "radialGradient" : tag;
-    return `<${name2}${attribute.length ? ` ${attribute.join(" ")}` : ""}>`;
+    // SVG-Formen brauchen den Selbstschluss: ohne ihn verschachtelt der
+    // HTML-Parser die folgenden Formen hinein, und sie bleiben unsichtbar.
+    const svgLeer = KI_LEERE_TAGS.has(tag) && tag !== "br" && tag !== "img";
+    return `<${name2}${attribute.length ? ` ${attribute.join(" ")}` : ""}${svgLeer ? " /" : ""}>`;
   });
   html = html.trim();
   if (!html) return "";
@@ -7699,7 +7702,7 @@ Regeln:
 - Listen als Wiederholblock: <!--repeat:bullets--><div data-field="item" style="...">{{item}}</div><!--/repeat-->; stats mit {{value}} {{label}} in <!--repeat:stats-->...<!--/repeat-->, steps mit {{n}} {{title}} {{text}} in <!--repeat:steps-->...<!--/repeat-->.
 - Fotos, Logos und Wappen der Vorbilder baust du nicht nach und setzt keine leeren Ersatzformen (keine bunten Kreise oder Kaesten als Logo-Ersatz). Was kein Inhalt hat, faellt weg.
 - Groessen: Titel 60 bis 110 px, Fliesstext mindestens 26 px. Plane Platz fuer die tatsaechliche Textmenge, nichts darf ueberlaufen.
-${e.mitPortraet ? "- Ein freigestelltes Portraet der Person steht als <img src=\"{{portraet}}\"> zur Verfuegung. Setze es ein, wenn die Vorbilder die Person zeigen, freigestellt am unteren Rand, Text daneben, nie ueber dem Gesicht.\n" : ""}${e.mitLogo ? "- Ein Logo steht als <img src=\"{{logo}}\"> zur Verfuegung, nur einsetzen, wenn die Vorbilder ein Zeichen tragen.\n" : ""}- Dekoration als Inline-SVG ist erlaubt. Keine Bilder aus dem Netz, keine Links, keine Skripte.
+${e.mitPortraet ? "- Ein freigestelltes Portraet der Person steht als <img src=\"{{portraet}}\"> zur Verfuegung. Setze es ein, wenn die Vorbilder die Person zeigen, freigestellt am unteren Rand, Text daneben, nie ueber dem Gesicht.\n" : "- Es gibt kein Portraet. Lass seinen Platz weg; keine Ringe, Kreise oder Flaechen als Ersatz.\n"}${e.mitLogo ? "- Ein Logo steht als <img src=\"{{logo}}\"> zur Verfuegung, nur einsetzen, wenn die Vorbilder ein Zeichen tragen.\n" : ""}- Dekoration als Inline-SVG ist erlaubt. Keine Bilder aus dem Netz, keine Links, keine Skripte.
 ${e.titelLayout ? `- Dies ist eine Folge-Folie: Hintergrund, Farben, Schriften, Rahmen und Dekoration exakt wie in dieser bereits gebauten Titelfolie, nur der Inhaltsbereich passt sich an:\n${e.titelLayout.slice(0, 12_000)}\n` : ""}
 Antworte nur mit JSON: {"html": "<div class=\\"li\\" ...>...</div>"}`;
 }

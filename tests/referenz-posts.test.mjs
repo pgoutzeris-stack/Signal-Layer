@@ -52,7 +52,9 @@ test("KI-Visual: Bereinigung laesst nur Folien-HTML durch", () => {
   assert.match(html, /<h1 data-field="title" style="font-size:90px">\{\{title\}\}<\/h1>/);
   assert.match(html, /<img src="\{\{portraet\}\}">/);
   assert.match(html, /<!--repeat:bullets-->.*<!--\/repeat-->/);
-  assert.match(html, /<svg viewBox="0 0 10 10"><path d="M0 0L10 10" stroke="#fff"><\/svg>/);
+  // SVG-Formen mit Selbstschluss, sonst verschachtelt der Browser sie.
+  assert.match(html, /<svg viewBox="0 0 10 10"><path d="M0 0L10 10" stroke="#fff" \/><\/svg>/);
+  assert.match(backend.bereinigeKiLayout('<div class="li"><svg><circle r="4"></circle><rect width="2"></rect></svg></div>'), /<circle r="4" \/><rect width="2" \/>/);
   // Ohne Wurzel .li wird eingefasst, damit Groesse und Export greifen.
   assert.match(backend.bereinigeKiLayout("<p>{{title}}</p>"), /^<div class="li li-ki"/);
 });
