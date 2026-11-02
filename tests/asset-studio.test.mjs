@@ -186,7 +186,8 @@ test("Profil, Design, Format - in dieser Reihenfolge", () => {
   // haengt am Profil und darf nicht davor gewaehlt werden.
   const block = studio.slice(studio.indexOf("const FORM_LINKEDIN"), studio.indexOf("const FORM_MEMO"));
   const reihenfolge = [...block.matchAll(/key: "([a-z_]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(reihenfolge.slice(0, 3), ["profile", "design", "asset_type"]);
+  // Design (nur ROOTS) und Stil (nur privat) haengen am Profil, das Format folgt.
+  assert.deepEqual(reihenfolge.slice(0, 4), ["profile", "design", "stil", "asset_type"]);
   // Die alte Frage nach der Anmutung ist ersetzt; hell/dunkel kommt aus der Vorlage.
   assert.ok(!reihenfolge.includes("look"), "look wird abgeleitet, nicht gefragt");
   assert.match(studio, /function synchronisiereDesign\(\)/);
@@ -3204,8 +3205,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20261102-7");
-  assert.match(indexHtml, /app\.js\?v=20261102-7/);
+  assert.equal(studioVersion, "20261102-8");
+  assert.match(indexHtml, /app\.js\?v=20261102-8/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);

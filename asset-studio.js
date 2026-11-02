@@ -210,6 +210,9 @@ const FORM_LINKEDIN = [
   // Hell/Dunkel gibt es nur fuer ROOTS. Privat baut die KI das Visual im Stil
   // der eigenen Posts, eine Vorlage entfaellt.
   { key: "design", label: "Design", art: "design", options: [["roots-hell", "ROOTS Hell"]], when: (answers) => answers.profile !== "private" },
+  // Privat: "Mein Stil" schreibt im eigenen Tonfall (Vorbilder: die staerksten
+  // eigenen Posts) und baut danach das Visual im Stil des staerksten Posts.
+  { key: "stil", label: "Stil", options: [["mein_stil", "Mein Stil"], ["ki", "KI"]], when: (answers) => answers.profile === "private" },
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
   // Einzelbild: genau ein Layout. Carousel: entweder das Modell mischt die
   // Slide-Arten, oder der Nutzer waehlt sie selbst.
@@ -267,6 +270,7 @@ const FORM_LINKEDIN = [
   {
     key: "caption",
     label: "Caption",
+    when: (answers) => !(answers.profile === "private" && answers.stil === "mein_stil"),
     options: [
       ["ai", "KI Vorschlag"],
       ["ai_tone", "KI + Tone of Voice"],
@@ -2498,6 +2502,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.answers.profile = "private";
       state.answers.design = "";
     }
+    // Mein Stil schreibt immer im hinterlegten Tonfall.
+    if (state.answers.profile === "private" && state.answers.stil === "mein_stil") state.answers.caption = "ai_tone";
     const liste = designListe();
     if (!liste.some((d) => d.id === state.answers.design)) {
       // Ohne eigene Wahl: die Vorlage des staerksten eigenen Posts.
@@ -3975,6 +3981,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     a.caption = src.caption_mode === "custom" ? "custom" : src.caption_mode === "ai_tone" ? "ai_tone" : "ai";
     a.caption_text = src.caption || "";
     a.profile = src.profile === "private" ? "private" : "roots";
+    a.stil = src.caption_mode === "ai_tone" ? "mein_stil" : "ki";
     a.design = src.design || (src.theme === "dark" ? "roots-dunkel" : "roots-hell");
     if (src.asset_type) a.asset_type = src.asset_type;
     if (src.variant) a.variant = src.variant;
@@ -4195,8 +4202,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Fehlt der Tonfall, bleibt die Frage offen: der Hinweis mit dem Weg in die
     // Einstellungen darf nicht unter einer zugeklappten Zeile verschwinden.
     if (q.key === "caption" && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice) return false;
-    // Dasselbe fuer ein Privatprofil ohne Vorlage.
-    if (q.key === "profile" && state.answers.profile === "private" && state.designsGeladen && !state.designs.length) return false;
+    // "Mein Stil" braucht Tonfall und eigene Posts; sonst bleibt die Frage offen.
+    if (q.key === "stil" && meinStilFehlt()) return false;
     return true;
   }
 
@@ -4276,8 +4283,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       : "";
     const warnung = q.key === "caption" && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice
       ? noticeHtml("fa-feather", "Tone of Voice ist noch nicht hinterlegt", "open-tone")
-      : q.key === "profile" && state.answers.profile === "private" && state.designsGeladen && !state.designs.length
-        ? noticeHtml("fa-swatchbook", "Für das Privatprofil ist noch keine Design-Vorlage hinterlegt", "open-designs")
+      : q.key === "stil" && meinStilFehlt()
+        ? noticeHtml("fa-feather", state.toneGeladen && !state.toneOfVoice ? "Tone of Voice ist noch nicht hinterlegt" : "Keine eigenen Posts hinterlegt", "open-tone")
         : "";
     if (isMemo && q.key === "cta" && state.answers.cta === "custom") {
       // Derselbe Feldvertrag wie im Abschnitt: es ist dasselbe Feld im Dokument.
@@ -4517,12 +4524,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         return;
       }
     }
-    if (!isMemo && state.answers.profile === "private" && state.designsGeladen && !state.designs.length) {
-      formFehler("design", DESIGN_FEHLT);
-      return;
-    }
     if (!isMemo && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice) {
-      formFehler("caption", TONE_FEHLT);
+      formFehler(state.answers.stil === "mein_stil" ? "stil" : "caption", TONE_FEHLT);
       return;
     }
     if (!isMemo && state.answers.caption === "custom" && !String(state.answers.caption_text || "").trim()) {
@@ -4592,7 +4595,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (pruefHinweise().length) state.step = "edit";
       render();
       // Privatprofil: das Visual im Stil der eigenen Posts gleich hinterher.
-      if (!isMemo && state.answers.profile === "private" && state.kiVisual) void baueKiVisuals();
+      if (!isMemo && state.answers.profile === "private" && state.answers.stil === "mein_stil" && state.kiVisual) void baueKiVisuals();
     } catch (err) {
       if (state.cancelRequested) return;
       state.busy = false;
@@ -4766,6 +4769,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     state.kiLaeuft = false;
     render();
+  }
+
+  function meinStilFehlt() {
+    return state.answers.profile === "private" && state.answers.stil === "mein_stil"
+      && ((state.toneGeladen && !state.toneOfVoice) || (state.designsGeladen && !state.kiVisual));
   }
 
   function kiStatusHtml() {

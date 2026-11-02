@@ -83,3 +83,14 @@ test("Privatprofil: keine Vorlage, Visual Folie fuer Folie", async () => {
   assert.match(studio, /api\("ki_visual_slide", \{ asset_id: state\.assetId, index: i \}\)/);
   assert.match(studio, /slide\.variant === "KI" && slide\.ki_layout/);
 });
+
+test("Fragebogen: Stil-Wahl im Privatprofil steuert Tonfall und Visual", async () => {
+  const studio = await readFile(new URL("../asset-studio.js", import.meta.url), "utf8");
+  assert.match(studio, /key: "stil", label: "Stil", options: \[\["mein_stil", "Mein Stil"\], \["ki", "KI"\]\], when: \(answers\) => answers\.profile === "private"/);
+  // Mein Stil: Caption-Frage entfaellt, Tonfall ist gesetzt, Visual laeuft danach.
+  assert.match(studio, /when: \(answers\) => !\(answers\.profile === "private" && answers\.stil === "mein_stil"\)/);
+  assert.match(studio, /answers\.stil === "mein_stil"\) state\.answers\.caption = "ai_tone"/);
+  assert.match(studio, /state\.answers\.stil === "mein_stil" && state\.kiVisual\) void baueKiVisuals\(\)/);
+  // Privatprofil ohne alte Vorlage wird nicht mehr blockiert.
+  assert.ok(!studio.includes('state.answers.profile === "private" && state.designsGeladen && !state.designs.length'));
+});
