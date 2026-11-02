@@ -10293,7 +10293,7 @@ Deno.serve(async (req: Request) => {
       }
 
       case "send_signal_digest": {
-        // Wochenmail ueber Resend. Test: nur an test_to. Ohne Schluessel im
+        // Briefing-Mail ueber Resend. Test: nur an test_to. Ohne Schluessel im
         // Vault verschickt nichts. Jeder Versand steht in signal_digest_log.
         const admin = getAdminClient();
         const testAn = String(body.test_to || "").trim();
@@ -10312,7 +10312,12 @@ Deno.serve(async (req: Request) => {
         if (!schluessel) return errorResponse(origin, "Resend-Schlüssel fehlt im Vault (signal_layer_resend_api_key)", 412);
         const { data: absenderWert } = await admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_digest_from" });
         const absender = String(absenderWert || "ROOTS Signal Layer <onboarding@resend.dev>");
-        const seit = new Date(Date.now() - tage * 86_400_000).toISOString();
+        // Briefing Montag und Mittwoch: der Zeitplan reicht den Zeitpunkt des
+        // letzten Briefings mit, damit zwischen zwei Mails nichts fehlt.
+        const seitWert = Date.parse(String(body.seit || ""));
+        const seit = Number.isFinite(seitWert) && seitWert > Date.now() - 31 * 86_400_000 && seitWert < Date.now()
+          ? new Date(seitWert).toISOString()
+          : new Date(Date.now() - tage * 86_400_000).toISOString();
         const { data: zeilen, error: digestFehler } = await admin.schema("signal_layer").from("simple_signals")
           .select("article_id, lane, signal_label, headline_de, why_de, company, roots_offering, score, tier1_companies, tier2_companies, created_at, article:articles(url, published_at, source:sources(company))")
           .eq("status", "signal").or(MANUAL_SIGNAL_EXCLUDE).gte("created_at", seit)
@@ -10376,7 +10381,7 @@ Deno.serve(async (req: Request) => {
             befunde.push(`Die Analyse ist abgebrochen: ${String(lauf.error_message || "ohne Meldung").slice(0, 160)}`);
           }
           if (lauf && ["running", "queued"].includes(String(lauf.status))) befunde.push("Die Analyse läuft noch.");
-          if (!signale.length) befunde.push("Keine neuen Signale in den letzten 24 Stunden.");
+          if (!signale.length) befunde.push("Keine neuen Signale seit dem letzten Briefing.");
           if (befunde.length) {
             const { betreff: dBetreff, html: dHtml } = baueDebugMail(befunde, {
               "Neue Signale": String(signale.length),
@@ -10591,26 +10596,32 @@ Deno.serve(async (req: Request) => {
 
       case "get_simple_dashboard": {
         const admin = getAdminClient();
+        // Zeitraum aus dem Dashboard (7, 30, 90, 365 Tage); ohne Angabe der
+        // gesamte Bestand.
+        const zeitraumTage = [7, 30, 90, 365].includes(Number(body.days)) ? Number(body.days) : 0;
+        const ab = zeitraumTage ? new Date(Date.now() - zeitraumTage * 86_400_000).toISOString() : "";
+        // deno-lint-ignore no-explicit-any
+        const imZeitraum = (abfrage: any, spalte: string) => ab ? abfrage.gte(spalte, ab) : abfrage;
         const [
           { count: marketing }, { count: sales }, { count: rejected },
           { count: review }, { count: crawled },
           { data: run }, { data: triggerBackfill },
         ] = await Promise.all([
-          admin.schema("signal_layer").from("simple_signals")
+          imZeitraum(admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "marketing")
-            .or(MANUAL_SIGNAL_EXCLUDE),
-          admin.schema("signal_layer").from("simple_signals")
+            .or(MANUAL_SIGNAL_EXCLUDE), "created_at"),
+          imZeitraum(admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "signal").eq("lane", "sales")
-            .or(MANUAL_SIGNAL_EXCLUDE),
-          admin.schema("signal_layer").from("simple_signals")
+            .or(MANUAL_SIGNAL_EXCLUDE), "created_at"),
+          imZeitraum(admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true }).eq("status", "rejected")
-            .or(MANUAL_SIGNAL_EXCLUDE),
+            .or(MANUAL_SIGNAL_EXCLUDE), "created_at"),
           // Artikel, die ein Mensch entscheiden muss, und der gesamte
           // gecrawlte Bestand als Bezugsgroesse fuer den Anteilsring.
-          admin.schema("signal_layer").from("articles")
-            .select("id", { count: "exact", head: true }).eq("classification_status", "uncertain"),
-          admin.schema("signal_layer").from("articles")
-            .select("id", { count: "exact", head: true }),
+          imZeitraum(admin.schema("signal_layer").from("articles")
+            .select("id", { count: "exact", head: true }).eq("classification_status", "uncertain"), "crawled_at"),
+          imZeitraum(admin.schema("signal_layer").from("articles")
+            .select("id", { count: "exact", head: true }), "crawled_at"),
           admin.schema("signal_layer").from("simple_runs").select("*")
             .order("started_at", { ascending: false }).limit(1).maybeSingle(),
           admin.schema("signal_layer").from("simple_trigger_backfill_runs").select("*")
@@ -11443,7 +11454,7 @@ Deno.serve(async (req: Request) => {
       }
 
       case "list_simple_signals": {
-        const { lane, limit, pipeline_version: pipelineVersion } = body as { lane?: string; limit?: number; pipeline_version?: string };
+        const { lane, limit, pipeline_version: pipelineVersion, days } = body as { lane?: string; limit?: number; pipeline_version?: string; days?: number };
         if (lane && !["marketing", "sales"].includes(lane)) return errorResponse(origin, "invalid lane");
         const admin = getAdminClient();
         const signalColumns = "article_id, lane, signal_id, signal_label, score, confidence, evidence, headline_de, why_de, trigger_de, company, summary_de, article_type, roots_offering, roots_link_de, tier1_companies, tier2_companies, person_name, person_role, buying_center_roles, score_details, pipeline_version, matched_families, model, prompt_version, article:articles(id, title, title_de, url, published_at, article_type, paywall_detected, paywall_evidence, source:sources(company, url, category))";
@@ -11463,6 +11474,12 @@ Deno.serve(async (req: Request) => {
             .order("updated_at", { ascending: false })
             .limit(Math.min(Math.max(Number(limit) || 60, 1), 200));
         if (lane) query = query.eq("lane", lane);
+        // Zeitraum der Ergebnisseite: grob nach Anlage vorfiltern, damit die
+        // 200 je Bahn aus dem Zeitraum kommen. Fein filtert die Seite nach
+        // dem Veroeffentlichungsdatum, das auf der Karte steht.
+        if ([7, 30, 90, 365].includes(Number(days))) {
+          query = query.gte(fromHistory ? "classified_at" : "created_at", new Date(Date.now() - Number(days) * 86_400_000).toISOString());
+        }
         const { data, error } = await query;
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, {

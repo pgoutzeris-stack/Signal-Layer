@@ -217,7 +217,9 @@ test("die Uebersicht traegt Bestand und Wirkung, ohne Erklaertext", async () => 
   assert.ok(!/stat\("Aussortierte Artikel"/.test(js), "keine eigene Kachel mehr");
   assert.match(js, /stat\("Return Rate"/);
   assert.ok(!indexHtml.includes('id="simple-dash-marketing"'), "die Kachelreihe unter dem Dashboard ist entfallen");
-  assert.match(simple, /ctx\.setDashboardSignalCounts\(/);
+  // Die Zahlen holt das Dashboard selbst, fuer seinen Zeitraum. Der einfache
+  // Modus reichte frueher Gesamtzahlen herein und ueberschrieb den Zeitraum.
+  assert.ok(!simple.includes("setDashboardSignalCounts"));
   // Kein Satz, der die Ansicht erklaert.
   assert.ok(!js.includes("Die Asset-Basis ist bereit"), "der Erklaertext ist weg");
   assert.ok(!js.includes("ausgewählte Assets"), "die Zeile daruber ist weg");
@@ -324,7 +326,7 @@ test("das Dashboard holt die Signalzahlen selbst", async () => {
   const js = await readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8");
   // Frueher reichte sie nur der einfache Modus herein - wer die Ansicht ohne
   // ihn oeffnete, sah Nullen.
-  assert.match(js, /callApi\("get_simple_dashboard"\)\.then\(/);
+  assert.match(js, /callApi\("get_simple_dashboard", \{ days: tage \}\)\.then\(/);
   assert.match(js, /signalCounts: \{\n\s*marketing: numberValue\(bestand\.counts\.marketing\)/);
 });
 
@@ -479,4 +481,50 @@ test("das hervortretende Segment kommt nach vorn, ohne neu einzulaufen", async (
   assert.match(js, /grundfolge\.forEach\(\(teil\) => svg\?\.appendChild\(teil\)\)/);
   // Ein neu eingefuegtes Element spielt seine Einlaufbewegung erneut.
   assert.match(js, /addEventListener\("animationend", \(\) => \{ teil\.style\.animation = "none"; \}/);
+});
+
+test("Bahnfilter: Satz und Kacheln nur fuer die gewaehlte Bahn", async () => {
+  const module = await import("../dashboard-insights.js");
+  const basis = {
+    assets: [], performance: [],
+    signalCounts: { marketing: 279, sales: 117, rejected: 5157, review: 100 },
+  };
+  const mit = (lane) => module.summarizeDashboardData({ ...basis, preferences: { ...module.defaultDashboardPreferences(), filters: { asset_scope: "roots", creator_ids: [], origin: "all", lane } } });
+  assert.equal(ohneSchmal(module.uebersichtSatz(mit("marketing"))), "5.653 analysierte Artikel, davon 279 Marketing-Signale mit 0 Views.");
+  assert.equal(ohneSchmal(module.uebersichtSatz(mit("sales"))), "5.653 analysierte Artikel, davon 117 Sales-Signale mit 0,0 % Return Rate.");
+  const js = readFileSync(new URL("../dashboard-insights.js", import.meta.url), "utf8");
+  // Kacheln der anderen Bahn fallen weg, statt leer stehen zu bleiben.
+  assert.match(js, /definition\.lane !== preferences\.filters\.lane\) return ""/);
+  assert.match(js, /id: "sales_funnel"[^}]*lane: "sales"/);
+  assert.match(js, /id: "marketing_funnel"[^}]*lane: "marketing"/);
+});
+
+test("Signalkacheln fuehren zur Ergebnisseite", async () => {
+  const [js, app, simple] = await Promise.all([
+    readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../simple-mode.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(js, /statLink\("Marketing-Signale"/);
+  assert.match(js, /statLink\("Sales-Signale"/);
+  assert.match(js, /signal-layer:signale-oeffnen/);
+  assert.match(app, /addEventListener\("signal-layer:signale-oeffnen"[\s\S]{0,200}switchAppView\("results"\)/);
+  assert.match(simple, /export function zeigeSimpleSignale/);
+});
+
+test("die Kopfzeile laeuft nur einmal ein", async () => {
+  const [js, css] = await Promise.all([
+    readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8"),
+    readFile(new URL("../dashboard-insights.css", import.meta.url), "utf8"),
+  ]);
+  // Gleicher Stand wird nicht neu gesetzt, danach still gezeichnet.
+  assert.match(js, /if \(letzteHtml\.get\(host\) === html\) continue;/);
+  assert.match(js, /host\.classList\.toggle\("pi-ruhig", state\.eingeblendet\)/);
+  assert.match(css, /\.pi-ruhig \.pi-headline-line/);
+});
+
+test("Funnel sagt Engagement statt Engagiert", async () => {
+  const js = await readFile(new URL("../dashboard-insights.js", import.meta.url), "utf8");
+  assert.ok(!js.includes('"Engagiert"'));
+  assert.match(js, /label: "Engagement", value: marketing\.engagements/);
 });

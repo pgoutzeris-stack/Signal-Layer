@@ -136,6 +136,17 @@
 .pi-stat > span { display: block; color: var(--muted); font-size: .58rem; font-weight: 700; }
 .pi-stat > b { display: block; margin-top: 5px; color: var(--ink); font-size: 1.08rem; line-height: 1.15; }
 .pi-stat > small { display: block; margin-top: 5px; color: var(--muted); font-size: .55rem; }
+/* Kachel als Sprung zu den Signalen ihrer Bahn. */
+.pi-stat--link { display: block; width: 100%; text-align: left; font: inherit; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.pi-stat--link > span { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.pi-stat--link > span i { color: var(--brand); font-size: .62rem; opacity: 0; transform: translateX(-3px); transition: opacity .15s ease, transform .15s ease; }
+.pi-stat--link:hover, .pi-stat--link:focus-visible { border-color: var(--brand); background: rgba(32,110,251,.04); outline: none; }
+.pi-stat--link:hover > span i, .pi-stat--link:focus-visible > span i { opacity: 1; transform: none; }
+/* Eine Bahn: zwei Kacheln untereinander statt einer halbleeren Reihe. */
+.pi-pulse-kpis--eine-bahn { grid-template-columns: minmax(0, 1fr); }
+/* Nach der ersten Einblendung wird still neu gezeichnet. */
+.pi-ruhig .pi-widget, .pi-ruhig .pi-headline-line, .pi-ruhig .pi-num, .pi-ruhig .pi-slice,
+.pi-ruhig .pi-donut-mitte b, .pi-ruhig .pi-trend-bars i { animation: none; }
 .pi-delta { display: inline-flex !important; align-items: center; gap: 4px; font-size: .55rem !important; font-weight: 800; }
 .pi-delta.is-positive { color: #15803d !important; }
 .pi-delta.is-negative { color: #b91c1c !important; }

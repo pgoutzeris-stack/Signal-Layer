@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/circular-std">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="./dashboard-insights.css?v=20261026-7">
+<link rel="stylesheet" href="./dashboard-insights.css?v=20261102-1">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
 <script defer src="https://pgoutzeris-stack.github.io/ROOTS_Intranet/roots-user-bridge.js?v=20260804-auth-dedupe-v1"></script>
 <style>
@@ -765,6 +765,15 @@
   .stats-part--error { color: var(--danger); font-weight: 600; }
   .review-card { margin-top: 1.2rem; }
   .results-review-section { margin-top: 1.2rem; }
+  /* Ergebnisseite im einfachen Modus: eine Bahn, darueber Bereich und Zeitraum. */
+  .ergebnis-leiste { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 1.2rem; }
+  .pi-seg--gross { padding: 3px; }
+  .pi-seg--gross button { min-height: 36px; padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; font-size: .82rem; }
+  .pi-seg button.is-active .track-count { background: rgba(255,255,255,.22); color: #fff; }
+  .ergebnis-bahn .track-findings-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; align-items: start; max-height: none; overflow: visible; padding-right: 0; }
+  .ergebnis-bahn .track-findings-list > .track-card-empty, .ergebnis-bahn .track-findings-list > .roots-loader { grid-column: 1 / -1; }
+  .ergebnis-bahn .review-list { max-height: none; overflow: visible; }
+  @media (max-width: 720px) { .ergebnis-bahn .track-findings-list { grid-template-columns: 1fr; } .pi-seg--gross { width: 100%; overflow-x: auto; } }
   .review-list { display: flex; flex-direction: column; gap: 8px; max-height: 520px; overflow-y: auto; }
   .review-reasons { display: flex; flex-wrap: wrap; gap: 4px; margin: .5rem 0; }
   .review-reasons span { font-size: .68rem; color: var(--danger); background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 2px 6px; }
@@ -2355,17 +2364,29 @@
               </div>
             </div>
           </nav>
-          <div class="track-grid">
-            <div class="track-card">
-              <div class="track-card-header"><i class="fa-solid fa-bullhorn"></i> Marketing <span class="track-count" id="simple-marketing-count">0</span></div>
-              <div class="track-findings-list" id="simple-list-marketing"><div class="roots-loader"></div></div>
+          <!-- Eine Bahn zur Zeit: wer die Seite oeffnet, will Marketing oder Sales. -->
+          <div class="ergebnis-leiste">
+            <div class="pi-seg pi-seg--gross" role="group" aria-label="Bereich">
+              <button type="button" data-ergebnis-bahn="marketing" class="is-active" aria-pressed="true"><i class="fa-solid fa-bullhorn"></i> Marketing <span class="track-count" id="simple-marketing-count">0</span></button>
+              <button type="button" data-ergebnis-bahn="sales" aria-pressed="false"><i class="fa-solid fa-chart-line"></i> Sales <span class="track-count" id="simple-sales-count">0</span></button>
+              <button type="button" data-ergebnis-bahn="review" aria-pressed="false"><i class="fa-solid fa-user-check"></i> Manuelle Prüfung <span class="track-count" id="simple-rejected-count">0</span></button>
             </div>
-            <div class="track-card">
-              <div class="track-card-header"><i class="fa-solid fa-chart-line"></i> Sales <span class="track-count" id="simple-sales-count">0</span></div>
-              <div class="track-findings-list" id="simple-list-sales"><div class="roots-loader"></div></div>
+            <div class="pi-seg" role="group" aria-label="Zeitraum">
+              <button type="button" data-ergebnis-zeitraum="7" aria-pressed="false">7 T</button>
+              <button type="button" data-ergebnis-zeitraum="30" class="is-active" aria-pressed="true">30 T</button>
+              <button type="button" data-ergebnis-zeitraum="90" aria-pressed="false">90 T</button>
+              <button type="button" data-ergebnis-zeitraum="365" aria-pressed="false">12 M</button>
             </div>
           </div>
-          <section class="track-card results-review-section"><div class="track-card-header"><i class="fa-solid fa-user-check"></i> Manuelle Prüfung <span class="track-count" id="simple-rejected-count">0</span></div><div class="review-list" id="simple-rejected-list"><div class="roots-loader"></div></div></section>
+          <div class="ergebnis-bahn" data-bahn-karte="marketing">
+            <div class="track-findings-list" id="simple-list-marketing"><div class="roots-loader"></div></div>
+          </div>
+          <div class="ergebnis-bahn" data-bahn-karte="sales" hidden>
+            <div class="track-findings-list" id="simple-list-sales"><div class="roots-loader"></div></div>
+          </div>
+          <div class="ergebnis-bahn" data-bahn-karte="review" hidden>
+            <div class="review-list" id="simple-rejected-list"><div class="roots-loader"></div></div>
+          </div>
         </section>
 
       </div>
@@ -2611,7 +2632,7 @@ try {
 
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261026-7';
+  import { initApp } from './app.js?v=20261102-1';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

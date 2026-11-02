@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { readFile } from "node:fs/promises";
 const { baueDigest } = await import("../supabase/functions/signal-layer/digest.ts");
 
 test("Wochenmail: Betreff, Abschnitte, Escaping", () => {
@@ -29,4 +30,20 @@ test("Mail verlinkt ins Signal-Popup, App oeffnet ?signal=", async () => {
   assert.doesNotMatch(html, /extern\.example/);
   const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
   assert.match(app, /oeffneSignalAusLink\(\);/);
+});
+
+test("Briefing-Mail hat nur noch einen Knopf", async () => {
+  const quelle = await readFile(new URL("../supabase/functions/signal-layer/digest.ts", import.meta.url), "utf8");
+  assert.ok(!quelle.includes("weitere`"), "der Knopf mit der Restzahl ist weg");
+  assert.match(quelle, /knopf\("Signal Layer öffnen"/);
+});
+
+test("Briefing nur Montag und Mittwoch, seit dem letzten Briefing", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/20261102100000_briefing_mo_mi.sql", import.meta.url), "utf8");
+  assert.match(sql, /isodow from ortszeit\) not in \(1, 3\)/);
+  assert.match(sql, /'\*\/10 2-9 \* \* 1,3'/);
+  assert.match(sql, /'\*\/20 8-10 \* \* 1,3'/);
+  assert.match(sql, /'seit', to_char\(letztes_briefing/);
+  const edge = await readFile(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
+  assert.match(edge, /Date\.parse\(String\(body\.seit \|\| ""\)\)/);
 });

@@ -1,5 +1,5 @@
 /**
- * Wochenmail: die neuen Signale als HTML im ROOTS-Stil. Reine Funktionen,
+ * Briefing-Mail (Montag und Mittwoch): die neuen Signale als HTML im ROOTS-Stil. Reine Funktionen,
  * damit sie ohne Deno-Laufzeit getestet werden koennen. Versand ueber Resend
  * passiert in index.ts (Aktion send_signal_digest).
  */
@@ -93,7 +93,6 @@ export function baueDigest(signale: DigestSignal[], _zeitraum: string, test = fa
   const marketing = sortiert.filter((signal) => signal.lane !== "sales");
   const gezeigtMarketing = marketing.slice(0, JE_BEREICH);
   const gezeigtSales = sales.slice(0, JE_BEREICH);
-  const rest = Math.max(0, sortiert.length - gezeigtMarketing.length - gezeigtSales.length);
   // Testmails tragen bewusst nicht "neue Signale verfügbar": darauf reagiert
   // der Power-Automate-Flow, der die Tagesmail ans Team weiterleitet.
   const betreff = test ? `[Test] ${signale.length} Signale · ROOTS Signal Layer` : `${signale.length} neue Signale verfügbar · ROOTS Signal Layer`;
@@ -111,7 +110,7 @@ export function baueDigest(signale: DigestSignal[], _zeitraum: string, test = fa
     ${abschnitt("Marketing", marketing, gezeigtMarketing)}
     ${abschnitt("Sales", sales, gezeigtSales)}
     <tr><td align="center" style="padding:32px 0 6px;">
-      ${knopf("Signal Layer öffnen", DIGEST_APP_URL, true)}${rest ? knopf(`${rest} weitere`, DIGEST_APP_URL, false) : ""}
+      ${knopf("Signal Layer öffnen", DIGEST_APP_URL, true)}
     </td></tr>
     <tr><td align="center" style="padding:18px 0 0;">
       <img src="${LOGO_URL}" width="84" height="13" alt="ROOTS" style="display:inline-block;border:0;width:84px;height:auto;">
@@ -122,9 +121,9 @@ export function baueDigest(signale: DigestSignal[], _zeitraum: string, test = fa
   return { betreff, html };
 }
 
-/** Debug-Mail nur an den Betreiber: warum heute keine Tagesmail ans Team ging. */
+/** Debug-Mail nur an den Betreiber: warum heute kein Briefing ans Team ging. */
 export function baueDebugMail(befunde: string[], kennzahlen: Record<string, string>): { betreff: string; html: string } {
-  const betreff = "Signal Layer: keine Tagesmail verschickt";
+  const betreff = "Signal Layer: kein Briefing verschickt";
   const zeilen = befunde.map((befund) => `<tr><td style="padding:8px 0;border-bottom:1px solid ${LINIE};font:500 14px/1.45 ${SCHRIFT};color:${TINTE};">${esc(befund)}</td></tr>`).join("");
   const zahlen = Object.entries(kennzahlen).map(([name, wert]) => `<tr><td style="padding:4px 0;font:400 12px/1.4 ${SCHRIFT};color:${GRAU};">${esc(name)}</td><td align="right" style="padding:4px 0;font:500 12px/1.4 ${SCHRIFT};color:${TINTE};">${esc(wert)}</td></tr>`).join("");
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(betreff)}</title></head>
@@ -137,7 +136,7 @@ export function baueDebugMail(befunde: string[], kennzahlen: Record<string, stri
         <td align="right" style="padding:12px 16px;"><span style="display:inline-block;padding:5px 11px;border-radius:999px;background:#fdecec;color:#b91c1c;font:600 11px/1.3 ${SCHRIFT};">Nur an dich</span></td>
       </tr></table>
     </td></tr>
-    <tr><td style="padding-bottom:6px;font:600 20px/1.3 ${SCHRIFT};color:${TINTE};">Heute keine Tagesmail ans Team</td></tr>
+    <tr><td style="padding-bottom:6px;font:600 20px/1.3 ${SCHRIFT};color:${TINTE};">Heute kein Briefing ans Team</td></tr>
     <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${zeilen}</table></td></tr>
     <tr><td style="padding-top:18px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${zahlen}</table></td></tr>
   </table>

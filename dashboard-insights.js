@@ -1,12 +1,12 @@
 const WIDGET_DEFINITIONS = [
   { id: "performance_pulse", title: "Übersicht", icon: "fa-solid fa-bolt", defaultSize: "wide" },
-  { id: "marketing_performance", title: "Marketing Performance", icon: "fa-solid fa-bullhorn", defaultSize: "compact" },
-  { id: "marketing_funnel", title: "Marketing Funnel", icon: "fa-solid fa-filter", defaultSize: "compact" },
-  { id: "sales_pipeline", title: "Sales Pipeline", icon: "fa-solid fa-chart-line", defaultSize: "compact" },
-  { id: "sales_funnel", title: "Sales Funnel", icon: "fa-solid fa-arrow-down-wide-short", defaultSize: "compact" },
+  { id: "marketing_performance", title: "Marketing Performance", icon: "fa-solid fa-bullhorn", defaultSize: "compact", lane: "marketing" },
+  { id: "marketing_funnel", title: "Marketing Funnel", icon: "fa-solid fa-filter", defaultSize: "compact", lane: "marketing" },
+  { id: "sales_pipeline", title: "Sales Pipeline", icon: "fa-solid fa-chart-line", defaultSize: "compact", lane: "sales" },
+  { id: "sales_funnel", title: "Sales Funnel", icon: "fa-solid fa-arrow-down-wide-short", defaultSize: "compact", lane: "sales" },
   { id: "performance_trend", title: "Performance-Trend", icon: "fa-solid fa-chart-column", defaultSize: "wide" },
   { id: "top_assets", title: "Top-Assets", icon: "fa-solid fa-trophy", defaultSize: "wide" },
-  { id: "memo_sends", title: "Abgeschickte Executive Memos", icon: "fa-solid fa-paper-plane", defaultSize: "wide" },
+  { id: "memo_sends", title: "Abgeschickte Executive Memos", icon: "fa-solid fa-paper-plane", defaultSize: "wide", lane: "sales" },
   { id: "smart_insights", title: "Insight Radar", icon: "fa-solid fa-wand-magic-sparkles", defaultSize: "wide" },
   { id: "data_quality", title: "Bestand", icon: "fa-solid fa-chart-pie", defaultSize: "compact" },
   { id: "recent_activity", title: "Letzte Updates", icon: "fa-solid fa-clock-rotate-left", defaultSize: "compact" },
@@ -263,22 +263,31 @@ function stat(label, value, detail = "", accent = "") {
   return `<div class="pi-stat ${accent ? `pi-stat--${accent}` : ""}"><span>${label}</span><b>${value}</b>${detail ? `<small>${detail}</small>` : ""}</div>`;
 }
 
+/** Kachel, die direkt zu den Signalen ihrer Bahn fuehrt. */
+function statLink(label, value, lane) {
+  return `<button type="button" class="pi-stat pi-stat--link" data-open-signals="${lane}" title="${label} öffnen"><span>${label}<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span><b>${value}</b></button>`;
+}
+
 function funnelHtml(stages, color) {
   const max = Math.max(1, ...stages.map((stage) => numberValue(stage.value)));
   return `<div class="pi-funnel">${stages.map((stage, index) => {
     const width = Math.max(10, (numberValue(stage.value) / max) * 100);
     const previous = index ? numberValue(stages[index - 1].value) : 0;
     const conversion = index && previous ? formatPercent(numberValue(stage.value) / previous) : "Basis";
-    return `<div class="pi-funnel-row"><span>${stage.label}</span><div><i style="--funnel-width:${width}%;--funnel-color:${color}"></i></div><b>${stage.formatter ? stage.formatter(stage.value) : formatNumber(stage.value)}</b><small>${conversion}</small></div>`;
+    return `<div class="pi-funnel-row"><span${stage.title ? ` title="${stage.title}"` : ""}>${stage.label}</span><div><i style="--funnel-width:${width}%;--funnel-color:${color}"></i></div><b>${stage.formatter ? stage.formatter(stage.value) : formatNumber(stage.value)}</b><small>${conversion}</small></div>`;
   }).join("")}</div>`;
 }
 
 function trendHtml(summary) {
   const maxMarketing = Math.max(1, ...summary.trend.map((item) => item.marketing));
   const maxSales = Math.max(1, ...summary.trend.map((item) => item.sales));
-  return `<div class="pi-trend-legend"><span><i class="is-marketing"></i>Marketing Views</span><span><i class="is-sales"></i>Sales Pipeline</span></div>
-    <div class="pi-trend-chart">${summary.trend.map((item) => `<div class="pi-trend-column" title="${formatNumber(item.marketing)} Views · ${formatMoney(item.sales)} Pipeline">
-      <div class="pi-trend-bars"><i class="is-marketing" style="--bar-height:${Math.max(3, item.marketing / maxMarketing * 100)}%"></i><i class="is-sales" style="--bar-height:${Math.max(3, item.sales / maxSales * 100)}%"></i></div><span>${item.label}</span>
+  // Mit Bahnfilter nur die gewaehlte Reihe.
+  const lane = summary.preferences?.filters?.lane || "all";
+  const mitMarketing = lane !== "sales";
+  const mitSales = lane !== "marketing";
+  return `<div class="pi-trend-legend">${mitMarketing ? '<span><i class="is-marketing"></i>Marketing Views</span>' : ""}${mitSales ? '<span><i class="is-sales"></i>Sales Pipeline</span>' : ""}</div>
+    <div class="pi-trend-chart">${summary.trend.map((item) => `<div class="pi-trend-column" title="${[mitMarketing ? `${formatNumber(item.marketing)} Views` : "", mitSales ? `${formatMoney(item.sales)} Pipeline` : ""].filter(Boolean).join(" · ")}">
+      <div class="pi-trend-bars">${mitMarketing ? `<i class="is-marketing" style="--bar-height:${Math.max(3, item.marketing / maxMarketing * 100)}%"></i>` : ""}${mitSales ? `<i class="is-sales" style="--bar-height:${Math.max(3, item.sales / maxSales * 100)}%"></i>` : ""}</div><span>${item.label}</span>
     </div>`).join("")}</div>`;
 }
 
@@ -387,6 +396,32 @@ export function uebersichtZeilen(summary) {
   const zeilen = [{
     teile: [{ text: formatNumber(analysiert), zahl: true }, { text: " analysierte Artikel," }],
   }];
+  const lane = summary.preferences?.filters?.lane || "all";
+  // Mit Bahnfilter steht nur die gewaehlte Bahn im Satz.
+  if (lane === "marketing") {
+    zeilen.push({
+      teile: [
+        { text: "davon " },
+        { text: formatNumber(marketingSignale), zahl: true },
+        { text: " Marketing-Signale mit " },
+        { text: formatNumber(views), zahl: true, schnitt: true },
+        { text: " Views." },
+      ],
+    });
+    return zeilen;
+  }
+  if (lane === "sales") {
+    zeilen.push({
+      teile: [
+        { text: "davon " },
+        { text: formatNumber(salesSignale), zahl: true },
+        { text: " Sales-Signale mit " },
+        { text: formatPercent(returnRate), zahl: true, schnitt: true },
+        { text: " Return Rate." },
+      ],
+    });
+    return zeilen;
+  }
   if (marketingSignale || salesSignale) {
     zeilen.push({
       teile: [
@@ -549,14 +584,18 @@ function renderWidget(definition, preference, summary, escapeHtml, optionen = {}
     const returnRate = numberValue(sales.sends) > 0 ? numberValue(sales.replies) / numberValue(sales.sends) : 0;
     // Links die Aussage, rechts die Zahlen: der Satz traegt die Karte, die
     // Kacheln belegen ihn. Untereinander gestapelt war beides gleich laut.
+    const lane = summary.preferences?.filters?.lane || "all";
+    const kacheln = [
+      lane !== "sales" ? statLink("Marketing-Signale", formatNumber(zaehler.marketing), "marketing") : "",
+      lane !== "marketing" ? statLink("Sales-Signale", formatNumber(zaehler.sales), "sales") : "",
+      lane !== "sales" ? stat("Marketing Views", formatNumber(marketing.impressions), summary.performance.length ? deltaHtml(summary.deltas.impressions) : "") : "",
+      lane !== "marketing" ? stat("Return Rate", formatPercent(returnRate)) : "",
+    ].join("");
     return widgetShell(definition, preference, `<div class="pi-overview">
       <div class="pi-pulse">
       ${uebersichtHeadlineHtml(summary, escapeHtml)}
-    </div><div class="pi-pulse-kpis">
-      ${stat("Marketing-Signale", formatNumber(zaehler.marketing))}
-      ${stat("Sales-Signale", formatNumber(zaehler.sales))}
-      ${stat("Marketing Views", formatNumber(marketing.impressions), summary.performance.length ? deltaHtml(summary.deltas.impressions) : "")}
-      ${stat("Return Rate", formatPercent(returnRate))}
+    </div><div class="pi-pulse-kpis${lane !== "all" ? " pi-pulse-kpis--eine-bahn" : ""}">
+      ${kacheln}
     </div></div>`);
   }
   if (definition.id === "marketing_performance") {
@@ -566,7 +605,7 @@ function renderWidget(definition, preference, summary, escapeHtml, optionen = {}
   if (definition.id === "marketing_funnel") {
     const body = funnelHtml([
       { label: "Views", value: marketing.impressions },
-      { label: "Engagiert", value: marketing.engagements },
+      { label: "Engagement", value: marketing.engagements, title: "Likes, Kommentare, Reposts und Saves" },
       { label: "Klicks", value: marketing.link_clicks },
     ], "var(--brand)");
     return widgetShell(definition, preference, body);
@@ -662,7 +701,13 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     reloadTimer: null,
     preferenceSaveTimer: null,
     channel: null,
+    // Die Kopfzeile laeuft einmal ein. Danach wird still neu gezeichnet:
+    // Cache, Zahlen und Einstellungen kommen nacheinander an, und jedes
+    // Neuzeichnen spielte die Einblendung sonst von vorn.
+    eingeblendet: false,
+    zaehlerTage: 0,
   };
+  const letzteHtml = new WeakMap();
   const hosts = [...document.querySelectorAll("[data-performance-dashboard]")];
   const kpiSelect = document.getElementById("kpi-asset-select");
   const kpiSearch = document.getElementById("kpi-asset-search");
@@ -704,24 +749,6 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     optionen.map(([wert, text]) => `<button type="button" data-dashboard-${escapeHtml(feld)}="${escapeHtml(wert)}" class="${wert === aktuell ? "is-active" : ""}" aria-pressed="${wert === aktuell}">${escapeHtml(text)}</button>`).join("")
   }</div>`;
 
-  /** Zahlen aus der Signalansicht. Der einfache Modus laedt sie ohnehin. */
-  const setSignalCounts = (counts) => {
-    state.countsLoaded = true;
-    state.payload = {
-      ...state.payload,
-      signalCounts: {
-        marketing: numberValue(counts?.marketing),
-        sales: numberValue(counts?.sales),
-        rejected: numberValue(counts?.rejected),
-        // Gleiche Felder wie beim eigenen Laden, sonst springt die Summe je
-        // nachdem, welche Antwort zuletzt kam.
-        review: numberValue(counts?.review),
-        crawled: numberValue(counts?.crawled),
-      },
-    };
-    if (state.payload.assets) renderDashboards();
-  };
-
   const renderDashboards = () => {
     state.summary = summarizeDashboardData(state.payload);
     for (const host of hosts) {
@@ -731,7 +758,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       // Eine Leiste statt Kopfzeile plus Filterkasten: Titel links, Filter
       // rechts, alles in einer Hoehe. Zahlen und Namen stehen im Titel des
       // jeweiligen Knopfs, nicht als zweite Zeile daneben.
-      host.innerHTML = `<div class="pi-bar">
+      const html = `<div class="pi-bar">
           <h2><i class="fa-solid fa-chart-line"></i>Performance</h2>
           <div class="pi-bar-filters">
             <div class="pi-seg" role="group" aria-label="Zeitraum">${[7, 30, 90, 365].map((days) => `<button type="button" data-dashboard-period="${days}" class="${days === preferences.period_days ? "is-active" : ""}" aria-pressed="${days === preferences.period_days}">${days === 365 ? "12 M" : `${days} T`}</button>`).join("")}</div>
@@ -745,6 +772,8 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
         </div>
         <div class="pi-grid">${preferences.widgets.map((preference) => {
           const definition = DASHBOARD_WIDGETS.find((item) => item.id === preference.id);
+          // Bahnfilter: Kacheln der anderen Bahn fallen weg, der Rest rueckt auf.
+          if (definition?.lane && preferences.filters.lane !== "all" && definition.lane !== preferences.filters.lane) return "";
           // Jede Kachel steht sofort da; was noch fehlt, zeigt nur in seiner
           // Kachel eine Ladeanimation.
           const wartet = !state.loaded || (["data_quality", "performance_pulse"].includes(definition?.id) && !state.countsLoaded);
@@ -752,8 +781,15 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
             ? widgetShell(definition, preference, '<div class="roots-loader pi-widget-loader" aria-label="Lädt"></div>')
             : renderWidget(definition, preference, state.summary, escapeHtml, { hideRejected: state.hideRejected });
         }).join("")}</div>`;
+      // Unveraenderter Stand: nichts anfassen, eine laufende Einblendung
+      // laeuft zu Ende.
+      if (letzteHtml.get(host) === html) continue;
+      letzteHtml.set(host, html);
+      host.classList.toggle("pi-ruhig", state.eingeblendet);
+      host.innerHTML = html;
       bindBestandRing(host, escapeHtml);
     }
+    if (state.loaded && state.countsLoaded) state.eingeblendet = true;
     updateLiveLabels();
   };
 
@@ -831,13 +867,16 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     }
   };
 
-  const load = async ({ announce = false } = {}) => {
-    if (state.loading) return;
-    state.loading = true;
-    // Beide Anfragen getrennt: die Kacheln zeigen, was zuerst da ist, statt
-    // auf die langsamere zu warten.
-    const bestandFertig = callApi("get_simple_dashboard").then((bestand) => {
-      if (!bestand?.counts) return;
+  /**
+   * Signalzahlen fuer den gewaehlten Zeitraum. Eigene Anfrage neben den
+   * KPI-Daten: die Kacheln zeigen, was zuerst da ist.
+   */
+  const ladeZaehler = () => {
+    const tage = state.payload.preferences?.period_days || 30;
+    state.zaehlerTage = tage;
+    return callApi("get_simple_dashboard", { days: tage }).then((bestand) => {
+      // Inzwischen ein anderer Zeitraum gewaehlt: diese Antwort ist veraltet.
+      if (!bestand?.counts || state.zaehlerTage !== tage) return;
       state.countsLoaded = true;
       state.payload = {
         ...state.payload,
@@ -851,6 +890,14 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       };
       if (state.loaded) { renderDashboards(); merkeCache(); }
     }).catch(() => null);
+  };
+
+  const load = async ({ announce = false } = {}) => {
+    if (state.loading) return;
+    state.loading = true;
+    // Beide Anfragen getrennt: die Kacheln zeigen, was zuerst da ist, statt
+    // auf die langsamere zu warten.
+    const bestandFertig = ladeZaehler();
     try {
       const payload = await callApi("get_dashboard_insights");
       state.payload = {
@@ -867,6 +914,8 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       renderDashboards();
       renderSettings();
       merkeCache();
+      // Gespeicherter Zeitraum weicht vom Cache ab: Zahlen fuer ihn holen.
+      if (state.zaehlerTage !== state.payload.preferences.period_days) void ladeZaehler();
       if (announce) setTimeout(() => { state.realtimeStatus = "live"; updateLiveLabels(); }, 900);
     } catch (error) {
       if (!state.loaded) for (const host of hosts) host.innerHTML = `<div class="pi-load-error"><i class="fa-solid fa-triangle-exclamation"></i> Dashboard-Insights konnten nicht geladen werden.</div>`;
@@ -916,6 +965,15 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     const periodButton = event.target.closest("[data-dashboard-period]");
     if (periodButton) {
       queuePreferenceSave({ ...state.payload.preferences, period_days: Number(periodButton.dataset.dashboardPeriod) });
+      void ladeZaehler();
+      return;
+    }
+    const signalLink = event.target.closest("[data-open-signals]");
+    if (signalLink) {
+      // app.js wechselt zur Ergebnisseite, gefiltert auf Bahn und Zeitraum.
+      window.dispatchEvent(new CustomEvent("signal-layer:signale-oeffnen", {
+        detail: { lane: signalLink.dataset.openSignals, period_days: state.payload.preferences.period_days },
+      }));
       return;
     }
     const ringToggle = event.target.closest("[data-toggle-rejected]");
@@ -1026,5 +1084,5 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
   if (state.loaded) renderSettings();
   void load();
   void connectRealtime();
-  return { reload: load, state, setSignalCounts };
+  return { reload: load, state };
 }
