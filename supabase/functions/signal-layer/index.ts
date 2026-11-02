@@ -608,6 +608,14 @@ async function ladeReferenzVisual(post: Record<string, unknown>): Promise<string
   return visual;
 }
 
+/** Schon abgelegtes Bild des staerksten eigenen Posts, ohne Nachladen. */
+async function gespeichertesVorbild(userId: string): Promise<string> {
+  const { data } = await getAdminClient().schema("signal_layer").from("referenz_posts")
+    .select("visual").eq("user_id", userId).not("visual", "is", null)
+    .order("impressions", { ascending: false }).limit(1).maybeSingle();
+  return String(data?.visual || "");
+}
+
 /** Vorbild-Visual: der staerkste eigene Post mit Bild. Fehlende Bilder werden nachgeladen. */
 async function referenzVorbildVisual(userId: string): Promise<{ visual: string; impressions: number; text: string } | null> {
   const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
@@ -8789,6 +8797,7 @@ Deno.serve(async (req: Request) => {
           design_templates: vorlagen, roots_assets: rootsAssets, vorlage_empfehlung: vorlagenEmpfehlung(posts, vorlagen),
           // KI-Visual im eigenen Stil geht, sobald eigene Posts hinterlegt sind.
           ki_visual: posts.length > 0, mein_stil: { portraet: Boolean(stil.portraet), logo: Boolean(stil.logo) },
+          vorbild_visual: posts.length ? await gespeichertesVorbild(auth.userId) : "",
         });
       }
 

@@ -712,9 +712,15 @@
   #article-detail-content > .roots-loader { min-height: 100%; }
 
   /* Filigree ROOTS-blue scrollbar for the scrollable list containers */
-  .track-findings-list, .review-list, main#main-content {
-    scrollbar-width: thin;
-    scrollbar-color: var(--brand) transparent;
+  /* Chrome ab 121 ignoriert die ::-webkit-scrollbar-Regeln, sobald
+     scrollbar-width oder scrollbar-color gesetzt ist, und blendet dann auf
+     dem Mac die Leiste nur beim Scrollen ein. Deshalb nur fuer Browser ohne
+     ::-webkit-scrollbar (Firefox). */
+  @supports not selector(::-webkit-scrollbar) {
+    .track-findings-list, .review-list, main#main-content {
+      scrollbar-width: thin;
+      scrollbar-color: var(--brand) transparent;
+    }
   }
   .track-findings-list::-webkit-scrollbar, .review-list::-webkit-scrollbar, main#main-content::-webkit-scrollbar { width: 6px; height: 6px; }
   .track-findings-list::-webkit-scrollbar-track, .review-list::-webkit-scrollbar-track, main#main-content::-webkit-scrollbar-track { background: transparent; }
@@ -2643,7 +2649,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261102-8';
+  import { initApp } from './app.js?v=20261102-9';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

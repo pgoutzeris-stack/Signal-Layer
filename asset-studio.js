@@ -152,6 +152,9 @@ const STANDARD_DESIGN = {
   id: "standard", name: "Standard", theme: "hell", footer: "", domain: "", logo: "",
 };
 
+/** Fragen, die im Privatprofil entfallen: Layout und Caption legt "Mein Stil" fest. */
+const PRIVAT_OHNE = new Set(["design", "variant_mode", "variant", "slide_mix", "slide_cover", "slide_content", "slide_end", "caption"]);
+
 /** Privatprofil: neutraler Ausgangspunkt, das Visual baut die KI im eigenen Stil. */
 const MEIN_STIL_DESIGN = { id: "mein-stil", name: "Mein Stil", theme: "hell", footer: "", domain: "", logo: "" };
 
@@ -210,9 +213,6 @@ const FORM_LINKEDIN = [
   // Hell/Dunkel gibt es nur fuer ROOTS. Privat baut die KI das Visual im Stil
   // der eigenen Posts, eine Vorlage entfaellt.
   { key: "design", label: "Design", art: "design", options: [["roots-hell", "ROOTS Hell"]], when: (answers) => answers.profile !== "private" },
-  // Privat: "Mein Stil" schreibt im eigenen Tonfall (Vorbilder: die staerksten
-  // eigenen Posts) und baut danach das Visual im Stil des staerksten Posts.
-  { key: "stil", label: "Stil", options: [["mein_stil", "Mein Stil"], ["ki", "KI"]], when: (answers) => answers.profile === "private" },
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
   // Einzelbild: genau ein Layout. Carousel: entweder das Modell mischt die
   // Slide-Arten, oder der Nutzer waehlt sie selbst.
@@ -270,7 +270,6 @@ const FORM_LINKEDIN = [
   {
     key: "caption",
     label: "Caption",
-    when: (answers) => !(answers.profile === "private" && answers.stil === "mein_stil"),
     options: [
       ["ai", "KI Vorschlag"],
       ["ai_tone", "KI + Tone of Voice"],
@@ -2222,6 +2221,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     kiLaeuft: false,
     kiFortschritt: null,
     meinStil: { portraet: "", logo: "" },
+    // Bild des staerksten eigenen Posts: Vorschau, bis das KI-Visual steht.
+    vorbildVisual: "",
     // Fusszeile, Domain und Logo der gewaehlten Vorlage. Was hier steht, steht
     // auch auf der Kachel.
     chrome: { footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "", custom: false },
@@ -2502,8 +2503,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.answers.profile = "private";
       state.answers.design = "";
     }
-    // Mein Stil schreibt immer im hinterlegten Tonfall.
-    if (state.answers.profile === "private" && state.answers.stil === "mein_stil") state.answers.caption = "ai_tone";
+    // Privat schreibt immer im hinterlegten Tonfall, das Layout waehlt die KI.
+    if (state.answers.profile === "private") {
+      state.answers.caption = "ai_tone";
+      state.answers.variant_mode = "auto";
+      state.answers.slide_mix = "auto";
+    }
     const liste = designListe();
     if (!liste.some((d) => d.id === state.answers.design)) {
       // Ohne eigene Wahl: die Vorlage des staerksten eigenen Posts.
@@ -3813,7 +3818,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const wann = formatDraftWhen(row.created_at);
     const dauer = formatDraftDauer(row.duration_ms);
     const klasse = status === "error" ? " is-error" : status === "running" ? " is-run" : "";
-    const unter = [draftStatusText(status), draftSettingsText(row)].filter(Boolean).join(" · ");
+    const unter = [row.creator_name || row.creator_short_name || "", draftStatusText(status), draftSettingsText(row)].filter(Boolean).join(" · ");
     return `<div class="as-draft${klasse}">
       ${personBildHtml(row.creator_avatar_url, row.creator_name || row.creator_short_name)}
       <div class="as-draft-body">
@@ -3887,6 +3892,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.rootsAssets = res?.roots_assets === true;
       state.vorlageEmpfehlung = res?.vorlage_empfehlung && typeof res.vorlage_empfehlung === "object" ? res.vorlage_empfehlung : null;
       state.kiVisual = res?.ki_visual === true;
+      state.vorbildVisual = /^data:image\//.test(String(res?.vorbild_visual || "")) ? String(res.vorbild_visual) : "";
       if (res?.mein_stil?.portraet || res?.mein_stil?.logo) {
         const stil = await api("get_mein_stil", {}).catch(() => null);
         if (stil?.mein_stil) state.meinStil = { portraet: String(stil.mein_stil.portraet || ""), logo: String(stil.mein_stil.logo || "") };
@@ -3981,7 +3987,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     a.caption = src.caption_mode === "custom" ? "custom" : src.caption_mode === "ai_tone" ? "ai_tone" : "ai";
     a.caption_text = src.caption || "";
     a.profile = src.profile === "private" ? "private" : "roots";
-    a.stil = src.caption_mode === "ai_tone" ? "mein_stil" : "ki";
     a.design = src.design || (src.theme === "dark" ? "roots-dunkel" : "roots-hell");
     if (src.asset_type) a.asset_type = src.asset_type;
     if (src.variant) a.variant = src.variant;
@@ -4075,7 +4080,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function aktiveFragen() {
     // Den Absender ROOTS waehlt nur, wer das Recht im Admin-Center hat; alle
     // anderen posten ueber das Privatprofil, die Frage entfaellt.
-    return questions.filter((q) => (!q.when || q.when(state.answers)) && !(q.key === "profile" && !state.rootsAssets));
+    return questions.filter((q) => (!q.when || q.when(state.answers)) && !(q.key === "profile" && !state.rootsAssets)
+      // Privat: kein Tool-Layout und keine Caption-Wahl. Text im eigenen
+      // Tonfall, Visual im Stil des staerksten eigenen Posts.
+      && !(state.answers.profile === "private" && PRIVAT_OHNE.has(q.key)));
   }
 
   /** Position im Fragebogen. Immer ueber den Schluessel, nie ueber einen Index:
@@ -4203,7 +4211,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Einstellungen darf nicht unter einer zugeklappten Zeile verschwinden.
     if (q.key === "caption" && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice) return false;
     // "Mein Stil" braucht Tonfall und eigene Posts; sonst bleibt die Frage offen.
-    if (q.key === "stil" && meinStilFehlt()) return false;
+    if (q.key === "asset_type" && meinStilFehlt()) return false;
     return true;
   }
 
@@ -4283,7 +4291,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       : "";
     const warnung = q.key === "caption" && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice
       ? noticeHtml("fa-feather", "Tone of Voice ist noch nicht hinterlegt", "open-tone")
-      : q.key === "stil" && meinStilFehlt()
+      : q.key === "asset_type" && meinStilFehlt()
         ? noticeHtml("fa-feather", state.toneGeladen && !state.toneOfVoice ? "Tone of Voice ist noch nicht hinterlegt" : "Keine eigenen Posts hinterlegt", "open-tone")
         : "";
     if (isMemo && q.key === "cta" && state.answers.cta === "custom") {
@@ -4525,7 +4533,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       }
     }
     if (!isMemo && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice) {
-      formFehler(state.answers.stil === "mein_stil" ? "stil" : "caption", TONE_FEHLT);
+      formFehler(state.answers.profile === "private" ? "asset_type" : "caption", TONE_FEHLT);
       return;
     }
     if (!isMemo && state.answers.caption === "custom" && !String(state.answers.caption_text || "").trim()) {
@@ -4595,7 +4603,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (pruefHinweise().length) state.step = "edit";
       render();
       // Privatprofil: das Visual im Stil der eigenen Posts gleich hinterher.
-      if (!isMemo && state.answers.profile === "private" && state.answers.stil === "mein_stil" && state.kiVisual) void baueKiVisuals();
+      if (!isMemo && state.answers.profile === "private" && state.kiVisual) void baueKiVisuals();
     } catch (err) {
       if (state.cancelRequested) return;
       state.busy = false;
@@ -4772,7 +4780,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function meinStilFehlt() {
-    return state.answers.profile === "private" && state.answers.stil === "mein_stil"
+    return state.answers.profile === "private"
       && ((state.toneGeladen && !state.toneOfVoice) || (state.designsGeladen && !state.kiVisual));
   }
 
@@ -4938,6 +4946,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function slideHtml(slide, editable = true) {
     let html = slide.variant === "KI" && slide.ki_layout
       ? kiSicher(slide.ki_layout)
+      // Privat gibt es keine Tool-Layouts: bis das Visual steht, zeigt die
+      // Folie das Vorbild mit KI-Hinweis.
+      : !isMemo && (state.answers.profile === "private" || (!state.rootsAssets && !state.assetId)) ? kiWarteHtml()
       : (ASSET_TEMPLATES[slide.variant] || ASSET_LAYOUTS[slide.variant] || ASSET_TEMPLATES.B);
     html = expandRepeats(html, slide);
     html = fillTemplate(html, slide);
@@ -5015,6 +5026,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * keine Skripte, keine Ereignis-Attribute, keine Links, Bilder nur aus den
    * Platzhaltern oder als Data-URI.
    */
+  function kiWarteHtml() {
+    const bild = state.vorbildVisual
+      ? `<img src="${attr(state.vorbildVisual)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:saturate(.9)">`
+      : "";
+    const zeile = state.kiLaeuft ? "KI baut das Visual im eigenen Stil" : "KI-Visual im eigenen Stil";
+    return `<div class="li li-ki-warte" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:#1e293b;font-family:'Circular Std',system-ui,sans-serif">${bild}
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.2) 0%,rgba(15,23,42,.78) 100%)"></div>
+      <div style="position:absolute;left:84px;right:84px;bottom:110px;color:#fff">
+        <div style="display:inline-flex;align-items:center;gap:14px;padding:12px 26px;border-radius:999px;background:rgba(255,255,255,.18);font-size:28px;font-weight:700"><i class="fa-solid fa-wand-magic-sparkles"></i>${esc(zeile)}</div>
+        <p data-field="title" style="font-size:62px;line-height:1.08;font-weight:700;margin-top:30px">{{title}}</p>
+      </div>
+    </div>`;
+  }
+
   function kiSicher(html) {
     const doc = new DOMParser().parseFromString(`<body>${String(html || "")}</body>`, "text/html");
     doc.body.querySelectorAll("script,style,iframe,object,embed,link,meta,form,input,button,foreignObject").forEach((el) => el.remove());
