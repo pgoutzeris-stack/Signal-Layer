@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signal Layer · Störung</title>
+<!-- Kommt aus dem Speicher des Service Workers, wenn GitHub Pages ausfaellt
+     und noch keine Fassung des Tools abgelegt ist. Darf deshalb nichts
+     nachladen: Schrift und Farben stehen hier, ohne Netz. -->
+<style>
+  :root { --ink: #0f172a; --muted: #475569; --brand: #206efb; --brand-dark: #165fd9; --bg: #ffffff; --app-bg: #f4f7fb; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ink: #e2e8f0; --muted: #94a3b8; --brand: #3b82f6; --brand-dark: #2563eb; --bg: #111827; --app-bg: #0b1120; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px;
+    background: var(--app-bg); color: var(--ink); font-family: 'Circular Std', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  main { max-width: 440px; padding: 32px 28px; text-align: center; background: var(--bg); border-radius: 16px; box-shadow: 0 4px 16px rgba(15,23,42,.08); }
+  svg { width: 30px; height: 30px; color: var(--brand); }
+  h1 { margin: 14px 0 6px; font-size: 1.15rem; font-weight: 700; }
+  p { margin: 0 0 20px; color: var(--muted); font-size: .88rem; }
+  button { border: 0; border-radius: 999px; padding: .75rem 1.6rem; background: var(--brand); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button:hover { background: var(--brand-dark); }
+</style>
+</head>
+<body>
+<main role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>
+  <h1>Signal Layer ist gerade nicht erreichbar</h1>
+  <p id="zustand">GitHub Pages meldet eine Störung · neuer Versuch in 15 s</p>
+  <button type="button" id="neu">Jetzt neu laden</button>
+</main>
+<script>
+  // Fragt mit ?probe= am Service Worker vorbei bei Pages nach. Antwortet die
+  // Seite wieder, laedt das Tool neu.
+  const WARTEN = [15, 30, 60, 120];
+  const zustand = document.getElementById("zustand");
+  let versuch = 0;
+  let rest = WARTEN[0];
+  let laeuft = false;
+  async function pruefen() {
+    if (laeuft) return;
+    laeuft = true;
+    zustand.textContent = "GitHub Pages meldet eine Störung · prüfe …";
+    try {
+      const antwort = await fetch(`./index.html?probe=${Date.now()}`, { cache: "no-store" });
+      const text = antwort.ok ? await antwort.text() : "";
+      if (text.includes('id="view-simple-results"')) { location.reload(); return; }
+    } catch (_) { /* weiter warten */ }
+    versuch += 1;
+    rest = WARTEN[Math.min(versuch, WARTEN.length - 1)];
+    zustand.textContent = `GitHub Pages meldet eine Störung · neuer Versuch in ${rest} s`;
+    laeuft = false;
+  }
+  document.getElementById("neu").addEventListener("click", () => void pruefen());
+  setInterval(() => {
+    if (laeuft) return;
+    rest -= 1;
+    if (rest > 0) zustand.textContent = `GitHub Pages meldet eine Störung · neuer Versuch in ${rest} s`;
+    else void pruefen();
+  }, 1000);
+</script>
+</body>
+</html>

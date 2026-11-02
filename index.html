@@ -2617,6 +2617,15 @@ try {
 }
 </script>
 
+<script>
+  // Rueckfall bei Stoerungen von GitHub Pages: zuletzt geladene Fassung oder
+  // eigene Stoerungsseite statt der GitHub-Fehlerseite. Siehe sw.js.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => { /* ohne Rueckfall weiter */ });
+    });
+  }
+</script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
   import { initApp } from './app.js?v=20261102-2';
