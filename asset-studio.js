@@ -2198,6 +2198,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     toneGeladen: false,
     designs: [],
     designsGeladen: false,
+    // Recht auf LinkedIn-Assets unter dem Absender ROOTS (Admin-Center).
+    rootsAssets: false,
     // Fusszeile, Domain und Logo der gewaehlten Vorlage. Was hier steht, steht
     // auch auf der Kachel.
     chrome: { footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "", custom: false },
@@ -2472,6 +2474,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Die Vorlage traegt hell/dunkel. Die Layoutliste und der Prompt lesen
    *  weiterhin look, deshalb wird es hier nachgezogen. */
   function synchronisiereDesign() {
+    // Ohne Recht auf ROOTS-Assets bleibt nur das Privatprofil, auch wenn ein
+    // Entwurf oder die Voreinstellung ROOTS mitbringt.
+    if (state.designsGeladen && !state.rootsAssets && state.answers.profile !== "private") {
+      state.answers.profile = "private";
+      state.answers.design = "";
+    }
     const liste = designListe();
     if (!liste.some((d) => d.id === state.answers.design)) {
       state.answers.design = liste[0].id;
@@ -3850,6 +3858,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     try {
       const res = await api("get_asset_design_templates", {});
       const liste = Array.isArray(res?.design_templates) ? res.design_templates : [];
+      state.rootsAssets = res?.roots_assets === true;
       // Der Server spricht light/dark und footer_left, der Fragebogen hell/dunkel
       // und footer. Ohne diese Uebersetzung stand eine dunkle Vorlage hell da
       // und die Layoutliste zeigte die falschen Kacheln.
@@ -4031,7 +4040,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Sichtbare Fragen in ihrer Reihenfolge. Bedingte Fragen fallen raus, sobald
    *  ihre Bedingung nicht mehr gilt. */
   function aktiveFragen() {
-    return questions.filter((q) => !q.when || q.when(state.answers));
+    // Den Absender ROOTS waehlt nur, wer das Recht im Admin-Center hat; alle
+    // anderen posten ueber das Privatprofil, die Frage entfaellt.
+    return questions.filter((q) => (!q.when || q.when(state.answers)) && !(q.key === "profile" && !state.rootsAssets));
   }
 
   /** Position im Fragebogen. Immer ueber den Schluessel, nie ueber einen Index:

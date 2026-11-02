@@ -535,6 +535,22 @@ async function assetToneOfVoice(userId: string): Promise<string> {
   return String(data?.tone_of_voice || "").trim();
 }
 
+/**
+ * LinkedIn-Assets unter dem Absender ROOTS (Unternehmensposts) legt nur an,
+ * wer das Recht im Intranet-Admin-Center hat (app_settings.signal_layer_roots_assets).
+ * Alle anderen posten ueber ihr Privatprofil mit eigenem Tonfall und Design.
+ */
+async function darfRootsAssets(userId: string | null | undefined): Promise<boolean> {
+  if (!userId) return false;
+  const { data, error } = await getAdminClient().schema("users")
+    .from("profiles").select("app_settings").eq("id", userId).maybeSingle();
+  if (error) throw new Error(`Rechte konnten nicht gelesen werden: ${error.message}`);
+  return (data?.app_settings as Record<string, unknown> | null)?.signal_layer_roots_assets === true;
+}
+
+export const ROOTS_ASSETS_GESPERRT =
+  "LinkedIn-Assets unter dem Absender ROOTS sind für dein Konto nicht freigeschaltet. Bitte das Privatprofil wählen.";
+
 /** Design-Vorlagen des Nutzers. Leer heisst: noch keine angelegt. */
 async function assetDesignTemplates(userId: string): Promise<DesignTemplate[]> {
   const { data, error } = await getAdminClient().schema("signal_layer")
@@ -8683,7 +8699,8 @@ Deno.serve(async (req: Request) => {
 
       case "get_asset_design_templates": {
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
-        return corsResponse(origin, { design_templates: await assetDesignTemplates(auth.userId) });
+        const [vorlagen, rootsAssets] = await Promise.all([assetDesignTemplates(auth.userId), darfRootsAssets(auth.userId)]);
+        return corsResponse(origin, { design_templates: vorlagen, roots_assets: rootsAssets });
       }
 
       // Ganze Liste in einem Zug: die Reihenfolge im Fragebogen ist die
@@ -13024,6 +13041,9 @@ Deno.serve(async (req: Request) => {
           // Die Vorlage wird jetzt festgeschrieben. Ein Wiederholungslauf liest
           // sie aus der gespeicherten Zeile und braucht die Einstellungen nicht
           // noch einmal - auch dann nicht, wenn sie inzwischen anders sind.
+          if (linkedinAnswers.profile !== "private" && !(await darfRootsAssets(auth?.userId))) {
+            return errorResponse(origin, ROOTS_ASSETS_GESPERRT, 403);
+          }
           const vorlage = linkedinAnswers.profile === "private"
             ? (auth?.userId ? (await assetDesignTemplates(auth.userId)).find((eintrag) => eintrag.id === linkedinAnswers.design) : undefined)
             : (ROOTS_DESIGNS[linkedinAnswers.design] || ROOTS_DESIGNS["roots-hell"]);

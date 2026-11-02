@@ -44,3 +44,21 @@ test("Stil fliesst vom Server bis auf die Folie", async () => {
   assert.match(app, /data-design-portraet=/);
   assert.match(app, /toDataURL\("image\/webp", qualitaet\)/);
 });
+
+test("ROOTS-LinkedIn-Assets nur mit Recht aus dem Admin-Center", async () => {
+  const [edge, studio, sql] = await Promise.all([
+    readFile(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../asset-studio.js", import.meta.url), "utf8"),
+    readFile(new URL("../../ROOTS_Intranet/supabase/migrations/20261102200000_signal_layer_roots_assets_recht.sql", import.meta.url), "utf8").catch(() => ""),
+  ]);
+  // Server liest das Recht aus users.profiles und sperrt den Absender ROOTS.
+  assert.match(edge, /signal_layer_roots_assets === true/);
+  assert.match(edge, /if \(linkedinAnswers\.profile !== "private" && !\(await darfRootsAssets\(auth\?\.userId\)\)\)/);
+  assert.match(edge, /design_templates: vorlagen, roots_assets: rootsAssets/);
+  // Studio: Frage "Absender" nur mit Recht, sonst fest Privatprofil.
+  assert.match(studio, /!\(q\.key === "profile" && !state\.rootsAssets\)/);
+  assert.match(studio, /state\.rootsAssets = res\?\.roots_assets === true;/);
+  assert.match(studio, /state\.designsGeladen && !state\.rootsAssets && state\.answers\.profile !== "private"/);
+  // Nur Admins setzen das Recht (Trigger), wenn die Intranet-Migration lokal liegt.
+  if (sql) assert.match(sql, /-> 'signal_layer_roots_assets'\)\s*is distinct from/);
+});
