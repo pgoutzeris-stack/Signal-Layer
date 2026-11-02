@@ -7515,3 +7515,139 @@ export function buildAssetRepairPrompt(prompt: string, mangel: string): string {
   const grund = mangel.replace(/\s+/g, " ").trim().slice(0, 400);
   return `${prompt}\n\n<repair>Die vorige Antwort war nicht verwendbar (${grund}). Antworte diesmal vollstaendig und ausschliesslich mit genau einem gueltigen JSON-Objekt. 13,3 % und 13,3 Prozent sind dieselbe Zahl. Erfinde keine Zahlen, die nicht im Artikel stehen. Jede sichtbare Zahl braucht ihren wortgleich kopierten source_context; value, label, title und subtitle muessen genau den Befund dieses Ausschnitts beschreiben. Passt keine Kennzahl-Variante (E, H, L), wähle eine Textfolie aus der erlaubten Liste, nicht dieselbe Variante mit leerer oder fremd beschrifteter Zahl. Ist der Mangel die Cover-These: Signal bleibt Anlass. title ist Action Title der Herausforderung aus roots_anschluss, nicht der Name der ROOTS-Leistung, nicht die Nachricht und nicht die Personalie. Die Leistung steht erst in about_fit. Keine 100-Tage-CMO-Sprache im Executive Memo.</repair>`;
 }
+
+/* ── Mein Stil: KI-Visual im Stil der eigenen Posts ────────────────────────── */
+
+/** Persoenliche Bausteine fuer KI-Visuals: freigestelltes Portraet und Logo. */
+export type MeinStil = { portraet: string; logo: string };
+
+export function normalizeMeinStil(raw: unknown): MeinStil {
+  const quelle = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const portraet = String(quelle.portraet || "").trim();
+  const logo = String(quelle.logo || "").trim();
+  return {
+    portraet: /^data:image\/(png|webp);base64,/.test(portraet) && portraet.length <= DESIGN_PORTRAET_LIMIT ? portraet : "",
+    logo: /^data:image\/(png|svg\+xml|webp);base64,/.test(logo) && logo.length <= DESIGN_LOGO_LIMIT ? logo : "",
+  };
+}
+
+/** Bauen laesst sich das Visual mit einem Modell, das Bilder sieht. */
+export const KI_VISUAL_MODELL = "anthropic/claude-opus-5-5";
+export const KI_LAYOUT_LIMIT = 30_000;
+
+const KI_TAGS = new Set([
+  "div", "span", "p", "h1", "h2", "h3", "b", "strong", "em", "i", "u", "s", "br", "ul", "ol", "li", "img",
+  "svg", "path", "circle", "rect", "line", "polygon", "polyline", "ellipse", "g", "defs",
+  "lineargradient", "radialgradient", "stop", "text", "tspan",
+]);
+const KI_ATTRIBUTE = new Set([
+  "class", "style", "data-field", "src", "alt", "aria-hidden", "viewbox", "d", "fill", "stroke", "stroke-width",
+  "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "cx", "cy", "r", "rx", "ry", "x", "y", "x1", "y1", "x2", "y2",
+  "width", "height", "points", "offset", "stop-color", "stop-opacity", "opacity", "fill-opacity", "transform",
+  "gradientunits", "gradienttransform", "id", "preserveaspectratio", "xmlns", "font-size", "font-weight",
+  "text-anchor", "dominant-baseline", "letter-spacing",
+]);
+const KI_LEERE_TAGS = new Set(["br", "img", "path", "circle", "rect", "line", "polygon", "polyline", "ellipse", "stop"]);
+
+/** Ein Stil-Wert ohne Nachladen, Skript oder festes Ankleben am Fenster. */
+function kiStil(wert: string): string {
+  return wert.split(";").map((teil) => teil.trim()).filter((teil) => {
+    if (!teil) return false;
+    if (/expression|javascript:|@import|behavior|-moz-binding/i.test(teil)) return false;
+    const urls = teil.match(/url\(([^)]*)\)/gi) || [];
+    return urls.every((u) => /url\(\s*['"]?(#|data:image\/)/i.test(u));
+  }).map((teil) => teil.replace(/position\s*:\s*fixed/i, "position:absolute")).join(";");
+}
+
+/**
+ * Das Modell liefert HTML, das im Editor und spaeter im Export steht. Erlaubt
+ * ist nur, was eine Folie braucht: Bloecke, Text, Bilder aus den Platzhaltern
+ * oder als Data-URI und Inline-SVG. Alles andere faellt weg, Text bleibt.
+ */
+export function bereinigeKiLayout(roh: string): string {
+  let html = String(roh || "").trim();
+  const zaun = html.match(/```(?:html)?\s*([\s\S]*?)```/i);
+  if (zaun) html = zaun[1].trim();
+  html = html
+    .replace(/<!--(?!\s*\/?repeat(?::(?:bullets|stats|steps))?\s*-->)[\s\S]*?-->/g, "")
+    .replace(/<(script|style|iframe|object|embed|noscript|template|foreignobject|form|textarea|select|button|video|audio|canvas)\b[\s\S]*?<\/\1\s*>/gi, "")
+    .replace(/<(script|style|iframe|object|embed|link|meta|base|input|frame|frameset)\b[^>]*>/gi, "");
+  html = html.replace(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)([^>]*)>/g, (_m, schluss: string, name: string, rest: string) => {
+    const tag = name.toLowerCase();
+    if (!KI_TAGS.has(tag)) return "";
+    if (schluss) return KI_LEERE_TAGS.has(tag) ? "" : `</${tag === "lineargradient" ? "linearGradient" : tag === "radialgradient" ? "radialGradient" : tag}>`;
+    const attribute: string[] = [];
+    for (const treffer of rest.matchAll(/([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
+      const schluessel = treffer[1].toLowerCase();
+      let wert = treffer[3] ?? treffer[4] ?? "";
+      if (!KI_ATTRIBUTE.has(schluessel)) continue;
+      if (schluessel === "src") {
+        if (tag !== "img" || !/^(\{\{(portraet|logo)\}\}|data:image\/(png|jpeg|webp|svg\+xml);base64,)/.test(wert)) continue;
+      }
+      if (schluessel === "style") wert = kiStil(wert);
+      if (/^(fill|stroke)$/.test(schluessel) && /url\(/i.test(wert) && !/^url\(#[-\w]+\)$/.test(wert.trim())) continue;
+      if (schluessel === "data-field" && !/^[a-z0-9_]{1,30}$/.test(wert)) continue;
+      const original = schluessel === "viewbox" ? "viewBox" : schluessel === "preserveaspectratio" ? "preserveAspectRatio"
+        : schluessel === "gradientunits" ? "gradientUnits" : schluessel === "gradienttransform" ? "gradientTransform" : schluessel;
+      attribute.push(`${original}="${wert.replace(/"/g, "&quot;")}"`);
+    }
+    const name2 = tag === "lineargradient" ? "linearGradient" : tag === "radialgradient" ? "radialGradient" : tag;
+    return `<${name2}${attribute.length ? ` ${attribute.join(" ")}` : ""}>`;
+  });
+  html = html.trim();
+  if (!html) return "";
+  // Die Wurzel traegt die Klasse li: daran haengen Groesse, Schriftanpassung und Export.
+  if (!/^<div\b[^>]*\bclass="[^"]*\bli\b/.test(html)) {
+    html = `<div class="li li-ki" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:#fff">${html}</div>`;
+  } else {
+    html = html.replace(/^<div\b([^>]*)\bclass="([^"]*)"/, (_m, vor: string, klassen: string) => `<div${vor}class="${klassen} li-ki"`);
+  }
+  return html.length <= KI_LAYOUT_LIMIT ? html : "";
+}
+
+export type KiVisualEingabe = {
+  slide: Record<string, unknown>;
+  rolle: "cover" | "content" | "end" | "single";
+  nummer: number;
+  gesamt: number;
+  mitPortraet: boolean;
+  mitLogo: boolean;
+  titelLayout: string;
+  vorbildText: string;
+  vorbildImpressions: number;
+};
+
+/** Auftrag an das Bildmodell: neue Folie im Stil des staerksten eigenen Posts. */
+export function buildKiVisualPrompt(e: KiVisualEingabe): string {
+  const s = e.slide || {};
+  const feld = (name: string) => String(s[name] ?? "").trim();
+  const liste = (name: string) => Array.isArray(s[name]) ? s[name] as unknown[] : [];
+  const inhalt = [
+    feld("kicker") && `kicker: ${feld("kicker")}`,
+    feld("title") && `title: ${feld("title")}`,
+    feld("subtitle") && `subtitle: ${feld("subtitle")}`,
+    feld("quote") && `quote: ${feld("quote")}`,
+    feld("attribution") && `attribution: ${feld("attribution")}`,
+    feld("takeaway") && `takeaway: ${feld("takeaway")}`,
+    s.stat && typeof s.stat === "object" && (s.stat as Record<string, unknown>).value ? `stat_value: ${(s.stat as Record<string, unknown>).value} / stat_label: ${(s.stat as Record<string, unknown>).label || ""}` : "",
+    liste("bullets").length ? `bullets (${liste("bullets").length}): ${liste("bullets").map((b) => String(b)).join(" | ")}` : "",
+    liste("stats").length ? `stats (${liste("stats").length}): ${liste("stats").map((x) => `${(x as Record<string, unknown>)?.value} ${(x as Record<string, unknown>)?.label}`).join(" | ")}` : "",
+    liste("steps").length ? `steps (${liste("steps").length}): ${liste("steps").map((x) => `${(x as Record<string, unknown>)?.title}: ${(x as Record<string, unknown>)?.text}`).join(" | ")}` : "",
+  ].filter(Boolean).join("\n");
+  const rolle = { cover: "Titelfolie eines Carousels", content: "Inhaltsfolie eines Carousels", end: "Endfolie eines Carousels", single: "Einzelbild-Post" }[e.rolle];
+  return `Gestalte eine LinkedIn-Folie (1080 x 1350 px) als HTML im Stil des Vorbild-Visuals im Bild. Das Vorbild ist der eigene Post mit den meisten Impressions (${e.vorbildImpressions.toLocaleString("de-DE")}).
+
+Uebernimm aus dem Vorbild: Farbwelt, Hintergrund (Flaeche oder Verlauf), Charakter der Typografie (Gewicht, Groessenverhaeltnisse, Versalien), Bildaufbau und Raumaufteilung, Dekorationen (Linien, Rahmen, Anfuehrungszeichen, Pinselstriche, Formen, Trennlinien). Fotos und Logos im Vorbild baust du nicht nach; an ihre Stelle treten Flaechen, Formen oder Verlaeufe in den Farben des Vorbilds.
+
+Inhalt dieser Folie (${rolle}, Folie ${e.nummer} von ${e.gesamt}):
+${inhalt || "title: (leer)"}
+
+Regeln:
+- Wurzel: <div class="li" style="width:1080px;height:1350px;position:relative;overflow:hidden;font-family:'Circular Std',system-ui,sans-serif;...">. Nur Inline-Styles, keine Klassen ausser li. Mindestens 72 px Innenabstand.
+- Texte stehen nur als Platzhalter in Elementen mit data-field, zum Beispiel <h1 data-field="title" style="...">{{title}}</h1>. Erlaubte Platzhalter: {{kicker}} {{title}} {{subtitle}} {{quote}} {{attribution}} {{takeaway}} {{stat_value}} {{stat_label}} {{footer_left}}. Nur die nutzen, die oben einen Inhalt haben.
+- Listen als Wiederholblock, genau so: <!--repeat:bullets--><div data-field="item" style="...">{{item}}</div><!--/repeat-->. Fuer stats {{value}} und {{label}} in <!--repeat:stats-->...<!--/repeat-->, fuer steps {{n}} {{title}} {{text}} in <!--repeat:steps-->...<!--/repeat-->. Den Block nur einmal schreiben, er wird je Eintrag wiederholt.
+- Groessen: Titel 60 bis 110 px, Fliesstext mindestens 26 px. Plane Platz fuer die tatsaechliche Textmenge oben, nichts darf ueberlaufen.
+${e.mitPortraet ? "- Ein freigestelltes Portraet der Person steht als <img src=\"{{portraet}}\"> zur Verfuegung. Setze es ein, wenn das Vorbild eine Person zeigt, freigestellt am unteren Rand, Text daneben, nie ueber dem Gesicht.\n" : ""}${e.mitLogo ? "- Ein Logo steht als <img src=\"{{logo}}\"> zur Verfuegung, nur einsetzen, wenn das Vorbild ein Zeichen traegt.\n" : ""}- Dekoration als Inline-SVG ist erlaubt. Keine Bilder aus dem Netz, keine Links, keine Skripte, keine erfundenen Zahlen oder Texte.
+${e.titelLayout ? `- Dies ist eine Folge-Folie: Hintergrund, Farben, Schriften, Rahmen und Dekoration exakt wie in dieser bereits gebauten Titelfolie, nur der Inhaltsbereich passt sich an:\n${e.titelLayout.slice(0, 12_000)}\n` : ""}
+Antworte nur mit JSON: {"html": "<div class=\\"li\\" ...>...</div>"}`;
+}

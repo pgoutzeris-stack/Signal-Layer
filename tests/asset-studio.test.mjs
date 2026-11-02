@@ -3204,8 +3204,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20261102-6");
-  assert.match(indexHtml, /app\.js\?v=20261102-6/);
+  assert.equal(studioVersion, "20261102-7");
+  assert.match(indexHtml, /app\.js\?v=20261102-7/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3680,7 +3680,8 @@ test("Design-Vorlagen liegen je Nutzer in Supabase", () => {
   assert.match(edge, /case "get_asset_design_templates"/);
   assert.match(edge, /case "save_asset_design_templates"/);
   assert.match(edge, /DESIGN_TEMPLATE_MISSING/);
-  assert.match(indexHtml, /id="design-template-list"/);
+  // Privat: "Mein Stil" (Portraet, Logo) statt Vorlagenliste.
+  assert.match(indexHtml, /id="mein-stil-felder"/);
   assert.match(appJs, /save_asset_design_templates/);
   assert.match(appJs, /function openSettingsPanel/);
 });
@@ -3708,8 +3709,9 @@ test("Der Fragebogen zeigt eine Frage nach der anderen", async () => {
   assert.match(studio, /oeffneEinstellungen\("tone"\)/);
   assert.match(studio, /oeffneEinstellungen\("design"\)/);
   const { assetQuestionCanAdvance } = await import("../asset-studio.js");
-  assert.equal(assetQuestionCanAdvance("profile", { profile: "private" }, { designsLoaded: true, designCount: 0 }), false);
-  assert.equal(assetQuestionCanAdvance("design", { profile: "private" }, { designsLoaded: true, designCount: 0 }), false);
+  // Privatprofil braucht keine Vorlage mehr, nur geladene Einstellungen.
+  assert.equal(assetQuestionCanAdvance("profile", { profile: "private" }, { designsLoaded: false, designCount: 0 }), false);
+  assert.equal(assetQuestionCanAdvance("profile", { profile: "private" }, { designsLoaded: true, designCount: 0 }), true);
   assert.equal(assetQuestionCanAdvance("profile", { profile: "private" }, { designsLoaded: true, designCount: 1 }), true);
   assert.equal(assetQuestionCanAdvance("caption", { caption: "ai_tone" }, { toneLoaded: true, toneOfVoice: "" }), false);
   assert.equal(assetQuestionCanAdvance("caption", { caption: "ai_tone" }, { toneLoaded: true, toneOfVoice: "Klar und direkt" }), true);

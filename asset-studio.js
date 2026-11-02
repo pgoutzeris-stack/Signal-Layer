@@ -113,7 +113,8 @@ const LAYOUT_NAMEN = {
 };
 const CONTENT_VARIANTS = [...VARIANTS, ...LAYOUT_KEYS.map((k) => [k, LAYOUT_NAMEN[k] || ASSET_LAYOUT_LABELS[k] || k])];
 const VARIANTS_ALL = [...CAROUSEL_FRAMES, ...CONTENT_VARIANTS];
-const VARIANT_KEYS = VARIANTS_ALL.map(([key]) => key);
+// "KI": Folie, deren Gestaltung die KI im Stil der eigenen Posts gebaut hat.
+const VARIANT_KEYS = [...VARIANTS_ALL.map(([key]) => key), "KI"];
 
 // Anmutung je Layout, abgelesen am Markup der gebauten Assets: dunkel heisst
 // li-dark oder ein dunkles Overlay ueber dem Bild. Die Wahl filtert die Liste,
@@ -151,6 +152,9 @@ const STANDARD_DESIGN = {
   id: "standard", name: "Standard", theme: "hell", footer: "", domain: "", logo: "",
 };
 
+/** Privatprofil: neutraler Ausgangspunkt, das Visual baut die KI im eigenen Stil. */
+const MEIN_STIL_DESIGN = { id: "mein-stil", name: "Mein Stil", theme: "hell", footer: "", domain: "", logo: "" };
+
 /** Gleiche Aussage wie serverseitig, damit der teure Aufruf gar nicht startet. */
 const TONE_FEHLT = "Für „KI + Tone of Voice“ ist noch kein Tonfall hinterlegt. Bitte in den Einstellungen unter Tone of Voice konfigurieren.";
 const DESIGN_FEHLT = "Für das Privatprofil ist noch keine Design-Vorlage hinterlegt.";
@@ -161,7 +165,7 @@ const DESIGN_FEHLT = "Für das Privatprofil ist noch keine Design-Vorlage hinter
 export function assetQuestionCanAdvance(questionKey, answers = {}, prerequisites = {}) {
   const key = String(questionKey || "");
   if ((key === "profile" || key === "design") && answers.profile === "private") {
-    return Boolean(prerequisites.designsLoaded && Number(prerequisites.designCount) > 0);
+    return Boolean(prerequisites.designsLoaded);
   }
   if (key === "caption" && answers.caption === "ai_tone") {
     return Boolean(prerequisites.toneLoaded && String(prerequisites.toneOfVoice || "").trim());
@@ -203,7 +207,9 @@ const FORM_LINKEDIN = [
   },
   // Die Auswahl haengt am Profil: ROOTS hat zwei feste Vorlagen, privat die in
   // den Einstellungen hinterlegten. Traegt zugleich hell/dunkel.
-  { key: "design", label: "Design", art: "design", options: [["roots-hell", "ROOTS Hell"]] },
+  // Hell/Dunkel gibt es nur fuer ROOTS. Privat baut die KI das Visual im Stil
+  // der eigenen Posts, eine Vorlage entfaellt.
+  { key: "design", label: "Design", art: "design", options: [["roots-hell", "ROOTS Hell"]], when: (answers) => answers.profile !== "private" },
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
   // Einzelbild: genau ein Layout. Carousel: entweder das Modell mischt die
   // Slide-Arten, oder der Nutzer waehlt sie selbst.
@@ -2207,6 +2213,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     rootsAssets: false,
     // Vorlage des staerksten eigenen Posts, vorausgewaehlt im Fragebogen.
     vorlageEmpfehlung: null,
+    // KI-Visual im eigenen Stil: moeglich, sobald eigene Posts hinterlegt sind.
+    kiVisual: false,
+    kiLaeuft: false,
+    kiFortschritt: null,
+    meinStil: { portraet: "", logo: "" },
     // Fusszeile, Domain und Logo der gewaehlten Vorlage. Was hier steht, steht
     // auch auf der Kachel.
     chrome: { footer_left: "ROOTS Consultants", domain: "roots-consultants.com", logo: "", custom: false },
@@ -2468,7 +2479,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Alle Vorlagen, die zum gewaehlten Profil gehoeren. */
   function designListe(answers = state.answers) {
     if (answers.profile === "private") {
-      return state.designs.length ? state.designs : [STANDARD_DESIGN];
+      return [MEIN_STIL_DESIGN];
     }
     return ROOTS_DESIGNS;
   }
@@ -3869,6 +3880,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const liste = Array.isArray(res?.design_templates) ? res.design_templates : [];
       state.rootsAssets = res?.roots_assets === true;
       state.vorlageEmpfehlung = res?.vorlage_empfehlung && typeof res.vorlage_empfehlung === "object" ? res.vorlage_empfehlung : null;
+      state.kiVisual = res?.ki_visual === true;
+      if (res?.mein_stil?.portraet || res?.mein_stil?.logo) {
+        const stil = await api("get_mein_stil", {}).catch(() => null);
+        if (stil?.mein_stil) state.meinStil = { portraet: String(stil.mein_stil.portraet || ""), logo: String(stil.mein_stil.logo || "") };
+      }
       // Der Server spricht light/dark und footer_left, der Fragebogen hell/dunkel
       // und footer. Ohne diese Uebersetzung stand eine dunkle Vorlage hell da
       // und die Layoutliste zeigte die falschen Kacheln.
@@ -4575,6 +4591,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // Mit offenen Stellen geht es direkt in die Bearbeitung, dort sind sie markiert.
       if (pruefHinweise().length) state.step = "edit";
       render();
+      // Privatprofil: das Visual im Stil der eigenen Posts gleich hinterher.
+      if (!isMemo && state.answers.profile === "private" && state.kiVisual) void baueKiVisuals();
     } catch (err) {
       if (state.cancelRequested) return;
       state.busy = false;
@@ -4713,7 +4731,54 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       },
       image: { src: "", pos: "50% 50%" },
       html: {},
+      // KI-Gestaltung im eigenen Stil und die Vorlage, aus der sie entstand.
+      ki_layout: variant === "KI" ? String(src.ki_layout || "") : "",
+      ki_basis: String(src.ki_basis || ""),
     };
+  }
+
+  /**
+   * Visual im Stil des staerksten eigenen Posts, Folie fuer Folie. Jede Folie
+   * ist ein eigener Serveraufruf; die Titelfolie zuerst, die folgenden
+   * uebernehmen ihre Gestaltung.
+   */
+  async function baueKiVisuals() {
+    if (isMemo || state.kiLaeuft || !state.assetId || state.answers.profile !== "private" || !state.kiVisual) return;
+    state.kiLaeuft = true;
+    state.kiFortschritt = { fertig: 0, gesamt: state.slides.length, fehler: "" };
+    render();
+    for (let i = 0; i < state.slides.length; i += 1) {
+      try {
+        const res = await api("ki_visual_slide", { asset_id: state.assetId, index: i });
+        const slide = state.slides[i];
+        if (slide && res?.html) {
+          slide.ki_basis = slide.ki_basis || slide.variant;
+          slide.variant = "KI";
+          slide.ki_layout = String(res.html);
+          slide.html = {};
+        }
+        state.kiFortschritt.fertig = i + 1;
+        render();
+      } catch (err) {
+        state.kiFortschritt.fehler = err && err.message ? fehlerKlartext(String(err.message)) : "Visual konnte nicht gebaut werden.";
+        break;
+      }
+    }
+    state.kiLaeuft = false;
+    render();
+  }
+
+  function kiStatusHtml() {
+    if (isMemo || state.answers.profile !== "private") return "";
+    const f = state.kiFortschritt;
+    const zeile = state.kiLaeuft && f ? `Visual im eigenen Stil · Folie ${f.fertig + 1} von ${f.gesamt}`
+      : f?.fehler ? f.fehler
+      : !state.kiVisual ? "Keine eigenen Posts hinterlegt"
+      : "";
+    const knopf = state.kiVisual && state.assetId
+      ? `<button type="button" class="as-btn" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i>Visual im eigenen Stil bauen</button>`
+      : "";
+    return knopf || zeile ? `<div class="as-group"><span>Visual</span>${knopf}${zeile ? `<p class="as-savehint">${esc(zeile)}</p>` : ""}</div>` : "";
   }
 
   function emptyImage() {
@@ -4863,7 +4928,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * Asset benutzen denselben Weg, deshalb kann die Vorschau nicht luegen.
    */
   function slideHtml(slide, editable = true) {
-    let html = ASSET_TEMPLATES[slide.variant] || ASSET_LAYOUTS[slide.variant] || ASSET_TEMPLATES.B;
+    let html = slide.variant === "KI" && slide.ki_layout
+      ? kiSicher(slide.ki_layout)
+      : (ASSET_TEMPLATES[slide.variant] || ASSET_LAYOUTS[slide.variant] || ASSET_TEMPLATES.B);
     html = expandRepeats(html, slide);
     html = fillTemplate(html, slide);
     html = ergaenzeZitatQuelle(html, slide);
@@ -4935,6 +5002,24 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return html;
   }
 
+  /**
+   * Zweite Sicherung fuer KI-Gestaltung (die erste laeuft auf dem Server):
+   * keine Skripte, keine Ereignis-Attribute, keine Links, Bilder nur aus den
+   * Platzhaltern oder als Data-URI.
+   */
+  function kiSicher(html) {
+    const doc = new DOMParser().parseFromString(`<body>${String(html || "")}</body>`, "text/html");
+    doc.body.querySelectorAll("script,style,iframe,object,embed,link,meta,form,input,button,foreignObject").forEach((el) => el.remove());
+    doc.body.querySelectorAll("*").forEach((el) => {
+      [...el.attributes].forEach((a) => {
+        const name = a.name.toLowerCase();
+        if (name.startsWith("on") || name === "href" || name === "xlink:href" || name === "srcset") el.removeAttribute(a.name);
+        if (name === "src" && !/^(\{\{(portraet|logo)\}\}|data:image\/)/.test(a.value)) el.removeAttribute(a.name);
+      });
+    });
+    return doc.body.innerHTML.replace(/%7B%7B(portraet|logo)%7D%7D/g, "{{$1}}");
+  }
+
   /** Ein Zitat ohne sichtbare Person wirkt wie eine unbelegte Werbeaussage.
    *  Die historischen A/J-Vorlagen hatten das Feld im Modell, aber nicht im
    *  Markup. Wir ergänzen es direkt unter dem Zitat, in beiden Varianten. */
@@ -4992,6 +5077,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // wiederholen, der steht schon oben rechts in der Kachel.
       eyebrow: "Abbildung",
       image: slide.image.src || "",
+      portraet: state.meinStil?.portraet || LEER_BILD,
     };
     (slide.stats || []).forEach((eintrag, i) => {
       werte[`stat${i + 1}_value`] = eintrag?.value || "";
@@ -5004,7 +5090,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
     return html.replace(/\{\{([a-z0-9_]+)\}\}/g, (_m, name) => {
       const wert = werte[name];
-      if (name === "logo" || name === "image") return attr(wert || "");
+      if (name === "logo" || name === "image" || name === "portraet") return attr(wert || "");
       const bearbeitet = slide.html?.[name];
       if (typeof bearbeitet === "string") return bearbeitet;
       return markiere(esc(wert || ""));
@@ -6021,6 +6107,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </div>`;
     return `<aside class="as-inspector">
       ${post}
+      ${kiStatusHtml()}
       <div class="as-group">
         <span>Ausgabe</span>
         <button type="button" class="as-btn" data-act="download"><i class="fa-solid fa-download"></i>HTML herunterladen</button>
@@ -7850,6 +7937,7 @@ ${stages}${post}
       if (id) void openDraft(id);
       return;
     }
+    if (act === "ki-visual") { void baueKiVisuals(); return; }
     if (act === "own") {
       void uebernehmen();
       return;

@@ -227,8 +227,13 @@ import {
   normalizeAssetAnswers,
   normalizeDesignTemplates,
   ROOTS_DESIGNS,
+  LEERER_STIL,
   TONE_OF_VOICE_LIMIT,
   REFERENZ_VORBILDER,
+  normalizeMeinStil,
+  bereinigeKiLayout,
+  buildKiVisualPrompt,
+  KI_VISUAL_MODELL,
   normalizeAssetPayload,
   normalizeMemoBenchmarkResearch,
   parseCommonsSceneHits,
@@ -552,10 +557,68 @@ async function darfRootsAssets(userId: string | null | undefined): Promise<boole
 /** Eigene LinkedIn-Posts des Nutzers, staerkste zuerst. */
 async function referenzPosts(userId: string): Promise<Array<Record<string, unknown>>> {
   const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
-    .select("id, quelle, extern_id, veroeffentlicht_am, text, impressions, reaktionen, kommentare, reposts, vorlage_id, aktualisiert_am")
+    .select("id, quelle, extern_id, veroeffentlicht_am, text, impressions, reaktionen, kommentare, reposts, vorlage_id, aktualisiert_am, visual_geladen_am, visual_fehler, hat_visual")
     .eq("user_id", userId).order("impressions", { ascending: false }).order("veroeffentlicht_am", { ascending: false }).limit(200);
   if (error) throw new Error(`Eigene Posts konnten nicht gelesen werden: ${error.message}`);
   return data || [];
+}
+
+/** Portraet und Logo fuer KI-Visuals im eigenen Stil. */
+async function meinStil(userId: string) {
+  const { data, error } = await getAdminClient().schema("signal_layer")
+    .from("user_asset_settings").select("mein_stil").eq("user_id", userId).maybeSingle();
+  if (error) throw new Error(`Mein Stil konnte nicht gelesen werden: ${error.message}`);
+  return normalizeMeinStil(data?.mein_stil);
+}
+
+function bytesAlsBase64(bytes: Uint8Array): string {
+  let text = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(text);
+}
+
+/**
+ * Das Bild eines oeffentlichen LinkedIn-Posts: die Gastansicht traegt es als
+ * og:image. Abgelegt als Data-URI, denn die LinkedIn-Adresse laeuft ab.
+ */
+async function ladeReferenzVisual(post: Record<string, unknown>): Promise<string> {
+  const id = String(post.extern_id || "").match(/\d{15,}/)?.[0];
+  if (!id) return "";
+  const kopf = { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36", "Accept-Language": "de-DE,de;q=0.9" };
+  let fehler = "";
+  let visual = "";
+  try {
+    const seite = await fetchMitLimit(`https://www.linkedin.com/feed/update/urn:li:activity:${id}/`, { headers: kopf }, 20_000);
+    const html = await seite.text();
+    const bildUrl = (html.match(/property="og:image"\s+content="([^"]+)"/) || html.match(/content="([^"]+)"\s+property="og:image"/) || [])[1]?.replace(/&amp;/g, "&") || "";
+    if (!/^https:\/\/(media|dms)\.licdn\.com\//.test(bildUrl)) fehler = `kein Bild (${seite.status})`;
+    else {
+      const bild = await fetchMitLimit(bildUrl, { headers: kopf }, 20_000);
+      const typ = String(bild.headers.get("content-type") || "").split(";")[0];
+      const bytes = new Uint8Array(await bild.arrayBuffer());
+      if (!bild.ok || !/^image\/(jpeg|png|webp)$/.test(typ) || bytes.length > 1_500_000) fehler = `Bild nicht nutzbar (${bild.status} ${typ})`;
+      else visual = `data:${typ};base64,${bytesAlsBase64(bytes)}`;
+    }
+  } catch (error) {
+    fehler = error instanceof Error ? error.message.slice(0, 200) : String(error);
+  }
+  await getAdminClient().schema("signal_layer").from("referenz_posts")
+    .update({ visual: visual || null, visual_geladen_am: new Date().toISOString(), visual_fehler: fehler || null })
+    .eq("id", String(post.id));
+  return visual;
+}
+
+/** Vorbild-Visual: der staerkste eigene Post mit Bild. Fehlende Bilder werden nachgeladen. */
+async function referenzVorbildVisual(userId: string): Promise<{ visual: string; impressions: number; text: string } | null> {
+  const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
+    .select("id, extern_id, text, impressions, visual, visual_geladen_am")
+    .eq("user_id", userId).order("impressions", { ascending: false }).limit(5);
+  if (error) throw new Error(`Eigene Posts konnten nicht gelesen werden: ${error.message}`);
+  for (const post of data || []) {
+    const visual = post.visual || (post.visual_geladen_am ? "" : await ladeReferenzVisual(post));
+    if (visual) return { visual, impressions: Number(post.impressions) || 0, text: String(post.text || "") };
+  }
+  return null;
 }
 
 /** Die Texte der staerksten Posts fuer den Begleittext. */
@@ -8721,15 +8784,107 @@ Deno.serve(async (req: Request) => {
 
       case "get_asset_design_templates": {
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
-        const [vorlagen, rootsAssets, posts] = await Promise.all([assetDesignTemplates(auth.userId), darfRootsAssets(auth.userId), referenzPosts(auth.userId)]);
-        return corsResponse(origin, { design_templates: vorlagen, roots_assets: rootsAssets, vorlage_empfehlung: vorlagenEmpfehlung(posts, vorlagen) });
+        const [vorlagen, rootsAssets, posts, stil] = await Promise.all([assetDesignTemplates(auth.userId), darfRootsAssets(auth.userId), referenzPosts(auth.userId), meinStil(auth.userId)]);
+        return corsResponse(origin, {
+          design_templates: vorlagen, roots_assets: rootsAssets, vorlage_empfehlung: vorlagenEmpfehlung(posts, vorlagen),
+          // KI-Visual im eigenen Stil geht, sobald eigene Posts hinterlegt sind.
+          ki_visual: posts.length > 0, mein_stil: { portraet: Boolean(stil.portraet), logo: Boolean(stil.logo) },
+        });
+      }
+
+      case "get_mein_stil": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        return corsResponse(origin, { mein_stil: await meinStil(auth.userId) });
+      }
+
+      case "save_mein_stil": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const stil = normalizeMeinStil(body.mein_stil);
+        const { error } = await getAdminClient().schema("signal_layer").from("user_asset_settings")
+          .upsert({ user_id: auth.userId, mein_stil: stil, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { mein_stil: stil });
+      }
+
+      // Eine Folie eines Privat-Assets im Stil des staerksten eigenen Posts.
+      // Der Browser ruft Folie fuer Folie auf: ein ganzes Carousel in einem
+      // Aufruf saehe die Zeitgrenze der Edge Function.
+      case "ki_visual_slide": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const kiAssetId = String(body.asset_id || "");
+        const kiIndex = Math.max(0, Math.floor(Number(body.index) || 0));
+        const { data: kiAsset, error: kiFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
+          .select("id, kind, created_by, answers, payload").eq("id", kiAssetId).maybeSingle();
+        if (kiFehler) return errorResponse(origin, kiFehler.message, 500);
+        if (!kiAsset || kiAsset.created_by !== auth.userId) return errorResponse(origin, "Asset nicht gefunden", 404);
+        if (kiAsset.kind !== "linkedin" || (kiAsset.answers as Record<string, unknown>)?.profile !== "private") {
+          return errorResponse(origin, "KI-Visuals gibt es nur für Assets im Privatprofil.");
+        }
+        const kiPayload = (kiAsset.payload || {}) as Record<string, unknown>;
+        const kiSlides = Array.isArray(kiPayload.slides) ? [...kiPayload.slides as Record<string, unknown>[]] : [];
+        const kiSlide = kiSlides[kiIndex];
+        if (!kiSlide) return errorResponse(origin, "Folie nicht gefunden", 404);
+        const vorbild = await referenzVorbildVisual(auth.userId);
+        if (!vorbild) return errorResponse(origin, "Kein eigener Post mit Bild hinterlegt. Bitte unter Tone of Voice eigene Posts importieren.", 409);
+        const kiStil = await meinStil(auth.userId);
+        const basis = String(kiSlide.ki_basis || kiSlide.variant || "B");
+        const rolle = kiSlides.length <= 1 ? "single" : basis.match(/^U[1256]$/) ? "cover" : basis.match(/^U[3478]$/) ? "end" : kiIndex === 0 ? "cover" : kiIndex === kiSlides.length - 1 ? "end" : "content";
+        const titelLayout = kiIndex > 0 ? String(kiSlides[0]?.ki_layout || "") : "";
+        const prompt = buildKiVisualPrompt({
+          slide: kiSlide, rolle, nummer: kiIndex + 1, gesamt: kiSlides.length,
+          mitPortraet: Boolean(kiStil.portraet), mitLogo: Boolean(kiStil.logo),
+          titelLayout, vorbildText: vorbild.text, vorbildImpressions: vorbild.impressions,
+        });
+        const apiKey = await getPerplexityKey().catch(() => "");
+        if (!apiKey) return errorResponse(origin, "Perplexity-Schlüssel fehlt im Vault.", 500);
+        let html = "";
+        let letzterFehler = "";
+        for (let versuch = 1; versuch <= 2 && !html; versuch += 1) {
+          const antwort = await fetchMitLimit(PERPLEXITY_RESPONSES_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              model: KI_VISUAL_MODELL,
+              max_output_tokens: 12_000,
+              reasoning: { effort: "low" },
+              input: [{ role: "user", content: [
+                { type: "input_text", text: prompt },
+                { type: "input_image", image_url: vorbild.visual },
+              ] }],
+            }),
+          }, 140_000).catch((error) => { letzterFehler = error instanceof Error ? error.message : String(error); return null; });
+          if (!antwort) continue;
+          const roh = await antwort.text().catch(() => "");
+          const geparst = parsePerplexityAntwort(roh);
+          const gemessen = { usd: geparst.costUsd, toolUsd: 0 };
+          if (!antwort.ok || !geparst.content.trim()) {
+            letzterFehler = `HTTP ${antwort.status}`;
+            await recordStandaloneAiUsage("asset_ki_visual", KI_VISUAL_MODELL, "error", geparst.usage, 0, letzterFehler, gemessen, "ki_visual");
+            if (antwort.status === 429 || antwort.status >= 500) await warte(3_000);
+            continue;
+          }
+          await recordStandaloneAiUsage("asset_ki_visual", KI_VISUAL_MODELL, "success", geparst.usage, 0, undefined, gemessen, "ki_visual");
+          const objekt = parseLooseJsonObject(geparst.content) as Record<string, unknown> | null;
+          html = bereinigeKiLayout(String(objekt?.html || geparst.content));
+          if (!html) letzterFehler = "Antwort ohne verwertbares HTML";
+        }
+        if (!html) return errorResponse(origin, `Visual konnte nicht gebaut werden: ${letzterFehler}`, 502);
+        kiSlides[kiIndex] = { ...kiSlide, ki_basis: basis, variant: "KI", ki_layout: html };
+        const { error: speicherFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
+          .update({ payload: { ...kiPayload, slides: kiSlides }, updated_at: new Date().toISOString() }).eq("id", kiAssetId);
+        if (speicherFehler) return errorResponse(origin, speicherFehler.message, 500);
+        return corsResponse(origin, { index: kiIndex, html, variant: "KI" });
       }
 
       // Eigene LinkedIn-Posts: lesen, Vorlage oder Zahlen nachtragen, entfernen.
       // Angelegt werden sie per Import; hier nur Pflege durch den Eigentuemer.
       case "list_referenz_posts": {
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
-        return corsResponse(origin, { posts: await referenzPosts(auth.userId) });
+        const posts = await referenzPosts(auth.userId);
+        // Bilder der staerksten Posts im Hintergrund holen, einmal je Post.
+        const offen = posts.slice(0, 5).filter((post) => !post.hat_visual && !post.visual_geladen_am);
+        if (offen.length) EdgeRuntime.waitUntil((async () => { for (const post of offen) await ladeReferenzVisual(post); })());
+        return corsResponse(origin, { posts });
       }
 
       case "save_referenz_post": {
@@ -13106,8 +13261,13 @@ Deno.serve(async (req: Request) => {
           if (linkedinAnswers.profile !== "private" && !(await darfRootsAssets(auth?.userId))) {
             return errorResponse(origin, ROOTS_ASSETS_GESPERRT, 403);
           }
+          // Privatprofil: keine Vorlage mehr. Das Visual baut die KI danach im
+          // Stil der eigenen Posts (ki_visual_slide); bis dahin neutral und hell.
           const vorlage = linkedinAnswers.profile === "private"
-            ? (auth?.userId ? (await assetDesignTemplates(auth.userId)).find((eintrag) => eintrag.id === linkedinAnswers.design) : undefined)
+            ? (auth?.userId ? {
+              id: "mein-stil", name: "Mein Stil", theme: "light" as const, footer_left: "", domain: "",
+              logo: (await meinStil(auth.userId)).logo, stil: LEERER_STIL,
+            } : undefined)
             : (ROOTS_DESIGNS[linkedinAnswers.design] || ROOTS_DESIGNS["roots-hell"]);
           if (!vorlage) return errorResponse(origin, DESIGN_TEMPLATE_MISSING);
           linkedinAnswers.design = vorlage.id;

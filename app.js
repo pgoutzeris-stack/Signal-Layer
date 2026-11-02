@@ -8,11 +8,11 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261102-6";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261102-7";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-6";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261102-7";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261102-1";
@@ -333,6 +333,9 @@ function cacheEls() {
   els.settingsNav = document.getElementById("settings-nav");
   els.apifyPanel = document.getElementById("settings-panel-apify");
   els.designList = document.getElementById("design-template-list");
+  els.meinStilFelder = document.getElementById("mein-stil-felder");
+  els.meinStilStatus = document.getElementById("mein-stil-status");
+  els.btnMeinStilSave = document.getElementById("btn-mein-stil-save");
   els.designStatus = document.getElementById("design-template-status");
   els.btnDesignSave = document.getElementById("btn-design-save");
   els.btnDesignAdd = document.getElementById("btn-design-add");
@@ -2199,6 +2202,49 @@ async function loadToneOfVoice(force = false) {
   }
 }
 
+// Mein Stil: freigestelltes Portraet und Logo, die die KI im Visual im Stil
+// der eigenen Posts einsetzen darf. Der Look selbst kommt aus den Posts.
+let meinStil = { portraet: "", logo: "" };
+
+function renderMeinStil() {
+  if (!els.meinStilFelder) return;
+  const feld = (art, titel, akzeptiert) => {
+    const wert = String(meinStil[art] || "");
+    return `<div class="design-logo">
+      <span class="mein-stil-titel">${titel}</span>
+      ${wert ? `<img class="${art === "portraet" ? "design-portraet" : ""}" src="${escapeHtml(wert)}" alt="">` : "<span>Nicht hinterlegt</span>"}
+      <input type="file" accept="${akzeptiert}" data-mein-stil="${art}" aria-label="${titel}">
+      ${wert ? `<button type="button" class="design-row-del" data-mein-stil-weg="${art}" aria-label="${titel} entfernen"><i class="fa-solid fa-xmark"></i></button>` : ""}
+    </div>`;
+  };
+  els.meinStilFelder.innerHTML = `${feld("portraet", "Porträt, freigestellt", "image/png,image/webp")}${feld("logo", "Logo", "image/png,image/svg+xml,image/webp")}`;
+}
+
+async function loadMeinStil() {
+  if (!els.meinStilFelder) return;
+  try {
+    const { mein_stil: stil } = await callApi("get_mein_stil");
+    meinStil = { portraet: String(stil?.portraet || ""), logo: String(stil?.logo || "") };
+    renderMeinStil();
+  } catch (error) {
+    if (els.meinStilStatus) els.meinStilStatus.textContent = error.message || "Konnte nicht geladen werden";
+  }
+}
+
+async function saveMeinStil() {
+  try {
+    els.btnMeinStilSave.disabled = true;
+    const { mein_stil: stil } = await callApi("save_mein_stil", { mein_stil: meinStil });
+    meinStil = { portraet: String(stil?.portraet || ""), logo: String(stil?.logo || "") };
+    renderMeinStil();
+    toast("Mein Stil gespeichert");
+  } catch (error) {
+    toast(error.message, "err");
+  } finally {
+    els.btnMeinStilSave.disabled = false;
+  }
+}
+
 // Eigene LinkedIn-Posts: die drei mit den meisten Impressions schreiben beim
 // Begleittext mit, die Vorlage des staerksten wird im Fragebogen vorgeschlagen.
 let referenzPosts = [];
@@ -2208,9 +2254,6 @@ function referenzPostHtml(post, index) {
   const erste = text.split("\n").find((zeile) => zeile.trim()) || text;
   const datum = post.veroeffentlicht_am ? new Date(post.veroeffentlicht_am).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
   const zahl = (wert) => Number(wert || 0).toLocaleString("de-DE");
-  const vorlagen = designTemplates.length ? designTemplates : [];
-  const optionen = [`<option value="">Keine Vorlage</option>`, ...vorlagen.map((v) => `<option value="${escapeHtml(v.id)}"${v.id === post.vorlage_id ? " selected" : ""}>${escapeHtml(v.name)}</option>`)];
-  if (post.vorlage_id && !vorlagen.some((v) => v.id === post.vorlage_id)) optionen.push(`<option value="${escapeHtml(post.vorlage_id)}" selected>${escapeHtml(post.vorlage_id)}</option>`);
   return `<article class="referenz-post" data-referenz="${escapeHtml(post.id)}">
     <details class="referenz-post-text"><summary>${escapeHtml(erste)}</summary><p>${escapeHtml(text)}</p></details>
     <div class="referenz-post-zahlen">${index < 3 ? '<span class="pill-vorbild">Vorbild</span>' : ""}
@@ -2219,7 +2262,7 @@ function referenzPostHtml(post, index) {
       <span>${escapeHtml(datum)}</span>
       <span><b>${zahl(post.impressions)}</b> Impressions</span>
       <span>${zahl(post.reaktionen)} Reaktionen · ${zahl(post.kommentare)} Kommentare</span>
-      <select data-referenz-vorlage="${escapeHtml(post.id)}" aria-label="Design-Vorlage dieses Posts">${optionen.join("")}</select>
+      ${index === 0 ? `<span>${post.hat_visual ? "Bild ist Stil-Vorbild" : post.visual_fehler ? "Bild nicht ladbar" : "Bild wird geladen"}</span>` : ""}
     </div>
   </article>`;
 }
@@ -2235,7 +2278,6 @@ function renderReferenzPosts() {
 async function loadReferenzPosts() {
   if (!els.referenzListe) return;
   try {
-    await loadDesignTemplates();
     const { posts } = await callApi("list_referenz_posts");
     referenzPosts = Array.isArray(posts) ? posts : [];
     renderReferenzPosts();
@@ -4821,6 +4863,32 @@ function bindUi() {
   });
   els.btnDesignAdd?.addEventListener("click", addDesignTemplate);
   els.btnDesignSave?.addEventListener("click", () => void saveDesignTemplates());
+  els.btnMeinStilSave?.addEventListener("click", () => void saveMeinStil());
+  els.meinStilFelder?.addEventListener("change", (event) => {
+    const eingabe = event.target.closest("[data-mein-stil]");
+    const datei = eingabe?.files?.[0];
+    if (!datei) return;
+    const art = eingabe.dataset.meinStil;
+    if (art === "portraet") {
+      if (!/^image\/(png|webp)$/.test(datei.type)) { toast("Bitte ein freigestelltes PNG oder WebP mit transparentem Hintergrund.", "err"); return; }
+      portraetVerkleinern(datei).then((wert) => { meinStil.portraet = wert; renderMeinStil(); }).catch((error) => toast(error.message, "err"));
+      return;
+    }
+    const leser = new FileReader();
+    leser.onload = () => {
+      const wert = String(leser.result || "");
+      if (wert.length > DESIGN_LOGO_LIMIT) { toast("Das Logo ist zu groß. Bitte unter 48 KB, am besten SVG oder PNG.", "err"); return; }
+      meinStil.logo = wert;
+      renderMeinStil();
+    };
+    leser.readAsDataURL(datei);
+  });
+  els.meinStilFelder?.addEventListener("click", (event) => {
+    const weg = event.target.closest("[data-mein-stil-weg]");
+    if (!weg) return;
+    meinStil[weg.dataset.meinStilWeg] = "";
+    renderMeinStil();
+  });
   els.designList?.addEventListener("input", (event) => {
     const feld = event.target.closest("[data-design-field]");
     if (!feld) return;
@@ -4949,7 +5017,7 @@ function bindUi() {
       }
       if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
       if (panel === "tone") { void loadToneOfVoice(); void loadReferenzPosts(); }
-      if (panel === "design") void loadDesignTemplates();
+      if (panel === "design") void loadMeinStil();
     });
   });
 

@@ -1910,6 +1910,7 @@
   .tone-editor { display: flex; flex-direction: column; gap: .75rem; max-width: 720px; }
   .tone-editor textarea { resize: vertical; min-height: 220px; line-height: 1.5; margin-bottom: 0; }
   .tone-editor-bar { display: flex; align-items: center; gap: 1rem; }
+  .mein-stil-titel { min-width: 150px; font-weight: 600; color: var(--ink); }
   .referenz-posts { max-width: 720px; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
   .referenz-posts-kopf { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .75rem; }
   .referenz-posts-kopf h4 { margin: 0; font-size: .95rem; font-weight: 700; color: var(--ink); }
@@ -2415,7 +2416,7 @@
           <i class="fa-solid fa-feather"></i> Tone of Voice
         </div>
         <div class="settings-nav-item" data-panel="design">
-          <i class="fa-solid fa-swatchbook"></i> Design-Vorlagen
+          <i class="fa-solid fa-swatchbook"></i> Mein Stil
         </div>
         <div class="settings-nav-item" data-panel="diagnostics" data-settings-mode="advanced">
           <i class="fa-solid fa-file-code"></i> Systemdiagnose
@@ -2542,13 +2543,12 @@
 
         <div class="settings-panel pipeline-panel" id="settings-panel-design">
           <div class="pipeline-scroll">
-            <div class="pipeline-section-head"><span>Nur für Ihr Konto</span><h3>Design-Vorlagen</h3><p>Gilt für LinkedIn-Assets, die Sie unter „Privatprofil“ erzeugen. ROOTS-Assets nutzen weiterhin die beiden festen ROOTS-Vorlagen.</p></div>
+            <div class="pipeline-section-head"><span>Nur für Ihr Konto</span><h3>Mein Stil</h3></div>
             <div class="design-editor">
-              <div id="design-template-list"></div>
-              <button type="button" class="btn-secondary" id="btn-design-add"><i class="fa-solid fa-plus"></i> Vorlage hinzufügen</button>
+              <div class="design-row" id="mein-stil-felder"></div>
               <div class="tone-editor-bar">
-                <span id="design-template-status"></span>
-                <button type="button" class="btn-primary" id="btn-design-save"><i class="fa-regular fa-floppy-disk"></i> Speichern</button>
+                <span id="mein-stil-status"></span>
+                <button type="button" class="btn-primary" id="btn-mein-stil-save"><i class="fa-regular fa-floppy-disk"></i> Speichern</button>
               </div>
             </div>
           </div>
@@ -2643,7 +2643,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261102-6';
+  import { initApp } from './app.js?v=20261102-7';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

@@ -43,3 +43,43 @@ test("Server, Einstellungen und Fragebogen tragen die eigenen Posts", async () =
   assert.match(studio, /state\.vorlageEmpfehlung = res\?\.vorlage_empfehlung/);
   assert.match(studio, /liste\.find\(\(d\) => d\.id === state\.vorlageEmpfehlung\?\.id\)/);
 });
+
+test("KI-Visual: Bereinigung laesst nur Folien-HTML durch", () => {
+  const roh = '```html\n<div class="li" style="width:1080px;background:url(https://evil.example/x.png);color:#fff" onclick="alert(1)"><script>alert(1)</script><h1 data-field="title" style="font-size:90px">{{title}}</h1><a href="https://x.example">Link</a><img src="https://x.example/a.png"><img src="{{portraet}}"><!--repeat:bullets--><div data-field="item">{{item}}</div><!--/repeat--><!-- geheim --><svg viewBox="0 0 10 10"><path d="M0 0L10 10" stroke="#fff"/></svg><iframe src="x"></iframe></div>\n```';
+  const html = backend.bereinigeKiLayout(roh);
+  assert.ok(!/script|onclick|iframe|evil\.example|x\.example|geheim|<a\b/i.test(html), html);
+  assert.match(html, /^<div class="li li-ki" style="width:1080px;color:#fff">/);
+  assert.match(html, /<h1 data-field="title" style="font-size:90px">\{\{title\}\}<\/h1>/);
+  assert.match(html, /<img src="\{\{portraet\}\}">/);
+  assert.match(html, /<!--repeat:bullets-->.*<!--\/repeat-->/);
+  assert.match(html, /<svg viewBox="0 0 10 10"><path d="M0 0L10 10" stroke="#fff"><\/svg>/);
+  // Ohne Wurzel .li wird eingefasst, damit Groesse und Export greifen.
+  assert.match(backend.bereinigeKiLayout("<p>{{title}}</p>"), /^<div class="li li-ki"/);
+});
+
+test("KI-Visual: Prompt traegt Inhalt, Platzhalter und Titelfolie fuer Folgefolien", () => {
+  const prompt = backend.buildKiVisualPrompt({
+    slide: { title: "Marke schlägt Preis", subtitle: "Drei Gründe", bullets: ["Eins", "Zwei"] },
+    rolle: "content", nummer: 2, gesamt: 8, mitPortraet: true, mitLogo: false,
+    titelLayout: '<div class="li">TITEL</div>', vorbildText: "", vorbildImpressions: 229881,
+  });
+  assert.match(prompt, /229\.881/);
+  assert.match(prompt, /title: Marke schlägt Preis/);
+  assert.match(prompt, /bullets \(2\): Eins \| Zwei/);
+  assert.match(prompt, /\{\{portraet\}\}/);
+  assert.match(prompt, /<div class="li">TITEL<\/div>/);
+  assert.match(prompt, /Folie 2 von 8/);
+});
+
+test("Privatprofil: keine Vorlage, Visual Folie fuer Folie", async () => {
+  const [edge, studio] = await Promise.all([
+    readFile(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../asset-studio.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(edge, /case "ki_visual_slide"/);
+  assert.match(edge, /kiAsset\.created_by !== auth\.userId/);
+  assert.match(edge, /id: "mein-stil", name: "Mein Stil", theme: "light"/);
+  assert.match(studio, /when: \(answers\) => answers\.profile !== "private" \}/);
+  assert.match(studio, /api\("ki_visual_slide", \{ asset_id: state\.assetId, index: i \}\)/);
+  assert.match(studio, /slide\.variant === "KI" && slide\.ki_layout/);
+});
