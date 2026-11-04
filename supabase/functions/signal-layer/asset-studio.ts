@@ -7773,7 +7773,43 @@ function kiVorlageVergleich(f: KiVorlagenFelder): string {
 }
 
 /** Buehne nach dem Deutschland-Niederlande-Post: Stadion-Nacht, Embleme, Gold. */
-function kiVorlageBuehne(f: KiVorlagenFelder): string {
+/** Buehne mit Gemini-Bild: das Bild traegt Stadion und Embleme, der Text
+ *  liegt als HTML darueber und bleibt im Editor bearbeitbar. */
+function kiVorlageBuehneBild(f: KiVorlagenFelder, bild: string): string {
+  const zwei = f.zwei_seiten === true && String(f.rechts_wort || "").trim() !== "";
+  const seite = (s: "links" | "rechts", mitte: number, breite: number) => {
+    const label = String(f[`${s}_label`] ?? "");
+    let akzent = String(f[`${s}_akzent`] ?? "").trim();
+    if (akzent && label.toLocaleLowerCase("de").includes(akzent.toLocaleLowerCase("de"))) akzent = "";
+    return `<div style="position:absolute;left:${mitte - breite / 2}px;top:900px;width:${breite}px;text-align:center">
+    <div data-field="${s}_label" style="font-size:${kiPasst(label, breite, zwei ? 54 : 66, 34)}px;line-height:1.1;font-weight:900;text-transform:uppercase;color:#ffffff;letter-spacing:1px;text-shadow:0 2px 14px rgba(0,0,0,.6)">${kiText(label, 26)}</div>
+    <div data-field="${s}_akzent" style="margin-top:14px;font-size:${zwei ? 52 : 60}px;font-weight:900;text-transform:uppercase;color:#e8b84a;letter-spacing:2px;text-shadow:0 2px 14px rgba(0,0,0,.6)">${kiText(akzent, 16)}</div></div>`;
+  };
+  return `<div class="li li-ki li-ki-buehne li-ki-bild" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:#050b1a;${KI_SCHRIFT};color:#ffffff">
+  <img src="${bild.replace(/"/g, "")}" alt="" style="position:absolute;left:0;top:0;width:1080px;height:1350px;object-fit:cover">
+  <div style="position:absolute;left:0;top:0;width:1080px;height:1350px;background:linear-gradient(180deg,rgba(5,11,26,.55) 0%,rgba(5,11,26,0) 22%,rgba(5,11,26,0) 58%,rgba(5,11,26,.82) 100%)"></div>
+  <div data-field="kicker" style="position:absolute;left:0;right:0;top:150px;text-align:center;font-size:28px;letter-spacing:8px;font-weight:700;text-transform:uppercase;color:#e8b84a;text-shadow:0 2px 12px rgba(0,0,0,.6)">${kiText(f.kicker, 32)}</div>
+  ${zwei ? seite("links", 270, 460) + seite("rechts", 810, 460) : seite("links", 540, 860)}
+  <div data-field="fuss" style="position:absolute;left:90px;right:90px;bottom:70px;text-align:center;font-size:26px;line-height:1.45;color:rgba(255,255,255,.85)">${kiText(f.fuss, 90)}</div></div>`;
+}
+
+/** Auftrag an Gemini: nur das Bild, kein Text. Bild 1 ist das Vorbild. */
+export function kiBuehnenBildPrompt(f: KiVorlagenFelder): string {
+  const zwei = f.zwei_seiten === true && String(f.rechts_wort || "").trim() !== "";
+  const motiv = (s: "links" | "rechts") => `${String(f[`${s}_label`] || f[`${s}_wort`] || "").slice(0, 60)}`;
+  return `Create a square-ish portrait image, 4:5, for a LinkedIn post. Use the attached image as the style reference: same night stadium mood, deep navy blue, floodlights, light cones, green turf at the bottom, white round emblem badges with thick white rim, dramatic and clean.
+Composition:
+${zwei
+    ? `- Two round emblem badges side by side, centers at about 25% and 75% of the width and 40% of the height, each about 32% of the width wide.
+- Left badge shows a symbolic illustration for "${motiv("links")}", right badge for "${motiv("rechts")}". Left badge in blue tones, right badge in grey or a contrasting colour.
+- A jagged white tear line runs vertically through the middle between the two badges, from about 20% to 88% of the height.`
+    : `- One large round emblem badge in the centre, at about 40% of the height, about 42% of the width wide, showing a symbolic illustration for "${motiv("links")}".`}
+- Keep the top 18% and the area below 62% of the height calm and dark, text will be placed there later.
+Strict rules: absolutely no text, no letters, no numbers, no words, no logos, no brand marks, no flags with writing, no watermark. No people's faces.`;
+}
+
+function kiVorlageBuehne(f: KiVorlagenFelder, bild = ""): string {
+  if (bild) return kiVorlageBuehneBild(f, bild);
   const zwei = f.zwei_seiten === true && String(f.rechts_wort || "").trim() !== "";
   const emblem = (seite: "links" | "rechts", x: number, r: number, verlauf: string) => {
     const wort = String(f[`${seite}_wort`] ?? "");
@@ -7805,6 +7841,6 @@ function kiVorlageBuehne(f: KiVorlagenFelder): string {
   <div data-field="fuss" style="position:absolute;left:90px;right:90px;bottom:80px;text-align:center;font-size:26px;line-height:1.45;color:rgba(255,255,255,.8)">${kiText(f.fuss, 90)}</div></div>`;
 }
 
-export function fuelleKiVorlage(typ: KiInhaltsTyp, felder: KiVorlagenFelder): string {
-  return typ === "zahlenvergleich" ? kiVorlageVergleich(felder) : kiVorlageBuehne(felder);
+export function fuelleKiVorlage(typ: KiInhaltsTyp, felder: KiVorlagenFelder, bild = ""): string {
+  return typ === "zahlenvergleich" ? kiVorlageVergleich(felder) : kiVorlageBuehne(felder, bild);
 }

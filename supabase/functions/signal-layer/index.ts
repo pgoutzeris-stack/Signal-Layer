@@ -215,6 +215,7 @@ import {
   buildMemoScenePrompt,
   type MemoSzeneKontext,
   parseGeminiImage,
+  kiBuehnenBildPrompt,
   memoBenchmarkCorpus,
   memoImageDataUri,
   memoImageUploadsFromBody,
@@ -8200,7 +8201,7 @@ Deno.serve(async (req: Request) => {
         if (!isScheduled) return unauthorizedResponse(req, origin);
       }
     }
-  } else if (action === "ki_visual_slide") {
+  } else if (action === "ki_visual_slide" || action === "ki_visual_bild") {
     // Neben dem User-JWT auch per Cron-Secret, damit der Betrieb ein Visual
     // fuer den Eigentuemer des Assets nachbauen und pruefen kann.
     isScheduled = await isScheduledTrigger(req);
@@ -8885,6 +8886,7 @@ Deno.serve(async (req: Request) => {
         const apiKey = await getPerplexityKey().catch(() => "");
         if (!apiKey) return errorResponse(origin, "Perplexity-Schlüssel fehlt im Vault.", 500);
         let html = "";
+        let kiFelder: Record<string, string | boolean> | null = null;
         let letzterFehler = "";
         for (let versuch = 1; versuch <= 2 && !html; versuch += 1) {
           const antwort = await fetchMitLimit(PERPLEXITY_RESPONSES_URL, {
@@ -8909,18 +8911,78 @@ Deno.serve(async (req: Request) => {
           }
           await recordStandaloneAiUsage("asset_ki_visual", KI_VISUAL_MODELL, "success", geparst.usage, 0, undefined, gemessen, "ki_visual");
           const objekt = parseLooseJsonObject(geparst.content) as Record<string, unknown> | null;
-          html = objekt ? fuelleKiVorlage(kiTyp, objekt as Record<string, string | boolean>) : "";
+          kiFelder = objekt ? objekt as Record<string, string | boolean> : null;
+          html = kiFelder ? fuelleKiVorlage(kiTyp, kiFelder) : "";
           if (!html) letzterFehler = "Antwort ohne verwertbares HTML";
           // Zahlen im Visual muessen im Inhalt stehen, sonst neu bauen.
           const fremd = html ? kiFremdeZahlen(html, belegQuelle) : [];
           if (fremd.length) { letzterFehler = `unbelegte Zahl ${fremd.slice(0, 3).join(", ")}`; html = ""; }
         }
         if (!html) return errorResponse(origin, `Visual konnte nicht gebaut werden: ${letzterFehler}`, 502);
-        kiSlides[kiIndex] = { ...kiSlide, ki_basis: basis, variant: "KI", ki_layout: html };
+        kiSlides[kiIndex] = { ...kiSlide, ki_basis: basis, variant: "KI", ki_layout: html, ki_typ: kiTyp, ki_felder: kiFelder };
         const { error: speicherFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
           .update({ payload: { ...kiPayload, slides: kiSlides }, updated_at: new Date().toISOString() }).eq("id", kiAssetId);
         if (speicherFehler) return errorResponse(origin, speicherFehler.message, 500);
-        return corsResponse(origin, { index: kiIndex, html, variant: "KI" });
+        return corsResponse(origin, { index: kiIndex, html, variant: "KI", bild_moeglich: kiTyp === "duell" });
+      }
+
+      // Zweiter Schritt der Buehne: Gemini malt Stadion und Embleme nach dem
+      // eigenen Vorbild, die Texte aus ki_visual_slide liegen als HTML darueber.
+      // Ohne Schluessel oder Guthaben bleibt die feste Vorlage stehen.
+      case "ki_visual_bild": {
+        if (!auth?.userId && !isScheduled) return errorResponse(origin, "Nicht angemeldet", 401);
+        const bildAssetId = String(body.asset_id || "");
+        const bildIndex = Math.max(0, Math.floor(Number(body.index) || 0));
+        const { data: bildAsset, error: bildLeseFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
+          .select("id, created_by, payload").eq("id", bildAssetId).maybeSingle();
+        if (bildLeseFehler) return errorResponse(origin, bildLeseFehler.message, 500);
+        if (!bildAsset || (!isScheduled && bildAsset.created_by !== auth?.userId)) return errorResponse(origin, "Asset nicht gefunden", 404);
+        const bildPayload = (bildAsset.payload || {}) as Record<string, unknown>;
+        const bildSlides = Array.isArray(bildPayload.slides) ? [...bildPayload.slides as Record<string, unknown>[]] : [];
+        const bildSlide = bildSlides[bildIndex];
+        const felder = bildSlide?.ki_felder as Record<string, string | boolean> | undefined;
+        if (!bildSlide || bildSlide.ki_typ !== "duell" || !felder) return errorResponse(origin, "Folie ohne Bühne", 409);
+        const geminiKey = await getGeminiKey().catch(() => "");
+        if (!geminiKey) return errorResponse(origin, "Gemini-Schlüssel fehlt im Vault.", 409);
+        const vorbild = (await referenzVorbildVisuals(String(bildAsset.created_by), "duell", 1))[0];
+        const teile: Record<string, unknown>[] = [];
+        const vorbildDaten = vorbild?.visual.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
+        if (vorbildDaten) teile.push({ inline_data: { mime_type: vorbildDaten[1], data: vorbildDaten[2] } });
+        teile.push({ text: kiBuehnenBildPrompt(felder) });
+        const endpunkt = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MEMO_SCENE_IMAGE_MODEL)}:generateContent`;
+        let bild = "";
+        let bildFehler = "";
+        for (const generationConfig of [{ responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "4:5" } }, { responseModalities: ["IMAGE"] }]) {
+          const antwort = await fetchMitLimit(endpunkt, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+            body: JSON.stringify({ contents: [{ role: "user", parts: teile }], generationConfig }),
+          }, 90_000).catch((error) => { bildFehler = error instanceof Error ? error.message : String(error); return null; });
+          if (!antwort) break;
+          if (!antwort.ok) {
+            const koerper = await antwort.text().catch(() => "");
+            bildFehler = `HTTP ${antwort.status} ${String(geminiResearchFehler(antwort.status, koerper).google || "").slice(0, 160)}`;
+            await recordStandaloneAiUsage("asset_ki_bild", MEMO_SCENE_IMAGE_MODEL, "error", undefined, 0, `http_${antwort.status}`);
+            if (antwort.status === 400) continue;
+            break;
+          }
+          const roh = await antwort.json().catch(() => null);
+          const meta = roh?.usageMetadata || {};
+          await recordStandaloneAiUsage("asset_ki_bild", MEMO_SCENE_IMAGE_MODEL, "success", {
+            input: Number(meta.promptTokenCount || 0), cachedInput: 0, output: Number(meta.candidatesTokenCount || 0),
+            thinking: Number(meta.thoughtsTokenCount || 0), total: Number(meta.totalTokenCount || 0),
+          });
+          const geliefert = parseGeminiImage(roh);
+          if (geliefert) { bild = `data:${geliefert.mime};base64,${geliefert.data}`; break; }
+          bildFehler = "Antwort ohne Bild";
+        }
+        if (!bild) return errorResponse(origin, `Bild konnte nicht gemalt werden: ${bildFehler}`, 502);
+        const bildHtml = fuelleKiVorlage("duell", felder, bild);
+        bildSlides[bildIndex] = { ...bildSlide, ki_layout: bildHtml };
+        const { error: bildSpeicherFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
+          .update({ payload: { ...bildPayload, slides: bildSlides }, updated_at: new Date().toISOString() }).eq("id", bildAssetId);
+        if (bildSpeicherFehler) return errorResponse(origin, bildSpeicherFehler.message, 500);
+        return corsResponse(origin, { index: bildIndex, html: bildHtml, variant: "KI" });
       }
 
       // Eigene LinkedIn-Posts: lesen, Vorlage oder Zahlen nachtragen, entfernen.

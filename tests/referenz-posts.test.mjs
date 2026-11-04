@@ -144,4 +144,11 @@ test("Feste Vorlagen: Vergleich und Buehne, Texte maskiert", () => {
   assert.match(doppelt, /data-field="links_akzent"[^>]*><\/div>/, "Akzent wiederholt das Label nicht");
   assert.match(doppelt, /data-field="rechts_akzent"[^>]*>19 Kontakte</);
   assert.match(doppelt, /<path d="M540 270 /, "Riss beginnt unter dem Kicker");
+
+  const mitBild = backend.fuelleKiVorlage("duell", { zwei_seiten: true, kicker: "K", links_wort: "A", links_label: "Links", rechts_wort: "B", rechts_label: "Rechts", rechts_akzent: "19 Kontakte" }, "data:image/png;base64,AAAA");
+  assert.match(mitBild, /li-ki-bild/);
+  assert.match(mitBild, /<img src="data:image\/png;base64,AAAA"/);
+  assert.match(mitBild, /data-field="rechts_akzent"[^>]*>19 Kontakte</);
+  assert.ok(!/data-field="links_wort"/.test(mitBild), "Embleme malt Gemini");
+  assert.match(backend.kiBuehnenBildPrompt({ zwei_seiten: true, links_label: "Spontankäufe", rechts_wort: "B", rechts_label: "Bedarfskäufe" }), /no text/);
 });

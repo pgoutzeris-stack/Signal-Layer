@@ -4768,6 +4768,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           slide.ki_layout = String(res.html);
           slide.html = {};
         }
+        if (slide && res?.bild_moeglich) {
+          render();
+          // Gemini malt die Buehne; ohne Schluessel oder Guthaben bleibt die Vorlage.
+          const bild = await api("ki_visual_bild", { asset_id: state.assetId, index: i }).catch(() => null);
+          if (bild?.html) slide.ki_layout = String(bild.html);
+        }
         state.kiFortschritt.fertig = i + 1;
         render();
       } catch (err) {
