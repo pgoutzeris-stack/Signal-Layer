@@ -68,7 +68,7 @@ test("KI-Visual: Prompt mit mehreren Vorbildern, Begleittext und Titelfolie", ()
   });
   assert.match(prompt, /Bild 1: 229\.881 Impressions, Bild 2: 1\.237 Impressions, Bild 3: 1\.064 Impressions/);
   assert.match(prompt, /Inhaltstyp dieser Folie: Zahlenvergleich/);
-  assert.match(prompt, /Bild 1 ist ein eigener Post genau dieses Typs/);
+  assert.match(prompt, /Bild 1 ist deine Vorlage/);
   assert.match(prompt, /keine leeren Ersatzformen/);
   assert.match(prompt, /Begleittext des Posts/);
   assert.match(prompt, /\{\{portraet\}\}/);
@@ -122,4 +122,10 @@ test("KI-Visual: dicke Deko-Linien werden halbtransparent", () => {
   const html = backend.bereinigeKiLayout('<div class="li"><svg><circle r="400" stroke="#fff" stroke-width="150" fill="none"></circle><path d="M0 0" stroke-width="3"></path></svg></div>');
   assert.match(html, /<circle r="400" stroke="#fff" stroke-width="150" fill="none" stroke-opacity="0\.14" \/>/);
   assert.match(html, /<path d="M0 0" stroke-width="3" \/>/);
+});
+
+test("KI-Visual: Hauptstil und ausgeschlossene Posts", async () => {
+  const edge = await readFile(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8");
+  assert.match(edge, /\.eq\("kein_vorbild", false\)/);
+  assert.match(edge, /\(p\.stil_typ === typ \? 2 : 0\) \+ \(p\.hauptstil \? 1 : 0\)/);
 });

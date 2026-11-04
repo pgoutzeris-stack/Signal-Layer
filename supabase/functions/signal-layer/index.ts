@@ -628,19 +628,21 @@ async function gespeichertesVorbild(userId: string): Promise<string> {
  * zuerst. Ein einzelner Post ist ein Ausreisser; erst mehrere zeigen die
  * wiederkehrende Bildsprache. Fehlende Bilder werden nachgeladen.
  */
-async function referenzVorbildVisuals(userId: string, typ = "", anzahl = 3): Promise<Array<{ visual: string; impressions: number; typ: string }>> {
+async function referenzVorbildVisuals(userId: string, typ = "", anzahl = 3): Promise<Array<{ visual: string; impressions: number; typ: string; haupt: boolean }>> {
   const { data, error } = await getAdminClient().schema("signal_layer").from("referenz_posts")
-    .select("id, extern_id, impressions, visual, visual_geladen_am, stil_typ")
-    .eq("user_id", userId).order("impressions", { ascending: false }).limit(12);
+    .select("id, extern_id, impressions, visual, visual_geladen_am, stil_typ, hauptstil")
+    .eq("user_id", userId).eq("kein_vorbild", false).order("impressions", { ascending: false }).limit(12);
   if (error) throw new Error(`Eigene Posts konnten nicht gelesen werden: ${error.message}`);
-  // Der staerkste Post des passenden Typs zuerst, dann die staerksten uebrigen.
-  const posts = [...(data || [])].sort((a, b) => Number(b.stil_typ === typ) - Number(a.stil_typ === typ));
-  const out: Array<{ visual: string; impressions: number; typ: string }> = [];
+  // Zuerst der staerkste Post des passenden Typs, sonst der Hauptstil, dann
+  // die staerksten uebrigen.
+  const rang = (p: Record<string, unknown>) => (p.stil_typ === typ ? 2 : 0) + (p.hauptstil ? 1 : 0);
+  const posts = [...(data || [])].sort((a, b) => rang(b) - rang(a));
+  const out: Array<{ visual: string; impressions: number; typ: string; haupt: boolean }> = [];
   for (const post of posts) {
     if (out.length >= anzahl) break;
     if (post.stil_typ === "illustration" && post.stil_typ !== typ) continue;
     const visual = post.visual || (post.visual_geladen_am ? "" : await ladeReferenzVisual(post));
-    if (visual) out.push({ visual, impressions: Number(post.impressions) || 0, typ: String(post.stil_typ || "") });
+    if (visual) out.push({ visual, impressions: Number(post.impressions) || 0, typ: String(post.stil_typ || ""), haupt: Boolean(post.hauptstil) });
   }
   return out;
 }
@@ -8870,7 +8872,8 @@ Deno.serve(async (req: Request) => {
           slide: kiSlide, rolle, nummer: kiIndex + 1, gesamt: kiSlides.length,
           mitPortraet: Boolean(kiStil.portraet), mitLogo: Boolean(kiStil.logo),
           titelLayout, vorbildImpressions: vorbilder.map((v) => v.impressions),
-          typ: kiTyp, typTreffer: vorbilder[0]?.typ === kiTyp,
+          // Passender Typ oder Hauptstil: Bild 1 ist die Kompositionsvorlage.
+          typ: kiTyp, typTreffer: vorbilder[0]?.typ === kiTyp || Boolean(vorbilder[0]?.haupt),
           postText: String(kiPayload.post_text || ""),
         });
         const belegQuelle = kiBelegText(kiSlide, String(kiPayload.post_text || ""));

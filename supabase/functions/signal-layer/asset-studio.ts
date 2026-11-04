@@ -7694,7 +7694,7 @@ export function buildKiVisualPrompt(e: KiVisualEingabe): string {
 
 Inhaltstyp dieser Folie: ${KI_TYP_AUFTRAG[e.typ]}.
 ${e.typTreffer
-    ? "Bild 1 ist ein eigener Post genau dieses Typs und deine Kompositionsvorlage: Aufbau, Buehne, Stimmung, Farben und Typografie so nah wie moeglich an Bild 1. Die weiteren Bilder nur als Gegenprobe fuer Schrift und Farben der Person."
+    ? "Bild 1 ist deine Vorlage (ein eigener Post dieses Typs oder der Hauptstil der Person): Buehne, Stimmung, Hintergrund, Farben und Typografie so nah wie moeglich an Bild 1, den Aufbau an den Inhalt angepasst. Die weiteren Bilder nur als Gegenprobe fuer Schrift und Farben."
     : "Kein eigener Post zeigt genau diesen Typ. Baue die Komposition fuer den Inhaltstyp selbst, aber in Farbwelt, Typografie und wiederkehrenden Elementen der Bilder, Bild 1 zaehlt am meisten."}
 
 Inhalt dieser Folie (${rolle}, Folie ${e.nummer} von ${e.gesamt}):
