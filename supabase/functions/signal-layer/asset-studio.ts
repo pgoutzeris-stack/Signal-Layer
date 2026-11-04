@@ -7634,8 +7634,8 @@ export type KiInhaltsTyp = "zahlenvergleich" | "duell" | "these" | "infografik";
 export const KI_STIL_TYPEN = ["zahlenvergleich", "duell", "these", "infografik", "illustration"] as const;
 
 export const KI_TYP_AUFTRAG: Record<KiInhaltsTyp, string> = {
-  zahlenvergleich: "Zahlenvergleich: zwei Werte gross gegenueberstellen, wie im Vorbild",
-  duell: "Duell: zwei Seiten gegenueberstellen, mit der Buehne, Stimmung und Dramatik des Vorbilds; die Seiten tragen Worte statt Logos oder Flaggen",
+  zahlenvergleich: "Zahlenvergleich wie im Vorbild: zwei Spalten mit Trennlinie, Spaltenkoepfe in fetten Versalien, riesige Zahlen (Gruen gegen Rot), darunter Einheit und eine kurze Zeile",
+  duell: "Buehne wie im Vorbild (Stadion-Nacht, Flutlicht, Rasen, Trennung in der Mitte): zwei Embleme gegenueber, hat der Inhalt keine zwei Seiten, ein grosses Emblem in der Mitte. Ein Emblem ist ein Kreis mit hellem Rand und Verlauf und traegt ein Wort oder eine Zahl aus dem Inhalt; darunter ein Label in Versalien, ein Akzentwort in Gold",
   these: "These: eine Aussage gross und allein, im Stil des Vorbilds (Portraet, Anfuehrungszeichen, Flaeche)",
   infografik: "Infografik: Punkte oder Schritte geordnet in Kacheln oder Zeilen, wie im Vorbild",
 };
@@ -7646,6 +7646,11 @@ export const KI_TYP_AUFTRAG: Record<KiInhaltsTyp, string> = {
  * Infografik ab drei Punkten; sonst eine These.
  */
 export function kiInhaltsTyp(slide: Record<string, unknown>): KiInhaltsTyp {
+  return kiInhaltsTypFein(slide) === "zahlenvergleich" ? "zahlenvergleich" : "duell";
+}
+
+/** Feinere Einordnung; gestaltet wird nur Zahlenvergleich oder Duell-Buehne. */
+export function kiInhaltsTypFein(slide: Record<string, unknown>): KiInhaltsTyp {
   const s = slide || {};
   const liste = (name: string) => Array.isArray(s[name]) ? s[name] as unknown[] : [];
   const titel = String(s.title || "");
@@ -7707,7 +7712,8 @@ Regeln:
 - Listen als Wiederholblock: <!--repeat:bullets--><div data-field="item" style="...">{{item}}</div><!--/repeat-->; stats mit {{value}} {{label}} in <!--repeat:stats-->...<!--/repeat-->, steps mit {{n}} {{title}} {{text}} in <!--repeat:steps-->...<!--/repeat-->.
 - Bedienelemente wie Play-Knoepfe, Pfeile oder Plattform-Overlays in den Vorbildern sind kein Stil und werden nie nachgebaut.
 - Fotos, Logos und Wappen der Vorbilder baust du nicht nach und setzt keine leeren Ersatzformen (keine bunten Kreise oder Kaesten als Logo-Ersatz). Was kein Inhalt hat, faellt weg.
-- Groessen: Titel 60 bis 110 px, Fliesstext mindestens 26 px. Plane Platz fuer die tatsaechliche Textmenge, nichts darf ueberlaufen.
+- Kaum Text, wie in den Vorbildern: kein Fliesstext, keine Absaetze, hoechstens zwoelf Woerter auf der Folie ausser Zahlen. Den Untertitel nur, wenn er unter acht Woertern bleibt. Eine Kennzahl nur, wenn sie Teil der Komposition ist, nie zusaetzlich unter Titel und Untertitel. Die Erklaerung steht im Begleittext des Posts.
+- Groessen: Labels und Titel 60 bis 120 px, Zahlen bis 260 px, kleine Zeilen mindestens 26 px. Nichts darf ueberlaufen.
 ${e.mitPortraet ? "- Ein freigestelltes Portraet der Person steht als <img src=\"{{portraet}}\"> zur Verfuegung. Setze es ein, wenn die Vorbilder die Person zeigen, freigestellt am unteren Rand, Text daneben, nie ueber dem Gesicht.\n" : "- Es gibt kein Portraet. Lass seinen Platz weg; keine Ringe, Kreise oder Flaechen als Ersatz.\n"}${e.mitLogo ? "- Ein Logo steht als <img src=\"{{logo}}\"> zur Verfuegung, nur einsetzen, wenn die Vorbilder ein Zeichen tragen.\n" : ""}- Dekoration als Inline-SVG ist erlaubt. Keine Bilder aus dem Netz, keine Links, keine Skripte.
 ${e.titelLayout ? `- Dies ist eine Folge-Folie: Hintergrund, Farben, Schriften, Rahmen und Dekoration exakt wie in dieser bereits gebauten Titelfolie, nur der Inhaltsbereich passt sich an:\n${e.titelLayout.slice(0, 12_000)}\n` : ""}
 Antworte nur mit JSON: {"html": "<div class=\\"li\\" ...>...</div>"}`;

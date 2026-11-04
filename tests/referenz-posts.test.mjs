@@ -108,14 +108,13 @@ test("Privatprofil: keine Tool-Layouts, Vorschau zeigt das Vorbild", async () =>
   assert.match(html, /@supports not selector\(::-webkit-scrollbar\) \{\s*\.track-findings-list/);
 });
 
-test("KI-Visual: Inhaltstyp nach fester Regel", () => {
+test("KI-Visual: nur Zahlenvergleich oder Duell-Buehne", () => {
   const typ = backend.kiInhaltsTyp;
   assert.equal(typ({ title: "Spontankäufe sind nie spontan", subtitle: "43 Kontakte bei Spontankäufen, bei Bedarfskäufen nur 19." }), "zahlenvergleich");
-  assert.equal(typ({ title: "Deutschland schlägt die Niederlande", subtitle: "Zumindest als Marke." }), "duell");
-  assert.equal(typ({ title: "Drei Gründe", bullets: ["a", "b", "c"] }), "infografik");
-  assert.equal(typ({ title: "Marke ist kein Logo", subtitle: "Sondern ein Versprechen." }), "these");
-  // Jahreszahlen sind kein Zahlenvergleich.
-  assert.equal(typ({ title: "Seit 2019 bei uns", subtitle: "Nur Wachstum seit 2020." }), "these");
+  assert.equal(typ({ title: "Deutschland schlägt die Niederlande" }), "duell");
+  assert.equal(typ({ title: "Drei Gründe", bullets: ["a", "b", "c"] }), "duell");
+  assert.equal(typ({ title: "Spontankäufe haben eine lange Vorgeschichte", stat: { value: "43" } }), "duell");
+  assert.equal(backend.kiInhaltsTypFein({ title: "Drei Gründe", bullets: ["a", "b", "c"] }), "infografik");
 });
 
 test("KI-Visual: dicke Deko-Linien werden halbtransparent", () => {
