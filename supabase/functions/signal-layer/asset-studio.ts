@@ -7718,3 +7718,75 @@ ${e.mitPortraet ? "- Ein freigestelltes Portraet der Person steht als <img src=\
 ${e.titelLayout ? `- Dies ist eine Folge-Folie: Hintergrund, Farben, Schriften, Rahmen und Dekoration exakt wie in dieser bereits gebauten Titelfolie, nur der Inhaltsbereich passt sich an:\n${e.titelLayout.slice(0, 12_000)}\n` : ""}
 Antworte nur mit JSON: {"html": "<div class=\\"li\\" ...>...</div>"}`;
 }
+
+/* ── Feste Vorlagen "Mein Stil" nach den beiden Fussball-Posts ─────────────── */
+
+export type KiVorlagenFelder = Record<string, string | boolean>;
+
+function kiText(wert: unknown, max = 40): string {
+  return String(wert ?? "").replace(/\s+/g, " ").trim().slice(0, max)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Auftrag: nur kurze Texte fuer die feste Vorlage, keine Gestaltung. */
+export function kiVorlagenPrompt(typ: KiInhaltsTyp, slide: Record<string, unknown>, postText: string): string {
+  const felder = typ === "zahlenvergleich"
+    ? '{"kicker":"","links_kopf":"","links_wert":"","links_einheit":"","links_zeile":"","rechts_kopf":"","rechts_wert":"","rechts_einheit":"","rechts_zeile":"","fuss":""}'
+    : '{"kicker":"","zwei_seiten":false,"links_wort":"","links_label":"","links_akzent":"","rechts_wort":"","rechts_label":"","rechts_akzent":"","fuss":""}';
+  const art = typ === "zahlenvergleich"
+    ? "Zahlenvergleich: zwei Spalten, je Spaltenkopf (1 bis 2 Woerter), Wert (nur die Zahl, mit Vorzeichen falls im Inhalt), Einheit (1 bis 2 Woerter), eine kurze Zeile (bis 5 Woerter)."
+    : "Buehne: ein oder zwei Embleme. Emblem-Wort 1 bis 2 Woerter oder eine Zahl, Label darunter 1 bis 3 Woerter, Akzent ein Wort in Gold (etwa das staerkere Element) oder leer. zwei_seiten nur true, wenn der Inhalt zwei Seiten gegenueberstellt; sonst nur die linke Seite fuellen.";
+  return `Fuelle eine feste LinkedIn-Folienvorlage mit kurzen Texten. ${art}
+Kicker: Thema in 1 bis 3 Woertern. fuss: Quelle oder Kernaussage in hoechstens 10 Woertern, oder leer.
+Jedes Wort und jede Zahl muss aus dem Inhalt oder dem Begleittext stammen. Nichts erfinden, kein Fliesstext.
+
+Inhalt der Folie:
+${JSON.stringify({ kicker: slide.kicker, title: slide.title, subtitle: slide.subtitle, stat: slide.stat, stats: slide.stats, bullets: slide.bullets, quote: slide.quote })}
+
+Begleittext:
+${String(postText || "").slice(0, 2_000)}
+
+Antworte nur mit JSON in genau dieser Struktur:
+${felder}`;
+}
+
+const KI_SCHRIFT = "font-family:'Circular Std',system-ui,sans-serif";
+
+/** Zahlenvergleich nach dem Vereins-Post: weiss, zwei Spalten, grosse Zahlen. */
+function kiVorlageVergleich(f: KiVorlagenFelder): string {
+  const spalte = (seite: "links" | "rechts", farbe: string) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;text-align:center">
+    <div data-field="${seite}_kopf" style="font-size:60px;font-weight:900;text-transform:uppercase;letter-spacing:-1px;color:#0d0f14">${kiText(f[`${seite}_kopf`], 24)}</div>
+    <div style="width:110px;height:2px;background:#9aa0b0;margin:44px 0"></div>
+    <div data-field="${seite}_wert" style="font-size:220px;line-height:1;font-weight:900;letter-spacing:-8px;color:${farbe}">${kiText(f[`${seite}_wert`], 10)}</div>
+    <div data-field="${seite}_einheit" style="font-size:52px;margin-top:18px;color:#3a3f55;text-transform:uppercase">${kiText(f[`${seite}_einheit`], 20)}</div>
+    <div data-field="${seite}_zeile" style="font-size:26px;margin-top:34px;letter-spacing:4px;line-height:1.5;color:#4a5068;text-transform:uppercase">${kiText(f[`${seite}_zeile`], 48)}</div></div>`;
+  return `<div class="li li-ki li-ki-vergleich" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:#ffffff;${KI_SCHRIFT};box-sizing:border-box;padding:110px 72px 96px">
+  <div data-field="kicker" style="text-align:center;font-size:26px;letter-spacing:7px;text-transform:uppercase;color:#4a5068">${kiText(f.kicker, 32)}</div>
+  <div style="display:flex;margin-top:110px;align-items:stretch">${spalte("links", "#1e8a3c")}<div style="width:2px;background:#d4d7e0;margin:0 24px"></div>${spalte("rechts", "#d6202a")}</div>
+  <div data-field="fuss" style="position:absolute;left:72px;right:72px;bottom:90px;text-align:center;font-size:26px;line-height:1.45;color:#4a5068">${kiText(f.fuss, 90)}</div></div>`;
+}
+
+/** Buehne nach dem Deutschland-Niederlande-Post: Stadion-Nacht, Embleme, Gold. */
+function kiVorlageBuehne(f: KiVorlagenFelder): string {
+  const zwei = f.zwei_seiten === true && String(f.rechts_wort || "").trim() !== "";
+  const emblem = (seite: "links" | "rechts", x: number, r: number, verlauf: string) => `<div style="position:absolute;left:${x - r}px;top:${600 - r}px;width:${r * 2}px;display:flex;flex-direction:column;align-items:center;text-align:center">
+    <div style="width:${r * 2}px;height:${r * 2}px;border-radius:50%;border:10px solid #ffffff;box-sizing:border-box;background:${verlauf};box-shadow:0 20px 60px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:28px">
+      <div data-field="${seite}_wort" style="font-size:${r > 180 ? 64 : 52}px;line-height:1.05;font-weight:900;text-transform:uppercase;color:#ffffff;text-shadow:0 2px 10px rgba(0,0,0,.35)">${kiText(f[`${seite}_wort`], 22)}</div></div>
+    <div data-field="${seite}_label" style="margin-top:44px;font-size:${zwei ? 54 : 64}px;font-weight:900;text-transform:uppercase;color:#ffffff;letter-spacing:1px">${kiText(f[`${seite}_label`], 26)}</div>
+    <div data-field="${seite}_akzent" style="margin-top:8px;font-size:${zwei ? 52 : 60}px;font-weight:900;text-transform:uppercase;color:#e8b84a;letter-spacing:2px">${kiText(f[`${seite}_akzent`], 16)}</div></div>`;
+  const lichter = Array.from({ length: 13 }, (_, i) => `<circle cx="${60 + i * 80}" cy="${118 + (i % 2) * 10}" r="5" fill="#ffffff" opacity=".85" />`).join("");
+  const riss = zwei ? `<path d="M540 0 L554 70 L530 150 L558 240 L526 330 L556 430 L528 520 L554 620 L530 720 L556 820 L528 920 L552 1020 L532 1120 L554 1230 L540 1350" stroke="#ffffff" stroke-width="9" fill="none" stroke-linejoin="round" opacity=".92" />` : "";
+  return `<div class="li li-ki li-ki-buehne" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:radial-gradient(ellipse 85% 55% at 50% 0%,#2a5aa0 0%,#0e2149 50%,#050b1a 100%);${KI_SCHRIFT};color:#ffffff">
+  <svg width="1080" height="1350" viewBox="0 0 1080 1350" style="position:absolute;left:0;top:0"><defs><linearGradient id="kiRasen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0c3b26" stop-opacity="0" /><stop offset="1" stop-color="#11522f" stop-opacity=".95" /></linearGradient></defs>
+    <path d="M90 0 L320 0 L560 760 L500 760Z" fill="#d6e6ff" opacity=".06" /><path d="M760 0 L990 0 L580 760 L520 760Z" fill="#d6e6ff" opacity=".06" />${lichter}
+    <rect y="960" width="1080" height="390" fill="url(#kiRasen)" />${riss}</svg>
+  <div data-field="kicker" style="position:absolute;left:0;right:0;top:190px;text-align:center;font-size:28px;letter-spacing:8px;font-weight:700;text-transform:uppercase;color:#e8b84a">${kiText(f.kicker, 32)}</div>
+  ${zwei
+    ? `${emblem("links", 270, 175, "radial-gradient(circle at 35% 30%,#3d7be0,#12306e)")}${emblem("rechts", 810, 175, "radial-gradient(circle at 35% 30%,#7a8597,#2a3242)")}`
+    : emblem("links", 540, 215, "radial-gradient(circle at 35% 30%,#3d7be0,#12306e)")}
+  <div data-field="fuss" style="position:absolute;left:90px;right:90px;bottom:80px;text-align:center;font-size:26px;line-height:1.45;color:rgba(255,255,255,.8)">${kiText(f.fuss, 90)}</div></div>`;
+}
+
+export function fuelleKiVorlage(typ: KiInhaltsTyp, felder: KiVorlagenFelder): string {
+  return typ === "zahlenvergleich" ? kiVorlageVergleich(felder) : kiVorlageBuehne(felder);
+}

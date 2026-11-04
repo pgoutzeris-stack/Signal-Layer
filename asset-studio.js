@@ -5027,16 +5027,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * Platzhaltern oder als Data-URI.
    */
   function kiWarteHtml() {
-    const bild = state.vorbildVisual
-      ? `<img src="${attr(state.vorbildVisual)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:saturate(.9)">`
-      : "";
-    const zeile = state.kiLaeuft ? "KI baut das Visual im eigenen Stil" : "KI-Visual im eigenen Stil";
-    return `<div class="li li-ki-warte" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:#1e293b;font-family:'Circular Std',system-ui,sans-serif">${bild}
-      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.2) 0%,rgba(15,23,42,.78) 100%)"></div>
-      <div style="position:absolute;left:84px;right:84px;bottom:110px;color:#fff">
-        <div style="display:inline-flex;align-items:center;gap:14px;padding:12px 26px;border-radius:999px;background:rgba(255,255,255,.18);font-size:28px;font-weight:700"><i class="fa-solid fa-wand-magic-sparkles"></i>${esc(zeile)}</div>
-        <p data-field="title" style="font-size:62px;line-height:1.08;font-weight:700;margin-top:30px">{{title}}</p>
-      </div>
+    // Nur der Zauberstab: das Visual entsteht erst nach dem Erzeugen.
+    return `<div class="li li-ki-warte" role="img" aria-label="KI-Visual im eigenen Stil" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:#f1f5f9;display:flex;align-items:center;justify-content:center">
+      <i class="fa-solid fa-wand-magic-sparkles" style="font-size:150px;color:#206efb${state.kiLaeuft ? ";animation:asKiPuls 1.6s ease-in-out infinite" : ""}"></i>
+      <style>@keyframes asKiPuls{50%{opacity:.35;transform:scale(.92)}}</style>
     </div>`;
   }
 

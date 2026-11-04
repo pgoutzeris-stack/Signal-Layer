@@ -128,3 +128,16 @@ test("KI-Visual: Hauptstil und ausgeschlossene Posts", async () => {
   assert.match(edge, /\.eq\("kein_vorbild", false\)/);
   assert.match(edge, /\(p\.stil_typ === typ \? 2 : 0\) \+ \(p\.hauptstil \? 1 : 0\)/);
 });
+
+test("Feste Vorlagen: Vergleich und Buehne, Texte maskiert", () => {
+  const v = backend.fuelleKiVorlage("zahlenvergleich", { kicker: "Customer Insights", links_kopf: "Spontankauf", links_wert: "43", links_einheit: "Kontakte", rechts_kopf: "Bedarfskauf", rechts_wert: "19", rechts_einheit: "Kontakte" });
+  assert.match(v, /li-ki-vergleich/);
+  assert.match(v, /data-field="links_wert"[^>]*color:#1e8a3c">43</);
+  assert.match(v, /data-field="rechts_wert"[^>]*color:#d6202a">19</);
+  const b = backend.fuelleKiVorlage("duell", { kicker: "Marke", zwei_seiten: false, links_wort: "<b>Vertrauen</b>", links_label: "Spontankauf", links_akzent: "Winner" });
+  assert.match(b, /li-ki-buehne/);
+  assert.match(b, /&lt;b&gt;Vertrauen&lt;\/b&gt;/);
+  assert.ok(!/data-field="rechts_wort"/.test(b), "eine Seite ohne zweites Emblem");
+  assert.match(backend.fuelleKiVorlage("duell", { zwei_seiten: true, links_wort: "A", rechts_wort: "B" }), /data-field="rechts_wort"/);
+  assert.match(backend.kiVorlagenPrompt("duell", { title: "X" }, ""), /"zwei_seiten":false/);
+});

@@ -236,6 +236,8 @@ import {
   kiFremdeZahlen,
   kiInhaltsTyp,
   KI_STIL_TYPEN,
+  kiVorlagenPrompt,
+  fuelleKiVorlage,
   buildKiVisualPrompt,
   KI_VISUAL_MODELL,
   normalizeAssetPayload,
@@ -8868,7 +8870,10 @@ Deno.serve(async (req: Request) => {
         const basis = String(kiSlide.ki_basis || kiSlide.variant || "B");
         const rolle = kiSlides.length <= 1 ? "single" : basis.match(/^U[1256]$/) ? "cover" : basis.match(/^U[3478]$/) ? "end" : kiIndex === 0 ? "cover" : kiIndex === kiSlides.length - 1 ? "end" : "content";
         const titelLayout = kiIndex > 0 ? String(kiSlides[0]?.ki_layout || "") : "";
-        const prompt = buildKiVisualPrompt({
+        // Feste Vorlage nach den Fussball-Posts; das Modell liefert nur die
+        // kurzen Texte. Das alte freie Layout bleibt fuer spaeter im Code.
+        const vorlagenPrompt = kiVorlagenPrompt(kiTyp, kiSlide, String(kiPayload.post_text || ""));
+        const prompt = vorlagenPrompt || buildKiVisualPrompt({
           slide: kiSlide, rolle, nummer: kiIndex + 1, gesamt: kiSlides.length,
           mitPortraet: Boolean(kiStil.portraet), mitLogo: Boolean(kiStil.logo),
           titelLayout, vorbildImpressions: vorbilder.map((v) => v.impressions),
@@ -8889,10 +8894,7 @@ Deno.serve(async (req: Request) => {
               model: KI_VISUAL_MODELL,
               max_output_tokens: 12_000,
               reasoning: { effort: "low" },
-              input: [{ role: "user", content: [
-                { type: "input_text", text: prompt },
-                ...vorbilder.map((v) => ({ type: "input_image", image_url: v.visual })),
-              ] }],
+              input: prompt,
             }),
           }, 140_000).catch((error) => { letzterFehler = error instanceof Error ? error.message : String(error); return null; });
           if (!antwort) continue;
@@ -8907,7 +8909,7 @@ Deno.serve(async (req: Request) => {
           }
           await recordStandaloneAiUsage("asset_ki_visual", KI_VISUAL_MODELL, "success", geparst.usage, 0, undefined, gemessen, "ki_visual");
           const objekt = parseLooseJsonObject(geparst.content) as Record<string, unknown> | null;
-          html = bereinigeKiLayout(String(objekt?.html || geparst.content));
+          html = objekt ? fuelleKiVorlage(kiTyp, objekt as Record<string, string | boolean>) : "";
           if (!html) letzterFehler = "Antwort ohne verwertbares HTML";
           // Zahlen im Visual muessen im Inhalt stehen, sonst neu bauen.
           const fremd = html ? kiFremdeZahlen(html, belegQuelle) : [];
