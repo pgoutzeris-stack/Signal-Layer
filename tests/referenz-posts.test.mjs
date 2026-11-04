@@ -140,4 +140,8 @@ test("Feste Vorlagen: Vergleich und Buehne, Texte maskiert", () => {
   assert.ok(!/data-field="rechts_wort"/.test(b), "eine Seite ohne zweites Emblem");
   assert.match(backend.fuelleKiVorlage("duell", { zwei_seiten: true, links_wort: "A", rechts_wort: "B" }), /data-field="rechts_wort"/);
   assert.match(backend.kiVorlagenPrompt("duell", { title: "X" }, ""), /"zwei_seiten":false/);
+  const doppelt = backend.fuelleKiVorlage("duell", { zwei_seiten: true, links_wort: "Impuls", links_label: "Kontakte bei Spontankäufen", links_akzent: "Spontankäufen", rechts_wort: "Bedarf", rechts_akzent: "19 Kontakte" });
+  assert.match(doppelt, /data-field="links_akzent"[^>]*><\/div>/, "Akzent wiederholt das Label nicht");
+  assert.match(doppelt, /data-field="rechts_akzent"[^>]*>19 Kontakte</);
+  assert.match(doppelt, /<path d="M540 270 /, "Riss beginnt unter dem Kicker");
 });

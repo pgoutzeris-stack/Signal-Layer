@@ -7735,7 +7735,7 @@ export function kiVorlagenPrompt(typ: KiInhaltsTyp, slide: Record<string, unknow
     : '{"kicker":"","zwei_seiten":false,"links_wort":"","links_label":"","links_akzent":"","rechts_wort":"","rechts_label":"","rechts_akzent":"","fuss":""}';
   const art = typ === "zahlenvergleich"
     ? "Zahlenvergleich: zwei Spalten, je Spaltenkopf (1 bis 2 Woerter), Wert (nur die Zahl, mit Vorzeichen falls im Inhalt), Einheit (1 bis 2 Woerter), eine kurze Zeile (bis 5 Woerter)."
-    : "Buehne: ein oder zwei Embleme. Emblem-Wort 1 bis 2 Woerter oder eine Zahl, Label darunter 1 bis 3 Woerter, Akzent ein Wort in Gold (etwa das staerkere Element) oder leer. zwei_seiten nur true, wenn der Inhalt zwei Seiten gegenueberstellt; sonst nur die linke Seite fuellen.";
+    : "Buehne: ein oder zwei Embleme. Emblem-Wort: Kurzname oder Kuerzel der Seite, ein Wort, hoechstens 10 Zeichen, keine Zahl (etwa DE, Impuls, Marke). Label darunter: voller Name der Seite, 1 bis 3 Woerter. Akzent in Gold: Kennzahl oder Rang der Seite mit Einheit (etwa Platz 2, 43 Kontakte), hoechstens 3 Woerter, kein Wort aus dem Label, sonst leer. zwei_seiten nur true, wenn der Inhalt zwei Seiten gegenueberstellt; sonst nur die linke Seite fuellen.";
   return `Fuelle eine feste LinkedIn-Folienvorlage mit kurzen Texten. ${art}
 Kicker: Thema in 1 bis 3 Woertern. fuss: Quelle oder Kernaussage in hoechstens 10 Woertern, oder leer.
 Jedes Wort und jede Zahl muss aus dem Inhalt oder dem Begleittext stammen. Nichts erfinden, kein Fliesstext.
@@ -7752,10 +7752,16 @@ ${felder}`;
 
 const KI_SCHRIFT = "font-family:'Circular Std',system-ui,sans-serif";
 
+/** Schriftgroesse, bei der das laengste Wort (Versalien, fett) in die Breite passt. */
+function kiPasst(text: string, breite: number, max: number, min: number): number {
+  const laengstes = Math.max(1, ...String(text).split(/\s+/).map((w) => w.length));
+  return Math.max(min, Math.min(max, Math.floor(breite / (laengstes * 0.7))));
+}
+
 /** Zahlenvergleich nach dem Vereins-Post: weiss, zwei Spalten, grosse Zahlen. */
 function kiVorlageVergleich(f: KiVorlagenFelder): string {
   const spalte = (seite: "links" | "rechts", farbe: string) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;text-align:center">
-    <div data-field="${seite}_kopf" style="font-size:60px;font-weight:900;text-transform:uppercase;letter-spacing:-1px;color:#0d0f14">${kiText(f[`${seite}_kopf`], 24)}</div>
+    <div data-field="${seite}_kopf" style="font-size:${kiPasst(String(f[`${seite}_kopf`] ?? ""), 430, 60, 34)}px;font-weight:900;text-transform:uppercase;letter-spacing:-1px;color:#0d0f14">${kiText(f[`${seite}_kopf`], 24)}</div>
     <div style="width:110px;height:2px;background:#9aa0b0;margin:44px 0"></div>
     <div data-field="${seite}_wert" style="font-size:220px;line-height:1;font-weight:900;letter-spacing:-8px;color:${farbe}">${kiText(f[`${seite}_wert`], 10)}</div>
     <div data-field="${seite}_einheit" style="font-size:52px;margin-top:18px;color:#3a3f55;text-transform:uppercase">${kiText(f[`${seite}_einheit`], 20)}</div>
@@ -7769,13 +7775,25 @@ function kiVorlageVergleich(f: KiVorlagenFelder): string {
 /** Buehne nach dem Deutschland-Niederlande-Post: Stadion-Nacht, Embleme, Gold. */
 function kiVorlageBuehne(f: KiVorlagenFelder): string {
   const zwei = f.zwei_seiten === true && String(f.rechts_wort || "").trim() !== "";
-  const emblem = (seite: "links" | "rechts", x: number, r: number, verlauf: string) => `<div style="position:absolute;left:${x - r}px;top:${600 - r}px;width:${r * 2}px;display:flex;flex-direction:column;align-items:center;text-align:center">
+  const emblem = (seite: "links" | "rechts", x: number, r: number, verlauf: string) => {
+    const wort = String(f[`${seite}_wort`] ?? "");
+    const label = String(f[`${seite}_label`] ?? "");
+    let akzent = String(f[`${seite}_akzent`] ?? "").trim();
+    // Gold wiederholt nichts, was schon im Label oder Emblem steht.
+    const klein = (t: string) => t.toLocaleLowerCase("de");
+    if (akzent && (klein(label).includes(klein(akzent)) || klein(akzent) === klein(wort.trim()))) akzent = "";
+    const breite = zwei ? 460 : 860;
+    const innen = r * 2 - 76;
+    const zahl = /^[+\-−]?[\d.,]+\s*%?$/.test(wort.trim());
+    return `<div style="position:absolute;left:${x - breite / 2}px;top:${600 - r}px;width:${breite}px;display:flex;flex-direction:column;align-items:center;text-align:center">
     <div style="width:${r * 2}px;height:${r * 2}px;border-radius:50%;border:10px solid #ffffff;box-sizing:border-box;background:${verlauf};box-shadow:0 20px 60px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:28px">
-      <div data-field="${seite}_wort" style="font-size:${r > 180 ? 64 : 52}px;line-height:1.05;font-weight:900;text-transform:uppercase;color:#ffffff;text-shadow:0 2px 10px rgba(0,0,0,.35)">${kiText(f[`${seite}_wort`], 22)}</div></div>
-    <div data-field="${seite}_label" style="margin-top:44px;font-size:${zwei ? 54 : 64}px;font-weight:900;text-transform:uppercase;color:#ffffff;letter-spacing:1px">${kiText(f[`${seite}_label`], 26)}</div>
-    <div data-field="${seite}_akzent" style="margin-top:8px;font-size:${zwei ? 52 : 60}px;font-weight:900;text-transform:uppercase;color:#e8b84a;letter-spacing:2px">${kiText(f[`${seite}_akzent`], 16)}</div></div>`;
+      <div data-field="${seite}_wort" style="font-size:${kiPasst(wort, innen, zahl ? 130 : r > 180 ? 76 : 64, 34)}px;line-height:1.05;font-weight:900;text-transform:uppercase;color:#ffffff;text-shadow:0 2px 10px rgba(0,0,0,.35)">${kiText(wort, 22)}</div></div>
+    <div data-field="${seite}_label" style="margin-top:44px;font-size:${kiPasst(label, breite, zwei ? 54 : 64, 34)}px;line-height:1.1;font-weight:900;text-transform:uppercase;color:#ffffff;letter-spacing:1px">${kiText(label, 26)}</div>
+    <div data-field="${seite}_akzent" style="margin-top:14px;font-size:${zwei ? 52 : 60}px;font-weight:900;text-transform:uppercase;color:#e8b84a;letter-spacing:2px">${kiText(akzent, 16)}</div></div>`;
+  };
   const lichter = Array.from({ length: 13 }, (_, i) => `<circle cx="${60 + i * 80}" cy="${118 + (i % 2) * 10}" r="5" fill="#ffffff" opacity=".85" />`).join("");
-  const riss = zwei ? `<path d="M540 0 L554 70 L530 150 L558 240 L526 330 L556 430 L528 520 L554 620 L530 720 L556 820 L528 920 L552 1020 L532 1120 L554 1230 L540 1350" stroke="#ffffff" stroke-width="9" fill="none" stroke-linejoin="round" opacity=".92" />` : "";
+  // Der Riss laeuft zwischen Kicker und Fusszeile, nie durch Text.
+  const riss = zwei ? `<path d="M540 270 L556 340 L528 430 L556 520 L530 620 L554 720 L528 820 L556 920 L530 1020 L552 1120 L540 1200" stroke="#ffffff" stroke-width="9" fill="none" stroke-linejoin="round" stroke-linecap="round" opacity=".92" />` : "";
   return `<div class="li li-ki li-ki-buehne" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:radial-gradient(ellipse 85% 55% at 50% 0%,#2a5aa0 0%,#0e2149 50%,#050b1a 100%);${KI_SCHRIFT};color:#ffffff">
   <svg width="1080" height="1350" viewBox="0 0 1080 1350" style="position:absolute;left:0;top:0"><defs><linearGradient id="kiRasen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0c3b26" stop-opacity="0" /><stop offset="1" stop-color="#11522f" stop-opacity=".95" /></linearGradient></defs>
     <path d="M90 0 L320 0 L560 760 L500 760Z" fill="#d6e6ff" opacity=".06" /><path d="M760 0 L990 0 L580 760 L520 760Z" fill="#d6e6ff" opacity=".06" />${lichter}
