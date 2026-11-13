@@ -813,6 +813,11 @@ export type SimpleDeps = {
   tier1Companies?: SimpleTier1Company[];
   request?: (prompt: string, options: SimpleRequestOptions) => Promise<{ ok: boolean; text: string; usage: SimpleUsage; status: number; error: string }>;
   priceUsage?: (model: string, usage: SimpleUsage, inferenceMode?: "standard" | "batch") => Promise<Record<string, unknown>>;
+  /** Guenstiger Vorfilter vor der eigentlichen Analyse (GPT-5.4 mini). */
+  vorfilterRequest?: (prompt: string, options: SimpleRequestOptions) => Promise<{ ok: boolean; text: string; usage: SimpleUsage; status: number; error: string }>;
+  vorfilterModel?: string;
+  /** KI-Budget des Tages: "knapp" laesst nur Artikel mit Tier-1-Treffer zur KI. */
+  budgetStufe?: () => "ok" | "knapp" | "aus";
 };
 
 export type SimpleUsage = {
@@ -845,6 +850,7 @@ async function recordSimpleUsage(
   errorCode?: string,
   errorMessage?: string,
   attempt = 1,
+  step?: string,
 ): Promise<void> {
   const fallbackCost = simpleUsageCostUsd(model, usage);
   const priceFields = deps.priceUsage
@@ -868,6 +874,7 @@ async function recordSimpleUsage(
     duration_ms: durationMs,
     error_code: errorCode || null,
     error_message: errorMessage ? errorMessage.slice(0, 1000) : null,
+    ...(step ? { step } : {}),
   });
   // Ein fehlender Ledger-Eintrag darf den Klassifizierer nicht verdeckt
   // stoppen, muss aber in den Function-Logs sichtbar sein.
@@ -1409,7 +1416,7 @@ function validateTier1Decisions(
 // ---------------------------------------------------------------------------
 export type SimpleResult = {
   article_id: string;
-  status: "signal" | "rejected";
+  status: "signal" | "rejected" | "zurueckgestellt";
   lane: SimpleLane | null;
   signal_id: string | null;
   signal_label: string | null;
@@ -1443,6 +1450,7 @@ export type SimpleResult = {
 export const SIMPLE_AI_REJECT_REASONS = new Set([
   "modell_ohne_signal", "familie_nicht_erlaubt", "evidenz_fehlt", "sensibles_zitat", "zu_unsicher",
   "kein_roots_bezug", "redaktioneller_kern_nicht_belegt", "zielunternehmen_nicht_belegt", "modellfehler",
+  "vorfilter_ohne_signal",
 ]);
 
 export function simpleResultUsedAi(result: SimpleResult): boolean {
@@ -1455,6 +1463,7 @@ export const SIMPLE_ALL_REJECT_REASONS = [
   "zu_wenig_text", "sensibles_thema", "kein_signalmuster", "modell_ohne_signal",
   "familie_nicht_erlaubt", "evidenz_fehlt", "zu_unsicher", "sensibles_zitat",
   "kein_roots_bezug", "redaktioneller_kern_nicht_belegt", "zielunternehmen_nicht_belegt", "modellfehler",
+  "vorfilter_ohne_signal",
 ];
 
 export const SIMPLE_REJECT_LABELS: Record<string, string> = {
@@ -1470,6 +1479,7 @@ export const SIMPLE_REJECT_LABELS: Record<string, string> = {
   redaktioneller_kern_nicht_belegt: "Die KI erkannte angehängte Fremdinhalte, konnte das Ende des echten Artikels aber nicht wörtlich belegen.",
   zielunternehmen_nicht_belegt: "Für das Sales-Signal fehlt ein wörtlich belegtes, zentrales Zielunternehmen.",
   modellfehler: "Technischer Fehler bei der KI-Prüfung.",
+  vorfilter_ohne_signal: "Der günstige Vorfilter (GPT-5.4 mini) sieht keinen Anlass für eine Analyse.",
 };
 
 function rejected(
@@ -1622,6 +1632,48 @@ export function deterministicAgencyTenderFallback(article: SimpleArticleInput, f
     reason: `Die Agentur-Ausschreibung bei ${company} belegt einen konkreten externen Bedarf und direkte Kaufabsicht.`, relevance: { a: 90, b: 90, c: 95, d: 95 } };
 }
 
+const VORFILTER_SCHEMA = {
+  type: "OBJECT",
+  required: ["weiter", "grund"],
+  properties: {
+    weiter: { type: "BOOLEAN", description: "true, wenn der Artikel moeglicherweise eines der Signalmuster enthaelt." },
+    grund: { type: "STRING", description: "Ein kurzer Satz." },
+  },
+};
+
+/**
+ * Billiger Vorfilter: GPT-5.4 mini liest den ganzen Artikel und sortiert nur
+ * eindeutige Nicht-Signale aus. Im Zweifel geht der Artikel weiter. Bei jedem
+ * Fehler ebenfalls: der Vorfilter darf kein Signal kosten.
+ */
+async function simpleVorfilter(deps: SimpleDeps, article: SimpleArticleInput, families: SimpleFamily[]): Promise<boolean> {
+  const model = deps.vorfilterModel || "openai/gpt-5.4-mini";
+  const muster = families.map((family) => `- ${family.label}: ${family.definition}`).join("\n") || "- beliebiges Marken-, Marketing- oder Vertriebssignal";
+  const prompt = `Du bist ein Vorfilter fuer B2B-Vertriebssignale einer Markenberatung (ROOTS).
+Pruefe, ob der Artikel moeglicherweise eines dieser Signalmuster enthaelt:
+${muster}
+
+Antworte mit weiter=false NUR, wenn der Artikel eindeutig keines davon enthaelt (z. B. Rezept, Verbrauchertipp, reine Produktwerbung ohne Unternehmensentscheidung, Sport, Wetter). Im Zweifel weiter=true.
+
+Titel: ${article.title || ""}
+Text:
+${String(article.cleaned_content || article.content || "")}`;
+  const startedAt = Date.now();
+  try {
+    const result = await deps.vorfilterRequest!(prompt, { responseSchema: VORFILTER_SCHEMA, maxOutputTokens: 300 });
+    if (!result.ok) {
+      await recordSimpleUsage(deps, article.id, model, "error", result.usage, Date.now() - startedAt, `vorfilter_http_${result.status || "network"}`, result.error);
+      return true;
+    }
+    await recordSimpleUsage(deps, article.id, model, "success", result.usage, Date.now() - startedAt, undefined, undefined, 1, "vorfilter");
+    const antwort = JSON.parse(result.text) as { weiter?: unknown };
+    return antwort.weiter !== false;
+  } catch (error) {
+    console.warn(`Vorfilter fuer ${article.id} fehlgeschlagen, Artikel geht weiter:`, error instanceof Error ? error.message : String(error));
+    return true;
+  }
+}
+
 export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArticleInput): Promise<SimpleResult> {
   const rawBody = String(article.cleaned_content || article.content || "");
   const deterministicCore = deterministicEditorialCore(rawBody);
@@ -1630,6 +1682,18 @@ export async function classifySimpleArticle(deps: SimpleDeps, article: SimpleArt
     : article;
   const prefilter = prefilterSimpleArticle(preparedArticle, deps.tier1Companies || []);
   if (prefilter.reject) return rejected(article, prefilter.reject, prefilter.families, null);
+
+  // Tagesbudget knapp: nur Artikel mit Tier-1-Treffer gehen noch zur KI, der
+  // Rest bleibt ohne Bewertung und kommt bei freiem Budget wieder dran.
+  const stufe = deps.budgetStufe?.() || "ok";
+  if (stufe === "aus" || (stufe === "knapp" && prefilter.tier1.length === 0)) {
+    return { ...rejected(article, "zurueckgestellt", prefilter.families, null), status: "zurueckgestellt", reject_reason: null };
+  }
+
+  if (deps.vorfilterRequest) {
+    const weiter = await simpleVorfilter(deps, preparedArticle, prefilter.families);
+    if (!weiter) return rejected(article, "vorfilter_ohne_signal", prefilter.families, deps.vorfilterModel || null);
+  }
 
   const model = deps.model || SIMPLE_MODEL;
   let answer: SimpleAiAnswer;

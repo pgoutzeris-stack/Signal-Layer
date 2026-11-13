@@ -462,6 +462,7 @@
   .status-pill--working { color: var(--brand-dark); border-color: #bfdbfe; background: var(--brand-light); }
   .status-pill--working .status-pill-dot { animation: statusPulse 1.25s ease-in-out infinite; }
   .status-pill--error { color: var(--danger); border-color: #fecaca; background: #fef2f2; }
+  .status-pill--waiting { color: #b45309; border-color: #fde68a; background: #fffbeb; }
   @keyframes statusPulse { 50% { transform: scale(1.75); opacity: .35; } }
   .crawl-status-popover { position: absolute; right: 0; top: 100%; width: min(330px, calc(100vw - 24px)); max-height: min(680px, calc(100vh - 88px)); overflow: auto; overscroll-behavior: contain; z-index: 45; padding: .85rem; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .16s, visibility .16s; }
   .crawl-trigger-wrap:hover .crawl-status-popover, .crawl-trigger-wrap:focus-within .crawl-status-popover { opacity: 1; visibility: visible; pointer-events: auto; }
@@ -2354,6 +2355,7 @@
                   <span class="crawl-live-state" id="simple-live-state">Kein Lauf aktiv</span>
                 </div>
                 <div class="lauf-kurz" id="simple-lauf-kurz" hidden></div>
+                <div class="source-health-note" id="simple-budget-note" hidden></div>
                 <div class="backfill-status">
                   <div class="article-live-progress" id="simple-article-progress" hidden>
                     <div class="backfill-status-row"><span>Artikelprüfung</span><b id="simple-progress-text">0 / 0</b></div>
@@ -2649,7 +2651,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261104-2';
+  import { initApp } from './app.js?v=20261113-1';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

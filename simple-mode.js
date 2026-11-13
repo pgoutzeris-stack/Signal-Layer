@@ -427,6 +427,7 @@ async function loadResults({ keepStatus = false } = {}) {
       ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill, status.cost_summary || null, {
       pricing: status.pricing || null, schedule: status.schedule || null,
       lastCrawl: status.last_crawl || null, crawlSchedule: status.crawl_schedule || null,
+      kiBudget: status.ki_budget || null,
     });
     }
   } catch (error) {
@@ -458,6 +459,7 @@ async function pollStatus() {
     ctx.setSimpleRunStatus(lastRun, status.forecast || null, triggerBackfill, status.cost_summary || null, {
       pricing: status.pricing || null, schedule: status.schedule || null,
       lastCrawl: status.last_crawl || null, crawlSchedule: status.crawl_schedule || null,
+      kiBudget: status.ki_budget || null,
     });
     const advanced = Number(lastRun?.processed_count || 0) !== Number(previous?.processed_count || 0)
       || Number(triggerBackfill?.cursor || 0) !== Number(previousTrigger?.cursor || 0);

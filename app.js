@@ -8,11 +8,11 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261104-2";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261113-1";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261104-2";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261113-1";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261102-1";
@@ -3793,10 +3793,17 @@ function renderSimpleHeaderStatusContent() {
   const progress = byId("simple-article-progress");
   if (!trigger || !live || !time || !progress) return;
 
-  trigger.classList.remove("status-pill--ready", "status-pill--idle", "status-pill--working", "status-pill--error");
-  trigger.classList.add(`status-pill--${tone}`);
-  trigger.setAttribute("aria-label", `Simple-Status: ${label}`);
-  live.textContent = label;
+  // Ein erreichtes KI-Budget zeigt sich in der Pille, solange kein Lauf
+  // arbeitet und kein Fehler wichtiger ist.
+  const budgetStufe = simpleKiBudget?.stufe;
+  const budgetSichtbar = !running && !failed && (budgetStufe === "aus" || budgetStufe === "knapp");
+  const pillTone = budgetSichtbar ? "waiting" : tone;
+  const pillLabel = budgetSichtbar ? (budgetStufe === "aus" ? "KI-Budget erreicht" : "KI-Budget knapp") : label;
+  trigger.classList.remove("status-pill--ready", "status-pill--idle", "status-pill--working", "status-pill--error", "status-pill--waiting");
+  trigger.classList.add(`status-pill--${pillTone}`);
+  trigger.setAttribute("aria-label", `Simple-Status: ${pillLabel}`);
+  live.textContent = pillLabel;
+  renderSimpleBudgetNote();
   time.textContent = visibleRun ? formatCrawlTime(visibleRun.finished_at || visibleRun.last_progress_at || visibleRun.started_at) : "--:--";
 
   progress.hidden = !progressRun;
@@ -4186,6 +4193,7 @@ if (typeof document !== "undefined") document.addEventListener("click", (event) 
 
 let simpleLastCrawl = null;
 let simpleCrawlSchedule = null;
+let simpleKiBudget = null;
 
 /** Naechster Termin eines taeglichen Cron-Ausdrucks "m h * * *" (UTC), sonst null. */
 export function naechsterCronTermin(schedule, jetzt = new Date()) {
@@ -4268,6 +4276,7 @@ export function setSimpleRunStatus(run, forecast = null, triggerBackfill = null,
     simpleSchedule = extras?.schedule || null;
     simpleLastCrawl = extras?.lastCrawl || null;
     simpleCrawlSchedule = extras?.crawlSchedule || null;
+    simpleKiBudget = extras?.kiBudget || null;
   }
   simpleTriggerBackfill = triggerBackfill || null;
   renderSimpleHeaderStatus();
@@ -4337,6 +4346,27 @@ document.addEventListener("click", (event) => {
   else if (knopf.dataset.act === "simple-fortsetzen") void setzeLaufFort(Boolean(simplePricing?.peak));
   else void brichPlanungAb();
 });
+
+function renderSimpleBudgetNote() {
+  const host = document.getElementById("simple-budget-note");
+  if (!host) return;
+  const b = simpleKiBudget;
+  if (!b || b.aktiv === false) { host.hidden = true; host.innerHTML = ""; return; }
+  const usd = (wert) => `${Number(wert || 0).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+  const heute = `${usd(b.heute_verbraucht_usd)} von ${usd(b.tagesbudget_usd)} heute`;
+  const monat = `${usd(b.monat_verbraucht_usd)} von ${usd(b.monatsbudget_usd)} im Monat`;
+  const offen = Number(b.offen || 0);
+  host.hidden = false;
+  if (b.stufe === "aus") {
+    host.innerHTML = `<span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-coins"></i>`
+      + `KI-Budget erreicht · ${escapeHtml(heute)}${offen ? ` · ${offen.toLocaleString("de-DE")} Artikel warten auf morgen` : ""}</span>`;
+  } else if (b.stufe === "knapp") {
+    host.innerHTML = `<span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-coins"></i>`
+      + `KI-Budget knapp · nur noch Artikel mit Zielkunden · ${escapeHtml(heute)}</span>`;
+  } else {
+    host.innerHTML = `<span class="crawl-result-pill"><i class="fa-solid fa-coins"></i>KI-Budget · ${escapeHtml(heute)} · ${escapeHtml(monat)}</span>`;
+  }
+}
 
 function renderSimplePricingNote() {
   const host = document.getElementById("simple-pricing-note");

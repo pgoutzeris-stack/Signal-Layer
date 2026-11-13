@@ -1033,6 +1033,22 @@ async function logGuardProbe(input: {
 }
 
 // ---------------------------------------------------------------------------
+// KI-Budget: Monatsdeckel fuer den Perplexity-Schluessel, verteilt auf die
+// restlichen Tage (signal_layer.ki_budget_lage). "knapp" laesst nur Artikel
+// mit Tier-1-Treffer zur KI, "aus" beendet den Lauf bis zum naechsten Tag.
+// ---------------------------------------------------------------------------
+const SIMPLE_VORFILTER_MODEL = "openai/gpt-5.4-mini";
+type KiBudgetLage = { stufe: "ok" | "knapp" | "aus"; [key: string]: unknown };
+async function kiBudgetLage(): Promise<KiBudgetLage> {
+  const { data, error } = await getAdminClient().schema("signal_layer").rpc("ki_budget_lage");
+  if (error || !data) {
+    if (error) console.warn("ki_budget_lage nicht lesbar, Budget gilt als frei:", error.message);
+    return { stufe: "ok" };
+  }
+  return data as KiBudgetLage;
+}
+
+// ---------------------------------------------------------------------------
 // Scheduled-trigger auth — pg_cron calls this function with a shared secret
 // header instead of a user JWT (there's no logged-in user for a 6am cron run).
 // ---------------------------------------------------------------------------
@@ -11220,18 +11236,31 @@ Deno.serve(async (req: Request) => {
           await admin.schema("signal_layer").from("simple_runs")
             .update({ pipeline_version: versionInfo.version }).eq("id", run.id);
         }
+        let kiBudget = await kiBudgetLage();
         const deps = {
           admin, apiKey: modelKey, model: simpleModel, runId: run.id,
           request: (prompt: string, options: { systemInstruction?: string; responseSchema?: Record<string, unknown>; maxOutputTokens?: number }) => callJsonModel({
             model: simpleModel, apiKey: modelKey, prompt, systemText: options.systemInstruction,
             schema: options.responseSchema, maxOutputTokens: options.maxOutputTokens || 8192,
-            temperature: 0, timeoutMs: 90_000, attempts: 1,
+            // low statt medium: die Denk-Tokens waren der groesste Kostenblock.
+            temperature: 0, timeoutMs: 90_000, attempts: 1, reasoningEffort: "low" as const,
           }),
+          ...(simpleModelOption(simpleModel).provider === "perplexity" ? {
+            vorfilterModel: SIMPLE_VORFILTER_MODEL,
+            vorfilterRequest: (prompt: string, options: { systemInstruction?: string; responseSchema?: Record<string, unknown>; maxOutputTokens?: number }) => callJsonModel({
+              model: SIMPLE_VORFILTER_MODEL, apiKey: modelKey, prompt, systemText: options.systemInstruction,
+              schema: options.responseSchema, maxOutputTokens: options.maxOutputTokens || 300,
+              temperature: 0, timeoutMs: 45_000, attempts: 1, reasoningEffort: "low" as const,
+            }),
+          } : {}),
+          budgetStufe: () => kiBudget.stufe,
           priceUsage: modelCostFields,
           rootsPortfolio: await getSimpleRootsPortfolio(),
           tier1Companies: await getSimpleTier1Companies(),
         };
         const rows: Array<Record<string, unknown>> = [];
+        let zurueckgestellt = 0;
+        let budgetStopp = false;
         let signals = 0;
         let aiCalls = 0;
         let consumed = 0;
@@ -11258,6 +11287,9 @@ Deno.serve(async (req: Request) => {
         for (const article of ordered) {
           if (aiCalls >= SIMPLE_AI_CALLS_PER_BATCH) break;
           if (aiCalls > 0 && Date.now() - batchStartedAt > BATCH_TIME_BUDGET_MS) break;
+          // Tagesbudget erschoepft: Lauf endet, offene Artikel bleiben ohne
+          // Bewertung und kommen am naechsten Tag dran.
+          if (kiBudget.stufe === "aus") { budgetStopp = true; break; }
           consumed += 1;
           await admin.schema("signal_layer").from("simple_runs").update({
             current_article: String(article.title || article.url || "").slice(0, 300),
@@ -11266,7 +11298,11 @@ Deno.serve(async (req: Request) => {
           }).eq("id", run.id).eq("status", "running").eq("processing_token", processingToken);
           const prepared = await ensureSimpleArticleText(admin, article);
           const result = await classifySimpleArticle(deps, prepared);
-          if (simpleResultUsedAi(result)) aiCalls += 1;
+          if (result.status === "zurueckgestellt") { zurueckgestellt += 1; continue; }
+          if (simpleResultUsedAi(result)) {
+            aiCalls += 1;
+            kiBudget = await kiBudgetLage();
+          }
           if (result.status === "signal") {
             signals += 1;
             // Gleiche Leseerfahrung wie im Advanced-Modus: fremdsprachige
@@ -11375,7 +11411,7 @@ Deno.serve(async (req: Request) => {
 
         const cursor = run.cursor + Math.max(consumed, 1);
         const processed = run.processed_count + rows.length;
-        const done = cursor >= allIds.length;
+        const done = budgetStopp || cursor >= allIds.length;
         const { count: finalTechnicalErrors } = done
           ? await admin.schema("signal_layer").from("simple_signals")
             .select("id", { count: "exact", head: true })
@@ -11394,6 +11430,7 @@ Deno.serve(async (req: Request) => {
           last_progress_at: new Date().toISOString(),
           current_article: done ? null : undefined,
           finished_at: done ? new Date().toISOString() : null,
+          ...(budgetStopp ? { paused_reason: "ki_budget" } : {}),
           processing_token: null,
           processing_until: null,
         }).eq("id", run.id).eq("status", "running").eq("processing_token", processingToken)
@@ -11415,7 +11452,7 @@ Deno.serve(async (req: Request) => {
         // Continue the run in a fresh invocation so no single request runs into
         // the function timeout.
         if (!done) triggerSimpleRun(run.id);
-        return corsResponse(origin, { run: updated, done, processed_now: rows.length, signals_now: signals, ai_calls: aiCalls });
+        return corsResponse(origin, { run: updated, done, processed_now: rows.length, signals_now: signals, ai_calls: aiCalls, zurueckgestellt, budget_stopp: budgetStopp });
       }
 
       case "process_simple_trigger_backfill": {
@@ -11794,6 +11831,7 @@ Deno.serve(async (req: Request) => {
           forecast: await buildSimpleForecast(run),
           pricing: deepseekTarifLage(simpleConfigForStatus.ai.simple_model || SIMPLE_MODEL),
           schedule: geplanterLauf || null,
+          ki_budget: await kiBudgetLage(),
           cost_summary: {
             ...costSummary,
             scope: "simple_since_v1.0",
