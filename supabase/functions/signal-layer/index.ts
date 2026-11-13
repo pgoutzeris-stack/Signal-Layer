@@ -8183,7 +8183,11 @@ Deno.serve(async (req: Request) => {
     const workerSecret = await getBrowserBatchSecret();
     const authorization = req.headers.get("authorization") || "";
     if (!workerSecret || authorization !== `Bearer ${workerSecret}`) return unauthorizedResponse(req, origin);
-  } else if (["process_crawl", "process_crawl_worker", "process_classification_backfill", "process_company_profile_jobs", "finish_asset", "retry_asset_model", "await_asset_model"].includes(action)) {
+  } else if (action === "process_crawl_worker" || action === "process_crawl") {
+    // Weiterlauf der Crawl-Kette kommt per pg_net mit Cron-Secret
+    // (signal_layer.crawl_kette_weiter), der Watchdog ruft mit Service-Role.
+    if (!isInternalCall(req) && !(await isScheduledTrigger(req))) return unauthorizedResponse(req, origin);
+  } else if (["process_classification_backfill", "process_company_profile_jobs", "finish_asset", "retry_asset_model", "await_asset_model"].includes(action)) {
     if (!isInternalCall(req)) return unauthorizedResponse(req, origin);
   } else if (["process_analysis_worker", "process_analysis_batches", "fill_roots_links"].includes(action)) {
     // Queue recovery may be started by the protected pg_cron/watchdog path;
@@ -10269,14 +10273,26 @@ Deno.serve(async (req: Request) => {
             error_code: latestAttempt?.error_code || null, error_message: latestAttempt?.error_message || null,
             finished_at: new Date().toISOString(),
           }).eq("id", queue_job_id);
-          fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_crawl_worker", crawl_run_id }) }).catch(() => {});
-          fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_batches" }) }).catch(() => {});
+          // Ueber pg_net statt Selbstaufruf: Supabase bricht lange Ketten in
+          // einer Trace mit "Rate limit exceeded for trace" ab (seit 05.11.2026).
+          const { error: ketteErr } = await admin.schema("signal_layer")
+            .rpc("crawl_kette_weiter", { p_crawl_run_id: crawl_run_id, p_analyse: true });
+          if (ketteErr) {
+            console.error("crawl_kette_weiter fehlgeschlagen, Selbstaufruf als Rueckfall:", ketteErr.message);
+            fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_crawl_worker", crawl_run_id }) }).catch(() => {});
+            fetch(selfUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }, body: JSON.stringify({ action: "process_analysis_batches" }) }).catch(() => {});
+          }
         } else {
-          fetch(selfUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-            body: JSON.stringify({ action: "process_crawl", crawl_run_id, source_ids, index: nextIndex, candidate_offset: nextOffset, queue_job_id }),
-          }).catch((e) => console.error("Failed to trigger next process_crawl step:", e));
+          const naechsterSchritt = { crawl_run_id, source_ids, index: nextIndex, candidate_offset: nextOffset, queue_job_id };
+          const { error: schrittErr } = await admin.schema("signal_layer").rpc("crawl_schritt", { p_body: naechsterSchritt });
+          if (schrittErr) {
+            console.error("crawl_schritt fehlgeschlagen, Selbstaufruf als Rueckfall:", schrittErr.message);
+            fetch(selfUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+              body: JSON.stringify({ action: "process_crawl", ...naechsterSchritt }),
+            }).catch((e) => console.error("Failed to trigger next process_crawl step:", e));
+          }
         }
 
         return corsResponse(origin, { ok: true });
