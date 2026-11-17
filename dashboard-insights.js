@@ -731,6 +731,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
     zaehlerTage: 0,
   };
   const letzteHtml = new WeakMap();
+  const letzteLeiste = new WeakMap();
   const hosts = [...document.querySelectorAll("[data-performance-dashboard]")];
   const kpiSelect = document.getElementById("kpi-asset-select");
   const kpiSearch = document.getElementById("kpi-asset-search");
@@ -781,7 +782,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       // Eine Leiste statt Kopfzeile plus Filterkasten: Titel links, Filter
       // rechts, alles in einer Hoehe. Zahlen und Namen stehen im Titel des
       // jeweiligen Knopfs, nicht als zweite Zeile daneben.
-      const html = `<div class="pi-bar">
+      const barHtml = `<div class="pi-bar">
           <h2><i class="fa-solid fa-chart-line"></i>Performance</h2>
           <div class="pi-bar-filters">
             <div class="pi-seg" role="group" aria-label="Zeitraum">${[7, 30, 90, 365].map((days) => `<button type="button" data-dashboard-period="${days}" class="${days === preferences.period_days ? "is-active" : ""}" aria-pressed="${days === preferences.period_days}">${days === 365 ? "12 M" : `${days} T`}</button>`).join("")}</div>
@@ -792,7 +793,8 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
               <button type="button" class="pi-creator pi-creator--all${selectedCreators.size === 0 ? " is-active" : ""}" data-dashboard-creator="all" aria-pressed="${selectedCreators.size === 0}" title="Alle Erstellenden">Alle</button>${creatorButtons}
             </div>
           </div>
-        </div>
+        </div>`;
+      const html = barHtml + `
         <div class="pi-grid">${preferences.widgets.map((preference) => {
           const definition = DASHBOARD_WIDGETS.find((item) => item.id === preference.id);
           // Bahnfilter: Kacheln der anderen Bahn fallen weg, der Rest rueckt auf.
@@ -809,7 +811,17 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       if (letzteHtml.get(host) === html) continue;
       letzteHtml.set(host, html);
       host.classList.toggle("pi-ruhig", state.eingeblendet);
-      host.innerHTML = html;
+      // Leiste unveraendert: stehen lassen, sonst laden die Avatare neu und flackern.
+      const alteLeiste = host.querySelector(":scope > .pi-bar");
+      const alteGrid = host.querySelector(":scope > .pi-grid");
+      if (alteLeiste && alteGrid && letzteLeiste.get(host) === barHtml) {
+        const tmp = document.createElement("div");
+        tmp.innerHTML = html;
+        alteGrid.replaceWith(tmp.querySelector(".pi-grid"));
+      } else {
+        host.innerHTML = html;
+      }
+      letzteLeiste.set(host, barHtml);
       bindBestandRing(host, escapeHtml);
       if (!state.eingeblendet) host.querySelectorAll(".pi-stat > b, .pi-donut-mitte b, .pi-headline .pi-num").forEach(zaehleHoch);
     }

@@ -8664,7 +8664,7 @@ Deno.serve(async (req: Request) => {
           admin.schema("signal_layer").from("generated_assets")
             .select("id,kind,company,created_by,created_at,updated_at,status,answers,title:payload_title,slide_title:payload_slide_title,article:articles(article_type)")
             .eq("status", "done").order("created_at", { ascending: false }).limit(500),
-          admin.schema("users").from("profiles").select("id,email,full_name,kuerzel,avatar_url").limit(250),
+          admin.schema("users").from("profiles").select("id,email,full_name,kuerzel,avatar_url,app_role,app_settings").limit(250),
         ]);
         const firstError = settingError || assetError || profileError;
         if (firstError) return errorResponse(origin, firstError.message, 500);
@@ -8706,7 +8706,8 @@ Deno.serve(async (req: Request) => {
           const id = String(profile.id || "");
           const shortName = dashboardCreatorShortName(profile.full_name || profile.kuerzel).toLocaleLowerCase("de");
           return !String(profile.email || "").toLocaleLowerCase("de").startsWith("claude-debug@")
-            && (creatorCounts.has(id) || DASHBOARD_TEAM_CREATORS.has(shortName));
+            // Alle mit Zugang zum Signal Layer sind waehlbar, nicht nur eine feste Namensliste.
+            && (creatorCounts.has(id) || DASHBOARD_TEAM_CREATORS.has(shortName) || (profile.app_role !== undefined && profileCanAccessSignalLayer(profile as ToolAccessProfile) && (profile as ToolAccessProfile).app_settings?.allowed_tools != null));
         }).map((profile) => {
           const id = String(profile.id || "");
           const name = String(profile.full_name || profile.kuerzel || "ROOTS Team").trim();

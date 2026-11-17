@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/circular-std">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="./dashboard-insights.css?v=20261117-5">
+<link rel="stylesheet" href="./dashboard-insights.css?v=20261117-6">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8"></script>
 <script defer src="https://pgoutzeris-stack.github.io/ROOTS_Intranet/roots-user-bridge.js?v=20260804-auth-dedupe-v1"></script>
 <style>
@@ -165,7 +165,7 @@
   /* ---------- Modus-Umschalter (Simple / Advanced) ---------- */
   /* Drei Pillen brauchen mehr Platz als zwei. Sie brechen um, statt nach links
      in die Kopfzeile zu wandern. */
-  .mode-switch-bar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; max-width: 1100px; margin: 0 auto .9rem; position: relative; z-index: 1; }
+  .mode-switch-bar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; max-width: 1440px; margin: 0 auto .9rem; position: relative; z-index: 1; }
   .mode-switch { flex-wrap: wrap; }
   .mode-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--bg); box-shadow: var(--shadow-dash); }
   .mode-switch-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 13px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--muted); font: inherit; font-size: .74rem; font-weight: 750; cursor: pointer; transition: background .18s ease, color .18s ease; }
@@ -429,7 +429,7 @@
   .simple-rejected-item small { display: block; margin-top: 3px; color: var(--muted); font-size: .68rem; }
 
   /* ---------- Dashboard ---------- */
-  .dashboard-wrap { max-width: 1100px; width: 100%; margin: 0 auto; }
+  .dashboard-wrap { max-width: 1440px; width: 100%; margin: 0 auto; }
   .dashboard-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
   .dashboard-title { font-size: 1.4rem; font-weight: 700; margin-bottom: .3rem; }
   .dashboard-subtitle { font-size: .9rem; color: var(--muted); }
@@ -2651,7 +2651,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261117-1';
+  import { initApp } from './app.js?v=20261117-2';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
