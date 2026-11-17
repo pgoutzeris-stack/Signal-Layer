@@ -474,6 +474,9 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
   }
   const lane = summary.preferences?.filters?.lane || "all";
   const sichtbar = teile.filter((teil) => teil.wert > 0);
+  // Einfaches und erweitertes Dashboard stehen beide im Dokument; gleiche
+  // Verlaufs-IDs liessen den sichtbaren Ring auf den versteckten zeigen.
+  const gid = `piGrad-${Math.random().toString(36).slice(2, 8)}-`;
 
   // Anteile, mit Untergrenze fuer winzige Gruppen. Was diese zusaetzlich
   // brauchen, gibt die groesste ab - sonst waere der Kreis mehr als voll.
@@ -496,11 +499,11 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
     const gedimmt = lane !== "all" && teil.lane !== lane;
     return `<path class="pi-slice${gedimmt ? " is-dimmed" : ""}" data-slice="${escapeHtml(teil.key)}"
       data-label="${escapeHtml(teil.label)}" data-value="${teil.wert}" data-share="${Math.round(teil.wert / (summe || 1) * 100)}"
-      d="${sektorPfad(gezeichnetVon, bis)}" fill="url(#piGrad-${escapeHtml(teil.key)})"
+      d="${sektorPfad(gezeichnetVon, bis)}" fill="url(#${gid}${escapeHtml(teil.key)})"
       style="--pi-delay:${index * 90}ms;--pi-x:${richtung.x};--pi-y:${richtung.y}"><title>${escapeHtml(teil.label)}: ${formatNumber(teil.wert)}</title></path>`;
   }).join("");
 
-  const verlaeufe = alle.map((teil) => `<linearGradient id="piGrad-${escapeHtml(teil.key)}" x1="0" y1="0" x2="1" y2="1">
+  const verlaeufe = alle.map((teil) => `<linearGradient id="${gid}${escapeHtml(teil.key)}" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="${teil.color}"></stop>
     <stop offset="100%" stop-color="${teil.light}"></stop>
   </linearGradient>`).join("");

@@ -365,12 +365,15 @@ test("der Ring laesst sich ohne die Aussortierten lesen", async () => {
   assert.match(ohne, /class="pi-legend-row is-hidden" data-slice-key="rejected"/);
   assert.match(ohne, /5\.157/);
   // Verlauf statt flacher Vollfarbe, runde Enden.
-  assert.match(mit, /fill="url\(#piGrad-marketing\)"/);
+  assert.match(mit, /fill="url\(#piGrad-[a-z0-9]+-marketing\)"/);
+  // Jeder Ring traegt eigene Verlaufs-IDs: einfaches und erweitertes
+  // Dashboard stehen beide im Dokument.
+  assert.notEqual(mit.match(/piGrad-[a-z0-9]+-/)[0], ohne.match(/piGrad-[a-z0-9]+-/)[0]);
   // Die Kontur kommt aus dem Stil und traegt die Kartenfarbe - sie zeichnet
   // die Kante nach, wo sich zwei Segmente ueberlagern.
   const cssKontur = readFileSync(new URL("../dashboard-insights.css", import.meta.url), "utf8");
   assert.match(cssKontur, /\.pi-slice \{[^}]*stroke: var\(--bg\)/);
-  assert.match(mit, /<linearGradient id="piGrad-sales"/);
+  assert.match(mit, /<linearGradient id="piGrad-[a-z0-9]+-sales"/);
   // Ringsektoren mit weichen Ecken statt Boegen mit ueberstehenden Kappen.
   const cssRing = readFileSync(new URL("../dashboard-insights.css", import.meta.url), "utf8");
   assert.match(cssRing, /stroke-linejoin: round/);
