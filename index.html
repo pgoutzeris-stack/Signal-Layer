@@ -606,6 +606,17 @@
   .kb-row b { font-weight: 700; white-space: nowrap; }
   .kb-row small { color: var(--muted); font-weight: 500; margin-left: 2px; }
   .kb-sub span { color: var(--muted); padding-left: 10px; }
+  .kb-table { display: grid; font-size: .74rem; }
+  .kb-tr { display: grid; grid-template-columns: minmax(0,1fr) 104px 104px; align-items: baseline; padding: 5px 0; border-top: 1px solid var(--line); }
+  .kb-tr.kb-th { border-top: 0; padding-top: 0; font-size: .62rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .kb-tr.kb-th .kb-td { justify-content: flex-end; }
+  .kb-td { display: flex; justify-content: flex-end; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+  .kb-td b { font-weight: 700; color: var(--ink); }
+  .kb-td small { min-width: 30px; text-align: right; color: var(--muted); font-size: .66rem; }
+  .kb-tr.kb-sub > span:first-child { padding-left: 12px; color: var(--muted); }
+  .kb-tr.kb-sub { border-top: 0; padding-top: 2px; }
+  .kb-tr.kb-gap { padding-bottom: 8px; }
+  .kb-tr.kb-hl .kb-td b { color: var(--brand); }
   .kb-foot { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: .66rem; color: var(--muted); }
   /* Lange Hinweise (z. B. KI-Budget) brechen in der Pille um, statt ueber den Rand des Popups zu ragen. */
   .source-health-note .crawl-result-pill { max-width: 100%; white-space: normal; line-height: 1.35; padding: 4px 10px; border-radius: 12px; }
@@ -2663,7 +2674,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261117-5';
+  import { initApp } from './app.js?v=20261117-6';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

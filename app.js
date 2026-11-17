@@ -8,14 +8,14 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261117-5";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261117-6";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261117-5";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261117-6";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261117-5";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261117-6";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
 let sb = null;
@@ -4322,17 +4322,11 @@ function renderSimpleBudgetNote() {
   const usd = (wert, stellen = 2) => `${Number(wert || 0).toLocaleString("de-DE", { minimumFractionDigits: stellen, maximumFractionDigits: stellen })} $`;
   const anteil = (teil, ganz) => ganz ? `${Math.round(teil / ganz * 100)} %` : "–";
   const monatName = new Date().toLocaleDateString("de-DE", { month: "long" });
-  const spalte = (titel, st, kosten) => {
-    const artikel = Number(st?.artikel || 0), ki = Number(st?.ki || 0), vor = Number(st?.vorfilter || 0), sig = Number(st?.signale || 0);
-    return `<div class="kb-col"><span class="kb-k">${escapeHtml(titel)}</span>
-      <div class="kb-row"><span>Ausgaben</span><b>${usd(kosten)}</b></div>
-      <div class="kb-row"><span>Geprüft</span><b>${zahl(artikel)}</b></div>
-      <div class="kb-row kb-sub"><span>Vorfilter raus</span><b>${zahl(vor)} <small>${anteil(vor, artikel)}</small></b></div>
-      <div class="kb-row kb-sub"><span>Zur KI</span><b>${zahl(ki)} <small>${anteil(ki, artikel)}</small></b></div>
-      <div class="kb-row kb-sub"><span>Signale</span><b>${zahl(sig)} <small>${anteil(sig, artikel)}</small></b></div>
-      <div class="kb-row"><span>Je KI-Artikel</span><b>${ki ? usd(kosten / ki, 3) : "–"}</b></div>
-    </div>`;
-  };
+  // Eine Tabelle: Kennzahl links, Heute und Monat als Spalten, Anteile in eigener Spalte.
+  const h = b.heute || {}, m = b.monat || {};
+  const zelle = (wert, ganz) => `<b>${zahl(wert)}</b><small>${ganz ? anteil(Number(wert || 0), Number(ganz || 0)) : ""}</small>`;
+  const zeile = (label, a, c, klasse = "") => `<div class="kb-tr ${klasse}"><span>${label}</span><span class="kb-td">${a}</span><span class="kb-td">${c}</span></div>`;
+  const jeKi = (kosten, ki) => Number(ki) ? usd(kosten / Number(ki), 3) : "–";
   const tag = Number(b.tagesbudget_usd || 0), heute = Number(b.heute_verbraucht_usd || 0);
   const quote = tag ? Math.min(100, heute / tag * 100) : 0;
   const stufe = b.aktiv === false ? "" : b.stufe === "aus" ? "erreicht" : b.stufe === "knapp" ? "knapp" : "";
@@ -4341,7 +4335,15 @@ function renderSimpleBudgetNote() {
   host.innerHTML = `<div class="kb">
     <div class="kb-head"><span><i class="fa-solid fa-coins"></i>KI-Budget heute</span><b>${usd(heute)} <small>von ${usd(tag)}</small></b>${stufe ? `<em class="kb-tag kb-tag--${b.stufe}">${stufe}</em>` : ""}</div>
     <div class="kb-bar kb-bar--${escapeHtml(b.stufe || "ok")}"><i style="width:${quote.toFixed(1)}%"></i></div>
-    <div class="kb-grid">${spalte("Heute", b.heute, heute)}${spalte(monatName, b.monat, b.monat_verbraucht_usd)}</div>
+    <div class="kb-table">
+      ${zeile("", "Heute", escapeHtml(monatName), "kb-th")}
+      ${zeile("Ausgaben", `<b>${usd(heute)}</b><small></small>`, `<b>${usd(b.monat_verbraucht_usd)}</b><small></small>`)}
+      ${zeile("Je KI-Artikel", `<b>${jeKi(heute, h.ki)}</b><small></small>`, `<b>${jeKi(b.monat_verbraucht_usd, m.ki)}</b><small></small>`, "kb-gap")}
+      ${zeile("Geprüft", zelle(h.artikel), zelle(m.artikel))}
+      ${zeile("Vorfilter raus", zelle(h.vorfilter, h.artikel), zelle(m.vorfilter, m.artikel), "kb-sub")}
+      ${zeile("Zur KI", zelle(h.ki, h.artikel), zelle(m.ki, m.artikel), "kb-sub")}
+      ${zeile("Signale", zelle(h.signale, h.artikel), zelle(m.signale, m.artikel), "kb-sub kb-hl")}
+    </div>
     <div class="kb-foot"><span>Monatsbudget ${usd(b.monat_verbraucht_usd)} von ${usd(b.monatsbudget_usd)}</span>${offen ? `<span>${zahl(offen)} Artikel warten</span>` : ""}${b.stufe === "knapp" ? "<span>Nur noch Artikel mit Tier-1-Kunden</span>" : ""}</div>
   </div>`;
 }
