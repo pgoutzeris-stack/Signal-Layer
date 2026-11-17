@@ -362,7 +362,7 @@
 .pi-seg, .pi-creators { padding: 3px; gap: 2px; background: var(--bg); border-color: var(--line); box-shadow: var(--shadow); }
 .pi-seg button { min-height: 32px; padding: 0 14px; font-size: .8125rem; font-weight: 600; }
 .pi-creator { width: 32px; height: 32px; }
-.pi-creator--all { height: 32px; padding: 0 14px; font-size: .8125rem; font-weight: 600; }
+.pi-creator--all { width: auto; height: 32px; padding: 0 14px; font-size: .8125rem; font-weight: 600; }
 .pi-avatar { width: 26px; height: 26px; }
 .pi-avatar--initials { font-size: .62rem; }
 @media (max-width: 900px) {
