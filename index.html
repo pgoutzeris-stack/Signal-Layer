@@ -585,6 +585,9 @@
   .spend-forecast b { font-size: .62rem; }
   .spend-forecast span { margin-top: 2px; color: #92400e; }
   .source-health-note { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  /* Lange Hinweise (z. B. KI-Budget) brechen in der Pille um, statt ueber den Rand des Popups zu ragen. */
+  .source-health-note .crawl-result-pill { max-width: 100%; white-space: normal; line-height: 1.35; padding: 4px 10px; border-radius: 12px; }
+  .source-health-note .crawl-result-pill > i { flex: none; align-self: flex-start; margin-top: 2px; }
   .crawl-result-pill { min-height: 23px; padding: 0 8px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--muted); font-size: .6rem; font-weight: 700; white-space: nowrap; }
   .crawl-result-pill--success { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
   .crawl-result-pill--error { color: var(--danger); border-color: #fecaca; background: #fef2f2; }
