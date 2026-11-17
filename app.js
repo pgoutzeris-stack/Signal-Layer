@@ -15,7 +15,7 @@ import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v
 import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261113-1";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261102-1";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261117-1";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
 let sb = null;

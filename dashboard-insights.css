@@ -285,3 +285,55 @@
 .pi-memo-sends small { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .pi-memo-sends em { color: var(--muted); font-size: .72rem; font-style: normal; white-space: nowrap; }
 .pi-memo-sends .pi-avatar--initials { font-size: .7rem; }
+
+/* Look der Rechnungs-Übersicht (ROOTS Rechnungen, 17.11.2026): blaue
+   Hero-Kachel, flache Kennzahlen ohne Kasten im Kasten, groessere Zahlen,
+   Kacheln heben sich beim Zeigen an. Keine Live-Plakette mehr. */
+[data-dashboard-live-label] { display: none !important; }
+.pi-widget { position: relative; transition: transform .2s ease, box-shadow .2s ease; animation: piWidgetUp .6s cubic-bezier(.2,.7,.2,1) both; }
+.pi-widget:hover { transform: translateY(-3px); box-shadow: 0 14px 32px rgba(15,23,42,.10); z-index: 5; }
+.pi-widget:nth-child(2) { animation-delay: .07s; } .pi-widget:nth-child(3) { animation-delay: .14s; }
+.pi-widget:nth-child(4) { animation-delay: .21s; } .pi-widget:nth-child(5) { animation-delay: .28s; }
+.pi-widget:nth-child(6) { animation-delay: .35s; } .pi-widget:nth-child(7) { animation-delay: .42s; }
+.pi-widget:nth-child(8) { animation-delay: .49s; } .pi-widget:nth-child(9) { animation-delay: .56s; }
+.pi-widget:nth-child(10) { animation-delay: .63s; } .pi-widget:nth-child(11) { animation-delay: .7s; }
+@keyframes piWidgetUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.pi-widget-head { border-bottom: 0; padding: 16px 20px 4px; }
+.pi-widget-head > span { font-size: 1rem; }
+
+/* Hero */
+.pi-widget[data-widget-id="performance_pulse"] { background: linear-gradient(135deg, var(--brand), #5b9bff); border-color: transparent; color: #fff; }
+.pi-widget[data-widget-id="performance_pulse"] .pi-widget-head > span { color: #fff; }
+.pi-widget[data-widget-id="performance_pulse"] .pi-widget-head > span > i { color: #fff; background: rgba(255,255,255,.18); }
+.pi-widget[data-widget-id="performance_pulse"] .pi-overview { background: none; padding: 12px 20px 22px; }
+.pi-widget[data-widget-id="performance_pulse"] .pi-headline { color: #fff; }
+.pi-widget[data-widget-id="performance_pulse"] .pi-num { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: #fff; animation: none; }
+.pi-widget[data-widget-id="performance_pulse"] .pi-stat { background: rgba(255,255,255,.14); }
+.pi-widget[data-widget-id="performance_pulse"] .pi-stat > span,
+.pi-widget[data-widget-id="performance_pulse"] .pi-stat > small { color: rgba(255,255,255,.85); }
+.pi-widget[data-widget-id="performance_pulse"] .pi-stat > b { color: #fff; }
+.pi-widget[data-widget-id="performance_pulse"] .pi-stat--link > span i { color: #fff; }
+.pi-widget[data-widget-id="performance_pulse"] .pi-stat--link:hover { background: rgba(255,255,255,.24); border-color: transparent; }
+
+/* Kennzahlen flach, Zahlen gross */
+.pi-stat { border: 0; background: var(--surface); padding: 14px 16px; border-radius: 12px; }
+.pi-stat > span { font-size: .75rem; font-weight: 500; }
+.pi-stat > b { font-size: 1.6rem; font-weight: 700; letter-spacing: -.01em; margin-top: 6px; }
+.pi-stat > small { font-size: .72rem; }
+.pi-stat-grid { padding: 12px 20px 20px; gap: 10px; }
+.pi-funnel-row > span { font-size: .75rem; font-weight: 500; }
+.pi-funnel-row > b { font-size: .8rem; }
+.pi-funnel-row > small { font-size: .68rem; }
+.pi-funnel-row > div { height: 8px; }
+.pi-funnel-row > div > i { animation: piFill .9s cubic-bezier(.2,.7,.2,1) .4s both; }
+@keyframes piFill { from { width: 0; } }
+.pi-trend-legend { padding: 8px 20px 0; font-size: .72rem; font-weight: 500; }
+.pi-trend-column > span { font-size: .68rem; }
+.pi-leaderboard { padding: 4px 20px 16px; }
+.pi-funnel { padding: 12px 20px 20px; }
+
+.pi-ruhig .pi-widget, .pi-ruhig .pi-funnel-row > div > i { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .pi-widget, .pi-funnel-row > div > i { animation: none; }
+  .pi-widget:hover { transform: none; }
+}

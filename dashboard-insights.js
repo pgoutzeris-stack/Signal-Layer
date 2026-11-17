@@ -680,6 +680,24 @@ function inputField(name, label, value, { step = "1", suffix = "", min = "0" } =
   return `<label class="pi-kpi-field"><span>${label}${suffix ? ` <small>${suffix}</small>` : ""}</span><input class="modern-input" type="number" min="${min}" step="${step}" name="${name}" value="${numberValue(value)}"></label>`;
 }
 
+/** Zahl im deutschen Format von 0 hochzaehlen; Praefix, Suffix und Nachkommastellen bleiben. */
+function zaehleHoch(el) {
+  const text = el.textContent || "";
+  const m = /^(\D*?)(\d{1,3}(?:\.\d{3})*|\d+)(,\d+)?(.*)$/.exec(text.trim());
+  if (!m || (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)) return;
+  const ziel = Number(m[2].replace(/\./g, "") + (m[3] ? "." + m[3].slice(1) : ""));
+  if (!Number.isFinite(ziel) || ziel === 0) return;
+  const stellen = m[3] ? m[3].length - 1 : 0;
+  const fmt = new Intl.NumberFormat("de-DE", { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+  const t0 = performance.now(), dauer = 1100;
+  const schritt = (t) => {
+    const p = Math.min(1, (t - t0) / dauer), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = m[1] + fmt.format(ziel * e) + m[4];
+    if (p < 1) requestAnimationFrame(schritt); else el.textContent = text;
+  };
+  requestAnimationFrame(schritt);
+}
+
 export function initPerformanceDashboard({ client, callApi, toast, openSettingsPanel, escapeHtml: escape = null }) {
   const escapeHtml = escape || ((value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char])));
   const state = {
@@ -788,6 +806,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       host.classList.toggle("pi-ruhig", state.eingeblendet);
       host.innerHTML = html;
       bindBestandRing(host, escapeHtml);
+      if (!state.eingeblendet) host.querySelectorAll(".pi-stat > b").forEach(zaehleHoch);
     }
     if (state.loaded && state.countsLoaded) state.eingeblendet = true;
     updateLiveLabels();
