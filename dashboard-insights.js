@@ -514,6 +514,7 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
       ${teil.key === "rejected"
         ? `<button type="button" class="pi-legend-toggle" data-toggle-rejected aria-pressed="${versteckt ? "false" : "true"}" title="${versteckt ? "Aussortierte wieder einrechnen" : "Aussortierte ausblenden"}" aria-label="${versteckt ? "Aussortierte wieder einrechnen" : "Aussortierte ausblenden"}"><i class="fa-regular fa-eye${versteckt ? "-slash" : ""}"></i></button>`
         : `<span class="pi-legend-spacer"></span>`}
+      <span class="pi-legend-track" aria-hidden="true"><i style="--pi-w:${versteckt ? 0 : Math.round(teil.wert / (summe || 1) * 1000) / 10}%;background:linear-gradient(90deg, ${teil.color}, ${teil.light})"></i></span>
     </div>`;
   }).join("");
   return `<div class="pi-donut" data-donut>
@@ -682,6 +683,7 @@ function inputField(name, label, value, { step = "1", suffix = "", min = "0" } =
 
 /** Zahl im deutschen Format von 0 hochzaehlen; Praefix, Suffix und Nachkommastellen bleiben. */
 function zaehleHoch(el) {
+  if (el.children.length) return;
   const text = el.textContent || "";
   const m = /^(\D*?)(\d{1,3}(?:\.\d{3})*|\d+)(,\d+)?(.*)$/.exec(text.trim());
   if (!m || (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)) return;
@@ -806,7 +808,7 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       host.classList.toggle("pi-ruhig", state.eingeblendet);
       host.innerHTML = html;
       bindBestandRing(host, escapeHtml);
-      if (!state.eingeblendet) host.querySelectorAll(".pi-stat > b").forEach(zaehleHoch);
+      if (!state.eingeblendet) host.querySelectorAll(".pi-stat > b, .pi-donut-mitte b, .pi-headline .pi-num").forEach(zaehleHoch);
     }
     if (state.loaded && state.countsLoaded) state.eingeblendet = true;
     updateLiveLabels();

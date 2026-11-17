@@ -369,3 +369,46 @@
   .pi-bar { padding: 0; }
   .pi-bar-filters { justify-content: flex-start; }
 }
+
+/* Bestand im neuen Design: Ring links, Legende rechts mit Anteilsbalken,
+   Ring dreht sich ein, Mitte zaehlt hoch, Balken wachsen nacheinander. */
+.pi-donut { padding: 18px 22px 22px; gap: 20px; }
+@container pi-widget (min-width: 460px) {
+  .pi-donut { grid-template-columns: minmax(150px, 200px) minmax(0, 1fr); align-items: center; justify-items: stretch; }
+  .pi-donut-chart { width: 100%; }
+}
+.pi-donut-chart svg { animation: piRingIn .8s cubic-bezier(.2,.7,.2,1) .15s both; transform-origin: center; }
+@keyframes piRingIn { from { opacity: 0; transform: rotate(-110deg) scale(.86); } to { opacity: 1; transform: none; } }
+.pi-donut-mitte b { font-size: 2.1rem; font-weight: 700; letter-spacing: -.02em; }
+.pi-donut-mitte span { font-size: .7rem; font-weight: 600; letter-spacing: .06em; }
+.pi-legend { gap: 6px; }
+.pi-legend-row { grid-template-columns: 10px minmax(0,1fr) auto 24px; row-gap: 6px; padding: 8px 10px; font-size: .8125rem; color: var(--ink); }
+.pi-legend-row b { font-size: .875rem; font-weight: 700; }
+.pi-legend-row:hover, .pi-legend-row.is-on { transform: none; }
+.pi-legend-track { grid-column: 2 / 4; height: 6px; border-radius: 3px; background: var(--surface); overflow: hidden; }
+.pi-legend-track i { display: block; width: var(--pi-w); height: 100%; border-radius: 3px; animation: piFill .9s cubic-bezier(.2,.7,.2,1) both; }
+.pi-legend-row:nth-child(1) .pi-legend-track i { animation-delay: .45s; }
+.pi-legend-row:nth-child(2) .pi-legend-track i { animation-delay: .52s; }
+.pi-legend-row:nth-child(3) .pi-legend-track i { animation-delay: .59s; }
+.pi-legend-row:nth-child(4) .pi-legend-track i { animation-delay: .66s; }
+.pi-legend-row:nth-child(5) .pi-legend-track i { animation-delay: .73s; }
+.pi-legend-row:nth-child(6) .pi-legend-track i { animation-delay: .8s; }
+.pi-legend-row.is-hidden .pi-legend-track { opacity: .4; }
+.pi-legend-foot { font-size: .72rem; padding-left: 10px; }
+
+/* Uebrige Bewegung wie in der Rechnungs-Uebersicht */
+.pi-trend-bars i { animation: piBarUp .9s cubic-bezier(.2,.7,.2,1) both; }
+.pi-trend-column:nth-child(2) i { animation-delay: .04s; } .pi-trend-column:nth-child(3) i { animation-delay: .08s; }
+.pi-trend-column:nth-child(4) i { animation-delay: .12s; } .pi-trend-column:nth-child(5) i { animation-delay: .16s; }
+.pi-trend-column:nth-child(6) i { animation-delay: .2s; } .pi-trend-column:nth-child(7) i { animation-delay: .24s; }
+.pi-trend-column:nth-child(8) i { animation-delay: .28s; } .pi-trend-column:nth-child(9) i { animation-delay: .32s; }
+@keyframes piBarUp { from { transform: scaleY(0); } to { transform: none; } }
+.pi-trend-bars i:hover { opacity: .8; }
+.pi-leaderboard > div, .pi-activity > div, .pi-memo-sends > div { transition: background .15s; border-radius: 8px; }
+.pi-leaderboard > div:hover, .pi-activity > div:hover, .pi-memo-sends > div:hover { background: var(--surface); }
+
+.pi-ruhig .pi-donut-chart svg, .pi-ruhig .pi-legend-track i, .pi-ruhig .pi-trend-bars i { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .pi-donut-chart svg, .pi-legend-track i, .pi-trend-bars i { animation: none; }
+}
+.pi-leaderboard > div, .pi-activity > div, .pi-memo-sends > div { padding: 12px 10px; margin: 0 -10px; }
