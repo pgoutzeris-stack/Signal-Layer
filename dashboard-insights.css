@@ -433,3 +433,4 @@
 .pi-legend-row[data-slice-key="rejected"] .pi-legend-track i { opacity: .45; }
 .pi-ruhig .pi-donut-chart svg { animation: none; }
 @media (prefers-reduced-motion: reduce) { .pi-donut-chart svg { animation: none; } }
+.pi-legend-row .pi-legend-track i { width: var(--pi-w); height: 100%; border-radius: 3px; }
