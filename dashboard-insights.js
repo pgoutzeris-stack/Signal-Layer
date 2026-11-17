@@ -508,6 +508,9 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
     <stop offset="100%" stop-color="${teil.light}"></stop>
   </linearGradient>`).join("");
 
+  // Balken im Verhaeltnis zum groessten Signal; neben den Aussortierten
+  // waeren die Signale sonst kaum sichtbar.
+  const maxSignal = Math.max(1, ...alle.filter((teil) => teil.key !== "rejected").map((teil) => teil.wert));
   const legende = alle.map((teil) => {
     const versteckt = ohneAussortiert && teil.key === "rejected";
     return `<div class="pi-legend-row${lane !== "all" && teil.lane !== lane ? " is-dimmed" : ""}${versteckt ? " is-hidden" : ""}" data-slice-key="${escapeHtml(teil.key)}">
@@ -517,7 +520,7 @@ export function bestandRingHtml(summary, escapeHtml = (value) => String(value ??
       ${teil.key === "rejected"
         ? `<button type="button" class="pi-legend-toggle" data-toggle-rejected aria-pressed="${versteckt ? "false" : "true"}" title="${versteckt ? "Aussortierte wieder einrechnen" : "Aussortierte ausblenden"}" aria-label="${versteckt ? "Aussortierte wieder einrechnen" : "Aussortierte ausblenden"}"><i class="fa-regular fa-eye${versteckt ? "-slash" : ""}"></i></button>`
         : `<span class="pi-legend-spacer"></span>`}
-      <span class="pi-legend-track" aria-hidden="true"><i style="--pi-w:${versteckt ? 0 : Math.round(teil.wert / (summe || 1) * 1000) / 10}%;background:linear-gradient(90deg, ${teil.color}, ${teil.light})"></i></span>
+      ${teil.key === "rejected" ? "" : `<span class="pi-legend-track" aria-hidden="true"><i style="--pi-w:${Math.round(teil.wert / maxSignal * 1000) / 10}%;background:linear-gradient(90deg, ${teil.color}, ${teil.light})"></i></span>`}
     </div>`;
   }).join("");
   return `<div class="pi-donut" data-donut>
