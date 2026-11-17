@@ -8,11 +8,11 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261117-3";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261117-4";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261117-3";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261117-4";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261117-5";
@@ -3843,41 +3843,7 @@ function renderSimpleHeaderStatusContent() {
 
   renderSimplePricingNote();
   renderSimpleLaufKurz(run);
-  const activeSimpleRun = Boolean(run && ["queued", "running"].includes(run.status));
-  byId("simple-cost-summary").textContent = formatSimpleTotalEur(simpleCostSummary?.total_eur);
-  byId("simple-cost-today").textContent = formatCostEur(simpleCostSummary?.today_eur);
-  byId("simple-cost-total").textContent = formatSimpleTotalEur(simpleCostSummary?.total_eur);
-  byId("simple-cost-projected").textContent = activeSimpleRun ? formatCostEur(simpleForecast?.projected_eur) : "-";
-  const analysisModel = simpleForecast?.analysis_model || run?.model || "nicht gesetzt";
-  const researchModel = simpleForecast?.research_model || run?.research_model || "nicht gesetzt";
-  byId("simple-cost-model").textContent = `Backend: Analyse ${analysisModel} · Recherche ${researchModel}`;
-  const simpleTodayDetail = byId("simple-today-cost-detail");
-  const simpleTotalDetail = byId("simple-total-cost-detail");
-  const simpleForecastDetail = byId("simple-forecast-cost-detail");
-  if (simpleTodayDetail) simpleTodayDetail.innerHTML = renderCostLedgerDetail(
-    "KI-Kosten heute", simpleCostSummary?.today_eur, simpleCostSummary?.today_model_breakdown,
-    simpleCostSummary, "Alle heute in Europe/Berlin protokollierten Aufrufe",
-  );
-  if (simpleTotalDetail) simpleTotalDetail.innerHTML = renderCostLedgerDetail(
-    "Simple-Kosten seit Version 1.0", simpleCostSummary?.total_eur, simpleCostSummary?.total_model_breakdown,
-    simpleCostSummary, simpleCostSummary?.scope_label || "Alle Simple-Aufrufe seit Version 1.0",
-  );
-  bindCostDetailPopover(byId("simple-today-cost-stat"), simpleTodayDetail);
-  bindCostDetailPopover(byId("simple-total-cost-stat"), simpleTotalDetail);
-  if (simpleForecastDetail) {
-    const calculatedAt = simpleForecast?.calculated_at
-      ? new Date(simpleForecast.calculated_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-      : "jetzt";
-    simpleForecastDetail.innerHTML = activeSimpleRun && simpleForecast ? `
-      <div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Simple-Laufkostenprognose</strong><small>Live aus Supabase · Stand ${calculatedAt}</small></div></div>
-      <div class="cost-detail-summary"><span>Bereits angefallen<b>${formatCostEur(simpleForecast.spent_eur)}</b></span><span>Voraussichtlich gesamt<b>${formatCostEur(simpleForecast.projected_eur)}</b></span><span>Verarbeitet<b>${formatCostInt(simpleForecast.processed_articles)}</b></span><span>Noch offen<b>${formatCostInt(simpleForecast.remaining_articles)}</b></span></div>
-      <span class="cost-detail-section"><b>Modell-Snapshot dieses Laufs</b><span class="cost-detail-row"><span>Analysemodell</span><b>${escapeHtml(analysisModel)}</b></span><span class="cost-detail-row"><span>Recherchemodell</span><b>${escapeHtml(researchModel)}</b></span><span class="cost-detail-row"><span>Abgleich mit echten Aufrufen</span><b>${simpleForecast.model_alignment ? "stimmt überein" : "Abweichung erkannt"}</b></span></span>
-      <span class="cost-detail-section"><b>Tokens & Restmenge</b><span class="cost-detail-row"><span>Bisherige Tokens</span><b>${formatCostInt(simpleForecast.tokens)}</b></span><span class="cost-detail-row"><span>Ø Input je verarbeitetem Artikel</span><b>${formatCostInt(simpleForecast.token_projection?.avg_input_tokens)}</b></span><span class="cost-detail-row"><span>Ø Output je verarbeitetem Artikel</span><b>${formatCostInt(simpleForecast.token_projection?.avg_output_tokens)}</b></span><span class="cost-detail-row"><span>Voraussichtliche Restkosten</span><b>${formatCostEur(simpleForecast.projected_remaining_eur)}</b></span></span>
-      <span class="cost-detail-section"><b>Tatsächlich verwendete KI-Modelle</b>${costModelBreakdownHtml(simpleForecast.model_breakdown, simpleCostSummary?.usd_eur_rate)}</span>
-      <small class="cost-detail-foot">Formel: echte Kosten dieses Laufs + offene Artikel × bisherige Kosten je verarbeitetem Artikel. Vorfilter ohne KI-Aufruf sind im Durchschnitt enthalten. Die Modelle wurden beim Start des Laufs im Backend festgeschrieben. ${escapeHtml(exchangeRateCopy(simpleCostSummary))}</small>
-    ` : '<div class="cost-detail-head"><i class="fa-solid fa-calculator"></i><div><strong>Keine laufende Prognose</strong><small>Sobald eine Simple-Analyse läuft, erscheint hier ihre Live-Kalkulation.</small></div></div>';
-  }
-  bindCostDetailPopover(byId("simple-forecast-cost-stat"), simpleForecastDetail);
+  renderSimpleBudgetNote();
 }
 
 // ---------------------------------------------------------------------------
@@ -4351,21 +4317,33 @@ function renderSimpleBudgetNote() {
   const host = document.getElementById("simple-budget-note");
   if (!host) return;
   const b = simpleKiBudget;
-  if (!b || b.aktiv === false) { host.hidden = true; host.innerHTML = ""; return; }
-  const usd = (wert) => `${Number(wert || 0).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
-  const heute = `${usd(b.heute_verbraucht_usd)} von ${usd(b.tagesbudget_usd)} heute`;
-  const monat = `${usd(b.monat_verbraucht_usd)} von ${usd(b.monatsbudget_usd)} im Monat`;
+  if (!b) { host.hidden = true; host.innerHTML = ""; return; }
+  const zahl = (wert) => Number(wert || 0).toLocaleString("de-DE");
+  const usd = (wert, stellen = 2) => `${Number(wert || 0).toLocaleString("de-DE", { minimumFractionDigits: stellen, maximumFractionDigits: stellen })} $`;
+  const anteil = (teil, ganz) => ganz ? `${Math.round(teil / ganz * 100)} %` : "–";
+  const monatName = new Date().toLocaleDateString("de-DE", { month: "long" });
+  const spalte = (titel, st, kosten) => {
+    const artikel = Number(st?.artikel || 0), ki = Number(st?.ki || 0), vor = Number(st?.vorfilter || 0), sig = Number(st?.signale || 0);
+    return `<div class="kb-col"><span class="kb-k">${escapeHtml(titel)}</span>
+      <div class="kb-row"><span>Ausgaben</span><b>${usd(kosten)}</b></div>
+      <div class="kb-row"><span>Geprüfte Artikel</span><b>${zahl(artikel)}</b></div>
+      <div class="kb-row kb-sub"><span>Vorfilter aussortiert</span><b>${zahl(vor)} <small>${anteil(vor, artikel)}</small></b></div>
+      <div class="kb-row kb-sub"><span>Von der KI geprüft</span><b>${zahl(ki)} <small>${anteil(ki, artikel)}</small></b></div>
+      <div class="kb-row kb-sub"><span>Signal geworden</span><b>${zahl(sig)} <small>${anteil(sig, artikel)}</small></b></div>
+      <div class="kb-row"><span>Kosten je KI-Artikel</span><b>${ki ? usd(kosten / ki, 3) : "–"}</b></div>
+    </div>`;
+  };
+  const tag = Number(b.tagesbudget_usd || 0), heute = Number(b.heute_verbraucht_usd || 0);
+  const quote = tag ? Math.min(100, heute / tag * 100) : 0;
+  const stufe = b.aktiv === false ? "" : b.stufe === "aus" ? "erreicht" : b.stufe === "knapp" ? "knapp" : "";
   const offen = Number(b.offen || 0);
   host.hidden = false;
-  if (b.stufe === "aus") {
-    host.innerHTML = `<span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-coins"></i>`
-      + `KI-Budget erreicht · ${escapeHtml(heute)}${offen ? ` · ${offen.toLocaleString("de-DE")} Artikel warten auf morgen` : ""}</span>`;
-  } else if (b.stufe === "knapp") {
-    host.innerHTML = `<span class="crawl-result-pill crawl-result-pill--error"><i class="fa-solid fa-coins"></i>`
-      + `KI-Budget knapp · nur noch Artikel mit Zielkunden · ${escapeHtml(heute)}</span>`;
-  } else {
-    host.innerHTML = `<span class="crawl-result-pill"><i class="fa-solid fa-coins"></i>KI-Budget · ${escapeHtml(heute)} · ${escapeHtml(monat)}</span>`;
-  }
+  host.innerHTML = `<div class="kb">
+    <div class="kb-head"><span><i class="fa-solid fa-coins"></i>KI-Budget heute</span><b>${usd(heute)} <small>von ${usd(tag)}</small></b>${stufe ? `<em class="kb-tag kb-tag--${b.stufe}">${stufe}</em>` : ""}</div>
+    <div class="kb-bar kb-bar--${escapeHtml(b.stufe || "ok")}"><i style="width:${quote.toFixed(1)}%"></i></div>
+    <div class="kb-grid">${spalte("Heute", b.heute, heute)}${spalte(monatName, b.monat, b.monat_verbraucht_usd)}</div>
+    <div class="kb-foot"><span>Monatsbudget ${usd(b.monat_verbraucht_usd)} von ${usd(b.monatsbudget_usd)}</span>${offen ? `<span>${zahl(offen)} Artikel warten</span>` : ""}${b.stufe === "knapp" ? "<span>Nur noch Artikel mit Tier-1-Kunden</span>" : ""}</div>
+  </div>`;
 }
 
 function renderSimplePricingNote() {
@@ -4656,7 +4634,6 @@ function bindUi() {
   bindStatusDisclosure(els.statusErrorToggle, els.apiErrorList, "Fehler");
   bindStatusDisclosure(els.statusCostToggle, els.statusCostBody, "Kosten");
   bindStatusDisclosure(els.statusAccessToggle, els.statusAccessBody, "Abrufstatus");
-  bindStatusDisclosure(document.getElementById("simple-cost-toggle"), document.getElementById("simple-cost-body"), "Kosten");
   els.appNav.addEventListener("click", (event) => {
     const button = event.target.closest("[data-app-view]");
     if (button) switchAppView(button.dataset.appView);

@@ -585,6 +585,26 @@
   .spend-forecast b { font-size: .62rem; }
   .spend-forecast span { margin-top: 2px; color: #92400e; }
   .source-health-note { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  /* KI-Budget im Status-Popup: heute und Monat nebeneinander. */
+  #simple-budget-note { display: block; }
+  .kb { margin-top: 10px; padding: 14px; border-radius: 12px; background: var(--surface); }
+  .kb-head { display: flex; align-items: baseline; gap: 8px; font-size: .78rem; }
+  .kb-head > span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 600; margin-right: auto; }
+  .kb-head > span i { color: var(--brand); }
+  .kb-head b { font-size: 1.05rem; color: var(--ink); }
+  .kb-head small { color: var(--muted); font-weight: 500; font-size: .75rem; }
+  .kb-tag { font-style: normal; font-size: .62rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #fffbeb; color: #92400e; }
+  .kb-tag--aus { background: #fef2f2; color: var(--danger); }
+  .kb-bar { height: 6px; margin: 10px 0 14px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .kb-bar i { display: block; height: 100%; border-radius: 3px; background: var(--brand); transition: width .6s ease; }
+  .kb-bar--knapp i { background: #f59e0b; } .kb-bar--aus i { background: var(--danger); }
+  .kb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .kb-k { display: block; margin-bottom: 6px; font-size: .62rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .kb-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: .72rem; color: var(--ink); }
+  .kb-row b { font-weight: 700; white-space: nowrap; }
+  .kb-row small { color: var(--muted); font-weight: 500; margin-left: 2px; }
+  .kb-sub span { color: var(--muted); padding-left: 10px; }
+  .kb-foot { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: .66rem; color: var(--muted); }
   /* Lange Hinweise (z. B. KI-Budget) brechen in der Pille um, statt ueber den Rand des Popups zu ragen. */
   .source-health-note .crawl-result-pill { max-width: 100%; white-space: normal; line-height: 1.35; padding: 4px 10px; border-radius: 12px; }
   .source-health-note .crawl-result-pill > i { flex: none; align-self: flex-start; margin-top: 2px; }
@@ -2368,19 +2388,6 @@
                     <div class="source-health-note simple-run-error" id="simple-run-error" hidden></div>
                     <div class="source-health-note" id="simple-pricing-note" hidden></div>
                   </div>
-                  <section class="status-disclosure-panel status-cost-panel">
-                    <button type="button" class="status-disclosure-toggle" id="simple-cost-toggle" aria-expanded="false" aria-controls="simple-cost-body">
-                      <span><i class="fa-solid fa-coins"></i><span><b>Kosten ausklappen</b><small id="simple-cost-model">Nur Simple-KI-Aufrufe</small></span></span>
-                      <span><strong id="simple-cost-summary">-</strong><i class="fa-solid fa-chevron-down"></i></span>
-                    </button>
-                    <div class="status-disclosure-body" id="simple-cost-body" hidden>
-                      <div class="telemetry-grid">
-                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-today-cost-stat" tabindex="0"><span>Heute</span><b id="simple-cost-today">-</b><div class="cost-detail-popover" id="simple-today-cost-detail" role="tooltip"></div></div>
-                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-total-cost-stat" tabindex="0"><span>Simple seit V1.0</span><b id="simple-cost-total">-</b><div class="cost-detail-popover" id="simple-total-cost-detail" role="tooltip"></div></div>
-                        <div class="telemetry-stat telemetry-stat--interactive" id="simple-forecast-cost-stat" tabindex="0"><span>Lauf-Prognose</span><b id="simple-cost-projected">-</b><div class="cost-detail-popover" id="simple-forecast-cost-detail" role="tooltip"></div></div>
-                      </div>
-                    </div>
-                  </section>
                 </div>
                 <span class="crawl-status-hint" id="simple-status-hint">Simple analysiert gespeicherte Artikel und startet keinen Crawl.</span>
               </div>
@@ -2654,7 +2661,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261117-3';
+  import { initApp } from './app.js?v=20261117-4';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
