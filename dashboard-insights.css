@@ -337,3 +337,35 @@
   .pi-widget, .pi-funnel-row > div > i { animation: none; }
   .pi-widget:hover { transform: none; }
 }
+
+/* Abstaende und Kopfleiste wie in der Rechnungs-Uebersicht: 16px zwischen
+   Kacheln, 20 bis 22px Innenabstand, Titel gross links, Filter als Pillen. */
+.pi-grid { gap: 16px; }
+.pi-widget-head { padding: 20px 22px 6px; min-height: 0; }
+.pi-overview, .pi-widget[data-widget-id="performance_pulse"] .pi-overview { padding: 14px 22px 24px; }
+.pi-stat-grid { padding: 14px 22px 22px; gap: 12px; }
+.pi-funnel { padding: 16px 22px 22px; gap: 12px; }
+.pi-trend-legend { padding: 10px 22px 0; }
+.pi-trend-chart { padding: 20px 22px 16px; }
+.pi-leaderboard, .pi-activity, .pi-memo-sends { padding: 6px 22px 18px; }
+.pi-leaderboard > div, .pi-activity > div, .pi-memo-sends > div { padding: 12px 0; }
+.pi-insight-list { padding: 14px 22px 22px; gap: 12px; }
+.pi-insight-list > div { padding: 14px 16px; border: 0; }
+.pi-donut { padding: 22px 22px 20px; }
+.pi-coverage, .pi-empty { padding: 22px; }
+.pi-inline-empty { font-size: .85rem; }
+
+.pi-bar { margin: 0 0 20px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; gap: 16px; }
+.pi-bar h2 { margin: 0; gap: 10px; font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; }
+.pi-bar h2 i { font-size: 1.1rem; }
+.pi-bar-filters { gap: 10px; }
+.pi-seg, .pi-creators { padding: 3px; gap: 2px; background: var(--bg); border-color: var(--line); box-shadow: var(--shadow); }
+.pi-seg button { min-height: 32px; padding: 0 14px; font-size: .8125rem; font-weight: 600; }
+.pi-creator { width: 32px; height: 32px; }
+.pi-creator--all { height: 32px; padding: 0 14px; font-size: .8125rem; font-weight: 600; }
+.pi-avatar { width: 26px; height: 26px; }
+.pi-avatar--initials { font-size: .62rem; }
+@media (max-width: 900px) {
+  .pi-bar { padding: 0; }
+  .pi-bar-filters { justify-content: flex-start; }
+}
