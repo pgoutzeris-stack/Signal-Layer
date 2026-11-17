@@ -412,3 +412,24 @@
   .pi-donut-chart svg, .pi-legend-track i, .pi-trend-bars i { animation: none; }
 }
 .pi-leaderboard > div, .pi-activity > div, .pi-memo-sends > div { padding: 12px 10px; margin: 0 -10px; }
+
+/* Bestand, zweite Fassung: der Ring zeichnet sich im Uhrzeigersinn ein statt
+   zu drehen, Aussortiert tritt zurueck, damit die Signale lesbar sind. */
+@property --pi-sweep { syntax: "<angle>"; inherits: false; initial-value: 360deg; }
+.pi-donut-chart svg {
+  animation: piSweep 1.2s cubic-bezier(.3,.7,.2,1) .25s both;
+  -webkit-mask: conic-gradient(#000 var(--pi-sweep), transparent 0);
+  mask: conic-gradient(#000 var(--pi-sweep), transparent 0);
+}
+@keyframes piSweep { from { --pi-sweep: 0deg; } to { --pi-sweep: 360deg; } }
+.pi-donut .pi-slice { animation: none; }
+.pi-slice[data-slice="rejected"] { opacity: .32; }
+.pi-donut-chart:hover .pi-slice[data-slice="rejected"]:not(:hover) { opacity: .2; }
+.pi-donut-chart { max-width: 220px; justify-self: center; }
+.pi-donut-mitte b { font-size: 2.25rem; }
+.pi-legend-row { grid-template-columns: 8px minmax(0,1fr) auto 24px; column-gap: 10px; padding: 10px 12px; border-radius: 10px; }
+.pi-legend-row i { width: 8px; height: 8px; border-radius: 50%; }
+.pi-legend-row:hover, .pi-legend-row.is-on { background: var(--surface); }
+.pi-legend-row[data-slice-key="rejected"] .pi-legend-track i { opacity: .45; }
+.pi-ruhig .pi-donut-chart svg { animation: none; }
+@media (prefers-reduced-motion: reduce) { .pi-donut-chart svg { animation: none; } }
