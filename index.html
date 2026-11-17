@@ -587,6 +587,8 @@
   .source-health-note { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   /* KI-Budget im Status-Popup: heute und Monat nebeneinander. */
   #simple-budget-note { display: block; }
+  .simple-status-popover:has(.kb) { width: min(440px, calc(100vw - 32px)); }
+  .kb-head b { white-space: nowrap; }
   .kb { margin-top: 10px; padding: 14px; border-radius: 12px; background: var(--surface); }
   .kb-head { display: flex; align-items: baseline; gap: 8px; font-size: .78rem; }
   .kb-head > span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 600; margin-right: auto; }
@@ -2661,7 +2663,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261117-4';
+  import { initApp } from './app.js?v=20261117-5';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

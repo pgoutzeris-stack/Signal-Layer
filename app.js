@@ -8,11 +8,11 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261117-4";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261117-5";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261117-4";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261117-5";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20260930-1";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261117-5";
@@ -4326,11 +4326,11 @@ function renderSimpleBudgetNote() {
     const artikel = Number(st?.artikel || 0), ki = Number(st?.ki || 0), vor = Number(st?.vorfilter || 0), sig = Number(st?.signale || 0);
     return `<div class="kb-col"><span class="kb-k">${escapeHtml(titel)}</span>
       <div class="kb-row"><span>Ausgaben</span><b>${usd(kosten)}</b></div>
-      <div class="kb-row"><span>Geprüfte Artikel</span><b>${zahl(artikel)}</b></div>
-      <div class="kb-row kb-sub"><span>Vorfilter aussortiert</span><b>${zahl(vor)} <small>${anteil(vor, artikel)}</small></b></div>
-      <div class="kb-row kb-sub"><span>Von der KI geprüft</span><b>${zahl(ki)} <small>${anteil(ki, artikel)}</small></b></div>
-      <div class="kb-row kb-sub"><span>Signal geworden</span><b>${zahl(sig)} <small>${anteil(sig, artikel)}</small></b></div>
-      <div class="kb-row"><span>Kosten je KI-Artikel</span><b>${ki ? usd(kosten / ki, 3) : "–"}</b></div>
+      <div class="kb-row"><span>Geprüft</span><b>${zahl(artikel)}</b></div>
+      <div class="kb-row kb-sub"><span>Vorfilter raus</span><b>${zahl(vor)} <small>${anteil(vor, artikel)}</small></b></div>
+      <div class="kb-row kb-sub"><span>Zur KI</span><b>${zahl(ki)} <small>${anteil(ki, artikel)}</small></b></div>
+      <div class="kb-row kb-sub"><span>Signale</span><b>${zahl(sig)} <small>${anteil(sig, artikel)}</small></b></div>
+      <div class="kb-row"><span>Je KI-Artikel</span><b>${ki ? usd(kosten / ki, 3) : "–"}</b></div>
     </div>`;
   };
   const tag = Number(b.tagesbudget_usd || 0), heute = Number(b.heute_verbraucht_usd || 0);
