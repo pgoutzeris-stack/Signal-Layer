@@ -1500,13 +1500,15 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 
 /* Fertiger LinkedIn-Entwurf: vertraute Feed-Hierarchie in der ROOTS-Anmutung.
    Die echte Asset-Buehne bleibt unveraendert und wird nur in den Post gesetzt. */
-#as-overlay .as-work--feed{display:flex; justify-content:center; overflow:auto; padding:0 8px 8px;}
+/* Platz fuer den Kartenschatten: mit 8 px Rand schnitt overflow den Schatten
+   eckig ab, auf weissem Grund sah das wie ein grauer Kasten aus. */
+#as-overlay .as-work--feed{display:flex; justify-content:center; overflow:auto; padding:4px 32px 40px; box-sizing:border-box;}
 /* Kein grauer Kasten hinter dem Entwurf: die Flaeche um die Karte ist weiss. */
 #as-overlay .as-main:has(.as-work--feed),#as-overlay .as-content:has(.as-work--feed){background:#fff;}
 #as-overlay .as-linkedin-post{width:min(1180px,100%); height:100%; min-height:520px; display:grid;
   grid-template-columns:minmax(0,1fr) minmax(0,1fr); overflow:hidden; background:#fff;
   border:1px solid var(--line,#e2e8f0); border-radius:16px;
-  box-shadow:0 14px 42px rgba(15,23,42,.12); color:#0f172a;}
+  box-shadow:0 8px 24px rgba(15,23,42,.08); color:#0f172a;}
 #as-overlay .as-linkedin-head{display:flex; align-items:center; gap:11px; padding:14px 16px 10px;}
 #as-overlay .as-linkedin-avatar{display:grid; place-items:center; flex:0 0 auto; width:46px; height:46px;
   padding:7px; overflow:hidden; border:1px solid #dbe7ff; border-radius:9px; background:#fff;}
