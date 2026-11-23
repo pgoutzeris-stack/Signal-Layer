@@ -9054,7 +9054,9 @@ Deno.serve(async (req: Request) => {
         if (isScheduled && body.speichern === true && pbSlides[0] && !stil.rootsLogo) {
           const neueFolien = [...pbSlides];
           neueFolien[0] = { ...pbSlides[0], ki_basis: String(pbSlides[0].ki_basis || pbSlides[0].variant || "B"), variant: "KI",
-            ki_layout: privatBildLayout(pbBild, stil.aspect, stil.name), ki_typ: "bild", ki_bild_stil: stil.id };
+            ki_layout: privatBildLayout(pbBild, stil.aspect, stil.name), ki_typ: "bild", ki_bild_stil: stil.id,
+            ki_bild_meta: { stil: stil.name, auftrag, modell: "Nano Banana 2", format: stil.aspect, ci_geprueft: ci.checked === true,
+              ci_ok: ci.ok === true, ci_grund: String(ci.reason || ""), erstellt: new Date().toISOString() } };
           const { error: nachFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
             .update({ payload: { ...pbPayload, slides: neueFolien }, updated_at: new Date().toISOString() }).eq("id", pbAssetId);
           if (nachFehler) return errorResponse(origin, nachFehler.message, 500);
@@ -9086,11 +9088,20 @@ Deno.serve(async (req: Request) => {
         const { stile } = await bildStile();
         const spStil = waehleBildStil(stile, String(body.stil_id || ""));
         const html = privatBildLayout(String(body.bild), spStil?.aspect || "1:1", spStil?.name || "");
-        spSlides[spIndex] = { ...spSlide, ki_basis: String(spSlide.ki_basis || spSlide.variant || "B"), variant: "KI", ki_layout: html, ki_typ: "bild", ki_bild_stil: spStil?.id || "" };
+        // Angaben fuer die Seitenleiste im Studio: Stil, Bildauftrag, Pruefung.
+        const roh = (body.meta && typeof body.meta === "object" ? body.meta : {}) as Record<string, unknown>;
+        const text = (wert: unknown, max: number) => String(wert ?? "").slice(0, max);
+        const vorher = (spSlide.ki_bild_meta && typeof spSlide.ki_bild_meta === "object" ? spSlide.ki_bild_meta : {}) as Record<string, unknown>;
+        const spMeta = Object.keys(roh).length ? {
+          stil: text(roh.stil, 100) || spStil?.name || "", auftrag: text(roh.auftrag, 3000), modell: text(roh.modell, 60),
+          format: text(roh.format, 10), ci_geprueft: roh.ci_geprueft === true, ci_ok: roh.ci_ok === true,
+          ci_grund: text(roh.ci_grund, 300), erstellt: text(roh.erstellt, 40),
+        } : vorher;
+        spSlides[spIndex] = { ...spSlide, ki_basis: String(spSlide.ki_basis || spSlide.variant || "B"), variant: "KI", ki_layout: html, ki_typ: "bild", ki_bild_stil: spStil?.id || "", ki_bild_meta: spMeta };
         const { error: spSpeicherFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
           .update({ payload: { ...spPayload, slides: spSlides }, updated_at: new Date().toISOString() }).eq("id", spAssetId);
         if (spSpeicherFehler) return errorResponse(origin, spSpeicherFehler.message, 500);
-        return corsResponse(origin, { index: spIndex, html, variant: "KI" });
+        return corsResponse(origin, { index: spIndex, html, variant: "KI", meta: spMeta });
       }
 
       // Eine Folie eines Privat-Assets im Stil des staerksten eigenen Posts.

@@ -1501,6 +1501,8 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 /* Fertiger LinkedIn-Entwurf: vertraute Feed-Hierarchie in der ROOTS-Anmutung.
    Die echte Asset-Buehne bleibt unveraendert und wird nur in den Post gesetzt. */
 #as-overlay .as-work--feed{display:flex; justify-content:center; overflow:auto; padding:0 8px 8px;}
+/* Kein grauer Kasten hinter dem Entwurf: die Flaeche um die Karte ist weiss. */
+#as-overlay .as-main:has(.as-work--feed),#as-overlay .as-content:has(.as-work--feed){background:#fff;}
 #as-overlay .as-linkedin-post{width:min(1180px,100%); height:100%; min-height:520px; display:grid;
   grid-template-columns:minmax(0,1fr) minmax(0,1fr); overflow:hidden; background:#fff;
   border:1px solid var(--line,#e2e8f0); border-radius:16px;
@@ -1517,7 +1519,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-caption{padding:2px 16px 12px;}
 #as-overlay .as-linkedin-copy{margin:0; font-size:13px; line-height:1.48; white-space:pre-wrap; color:#1e293b;}
 #as-overlay .as-linkedin-caption:empty{display:none;}
-#as-overlay .as-stagearea--linkedin{min-width:0; min-height:260px; padding:16px; background:#f8fafc;
+#as-overlay .as-stagearea--linkedin{min-width:0; min-height:260px; padding:16px; background:transparent;
   display:flex; align-items:center; justify-content:center;}
 #as-overlay .as-linkedin-col{min-width:0; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto;
   border-right:1px solid #edf2f7; overflow:hidden;}
@@ -1527,6 +1529,20 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-col .as-linkedin-caption{min-height:0; overflow-y:auto; overscroll-behavior:contain;}
 #as-overlay .as-linkedin-avatar--person{padding:0; border-radius:50%; border:0;}
 #as-overlay .as-linkedin-avatar--person img{object-fit:cover;}
+#as-overlay [data-ki-bild]{cursor:zoom-in;}
+#as-overlay .as-bildinfo{position:absolute; top:0; right:0; bottom:0; z-index:60; width:min(400px,100%); display:flex; flex-direction:column; gap:16px;
+  padding:20px; overflow:auto; background:#fff; border-left:1px solid var(--line,#e2e8f0); box-shadow:-12px 0 40px rgba(15,23,42,.16);}
+#as-overlay .as-bildinfo[hidden]{display:none;}
+#as-overlay .as-bildinfo-kopf{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+#as-overlay .as-bildinfo-kopf h3{margin:0; font-size:16px;}
+#as-overlay .as-bildinfo-zu{border:0; background:none; font-size:18px; color:#64748b; cursor:pointer; padding:4px 8px;}
+#as-overlay .as-bildinfo-bild{width:100%; border-radius:12px; display:block;}
+#as-overlay .as-bildinfo-text span,#as-overlay .as-bildinfo-feld span{display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#64748b; margin-bottom:4px;}
+#as-overlay .as-bildinfo-text p{margin:0; padding:10px 12px; border-radius:10px; background:#f8fafc; font-size:13px; line-height:1.5; white-space:pre-wrap; color:#0f172a;}
+#as-overlay .as-bildinfo-raster{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+#as-overlay .as-bildinfo-feld{padding:10px 12px; border-radius:10px; background:#f8fafc;}
+#as-overlay .as-bildinfo-feld b{font-size:13px; color:#0f172a; font-weight:600;}
+#as-overlay .as-bildinfo-fuss{display:flex; flex-direction:column; gap:8px; margin-top:auto;}
 #as-overlay .as-tone-pill{margin-left:auto; align-self:flex-start; display:inline-flex; align-items:center; gap:5px;
   padding:3px 9px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;}
 #as-overlay .as-tone-pill.is-ok{background:#dcfce7; color:#166534;}
@@ -2352,6 +2368,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       </footer>
     </div>`;
   overlay.appendChild(cropOverlay);
+
+  // Seitenleiste zum Bild: wie im Bildgenerierungs-Tool Stil, Auftrag, Modell.
+  const bildInfo = document.createElement("aside");
+  bildInfo.className = "as-bildinfo";
+  bildInfo.hidden = true;
+  overlay.appendChild(bildInfo);
 
   const ownOverlay = document.createElement("div");
   ownOverlay.className = "as-crop";
@@ -4780,6 +4802,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // KI-Gestaltung im eigenen Stil und die Vorlage, aus der sie entstand.
       ki_layout: variant === "KI" ? String(src.ki_layout || "") : "",
       ki_basis: String(src.ki_basis || ""),
+      ki_bild_stil: String(src.ki_bild_stil || ""),
+      ki_bild_meta: src.ki_bild_meta && typeof src.ki_bild_meta === "object" ? src.ki_bild_meta : null,
     };
   }
 
@@ -4847,7 +4871,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       let bild = String(res.bild);
       if (res.stil?.roots_logo && res.logo) bild = await setzeRootsLogo(bild, String(res.logo));
       bild = await alsJpegUnter(bild, 470000);
-      const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: res.stil?.id || "" });
+      const meta = {
+        stil: String(res.stil?.name || ""), auftrag: String(res.auftrag || ""), modell: "Nano Banana 2",
+        format: String(res.stil?.aspect || "1:1"), ci_geprueft: Boolean(res.ci?.checked), ci_ok: Boolean(res.ci?.ok),
+        ci_grund: String(res.ci?.reason || ""), erstellt: new Date().toISOString(),
+      };
+      const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: res.stil?.id || "", meta });
+      slide.ki_bild_meta = gespeichert?.meta || meta;
+      slide.ki_bild_stil = String(res.stil?.id || "");
       slide.ki_basis = slide.ki_basis || slide.variant;
       slide.variant = "KI";
       slide.ki_layout = String(gespeichert?.html || "");
@@ -4925,6 +4956,31 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       breite = Math.round(breite * 0.85);
     }
     throw new Error("Bild lässt sich nicht klein genug speichern.");
+  }
+
+  function schliesseBildInfo() { bildInfo.hidden = true; bildInfo.innerHTML = ""; }
+
+  function oeffneBildInfo(slide) {
+    const src = privatBildSrc();
+    if (!slide || !src) return;
+    const m = slide.ki_bild_meta || {};
+    const datum = m.erstellt ? new Date(m.erstellt).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
+    const ci = !m.ci_geprueft ? "Nicht geprüft" : m.ci_ok ? "Bestanden" : `Auffällig: ${m.ci_grund || "ROOTS-Zeichen im Bild"}`;
+    const zeile = (titel, wert) => `<div class="as-bildinfo-feld"><span>${esc(titel)}</span><b>${esc(wert || "-")}</b></div>`;
+    bildInfo.innerHTML = `
+      <header class="as-bildinfo-kopf"><h3>${esc(m.stil || state.privatBildStil || "Bild")}</h3>
+        <button type="button" class="as-bildinfo-zu" data-act="bild-info-zu" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button></header>
+      <img class="as-bildinfo-bild" src="${attr(src)}" alt="">
+      <div class="as-bildinfo-text"><span>Bildauftrag</span><p>${esc(m.auftrag || "Nicht gespeichert")}</p></div>
+      <div class="as-bildinfo-raster">
+        ${zeile("Stil", m.stil || state.privatBildStil)}${zeile("Modell", m.modell)}${zeile("Format", m.format)}
+        ${zeile("CI-Prüfung", ci)}${zeile("Erstellt", datum)}
+      </div>
+      <footer class="as-bildinfo-fuss">
+        <button type="button" class="as-btn as-btn--primary" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-rotate-right"></i>Bild neu generieren</button>
+        <button type="button" class="as-btn" data-act="privat-bild-laden"><i class="fa-solid fa-download"></i>Bild herunterladen</button>
+      </footer>`;
+    bildInfo.hidden = false;
   }
 
   /** Vom Betrieb nachgezogene Bilder kommen in voller Groesse; einmal
@@ -8059,6 +8115,10 @@ ${stages}${post}
       return;
     }
     const hit = event.target.closest("[data-act]");
+    if (!hit && stageEl && event.target.closest("[data-ki-bild]")) {
+      oeffneBildInfo(modelByUid(stageEl.getAttribute("data-uid")));
+      return;
+    }
     // Ein leerer Bildplatz nimmt den Klick selbst: dort gibt es nur eines zu tun.
     // Im freien Modus waehlt der Klick den Platz aus, das Fenster oeffnet der Stift.
     if (!hit && stageEl && state.step === "edit" && !state.ciFrei) {
@@ -8146,7 +8206,8 @@ ${stages}${post}
       if (id) void openDraft(id);
       return;
     }
-    if (act === "ki-visual") { void baueKiVisuals(); return; }
+    if (act === "ki-visual") { schliesseBildInfo(); void baueKiVisuals(); return; }
+    if (act === "bild-info-zu") { schliesseBildInfo(); return; }
     if (act === "privat-bild-laden") {
       const src = privatBildSrc();
       if (!src) return;
