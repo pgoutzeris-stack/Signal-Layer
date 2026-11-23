@@ -1519,7 +1519,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-caption{padding:2px 16px 12px;}
 #as-overlay .as-linkedin-copy{margin:0; font-size:13px; line-height:1.48; white-space:pre-wrap; color:#1e293b;}
 #as-overlay .as-linkedin-caption:empty{display:none;}
-#as-overlay .as-stagearea--linkedin{min-width:0; min-height:260px; padding:16px; background:transparent;
+#as-overlay .as-stagearea--linkedin{min-width:0; min-height:260px; padding:16px; background:#f8fafc;
   display:flex; align-items:center; justify-content:center;}
 #as-overlay .as-linkedin-col{min-width:0; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto;
   border-right:1px solid #edf2f7; overflow:hidden;}
