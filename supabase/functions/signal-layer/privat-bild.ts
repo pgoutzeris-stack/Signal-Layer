@@ -75,10 +75,13 @@ export function serienRefPfad(pfad: string): string {
   return /^assets\/(master-styles\/[a-z0-9-]+|team-dunkel\/[a-z0-9-]+|portrait-master(-hell)?)\.jpg$/.test(sauber) ? sauber : "";
 }
 
+/** Wortgleich zu STYLE_PRIORITY_RULE im Bildtool: Stil vor Gestaltungswunsch. */
+export const BILDSTIL_RANGFOLGE = "RANGFOLGE: Der BILDAUFTRAG bestimmt Thema, Aussage, Motiv, Marken, Produkte und Fakten. Medium und Bildsprache, Farbwelt, Licht, Format und die Textregeln der Stilvorgabe sind verbindlich und haben Vorrang vor jeder Gestaltungsangabe im BILDAUFTRAG. Verlangt der BILDAUFTRAG etwas anderes, etwa Illustration statt Fotografie, eine Headline, ganze Sätze oder mehr Wörter als die Stilvorgabe erlaubt, ein anderes Format oder eine andere Farbwelt, setze die Stilvorgabe um und übernimm aus dem Auftrag nur Thema und Aussage.";
+
 /**
  * Wortgleich zu buildSystemInstruction im Bildtool (image-generation/index.ts)
- * fuer den Fall ohne Eingabe-, Stil- und Logobild. Aendert sich dort der Text,
- * muss er hier mitgehen.
+ * fuer einen festen Stil (styleStrict) ohne Eingabe-, Stil- und Logobild.
+ * Aendert sich dort der Text, muss er hier mitgehen.
  */
 export function bildstilSystemInstruction(stylePrompt: string, seriesReferenceCount: number): string {
   const sections = [
@@ -86,7 +89,7 @@ export function bildstilSystemInstruction(stylePrompt: string, seriesReferenceCo
   ];
   if (stylePrompt) {
     sections.push(
-      `VERBINDLICHE STILVORGABE:\n${stylePrompt}\nDie Stilvorgabe bestimmt ausschließlich die visuelle Ausführung. Sie darf Motiv, Fakten und ausdrückliche Anforderungen des Nutzers nicht ersetzen.`,
+      `VERBINDLICHE STILVORGABE:\n${stylePrompt}\n${BILDSTIL_RANGFOLGE}`,
     );
   }
   if (seriesReferenceCount > 0) {

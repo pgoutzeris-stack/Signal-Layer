@@ -52,6 +52,7 @@ test("Systemanweisung wie im Bildtool, Auftrag ist der Beitrag", () => {
   assert.match(text, /^Du bist ein professioneller Art Director/);
   assert.match(text, /VERBINDLICHE STILVORGABE:\nPRIVAT\n/);
   assert.match(text, /SERIENREFERENZEN: Die 3 als Serienreferenz/);
+  assert.match(text, /RANGFOLGE: Der BILDAUFTRAG bestimmt Thema/);
   const auftrag = pb.privatBildAuftrag({ postText: "Lindt senkt Preise.", titel: "<b>Premium</b> hat Grenzen" });
   assert.equal(auftrag, "LinkedIn-Beitrag:\nLindt senkt Preise.\n\nZentrale These: Premium hat Grenzen");
 });
