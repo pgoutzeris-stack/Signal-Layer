@@ -1519,12 +1519,21 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-caption:empty{display:none;}
 #as-overlay .as-stagearea--linkedin{min-width:0; min-height:260px; padding:16px; background:#f8fafc;
   display:flex; align-items:center; justify-content:center;}
-#as-overlay .as-linkedin-col{min-width:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto;
-  border-right:1px solid #edf2f7;}
-#as-overlay .as-linkedin-col .as-linkedin-caption{min-height:0; overflow:auto;}
+#as-overlay .as-linkedin-col{min-width:0; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto;
+  border-right:1px solid #edf2f7; overflow:hidden;}
+/* Eine Zeile, die so hoch ist wie der Beitrag: sonst waechst die Spalte mit
+   langer Caption ueber den Rahmen und der Rest wird abgeschnitten. */
+#as-overlay .as-linkedin-post{grid-template-rows:minmax(0,1fr);}
+#as-overlay .as-linkedin-col .as-linkedin-caption{min-height:0; overflow-y:auto; overscroll-behavior:contain;}
+#as-overlay .as-linkedin-avatar--person{padding:0; border-radius:50%; border:0;}
+#as-overlay .as-linkedin-avatar--person img{object-fit:cover;}
+#as-overlay .as-tone-pill{margin-left:auto; align-self:flex-start; display:inline-flex; align-items:center; gap:5px;
+  padding:3px 9px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;}
+#as-overlay .as-tone-pill.is-ok{background:#dcfce7; color:#166534;}
+#as-overlay .as-tone-pill.is-off{background:#fee2e2; color:#991b1b;}
 @media (max-width:900px){
-  #as-overlay .as-linkedin-post{grid-template-columns:minmax(0,1fr);}
-  #as-overlay .as-linkedin-col{border-right:0; border-bottom:1px solid #edf2f7;}
+  #as-overlay .as-linkedin-post{grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr) auto;}
+  #as-overlay .as-linkedin-col{border-right:0; border-bottom:1px solid #edf2f7; max-height:55vh;}
 }
 #as-overlay .as-linkedin-actions{display:grid; grid-template-columns:repeat(4,1fr); gap:2px; padding:7px 10px; background:#fff;}
 #as-overlay .as-linkedin-action{display:flex; align-items:center; justify-content:center; gap:6px; min-height:34px;
@@ -2223,6 +2232,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     kiFortschritt: null,
     privatBildStil: "",
     privatBildCi: "",
+    // Angemeldete Person fuer den Kopf des Entwurfs im Privatprofil.
+    ich: { name: "", avatar_url: "" },
+    // Ist der hinterlegte Tonfall in die Caption eingeflossen?
+    toneGenutzt: null,
     meinStil: { portraet: "", logo: "" },
     // Bild des staerksten eigenen Posts: Vorschau, bis das KI-Visual steht.
     vorbildVisual: "",
@@ -2740,21 +2753,33 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     </div>`;
   }
 
+  /** Der Tonfall floss ein, wenn die Caption mit „KI + Tone of Voice“ und einem
+   *  hinterlegten Tonfall entstand. Beides friert der Server in answers ein. */
+  function toneGenutzt(answers) {
+    if (!answers || typeof answers !== "object") return null;
+    return answers.caption_mode === "ai_tone" && Boolean(String(answers.tone_of_voice || "").trim());
+  }
+
   /** Der fertige Entwurf orientiert sich an der Hierarchie eines LinkedIn-Posts,
    *  bleibt aber als ROOTS-Karte klar Teil des Signal Layers. */
   function linkedinDraftHtml() {
     const privat = state.answers.profile === "private";
     const name = privat
-      ? (state.chrome.footer_left || "Persönliches Beraterprofil")
+      ? (state.ich.name || state.chrome.footer_left || "")
       : "ROOTS Consultants";
-    const rolle = privat ? "Beraterprofil" : "Brand Strategy Consultants";
-    const logo = state.chrome.logo || state.logo || LOGO_PATH;
+    const rolle = privat ? "" : "Brand Strategy Consultants";
+    const logo = privat && state.ich.avatar_url ? state.ich.avatar_url : (state.chrome.logo || state.logo || LOGO_PATH);
+    const avatarKlasse = privat && state.ich.avatar_url ? " as-linkedin-avatar--person" : "";
+    const tonPill = privat && state.toneGenutzt !== null
+      ? `<span class="as-tone-pill ${state.toneGenutzt ? "is-ok" : "is-off"}"><i class="fa-solid fa-${state.toneGenutzt ? "check" : "xmark"}"></i>Tone of Voice</span>`
+      : "";
     return `<div class="as-work as-work--feed" data-kind="linkedin">
       <article class="as-linkedin-post" aria-label="LinkedIn-Vorschau">
         <div class="as-linkedin-col">
           <header class="as-linkedin-head">
-            <span class="as-linkedin-avatar"><img src="${attr(logo)}" alt=""></span>
-            <span class="as-linkedin-byline"><strong>${esc(name)}</strong><span>${esc(rolle)}</span><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span>
+            <span class="as-linkedin-avatar${avatarKlasse}"><img src="${attr(logo)}" alt="" referrerpolicy="no-referrer"></span>
+            <span class="as-linkedin-byline"><strong>${esc(name)}</strong>${rolle ? `<span>${esc(rolle)}</span>` : ""}<small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span>
+            ${tonPill}
           </header>
           <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
           <footer class="as-linkedin-actions" aria-hidden="true">
@@ -3895,6 +3920,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.rootsAssets = res?.roots_assets === true;
       state.vorlageEmpfehlung = res?.vorlage_empfehlung && typeof res.vorlage_empfehlung === "object" ? res.vorlage_empfehlung : null;
       state.kiVisual = res?.ki_visual === true;
+      if (res?.ich && typeof res.ich === "object") state.ich = { name: String(res.ich.name || ""), avatar_url: String(res.ich.avatar_url || "") };
       state.vorbildVisual = /^data:image\//.test(String(res?.vorbild_visual || "")) ? String(res.vorbild_visual) : "";
       if (res?.mein_stil?.portraet || res?.mein_stil?.logo) {
         const stil = await api("get_mein_stil", {}).catch(() => null);
@@ -4020,6 +4046,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.owned = Boolean(row.owner_id);
       state.memoSend = res && typeof res === "object" ? (res.memo_send || null) : null;
       state.answers = answersToForm(row.answers, row);
+      state.toneGenutzt = toneGenutzt(row.answers);
       state.forecastMs = Number(row.forecast_ms) || 0;
       if (row.status === "running") {
         state.step = "draft";
@@ -4594,6 +4621,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.memoSend = null;
       uebernehmeLaufstand(row);
       const fertig = row.status === "running" ? await warteAufAsset(row.id) : row;
+      // Ohne eingefrorene Antworten zaehlt, was der Server bekommen hat.
+      state.toneGenutzt = fertig?.answers ? toneGenutzt(fertig.answers)
+        : state.answers.caption === "ai_tone" && Boolean(String(state.toneOfVoice || "").trim());
       if (state.cancelRequested) return;
       if (fertig.status === "error") throw new Error(fertig.error_message || "Der Entwurf ist fehlgeschlagen.");
       state.assetId = fertig.id || state.assetId;

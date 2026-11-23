@@ -155,3 +155,53 @@ export function istPrivatBild(wert: unknown): wert is string {
   const text = String(wert || "");
   return /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(text) && text.length <= PRIVAT_BILD_MAX_ZEICHEN;
 }
+
+/**
+ * Art-Director-Schritt vor dem Bild. Der ganze Beitrag als Bildauftrag ergab
+ * Wimmelbilder mit jeder Marke und jedem Argument (Padel-Test 23.11.2026).
+ * Im Bildtool tippt man einen kurzen Auftrag mit einer Idee; diesen Auftrag
+ * schreibt hier ein Textmodell aus Beitrag und Stilvorgabe.
+ */
+export const BILDSTIL_BRIEF_MODELL = "gemini-2.5-flash";
+
+export function privatBildBriefPrompt(stylePrompt: string, postText: string, titel = ""): { system: string; user: string } {
+  const system = [
+    "Du bist Art Director für persönliche LinkedIn-Beiträge und schreibst den Bildauftrag für einen Bildgenerator.",
+    "Der Bildgenerator arbeitet nach der STILVORGABE unten. Entwickle genau eine Bildidee, die diese Stilvorgabe gut umsetzen kann, mit einem dominanten Blickfang und wenigen unterstützenden Elementen.",
+    "Die Idee übersetzt die Kernaussage in eine konkrete, überraschende Szene: zum Beispiel ein Produkt in einem unerwarteten Kontext, ein klarer Vergleich zweier Zustände oder eine fotografisch glaubwürdige Metapher.",
+    "Verboten: Wimmelbild, Sammlung aller Marken oder Argumente des Beitrags, Gruppe jubelnder Menschen als Ersatz für eine Idee, Schilder oder Bildschirme mit Text, Headlines, Zahlen.",
+    "Marken: höchstens zwei, nur solche, die im Beitrag vorkommen und für die Kernaussage zentral sind. Keine erfundenen Marken.",
+    "Antworte nur mit JSON.",
+  ].join("\n");
+  const user = `STILVORGABE:\n${String(stylePrompt || "").slice(0, 12000)}\n\nBEITRAG:\n${String(postText || "").slice(0, 5000)}${titel ? `\n\nTITEL DES ASSETS: ${titel}` : ""}`;
+  return { system, user };
+}
+
+export const BILDSTIL_BRIEF_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    thema: { type: "STRING" },
+    kernaussage: { type: "STRING" },
+    marken_und_produkte: { type: "STRING" },
+    motiv: { type: "STRING" },
+  },
+  required: ["thema", "kernaussage", "marken_und_produkte", "motiv"],
+};
+
+/** Aus der Antwort des Art Directors den BILDAUFTRAG in der Sprache des Masterprompts bauen. */
+export function privatBildAuftragAusBrief(brief: unknown): string {
+  const r = (brief && typeof brief === "object" ? brief : {}) as Record<string, unknown>;
+  const feld = (wert: unknown, max: number) => String(wert ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+  const thema = feld(r.thema, 500);
+  const kern = feld(r.kernaussage, 300);
+  const marken = feld(r.marken_und_produkte, 200);
+  const motiv = feld(r.motiv, 900);
+  if (!thema || !motiv) return "";
+  return [
+    `Beitrag oder Thema: ${thema}`,
+    kern ? `Kernaussage: ${kern}` : "",
+    marken ? `Relevante Marken und Produkte: ${marken}` : "",
+    `Konkrete Motividee: ${motiv}`,
+    "Zusätzlich erlaubte Wörter im Bild: keine",
+  ].filter(Boolean).join("\n");
+}

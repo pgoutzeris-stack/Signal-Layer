@@ -3,6 +3,7 @@ import { baueDebugMail, baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
 import {
+  BILDSTIL_BRIEF_MODELL, BILDSTIL_BRIEF_SCHEMA, privatBildAuftragAusBrief, privatBildBriefPrompt,
   BILDSTIL_CI_PRUEFUNG, BILDSTIL_CI_SCHEMA, BILDSTIL_MODELL, BILDSTIL_PRUEF_MODELL, BILDSTIL_STANDARD, BILDTOOL_BASIS,
   type BildStil, bildstilSystemInstruction, bildVorschauUrls, istPrivatBild, linkedinBildStile, parseMasterLogo,
   parseMasterStile, privatBildAuftrag, privatBildLayout, serienRefPfad, waehleBildStil,
@@ -8883,8 +8884,11 @@ Deno.serve(async (req: Request) => {
 
       case "get_asset_design_templates": {
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
-        const [vorlagen, rootsAssets, posts, stil] = await Promise.all([assetDesignTemplates(auth.userId), darfRootsAssets(auth.userId), referenzPosts(auth.userId), meinStil(auth.userId)]);
+        const [vorlagen, rootsAssets, posts, stil, ichProfil] = await Promise.all([assetDesignTemplates(auth.userId), darfRootsAssets(auth.userId), referenzPosts(auth.userId), meinStil(auth.userId),
+          getAdminClient().schema("users").from("profiles").select("full_name, avatar_url").eq("id", auth.userId).maybeSingle().then(({ data }) => data).catch(() => null)]);
         return corsResponse(origin, {
+          // Kopf des Entwurfs im Privatprofil: Bild und Name der angemeldeten Person.
+          ich: { name: String(ichProfil?.full_name || ""), avatar_url: String(ichProfil?.avatar_url || "") },
           design_templates: vorlagen, roots_assets: rootsAssets, vorlage_empfehlung: vorlagenEmpfehlung(posts, vorlagen),
           // KI-Visual im eigenen Stil geht, sobald eigene Posts hinterlegt sind.
           ki_visual: posts.length > 0, mein_stil: { portraet: Boolean(stil.portraet), logo: Boolean(stil.logo) },
@@ -8946,16 +8950,40 @@ Deno.serve(async (req: Request) => {
         }
         const pbPayload = (pbAsset.payload || {}) as Record<string, unknown>;
         const pbSlides = Array.isArray(pbPayload.slides) ? pbPayload.slides as Record<string, unknown>[] : [];
-        const auftrag = privatBildAuftrag({
-          postText: String(body.post_text || pbPayload.post_text || ""),
-          titel: String(pbSlides[0]?.title || ""),
-        });
-        if (!auftrag) return errorResponse(origin, "Kein Beitragstext für das Bild vorhanden.", 409);
+        const pbPost = String(body.post_text || pbPayload.post_text || "");
+        const pbTitel = String(pbSlides[0]?.title || "").replace(/<[^>]+>/g, "").trim();
+        const rohAuftrag = privatBildAuftrag({ postText: pbPost, titel: pbTitel });
+        if (!rohAuftrag) return errorResponse(origin, "Kein Beitragstext für das Bild vorhanden.", 409);
         const [{ stile, logo }, gewuenscht] = await Promise.all([bildStile(), gewaehlterBildStil(pbNutzer)]);
         const stil = waehleBildStil(stile, gewuenscht);
         if (!stil) return errorResponse(origin, "Kein Bildstil verfügbar.", 500);
         const geminiKey = await getGeminiKey().catch(() => "");
         if (!geminiKey) return errorResponse(origin, "Gemini-Schlüssel fehlt im Vault.", 409);
+        // Art Director: aus Beitrag und Stil ein kurzer Auftrag mit genau einer
+        // Bildidee. Scheitert er, bleibt der Beitrag selbst der Auftrag.
+        let auftrag = rohAuftrag;
+        let brief: Record<string, unknown> | null = null;
+        {
+          const { system, user } = privatBildBriefPrompt(stil.prompt, pbPost, pbTitel);
+          const briefAntwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_BRIEF_MODELL}:generateContent`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: system }] },
+              contents: [{ role: "user", parts: [{ text: user }] }],
+              generationConfig: { temperature: 0.8, thinkingConfig: { thinkingBudget: 512 }, responseMimeType: "application/json", responseSchema: BILDSTIL_BRIEF_SCHEMA },
+            }),
+          }, 25_000).catch(() => null);
+          const briefJson = briefAntwort?.ok ? await briefAntwort.json().catch(() => null) : null;
+          const bm = briefJson?.usageMetadata || {};
+          try { brief = JSON.parse(String(briefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { brief = null; }
+          await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_BRIEF_MODELL, brief ? "success" : "error", {
+            input: Number(bm.promptTokenCount || 0), cachedInput: 0, output: Number(bm.candidatesTokenCount || 0),
+            thinking: Number(bm.thoughtsTokenCount || 0), total: Number(bm.totalTokenCount || 0),
+          });
+          const ausBrief = privatBildAuftragAusBrief(brief);
+          if (ausBrief) auftrag = ausBrief;
+        }
         const refs = (await Promise.all(stil.seriesRefs.slice(0, 3).map(serienRef))).filter(Boolean) as { mime_type: string; data: string }[];
         const teile: Record<string, unknown>[] = [{ text: `BILDAUFTRAG:\n${auftrag}` }];
         refs.forEach((ref, i) => { teile.push({ text: `SERIENREFERENZ ${i + 1}:` }); teile.push({ inline_data: ref }); });
@@ -8972,7 +9000,7 @@ Deno.serve(async (req: Request) => {
         // zweiter Versuch bei Ueberlast. Die Edge Function hat 150 s.
         for (let bildVersuch = 1; bildVersuch <= 2 && !pbBild; bildVersuch += 1) {
           let roh = "";
-          for (let netz = 1; netz <= 2 && !roh && Date.now() - start < 95_000; netz += 1) {
+          for (let netz = 1; netz <= 2 && !roh && Date.now() - start < 80_000; netz += 1) {
             const antwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_MODELL}:generateContent`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
@@ -9018,7 +9046,7 @@ Deno.serve(async (req: Request) => {
           // Wie im Bildtool: ist die Pruefung nicht erreichbar, bleibt das Bild,
           // markiert als ungeprueft. Verstoss ist nur ein gezeichnetes ROOTS-Zeichen.
           ci = urteil ? { checked: true, ok: urteil.roots_mark === false, reason: String(urteil.reason || "") } : { checked: false, ok: false, reason: "CI-Prüfung nicht erreichbar" };
-          if (!urteil || urteil.roots_mark === false || bildVersuch === 2 || Date.now() - start > 70_000) pbBild = roh;
+          if (!urteil || urteil.roots_mark === false || bildVersuch === 2 || Date.now() - start > 55_000) pbBild = roh;
         }
         if (!pbBild) return errorResponse(origin, `Bild konnte nicht generiert werden: ${pbFehlerText || "unbekannter Fehler"}`, 502);
         return corsResponse(origin, {
@@ -9026,6 +9054,7 @@ Deno.serve(async (req: Request) => {
           stil: { id: stil.id, name: stil.name, aspect: stil.aspect, roots_logo: stil.rootsLogo },
           logo: stil.rootsLogo ? logo : "",
           ci,
+          auftrag,
         });
       }
 

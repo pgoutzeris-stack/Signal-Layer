@@ -64,3 +64,15 @@ test("Bildfolie traegt Marke und Format", () => {
   assert.equal(pb.istPrivatBild("data:image/jpeg;base64,AAAA"), true);
   assert.equal(pb.istPrivatBild("https://example.com/a.jpg"), false);
 });
+
+test("Art Director liefert einen kurzen Auftrag mit einer Idee", () => {
+  const { system, user } = pb.privatBildBriefPrompt("STIL", "Padel bindet Marken.", "Teil der Community");
+  assert.match(system, /genau eine Bildidee/);
+  assert.match(system, /höchstens zwei/);
+  assert.match(user, /STILVORGABE:\nSTIL/);
+  const auftrag = pb.privatBildAuftragAusBrief({ thema: "Padel als Markenbühne", kernaussage: "Marken werden Teil des Spiels.", marken_und_produkte: "Cupra", motiv: "Ein Padelschläger als Autoschlüssel." });
+  assert.match(auftrag, /^Beitrag oder Thema: Padel als Markenbühne/);
+  assert.match(auftrag, /Konkrete Motividee: Ein Padelschläger/);
+  assert.match(auftrag, /erlaubte Wörter im Bild: keine$/);
+  assert.equal(pb.privatBildAuftragAusBrief({ thema: "", motiv: "" }), "");
+});
