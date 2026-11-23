@@ -194,7 +194,8 @@ export function privatBildAuftragAusBrief(brief: unknown): string {
   const feld = (wert: unknown, max: number) => String(wert ?? "").replace(/\s+/g, " ").trim().slice(0, max);
   const thema = feld(r.thema, 500);
   const kern = feld(r.kernaussage, 300);
-  const marken = feld(r.marken_und_produkte, 200);
+  // Hoechstens zwei Marken, auch wenn das Modell mehr nennt.
+  const marken = feld(r.marken_und_produkte, 200).split(/\s*(?:,|;|\bund\b|&)\s*/).filter(Boolean).slice(0, 2).join(", ");
   const motiv = feld(r.motiv, 900);
   if (!thema || !motiv) return "";
   return [

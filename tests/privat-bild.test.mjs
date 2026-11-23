@@ -75,4 +75,6 @@ test("Art Director liefert einen kurzen Auftrag mit einer Idee", () => {
   assert.match(auftrag, /Konkrete Motividee: Ein Padelschläger/);
   assert.match(auftrag, /erlaubte Wörter im Bild: keine$/);
   assert.equal(pb.privatBildAuftragAusBrief({ thema: "", motiv: "" }), "");
+  const drei = pb.privatBildAuftragAusBrief({ thema: "T", motiv: "M", marken_und_produkte: "Cupra, HanseMerkur und Wero" });
+  assert.match(drei, /Relevante Marken und Produkte: Cupra, HanseMerkur\n/);
 });
