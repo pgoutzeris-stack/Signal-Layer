@@ -9049,6 +9049,17 @@ Deno.serve(async (req: Request) => {
           if (!urteil || urteil.roots_mark === false || bildVersuch === 2 || Date.now() - start > 55_000) pbBild = roh;
         }
         if (!pbBild) return errorResponse(origin, `Bild konnte nicht generiert werden: ${pbFehlerText || "unbekannter Fehler"}`, 502);
+        // Betrieb (Cron-Secret) kann ein fehlendes Bild fuer den Eigentuemer
+        // nachziehen. Das Studio verkleinert es beim naechsten Oeffnen.
+        if (isScheduled && body.speichern === true && pbSlides[0] && !stil.rootsLogo) {
+          const neueFolien = [...pbSlides];
+          neueFolien[0] = { ...pbSlides[0], ki_basis: String(pbSlides[0].ki_basis || pbSlides[0].variant || "B"), variant: "KI",
+            ki_layout: privatBildLayout(pbBild, stil.aspect, stil.name), ki_typ: "bild", ki_bild_stil: stil.id };
+          const { error: nachFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
+            .update({ payload: { ...pbPayload, slides: neueFolien }, updated_at: new Date().toISOString() }).eq("id", pbAssetId);
+          if (nachFehler) return errorResponse(origin, nachFehler.message, 500);
+          return corsResponse(origin, { gespeichert: true, stil: { id: stil.id, name: stil.name }, ci, auftrag, laenge: pbBild.length });
+        }
         return corsResponse(origin, {
           bild: pbBild,
           stil: { id: stil.id, name: stil.name, aspect: stil.aspect, roots_logo: stil.rootsLogo },

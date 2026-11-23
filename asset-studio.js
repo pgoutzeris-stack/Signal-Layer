@@ -4094,6 +4094,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.busy = false;
       state.error = "";
       render();
+      void verkleinerePrivatBild();
     } catch (err) {
       state.formError = err && err.message ? fehlerKlartext(String(err.message)) : "Entwurf konnte nicht geöffnet werden.";
       state.step = "form";
@@ -4926,6 +4927,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     throw new Error("Bild lässt sich nicht klein genug speichern.");
   }
 
+  /** Vom Betrieb nachgezogene Bilder kommen in voller Groesse; einmal
+   *  verkleinern, sonst scheitert spaeter „Entwurf speichern“ an der Grenze. */
+  async function verkleinerePrivatBild() {
+    const src = privatBildSrc();
+    if (!src || src.length <= 470000 || !state.assetId || state.answers.profile !== "private") return;
+    try {
+      const bild = await alsJpegUnter(src, 470000);
+      const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: state.slides[0]?.ki_bild_stil || "" });
+      if (gespeichert?.html && state.slides[0]) { state.slides[0].ki_layout = String(gespeichert.html); render(); }
+    } catch { /* bleibt gross, Anzeige funktioniert trotzdem */ }
+  }
+
   function privatBildSrc() {
     const layout = String(state.slides[0]?.ki_layout || "");
     if (!layout.includes("data-ki-bild")) return "";
@@ -5122,7 +5135,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // vorher weisse Schrift auf weissem Grund erzeugt - die Kachel sah leer aus.
     // lang="de" ist die Bedingung für hyphens:auto. Ohne sie trennt der Browser
     // lange Komposita nicht und der Titel läuft aus der Kachel.
-    const nurBild = slide.variant === "KI" && String(slide.ki_layout || "").includes("data-ki-bild");
+    const nurBild = (slide.variant === "KI" && String(slide.ki_layout || "").includes("data-ki-bild"))
+      || /li-ki-fehler/.test(html);
     return `<div class="as-stage as-stage--tpl${nurBild ? " as-stage--bild" : ""}" lang="de" data-stage data-uid="${attr(slide.uid)}" data-variant="${attr(slide.variant)}">${html}</div>`;
   }
 
@@ -5187,7 +5201,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * Platzhaltern oder als Data-URI.
    */
   function kiWarteHtml() {
-    // Nur der Zauberstab: das Visual entsteht erst nach dem Erzeugen.
+    // Entwurf steht, Bild fehlt und nichts laeuft: das Bild ist gescheitert.
+    // Fehlerzeichen statt Zauberstab, darunter der Weg zum neuen Versuch.
+    if (!state.kiLaeuft && state.assetId && state.step !== "form" && state.answers.asset_type !== "carousel") {
+      return `<div class="li li-ki-fehler" role="img" aria-label="Bild konnte nicht generiert werden" style="width:1080px;height:1080px;position:relative;overflow:hidden;background:#fef2f2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px">
+      <i class="fa-solid fa-triangle-exclamation" style="font-size:150px;color:#dc2626"></i>
+      <button type="button" data-act="ki-visual" style="font:600 40px/1.1 inherit;padding:24px 52px;border:0;border-radius:999px;background:#fff;color:#b91c1c;box-shadow:0 8px 28px rgba(185,28,28,.18);cursor:pointer"><i class="fa-solid fa-rotate-right" style="margin-right:18px"></i>Erneut versuchen</button>
+    </div>`;
+    }
+    // Sonst der Zauberstab: das Visual entsteht erst nach dem Erzeugen.
     return `<div class="li li-ki-warte" role="img" aria-label="KI-Visual im eigenen Stil" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:#f1f5f9;display:flex;align-items:center;justify-content:center">
       <i class="fa-solid fa-wand-magic-sparkles" style="font-size:150px;color:#206efb${state.kiLaeuft ? ";animation:asKiPuls 1.6s ease-in-out infinite" : ""}"></i>
       <style>@keyframes asKiPuls{50%{opacity:.35;transform:scale(.92)}}</style>
