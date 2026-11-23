@@ -164,15 +164,26 @@ export function istPrivatBild(wert: unknown): wert is string {
  */
 export const BILDSTIL_BRIEF_MODELL = "gemini-2.5-flash";
 
-export function privatBildBriefPrompt(stylePrompt: string, postText: string, titel = ""): { system: string; user: string } {
+/** voll: ausfuehrliche Szene; leicht: nur Thema, Aussage, Marken; idee: ein Satz Bildidee. */
+export type BriefModus = "voll" | "leicht" | "idee";
+export const BRIEF_MODI: BriefModus[] = ["voll", "leicht", "idee"];
+export const BRIEF_STANDARD: BriefModus = "voll";
+
+export function privatBildBriefPrompt(stylePrompt: string, postText: string, titel = "", modus: BriefModus = BRIEF_STANDARD): { system: string; user: string } {
+  const motivRegel = modus === "idee"
+    ? "Feld motiv: genau ein Satz, höchstens 20 Wörter, eine plakative Bildidee wie ein Kampagnenmotiv. Nur WAS zu sehen ist, keine Angaben zu Licht, Perspektive, Farben oder Stimmung; die Umsetzung macht der Stil."
+    : modus === "leicht"
+      ? "Feld motiv: leer lassen. Die Bildidee entwickelt der Bildgenerator selbst aus der Stilvorgabe."
+      : "";
   const system = [
     "Du bist Art Director für persönliche LinkedIn-Beiträge und schreibst den Bildauftrag für einen Bildgenerator.",
     "Der Bildgenerator arbeitet nach der STILVORGABE unten. Entwickle genau eine Bildidee, die diese Stilvorgabe gut umsetzen kann, mit einem dominanten Blickfang und wenigen unterstützenden Elementen.",
     "Die Idee übersetzt die Kernaussage in eine konkrete, überraschende Szene: zum Beispiel ein Produkt in einem unerwarteten Kontext, ein klarer Vergleich zweier Zustände oder eine fotografisch glaubwürdige Metapher.",
     "Verboten: Wimmelbild, Sammlung aller Marken oder Argumente des Beitrags, Gruppe jubelnder Menschen als Ersatz für eine Idee, Schilder oder Bildschirme mit Text, Headlines, Zahlen.",
     "Marken: höchstens zwei, nur solche, die im Beitrag vorkommen und für die Kernaussage zentral sind. Keine erfundenen Marken.",
+    motivRegel,
     "Antworte nur mit JSON.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   const user = `STILVORGABE:\n${String(stylePrompt || "").slice(0, 12000)}\n\nBEITRAG:\n${String(postText || "").slice(0, 5000)}${titel ? `\n\nTITEL DES ASSETS: ${titel}` : ""}`;
   return { system, user };
 }
@@ -189,7 +200,7 @@ export const BILDSTIL_BRIEF_SCHEMA = {
 };
 
 /** Aus der Antwort des Art Directors den BILDAUFTRAG in der Sprache des Masterprompts bauen. */
-export function privatBildAuftragAusBrief(brief: unknown): string {
+export function privatBildAuftragAusBrief(brief: unknown, modus: BriefModus = BRIEF_STANDARD): string {
   const r = (brief && typeof brief === "object" ? brief : {}) as Record<string, unknown>;
   const feld = (wert: unknown, max: number) => String(wert ?? "").replace(/\s+/g, " ").trim().slice(0, max);
   const thema = feld(r.thema, 500);
@@ -197,12 +208,12 @@ export function privatBildAuftragAusBrief(brief: unknown): string {
   // Hoechstens zwei Marken, auch wenn das Modell mehr nennt.
   const marken = feld(r.marken_und_produkte, 200).split(/\s*(?:,|;|\bund\b|&)\s*/).filter(Boolean).slice(0, 2).join(", ");
   const motiv = feld(r.motiv, 900);
-  if (!thema || !motiv) return "";
+  if (!thema || (!motiv && modus !== "leicht")) return "";
   return [
     `Beitrag oder Thema: ${thema}`,
     kern ? `Kernaussage: ${kern}` : "",
     marken ? `Relevante Marken und Produkte: ${marken}` : "",
-    `Konkrete Motividee: ${motiv}`,
+    modus !== "leicht" && motiv ? `Konkrete Motividee: ${motiv}` : "",
     "Zusätzlich erlaubte Wörter im Bild: keine",
   ].filter(Boolean).join("\n");
 }

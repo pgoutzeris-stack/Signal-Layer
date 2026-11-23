@@ -3,7 +3,7 @@ import { baueDebugMail, baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
 import {
-  BILDSTIL_BRIEF_MODELL, BILDSTIL_BRIEF_SCHEMA, privatBildAuftragAusBrief, privatBildBriefPrompt,
+  BILDSTIL_BRIEF_MODELL, BILDSTIL_BRIEF_SCHEMA, privatBildAuftragAusBrief, privatBildBriefPrompt, BRIEF_MODI, BRIEF_STANDARD, type BriefModus,
   BILDSTIL_CI_PRUEFUNG, BILDSTIL_CI_SCHEMA, BILDSTIL_MODELL, BILDSTIL_PRUEF_MODELL, BILDSTIL_STANDARD, BILDTOOL_BASIS,
   type BildStil, bildstilSystemInstruction, bildVorschauUrls, istPrivatBild, linkedinBildStile, parseMasterLogo,
   parseMasterStile, privatBildAuftrag, privatBildLayout, serienRefPfad, waehleBildStil,
@@ -8964,7 +8964,9 @@ Deno.serve(async (req: Request) => {
         let auftrag = rohAuftrag;
         let brief: Record<string, unknown> | null = null;
         {
-          const { system, user } = privatBildBriefPrompt(stil.prompt, pbPost, pbTitel);
+          // Testschalter nur fuer den Betrieb: Varianten des Auftrags vergleichen.
+          const briefModus: BriefModus = isScheduled && BRIEF_MODI.includes(body.brief_modus as BriefModus) ? body.brief_modus as BriefModus : BRIEF_STANDARD;
+          const { system, user } = privatBildBriefPrompt(stil.prompt, pbPost, pbTitel, briefModus);
           const briefAntwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_BRIEF_MODELL}:generateContent`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
@@ -8981,7 +8983,7 @@ Deno.serve(async (req: Request) => {
             input: Number(bm.promptTokenCount || 0), cachedInput: 0, output: Number(bm.candidatesTokenCount || 0),
             thinking: Number(bm.thoughtsTokenCount || 0), total: Number(bm.totalTokenCount || 0),
           });
-          const ausBrief = privatBildAuftragAusBrief(brief);
+          const ausBrief = privatBildAuftragAusBrief(brief, briefModus);
           if (ausBrief) auftrag = ausBrief;
         }
         const refs = (await Promise.all(stil.seriesRefs.slice(0, 3).map(serienRef))).filter(Boolean) as { mime_type: string; data: string }[];
