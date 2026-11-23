@@ -179,6 +179,7 @@ export function privatBildBriefPrompt(stylePrompt: string, postText: string, tit
       "Wähle eine dieser Darstellungsformen: ein Produkt der genannten Marke in einem überraschenden Kontext; ein Alltagsgegenstand, inszeniert wie ein wertvolles Objekt; ein klarer Vergleich zweier Zustände; eine surreale Metapher mit ungewöhnlichem Größenverhältnis; visueller Humor.",
       "Verboten: dokumentarische Szene, Sportfoto, Menschen, die einfach die Tätigkeit aus dem Beitrag ausüben, Logos auf Banden, Wänden oder Netzen als Hauptidee, Publikum, leuchtende Portale, Science-Fiction- oder Neon-Effekte.",
       "Die Idee muss in einer kleinen Smartphone-Vorschau ohne Text verstanden werden und einen zweiten Gedanken auslösen.",
+      "Die Motividee zeigt höchstens die zwei Marken aus marken_und_produkte, jede nur einmal, und keine Logo-Sammlung.",
       "Nur WAS zu sehen ist; Licht, Perspektive und Farben macht der Stil.",
     ].join(" ")
     : modus === "idee"
