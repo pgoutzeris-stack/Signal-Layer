@@ -76,7 +76,7 @@ export function serienRefPfad(pfad: string): string {
 }
 
 /** Wortgleich zu STYLE_PRIORITY_RULE im Bildtool: Stil vor Gestaltungswunsch. */
-export const BILDSTIL_RANGFOLGE = "RANGFOLGE: Der BILDAUFTRAG bestimmt Thema, Aussage, Motiv, Marken, Produkte und Fakten. Medium und Bildsprache, Farbwelt, Licht, Format und die Textregeln der Stilvorgabe sind verbindlich und haben Vorrang vor jeder Gestaltungsangabe im BILDAUFTRAG. Verlangt der BILDAUFTRAG etwas anderes, etwa Illustration statt Fotografie, eine Headline, ganze Sätze oder mehr Wörter als die Stilvorgabe erlaubt, ein anderes Format oder eine andere Farbwelt, setze die Stilvorgabe um und übernimm aus dem Auftrag nur Thema und Aussage.";
+export const BILDSTIL_RANGFOLGE = "RANGFOLGE: Der BILDAUFTRAG bestimmt Thema, Aussage, Motiv, Marken, Produkte und Fakten. Medium und Bildsprache, Farbwelt, Licht, Format und die Textregeln der Stilvorgabe sind verbindlich und haben Vorrang vor jeder Gestaltungsangabe im BILDAUFTRAG. Verlangt der BILDAUFTRAG etwas anderes, etwa Illustration statt Fotografie, eine Headline, ganze Sätze oder mehr Wörter als die Stilvorgabe erlaubt, ein anderes Format oder eine andere Farbwelt, setze die Stilvorgabe um und übernimm aus dem Auftrag nur Thema und Aussage. Headlines, Sätze und Slogans aus dem BILDAUFTRAG erscheinen nicht im Bild, auch nicht als Schild, Plakat, Anzeige, Bildschirm oder Aufdruck in der Szene. Zeige nur Marken, die der BILDAUFTRAG nennt.";
 
 /**
  * Wortgleich zu buildSystemInstruction im Bildtool (image-generation/index.ts)
