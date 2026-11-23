@@ -3627,6 +3627,8 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
   "gemini-2.5-flash-lite": { currency: "USD", standard: { input: 0.1, cachedInput: 0.025, output: 0.4 }, batch: { input: 0.05, cachedInput: 0.025, output: 0.2 } },
   "gemini-2.5-flash": { currency: "USD", standard: { input: 0.3, cachedInput: 0.075, output: 2.5 }, batch: { input: 0.15, cachedInput: 0.075, output: 1.25 } },
   "gemini-2.5-flash-image": { currency: "USD", standard: { input: 0.3, cachedInput: 0.075, output: 30 } },
+  // Nano Banana 2, Standard im Image-Generation-Tool. Ausgabe ist fast nur Bildtokens (60 $/Mio.).
+  "gemini-3.1-flash-image": { currency: "USD", standard: { input: 0.25, cachedInput: 0.025, output: 60 } },
   "gemini-2.5-pro": { currency: "USD", standard: { input: 1.25, cachedInput: 0.125, output: 10 }, standardLarge: { input: 2.5, cachedInput: 0.25, output: 15 }, batch: { input: 0.625, cachedInput: 0.125, output: 5 }, batchLarge: { input: 1.25, cachedInput: 0.25, output: 7.5 } },
   "gemini-3.1-flash-lite": { currency: "USD", standard: { input: 0.25, cachedInput: 0.025, output: 1.5 }, batch: { input: 0.125, cachedInput: 0.0125, output: 0.75 } },
   "gemini-3.1-pro-preview": { currency: "USD", standard: { input: 2, cachedInput: 0.2, output: 12 }, standardLarge: { input: 4, cachedInput: 0.4, output: 18 }, batch: { input: 1, cachedInput: 0.2, output: 6 }, batchLarge: { input: 2, cachedInput: 0.4, output: 9 } },

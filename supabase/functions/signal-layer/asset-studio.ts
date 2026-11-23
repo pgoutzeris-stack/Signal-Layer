@@ -1911,6 +1911,7 @@ export function modelAnzeigeName(model: string): string {
     "gemini-2.5-flash": "Gemini 2.5 Flash",
     "gemini-2.5-flash-lite": "Gemini 2.5 Flash-Lite",
     "gemini-2.5-flash-image": "Gemini 2.5 Flash Image",
+    "gemini-3.1-flash-image": "Nano Banana 2",
   };
   const name = bekannt[id] || id.split("/").pop() || id;
   return isPerplexityModel(id) ? `${name} (über Perplexity)` : name;
