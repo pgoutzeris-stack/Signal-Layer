@@ -167,14 +167,17 @@ export const BILDSTIL_BRIEF_MODELL = "gemini-2.5-flash";
 /** voll: ausfuehrliche Szene; leicht: nur Thema, Aussage, Marken; idee: ein Satz Bildidee. */
 export type BriefModus = "voll" | "leicht" | "idee" | "plakativ";
 export const BRIEF_MODI: BriefModus[] = ["voll", "leicht", "idee", "plakativ"];
-export const BRIEF_STANDARD: BriefModus = "voll";
+// Test 23.11.2026 mit Richards Padel-Post: voll, leicht und idee lieferten
+// dokumentarische Court-Szenen, plakativ eine Kampagnenidee wie in den
+// Vorschaubildern des Stils.
+export const BRIEF_STANDARD: BriefModus = "plakativ";
 
 export function privatBildBriefPrompt(stylePrompt: string, postText: string, titel = "", modus: BriefModus = BRIEF_STANDARD): { system: string; user: string } {
   const motivRegel = modus === "plakativ"
     ? [
       "Feld motiv: genau ein Satz, höchstens 25 Wörter, eine plakative Kampagnenidee.",
       "Wähle eine dieser Darstellungsformen: ein Produkt der genannten Marke in einem überraschenden Kontext; ein Alltagsgegenstand, inszeniert wie ein wertvolles Objekt; ein klarer Vergleich zweier Zustände; eine surreale Metapher mit ungewöhnlichem Größenverhältnis; visueller Humor.",
-      "Verboten: dokumentarische Szene, Sportfoto, Menschen, die einfach die Tätigkeit aus dem Beitrag ausüben, Logos auf Banden, Wänden oder Netzen als Hauptidee, Publikum.",
+      "Verboten: dokumentarische Szene, Sportfoto, Menschen, die einfach die Tätigkeit aus dem Beitrag ausüben, Logos auf Banden, Wänden oder Netzen als Hauptidee, Publikum, leuchtende Portale, Science-Fiction- oder Neon-Effekte.",
       "Die Idee muss in einer kleinen Smartphone-Vorschau ohne Text verstanden werden und einen zweiten Gedanken auslösen.",
       "Nur WAS zu sehen ist; Licht, Perspektive und Farben macht der Stil.",
     ].join(" ")
