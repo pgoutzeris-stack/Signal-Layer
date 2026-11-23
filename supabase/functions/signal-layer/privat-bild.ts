@@ -165,12 +165,20 @@ export function istPrivatBild(wert: unknown): wert is string {
 export const BILDSTIL_BRIEF_MODELL = "gemini-2.5-flash";
 
 /** voll: ausfuehrliche Szene; leicht: nur Thema, Aussage, Marken; idee: ein Satz Bildidee. */
-export type BriefModus = "voll" | "leicht" | "idee";
-export const BRIEF_MODI: BriefModus[] = ["voll", "leicht", "idee"];
+export type BriefModus = "voll" | "leicht" | "idee" | "plakativ";
+export const BRIEF_MODI: BriefModus[] = ["voll", "leicht", "idee", "plakativ"];
 export const BRIEF_STANDARD: BriefModus = "voll";
 
 export function privatBildBriefPrompt(stylePrompt: string, postText: string, titel = "", modus: BriefModus = BRIEF_STANDARD): { system: string; user: string } {
-  const motivRegel = modus === "idee"
+  const motivRegel = modus === "plakativ"
+    ? [
+      "Feld motiv: genau ein Satz, höchstens 25 Wörter, eine plakative Kampagnenidee.",
+      "Wähle eine dieser Darstellungsformen: ein Produkt der genannten Marke in einem überraschenden Kontext; ein Alltagsgegenstand, inszeniert wie ein wertvolles Objekt; ein klarer Vergleich zweier Zustände; eine surreale Metapher mit ungewöhnlichem Größenverhältnis; visueller Humor.",
+      "Verboten: dokumentarische Szene, Sportfoto, Menschen, die einfach die Tätigkeit aus dem Beitrag ausüben, Logos auf Banden, Wänden oder Netzen als Hauptidee, Publikum.",
+      "Die Idee muss in einer kleinen Smartphone-Vorschau ohne Text verstanden werden und einen zweiten Gedanken auslösen.",
+      "Nur WAS zu sehen ist; Licht, Perspektive und Farben macht der Stil.",
+    ].join(" ")
+    : modus === "idee"
     ? "Feld motiv: genau ein Satz, höchstens 20 Wörter, eine plakative Bildidee wie ein Kampagnenmotiv. Nur WAS zu sehen ist, keine Angaben zu Licht, Perspektive, Farben oder Stimmung; die Umsetzung macht der Stil."
     : modus === "leicht"
       ? "Feld motiv: leer lassen. Die Bildidee entwickelt der Bildgenerator selbst aus der Stilvorgabe."
