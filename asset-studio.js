@@ -1080,6 +1080,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 /* Die Buehne aus der Vorlage traegt ihre Masse selbst, damit das Einpassen
    nicht auf einen zusammengefallenen Rahmen rechnet. */
 #as-overlay .as-stage--tpl{width:1080px; height:1350px; flex:0 0 auto; overflow:hidden; border-radius:0;}
+#as-overlay .as-stage--tpl.as-stage--bild{height:auto;}
 
 /* Bildplatz in der Vorlage: die Bedienung liegt als Auflage darauf. */
 /* Eigener Namensraum ohne Basisklasse. Die Slots hiessen frueher .as-img und
@@ -2220,6 +2221,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     kiVisual: false,
     kiLaeuft: false,
     kiFortschritt: null,
+    privatBildStil: "",
+    privatBildCi: "",
     meinStil: { portraet: "", logo: "" },
     // Bild des staerksten eigenen Posts: Vorschau, bis das KI-Visual steht.
     vorbildVisual: "",
@@ -4603,7 +4606,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (pruefHinweise().length) state.step = "edit";
       render();
       // Privatprofil: das Visual im Stil der eigenen Posts gleich hinterher.
-      if (!isMemo && state.answers.profile === "private" && state.kiVisual) void baueKiVisuals();
+      // Einzelbild: Bild im gewaehlten Bildstil aus dem Bildtool.
+      if (!isMemo && state.answers.profile === "private" && (state.answers.asset_type !== "carousel" || state.kiVisual)) void baueKiVisuals();
     } catch (err) {
       if (state.cancelRequested) return;
       state.busy = false;
@@ -4754,7 +4758,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * uebernehmen ihre Gestaltung.
    */
   async function baueKiVisuals() {
-    if (isMemo || state.kiLaeuft || !state.assetId || state.answers.profile !== "private" || !state.kiVisual) return;
+    if (isMemo || state.kiLaeuft || !state.assetId || state.answers.profile !== "private") return;
+    if (state.answers.asset_type !== "carousel") { await bauePrivatBild(); return; }
+    if (!state.kiVisual) return;
     state.kiLaeuft = true;
     state.kiFortschritt = { fertig: 0, gesamt: state.slides.length, fehler: "" };
     render();
@@ -4786,13 +4792,130 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function meinStilFehlt() {
+    // Eigene Posts braucht nur das Carousel; das Einzelbild kommt aus dem Bildstil.
     return state.answers.profile === "private"
-      && ((state.toneGeladen && !state.toneOfVoice) || (state.designsGeladen && !state.kiVisual));
+      && ((state.toneGeladen && !state.toneOfVoice) || (state.designsGeladen && !state.kiVisual && state.answers.asset_type === "carousel"));
+  }
+
+  /**
+   * Einzelbild im Privatprofil: der Server baut das Bild wie das
+   * Image-Generation-Tool (Masterprompt, Serienreferenzen, CI-Pruefung). Hier
+   * kommt bei rootsLogo-Stilen die Wortmarke drauf, dann wird es als JPEG
+   * abgelegt. Das Gateway nimmt nur rund 512 KB an.
+   */
+  async function bauePrivatBild() {
+    const slide = state.slides[0];
+    if (!slide) return;
+    harvest();
+    state.kiLaeuft = true;
+    state.kiFortschritt = { fertig: 0, gesamt: 1, fehler: "", bild: true };
+    render();
+    try {
+      const res = await api("privat_bild", { asset_id: state.assetId, post_text: state.postText || "" });
+      if (!res?.bild) throw new Error("Bild konnte nicht generiert werden.");
+      let bild = String(res.bild);
+      if (res.stil?.roots_logo && res.logo) bild = await setzeRootsLogo(bild, String(res.logo));
+      bild = await alsJpegUnter(bild, 470000);
+      const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: res.stil?.id || "" });
+      slide.ki_basis = slide.ki_basis || slide.variant;
+      slide.variant = "KI";
+      slide.ki_layout = String(gespeichert?.html || "");
+      slide.html = {};
+      state.privatBildStil = String(res.stil?.name || "");
+      state.privatBildCi = res.ci && res.ci.checked && !res.ci.ok ? String(res.ci.reason || "ROOTS-Zeichen im Bild") : "";
+      state.kiFortschritt.fertig = 1;
+    } catch (err) {
+      state.kiFortschritt.fehler = err && err.message ? fehlerKlartext(String(err.message)) : "Bild konnte nicht generiert werden.";
+    }
+    state.kiLaeuft = false;
+    render();
+  }
+
+  function ladeBild(src) {
+    return new Promise((fertig, fehler) => {
+      const img = new Image();
+      img.onload = () => fertig(img);
+      img.onerror = () => fehler(new Error("Bild konnte nicht gelesen werden."));
+      img.src = src;
+    });
+  }
+
+  /** Wie compositeRootsLogo im Bildtool: x 80 %, 17 % breit, weicher Navy-Verlauf bei heller Ecke. */
+  async function setzeRootsLogo(bild, logoSrc) {
+    const [foto, logo] = await Promise.all([ladeBild(bild), ladeBild(logoSrc)]);
+    const canvas = document.createElement("canvas");
+    canvas.width = foto.naturalWidth;
+    canvas.height = foto.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(foto, 0, 0);
+    const W = canvas.width, H = canvas.height;
+    const w = Math.round(W * 0.17);
+    const h = Math.round(w * logo.naturalHeight / logo.naturalWidth);
+    const x = Math.round(W * 0.80);
+    const y = Math.round(H * 0.935 - h / 2);
+    const feld = ctx.getImageData(x, y, w, h).data;
+    let summe = 0, quadrat = 0, n = 0;
+    for (let i = 0; i < feld.length; i += 16) {
+      const l = 0.2126 * feld[i] + 0.7152 * feld[i + 1] + 0.0722 * feld[i + 2];
+      summe += l; quadrat += l * l; n++;
+    }
+    const lum = summe / n, sd = Math.sqrt(Math.max(0, quadrat / n - lum * lum));
+    const staerke = Math.min(0.82, Math.max(0, (lum - 45) / 150) + Math.max(0, (sd - 25) / 120));
+    if (staerke > 0.02) {
+      ctx.save();
+      ctx.translate(x + w / 2, y + h / 2);
+      ctx.scale(1, (h * 3.2) / (w * 1.5));
+      const r = w * 0.95;
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+      g.addColorStop(0, `rgba(0, 22, 62, ${staerke})`);
+      g.addColorStop(0.55, `rgba(0, 22, 62, ${staerke * 0.7})`);
+      g.addColorStop(1, "rgba(0, 22, 62, 0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(-r, -r, r * 2, r * 2);
+      ctx.restore();
+    }
+    ctx.drawImage(logo, x, y, w, h);
+    return canvas.toDataURL("image/png");
+  }
+
+  /** JPEG bis 1080 px Breite, Qualitaet sinkt, bis die Zeichenzahl passt. */
+  async function alsJpegUnter(bild, grenze) {
+    const img = await ladeBild(bild);
+    let breite = Math.min(1080, img.naturalWidth);
+    for (let runde = 0; runde < 4; runde += 1) {
+      const canvas = document.createElement("canvas");
+      canvas.width = breite;
+      canvas.height = Math.round(breite * img.naturalHeight / img.naturalWidth);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      for (const q of [0.92, 0.86, 0.8, 0.72, 0.64]) {
+        const daten = canvas.toDataURL("image/jpeg", q);
+        if (daten.length <= grenze) return daten;
+      }
+      breite = Math.round(breite * 0.85);
+    }
+    throw new Error("Bild lässt sich nicht klein genug speichern.");
+  }
+
+  function privatBildSrc() {
+    const layout = String(state.slides[0]?.ki_layout || "");
+    if (!layout.includes("data-ki-bild")) return "";
+    const treffer = /src="(data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+)"/.exec(layout);
+    return treffer ? treffer[1] : "";
   }
 
   function kiStatusHtml() {
     if (isMemo || state.answers.profile !== "private") return "";
     const f = state.kiFortschritt;
+    if (state.answers.asset_type !== "carousel") {
+      const bildZeile = state.kiLaeuft ? "Bild wird generiert" : f?.fehler ? f.fehler
+        : state.privatBildCi ? `CI-Prüfung: ${state.privatBildCi}` : "";
+      const vorhanden = Boolean(privatBildSrc());
+      const knoepfe = state.assetId
+        ? `<button type="button" class="as-btn" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i>${vorhanden ? "Bild neu generieren" : "Bild generieren"}</button>`
+          + (vorhanden ? `<button type="button" class="as-btn" data-act="privat-bild-laden"><i class="fa-solid fa-image"></i>Bild herunterladen</button>` : "")
+        : "";
+      return knoepfe || bildZeile ? `<div class="as-group"><span>Bild${state.privatBildStil ? ` · ${esc(state.privatBildStil)}` : ""}</span>${knoepfe}${bildZeile ? `<p class="as-savehint">${esc(bildZeile)}</p>` : ""}</div>` : "";
+    }
     const zeile = state.kiLaeuft && f ? `Visual im eigenen Stil · Folie ${f.fertig + 1} von ${f.gesamt}`
       : f?.fehler ? f.fehler
       : !state.kiVisual ? "Keine eigenen Posts hinterlegt"
@@ -4969,7 +5092,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // vorher weisse Schrift auf weissem Grund erzeugt - die Kachel sah leer aus.
     // lang="de" ist die Bedingung für hyphens:auto. Ohne sie trennt der Browser
     // lange Komposita nicht und der Titel läuft aus der Kachel.
-    return `<div class="as-stage as-stage--tpl" lang="de" data-stage data-uid="${attr(slide.uid)}" data-variant="${attr(slide.variant)}">${html}</div>`;
+    const nurBild = slide.variant === "KI" && String(slide.ki_layout || "").includes("data-ki-bild");
+    return `<div class="as-stage as-stage--tpl${nurBild ? " as-stage--bild" : ""}" lang="de" data-stage data-uid="${attr(slide.uid)}" data-variant="${attr(slide.variant)}">${html}</div>`;
   }
 
   /**
@@ -7971,6 +8095,17 @@ ${stages}${post}
       return;
     }
     if (act === "ki-visual") { void baueKiVisuals(); return; }
+    if (act === "privat-bild-laden") {
+      const src = privatBildSrc();
+      if (!src) return;
+      const link = document.createElement("a");
+      link.href = src;
+      link.download = `linkedin-bild-${new Date().toISOString().slice(0, 10)}.${src.startsWith("data:image/png") ? "png" : "jpg"}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      return;
+    }
     if (act === "own") {
       void uebernehmen();
       return;

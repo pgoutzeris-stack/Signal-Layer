@@ -3205,8 +3205,8 @@ test("Memo-Motive haben das Platzhalter-Seitenverhältnis und recherchierte Foto
   assert.match(memoTpl, /\.em-pot img\s*\{[^}]*object-fit:\s*cover/);
   // Neues Verhalten braucht frische Dateien, sonst zeigt der Browser die alten.
   const studioVersion = /asset-studio\.js\?v=([0-9-]+)/.exec(appJs)?.[1] || "";
-  assert.equal(studioVersion, "20261117-6");
-  assert.match(indexHtml, /app\.js\?v=20261117-6/);
+  assert.equal(studioVersion, "20261123-1");
+  assert.match(indexHtml, /app\.js\?v=20261123-1/);
   assert.match(studio, /asset-templates\.js\?v=20260824-0305/);
   assert.match(studio, /image_uploads: isMemo \? state\.formImages/);
   assert.match(studio, /KI sucht Bilder & Logos/);
@@ -3580,7 +3580,7 @@ test("Begleittext: KI, KI plus Tonfall oder eigener Text", () => {
   assert.equal(mitTon.caption_mode, "ai_tone");
   // Der Tonfall kommt aus den Nutzereinstellungen, nie aus dem Browser.
   assert.equal(mitTon.tone_of_voice, "");
-  assert.equal(backend.TONE_OF_VOICE_LIMIT, 2_000);
+  assert.equal(backend.TONE_OF_VOICE_LIMIT, 4_000);
 
   const tonPrompt = backend.buildAssetPrompt("linkedin", { headline_de: "S" }, { title: "A" },
     { ...mitTon, tone_of_voice: "Kurze Sätze. Kein Werbeton." });

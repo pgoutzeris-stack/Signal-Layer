@@ -1954,6 +1954,10 @@
   .tone-editor textarea { resize: vertical; min-height: 220px; line-height: 1.5; margin-bottom: 0; }
   .tone-editor-bar { display: flex; align-items: center; gap: 1rem; }
   .mein-stil-titel { min-width: 150px; font-weight: 600; color: var(--ink); }
+  .bild-stil { max-width: 720px; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+  .bild-stil select { margin-bottom: .75rem; }
+  .bild-stil-vorschau { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+  .bild-stil-vorschau img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: var(--status-bg); }
   .referenz-posts { max-width: 720px; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
   .referenz-posts-kopf { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .75rem; }
   .referenz-posts-kopf h4 { margin: 0; font-size: .95rem; font-weight: 700; color: var(--ink); }
@@ -2559,12 +2563,17 @@
             <div class="pipeline-section-head"><span>Nur für Ihr Konto</span><h3>Tone of Voice</h3><p>Gilt für den Begleittext eines LinkedIn-Assets, wenn im Fragebogen „KI + Tone of Voice“ gewählt ist. Die Slides bleiben davon unberührt.</p></div>
             <div class="tone-editor">
               <label class="modern-label" for="tone-of-voice-input">Tonfall</label>
-              <textarea class="modern-input" id="tone-of-voice-input" rows="12" maxlength="2000" placeholder="Kurze Sätze. Kein Werbeton. Beispielformulierungen, die typisch für Sie sind."></textarea>
+              <textarea class="modern-input" id="tone-of-voice-input" rows="12" maxlength="4000" placeholder="Kurze Sätze. Kein Werbeton. Beispielformulierungen, die typisch für Sie sind."></textarea>
               <div class="tone-editor-bar">
                 <span id="tone-of-voice-status"></span>
                 <button type="button" class="btn-primary" id="btn-tone-save"><i class="fa-regular fa-floppy-disk"></i> Speichern</button>
               </div>
             </div>
+            <section class="bild-stil" aria-labelledby="bild-stil-titel">
+              <div class="referenz-posts-kopf"><h4 id="bild-stil-titel">Bildstil für LinkedIn-Bilder</h4><span id="bild-stil-status"></span></div>
+              <select class="modern-input" id="bild-stil-auswahl" aria-labelledby="bild-stil-titel"></select>
+              <div class="bild-stil-vorschau" id="bild-stil-vorschau"></div>
+            </section>
             <section class="referenz-posts" aria-labelledby="referenz-posts-titel">
               <div class="referenz-posts-kopf"><h4 id="referenz-posts-titel">Eigene LinkedIn-Posts</h4><span id="referenz-posts-anzahl"></span></div>
               <div id="referenz-posts-liste"></div>
@@ -2674,7 +2683,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261117-6';
+  import { initApp } from './app.js?v=20261123-1';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

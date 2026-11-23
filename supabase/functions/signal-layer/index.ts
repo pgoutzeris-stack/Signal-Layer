@@ -2,6 +2,11 @@ import { articleReadingText } from "./article-reading-text.mjs";
 import { baueDebugMail, baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
+import {
+  BILDSTIL_CI_PRUEFUNG, BILDSTIL_CI_SCHEMA, BILDSTIL_MODELL, BILDSTIL_PRUEF_MODELL, BILDSTIL_STANDARD, BILDTOOL_BASIS,
+  type BildStil, bildstilSystemInstruction, bildVorschauUrls, istPrivatBild, linkedinBildStile, parseMasterLogo,
+  parseMasterStile, privatBildAuftrag, privatBildLayout, serienRefPfad, waehleBildStil,
+} from "./privat-bild.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.8";
 import {
   hasIndependentEventReportSubstance,
@@ -568,6 +573,40 @@ async function referenzPosts(userId: string): Promise<Array<Record<string, unkno
     .eq("user_id", userId).order("impressions", { ascending: false }).order("veroeffentlicht_am", { ascending: false }).limit(200);
   if (error) throw new Error(`Eigene Posts konnten nicht gelesen werden: ${error.message}`);
   return data || [];
+}
+
+// Bildstile aus dem Image-Generation-Tool. Zehn Minuten Cache wie GitHub Pages.
+const _bildStilCache: { at: number; stile: BildStil[]; logo: string } = { at: 0, stile: [], logo: "" };
+const _serienRefCache = new Map<string, { mime_type: string; data: string }>();
+
+async function bildStile(): Promise<{ stile: BildStil[]; logo: string }> {
+  if (_bildStilCache.stile.length && Date.now() - _bildStilCache.at < 600_000) return _bildStilCache;
+  const antwort = await fetchMitLimit(`${BILDTOOL_BASIS}assets/master-styles.js`, {}, 20_000);
+  if (!antwort.ok) throw new Error(`Bildstile nicht ladbar (HTTP ${antwort.status})`);
+  const quelltext = await antwort.text();
+  const stile = linkedinBildStile(parseMasterStile(quelltext));
+  if (!stile.length) throw new Error("Bildstile nicht lesbar");
+  Object.assign(_bildStilCache, { at: Date.now(), stile, logo: parseMasterLogo(quelltext) });
+  return _bildStilCache;
+}
+
+async function serienRef(pfad: string): Promise<{ mime_type: string; data: string } | null> {
+  const sauber = serienRefPfad(pfad);
+  if (!sauber) return null;
+  const vorhanden = _serienRefCache.get(sauber);
+  if (vorhanden) return vorhanden;
+  const antwort = await fetchMitLimit(BILDTOOL_BASIS + sauber, {}, 20_000).catch(() => null);
+  if (!antwort?.ok) return null;
+  const ref = { mime_type: "image/jpeg", data: bytesAlsBase64(new Uint8Array(await antwort.arrayBuffer())) };
+  _serienRefCache.set(sauber, ref);
+  return ref;
+}
+
+async function gewaehlterBildStil(userId: string): Promise<string> {
+  const { data, error } = await getAdminClient().schema("signal_layer")
+    .from("user_asset_settings").select("bild_stil").eq("user_id", userId).maybeSingle();
+  if (error) throw new Error(`Bildstil konnte nicht gelesen werden: ${error.message}`);
+  return String(data?.bild_stil || BILDSTIL_STANDARD);
 }
 
 /** Portraet und Logo fuer KI-Visuals im eigenen Stil. */
@@ -8221,7 +8260,7 @@ Deno.serve(async (req: Request) => {
         if (!isScheduled) return unauthorizedResponse(req, origin);
       }
     }
-  } else if (action === "ki_visual_slide" || action === "ki_visual_bild") {
+  } else if (action === "ki_visual_slide" || action === "ki_visual_bild" || action === "privat_bild") {
     // Neben dem User-JWT auch per Cron-Secret, damit der Betrieb ein Visual
     // fuer den Eigentuemer des Assets nachbauen und pruefen kann.
     isScheduled = await isScheduledTrigger(req);
@@ -8863,6 +8902,153 @@ Deno.serve(async (req: Request) => {
           .upsert({ user_id: auth.userId, mein_stil: stil, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
         if (error) return errorResponse(origin, error.message, 500);
         return corsResponse(origin, { mein_stil: stil });
+      }
+
+      // Bildstil fuer das Bild privater LinkedIn-Assets. Die Stile kommen aus
+      // dem Image-Generation-Tool, Vorschau sind dessen Serienbilder.
+      case "list_bild_stile": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const [{ stile }, gewaehlt] = await Promise.all([bildStile(), gewaehlterBildStil(auth.userId)]);
+        return corsResponse(origin, {
+          stile: stile.map((stil) => ({ id: stil.id, name: stil.name, aspect: stil.aspect, vorschau: bildVorschauUrls(stil) })),
+          gewaehlt: waehleBildStil(stile, gewaehlt)?.id || BILDSTIL_STANDARD,
+          standard: BILDSTIL_STANDARD,
+        });
+      }
+
+      case "save_bild_stil": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const { stile } = await bildStile();
+        const gewuenscht = String(body.bild_stil || "");
+        if (!stile.some((stil) => stil.id === gewuenscht)) return errorResponse(origin, "Unbekannter Bildstil");
+        const { error } = await getAdminClient().schema("signal_layer").from("user_asset_settings")
+          .upsert({ user_id: auth.userId, bild_stil: gewuenscht, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+        if (error) return errorResponse(origin, error.message, 500);
+        return corsResponse(origin, { bild_stil: gewuenscht });
+      }
+
+      // Bild eines privaten Einzelbild-Assets, gebaut wie im Bildtool: derselbe
+      // Masterprompt als Systemanweisung, dieselben Serienreferenzen, dasselbe
+      // Modell und dieselbe ROOTS-CI-Pruefung mit hoechstens einer Neugenerierung.
+      // Der Browser setzt bei rootsLogo-Stilen die Wortmarke ein und speichert.
+      case "privat_bild": {
+        if (!auth?.userId && !isScheduled) return errorResponse(origin, "Nicht angemeldet", 401);
+        const pbAssetId = String(body.asset_id || "");
+        const { data: pbAsset, error: pbFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
+          .select("id, kind, created_by, answers, payload").eq("id", pbAssetId).maybeSingle();
+        if (pbFehler) return errorResponse(origin, pbFehler.message, 500);
+        if (!pbAsset || (!isScheduled && pbAsset.created_by !== auth?.userId)) return errorResponse(origin, "Asset nicht gefunden", 404);
+        const pbNutzer = String(isScheduled ? pbAsset.created_by : auth?.userId);
+        if (pbAsset.kind !== "linkedin" || (pbAsset.answers as Record<string, unknown>)?.profile !== "private") {
+          return errorResponse(origin, "Das Bild im eigenen Stil gibt es nur für Assets im Privatprofil.");
+        }
+        const pbPayload = (pbAsset.payload || {}) as Record<string, unknown>;
+        const pbSlides = Array.isArray(pbPayload.slides) ? pbPayload.slides as Record<string, unknown>[] : [];
+        const auftrag = privatBildAuftrag({
+          postText: String(body.post_text || pbPayload.post_text || ""),
+          titel: String(pbSlides[0]?.title || ""),
+        });
+        if (!auftrag) return errorResponse(origin, "Kein Beitragstext für das Bild vorhanden.", 409);
+        const [{ stile, logo }, gewuenscht] = await Promise.all([bildStile(), gewaehlterBildStil(pbNutzer)]);
+        const stil = waehleBildStil(stile, gewuenscht);
+        if (!stil) return errorResponse(origin, "Kein Bildstil verfügbar.", 500);
+        const geminiKey = await getGeminiKey().catch(() => "");
+        if (!geminiKey) return errorResponse(origin, "Gemini-Schlüssel fehlt im Vault.", 409);
+        const refs = (await Promise.all(stil.seriesRefs.slice(0, 3).map(serienRef))).filter(Boolean) as { mime_type: string; data: string }[];
+        const teile: Record<string, unknown>[] = [{ text: `BILDAUFTRAG:\n${auftrag}` }];
+        refs.forEach((ref, i) => { teile.push({ text: `SERIENREFERENZ ${i + 1}:` }); teile.push({ inline_data: ref }); });
+        const anfrage = JSON.stringify({
+          systemInstruction: { parts: [{ text: bildstilSystemInstruction(stil.prompt, refs.length) }] },
+          contents: [{ role: "user", parts: teile }],
+          generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: stil.aspect } },
+        });
+        const start = Date.now();
+        let pbBild = "";
+        let pbFehlerText = "";
+        let ci: Record<string, unknown> = { checked: false };
+        // Zwei Bilder, wenn die CI-Pruefung das erste verwirft, dazu je ein
+        // zweiter Versuch bei Ueberlast. Die Edge Function hat 150 s.
+        for (let bildVersuch = 1; bildVersuch <= 2 && !pbBild; bildVersuch += 1) {
+          let roh = "";
+          for (let netz = 1; netz <= 2 && !roh && Date.now() - start < 95_000; netz += 1) {
+            const antwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_MODELL}:generateContent`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+              body: anfrage,
+            }, 90_000).catch((error) => { pbFehlerText = error instanceof Error ? error.message : String(error); return null; });
+            if (!antwort) break;
+            if (!antwort.ok) {
+              const koerper = await antwort.text().catch(() => "");
+              pbFehlerText = `HTTP ${antwort.status} ${String(geminiResearchFehler(antwort.status, koerper).google || "").slice(0, 160)}`;
+              await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_MODELL, "error", undefined, 0, `http_${antwort.status}`);
+              if (antwort.status === 429 || antwort.status >= 500) { await warte(4_000); continue; }
+              break;
+            }
+            const json = await antwort.json().catch(() => null);
+            const meta = json?.usageMetadata || {};
+            await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_MODELL, "success", {
+              input: Number(meta.promptTokenCount || 0), cachedInput: 0, output: Number(meta.candidatesTokenCount || 0),
+              thinking: Number(meta.thoughtsTokenCount || 0), total: Number(meta.totalTokenCount || 0),
+            });
+            const geliefert = parseGeminiImage(json);
+            if (geliefert) roh = `data:${geliefert.mime};base64,${geliefert.data}`;
+            else pbFehlerText = "Antwort ohne Bild";
+          }
+          if (!roh) break;
+          if (!stil.ciCheck) { pbBild = roh; break; }
+          const [, mime, daten] = roh.match(/^data:([^;]+);base64,(.+)$/) || [];
+          const pruefung = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_PRUEF_MODELL}:generateContent`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [{ text: BILDSTIL_CI_PRUEFUNG }, { inline_data: { mime_type: mime, data: daten } }] }],
+              generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: BILDSTIL_CI_SCHEMA },
+            }),
+          }, 30_000).catch(() => null);
+          const pruefJson = pruefung?.ok ? await pruefung.json().catch(() => null) : null;
+          let urteil: Record<string, unknown> | null = null;
+          try { urteil = JSON.parse(String(pruefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { urteil = null; }
+          const pm = pruefJson?.usageMetadata || {};
+          await recordStandaloneAiUsage("asset_privat_bild_ci", BILDSTIL_PRUEF_MODELL, urteil ? "success" : "error", {
+            input: Number(pm.promptTokenCount || 0), cachedInput: 0, output: Number(pm.candidatesTokenCount || 0),
+            thinking: Number(pm.thoughtsTokenCount || 0), total: Number(pm.totalTokenCount || 0),
+          });
+          // Wie im Bildtool: ist die Pruefung nicht erreichbar, bleibt das Bild,
+          // markiert als ungeprueft. Verstoss ist nur ein gezeichnetes ROOTS-Zeichen.
+          ci = urteil ? { checked: true, ok: urteil.roots_mark === false, reason: String(urteil.reason || "") } : { checked: false, ok: false, reason: "CI-Prüfung nicht erreichbar" };
+          if (!urteil || urteil.roots_mark === false || bildVersuch === 2 || Date.now() - start > 70_000) pbBild = roh;
+        }
+        if (!pbBild) return errorResponse(origin, `Bild konnte nicht generiert werden: ${pbFehlerText || "unbekannter Fehler"}`, 502);
+        return corsResponse(origin, {
+          bild: pbBild,
+          stil: { id: stil.id, name: stil.name, aspect: stil.aspect, roots_logo: stil.rootsLogo },
+          logo: stil.rootsLogo ? logo : "",
+          ci,
+        });
+      }
+
+      // Das fertige Bild (bei rootsLogo-Stilen mit Wortmarke) als Folie ablegen.
+      case "save_privat_bild": {
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const spAssetId = String(body.asset_id || "");
+        const spIndex = Math.max(0, Math.floor(Number(body.index) || 0));
+        if (!istPrivatBild(body.bild)) return errorResponse(origin, "Bild fehlt oder ist zu groß.", 413);
+        const { data: spAsset, error: spFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
+          .select("id, created_by, payload").eq("id", spAssetId).maybeSingle();
+        if (spFehler) return errorResponse(origin, spFehler.message, 500);
+        if (!spAsset || spAsset.created_by !== auth.userId) return errorResponse(origin, "Asset nicht gefunden", 404);
+        const spPayload = (spAsset.payload || {}) as Record<string, unknown>;
+        const spSlides = Array.isArray(spPayload.slides) ? [...spPayload.slides as Record<string, unknown>[]] : [];
+        const spSlide = spSlides[spIndex];
+        if (!spSlide) return errorResponse(origin, "Folie nicht gefunden", 404);
+        const { stile } = await bildStile();
+        const spStil = waehleBildStil(stile, String(body.stil_id || ""));
+        const html = privatBildLayout(String(body.bild), spStil?.aspect || "1:1", spStil?.name || "");
+        spSlides[spIndex] = { ...spSlide, ki_basis: String(spSlide.ki_basis || spSlide.variant || "B"), variant: "KI", ki_layout: html, ki_typ: "bild", ki_bild_stil: spStil?.id || "" };
+        const { error: spSpeicherFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
+          .update({ payload: { ...spPayload, slides: spSlides }, updated_at: new Date().toISOString() }).eq("id", spAssetId);
+        if (spSpeicherFehler) return errorResponse(origin, spSpeicherFehler.message, 500);
+        return corsResponse(origin, { index: spIndex, html, variant: "KI" });
       }
 
       // Eine Folie eines Privat-Assets im Stil des staerksten eigenen Posts.

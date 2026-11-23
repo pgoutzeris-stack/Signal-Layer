@@ -1663,7 +1663,7 @@ function choiceText(
 
 /** Laenge des hinterlegten Tonfalls. Genug fuer eine Handvoll Regeln und
  *  Beispielsaetze, zu wenig, um einen ganzen Beitrag zu schmuggeln. */
-export const TONE_OF_VOICE_LIMIT = 2_000;
+export const TONE_OF_VOICE_LIMIT = 4_000;
 /** Eigene LinkedIn-Posts: so lang wie LinkedIn erlaubt, drei als Vorbild. */
 export const REFERENZ_POST_LIMIT = 3_000;
 export const REFERENZ_VORBILDER = 3;
@@ -3018,7 +3018,17 @@ function captionAuftrag(answers: LinkedinAnswers): string {
     const vorbildBlock = vorbilder.length
       ? `\n\n<vorbilder>\nDie eigenen Beitraege mit den meisten Impressions. Hook, Aufbau, Satzrhythmus, Absatzlaenge und Fettungen daran ausrichten. Thema, Zahlen, Namen und Formulierungen daraus nicht uebernehmen; Inhalt kommt nur aus signal und artikel.\n${vorbilder.map((text, i) => `--- Vorbild ${i + 1} ---\n${text}`).join("\n")}\n</vorbilder>`
       : "";
-    return `Caption im hinterlegten Tonfall schreiben. Der Tonfall gilt fuer post_text, nicht fuer die Slides:\n${answers.tone_of_voice}${vorbildBlock}`;
+    // Stimme konstant, Ton nach Signal: der Tonfall beschreibt Tendenzen, keine
+    // Quoten. So wird er weder zur Karikatur noch zum generischen KI-Ton.
+    const anwendung = [
+      "So den Tonfall anwenden:",
+      "- Stimme (Haltung, Denkmuster, Aufbau, Leserbeziehung) gilt fuer jedes Thema gleich.",
+      "- Ton (Schaerfe, Waerme, Zuspitzung, Tempo) passt sich dem Signal an, innerhalb der Spannweiten im Tonfall. Krise, Stellenabbau oder Rueckzug nuechterner, ein Erfolg oder eine kluge Entscheidung darf Anerkennung zeigen.",
+      "- Muster sind Tendenzen, keine Pflicht je Post. Nicht jede Eigenheit unterbringen, keine Lieblingswendung erzwingen, nichts uebertreiben.",
+      "- Beispielsaetze im Tonfall zeigen die Bauart, sie werden nicht zitiert.",
+      "- Fakten, Zahlen und Namen nur aus signal und artikel.",
+    ].join("\n");
+    return `Caption im hinterlegten Tonfall schreiben. Der Tonfall gilt fuer post_text, nicht fuer die Slides:\n<tonfall>\n${answers.tone_of_voice}\n</tonfall>\n${anwendung}${vorbildBlock}`;
   }
   return "Caption: sachlich, ohne Werbeton.";
 }

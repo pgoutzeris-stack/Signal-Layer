@@ -8,14 +8,14 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261117-6";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261123-1";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261117-6";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261123-1";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
-import { openManualSignal } from "./manual-signal.js?v=20260930-1";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261117-6";
+import { openManualSignal } from "./manual-signal.js?v=20261123-1";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261123-1";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
 
 let sb = null;
@@ -343,6 +343,9 @@ function cacheEls() {
   els.toneStatus = document.getElementById("tone-of-voice-status");
   els.btnToneSave = document.getElementById("btn-tone-save");
   els.referenzListe = document.getElementById("referenz-posts-liste");
+  els.bildStilAuswahl = document.getElementById("bild-stil-auswahl");
+  els.bildStilVorschau = document.getElementById("bild-stil-vorschau");
+  els.bildStilStatus = document.getElementById("bild-stil-status");
   els.referenzAnzahl = document.getElementById("referenz-posts-anzahl");
   els.sourceSearch = document.getElementById("source-search");
   els.sourceCategoryFilter = document.getElementById("source-category-filter");
@@ -2274,6 +2277,46 @@ function renderReferenzPosts() {
   els.referenzListe.innerHTML = referenzPosts.length
     ? referenzPosts.map(referenzPostHtml).join("")
     : `<p class="referenz-post-leer">Noch keine Posts importiert.</p>`;
+}
+
+// Bildstil der LinkedIn-Bilder im Privatprofil. Die Stile stammen aus dem
+// Image-Generation-Tool, die Vorschau zeigt dessen Serienbilder.
+let bildStile = [];
+
+function renderBildStilVorschau() {
+  if (!els.bildStilVorschau || !els.bildStilAuswahl) return;
+  const stil = bildStile.find((eintrag) => eintrag.id === els.bildStilAuswahl.value);
+  const bilder = Array.isArray(stil?.vorschau) ? stil.vorschau.slice(0, 3) : [];
+  els.bildStilVorschau.innerHTML = bilder.map((url) => `<img src="${escapeHtml(url)}" alt="" loading="lazy">`).join("");
+}
+
+async function loadBildStile() {
+  if (!els.bildStilAuswahl) return;
+  try {
+    const { stile, gewaehlt, standard } = await callApi("list_bild_stile");
+    bildStile = Array.isArray(stile) ? stile : [];
+    els.bildStilAuswahl.innerHTML = bildStile.map((stil) => `<option value="${escapeHtml(stil.id)}">${escapeHtml(stil.name)}${stil.id === standard ? " (Standard)" : ""}</option>`).join("");
+    els.bildStilAuswahl.value = gewaehlt || standard || "";
+    if (els.bildStilStatus) els.bildStilStatus.textContent = "";
+    renderBildStilVorschau();
+  } catch (error) {
+    if (els.bildStilStatus) els.bildStilStatus.textContent = error.message || "Konnte nicht geladen werden";
+  }
+}
+
+async function saveBildStil() {
+  if (!els.bildStilAuswahl) return;
+  renderBildStilVorschau();
+  try {
+    els.bildStilAuswahl.disabled = true;
+    await callApi("save_bild_stil", { bild_stil: els.bildStilAuswahl.value });
+    toast("Bildstil gespeichert");
+  } catch (error) {
+    toast(error.message, "err");
+    void loadBildStile();
+  } finally {
+    els.bildStilAuswahl.disabled = false;
+  }
 }
 
 async function loadReferenzPosts() {
@@ -4848,6 +4891,7 @@ function bindUi() {
 
   els.btnSettings.addEventListener("click", openSettings);
   els.btnToneSave?.addEventListener("click", () => void saveToneOfVoice());
+  els.bildStilAuswahl?.addEventListener("change", () => void saveBildStil());
   els.referenzListe?.addEventListener("change", async (event) => {
     const auswahl = event.target.closest("[data-referenz-typ]");
     if (!auswahl) return;
@@ -5026,7 +5070,7 @@ function bindUi() {
           .catch((error) => toast(error.message, "err"));
       }
       if (panel === "operations") void loadPipelineSettings().then(loadPipelineOperations).catch((error) => toast(error.message, "err"));
-      if (panel === "tone") { void loadToneOfVoice(); void loadReferenzPosts(); }
+      if (panel === "tone") { void loadToneOfVoice(); void loadBildStile(); void loadReferenzPosts(); }
       if (panel === "design") void loadMeinStil();
     });
   });
