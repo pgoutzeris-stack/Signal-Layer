@@ -1508,7 +1508,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-post{width:min(1180px,100%); height:100%; min-height:520px; display:grid;
   grid-template-columns:minmax(0,1fr) minmax(0,1fr); overflow:hidden; background:#fff;
   border:1px solid var(--line,#e2e8f0); border-radius:16px;
-  box-shadow:0 8px 24px rgba(15,23,42,.08); color:#0f172a;}
+  box-shadow:0 4px 14px rgba(15,23,42,.05); color:#0f172a;}
 #as-overlay .as-linkedin-head{display:flex; align-items:center; gap:11px; padding:14px 16px 10px;}
 #as-overlay .as-linkedin-avatar{display:grid; place-items:center; flex:0 0 auto; width:46px; height:46px;
   padding:7px; overflow:hidden; border:1px solid #dbe7ff; border-radius:9px; background:#fff;}
