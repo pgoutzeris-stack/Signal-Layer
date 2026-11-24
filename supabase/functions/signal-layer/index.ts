@@ -2,7 +2,7 @@ import { articleReadingText } from "./article-reading-text.mjs";
 import { baueDebugMail, baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
-import { KI_CAPTION_MAX, KI_CHAT_MODELLE, KI_CHAT_SCHEMA, KI_NACHRICHT_MAX, kiChatErgebnis, kiChatModell, kiChatPrompt, kiVerlauf, type KiZiel } from "./ki-editor.ts";
+import { KI_CAPTION_MAX, KI_CHAT_MODELLE, KI_CHAT_SCHEMA, KI_NACHRICHT_MAX, KI_VERDICHTEN_SCHEMA, kiChatErgebnis, kiChatModell, kiChatPrompt, kiKontextFenster, kiVerdichtenPrompt, kiVerlauf, type KiZiel } from "./ki-editor.ts";
 import {
   BILDSTIL_BRIEF_MODELL, BILDSTIL_BRIEF_SCHEMA, MARKEN_CHECK_MODELL, MARKEN_CHECK_SCHEMA, markenCheckPrompt, privatBildAuftragAusBrief, privatBildBriefPrompt, BRIEF_MODI, BRIEF_STANDARD, type BriefModus,
   BILDSTIL_CI_PRUEFUNG, BILDSTIL_CI_SCHEMA, BILDSTIL_MODELL, BILDSTIL_PRUEF_MODELL, BILDSTIL_STANDARD, BILDTOOL_BASIS,
@@ -9027,6 +9027,27 @@ Deno.serve(async (req: Request) => {
         let roh: unknown = null;
         try { roh = JSON.parse(antwort.text.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { roh = null; }
         const ergebnis = kiChatErgebnis(roh, ziel);
+        // Einstellungen der Person zeigt das System selbst, im genauen Wortlaut.
+        let karte: Record<string, unknown> | null = null;
+        if (ergebnis.zeige === "tone_of_voice") {
+          karte = { art: "tone_of_voice", titel: "Tone of Voice", text: String(kcAnswers.tone_of_voice || "") || "Für diesen Entwurf war kein Tone of Voice hinterlegt." };
+        } else if (ergebnis.zeige === "bildstil") {
+          const { stile } = await bildStile();
+          const stilId = String(kcSlides[0]?.ki_bild_stil || "") || await gewaehlterBildStil(String(kcAsset.created_by || ""));
+          const stil = waehleBildStil(stile, stilId);
+          karte = stil ? { art: "bildstil", titel: stil.name, text: stil.prompt, bilder: bildVorschauUrls(stil).slice(0, 4) } : null;
+        }
+        // Sitzungswerte fuer die Leiste: Kosten, Tokens, Fuellstand des Kontextfensters.
+        const alteStats = (kcPayload.ki_chat_stats || {}) as Record<string, unknown>;
+        const stats = {
+          kosten_eur: (Number(alteStats.kosten_eur) || 0) + kcKosten,
+          input_tokens: (Number(alteStats.input_tokens) || 0) + Number(antwort.usage.input || 0) + Number(antwort.usage.cachedInput || 0),
+          output_tokens: (Number(alteStats.output_tokens) || 0) + Number(antwort.usage.output || 0) + Number(antwort.usage.thinking || 0),
+          nachrichten: (Number(alteStats.nachrichten) || 0) + 1,
+          letzter_kontext: Number(antwort.usage.input || 0) + Number(antwort.usage.cachedInput || 0),
+          kontext_fenster: kiKontextFenster(modell),
+          modell,
+        };
         const jetzt = new Date().toISOString();
         const neuerVerlauf = [...verlauf,
           { rolle: "nutzer", ziel, text: nachricht, zeit: jetzt },
@@ -9034,9 +9055,33 @@ Deno.serve(async (req: Request) => {
         ].slice(-30);
         // Betriebsprobe (Cron-Secret mit probe) schreibt keinen Verlauf.
         if (!(isScheduled && body.probe === true)) {
-          await admin.schema("signal_layer").from("generated_assets").update({ payload: { ...kcPayload, ki_chat: neuerVerlauf } }).eq("id", kcId);
+          await admin.schema("signal_layer").from("generated_assets").update({ payload: { ...kcPayload, ki_chat: neuerVerlauf, ki_chat_stats: stats } }).eq("id", kcId);
         }
-        return corsResponse(origin, { ...ergebnis, modell, kosten_eur: kcKosten });
+        return corsResponse(origin, { ...ergebnis, karte, modell, kosten_eur: kcKosten, stats });
+      }
+
+      case "ki_chat_verdichten": {
+        // Langer Verlauf wird zu einer Zusammenfassung; der Kontext bleibt, die Tokens sinken.
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const vdId = String(body.asset_id || "");
+        const admin = getAdminClient();
+        const { data: vdAsset } = await admin.schema("signal_layer").from("generated_assets").select("id, created_by, payload").eq("id", vdId).maybeSingle();
+        if (!vdAsset || String(vdAsset.created_by || "") !== String(auth.userId)) return errorResponse(origin, "Asset nicht gefunden", 404);
+        const vdPayload = (vdAsset.payload || {}) as Record<string, unknown>;
+        const verlauf = kiVerlauf(vdPayload.ki_chat);
+        if (verlauf.length < 4) return corsResponse(origin, { verlauf, stats: vdPayload.ki_chat_stats || null });
+        const modell = "gemini-3.5-flash";
+        const { system, prompt } = kiVerdichtenPrompt(verlauf);
+        const res = await callJsonModel({ model: modell, apiKey: await getGeminiKey(), systemText: system, prompt, schema: KI_VERDICHTEN_SCHEMA, maxOutputTokens: 1_200, temperature: 0.2, thinkingLevel: "low", attempts: 2, timeoutMs: 40_000 });
+        const kosten = await recordStandaloneAiUsage("asset_ki_chat", modell, res.ok ? "success" : "error", res.usage);
+        let text = "";
+        try { text = String(JSON.parse(res.text).zusammenfassung || "").slice(0, 1500); } catch { text = ""; }
+        if (!text) return errorResponse(origin, "Die Zusammenfassung ist fehlgeschlagen.", 502);
+        const neu = [{ rolle: "ki", ziel: "caption", status: "zusammenfassung", text, zeit: new Date().toISOString() }];
+        const alt = (vdPayload.ki_chat_stats || {}) as Record<string, unknown>;
+        const stats = { ...alt, kosten_eur: (Number(alt.kosten_eur) || 0) + kosten, letzter_kontext: 0, verdichtet: new Date().toISOString() };
+        await admin.schema("signal_layer").from("generated_assets").update({ payload: { ...vdPayload, ki_chat: neu, ki_chat_stats: stats } }).eq("id", vdId);
+        return corsResponse(origin, { verlauf: neu, stats });
       }
 
       case "save_caption": {

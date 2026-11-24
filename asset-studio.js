@@ -1613,6 +1613,28 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-senden:disabled{opacity:.4; cursor:default; transform:none;}
 @media (max-width:900px){#as-overlay .as-ki-rumpf{grid-template-columns:1fr; grid-template-rows:minmax(0,1fr) minmax(0,1fr);} #as-overlay .as-ki-links{border-right:0; border-bottom:1px solid #edf2f7;}}
 @media (prefers-reduced-motion:reduce){#as-overlay .as-ki, #as-overlay .as-ki-karte, #as-overlay .as-ki-msg{animation:none;}}
+#as-overlay .as-ki-perf{position:relative;}
+#as-overlay .as-ki-perf + .as-ki-modell{margin-left:0;}
+#as-overlay .as-ki-perf-knopf{height:36px; padding:0 12px 0 8px; border:1px solid var(--line,#e2e8f0); border-radius:999px; background:#fff; display:inline-flex; align-items:center; gap:8px;
+  font-weight:650; font-size:12.5px; font-family:inherit; color:#475569; cursor:pointer; font-variant-numeric:tabular-nums; transition:border-color .16s, box-shadow .16s;}
+#as-overlay .as-ki-perf-knopf:hover, #as-overlay .as-ki-perf.is-offen .as-ki-perf-knopf{border-color:color-mix(in srgb,#206efb 48%,#e2e8f0); box-shadow:0 0 0 3px rgba(32,110,251,.12);}
+#as-overlay .as-ki-ring{width:20px; height:20px; border-radius:50%; background:conic-gradient(var(--ton) calc(var(--wert) * 1%), #e2e8f0 0); -webkit-mask:radial-gradient(circle 6px, transparent 98%, #000 100%); mask:radial-gradient(circle 6px, transparent 98%, #000 100%);}
+#as-overlay .as-ki-perf-menu{position:absolute; right:0; top:calc(100% + 6px); z-index:6; width:300px; padding:14px; border:1px solid var(--line,#e2e8f0); border-radius:14px; background:#fff;
+  box-shadow:0 18px 46px rgba(15,23,42,.18); display:none; flex-direction:column; gap:9px; animation:asKiMenue .16s ease both;}
+#as-overlay .as-ki-perf.is-offen .as-ki-perf-menu{display:flex;}
+#as-overlay .as-ki-perf-zeile{display:flex; justify-content:space-between; gap:12px; font-size:12.5px; color:#64748b;}
+#as-overlay .as-ki-perf-zeile b{color:#0f172a; font-variant-numeric:tabular-nums;}
+#as-overlay .as-ki-balken{height:6px; border-radius:99px; background:#eef2f7; overflow:hidden;}
+#as-overlay .as-ki-balken span{display:block; height:100%; border-radius:inherit; transition:width .5s ease;}
+#as-overlay .as-ki-perf-menu .as-btn{justify-content:center; margin-top:4px;}
+#as-overlay .as-ki-einst{margin-top:10px; background:#fff; border-radius:12px; padding:12px; box-shadow:0 1px 3px rgba(15,23,42,.08);}
+#as-overlay .as-ki-einst-text{max-height:260px; overflow:auto; font-size:12.5px; line-height:1.55; color:#1e293b;}
+#as-overlay .as-ki-einst-text span{display:block; white-space:pre-wrap; animation:asKiZeile .4s ease both;}
+@keyframes asKiZeile{from{opacity:0; transform:translateX(-6px); filter:blur(2px);} to{opacity:1; transform:none; filter:none;}}
+#as-overlay .as-ki-karte-bilder{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin:0 0 10px;}
+#as-overlay .as-ki-karte-bilder img{width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; animation:asKiBild .5s cubic-bezier(.2,.8,.2,1) both;}
+@keyframes asKiBild{from{opacity:0; transform:scale(.9);} to{opacity:1; transform:none;}}
+#as-overlay .as-ki-einst.is-alt span, #as-overlay .as-ki-einst.is-alt img{animation:none;}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
@@ -4248,7 +4270,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.owned = Boolean(row.owner_id);
       state.nurLesen = res?.eigen === false;
       state.captionInfo = { model: row.model, cost_eur: row.cost_eur, created_at: row.created_at };
-      state.ki = { offen: false, verlauf: kiVerlaufAusPayload(row.payload?.ki_chat) };
+      state.ki = { offen: false, verlauf: kiVerlaufAusPayload(row.payload?.ki_chat), stats: row.payload?.ki_chat_stats || null };
       state.toneScore = row.payload?.tone_score?.score !== undefined ? { ...row.payload.tone_score, text: String(row.payload.post_text || "") } : null;
       state.autor = res?.autor && res.eigen === false ? { name: String(res.autor.name || ""), avatar_url: String(res.autor.avatar_url || "") } : null;
       state.memoSend = res && typeof res === "object" ? (res.memo_send || null) : null;
@@ -5303,6 +5325,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     };
     kiEditor.hidden = false;
     kiEditorZeichne();
+    // Server vorwaermen, damit die erste Antwort nicht auf den Kaltstart wartet.
+    void api("ki_chat_modelle", {}).catch(() => {});
     requestAnimationFrame(() => kiEditor.querySelector("[data-ki-eingabe]")?.focus());
   }
 
@@ -5325,6 +5349,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     } else if (n.bild_auftrag) {
       vorschlag = `<div class="as-ki-vorschlag"><span class="as-ki-tag"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Bild anpassen" : "Neues Bild"}</span><pre>${esc(n.bild_auftrag)}</pre>
         <button type="button" class="as-btn as-btn--primary" data-ki-bild="${i}"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i>Bild erzeugen</button></div>`;
+    }
+    if (n.status === "zusammenfassung") {
+      return `<div class="as-ki-msg as-ki-msg--ki"${alt}><span class="as-ki-ava"><i class="fa-solid fa-compress"></i></span><div class="as-ki-blase"><span class="as-ki-ziel">Bisheriger Verlauf, verdichtet</span><br>${esc(n.text)}</div></div>`;
+    }
+    if (n.karte) {
+      const kt = n.karte;
+      const bilder = Array.isArray(kt.bilder) && kt.bilder.length
+        ? `<div class="as-ki-karte-bilder">${kt.bilder.map((src, j) => `<img src="${attr(src)}" alt="" style="animation-delay:${0.12 + j * 0.09}s">`).join("")}</div>` : "";
+      const zeilen = String(kt.text || "").split("\n").map((z, j) => `<span style="animation-delay:${Math.min(1.6, 0.05 + j * 0.035)}s">${esc(z) || "&nbsp;"}</span>`).join("");
+      vorschlag += `<div class="as-ki-einst${n.alt ? " is-alt" : ""}"><span class="as-ki-tag"><i class="fa-solid ${kt.art === "bildstil" ? "fa-palette" : "fa-feather"}"></i>${esc(kt.titel || "")}</span>${bilder}<div class="as-ki-einst-text">${zeilen}</div></div>`;
     }
     return `<div class="as-ki-msg as-ki-msg--ki${n.status === "abgelehnt" ? " as-ki-msg--abgelehnt" : ""}"${alt}><span class="as-ki-ava"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
       <div class="as-ki-blase">${zielTag}<br>${esc(n.text)}${vorschlag}</div></div>`;
@@ -5368,6 +5402,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
             <div class="as-ki-modell-menu" role="listbox" aria-label="KI-Modell">${KI_MODELLE.map(([id, name, icon]) => `<button type="button" role="option" aria-selected="${id === k.modell}" data-ki-modellwahl="${attr(id)}"><span class="as-ki-mico"><i class="${icon}"></i></span>${esc(name)}${id === k.modell ? '<i class="fa-solid fa-check as-ki-haken"></i>' : ""}</button>`).join("")}</div>
           </div>`;
         })()}
+        ${kiStatsHtml()}
         <button type="button" class="as-ki-zu" data-ki-zu aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
       </header>
       <div class="as-ki-rumpf">
@@ -5387,6 +5422,47 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (liste && scrollUnten) liste.scrollTop = liste.scrollHeight;
   }
 
+  function kiZahl(n) { return Math.round(Number(n) || 0).toLocaleString("de-DE"); }
+
+  /** Kleine Leiste im Kopf: Kosten, Tokens, Fuellstand des Kontextfensters, Verdichten. */
+  function kiStatsHtml() {
+    const k = state.ki;
+    const st = k.stats || {};
+    const fenster = Number(st.kontext_fenster) || 200000;
+    const anteil = Math.min(100, Math.round(((Number(st.letzter_kontext) || 0) / fenster) * 1000) / 10);
+    const ton = anteil > 80 ? "#dc2626" : anteil > 50 ? "#d97706" : "#206efb";
+    return `<div class="as-ki-perf${k.perfOffen ? " is-offen" : ""}">
+      <button type="button" class="as-ki-perf-knopf" data-ki-perf aria-expanded="${k.perfOffen ? "true" : "false"}" title="Sitzung">
+        <span class="as-ki-ring" style="--wert:${anteil}; --ton:${ton}"></span>${euro(st.kosten_eur || 0)}
+      </button>
+      <div class="as-ki-perf-menu">
+        <div class="as-ki-perf-zeile"><span>Kosten dieser Sitzung</span><b>${euro(st.kosten_eur || 0)}</b></div>
+        <div class="as-ki-perf-zeile"><span>Nachrichten</span><b>${kiZahl(st.nachrichten)}</b></div>
+        <div class="as-ki-perf-zeile"><span>Tokens gesendet / erhalten</span><b>${kiZahl(st.input_tokens)} / ${kiZahl(st.output_tokens)}</b></div>
+        <div class="as-ki-perf-zeile"><span>Kontext letzte Anfrage</span><b>${kiZahl(st.letzter_kontext)} von ${kiZahl(fenster)}</b></div>
+        <div class="as-ki-balken"><span style="width:${anteil}%; background:${ton}"></span></div>
+        <button type="button" class="as-btn" data-ki-verdichten${k.verlauf.length < 4 || k.laeuft ? " disabled" : ""}><i class="fa-solid fa-compress"></i>Sitzung verdichten</button>
+      </div>
+    </div>`;
+  }
+
+  async function kiVerdichten() {
+    const k = state.ki;
+    if (!k || k.laeuft) return;
+    k.laeuft = true;
+    k.perfOffen = false;
+    kiEditorZeichne();
+    try {
+      const res = await api("ki_chat_verdichten", { asset_id: state.assetId });
+      k.verlauf = kiVerlaufAusPayload(res?.verlauf).map((n) => ({ ...n, alt: false }));
+      if (res?.stats) k.stats = res.stats;
+    } catch (err) {
+      k.verlauf.push({ rolle: "ki", ziel: k.ziel, status: "fehler", text: err && err.message ? fehlerKlartext(String(err.message)) : "Verdichten fehlgeschlagen." });
+    }
+    k.laeuft = false;
+    kiEditorZeichne();
+  }
+
   async function kiSenden(text) {
     const k = state.ki;
     const nachricht = String(text || "").trim();
@@ -5398,7 +5474,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     kiEditorZeichne();
     try {
       const res = await api("ki_chat", { asset_id: state.assetId, ziel: k.ziel, nachricht, modell: k.modell, caption: k.entwurf });
-      k.verlauf.push({ rolle: "ki", ziel: k.ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "" });
+      k.verlauf.push({ rolle: "ki", ziel: k.ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null });
+      if (res?.stats) k.stats = res.stats;
     } catch (err) {
       k.verlauf.push({ rolle: "ki", ziel: k.ziel, status: "fehler", text: err && err.message ? fehlerKlartext(String(err.message)) : "Die KI hat nicht geantwortet." });
     }
@@ -5428,6 +5505,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const k = state.ki;
     if (!k?.offen) return;
     if (event.target === kiEditor || event.target.closest("[data-ki-zu]")) { kiEditorSchliessen(); return; }
+    if (event.target.closest("[data-ki-perf]")) { k.perfOffen = !k.perfOffen; k.modellOffen = false; kiEditorZeichne(); return; }
+    if (event.target.closest("[data-ki-verdichten]")) { void kiVerdichten(); return; }
+    if (k.perfOffen && !event.target.closest(".as-ki-perf-menu")) { k.perfOffen = false; kiEditorZeichne(); return; }
     if (event.target.closest("[data-ki-modellknopf]")) { k.modellOffen = !k.modellOffen; kiEditorZeichne(); return; }
     const wahl = event.target.closest("[data-ki-modellwahl]");
     if (wahl) {
