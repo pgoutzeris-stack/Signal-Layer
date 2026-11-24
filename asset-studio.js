@@ -1573,7 +1573,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-zu:hover{background:#f1f5f9; color:#0f172a;}
 #as-overlay .as-ki-rumpf{display:grid; grid-template-columns:minmax(0,1.08fr) minmax(360px,.92fr); min-height:0;}
 #as-overlay .as-ki-links{display:grid; grid-template-rows:minmax(0,1fr) auto; min-height:0; background:#f8fafc; border-right:1px solid #edf2f7;}
-#as-overlay .as-ki-text{width:100%; height:100%; resize:none; border:0; outline:0; background:transparent; padding:28px 32px; font-weight:400;font-size:15.5px;line-height:1.65;font-family:inherit; color:#0f172a;}
+#as-overlay .as-ki-text{width:100%; height:100%; min-height:0; box-sizing:border-box; resize:none; border:0; outline:0; background:transparent; padding:28px 32px; font-weight:400;font-size:15.5px;line-height:1.65;font-family:inherit; color:#0f172a;}
 #as-overlay .as-ki-bildbox{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:28px; min-height:0; overflow:auto;}
 #as-overlay .as-ki-bildbox img{max-width:min(100%,560px); max-height:58vh; border-radius:10px; box-shadow:0 10px 30px rgba(15,23,42,.12); transition:filter .3s, opacity .3s;}
 #as-overlay .as-ki-bildbox.is-laeuft img{filter:blur(3px) saturate(.6); opacity:.6;}
@@ -1635,6 +1635,38 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-karte-bilder img{width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; animation:asKiBild .5s cubic-bezier(.2,.8,.2,1) both;}
 @keyframes asKiBild{from{opacity:0; transform:scale(.9);} to{opacity:1; transform:none;}}
 #as-overlay .as-ki-einst.is-alt span, #as-overlay .as-ki-einst.is-alt img{animation:none;}
+#as-overlay .as-ki-msg.is-alt{animation:none;}
+#as-overlay .as-ki-wort{display:inline-block; animation:asKiWort .42s cubic-bezier(.2,.8,.2,1) both;}
+@keyframes asKiWort{from{opacity:0; filter:blur(4px); transform:translateY(3px);} to{opacity:1; filter:none; transform:none;}}
+#as-overlay .as-ki-feld{position:relative; min-height:0; display:grid;}
+#as-overlay .as-ki-feld::after{content:""; position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity .3s;
+  background:linear-gradient(110deg, transparent 30%, rgba(32,110,251,.07) 45%, rgba(122,167,255,.12) 50%, rgba(32,110,251,.07) 55%, transparent 70%); background-size:250% 100%;}
+#as-overlay .as-ki-feld.is-denkt::after{opacity:1; animation:asKiWelle 1.6s linear infinite;}
+@keyframes asKiWelle{from{background-position:120% 0;} to{background-position:-120% 0;}}
+#as-overlay .as-ki-text--tippt{overflow:auto; white-space:pre-wrap;}
+#as-overlay .as-ki-status{font-size:12px; color:#16a34a; margin-left:auto; animation:asKiRein .3s ease both;}
+#as-overlay .as-ki-versionen{display:inline-flex; align-items:center; gap:4px; padding:3px; border-radius:999px; background:#f1f5f9; font-size:12px; color:#475569; font-variant-numeric:tabular-nums;}
+#as-overlay .as-ki-versionen span{padding:0 6px;}
+#as-overlay .as-ki-versionen button{width:28px; height:28px; border:0; border-radius:50%; background:#fff; color:#206efb; cursor:pointer; box-shadow:0 1px 3px rgba(15,23,42,.1); transition:transform .15s, opacity .15s;}
+#as-overlay .as-ki-versionen button:hover:not(:disabled){transform:scale(1.08);}
+#as-overlay .as-ki-versionen button:disabled{opacity:.35; cursor:default; box-shadow:none;}
+#as-overlay .as-ki-aenderung{display:inline-flex; align-items:center; gap:7px; margin-top:8px; padding:5px 10px; border-radius:999px; background:#ecfdf5; color:#047857; font-size:12px; font-weight:600; animation:asKiWort .5s .3s both;}
+#as-overlay .as-ki-seg{position:relative;}
+#as-overlay .as-ki-seg-pille{position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); border-radius:999px; background:#fff; box-shadow:0 1px 4px rgba(15,23,42,.12);
+  transform:translateX(calc(var(--pos) * 100%)); transition:transform .32s cubic-bezier(.2,.8,.2,1);}
+#as-overlay .as-ki-seg button{position:relative; z-index:1; min-width:92px; display:inline-flex; align-items:center; justify-content:center; gap:6px;}
+#as-overlay .as-ki-seg button[aria-pressed="true"]{background:transparent !important; box-shadow:none !important;}
+#as-overlay .as-ki-punkt{width:6px; height:6px; border-radius:50%; background:#206efb; animation:asKiPuls 1.2s ease-in-out infinite;}
+@keyframes asKiPuls{50%{opacity:.3; transform:scale(.7);}}
+#as-overlay .as-ki-ava--denkt{animation:asKiDreh 2.4s linear infinite;}
+@keyframes asKiDreh{to{filter:hue-rotate(40deg); transform:rotate(360deg);}}
+#as-overlay .as-ki-bildrahmen{position:relative; border-radius:10px; overflow:hidden; line-height:0;}
+#as-overlay .as-ki-bildrahmen img{max-width:min(100%,560px); max-height:58vh; border-radius:10px;}
+#as-overlay .as-ki-bildrahmen img.is-neu{animation:asKiNeu .7s cubic-bezier(.2,.8,.2,1) both;}
+@keyframes asKiNeu{from{opacity:0; transform:scale(.96); filter:blur(8px);} to{opacity:1; transform:none; filter:none;}}
+#as-overlay .as-ki-schimmer{position:absolute; inset:0; background:linear-gradient(110deg, transparent 25%, rgba(255,255,255,.55) 50%, transparent 75%); background-size:250% 100%; animation:asKiWelle 1.4s linear infinite;}
+#as-overlay .as-ki-bildbox .as-ki-laeuft{position:absolute; left:50%; bottom:16px; transform:translateX(-50%); line-height:1; background:#fff; padding:9px 14px; border-radius:999px; box-shadow:0 6px 20px rgba(15,23,42,.15);}
+#as-overlay .as-ki-chip{animation:asKiWort .4s cubic-bezier(.2,.8,.2,1) both;}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
@@ -2985,7 +3017,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       ? `<span class="as-knopfgruppe"><button type="button" class="as-info-knopf" data-act="ki-editor" data-ziel="caption" title="Caption mit KI bearbeiten" aria-label="Caption mit KI bearbeiten"><i class="fa-solid fa-wand-magic-sparkles"></i></button><button type="button" class="as-info-knopf" data-act="caption-info" title="Infos zur Caption" aria-label="Infos zur Caption"><i class="fa-solid fa-circle-info"></i></button></span>`
       : "";
     const bildKnopf = privat && state.assetId && state.answers.asset_type !== "carousel"
-      ? `<span class="as-knopfgruppe as-knopfgruppe--bild"><button type="button" class="as-info-knopf" data-act="ki-editor" data-ziel="bild" title="Bild mit KI bearbeiten" aria-label="Bild mit KI bearbeiten"><i class="fa-solid fa-wand-magic-sparkles"></i></button>${privatBildSrc() ? '<button type="button" class="as-info-knopf" data-act="bild-info" title="Infos zum Bild" aria-label="Infos zum Bild"><i class="fa-solid fa-circle-info"></i></button>' : ""}</span>`
+      ? `<span class="as-knopfgruppe as-knopfgruppe--bild"><button type="button" class="as-info-knopf" data-act="ki-editor" data-ziel="bild" title="Visual mit KI bearbeiten" aria-label="Visual mit KI bearbeiten"><i class="fa-solid fa-wand-magic-sparkles"></i></button>${privatBildSrc() ? '<button type="button" class="as-info-knopf" data-act="bild-info" title="Infos zum Visual" aria-label="Infos zum Visual"><i class="fa-solid fa-circle-info"></i></button>' : ""}</span>`
       : "";
     return `<div class="as-work as-work--feed" data-kind="linkedin">
       <article class="as-linkedin-post" aria-label="LinkedIn-Vorschau">
@@ -5114,7 +5146,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         break;
       }
       const stand = payload.privat_bild || {};
-      if (stand.status === "fehler") { ergebnis = "fehler"; state.kiFortschritt.fehler = fehlerKlartext(String(stand.fehler || "")) || "Das Bild konnte nicht erstellt werden."; break; }
+      if (stand.status === "fehler") { ergebnis = "fehler"; state.kiFortschritt.fehler = fehlerKlartext(String(stand.fehler || "")) || "Das Visual konnte nicht erstellt werden."; break; }
       if (stand.status === "client") { ergebnis = "client"; break; }
       // Ohne jeden Stand nach 20 s hat der Server nicht uebernommen: selbst bauen.
       if (!stand.status && Date.now() - start > 20_000) { ergebnis = "client"; break; }
@@ -5294,7 +5326,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   ];
   const KI_CHIPS = {
     caption: ["Kürzer und pointierter", "Stärkerer Einstieg", "Schlussfrage schärfen", "Näher an meinem Tone of Voice"],
-    bild: ["Marke deutlicher zeigen", "Ruhigerer Hintergrund", "Ganz neue Bildidee"],
+    bild: ["Marke deutlicher zeigen", "Ruhigerer Hintergrund", "Ganz neue Visual-Idee"],
   };
 
   /** Gespeicherter Verlauf: Antwort und Vorschlag stehen in einem Text. */
@@ -5317,11 +5349,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     harvest();
     let modell = "";
     try { modell = localStorage.getItem("sl-ki-modell") || ""; } catch { /* egal */ }
+    const vorher = state.ki || {};
+    const versionenCaption = vorher.versionen?.caption?.liste?.length ? vorher.versionen.caption : { liste: [state.postText || ""], index: 0 };
+    const visualJetzt = state.slides[0] && state.slides[0].ki_layout ? { layout: state.slides[0].ki_layout, meta: state.slides[0].ki_bild_meta || {}, stil: state.slides[0].ki_bild_stil || "" } : null;
+    const versionenVisual = vorher.versionen?.bild?.liste?.length ? vorher.versionen.bild : { liste: visualJetzt ? [visualJetzt] : [], index: 0 };
     state.ki = {
-      ...(state.ki || {}), offen: true, ziel: ziel === "bild" ? "bild" : "caption",
+      ...vorher, offen: true, ziel: ziel === "bild" ? "bild" : "caption",
       modell: KI_MODELLE.some(([id]) => id === modell) ? modell : KI_MODELLE[0][0],
-      entwurf: state.postText || "", laeuft: false, hinweis: "",
-      verlauf: (state.ki?.verlauf || []).map((n) => ({ ...n, alt: true })),
+      entwurf: state.postText || "", hinweis: "", laeuft: vorher.laeuft || { caption: false, bild: false },
+      verlauf: (vorher.verlauf || []).map((n) => ({ ...n, alt: true })),
+      versionen: { caption: versionenCaption, bild: versionenVisual },
     };
     kiEditor.hidden = false;
     kiEditorZeichne();
@@ -5332,68 +5369,99 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function kiEditorSchliessen() {
     if (!state.ki?.offen) return;
-    if (state.ki.entwurf !== (state.postText || "") && !window.confirm("Ungespeicherte Änderungen an der Caption verwerfen?")) return;
+    kiAutosaveJetzt();
     state.ki.offen = false;
     kiEditor.hidden = true;
     kiEditor.innerHTML = "";
   }
 
+  /** Text Wort fuer Wort einblenden, wie eine KI, die gerade schreibt. */
+  function kiWoerter(text, start = 0, schritt = 0.018) {
+    let i = 0;
+    return esc(String(text || "")).split(/(\s+)/).map((teil) => {
+      if (/^\s+$/.test(teil)) return teil;
+      const delay = Math.min(2.4, start + (i++) * schritt);
+      return `<span class="as-ki-wort" style="animation-delay:${delay.toFixed(3)}s">${teil}</span>`;
+    }).join("");
+  }
+
   function kiNachrichtHtml(n, i) {
-    const zielTag = `<span class="as-ki-ziel">${n.ziel === "bild" ? "Bild" : "Caption"}</span>`;
-    const alt = n.alt ? ' style="animation:none"' : "";
-    if (n.rolle === "nutzer") return `<div class="as-ki-msg as-ki-msg--nutzer"${alt}>${zielTag}<br>${esc(n.text)}</div>`;
-    let vorschlag = "";
-    if (n.caption) {
-      vorschlag = `<div class="as-ki-vorschlag"><span class="as-ki-tag"><i class="fa-solid fa-pen"></i>Neue Caption</span><pre>${esc(n.caption)}</pre>
-        <button type="button" class="as-btn as-btn--primary" data-ki-uebernehmen="${i}"><i class="fa-solid fa-arrow-left"></i>In den Editor</button></div>`;
-    } else if (n.bild_auftrag) {
-      vorschlag = `<div class="as-ki-vorschlag"><span class="as-ki-tag"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Bild anpassen" : "Neues Bild"}</span><pre>${esc(n.bild_auftrag)}</pre>
-        <button type="button" class="as-btn as-btn--primary" data-ki-bild="${i}"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i>Bild erzeugen</button></div>`;
-    }
+    const alt = n.alt ? " is-alt" : "";
+    if (n.rolle === "nutzer") return `<div class="as-ki-msg as-ki-msg--nutzer${alt}">${esc(n.text)}</div>`;
     if (n.status === "zusammenfassung") {
-      return `<div class="as-ki-msg as-ki-msg--ki"${alt}><span class="as-ki-ava"><i class="fa-solid fa-compress"></i></span><div class="as-ki-blase"><span class="as-ki-ziel">Bisheriger Verlauf, verdichtet</span><br>${esc(n.text)}</div></div>`;
+      return `<div class="as-ki-msg as-ki-msg--ki${alt}"><span class="as-ki-ava"><i class="fa-solid fa-compress"></i></span><div class="as-ki-blase"><span class="as-ki-ziel">Bisheriger Verlauf, verdichtet</span><br>${esc(n.text)}</div></div>`;
+    }
+    let extra = "";
+    if (n.caption) extra = `<div class="as-ki-aenderung"><i class="fa-solid fa-pen"></i>Caption im Editor geändert${n.version ? ` · Version ${n.version}` : ""}</div>`;
+    if (n.bild_auftrag) {
+      extra = `<div class="as-ki-vorschlag"><span class="as-ki-tag"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Visual anpassen" : "Neues Visual"}</span><pre>${esc(n.bild_auftrag)}</pre>
+        <button type="button" class="as-btn as-btn--primary" data-ki-visual="${i}"${state.ki?.laeuft?.bild ? " disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i>Visual erzeugen</button></div>`;
     }
     if (n.karte) {
       const kt = n.karte;
       const bilder = Array.isArray(kt.bilder) && kt.bilder.length
         ? `<div class="as-ki-karte-bilder">${kt.bilder.map((src, j) => `<img src="${attr(src)}" alt="" style="animation-delay:${0.12 + j * 0.09}s">`).join("")}</div>` : "";
       const zeilen = String(kt.text || "").split("\n").map((z, j) => `<span style="animation-delay:${Math.min(1.6, 0.05 + j * 0.035)}s">${esc(z) || "&nbsp;"}</span>`).join("");
-      vorschlag += `<div class="as-ki-einst${n.alt ? " is-alt" : ""}"><span class="as-ki-tag"><i class="fa-solid ${kt.art === "bildstil" ? "fa-palette" : "fa-feather"}"></i>${esc(kt.titel || "")}</span>${bilder}<div class="as-ki-einst-text">${zeilen}</div></div>`;
+      extra += `<div class="as-ki-einst"><span class="as-ki-tag"><i class="fa-solid ${kt.art === "bildstil" ? "fa-palette" : "fa-feather"}"></i>${esc(kt.titel || "")}</span>${bilder}<div class="as-ki-einst-text">${zeilen}</div></div>`;
     }
-    return `<div class="as-ki-msg as-ki-msg--ki${n.status === "abgelehnt" ? " as-ki-msg--abgelehnt" : ""}"${alt}><span class="as-ki-ava"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
-      <div class="as-ki-blase">${zielTag}<br>${esc(n.text)}${vorschlag}</div></div>`;
+    const text = n.alt ? esc(n.text) : kiWoerter(n.text);
+    return `<div class="as-ki-msg as-ki-msg--ki${n.status === "abgelehnt" ? " as-ki-msg--abgelehnt" : ""}${n.status === "fehler" ? " as-ki-msg--abgelehnt" : ""}${alt}"><span class="as-ki-ava"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+      <div class="as-ki-blase">${text}${extra}</div></div>`;
+  }
+
+  function kiVersionLeiste(ziel) {
+    const v = state.ki.versionen[ziel];
+    const anzahl = v.liste.length;
+    if (!anzahl) return "";
+    return `<span class="as-ki-versionen" role="group" aria-label="Versionen">
+      <button type="button" data-ki-zurueck="${ziel}" aria-label="Vorherige Version"${v.index <= 0 || state.ki.laeuft[ziel] ? " disabled" : ""}><i class="fa-solid fa-arrow-rotate-left"></i></button>
+      <span>${v.index + 1} / ${anzahl}</span>
+      <button type="button" data-ki-vor="${ziel}" aria-label="Nächste Version"${v.index >= anzahl - 1 || state.ki.laeuft[ziel] ? " disabled" : ""}><i class="fa-solid fa-arrow-rotate-right"></i></button>
+    </span>`;
+  }
+
+  function kiLinksHtml() {
+    const k = state.ki;
+    if (k.ziel === "caption") {
+      const laenge = (k.entwurf || "").length;
+      const feld = k.tippt
+        ? `<div class="as-ki-text as-ki-text--tippt" aria-live="polite">${kiWoerter(k.entwurf, 0, 0.012)}</div>`
+        : `<textarea class="as-ki-text" data-ki-text aria-label="Caption" spellcheck="true">${esc(k.entwurf || "")}</textarea>`;
+      return `<div class="as-ki-feld${k.laeuft.caption ? " is-denkt" : ""}">${feld}</div>
+        <div class="as-ki-leiste">${kiVersionLeiste("caption")}
+          <span class="as-ki-zaehler${laenge > 3000 ? " is-zuviel" : ""}" data-ki-zaehler>${laenge.toLocaleString("de-DE")} / 3.000</span>
+          <span class="as-ki-status" data-ki-hinweis>${esc(k.hinweis || "")}</span></div>`;
+    }
+    const bildSrc = privatBildSrc();
+    const meta = state.slides[0]?.ki_bild_meta || {};
+    return `<div class="as-ki-bildbox${k.laeuft.bild ? " is-laeuft" : ""}">
+        <div class="as-ki-bildrahmen">${bildSrc ? `<img src="${attr(bildSrc)}" alt="" class="${k.neuesVisual ? "is-neu" : ""}">` : '<div class="as-ki-auftrag">Noch kein Visual.</div>'}
+          ${k.laeuft.bild ? '<span class="as-ki-schimmer" aria-hidden="true"></span><span class="as-ki-laeuft"><i class="fa-solid fa-wand-magic-sparkles"></i>Visual wird erzeugt</span>' : ""}</div>
+        ${state.kiFortschritt?.fehler && !k.laeuft.bild ? `<div class="as-ki-auftrag" style="color:#b91c1c">${esc(state.kiFortschritt.fehler)}</div>` : ""}
+        ${meta.auftrag ? `<div class="as-ki-auftrag">${esc(meta.auftrag)}</div>` : ""}
+      </div>
+      <div class="as-ki-leiste">${kiVersionLeiste("bild")}<span class="as-ki-zaehler">${esc(meta.stil || state.privatBildStil || "")}</span><span class="as-ki-status">${esc(k.hinweisVisual || "")}</span></div>`;
   }
 
   function kiEditorZeichne() {
     const k = state.ki;
     if (!k?.offen) return;
     const eingabeVorher = kiEditor.querySelector("[data-ki-eingabe]")?.value || "";
-    const scrollUnten = true;
-    const bildSrc = privatBildSrc();
-    const meta = state.slides[0]?.ki_bild_meta || {};
-    const laenge = (k.entwurf || "").length;
-    const links = k.ziel === "caption"
-      ? `<textarea class="as-ki-text" data-ki-text aria-label="Caption" spellcheck="true">${esc(k.entwurf || "")}</textarea>
-        <div class="as-ki-leiste"><span class="as-ki-zaehler${laenge > 3000 ? " is-zuviel" : ""}" data-ki-zaehler>${laenge.toLocaleString("de-DE")} / 3.000</span>
-          <span class="as-ki-zaehler" data-ki-hinweis>${esc(k.hinweis || "")}</span>
-          <button type="button" class="as-btn" data-ki-verwerfen${k.entwurf === (state.postText || "") ? " disabled" : ""}>Verwerfen</button>
-          <button type="button" class="as-btn as-btn--primary" data-ki-speichern${k.entwurf === (state.postText || "") || laenge > 3000 ? " disabled" : ""}><i class="fa-solid fa-check"></i>Speichern</button></div>`
-      : `<div class="as-ki-bildbox${state.kiLaeuft ? " is-laeuft" : ""}">
-          ${bildSrc ? `<img src="${attr(bildSrc)}" alt="">` : '<div class="as-ki-auftrag">Noch kein Bild.</div>'}
-          ${state.kiLaeuft ? '<span class="as-ki-laeuft"><span class="roots-loader" style="min-height:0;padding:0;width:auto"></span>Bild wird erzeugt</span>' : ""}
-          ${state.kiFortschritt?.fehler && !state.kiLaeuft ? `<div class="as-ki-auftrag" style="color:#b91c1c">${esc(state.kiFortschritt.fehler)}</div>` : ""}
-          ${meta.auftrag ? `<div class="as-ki-auftrag">${esc(meta.auftrag)}</div>` : ""}
-        </div>
-        <div class="as-ki-leiste"><span class="as-ki-zaehler">${esc(meta.stil || state.privatBildStil || "")}</span></div>`;
-    const verlauf = k.verlauf.length
-      ? k.verlauf.map(kiNachrichtHtml).join("")
-      : `<div class="as-ki-start">${KI_CHIPS[k.ziel].map((t) => `<button type="button" class="as-ki-chip" data-ki-chip="${attr(t)}">${esc(t)}</button>`).join("")}</div>`;
+    const fokusTextfeld = document.activeElement?.matches?.("[data-ki-text]");
+    const auswahl = fokusTextfeld ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+    const verlaufEigen = k.verlauf.map((n, i) => [n, i]).filter(([n]) => n.ziel === k.ziel || n.status === "zusammenfassung");
+    const laeuft = k.laeuft[k.ziel];
+    const verlauf = verlaufEigen.length
+      ? verlaufEigen.map(([n, i]) => kiNachrichtHtml(n, i)).join("")
+      : `<div class="as-ki-start">${KI_CHIPS[k.ziel].map((t, j) => `<button type="button" class="as-ki-chip" data-ki-chip="${attr(t)}" style="animation-delay:${0.05 + j * 0.06}s">${esc(t)}</button>`).join("")}</div>`;
+    const sichtbar = state.answers.profile === "private" && state.answers.asset_type !== "carousel";
     kiEditor.innerHTML = `<div class="as-ki-karte" role="dialog" aria-modal="true" aria-label="Mit KI bearbeiten">
       <header class="as-ki-kopf">
         <h3><i class="fa-solid fa-wand-magic-sparkles"></i>Mit KI bearbeiten</h3>
-        <span class="as-ki-seg" role="group" aria-label="Ziel">
-          <button type="button" data-ki-ziel="caption" aria-pressed="${k.ziel === "caption"}">Caption</button>
-          <button type="button" data-ki-ziel="bild" aria-pressed="${k.ziel === "bild"}"${state.answers.profile === "private" && state.answers.asset_type !== "carousel" ? "" : " disabled"}>Bild</button>
+        <span class="as-ki-seg" role="group" aria-label="Ziel" style="--pos:${k.ziel === "bild" ? 1 : 0}">
+          <span class="as-ki-seg-pille" aria-hidden="true"></span>
+          <button type="button" data-ki-ziel="caption" aria-pressed="${k.ziel === "caption"}">Caption${k.laeuft.caption ? '<span class="as-ki-punkt"></span>' : ""}</button>
+          <button type="button" data-ki-ziel="bild" aria-pressed="${k.ziel === "bild"}"${sichtbar ? "" : " disabled"}>Visual${k.laeuft.bild ? '<span class="as-ki-punkt"></span>' : ""}</button>
         </span>
         ${(() => {
           const [, aktivName, aktivIcon] = KI_MODELLE.find(([id]) => id === k.modell) || KI_MODELLE[0];
@@ -5406,20 +5474,29 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <button type="button" class="as-ki-zu" data-ki-zu aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
       </header>
       <div class="as-ki-rumpf">
-        <section class="as-ki-links">${links}</section>
+        <section class="as-ki-links" data-ki-links>${kiLinksHtml()}</section>
         <section class="as-ki-chat">
-          <div class="as-ki-verlauf" data-ki-verlauf>${verlauf}${k.laeuft ? '<div class="as-ki-msg as-ki-msg--ki"><span class="as-ki-ava"><i class="fa-solid fa-wand-magic-sparkles"></i></span><div class="as-ki-blase as-ki-tippt"><span></span><span></span><span></span></div></div>' : ""}</div>
+          <div class="as-ki-verlauf" data-ki-verlauf>${verlauf}${laeuft ? '<div class="as-ki-msg as-ki-msg--ki"><span class="as-ki-ava as-ki-ava--denkt"><i class="fa-solid fa-wand-magic-sparkles"></i></span><div class="as-ki-blase as-ki-tippt"><span></span><span></span><span></span></div></div>' : ""}</div>
           <form class="as-ki-eingabe" data-ki-form>
-            <textarea rows="1" data-ki-eingabe placeholder="${k.ziel === "bild" ? "Was soll sich am Bild ändern?" : "Was soll sich an der Caption ändern?"}" aria-label="Nachricht an die KI">${esc(eingabeVorher)}</textarea>
-            <button type="submit" class="as-ki-senden" aria-label="Senden"${k.laeuft ? " disabled" : ""}><i class="fa-solid fa-arrow-up"></i></button>
+            <textarea rows="1" data-ki-eingabe placeholder="${k.ziel === "bild" ? "Was soll sich am Visual ändern?" : "Was soll sich an der Caption ändern?"}" aria-label="Nachricht an die KI">${esc(eingabeVorher)}</textarea>
+            <button type="submit" class="as-ki-senden" aria-label="Senden"${laeuft ? " disabled" : ""}><i class="fa-solid fa-arrow-up"></i></button>
           </form>
         </section>
       </div>
     </div>`;
-    // Neue Nachrichten animieren nur einmal.
     k.verlauf.forEach((n) => { n.alt = true; });
     const liste = kiEditor.querySelector("[data-ki-verlauf]");
-    if (liste && scrollUnten) liste.scrollTop = liste.scrollHeight;
+    if (liste) liste.scrollTop = liste.scrollHeight;
+    if (auswahl) {
+      const feld = kiEditor.querySelector("[data-ki-text]");
+      if (feld) { feld.focus(); feld.setSelectionRange(auswahl[0], auswahl[1]); }
+    }
+  }
+
+  /** Nur die linke Seite neu zeichnen (Tippen, Versionen), der Chat bleibt stehen. */
+  function kiLinksZeichne() {
+    const links = kiEditor.querySelector("[data-ki-links]");
+    if (links && state.ki?.offen) links.innerHTML = kiLinksHtml();
   }
 
   function kiZahl(n) { return Math.round(Number(n) || 0).toLocaleString("de-DE"); }
@@ -5441,15 +5518,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <div class="as-ki-perf-zeile"><span>Tokens gesendet / erhalten</span><b>${kiZahl(st.input_tokens)} / ${kiZahl(st.output_tokens)}</b></div>
         <div class="as-ki-perf-zeile"><span>Kontext letzte Anfrage</span><b>${kiZahl(st.letzter_kontext)} von ${kiZahl(fenster)}</b></div>
         <div class="as-ki-balken"><span style="width:${anteil}%; background:${ton}"></span></div>
-        <button type="button" class="as-btn" data-ki-verdichten${k.verlauf.length < 4 || k.laeuft ? " disabled" : ""}><i class="fa-solid fa-compress"></i>Sitzung verdichten</button>
+        <button type="button" class="as-btn" data-ki-verdichten${k.verlauf.length < 4 || k.laeuft.caption || k.laeuft.bild ? " disabled" : ""}><i class="fa-solid fa-compress"></i>Sitzung verdichten</button>
       </div>
     </div>`;
   }
 
   async function kiVerdichten() {
     const k = state.ki;
-    if (!k || k.laeuft) return;
-    k.laeuft = true;
+    if (!k || k.laeuft.caption || k.laeuft.bild) return;
+    k.laeuft.caption = true;
     k.perfOffen = false;
     kiEditorZeichne();
     try {
@@ -5459,45 +5536,155 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     } catch (err) {
       k.verlauf.push({ rolle: "ki", ziel: k.ziel, status: "fehler", text: err && err.message ? fehlerKlartext(String(err.message)) : "Verdichten fehlgeschlagen." });
     }
-    k.laeuft = false;
+    k.laeuft.caption = false;
     kiEditorZeichne();
+  }
+
+  /* Versionen und Autosave */
+
+  let kiSpeicherUhr = 0;
+  function kiAutosave(sofort = false) {
+    clearTimeout(kiSpeicherUhr);
+    const k = state.ki;
+    if (!k || k.entwurf === (state.postText || "")) return;
+    const lauf = async () => {
+      if (!state.ki || state.ki.entwurf === (state.postText || "")) return;
+      const text = state.ki.entwurf;
+      if (text.length > 3000) { state.ki.hinweis = "Zu lang, nicht gespeichert"; kiHinweis(); return; }
+      state.ki.hinweis = "Speichert …";
+      kiHinweis();
+      try {
+        await api("save_caption", { asset_id: state.assetId, post_text: text });
+        state.postText = text;
+        state.toneScore = null;
+        state.ki.hinweis = "Gespeichert";
+        render();
+      } catch (err) {
+        state.ki.hinweis = err && err.message ? fehlerKlartext(String(err.message)) : "Speichern fehlgeschlagen";
+      }
+      kiHinweis();
+    };
+    if (sofort) void lauf(); else kiSpeicherUhr = setTimeout(() => void lauf(), 900);
+  }
+  function kiAutosaveJetzt() { kiAutosave(true); }
+
+  function kiHinweis() {
+    const h = kiEditor.querySelector("[data-ki-hinweis]");
+    if (h) h.textContent = state.ki?.hinweis || "";
+  }
+
+  /** Neue Caption-Fassung: in die Versionen, sichtbar einschreiben, speichern. */
+  function kiCaptionSetzen(text) {
+    const k = state.ki;
+    const v = k.versionen.caption;
+    // Handarbeit seit der letzten Fassung bleibt als eigene Version erhalten.
+    if (v.liste[v.index] !== k.entwurf) { v.liste.splice(v.index + 1); v.liste.push(k.entwurf); v.index = v.liste.length - 1; }
+    v.liste.splice(v.index + 1);
+    v.liste.push(text);
+    v.index = v.liste.length - 1;
+    k.entwurf = text;
+    k.tippt = true;
+    if (k.ziel === "caption") kiLinksZeichne();
+    const woerter = text.split(/\s+/).length;
+    setTimeout(() => {
+      if (!state.ki) return;
+      state.ki.tippt = false;
+      if (state.ki.ziel === "caption") kiLinksZeichne();
+    }, Math.min(2600, woerter * 12 + 500));
+    kiAutosave(true);
+    return v.liste.length;
+  }
+
+  async function kiVersionWechseln(ziel, richtung) {
+    const k = state.ki;
+    const v = k.versionen[ziel];
+    if (ziel === "caption" && v.liste[v.index] !== k.entwurf) { v.liste.splice(v.index + 1); v.liste.push(k.entwurf); v.index = v.liste.length - 1; }
+    const neu = v.index + richtung;
+    if (neu < 0 || neu >= v.liste.length) return;
+    v.index = neu;
+    if (ziel === "caption") {
+      k.entwurf = v.liste[neu];
+      kiLinksZeichne();
+      kiAutosave(true);
+      return;
+    }
+    const stand = v.liste[neu];
+    const slide = state.slides[0];
+    if (!slide || !stand) return;
+    slide.ki_layout = stand.layout;
+    slide.ki_bild_meta = stand.meta;
+    slide.ki_bild_stil = stand.stil;
+    slide.variant = "KI";
+    k.neuesVisual = true;
+    k.hinweisVisual = "Speichert …";
+    render();
+    kiLinksZeichne();
+    k.neuesVisual = false;
+    const src = privatBildSrc();
+    try {
+      if (src) await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild: src, stil_id: stand.stil || "", meta: stand.meta || {} });
+      k.hinweisVisual = "Gespeichert";
+    } catch (err) {
+      k.hinweisVisual = err && err.message ? fehlerKlartext(String(err.message)) : "Speichern fehlgeschlagen";
+    }
+    kiLinksZeichne();
+  }
+
+  /** Nach jedem neuen Visual: als Version merken. */
+  function kiVisualVersionMerken() {
+    const k = state.ki;
+    const slide = state.slides[0];
+    if (!k?.versionen || !slide?.ki_layout) return;
+    const v = k.versionen.bild;
+    if (v.liste[v.index]?.layout === slide.ki_layout) return;
+    v.liste.splice(v.index + 1);
+    v.liste.push({ layout: slide.ki_layout, meta: slide.ki_bild_meta || {}, stil: slide.ki_bild_stil || "" });
+    v.index = v.liste.length - 1;
+    k.neuesVisual = true;
   }
 
   async function kiSenden(text) {
     const k = state.ki;
     const nachricht = String(text || "").trim();
-    if (!k?.offen || !nachricht || k.laeuft) return;
-    k.verlauf.push({ rolle: "nutzer", ziel: k.ziel, text: nachricht });
-    k.laeuft = true;
+    const ziel = k?.ziel;
+    if (!k?.offen || !nachricht || k.laeuft[ziel]) return;
+    k.verlauf.push({ rolle: "nutzer", ziel, text: nachricht });
+    k.laeuft[ziel] = true;
     const feld = kiEditor.querySelector("[data-ki-eingabe]");
-    if (feld) feld.value = "";
+    if (feld) { feld.value = ""; feld.style.height = "auto"; }
     kiEditorZeichne();
     try {
-      const res = await api("ki_chat", { asset_id: state.assetId, ziel: k.ziel, nachricht, modell: k.modell, caption: k.entwurf });
-      k.verlauf.push({ rolle: "ki", ziel: k.ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null });
+      const res = await api("ki_chat", { asset_id: state.assetId, ziel, nachricht, modell: k.modell, caption: k.entwurf });
+      const eintrag = { rolle: "ki", ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null };
       if (res?.stats) k.stats = res.stats;
+      // Caption-Vorschlaege landen direkt im Editor, mit Version und Autosave.
+      if (eintrag.caption) eintrag.version = kiCaptionSetzen(eintrag.caption);
+      k.verlauf.push(eintrag);
     } catch (err) {
-      k.verlauf.push({ rolle: "ki", ziel: k.ziel, status: "fehler", text: err && err.message ? fehlerKlartext(String(err.message)) : "Die KI hat nicht geantwortet." });
+      k.verlauf.push({ rolle: "ki", ziel, status: "fehler", text: err && err.message ? fehlerKlartext(String(err.message)) : "Die KI hat nicht geantwortet." });
     }
-    k.laeuft = false;
+    k.laeuft[ziel] = false;
+    if (!state.ki?.offen) return;
+    // Nur neu zeichnen, ohne die laufende Schreib-Animation links zu stoeren.
+    const tippt = k.tippt;
+    k.tippt = false;
     kiEditorZeichne();
-    kiEditor.querySelector("[data-ki-eingabe]")?.focus();
+    if (tippt && k.ziel === "caption") { k.tippt = true; kiLinksZeichne(); }
+    if (k.ziel === ziel) kiEditor.querySelector("[data-ki-eingabe]")?.focus();
   }
 
-  async function kiCaptionSpeichern() {
+  async function kiVisualErzeugen(n) {
     const k = state.ki;
-    if (!k || k.entwurf.length > 3000) return;
-    k.hinweis = "Wird gespeichert";
+    if (!n?.bild_auftrag || k.laeuft.bild) return;
+    k.laeuft.bild = true;
+    k.hinweisVisual = "";
     kiEditorZeichne();
-    try {
-      await api("save_caption", { asset_id: state.assetId, post_text: k.entwurf });
-      state.postText = k.entwurf;
-      k.hinweis = "Gespeichert";
-      render();
-    } catch (err) {
-      k.hinweis = err && err.message ? fehlerKlartext(String(err.message)) : "Speichern fehlgeschlagen";
-    }
+    await bauePrivatBild({ auftrag: n.bild_auftrag, anpassen: n.bild_modus === "anpassen" });
+    k.laeuft.bild = false;
+    kiVisualVersionMerken();
+    if (!state.kiFortschritt?.fehler) k.hinweisVisual = "Gespeichert";
     kiEditorZeichne();
+    k.neuesVisual = false;
   }
 
   kiEditor.addEventListener("click", (event) => {
@@ -5519,23 +5706,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     if (k.modellOffen) { k.modellOffen = false; kiEditorZeichne(); }
     const ziel = event.target.closest("[data-ki-ziel]");
-    if (ziel && !ziel.disabled) { k.ziel = ziel.getAttribute("data-ki-ziel"); kiEditorZeichne(); return; }
+    if (ziel && !ziel.disabled) { kiAutosaveJetzt(); k.ziel = ziel.getAttribute("data-ki-ziel"); k.tippt = false; kiEditorZeichne(); return; }
     const chip = event.target.closest("[data-ki-chip]");
     if (chip) { void kiSenden(chip.getAttribute("data-ki-chip")); return; }
-    const ueber = event.target.closest("[data-ki-uebernehmen]");
-    if (ueber) {
-      const n = k.verlauf[Number(ueber.getAttribute("data-ki-uebernehmen"))];
-      if (n?.caption) { k.entwurf = n.caption; k.ziel = "caption"; k.hinweis = "Übernommen, noch nicht gespeichert"; kiEditorZeichne(); }
-      return;
-    }
-    const bild = event.target.closest("[data-ki-bild]");
-    if (bild && !bild.disabled) {
-      const n = k.verlauf[Number(bild.getAttribute("data-ki-bild"))];
-      if (n?.bild_auftrag) { k.ziel = "bild"; void bauePrivatBild({ auftrag: n.bild_auftrag, anpassen: n.bild_modus === "anpassen" }); }
-      return;
-    }
-    if (event.target.closest("[data-ki-verwerfen]")) { k.entwurf = state.postText || ""; k.hinweis = ""; kiEditorZeichne(); return; }
-    if (event.target.closest("[data-ki-speichern]")) { void kiCaptionSpeichern(); }
+    const zurueck = event.target.closest("[data-ki-zurueck]");
+    if (zurueck && !zurueck.disabled) { void kiVersionWechseln(zurueck.getAttribute("data-ki-zurueck"), -1); return; }
+    const vor = event.target.closest("[data-ki-vor]");
+    if (vor && !vor.disabled) { void kiVersionWechseln(vor.getAttribute("data-ki-vor"), 1); return; }
+    const bild = event.target.closest("[data-ki-visual]");
+    if (bild && !bild.disabled) { void kiVisualErzeugen(k.verlauf[Number(bild.getAttribute("data-ki-visual"))]); }
   });
   kiEditor.addEventListener("input", (event) => {
     const k = state.ki;
@@ -5545,23 +5724,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       k.hinweis = "";
       const z = kiEditor.querySelector("[data-ki-zaehler]");
       if (z) { z.textContent = `${k.entwurf.length.toLocaleString("de-DE")} / 3.000`; z.classList.toggle("is-zuviel", k.entwurf.length > 3000); }
-      const unveraendert = k.entwurf === (state.postText || "");
-      const sp = kiEditor.querySelector("[data-ki-speichern]");
-      if (sp) sp.disabled = unveraendert || k.entwurf.length > 3000;
-      const vw = kiEditor.querySelector("[data-ki-verwerfen]");
-      if (vw) vw.disabled = unveraendert;
-      const h = kiEditor.querySelector("[data-ki-hinweis]");
-      if (h) h.textContent = "";
+      kiHinweis();
+      kiAutosave();
     }
     if (event.target.matches("[data-ki-eingabe]")) {
       event.target.style.height = "auto";
       event.target.style.height = `${Math.min(160, event.target.scrollHeight)}px`;
     }
-  });
-  kiEditor.addEventListener("change", (event) => {
-    if (!event.target.matches("[data-ki-modell]") || !state.ki) return;
-    state.ki.modell = event.target.value;
-    try { localStorage.setItem("sl-ki-modell", state.ki.modell); } catch { /* egal */ }
   });
   kiEditor.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -5634,14 +5803,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <header class="as-bildinfo-kopf"><h3>${esc(m.stil || state.privatBildStil || "Bild")}</h3>
         <button type="button" class="as-bildinfo-zu" data-act="bild-info-zu" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button></header>
       <img class="as-bildinfo-bild" src="${attr(src)}" alt="">
-      <div class="as-bildinfo-text"><span>Bildauftrag</span><p>${esc(m.auftrag || "Nicht gespeichert")}</p></div>
+      <div class="as-bildinfo-text"><span>Visual-Auftrag</span><p>${esc(m.auftrag || "Nicht gespeichert")}</p></div>
       <div class="as-bildinfo-raster">
         ${zeile("Stil", m.stil || state.privatBildStil)}${zeile("Modell", m.modell)}${zeile("Format", m.format)}
-        ${zeile("CI-Prüfung", ci)}${zeile("Kosten Bild", euro(m.kosten_eur))}${zeile("Erstellt", datum)}
+        ${zeile("CI-Prüfung", ci)}${zeile("Kosten Visual", euro(m.kosten_eur))}${zeile("Erstellt", datum)}
       </div>
       <footer class="as-bildinfo-fuss">
-        <button type="button" class="as-btn as-btn--primary" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-rotate-right"></i>Bild neu generieren</button>
-        <button type="button" class="as-btn" data-act="privat-bild-laden"><i class="fa-solid fa-download"></i>Bild herunterladen</button>
+        <button type="button" class="as-btn as-btn--primary" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-rotate-right"></i>Visual neu generieren</button>
+        <button type="button" class="as-btn" data-act="privat-bild-laden"><i class="fa-solid fa-download"></i>Visual herunterladen</button>
       </footer>`;
     bildInfo.hidden = false;
   }
@@ -5673,8 +5842,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         : state.privatBildCi ? `CI-Prüfung: ${state.privatBildCi}` : "";
       const vorhanden = Boolean(privatBildSrc());
       const knoepfe = state.assetId
-        ? `<button type="button" class="as-btn" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i>${vorhanden ? "Bild neu generieren" : "Bild generieren"}</button>`
-          + (vorhanden ? `<button type="button" class="as-btn" data-act="privat-bild-laden"><i class="fa-solid fa-image"></i>Bild herunterladen</button>` : "")
+        ? `<button type="button" class="as-btn" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i>${vorhanden ? "Visual neu generieren" : "Bild generieren"}</button>`
+          + (vorhanden ? `<button type="button" class="as-btn" data-act="privat-bild-laden"><i class="fa-solid fa-image"></i>Visual herunterladen</button>` : "")
         : "";
       return knoepfe || bildZeile ? `<div class="as-group"><span>Bild${state.privatBildStil ? ` · ${esc(state.privatBildStil)}` : ""}</span>${knoepfe}${bildZeile ? `<p class="as-savehint">${esc(bildZeile)}</p>` : ""}</div>` : "";
     }
@@ -5923,10 +6092,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Entwurf steht, Bild fehlt und nichts laeuft: das Bild ist gescheitert.
     // Fehlerzeichen statt Zauberstab, darunter der Weg zum neuen Versuch.
     if (!state.kiLaeuft && state.assetId && state.step !== "form" && state.answers.asset_type !== "carousel") {
-      const grund = state.kiFortschritt?.fehler || "Das Bild konnte nicht erstellt werden.";
+      const grund = state.kiFortschritt?.fehler || "Das Visual konnte nicht erstellt werden.";
       return `<div class="li li-ki-fehler" role="img" aria-label="Bild konnte nicht generiert werden" style="width:1080px;height:1080px;position:relative;overflow:hidden;background:#f8fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:44px;padding:0 120px;text-align:center;font-family:inherit">
       <span style="width:190px;height:190px;border-radius:50%;background:#fee2e2;display:grid;place-items:center"><i class="fa-solid fa-triangle-exclamation" style="font-size:84px;color:#dc2626"></i></span>
-      <span style="font-weight:700;font-size:46px;line-height:1.25;font-family:inherit;color:#0f172a">Bild nicht erstellt</span>
+      <span style="font-weight:700;font-size:46px;line-height:1.25;font-family:inherit;color:#0f172a">Visual nicht erstellt</span>
       <span style="font-weight:400;font-size:32px;line-height:1.45;font-family:inherit;color:#475569;max-width:780px">${esc(grund)}</span>
       <button type="button" class="as-ki-nochmal" data-act="ki-visual" style="pointer-events:auto;font-weight:600;font-size:36px;line-height:1;font-family:inherit;padding:30px 60px;border:0;border-radius:999px;background:#206efb;color:#fff;box-shadow:0 14px 34px rgba(32,110,251,.32);cursor:pointer;display:inline-flex;align-items:center;gap:20px"><i class="fa-solid fa-rotate-right"></i>Erneut versuchen</button>
     </div>`;

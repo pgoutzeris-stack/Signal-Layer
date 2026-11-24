@@ -26,7 +26,7 @@ export function kiChatModell(gewuenscht: unknown): string {
 
 export const KI_CAPTION_MAX = 3000;
 export const KI_NACHRICHT_MAX = 2000;
-export const KI_VERLAUF_MAX = 30;
+export const KI_VERLAUF_MAX = 60;
 
 export type KiNachricht = { rolle: "nutzer" | "ki"; ziel: KiZiel; text: string; status?: string; zeit?: string };
 
@@ -112,7 +112,10 @@ export function kiChatPrompt(k: KiKontext): { system: string; prompt: string } {
     "Antworte nur mit JSON.",
   ].join("\n");
   const s = k.signal, a = k.artikel, f = k.antworten;
-  const verlauf = k.verlauf.slice(-16).map((n) => `${n.rolle === "nutzer" ? "NUTZER" : "KI"} [${n.ziel}]${n.status ? ` (${n.status})` : ""}: ${kurz(n.text, 1500)}`).join("\n");
+  // Getrennte Chats: der eigene Verlauf voll, vom anderen Ziel nur die letzten Schritte.
+  const eigen = k.verlauf.filter((n) => n.ziel === k.ziel || n.status === "zusammenfassung").slice(-16);
+  const anderes = k.verlauf.filter((n) => n.ziel !== k.ziel && n.status !== "zusammenfassung").slice(-4);
+  const verlauf = [...anderes, ...eigen].map((n) => `${n.rolle === "nutzer" ? "NUTZER" : "KI"} [${n.ziel}]${n.status ? ` (${n.status})` : ""}: ${kurz(n.text, 1500)}`).join("\n");
   const prompt = [
     "SIGNAL:",
     `Überschrift: ${kurz(s.headline_de, 300)}`,
@@ -151,7 +154,8 @@ export function kiChatPrompt(k: KiKontext): { system: string; prompt: string } {
 export function kiChatErgebnis(roh: unknown, ziel: KiZiel): { status: string; antwort: string; caption: string; bild_modus: string; bild_auftrag: string; zeige: string } {
   const r = (roh && typeof roh === "object" ? roh : {}) as Record<string, unknown>;
   const status = ["vorschlag", "rueckfrage", "abgelehnt"].includes(String(r.status)) ? String(r.status) : "rueckfrage";
-  let caption = ziel === "caption" && status === "vorschlag" ? String(r.caption || "").trim().slice(0, KI_CAPTION_MAX) : "";
+  // Manche Modelle packen die Caption in einen Codeblock.
+  let caption = ziel === "caption" && status === "vorschlag" ? String(r.caption || "").trim().replace(/^```[a-z]*\s*\n?|\n?```\s*$/g, "").trim().slice(0, KI_CAPTION_MAX) : "";
   caption = caption.replace(/\s[—–]\s/g, ". ");
   const bildAuftrag = ziel === "bild" && status === "vorschlag" ? String(r.bild_auftrag || "").trim().slice(0, 1500) : "";
   const bildModus = bildAuftrag ? (r.bild_modus === "anpassen" ? "anpassen" : "neu") : "";

@@ -3628,6 +3628,8 @@ type ModelUsage = {
   input: number; cachedInput: number; output: number; thinking: number; total: number;
   /** Vom Anbieter gemeldeter Preis in USD (Perplexity). Hat Vorrang vor der Preistabelle. */
   costUsd?: number;
+  /** Entwurf, dem die Kosten gehoeren, wenn kein Aufrufkontext gesetzt ist (KI-Editor, Bild). */
+  assetId?: string;
 };
 
 const EMPTY_MODEL_USAGE: ModelUsage = { input: 0, cachedInput: 0, output: 0, thinking: 0, total: 0 };
@@ -3864,7 +3866,7 @@ async function recordStandaloneAiUsage(
       operation, model, status, attempt: 1, prompt_version: assetUsageContext.getStore()?.promptVersion || ASSET_PROMPT_VERSION,
       article_id: assetUsageContext.getStore()?.articleId || null,
       person_research_id: assetUsageContext.getStore()?.personResearchId || null,
-      asset_id: currentUsageAssetId(), step: step || standaloneSchritt(operation),
+      asset_id: usage.assetId || currentUsageAssetId(), step: step || standaloneSchritt(operation),
       input_tokens: usage.input + usage.cachedInput, cached_input_tokens: usage.cachedInput,
       output_tokens: usage.output, thinking_tokens: usage.thinking, total_tokens: usage.total,
       ...costs, ...grounding, error_code: errorCode || null,
@@ -9022,7 +9024,7 @@ Deno.serve(async (req: Request) => {
           maxOutputTokens: 4_000, temperature: 0.6, thinkingLevel: "low", reasoningEffort: "low",
           attempts: 2, timeoutMs: 90_000,
         });
-        const kcKosten = await recordStandaloneAiUsage("asset_ki_chat", modell, antwort.ok ? "success" : "error", antwort.usage);
+        const kcKosten = await recordStandaloneAiUsage("asset_ki_chat", modell, antwort.ok ? "success" : "error", { ...antwort.usage, assetId: kcId });
         if (!antwort.ok) return errorResponse(origin, `Die KI hat nicht geantwortet: ${antwort.error.slice(0, 160)}`, 502);
         let roh: unknown = null;
         try { roh = JSON.parse(antwort.text.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { roh = null; }
@@ -9054,7 +9056,7 @@ Deno.serve(async (req: Request) => {
         const neuerVerlauf = [...verlauf,
           { rolle: "nutzer", ziel, text: nachricht, zeit: jetzt },
           { rolle: "ki", ziel, text: [ergebnis.antwort, ergebnis.caption ? `[Caption-Vorschlag]\n${ergebnis.caption}` : "", ergebnis.bild_auftrag ? `[Bildauftrag ${ergebnis.bild_modus}]\n${ergebnis.bild_auftrag}` : ""].filter(Boolean).join("\n\n"), status: ergebnis.status, zeit: jetzt },
-        ].slice(-30);
+        ].slice(-60);
         // Betriebsprobe (Cron-Secret mit probe) schreibt keinen Verlauf.
         if (!(isScheduled && body.probe === true)) {
           await admin.schema("signal_layer").from("generated_assets").update({ payload: { ...kcPayload, ki_chat: neuerVerlauf, ki_chat_stats: stats } }).eq("id", kcId);
@@ -9075,7 +9077,7 @@ Deno.serve(async (req: Request) => {
         const modell = "gemini-3.5-flash";
         const { system, prompt } = kiVerdichtenPrompt(verlauf);
         const res = await callJsonModel({ model: modell, apiKey: await getGeminiKey(), systemText: system, prompt, schema: KI_VERDICHTEN_SCHEMA, maxOutputTokens: 1_200, temperature: 0.2, thinkingLevel: "low", attempts: 2, timeoutMs: 40_000 });
-        const kosten = await recordStandaloneAiUsage("asset_ki_chat", modell, res.ok ? "success" : "error", res.usage);
+        const kosten = await recordStandaloneAiUsage("asset_ki_chat", modell, res.ok ? "success" : "error", { ...res.usage, assetId: vdId });
         let text = "";
         try { text = String(JSON.parse(res.text).zusammenfassung || "").slice(0, 1500); } catch { text = ""; }
         if (!text) return errorResponse(origin, "Die Zusammenfassung ist fehlgeschlagen.", 502);
@@ -9148,7 +9150,7 @@ Deno.serve(async (req: Request) => {
         const tm = tsJson?.usageMetadata || {};
         const tsKosten = await recordStandaloneAiUsage("asset_tone_score", MARKEN_CHECK_MODELL, tsUrteil ? "success" : "error", {
           input: Number(tm.promptTokenCount || 0), cachedInput: 0, output: Number(tm.candidatesTokenCount || 0),
-          thinking: Number(tm.thoughtsTokenCount || 0), total: Number(tm.totalTokenCount || 0),
+          thinking: Number(tm.thoughtsTokenCount || 0), total: Number(tm.totalTokenCount || 0), assetId: tsId,
         });
         if (!tsUrteil) return corsResponse(origin, { score: null, grund: "Bewertung gerade nicht verfügbar." });
         const ergebnis = {
@@ -9272,7 +9274,7 @@ Deno.serve(async (req: Request) => {
           try { brief = JSON.parse(String(briefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { brief = null; }
           bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_BRIEF_MODELL, brief ? "success" : "error", {
             input: Number(bm.promptTokenCount || 0), cachedInput: 0, output: Number(bm.candidatesTokenCount || 0),
-            thinking: Number(bm.thoughtsTokenCount || 0), total: Number(bm.totalTokenCount || 0),
+            thinking: Number(bm.thoughtsTokenCount || 0), total: Number(bm.totalTokenCount || 0), assetId: pbAssetId,
           });
           const ausBrief = privatBildAuftragAusBrief(brief, briefModus);
           if (ausBrief) auftrag = ausBrief;
@@ -9311,7 +9313,7 @@ Deno.serve(async (req: Request) => {
             if (!antwort.ok) {
               const koerper = await antwort.text().catch(() => "");
               pbFehlerText = `HTTP ${antwort.status} ${String(geminiResearchFehler(antwort.status, koerper).google || "").slice(0, 160)}`;
-              bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_MODELL, "error", undefined, 0, `http_${antwort.status}`);
+              bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_MODELL, "error", { ...EMPTY_MODEL_USAGE, assetId: pbAssetId }, 0, `http_${antwort.status}`);
               if (antwort.status === 429 || antwort.status >= 500) { await warte(4_000); continue; }
               break;
             }
@@ -9319,7 +9321,7 @@ Deno.serve(async (req: Request) => {
             const meta = json?.usageMetadata || {};
             bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_MODELL, "success", {
               input: Number(meta.promptTokenCount || 0), cachedInput: 0, output: Number(meta.candidatesTokenCount || 0),
-              thinking: Number(meta.thoughtsTokenCount || 0), total: Number(meta.totalTokenCount || 0),
+              thinking: Number(meta.thoughtsTokenCount || 0), total: Number(meta.totalTokenCount || 0), assetId: pbAssetId,
             });
             const geliefert = parseGeminiImage(json);
             if (geliefert) roh = `data:${geliefert.mime};base64,${geliefert.data}`;
@@ -9342,7 +9344,7 @@ Deno.serve(async (req: Request) => {
           const pm = pruefJson?.usageMetadata || {};
           bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild_ci", BILDSTIL_PRUEF_MODELL, urteil ? "success" : "error", {
             input: Number(pm.promptTokenCount || 0), cachedInput: 0, output: Number(pm.candidatesTokenCount || 0),
-            thinking: Number(pm.thoughtsTokenCount || 0), total: Number(pm.totalTokenCount || 0),
+            thinking: Number(pm.thoughtsTokenCount || 0), total: Number(pm.totalTokenCount || 0), assetId: pbAssetId,
           });
           // Wie im Bildtool: ist die Pruefung nicht erreichbar, bleibt das Bild,
           // markiert als ungeprueft. Verstoss ist nur ein gezeichnetes ROOTS-Zeichen.
