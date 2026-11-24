@@ -64,6 +64,22 @@ export const KI_SCHRANKEN = [
   "EINSTELLUNGEN DER PERSON: Tone of Voice und Bildstil gehören der Person und dürfen jederzeit gezeigt werden. Fragt sie danach, setze zeige auf tone_of_voice oder bildstil, sonst immer keine; das System blendet den genauen Text ein. Fasse ihn in antwort in einem Satz zusammen, statt ihn abzuschreiben.",
 ];
 
+/** Dieselben Schranken fuer Menschen formuliert: das Studio zeigt sie offen. */
+export const KI_SCHRANKEN_ANZEIGE: { id: string; titel: string; text: string }[] = [
+  { id: "thema", titel: "Nur dieser Beitrag", text: "Die KI bearbeitet ausschließlich Caption und Visual dieses Beitrags zu diesem Signal. Andere Themen lehnt sie ab." },
+  { id: "fakten", titel: "Keine erfundenen Fakten", text: "Zahlen, Zitate, Studien und Quellen kommen nur aus Artikel und Signal oder von dir. Unbelegtes fügt sie nicht ein." },
+  { id: "personen", titel: "Fair zu Personen und Firmen", text: "Keine Beleidigung, keine unbelegten Vorwürfe, nichts Diskriminierendes oder Politisches." },
+  { id: "vertraulichkeit", titel: "Vertraulichkeit", text: "Keine ROOTS-Kunden, Projekte oder internen Zahlen, die nicht im Artikel stehen." },
+  { id: "stimme", titel: "Dein Tone of Voice", text: "Änderungen bleiben in deinem Tone of Voice, außer du willst ausdrücklich etwas anderes." },
+  { id: "format", titel: "LinkedIn-Format", text: "Immer die vollständige Caption, höchstens 3.000 Zeichen, keine Gedankenstriche." },
+  { id: "visual", titel: "Regeln für Visuals", text: "Keine echten, erkennbaren Personen (Persönlichkeitsrecht). Marken nur passend zum Signal. Kein ROOTS-Logo, keine Sätze oder Zahlen im Visual. Der Bildstil bleibt fest." },
+  { id: "sicherheit", titel: "Schutz vor fremden Anweisungen", text: "Anweisungen, die im Artikeltext stehen, befolgt die KI nicht." },
+];
+
+export function kiSchrankeAnzeige(id: unknown) {
+  return KI_SCHRANKEN_ANZEIGE.find((r) => r.id === String(id || "")) || null;
+}
+
 export const KI_CHAT_SCHEMA = {
   type: "OBJECT",
   properties: {
@@ -73,8 +89,9 @@ export const KI_CHAT_SCHEMA = {
     bild_modus: { type: "STRING", enum: ["anpassen", "neu", "keiner"] },
     bild_auftrag: { type: "STRING" },
     zeige: { type: "STRING", enum: ["keine", "tone_of_voice", "bildstil"] },
+    regel: { type: "STRING", enum: ["keine", "thema", "fakten", "personen", "vertraulichkeit", "stimme", "format", "visual", "sicherheit"] },
   },
-  required: ["status", "antwort", "caption", "bild_modus", "bild_auftrag", "zeige"],
+  required: ["status", "antwort", "caption", "bild_modus", "bild_auftrag", "zeige", "regel"],
 };
 
 export type KiKontext = {
@@ -109,6 +126,7 @@ export function kiChatPrompt(k: KiKontext): { system: string; prompt: string } {
         "Die Motividee bleibt eine plakative Kampagnenidee mit einem dominanten Blickfang, sofort verständlich, mit erkennbarem Markenprodukt, wenn das Signal eine Marke hergibt.",
       ].join(" "),
     "antwort: ein bis drei Sätze an den Nutzer, was du geändert hast oder warum nicht. Nie die ganze Caption in antwort wiederholen.",
+    "regel: Lehnst du etwas ganz oder teilweise wegen einer REGEL ab oder schränkst es ein, nenne die Regel (thema, fakten, personen, vertraulichkeit, stimme, format, visual, sicherheit); fragt der Nutzer, warum du etwas nicht darfst, ebenso. Sonst keine. Das System zeigt die Regel dann offen als ROOTS-Guardrail; sag in antwort klar, dass es eine ROOTS-Regel ist.",
     "Antworte nur mit JSON.",
   ].join("\n");
   const s = k.signal, a = k.artikel, f = k.antworten;
@@ -151,7 +169,7 @@ export function kiChatPrompt(k: KiKontext): { system: string; prompt: string } {
 
 
 /** Antwort des Modells pruefen und kappen. */
-export function kiChatErgebnis(roh: unknown, ziel: KiZiel): { status: string; antwort: string; caption: string; bild_modus: string; bild_auftrag: string; zeige: string } {
+export function kiChatErgebnis(roh: unknown, ziel: KiZiel): { status: string; antwort: string; caption: string; bild_modus: string; bild_auftrag: string; zeige: string; regel: string } {
   const r = (roh && typeof roh === "object" ? roh : {}) as Record<string, unknown>;
   const status = ["vorschlag", "rueckfrage", "abgelehnt"].includes(String(r.status)) ? String(r.status) : "rueckfrage";
   // Manche Modelle packen die Caption in einen Codeblock.
@@ -162,7 +180,8 @@ export function kiChatErgebnis(roh: unknown, ziel: KiZiel): { status: string; an
   const antwort = String(r.antwort || "").trim().slice(0, 800)
     || (status === "abgelehnt" ? "Dabei kann ich nicht helfen. Ich bearbeite nur Caption und Bild dieses Beitrags." : "");
   const zeige = r.zeige === "tone_of_voice" || r.zeige === "bildstil" ? String(r.zeige) : "";
-  return { status: status === "vorschlag" && !caption && !bildAuftrag ? (zeige ? "info" : "rueckfrage") : status, antwort, caption, bild_modus: bildModus, bild_auftrag: bildAuftrag, zeige };
+  const regel = KI_SCHRANKEN_ANZEIGE.some((x) => x.id === r.regel) ? String(r.regel) : "";
+  return { status: status === "vorschlag" && !caption && !bildAuftrag ? (zeige ? "info" : "rueckfrage") : status, antwort, caption, bild_modus: bildModus, bild_auftrag: bildAuftrag, zeige, regel };
 }
 
 /** Verdichten: der lange Verlauf wird zu einer Zusammenfassung, die als erste Nachricht stehen bleibt. */

@@ -1679,13 +1679,19 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 @keyframes asKiAtmen{0%,100%{transform:scale(1); opacity:1;} 50%{transform:scale(1.03); opacity:.85;}}
 @keyframes asKiRing{from{transform:scale(1); opacity:.28;} to{transform:scale(1.45); opacity:0;}}
 @media (prefers-reduced-motion:reduce){#as-overlay .as-ki-ava--denkt, #as-overlay .as-ki-ava--denkt::before, #as-overlay .as-ki-ava--denkt::after{animation:none;}}
-#as-overlay .as-ki-bildrahmen{position:relative; border-radius:10px; overflow:hidden; line-height:0;}
+#as-overlay .as-ki-bildrahmen{position:relative; display:inline-block; border-radius:10px; overflow:hidden; line-height:0;}
 #as-overlay .as-ki-bildrahmen img{max-width:min(100%,560px); max-height:58vh; border-radius:10px;}
 #as-overlay .as-ki-bildrahmen img.is-neu{animation:asKiNeu .7s cubic-bezier(.2,.8,.2,1) both;}
 @keyframes asKiNeu{from{opacity:0; transform:scale(.96); filter:blur(8px);} to{opacity:1; transform:none; filter:none;}}
 #as-overlay .as-ki-schimmer{position:absolute; inset:0; background:linear-gradient(110deg, transparent 25%, rgba(255,255,255,.55) 50%, transparent 75%); background-size:250% 100%; animation:asKiWelle 1.4s linear infinite;}
-#as-overlay .as-ki-bildbox .as-ki-laeuft{position:absolute; left:50%; bottom:16px; transform:translateX(-50%); line-height:1; background:#fff; padding:9px 14px; border-radius:999px; box-shadow:0 6px 20px rgba(15,23,42,.15);}
+#as-overlay .as-ki-bildbox .as-ki-laeuft{position:absolute; left:0; right:0; bottom:16px; margin:0 auto; width:max-content; transform:none; white-space:nowrap; justify-content:center; line-height:1; background:#fff; padding:9px 14px; border-radius:999px; box-shadow:0 6px 20px rgba(15,23,42,.15);}
 #as-overlay .as-ki-chip{animation:asKiWort .4s cubic-bezier(.2,.8,.2,1) both;}
+#as-overlay .as-ki-chip--regel{display:inline-flex; align-items:center; gap:7px; border-color:#e2e8f0; color:#475569;}
+#as-overlay .as-ki-regel{margin-top:10px; display:flex; flex-direction:column; gap:8px;}
+#as-overlay .as-ki-regel-zeile{display:flex; gap:10px; align-items:flex-start; background:#fff; border-radius:12px; padding:10px 12px; box-shadow:0 1px 3px rgba(15,23,42,.08); animation:asKiWort .45s cubic-bezier(.2,.8,.2,1) both;}
+#as-overlay .as-ki-regel-ico{width:26px; height:26px; flex:0 0 auto; border-radius:8px; display:grid; place-items:center; background:#eff6ff; color:#206efb; font-size:12px;}
+#as-overlay .as-ki-regel-zeile b{display:block; font-size:12.5px; color:#0f172a;}
+#as-overlay .as-ki-regel-zeile p{margin:2px 0 0; font-size:12.5px; line-height:1.5; color:#475569; white-space:normal;}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
@@ -5386,7 +5392,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     kiEditor.hidden = false;
     kiEditorZeichne();
     // Server vorwaermen, damit die erste Antwort nicht auf den Kaltstart wartet.
-    void api("ki_chat_modelle", {}).catch(() => {});
+    void api("ki_chat_modelle", {}).then((res) => { if (Array.isArray(res?.regeln) && state.ki) state.ki.regeln = res.regeln; }).catch(() => {});
     requestAnimationFrame(() => kiEditor.querySelector("[data-ki-eingabe]")?.focus());
   }
 
@@ -5426,6 +5432,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         ? `<div class="as-ki-karte-bilder">${kt.bilder.map((src, j) => `<img src="${attr(src)}" alt="" style="animation-delay:${0.12 + j * 0.09}s">`).join("")}</div>` : "";
       const zeilen = String(kt.text || "").split("\n").map((z, j) => `<span style="animation-delay:${Math.min(1.6, 0.05 + j * 0.035)}s">${esc(z) || "&nbsp;"}</span>`).join("");
       extra += `<div class="as-ki-einst"><span class="as-ki-tag"><i class="fa-solid ${kt.art === "bildstil" ? "fa-palette" : "fa-feather"}"></i>${esc(kt.titel || "")}</span>${bilder}<div class="as-ki-einst-text">${zeilen}</div></div>`;
+    }
+    if (n.guardrail || n.regeln) {
+      const liste = n.regeln || [n.guardrail];
+      extra += `<div class="as-ki-regel">${liste.map((r, j) => `<div class="as-ki-regel-zeile" style="animation-delay:${0.15 + j * 0.08}s"><span class="as-ki-regel-ico"><i class="fa-solid fa-shield-halved"></i></span><div><b>${esc(r.titel)}</b><p>${esc(r.text)}</p></div></div>`).join("")}</div>`;
     }
     const text = n.alt ? esc(n.text) : kiWoerter(n.text);
     return `<div class="as-ki-msg as-ki-msg--ki${n.status === "abgelehnt" ? " as-ki-msg--abgelehnt" : ""}${n.status === "fehler" ? " as-ki-msg--abgelehnt" : ""}${alt}"><span class="as-ki-ava"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
@@ -5474,7 +5484,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const laeuft = k.laeuft[k.ziel];
     const verlauf = verlaufEigen.length
       ? verlaufEigen.map(([n, i]) => kiNachrichtHtml(n, i)).join("")
-      : `<div class="as-ki-start">${KI_CHIPS[k.ziel].map((t, j) => `<button type="button" class="as-ki-chip" data-ki-chip="${attr(t)}" style="animation-delay:${0.05 + j * 0.06}s${k.chipsGezeigt?.[k.ziel] ? ";animation:none" : ""}">${esc(t)}</button>`).join("")}</div>`;
+      : `<div class="as-ki-start">${KI_CHIPS[k.ziel].map((t, j) => `<button type="button" class="as-ki-chip" data-ki-chip="${attr(t)}" style="animation-delay:${0.05 + j * 0.06}s${k.chipsGezeigt?.[k.ziel] ? ";animation:none" : ""}">${esc(t)}</button>`).join("")}<button type="button" class="as-ki-chip as-ki-chip--regel" data-ki-regeln style="animation-delay:.3s${k.chipsGezeigt?.[k.ziel] ? ";animation:none" : ""}"><i class="fa-solid fa-shield-halved"></i>ROOTS-Guardrails</button></div>`;
     const sichtbar = state.answers.profile === "private" && state.answers.asset_type !== "carousel";
     const erstmals = !kiEditor.firstElementChild;
     kiEditor.innerHTML = `<div class="as-ki-karte${erstmals ? " is-auf" : ""}" role="dialog" aria-modal="true" aria-label="Mit KI bearbeiten">
@@ -5679,7 +5689,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     kiEditorZeichne();
     try {
       const res = await api("ki_chat", { asset_id: state.assetId, ziel, nachricht, modell: k.modell, caption: k.entwurf });
-      const eintrag = { rolle: "ki", ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null };
+      const eintrag = { rolle: "ki", ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null, guardrail: res?.guardrail || null };
       if (res?.stats) k.stats = res.stats;
       // Caption-Vorschlaege landen direkt im Editor, mit Version und Autosave.
       if (eintrag.caption) eintrag.version = kiCaptionSetzen(eintrag.caption);
@@ -5738,6 +5748,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (k.modellOffen) { k.modellOffen = false; kiEditorZeichne(); }
     const ziel = event.target.closest("[data-ki-ziel]");
     if (ziel && !ziel.disabled) { kiAutosaveJetzt(); k.ziel = ziel.getAttribute("data-ki-ziel"); k.tippt = false; kiEditorZeichne(); return; }
+    if (event.target.closest("[data-ki-regeln]")) {
+      const regeln = k.regeln || [];
+      k.verlauf.push({ rolle: "nutzer", ziel: k.ziel, text: "Welche ROOTS-Guardrails gelten?" });
+      k.verlauf.push({ rolle: "ki", ziel: k.ziel, status: "info", text: regeln.length ? "Diese Regeln gelten für jede Anfrage im KI-Editor:" : "Die Regeln werden gerade geladen, bitte gleich noch einmal.", regeln: regeln.length ? regeln : null });
+      kiEditorZeichne();
+      return;
+    }
     const chip = event.target.closest("[data-ki-chip]");
     if (chip) { void kiSenden(chip.getAttribute("data-ki-chip")); return; }
     const zurueck = event.target.closest("[data-ki-zurueck]");

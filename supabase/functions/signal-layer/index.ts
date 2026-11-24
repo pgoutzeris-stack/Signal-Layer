@@ -2,7 +2,7 @@ import { articleReadingText } from "./article-reading-text.mjs";
 import { baueDebugMail, baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
-import { KI_CAPTION_MAX, KI_CHAT_MODELLE, KI_CHAT_SCHEMA, KI_NACHRICHT_MAX, KI_VERDICHTEN_SCHEMA, kiChatErgebnis, kiChatModell, kiChatPrompt, kiKontextFenster, kiVerdichtenPrompt, kiVerlauf, type KiZiel } from "./ki-editor.ts";
+import { KI_CAPTION_MAX, KI_CHAT_MODELLE, KI_CHAT_SCHEMA, KI_NACHRICHT_MAX, KI_VERDICHTEN_SCHEMA, KI_SCHRANKEN_ANZEIGE, kiSchrankeAnzeige, kiChatErgebnis, kiChatModell, kiChatPrompt, kiKontextFenster, kiVerdichtenPrompt, kiVerlauf, type KiZiel } from "./ki-editor.ts";
 import {
   BILDSTIL_BRIEF_MODELL, BILDSTIL_BRIEF_SCHEMA, MARKEN_CHECK_MODELL, MARKEN_CHECK_SCHEMA, markenCheckPrompt, privatBildAuftragAusBrief, privatBildBriefPrompt, BRIEF_MODI, BRIEF_STANDARD, type BriefModus,
   BILDSTIL_CI_PRUEFUNG, BILDSTIL_CI_SCHEMA, BILDSTIL_MODELL, BILDSTIL_PRUEF_MODELL, BILDSTIL_STANDARD, BILDTOOL_BASIS,
@@ -8977,7 +8977,7 @@ Deno.serve(async (req: Request) => {
       // Bildstil fuer das Bild privater LinkedIn-Assets. Die Stile kommen aus
       // dem Image-Generation-Tool, Vorschau sind dessen Serienbilder.
       case "ki_chat_modelle": {
-        return corsResponse(origin, { modelle: KI_CHAT_MODELLE });
+        return corsResponse(origin, { modelle: KI_CHAT_MODELLE, regeln: KI_SCHRANKEN_ANZEIGE });
       }
 
       case "ki_chat": {
@@ -9061,7 +9061,7 @@ Deno.serve(async (req: Request) => {
         if (!(isScheduled && body.probe === true)) {
           await admin.schema("signal_layer").from("generated_assets").update({ payload: { ...kcPayload, ki_chat: neuerVerlauf, ki_chat_stats: stats } }).eq("id", kcId);
         }
-        return corsResponse(origin, { ...ergebnis, karte, modell, kosten_eur: kcKosten, stats });
+        return corsResponse(origin, { ...ergebnis, karte, guardrail: kiSchrankeAnzeige(ergebnis.regel), modell, kosten_eur: kcKosten, stats });
       }
 
       case "ki_chat_verdichten": {
