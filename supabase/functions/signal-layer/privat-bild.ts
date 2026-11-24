@@ -162,7 +162,32 @@ export function istPrivatBild(wert: unknown): wert is string {
  * Im Bildtool tippt man einen kurzen Auftrag mit einer Idee; diesen Auftrag
  * schreibt hier ein Textmodell aus Beitrag und Stilvorgabe.
  */
-export const BILDSTIL_BRIEF_MODELL = "gemini-2.5-flash";
+// 24.11.2026: von gemini-2.5-flash gehoben, damit Markenbezug und klare
+// Bildidee zuverlaessiger kommen.
+export const BILDSTIL_BRIEF_MODELL = "gemini-3.5-flash";
+/** Schneller Vorab-Check, ob ein Signal eine Marke fuers Bild hergibt. */
+export const MARKEN_CHECK_MODELL = "gemini-3.5-flash-lite";
+
+export const MARKEN_CHECK_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    markenbezug: { type: "BOOLEAN" },
+    marken: { type: "STRING" },
+  },
+  required: ["markenbezug", "marken"],
+};
+
+export function markenCheckPrompt(titel: string, text: string): { system: string; user: string } {
+  return {
+    system: [
+      "Prüfe, ob ein Nachrichtenartikel eine konkrete Konsumgüter-, Handels- oder Unternehmensmarke enthält, die man in einem Werbebild sinnvoll zeigen kann: ein erkennbares Produkt, eine Verpackung, ein Laden oder ein Markenzeichen, das zur Kernaussage gehört.",
+      "markenbezug ist false, wenn es um Branchen, Rohstoffpreise, Studien, Politik, Personen oder Managementthemen ohne zeigbares Markenprodukt geht, oder wenn eine Marke nur am Rand erwähnt wird.",
+      "marken: die zeigbaren Marken, höchstens zwei, kommagetrennt, sonst leer.",
+      "Antworte nur mit JSON.",
+    ].join("\n"),
+    user: `TITEL: ${String(titel || "").slice(0, 300)}\n\nTEXT:\n${String(text || "").slice(0, 4000)}`,
+  };
+}
 
 /** voll: ausfuehrliche Szene; leicht: nur Thema, Aussage, Marken; idee: ein Satz Bildidee. */
 export type BriefModus = "voll" | "leicht" | "idee" | "plakativ";
@@ -176,7 +201,7 @@ export function privatBildBriefPrompt(stylePrompt: string, postText: string, tit
   const motivRegel = modus === "plakativ"
     ? [
       "Feld motiv: genau ein Satz, höchstens 25 Wörter, eine plakative Kampagnenidee.",
-      "Wähle eine dieser Darstellungsformen: ein Produkt der genannten Marke in einem überraschenden Kontext; ein Alltagsgegenstand, inszeniert wie ein wertvolles Objekt; ein klarer Vergleich zweier Zustände; eine surreale Metapher mit ungewöhnlichem Größenverhältnis; visueller Humor.",
+      "Gibt es eine Marke in marken_und_produkte, zeigt die Idee ihr erkennbares Produkt in einer überraschenden Handlung oder einem überraschenden Kontext. Nur ohne Marke: ein generisches Produkt oder Alltagsgegenstand, inszeniert wie ein wertvolles Objekt, oder ein klarer Vergleich zweier Zustände. Visueller Humor ist willkommen.",
       "Verboten: dokumentarische Szene, Sportfoto, Menschen, die einfach die Tätigkeit aus dem Beitrag ausüben, Logos auf Banden, Wänden oder Netzen als Hauptidee, Publikum, leuchtende Portale, Science-Fiction- oder Neon-Effekte.",
       "Die Idee muss in einer kleinen Smartphone-Vorschau ohne Text verstanden werden und einen zweiten Gedanken auslösen.",
       "Die Motividee zeigt höchstens die zwei Marken aus marken_und_produkte, jede nur einmal, und keine Logo-Sammlung.",
@@ -190,8 +215,12 @@ export function privatBildBriefPrompt(stylePrompt: string, postText: string, tit
   const system = [
     "Du bist Art Director für persönliche LinkedIn-Beiträge und schreibst den Bildauftrag für einen Bildgenerator.",
     "Der Bildgenerator arbeitet nach der STILVORGABE unten. Entwickle genau eine Bildidee, die diese Stilvorgabe gut umsetzen kann, mit einem dominanten Blickfang und wenigen unterstützenden Elementen.",
-    "Die Idee übersetzt die Kernaussage in eine konkrete, überraschende Szene: zum Beispiel ein Produkt in einem unerwarteten Kontext, ein klarer Vergleich zweier Zustände oder eine fotografisch glaubwürdige Metapher.",
-    "Verboten: Wimmelbild, Sammlung aller Marken oder Argumente des Beitrags, Gruppe jubelnder Menschen als Ersatz für eine Idee, Schilder oder Bildschirme mit Text, Headlines, Zahlen.",
+    "Die Idee übersetzt die Kernaussage in eine konkrete, sofort verständliche Szene. Wer das Bild in einer Sekunde ansieht, versteht ohne Text, worum es geht.",
+    "MARKEN ZUERST: Kommt im Beitrag eine echte Marke mit zeigbarem Produkt vor, die zur Kernaussage gehört, steht ein klar erkennbares Produkt dieser Marke im Zentrum: typische Verpackung, Form, Farben und Markenname auf dem Produkt, so wie es im Regal steht. Die Bildidee baut auf diesem Produkt auf.",
+    "Vorbild für eine gute Idee: Beitrag über Produkte mit Zusatznutzen, Bild zeigt einen Protein-Joghurt als muskulösen Becher, der einen schlichten Joghurt aus dem Regal schiebt. Ein Produkt, eine Handlung, sofort verstanden.",
+    "Gibt der Beitrag keine solche Marke her, zeige ein generisches Produkt ohne Markennamen. Erfinde nie Marken, Fantasienamen oder Logos.",
+    "Vermeide abstrakte Metaphern, die man erst erklären muss (Waagen, Nebelgestalten, Symbole), wenn ein Produkt die Aussage tragen kann.",
+    "Verboten: Wimmelbild, Sammlung aller Marken oder Argumente des Beitrags, Gruppe jubelnder Menschen als Ersatz für eine Idee, Schilder, Preisschilder oder Bildschirme mit Text, Headlines, Zahlen, Eurobeträge.",
     "Marken: höchstens zwei, nur solche, die im Beitrag vorkommen und für die Kernaussage zentral sind. Keine erfundenen Marken.",
     motivRegel,
     "Antworte nur mit JSON.",

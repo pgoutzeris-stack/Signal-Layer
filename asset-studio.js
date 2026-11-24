@@ -4573,8 +4573,33 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     zeichneForm();
   }
 
+  /** Hinweis vor dem Entwurf: Signal ohne zeigbare Marke. true = trotzdem erstellen. */
+  function markenHinweis() {
+    return new Promise((fertig) => {
+      const box = document.createElement("div");
+      box.className = "as-crop";
+      box.setAttribute("role", "dialog");
+      box.setAttribute("aria-modal", "true");
+      box.innerHTML = `<div class="as-crop-card as-marken-card">
+        <h3><i class="fa-solid fa-triangle-exclamation" style="color:#d97706;margin-right:8px;"></i>Signal ohne Markenbezug</h3>
+        <p style="margin:0;font-size:14px;color:#475569;line-height:1.5;">In diesem Signal steckt keine Marke, die sich im Bild sinnvoll zeigen lässt. Das Bild wird dadurch voraussichtlich schwächer.</p>
+        <footer class="as-crop-actions">
+          <button type="button" class="as-btn" data-wahl="nein">Abbrechen</button>
+          <button type="button" class="as-btn as-btn--primary" data-wahl="ja">Trotzdem erstellen</button>
+        </footer></div>`;
+      const ende = (wert) => { box.remove(); fertig(wert); };
+      box.addEventListener("click", (e) => {
+        const knopf = e.target.closest("[data-wahl]");
+        if (knopf) ende(knopf.dataset.wahl === "ja");
+        else if (e.target === box) ende(false);
+      });
+      (document.getElementById("as-overlay") || document.body).appendChild(box);
+      box.querySelector('[data-wahl="ja"]').focus();
+    });
+  }
+
   async function generate() {
-    if (state.busy) return;
+    if (state.busy || state.markenLaeuft) return;
     readForm();
     if (isMemo && state.answers.memo_track === "cmo100") {
       formFehler("memo_track", "Das 100-Tage-CMO-Dokument ist noch in Ausarbeitung. Es ist kein Executive Memo. Bitte das thematische Executive Memo wählen.");
@@ -4609,6 +4634,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           return;
         }
       }
+    }
+    // Privatprofil mit Bild: gibt das Signal keine zeigbare Marke her, wird das
+    // Bild schwaecher. Vorher fragen, Pruefung scheitert still.
+    if (!isMemo && articleId && state.answers.profile === "private"
+      && (state.answers.asset_type !== "carousel" || state.kiVisual) && state.markenOk !== articleId) {
+      state.markenLaeuft = true;
+      const check = await api("marken_check", { article_id: articleId }).catch(() => null);
+      const weiter = !(check?.geprueft && !check.markenbezug) || await markenHinweis();
+      state.markenLaeuft = false;
+      if (!weiter) return;
+      state.markenOk = articleId;
     }
     const gewaehlt = state.answers.variant;
     const anzahl = !isMemo && state.answers.asset_type === "carousel" ? carouselRequestedSlides(state.answers) : 1;

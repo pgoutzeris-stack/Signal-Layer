@@ -3,7 +3,7 @@ import { baueDebugMail, baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
 import {
-  BILDSTIL_BRIEF_MODELL, BILDSTIL_BRIEF_SCHEMA, privatBildAuftragAusBrief, privatBildBriefPrompt, BRIEF_MODI, BRIEF_STANDARD, type BriefModus,
+  BILDSTIL_BRIEF_MODELL, BILDSTIL_BRIEF_SCHEMA, MARKEN_CHECK_MODELL, MARKEN_CHECK_SCHEMA, markenCheckPrompt, privatBildAuftragAusBrief, privatBildBriefPrompt, BRIEF_MODI, BRIEF_STANDARD, type BriefModus,
   BILDSTIL_CI_PRUEFUNG, BILDSTIL_CI_SCHEMA, BILDSTIL_MODELL, BILDSTIL_PRUEF_MODELL, BILDSTIL_STANDARD, BILDTOOL_BASIS,
   type BildStil, bildstilSystemInstruction, bildVorschauUrls, istPrivatBild, linkedinBildStile, parseMasterLogo,
   parseMasterStile, privatBildAuftrag, privatBildLayout, serienRefPfad, waehleBildStil,
@@ -8921,6 +8921,41 @@ Deno.serve(async (req: Request) => {
 
       // Bildstil fuer das Bild privater LinkedIn-Assets. Die Stile kommen aus
       // dem Image-Generation-Tool, Vorschau sind dessen Serienbilder.
+      case "marken_check": {
+        // Vor dem Privat-Entwurf: gibt das Signal eine zeigbare Marke fuers Bild her?
+        if (!auth?.userId && !isScheduled) return errorResponse(origin, "Nicht angemeldet", 401);
+        const mcId = String(body.article_id || "");
+        if (!mcId) return errorResponse(origin, "article_id fehlt");
+        const { data: mcArtikel } = await getAdminClient().schema("signal_layer").from("articles")
+          .select("title, title_de, content_de, cleaned_content, content, primary_company").eq("id", mcId).maybeSingle();
+        if (!mcArtikel) return errorResponse(origin, "Artikel nicht gefunden", 404);
+        const mcKey = await getGeminiKey().catch(() => "");
+        if (!mcKey) return corsResponse(origin, { geprueft: false });
+        const { system, user } = markenCheckPrompt(
+          String(mcArtikel.title_de || mcArtikel.title || ""),
+          `${mcArtikel.primary_company ? `Hauptunternehmen laut Erfassung: ${mcArtikel.primary_company}\n` : ""}${String(mcArtikel.content_de || mcArtikel.cleaned_content || mcArtikel.content || "")}`,
+        );
+        const mcAntwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${MARKEN_CHECK_MODELL}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": mcKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: "user", parts: [{ text: user }] }],
+            generationConfig: { temperature: 0, thinkingConfig: { thinkingLevel: "minimal" }, responseMimeType: "application/json", responseSchema: MARKEN_CHECK_SCHEMA },
+          }),
+        }, 15_000).catch(() => null);
+        const mcJson = mcAntwort?.ok ? await mcAntwort.json().catch(() => null) : null;
+        let mcUrteil: Record<string, unknown> | null = null;
+        try { mcUrteil = JSON.parse(String(mcJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { mcUrteil = null; }
+        const mm = mcJson?.usageMetadata || {};
+        await recordStandaloneAiUsage("asset_privat_bild", MARKEN_CHECK_MODELL, mcUrteil ? "success" : "error", {
+          input: Number(mm.promptTokenCount || 0), cachedInput: 0, output: Number(mm.candidatesTokenCount || 0),
+          thinking: Number(mm.thoughtsTokenCount || 0), total: Number(mm.totalTokenCount || 0),
+        });
+        if (!mcUrteil) return corsResponse(origin, { geprueft: false });
+        return corsResponse(origin, { geprueft: true, markenbezug: mcUrteil.markenbezug === true, marken: String(mcUrteil.marken || "").slice(0, 200) });
+      }
+
       case "list_bild_stile": {
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
         const [{ stile }, gewaehlt] = await Promise.all([bildStile(), gewaehlterBildStil(auth.userId)]);
@@ -8982,9 +9017,9 @@ Deno.serve(async (req: Request) => {
             body: JSON.stringify({
               systemInstruction: { parts: [{ text: system }] },
               contents: [{ role: "user", parts: [{ text: user }] }],
-              generationConfig: { temperature: 0.8, thinkingConfig: { thinkingBudget: 512 }, responseMimeType: "application/json", responseSchema: BILDSTIL_BRIEF_SCHEMA },
+              generationConfig: { temperature: 0.8, thinkingConfig: { thinkingLevel: "low" }, responseMimeType: "application/json", responseSchema: BILDSTIL_BRIEF_SCHEMA },
             }),
-          }, 25_000).catch(() => null);
+          }, 40_000).catch(() => null);
           const briefJson = briefAntwort?.ok ? await briefAntwort.json().catch(() => null) : null;
           const bm = briefJson?.usageMetadata || {};
           try { brief = JSON.parse(String(briefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { brief = null; }
