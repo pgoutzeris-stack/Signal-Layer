@@ -4,6 +4,14 @@
 // Modi (einfach und erweitert) ohne Eingriff in deren Render-Logik greifen.
 
 const CACHE_MS = 60_000;
+const CONTENT_CACHE_KEY = "sl-content-v1";
+
+function inhalteAusSpeicher() {
+  try {
+    const liste = JSON.parse(localStorage.getItem(CONTENT_CACHE_KEY) || "null");
+    return Array.isArray(liste) ? liste : null;
+  } catch { return null; }
+}
 let callApi = null;
 let escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 let oeffneEntwurf = null;
@@ -19,6 +27,10 @@ export async function ladeInhalte(neu = false) {
       const res = await callApi("list_contents", {});
       cache.daten = Array.isArray(res?.contents) ? res.contents : [];
       cache.zeit = Date.now();
+      try {
+        const text = JSON.stringify(cache.daten);
+        if (text.length < 2_000_000) localStorage.setItem(CONTENT_CACHE_KEY, text);
+      } catch { /* Speicher voll oder gesperrt */ }
       return cache.daten;
     } finally {
       cache.laeuft = null;
@@ -207,9 +219,7 @@ function zeichneListe(root, liste) {
   const teile = [...gruppen.values()].map((liste) => {
     if (liste.length === 1) return zeile(liste[0], false);
     const erste = liste[0];
-    const personen = new Set(liste.map((i) => i.author?.user_id).filter(Boolean)).size;
-    const zahl = `${liste.length} Entwürfe${personen > 1 ? ` von ${personen} Personen` : ""}`;
-    return `<div class="cl-gruppe"><div class="cl-gruppe-kopf"><b>${escapeHtml(erste.signal_title || erste.article_title || "Signal")}</b><span>${escapeHtml(zahl)}</span></div>${liste.map((i) => zeile(i, true)).join("")}</div>`;
+    return `<div class="cl-gruppe"><div class="cl-gruppe-kopf"><b>${escapeHtml(erste.signal_title || erste.article_title || "Signal")}</b></div>${liste.map((i) => zeile(i, true)).join("")}</div>`;
   });
   ziel.innerHTML = `<div class="cl-zeile cl-kopf"><span>Content</span><span>Bereich</span><span>Erstellt von</span><span>Übernommen von</span><span>Stand</span></div>${teile.join("")}`;
 }
@@ -221,13 +231,29 @@ export async function zeigeContent(neu = true) {
   const root = contentRoot;
   if (!root) return;
   const ziel = root.querySelector(".cl-liste");
-  if (!contentDaten.length) ziel.innerHTML = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
+  // Letzter Stand sofort, frische Daten danach.
+  if (!contentDaten.length) {
+    const gespeichert = cache.daten || inhalteAusSpeicher();
+    if (gespeichert?.length) {
+      contentDaten = gespeichert;
+      personenFuellen(root);
+      zeichneListe(root, contentDaten);
+    } else {
+      ziel.innerHTML = '<div class="roots-loader" role="status" aria-label="Wird geladen"></div>';
+    }
+  }
   try {
     contentDaten = await ladeInhalte(neu);
   } catch (err) {
+    if (contentDaten.length) return;
     ziel.innerHTML = `<div class="cl-leer">${escapeHtml(err?.message || "Content konnte nicht geladen werden.")}</div>`;
     return;
   }
+  personenFuellen(root);
+  zeichneListe(root, contentDaten);
+}
+
+function personenFuellen(root) {
   const personen = new Map();
   contentDaten.forEach((i) => [i.author, i.owner].forEach((p) => { if (p?.user_id) personen.set(p.user_id, p.name); }));
   const select = root.querySelector('[data-cl="person"]');
@@ -235,7 +261,6 @@ export async function zeigeContent(neu = true) {
     .map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join("")}`;
   if (!personen.has(contentFilter.person)) contentFilter.person = "all";
   select.value = contentFilter.person;
-  zeichneListe(root, contentDaten);
 }
 
 function contentAnsichtBauen(root) {
@@ -280,4 +305,7 @@ export function initContentListe(optionen) {
   css();
   document.querySelectorAll("#view-results .signal-toolbar, #view-simple-results .signal-toolbar").forEach(leisteEinbauen);
   if (contentRoot) contentAnsichtBauen(contentRoot);
+  // Im Hintergrund vorladen: Content und "Mit Entwurf" sind dann sofort da.
+  const spaeter = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
+  spaeter(() => { void ladeInhalte().catch(() => {}); });
 }

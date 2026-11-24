@@ -17,7 +17,7 @@ import { matchesDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs
 
 import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261013-5";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { beiSignalFilter, signalFilterAktiv, signalPasst } from "./content-liste.mjs?v=20261124-11";
+import { beiSignalFilter, signalFilterAktiv, signalPasst } from "./content-liste.mjs?v=20261124-12";
 import { articleDisplayTitle } from "./article-title.mjs?v=20261013-5";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20261013-5";
 
@@ -326,11 +326,24 @@ function renderLane(lane) {
   count.title = filtersActive && signals.length !== total
     ? `${signals.length.toLocaleString("de-DE")} sichtbar · ${total.toLocaleString("de-DE")} insgesamt`
     : `${total.toLocaleString("de-DE")} Signale insgesamt`;
+  // Erst die sichtbaren Karten, der Rest im naechsten freien Moment.
+  const ERSTE = 16;
+  const lauf = (renderLauf[lane] = (renderLauf[lane] || 0) + 1);
   list.innerHTML = signals.length
-    ? signals.map(signalCard).join("")
+    ? signals.slice(0, ERSTE).map(signalCard).join("")
     : `<div class="track-card-empty">Keine Signale entsprechen den gewählten Filtern.</div>`;
-  if (signals.length) void paintAssetAuthors(list, ctx.callApi, esc);
+  if (!signals.length) return;
+  const rest = signals.slice(ERSTE);
+  const fertig = () => { if (renderLauf[lane] === lauf) void paintAssetAuthors(list, ctx.callApi, esc); };
+  if (!rest.length) { fertig(); return; }
+  const spaeter = window.requestIdleCallback || ((fn) => setTimeout(fn, 30));
+  spaeter(() => {
+    if (renderLauf[lane] !== lauf) return;
+    list.insertAdjacentHTML("beforeend", rest.map(signalCard).join(""));
+    fertig();
+  });
 }
+const renderLauf = {};
 
 function renderRejected(articles, rejectLabels) {
   if (!els.rejectedList) return;
@@ -407,21 +420,70 @@ async function loadVersions() {
   } catch (_error) { /* Auswahl bleibt bei der aktuellen Pipeline */ }
 }
 
+// Letzter Stand der Signale im Browser: beim Oeffnen sofort sichtbar, dann
+// im Hintergrund aktualisiert. Nur fuer den aktuellen Regelstand.
+const SIGNAL_CACHE_KEY = "sl-simple-signale-v1";
+
+function signaleAusCache() {
+  if (selectedVersion) return null;
+  try {
+    const c = JSON.parse(localStorage.getItem(SIGNAL_CACHE_KEY) || "null");
+    return c && Array.isArray(c.marketing) && Array.isArray(c.sales) ? c : null;
+  } catch { return null; }
+}
+
+function signaleInCache() {
+  if (selectedVersion) return;
+  try {
+    const text = JSON.stringify({ t: Date.now(), marketing: signalsByLane.marketing, sales: signalsByLane.sales });
+    if (text.length < 3_500_000) localStorage.setItem(SIGNAL_CACHE_KEY, text);
+  } catch { /* Speicher voll oder gesperrt */ }
+}
+
+function zeichneLanes() {
+  refreshFilterOptions();
+  renderLane("marketing");
+  renderLane("sales");
+}
+
 async function loadResults({ keepStatus = false } = {}) {
   const versionFilter = selectedVersion ? { pipeline_version: selectedVersion } : {};
+  const leer = !signalsByLane.marketing.length && !signalsByLane.sales.length;
+  if (leer) {
+    const cache = signaleAusCache();
+    if (cache) {
+      signalsByLane.marketing = cache.marketing;
+      signalsByLane.sales = cache.sales;
+      zeichneLanes();
+    } else {
+      // Ohne Cache: erst die obersten 20 je Spalte, der Rest kommt danach.
+      void Promise.all([
+        ctx.callApi("list_simple_signals", { lane: "marketing", limit: 20, ...versionFilter }),
+        ctx.callApi("list_simple_signals", { lane: "sales", limit: 20, ...versionFilter }),
+      ]).then(([m, v]) => {
+        if (signalsByLane.marketing.length || signalsByLane.sales.length) return;
+        signalsByLane.marketing = m.signals || [];
+        signalsByLane.sales = v.signals || [];
+        zeichneLanes();
+      }).catch(() => {});
+    }
+  }
   try {
-    const [marketing, sales, rejected, status] = await Promise.all([
+    const lanes = Promise.all([
       ctx.callApi("list_simple_signals", { lane: "marketing", limit: 200, ...versionFilter }),
       ctx.callApi("list_simple_signals", { lane: "sales", limit: 200, ...versionFilter }),
+    ]).then(([marketing, sales]) => {
+      signalsByLane.marketing = marketing.signals || [];
+      signalsByLane.sales = sales.signals || [];
+      zeichneLanes();
+      signaleInCache();
+    });
+    const [rejected, status] = await Promise.all([
       ctx.callApi("list_simple_rejected", { limit: 60, reasons: ["zu_unsicher", "evidenz_fehlt", "familie_nicht_erlaubt"], ...versionFilter }),
       ctx.callApi("get_simple_run_status"),
+      lanes,
     ]);
-    signalsByLane.marketing = marketing.signals || [];
-    signalsByLane.sales = sales.signals || [];
     rejectedRows = rejected.articles || [];
-    refreshFilterOptions();
-    renderLane("marketing");
-    renderLane("sales");
     renderRejected(rejectedRows, simpleRules?.reject_labels);
     if (!keepStatus) {
       lastRun = status.run || null;

@@ -1472,6 +1472,11 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
   #as-overlay .as-progress-bar span{transition:none;}
 }
 
+#as-overlay .as-oeffnet{grid-column:1 / -1; width:100%; height:100%; min-height:70vh; display:flex; align-items:center; justify-content:center; gap:24px; padding:40px; background:#f8fafc;}
+#as-overlay .as-oeffnet-kachel{background:#fff; border-radius:16px; box-shadow:0 4px 14px rgba(15,23,42,.05); display:flex; align-items:center; justify-content:center;}
+#as-overlay .as-oeffnet-kachel--bild{width:min(440px, 42vw); aspect-ratio:4 / 5;}
+#as-overlay .as-oeffnet-kachel--text{width:min(340px, 30vw); align-self:stretch; max-height:calc(min(440px, 42vw) * 1.25); margin:auto 0;}
+#as-overlay .as-oeffnet-kachel .roots-loader{min-height:0; padding:0;}
 #as-overlay .as-loader{display:flex; align-items:center; justify-content:center; min-height:280px;}
 #as-overlay .as-loader::after{
   content:""; width:34px; height:34px; border-radius:50%;
@@ -2667,7 +2672,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function render() {
     if (state.oeffnet) {
-      shell.innerHTML = `<div class="as-loader" style="flex:1; min-height:60vh;" role="status" aria-label="Entwurf wird geöffnet"></div>`;
+      // Leere Kacheln wie im fertigen Entwurf, darin der Ladekreis der App.
+      shell.innerHTML = `<div class="as-oeffnet" role="status" aria-label="Entwurf wird geöffnet">
+        <div class="as-oeffnet-kachel as-oeffnet-kachel--bild"><div class="roots-loader"></div></div>
+        ${isMemo ? "" : '<div class="as-oeffnet-kachel as-oeffnet-kachel--text"><div class="roots-loader"></div></div>'}
+      </div>`;
       return;
     }
     if (state.nurLesen && state.step === "edit") state.step = "draft";
