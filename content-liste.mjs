@@ -53,8 +53,8 @@ function css() {
 .cl-view-head h2{margin:0;}
 .cl-bar{flex-wrap:wrap;}
 .cl-bar select{height:34px; padding:0 12px; border:1px solid var(--line); border-radius:999px; background:var(--bg); color:var(--ink); font:inherit; font-size:.72rem; font-weight:650; cursor:pointer;}
-.cl-liste{display:flex; flex-direction:column; background:var(--bg); border:1px solid var(--line); border-radius:14px; overflow:hidden;}
-.cl-zeile{display:grid; grid-template-columns:minmax(0,1fr) 120px 150px 150px 96px; gap:14px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); cursor:pointer; text-align:left; background:transparent; border-left:0; border-right:0; border-top:0; font:inherit; color:var(--ink); width:100%;}
+.cl-liste{display:flex; flex-direction:column; background:var(--bg); border:1px solid var(--line); border-radius:14px; overflow:hidden; box-shadow:var(--shadow-dash);}
+.cl-zeile{display:grid; font-size:inherit; grid-template-columns:minmax(0,1fr) 120px 150px 150px 96px; gap:14px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); cursor:pointer; text-align:left; background:transparent; border-left:0; border-right:0; border-top:0; font:inherit; color:var(--ink); width:100%;}
 .cl-zeile:last-child{border-bottom:0;}
 .cl-zeile:hover{background:color-mix(in srgb, var(--brand) 4%, var(--bg));}
 .cl-kopf{cursor:default; font-size:.7rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; background:var(--surface,#f8fafc);}
@@ -203,19 +203,24 @@ export async function zeigeContent(neu = true) {
 }
 
 function contentAnsichtBauen(root) {
-  root.innerHTML = `<div class="cl-view-head"><h2>Content <span class="track-count cl-zahl">0</span></h2></div>
-    <nav class="signal-toolbar cl-bar" aria-label="Content filtern">
-      <span class="signal-toolbar-label"><i class="fa-solid fa-pen-nib"></i> Content</span>
-      <div class="signal-toolbar-controls" style="flex-wrap:wrap;">
-        <label class="cl-suche cl-suche--offen"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-cl="text" placeholder="Content suchen" aria-label="Content suchen"></label>
-        <select data-cl="lane" aria-label="Bereich"><option value="all">Marketing und Sales</option><option value="marketing">Marketing</option><option value="sales">Sales</option></select>
-        <select data-cl="kind" aria-label="Art"><option value="all">Alle Arten</option><option value="linkedin">LinkedIn</option><option value="memo">Executive Memo</option></select>
-        <select data-cl="status" aria-label="Stand"><option value="all">Entwurf und übernommen</option><option value="draft">Nur Entwürfe</option><option value="owned">Nur übernommen</option></select>
-        <select data-cl="person" aria-label="Person"><option value="all">Alle Personen</option></select>
+  root.innerHTML = `<nav class="signal-toolbar" aria-label="Content filtern">
+      <span class="signal-toolbar-label"><i class="fa-solid fa-pen-nib"></i> Content <span class="track-count cl-zahl">0</span></span>
+      <div class="signal-toolbar-controls">
+        <select class="signal-toolbar-select" id="cl-lane" data-cl="lane" aria-label="Bereich filtern"><option value="all">Marketing und Sales</option><option value="marketing">Marketing</option><option value="sales">Sales</option></select>
+        <select class="signal-toolbar-select" id="cl-kind" data-cl="kind" aria-label="Art filtern"><option value="all">Alle Arten</option><option value="linkedin">LinkedIn</option><option value="memo">Executive Memo</option></select>
+        <select class="signal-toolbar-select" id="cl-stand" data-cl="status" aria-label="Stand filtern"><option value="all">Entwurf und übernommen</option><option value="draft">Nur Entwürfe</option><option value="owned">Nur übernommen</option></select>
+        <select class="signal-toolbar-select" id="cl-person" data-cl="person" aria-label="Person filtern"><option value="all">Alle Personen</option></select>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; flex:0 0 auto;">
+        <label class="cl-suche" title="Content suchen"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-cl="text" placeholder="Content suchen" aria-label="Content suchen"></label>
       </div>
     </nav>
     <div class="cl-liste"></div>`;
-  root.querySelector('[data-cl="text"]').addEventListener("input", (e) => { contentFilter.text = e.target.value; zeichneListe(root, contentDaten); });
+  root.querySelector('[data-cl="text"]').addEventListener("input", (e) => {
+    contentFilter.text = e.target.value;
+    e.target.closest(".cl-suche").classList.toggle("is-aktiv", Boolean(e.target.value.trim()));
+    zeichneListe(root, contentDaten);
+  });
   root.querySelectorAll("select[data-cl]").forEach((sel) => {
     sel.value = contentFilter[sel.dataset.cl];
     sel.addEventListener("change", () => { contentFilter[sel.dataset.cl] = sel.value; zeichneListe(root, contentDaten); });

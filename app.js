@@ -17,7 +17,7 @@ import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20261124-3";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261124-3";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { initContentListe, zeigeContent } from "./content-liste.mjs?v=20261124-4";
+import { initContentListe, zeigeContent } from "./content-liste.mjs?v=20261124-5";
 
 let sb = null;
 let sources = [];
@@ -5309,8 +5309,8 @@ export function initApp(client) {
     cacheEls();
     bindUi();
     mountResultsHeader();
-    enhanceHeaderSelects();
     // Suche und Entwurf-Filter in der Signal-Leiste, Ansicht "Content".
+    // Vor enhanceHeaderSelects, damit die Content-Filter dieselben Dropdowns bekommen.
     initContentListe({
       callApi,
       escapeHtml,
@@ -5326,6 +5326,7 @@ export function initApp(client) {
         openSettingsPanel,
       }),
     });
+    enhanceHeaderSelects();
     bindSourceErrorTooltip();
     // Das Dashboard holt seine Signalzahlen selbst, fuer den gewaehlten Zeitraum.
     initPerformanceDashboard({ client: sb, callApi, toast, openSettingsPanel, escapeHtml });
