@@ -17,6 +17,7 @@ import { matchesDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs
 
 import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261013-5";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
+import { beiSignalFilter, signalFilterAktiv, signalPasst } from "./content-liste.mjs?v=20261124-6";
 import { articleDisplayTitle } from "./article-title.mjs?v=20261013-5";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20261013-5";
 
@@ -254,7 +255,8 @@ function visibleSignals(lane) {
     const topicOk = state.topics.length === 0 || state.topics.includes(signalThema(signal).id);
     const sourceOk = state.sources.length === 0 || state.sources.includes(signalSourceName(signal));
     const companyOk = companyMatches(signal);
-    return topicOk && sourceOk && companyOk;
+    return topicOk && sourceOk && companyOk
+      && signalPasst(signal.article_id || signal.article?.id, articleDisplayTitle(signal.article || {}, signal));
   });
   return [...filtered].sort((a, b) => {
     if (state.sort === "newest") return signalDate(b) - signalDate(a) || Number(b.score || 0) - Number(a.score || 0);
@@ -272,7 +274,8 @@ function visibleSignals(lane) {
 }
 
 function resultFiltersActive() {
-  return ctx.viewState.topics.length > 0
+  return signalFilterAktiv()
+    || ctx.viewState.topics.length > 0
     || ctx.viewState.sources.length > 0
     || companyFilterState.selected.length > 0;
 }
@@ -482,6 +485,7 @@ function bindUi() {
     renderLane("sales");
   };
   [els.topicFilter, els.sourceFilter, els.sort].forEach((control) => control?.addEventListener("change", rerender));
+  beiSignalFilter(() => { renderLane("marketing"); renderLane("sales"); });
   bindDropdownSearch(els.companyFilterSearch?.closest(".roots-select-search"));
   els.companyFilterSearch?.addEventListener("input", renderCompanyFilter);
   els.companyFilterTrigger?.addEventListener("click", (event) => {

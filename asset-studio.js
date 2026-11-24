@@ -759,6 +759,11 @@ const CHROME_CSS = `
 #as-overlay .as-back:hover{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
 #as-overlay .as-railtitle{font-size:11px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; color:var(--muted,#475569);}
 #as-overlay .as-steps{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px;}
+#as-overlay.as-nur-lesen [data-act="to-edit"], #as-overlay.as-nur-lesen [data-act="own"], #as-overlay.as-nur-lesen [data-act="save"],
+#as-overlay.as-nur-lesen [data-act="send"], #as-overlay.as-nur-lesen [data-act="ki-visual"],
+#as-overlay.as-nur-lesen [data-act="step-open"][data-step="edit"]{display:none !important;}
+#as-overlay .as-nurlesen{display:flex; align-items:center; gap:8px; margin:10px 0 0; padding:9px 12px; border-radius:12px; background:var(--surface,#f8fafc); font-size:12.5px; color:var(--muted,#475569);}
+#as-overlay .as-nurlesen i{color:#64748b;}
 #as-overlay .as-steps li{
   display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:12px;
   font-size:14px; color:var(--muted,#475569); border:1px solid transparent;
@@ -2039,6 +2044,12 @@ const HINTERGRUND_ABSCHNITTE = {
   fuellen: "Die Vorlage wird gefüllt",
 };
 const hintergrundLaeufe = new Map();
+/** Was bei einem fremden Entwurf erlaubt bleibt: ansehen, blaettern, kopieren, laden. */
+const NUR_LESEN_ERLAUBT = new Set([
+  "close", "close-popup", "show-drafts", "open-draft", "to-form", "toggle-fs", "toggle-fs-controls", "toggle-fs-tools",
+  "fs-zoom-in", "fs-zoom-out", "fs-zoom-fit", "prev-fwd", "prev-back", "download", "copy-post", "print", "bild-info-zu",
+  "step-back", "pruef-zu", "privat-bild-laden",
+]);
 
 function hintergrundCss() {
   if (document.getElementById("as-lauf-css")) return;
@@ -2253,6 +2264,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     privatBildCi: "",
     // Angemeldete Person fuer den Kopf des Entwurfs im Privatprofil.
     ich: { name: "", avatar_url: "" },
+    // Entwurf einer anderen Person: Kopf zeigt sie, Bearbeiten ist gesperrt.
+    autor: null,
+    nurLesen: false,
     // Ist der hinterlegte Tonfall in die Caption eingeflossen?
     toneGenutzt: null,
     meinStil: { portraet: "", logo: "" },
@@ -2638,6 +2652,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /* ── Aufbau der Schritte ── */
 
   function render() {
+    if (state.nurLesen && state.step === "edit") state.step = "draft";
+    overlay.classList.toggle("as-nur-lesen", state.nurLesen);
     shell.innerHTML = `
       <nav class="as-rail">
         <button type="button" class="as-back" data-act="close"><i class="fa-solid fa-arrow-left"></i>Zurück</button>
@@ -2647,6 +2663,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           ${stepItem(2, "Entwurf", "draft")}
           ${stepItem(3, "Bearbeiten", "edit")}
         </ol>
+        ${state.nurLesen ? `<div class="as-nurlesen"><i class="fa-solid fa-lock"></i><span>Nur lesen · Entwurf von ${esc(state.autor?.name || "anderer Person")}</span></div>` : ""}
         ${draftsTabHtml()}
       </nav>
       <div class="as-main">
@@ -2790,11 +2807,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function linkedinDraftHtml() {
     const privat = state.answers.profile === "private";
     const name = privat
-      ? (state.ich.name || state.chrome.footer_left || "")
+      ? ((state.autor || state.ich).name || state.chrome.footer_left || "")
       : "ROOTS Consultants";
     const rolle = privat ? "" : "Brand Strategy Consultants";
-    const logo = privat && state.ich.avatar_url ? state.ich.avatar_url : (state.chrome.logo || state.logo || LOGO_PATH);
-    const avatarKlasse = privat && state.ich.avatar_url ? " as-linkedin-avatar--person" : "";
+    const kopf = state.autor || state.ich;
+    const logo = privat && kopf.avatar_url ? kopf.avatar_url : (state.chrome.logo || state.logo || LOGO_PATH);
+    const avatarKlasse = privat && kopf.avatar_url ? " as-linkedin-avatar--person" : "";
     const tonPill = privat && state.toneGenutzt !== null
       ? `<span class="as-tone-pill ${state.toneGenutzt ? "is-ok" : "is-off"}"><i class="fa-solid fa-${state.toneGenutzt ? "check" : "xmark"}"></i>Tone of Voice</span>`
       : "";
@@ -4069,6 +4087,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (!row.id) throw new Error("Entwurf nicht gefunden.");
       state.assetId = row.id;
       state.owned = Boolean(row.owner_id);
+      state.nurLesen = res?.eigen === false;
+      state.autor = res?.autor && res.eigen === false ? { name: String(res.autor.name || ""), avatar_url: String(res.autor.avatar_url || "") } : null;
       state.memoSend = res && typeof res === "object" ? (res.memo_send || null) : null;
       state.answers = answersToForm(row.answers, row);
       state.toneGenutzt = toneGenutzt(row.answers);
@@ -4661,6 +4681,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     state.formError = "";
     state.formErrorKey = "";
+    state.nurLesen = false;
+    state.autor = null;
     state.step = "draft";
     state.busy = true;
     state.error = "";
@@ -4852,6 +4874,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * uebernehmen ihre Gestaltung.
    */
   async function baueKiVisuals() {
+    if (state.nurLesen) return;
     if (isMemo || state.kiLaeuft || !state.assetId || state.answers.profile !== "private") return;
     if (state.answers.asset_type !== "carousel") { await bauePrivatBild(); return; }
     if (!state.kiVisual) return;
@@ -5026,7 +5049,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    *  verkleinern, sonst scheitert spaeter „Entwurf speichern“ an der Grenze. */
   async function verkleinerePrivatBild() {
     const src = privatBildSrc();
-    if (!src || src.length <= 470000 || !state.assetId || state.answers.profile !== "private") return;
+    if (state.nurLesen || !src || src.length <= 470000 || !state.assetId || state.answers.profile !== "private") return;
     try {
       const bild = await alsJpegUnter(src, 470000);
       const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: state.slides[0]?.ki_bild_stil || "" });
@@ -7870,6 +7893,7 @@ ${stages}${post}
   }
 
   async function save() {
+    if (state.nurLesen) return;
     harvest();
     if (!state.assetId) {
       showSaveHint("Kein gespeicherter Entwurf vorhanden. Bitte den Entwurf neu erzeugen.");
@@ -8170,6 +8194,10 @@ ${stages}${post}
     }
     if (!hit) return;
     const act = hit.getAttribute("data-act");
+    if (state.nurLesen && !NUR_LESEN_ERLAUBT.has(act)) {
+      showSaveHint(`Entwurf von ${state.autor?.name || "einer anderen Person"}: nur lesen.`);
+      return;
+    }
     const frame = hit.closest("[data-uid]");
     const id = frame ? frame.getAttribute("data-uid") : null;
 

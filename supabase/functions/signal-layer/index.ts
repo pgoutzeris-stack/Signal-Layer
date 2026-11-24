@@ -14493,7 +14493,15 @@ Deno.serve(async (req: Request) => {
           ? await admin.schema("signal_layer").from("memo_sends")
             .select("asset_id, channel, channel_other, sent_on, recipient, sent_by").eq("asset_id", gefragteId).maybeSingle()
           : { data: null };
-        return corsResponse(origin, { asset: gepflegt || geladen, memo_send: memoSend || null });
+        // Wer den Entwurf gebaut hat: der Kopf der Vorschau zeigt diese Person,
+        // und nur sie darf ihn bearbeiten.
+        const erstellerId = String(geladen.created_by || "");
+        const ersteller = erstellerId ? (await assetAuthorsByIds([erstellerId])).get(erstellerId) : null;
+        const eigen = !erstellerId || erstellerId === String(auth?.userId || "");
+        return corsResponse(origin, {
+          asset: gepflegt || geladen, memo_send: memoSend || null, eigen,
+          autor: ersteller ? { user_id: erstellerId, name: ersteller.name, avatar_url: ersteller.avatar_url } : null,
+        });
       }
 
       case "save_asset": {
@@ -14505,6 +14513,11 @@ Deno.serve(async (req: Request) => {
         // waere beim naechsten Oeffnen unbrauchbar.
         if (editedHtml.length > ASSET_EDITED_HTML_LIMIT) {
           return errorResponse(origin, `Der bearbeitete Stand ist zu groß (maximal ${ASSET_EDITED_HTML_LIMIT.toLocaleString("de-DE")} Zeichen).`, 413);
+        }
+        const { data: besitz } = await getAdminClient().schema("signal_layer").from("generated_assets")
+          .select("created_by").eq("id", savedAssetId).maybeSingle();
+        if (besitz?.created_by && String(besitz.created_by) !== String(auth?.userId || "")) {
+          return errorResponse(origin, "Diesen Entwurf darf nur die Person bearbeiten, die ihn erstellt hat.", 403);
         }
         const { data: savedAsset, error: savedAssetError } = await getAdminClient().schema("signal_layer")
           .from("generated_assets")

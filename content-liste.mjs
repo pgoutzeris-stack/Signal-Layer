@@ -47,7 +47,6 @@ function css() {
 .cl-pill{height:34px; padding:0 13px; border:1px solid var(--line); border-radius:999px; background:var(--bg); color:var(--status-text, var(--muted)); display:inline-flex; align-items:center; gap:7px; font:inherit; font-size:.72rem; font-weight:650; cursor:pointer; white-space:nowrap; flex:0 0 auto; transition:border-color .16s, color .16s, background .16s;}
 .cl-pill:hover{color:var(--ink); border-color:color-mix(in srgb, var(--brand) 48%, var(--line));}
 .cl-pill.is-an{color:var(--brand-dark,#165fd9); background:var(--brand-light,#eff6ff); border-color:#bfdbfe;}
-.finding-item.cl-weg{display:none !important;}
 .cl-leer{padding:1rem; color:var(--muted); font-size:.85rem;}
 .cl-view-head{display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 1rem;}
 .cl-view-head h2{margin:0;}
@@ -69,27 +68,45 @@ function css() {
 .cl-person{display:flex; align-items:center; gap:8px; font-size:.78rem; min-width:0;}
 .cl-person img, .cl-person .cl-ini{width:24px; height:24px; border-radius:50%; object-fit:cover; flex:0 0 auto; background:#e2e8f0; display:grid; place-items:center; font-size:.62rem; font-weight:700; color:#475569;}
 .cl-person span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.cl-gruppe{border-bottom:1px solid var(--line); background:color-mix(in srgb, var(--brand) 2.5%, var(--bg));}
+.cl-gruppe:last-child{border-bottom:0;}
+.cl-gruppe-kopf{display:flex; align-items:center; gap:8px; padding:10px 16px 4px; font-size:.76rem; color:var(--muted);}
+.cl-gruppe-kopf i{font-size:.72rem;}
+.cl-gruppe-kopf b{color:var(--ink); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+.cl-gruppe-kopf span{flex:0 0 auto;}
+.cl-zeile--gruppe{padding-left:34px; border-bottom:0; background:transparent;}
+.cl-zeile--gruppe:last-child{padding-bottom:12px;}
 .cl-datum{font-size:.74rem; color:var(--muted); font-variant-numeric:tabular-nums;}
 @media (max-width:900px){.cl-zeile{grid-template-columns:minmax(0,1fr) 110px;} .cl-zeile > :nth-child(n+3){display:none;}}`;
   document.head.appendChild(stil);
 }
 
-function karteTitel(karte) {
-  return norm(karte.querySelector(".finding-title")?.textContent || karte.textContent || "");
+let entwurfArtikel = null;
+const signalHoerer = new Set();
+
+/** Listen der Signale melden sich hier an und zeichnen bei jeder Aenderung neu. */
+export function beiSignalFilter(cb) {
+  signalHoerer.add(cb);
+}
+
+export function signalFilterAktiv() {
+  return Boolean(signalFilter.text.trim()) || signalFilter.nurEntwurf;
+}
+
+/** Passt ein Signal zu Suche und "Mit Entwurf"? Titel wie auf der Karte. */
+export function signalPasst(articleId, titel) {
+  const text = norm(signalFilter.text.trim());
+  if (text && !norm(titel).includes(text)) return false;
+  if (signalFilter.nurEntwurf && entwurfArtikel && !entwurfArtikel.has(String(articleId || ""))) return false;
+  return true;
 }
 
 async function signaleFiltern() {
-  const text = norm(signalFilter.text.trim());
-  let mitEntwurf = null;
   if (signalFilter.nurEntwurf) {
     const inhalte = await ladeInhalte().catch(() => []);
-    mitEntwurf = new Set(inhalte.map((i) => String(i.article_id || "")));
+    entwurfArtikel = new Set(inhalte.map((i) => String(i.article_id || "")));
   }
-  document.querySelectorAll("#view-results .finding-item[data-article-id], #view-simple-results .finding-item[data-article-id]").forEach((karte) => {
-    const passt = (!text || karteTitel(karte).includes(text))
-      && (!mitEntwurf || mitEntwurf.has(karte.getAttribute("data-article-id") || ""));
-    karte.classList.toggle("cl-weg", !passt);
-  });
+  signalHoerer.forEach((cb) => { try { cb(); } catch (_) { /* eine Liste darf die andere nicht stoppen */ } });
 }
 
 function leisteEinbauen(toolbar) {
@@ -164,18 +181,34 @@ function zeichneListe(root, liste) {
     ziel.innerHTML = `<div class="cl-leer">${liste.length ? "Kein Content entspricht den Filtern." : "Noch kein Content."}</div>`;
     return;
   }
-  ziel.innerHTML = `<div class="cl-zeile cl-kopf"><span>Content</span><span>Bereich</span><span>Erstellt von</span><span>Übernommen von</span><span>Stand</span></div>${sichtbar.map((i) => {
+  // Entwuerfe zum selben Signal stehen zusammen, die Gruppe mit dem neuesten
+  // Entwurf zuerst. Ab zwei Entwuerfen traegt die Gruppe einen Kopf.
+  const gruppen = new Map();
+  sichtbar.forEach((i) => {
+    const schluessel = String(i.article_id || i.id);
+    if (!gruppen.has(schluessel)) gruppen.set(schluessel, []);
+    gruppen.get(schluessel).push(i);
+  });
+  const zeile = (i, inGruppe) => {
     const titel = i.title || i.signal_title || i.article_title || "Ohne Titel";
-    const unter = [artLabel(i), i.signal_title || i.article_title].filter(Boolean).join(" · ");
+    const unter = inGruppe ? artLabel(i) : [artLabel(i), i.signal_title || i.article_title].filter(Boolean).join(" · ");
     const lane = i.lane === "sales" ? '<span class="cl-tag cl-tag--sales">Sales</span>' : i.lane === "marketing" ? '<span class="cl-tag cl-tag--marketing">Marketing</span>' : '<span class="cl-datum">ohne Signal</span>';
-    return `<button type="button" class="cl-zeile" data-cl-id="${escapeHtml(i.id)}">
+    return `<button type="button" class="cl-zeile${inGruppe ? " cl-zeile--gruppe" : ""}" data-cl-id="${escapeHtml(i.id)}">
       <span class="cl-titel"><b>${escapeHtml(titel)}</b><span>${escapeHtml(unter)}</span></span>
       <span>${lane}</span>
       <span>${personHtml(i.author)}</span>
       <span>${i.owner ? personHtml(i.owner) : '<span class="cl-tag">Entwurf</span>'}</span>
       <span class="cl-datum">${escapeHtml(datum(i.updated_at || i.created_at))}</span>
     </button>`;
-  }).join("")}`;
+  };
+  const teile = [...gruppen.values()].map((liste) => {
+    if (liste.length === 1) return zeile(liste[0], false);
+    const erste = liste[0];
+    const personen = new Set(liste.map((i) => i.author?.user_id).filter(Boolean)).size;
+    const zahl = `${liste.length} Entwürfe${personen > 1 ? ` von ${personen} Personen` : ""}`;
+    return `<div class="cl-gruppe"><div class="cl-gruppe-kopf"><i class="fa-solid fa-tower-broadcast"></i><b>${escapeHtml(erste.signal_title || erste.article_title || "Signal")}</b><span>${escapeHtml(zahl)}</span></div>${liste.map((i) => zeile(i, true)).join("")}</div>`;
+  });
+  ziel.innerHTML = `<div class="cl-zeile cl-kopf"><span>Content</span><span>Bereich</span><span>Erstellt von</span><span>Übernommen von</span><span>Stand</span></div>${teile.join("")}`;
 }
 
 let contentRoot = null;
@@ -244,12 +277,4 @@ export function initContentListe(optionen) {
   css();
   document.querySelectorAll("#view-results .signal-toolbar, #view-simple-results .signal-toolbar").forEach(leisteEinbauen);
   if (contentRoot) contentAnsichtBauen(contentRoot);
-  // Karten werden neu gezeichnet (Filter, Nachladen): Suche gleich wieder anwenden.
-  let geplant = 0;
-  const beobachter = new MutationObserver(() => {
-    if (!signalFilter.text.trim() && !signalFilter.nurEntwurf) return;
-    cancelAnimationFrame(geplant);
-    geplant = requestAnimationFrame(() => { void signaleFiltern(); });
-  });
-  document.querySelectorAll("#view-results, #view-simple-results").forEach((v) => beobachter.observe(v, { childList: true, subtree: true }));
 }
