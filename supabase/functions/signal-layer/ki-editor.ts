@@ -83,7 +83,7 @@ export function kiSchrankeAnzeige(id: unknown) {
 export const KI_CHAT_SCHEMA = {
   type: "OBJECT",
   properties: {
-    status: { type: "STRING", enum: ["vorschlag", "rueckfrage", "abgelehnt"] },
+    status: { type: "STRING", enum: ["vorschlag", "rueckfrage", "abgelehnt", "info"] },
     antwort: { type: "STRING" },
     caption: { type: "STRING" },
     bild_modus: { type: "STRING", enum: ["anpassen", "neu", "keiner"] },
@@ -125,7 +125,8 @@ export function kiChatPrompt(k: KiKontext): { system: string; prompt: string } {
         `bild_modus: anpassen, wenn das vorhandene Bild nur verändert werden soll (Farbe, Detail, ein Element dazu oder weg); neu, wenn eine andere Bildidee gewünscht ist${k.bildVorhanden ? "" : ". Es gibt noch kein Bild, also immer neu"}.`,
         "Die Motividee bleibt eine plakative Kampagnenidee mit einem dominanten Blickfang, sofort verständlich, mit erkennbarem Markenprodukt, wenn das Signal eine Marke hergibt.",
       ].join(" "),
-    "antwort: ein bis drei Sätze an den Nutzer, was du geändert hast oder warum nicht. Nie die ganze Caption in antwort wiederholen.",
+    "ÄNDERN NUR AUF AUFTRAG: Ändere Caption oder Visual nur, wenn der Nutzer ausdrücklich eine Änderung verlangt (ändern, kürzen, ersetzen, hinzufügen, mehr davon im Bild). Fragen, Bitten um Erklärung, Kontext, Hintergrund, Quellen oder Details aus dem Artikel beantwortest du in antwort mit Inhalt aus ARTIKEL und SIGNAL, ohne etwas zu ändern (status info, caption und bild_auftrag leer). Ist unklar, ob der Nutzer eine Änderung oder eine Auskunft will, frag kurz nach (status rueckfrage). Ein neues Visual kostet Geld; im Zweifel nachfragen.",
+    "antwort: bei Änderungen ein bis drei Sätze, was du geändert hast oder warum nicht. Bei Auskünften so ausführlich wie nötig, höchstens sechs Sätze. Nie die ganze Caption in antwort wiederholen.",
     "regel: Lehnst du etwas ganz oder teilweise wegen einer REGEL ab oder schränkst es ein, nenne die Regel (thema, fakten, personen, vertraulichkeit, stimme, format, visual, sicherheit); fragt der Nutzer, warum du etwas nicht darfst, ebenso. Sonst keine. Das System zeigt die Regel dann offen als ROOTS-Guardrail; sag in antwort klar, dass es eine ROOTS-Regel ist.",
     "Antworte nur mit JSON.",
   ].join("\n");
@@ -171,13 +172,13 @@ export function kiChatPrompt(k: KiKontext): { system: string; prompt: string } {
 /** Antwort des Modells pruefen und kappen. */
 export function kiChatErgebnis(roh: unknown, ziel: KiZiel): { status: string; antwort: string; caption: string; bild_modus: string; bild_auftrag: string; zeige: string; regel: string } {
   const r = (roh && typeof roh === "object" ? roh : {}) as Record<string, unknown>;
-  const status = ["vorschlag", "rueckfrage", "abgelehnt"].includes(String(r.status)) ? String(r.status) : "rueckfrage";
+  const status = ["vorschlag", "rueckfrage", "abgelehnt", "info"].includes(String(r.status)) ? String(r.status) : "rueckfrage";
   // Manche Modelle packen die Caption in einen Codeblock.
   let caption = ziel === "caption" && status === "vorschlag" ? String(r.caption || "").trim().replace(/^```[a-z]*\s*\n?|\n?```\s*$/g, "").trim().slice(0, KI_CAPTION_MAX) : "";
   caption = caption.replace(/\s[—–]\s/g, ". ");
   const bildAuftrag = ziel === "bild" && status === "vorschlag" ? String(r.bild_auftrag || "").trim().slice(0, 1500) : "";
   const bildModus = bildAuftrag ? (r.bild_modus === "anpassen" ? "anpassen" : "neu") : "";
-  const antwort = String(r.antwort || "").trim().slice(0, 800)
+  const antwort = String(r.antwort || "").trim().slice(0, 1400)
     || (status === "abgelehnt" ? "Dabei kann ich nicht helfen. Ich bearbeite nur Caption und Bild dieses Beitrags." : "");
   const zeige = r.zeige === "tone_of_voice" || r.zeige === "bildstil" ? String(r.zeige) : "";
   const regel = KI_SCHRANKEN_ANZEIGE.some((x) => x.id === r.regel) ? String(r.regel) : "";
