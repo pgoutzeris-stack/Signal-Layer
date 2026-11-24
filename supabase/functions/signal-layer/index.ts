@@ -9088,6 +9088,91 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { verlauf: neu, stats });
       }
 
+      case "versionen_liste":
+      case "version_speichern":
+      case "version_laden": {
+        // Versionen fuer Vor/Zurueck im KI-Editor, dauerhaft und nur anhaengend.
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const vId = String(body.asset_id || "");
+        const admin = getAdminClient();
+        const { data: vAsset } = await admin.schema("signal_layer").from("generated_assets").select("id, created_by, payload").eq("id", vId).maybeSingle();
+        if (!vAsset) return errorResponse(origin, "Asset nicht gefunden", 404);
+        if (String(vAsset.created_by || "") !== String(auth.userId)) return errorResponse(origin, "Diesen Entwurf darf nur die Person bearbeiten, die ihn erstellt hat.", 403);
+        const vPayload = (vAsset.payload || {}) as Record<string, unknown>;
+        const vSlides = Array.isArray(vPayload.slides) ? [...vPayload.slides as Record<string, unknown>[]] : [];
+        const aktiv = { ...((vPayload.version_aktiv || {}) as Record<string, string>) };
+        const tabelle = () => admin.schema("signal_layer").from("asset_versionen");
+        const zusammenfassung = "id, art, quelle, notiz, created_at";
+        const setzeAktiv = async (art: string, id: string, extra: Record<string, unknown> = {}) => {
+          const { data: frisch } = await admin.schema("signal_layer").from("generated_assets").select("payload").eq("id", vId).maybeSingle();
+          const p = (frisch?.payload || {}) as Record<string, unknown>;
+          await admin.schema("signal_layer").from("generated_assets").update({
+            payload: { ...p, ...extra, version_aktiv: { ...((p.version_aktiv || {}) as Record<string, string>), [art]: id } },
+            updated_at: new Date().toISOString(),
+          }).eq("id", vId);
+        };
+        if (action === "versionen_liste") {
+          const ergebnis: Record<string, unknown> = {};
+          for (const art of ["caption", "bild"]) {
+            let { data: liste } = await tabelle().select(zusammenfassung).eq("asset_id", vId).eq("art", art).order("created_at", { ascending: true });
+            if (!liste?.length) {
+              // Erster Aufruf: der heutige Stand wird Version 1.
+              const inhalt = art === "caption"
+                ? String(vPayload.post_text || "")
+                : (/src="(data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+)"/.exec(String(vSlides[0]?.ki_layout || "")) || [])[1] || "";
+              if (inhalt) {
+                await tabelle().insert({ asset_id: vId, art, inhalt, quelle: "original", erstellt_von: auth.userId,
+                  meta: art === "bild" ? { stil_id: String(vSlides[0]?.ki_bild_stil || ""), bild_meta: vSlides[0]?.ki_bild_meta || {} } : {} });
+                ({ data: liste } = await tabelle().select(zusammenfassung).eq("asset_id", vId).eq("art", art).order("created_at", { ascending: true }));
+              }
+            }
+            ergebnis[art] = { liste: liste || [], aktiv: aktiv[art] || (liste?.length ? liste[liste.length - 1].id : null) };
+          }
+          return corsResponse(origin, ergebnis);
+        }
+        if (action === "version_speichern") {
+          const art = body.art === "bild" ? "bild" : "caption";
+          const inhalt = String(body.inhalt || "");
+          if (art === "caption" && (!inhalt.trim() || inhalt.length > KI_CAPTION_MAX)) return errorResponse(origin, "Caption fehlt oder ist zu lang.");
+          if (art === "bild" && !istPrivatBild(inhalt)) return errorResponse(origin, "Visual fehlt oder ist zu groß.", 413);
+          const quelle = ["original", "ki", "manuell", "generiert"].includes(String(body.quelle)) ? String(body.quelle) : "manuell";
+          const { data: letzte } = await tabelle().select("id, inhalt").eq("asset_id", vId).eq("art", art).order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (letzte && letzte.inhalt === inhalt) {
+            await setzeAktiv(art, String(letzte.id));
+            return corsResponse(origin, { id: letzte.id, neu: false });
+          }
+          const meta = art === "bild" ? { stil_id: String(body.stil_id || ""), bild_meta: (body.meta && typeof body.meta === "object" ? body.meta : {}) } : {};
+          const { data: zeile, error: vFehler } = await tabelle().insert({ asset_id: vId, art, inhalt, meta, quelle,
+            notiz: String(body.notiz || "").slice(0, 400), erstellt_von: auth.userId }).select(zusammenfassung).single();
+          if (vFehler) return errorResponse(origin, vFehler.message, 500);
+          await setzeAktiv(art, String(zeile.id));
+          return corsResponse(origin, { ...zeile, neu: true });
+        }
+        // version_laden: Stand anwenden, alle anderen Staende bleiben erhalten.
+        const { data: version } = await tabelle().select("id, art, inhalt, meta").eq("id", String(body.version_id || "")).eq("asset_id", vId).maybeSingle();
+        if (!version) return errorResponse(origin, "Version nicht gefunden", 404);
+        if (version.art === "caption") {
+          await setzeAktiv("caption", String(version.id), { post_text: version.inhalt });
+          return corsResponse(origin, { art: "caption", id: version.id, inhalt: version.inhalt });
+        }
+        const vMeta = (version.meta || {}) as Record<string, unknown>;
+        const { stile } = await bildStile();
+        const vStil = waehleBildStil(stile, String(vMeta.stil_id || ""));
+        const html = privatBildLayout(String(version.inhalt), vStil?.aspect || "1:1", vStil?.name || "");
+        const { data: frisch } = await admin.schema("signal_layer").from("generated_assets").select("payload").eq("id", vId).maybeSingle();
+        const fp = (frisch?.payload || {}) as Record<string, unknown>;
+        const folien = Array.isArray(fp.slides) ? [...fp.slides as Record<string, unknown>[]] : [];
+        if (folien[0]) {
+          folien[0] = { ...folien[0], ki_basis: String(folien[0].ki_basis || folien[0].variant || "B"), variant: "KI", ki_layout: html, ki_typ: "bild",
+            ki_bild_stil: vStil?.id || "", ki_bild_meta: vMeta.bild_meta || {} };
+        }
+        await admin.schema("signal_layer").from("generated_assets").update({
+          payload: { ...fp, slides: folien, version_aktiv: { ...((fp.version_aktiv || {}) as Record<string, string>), bild: String(version.id) } },
+          updated_at: new Date().toISOString(),
+        }).eq("id", vId);
+        return corsResponse(origin, { art: "bild", id: version.id, html, meta: vMeta.bild_meta || {}, stil_id: vStil?.id || "" });
+      }
+
       case "save_caption": {
         // Caption dauerhaft im Entwurf. Die erste Fassung bleibt fuer den KI-Editor erhalten.
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
@@ -9365,7 +9450,17 @@ Deno.serve(async (req: Request) => {
           if (nachFehler) return errorResponse(origin, nachFehler.message, 500);
           return corsResponse(origin, { gespeichert: true, stil: { id: stil.id, name: stil.name }, ci, auftrag, laenge: pbBild.length, kosten_eur: bildKostenEur });
         }
+        // Visual aus dem KI-Editor: Kosten gehoeren in die Sitzung des Chats.
+        let pbStats: Record<string, unknown> | null = null;
+        if (chatAuftrag && !isScheduled) {
+          const { data: frisch } = await getAdminClient().schema("signal_layer").from("generated_assets").select("payload").eq("id", pbAssetId).maybeSingle();
+          const fp = (frisch?.payload || {}) as Record<string, unknown>;
+          const alt = (fp.ki_chat_stats || {}) as Record<string, unknown>;
+          pbStats = { ...alt, kosten_eur: (Number(alt.kosten_eur) || 0) + bildKostenEur, visuals: (Number(alt.visuals) || 0) + 1, visual_kosten_eur: (Number(alt.visual_kosten_eur) || 0) + bildKostenEur };
+          await getAdminClient().schema("signal_layer").from("generated_assets").update({ payload: { ...fp, ki_chat_stats: pbStats } }).eq("id", pbAssetId);
+        }
         return corsResponse(origin, {
+          stats: pbStats,
           bild: pbBild,
           stil: { id: stil.id, name: stil.name, aspect: stil.aspect, roots_logo: stil.rootsLogo },
           logo: stil.rootsLogo ? logo : "",
@@ -9406,6 +9501,22 @@ Deno.serve(async (req: Request) => {
         const { error: spSpeicherFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
           .update({ payload: { ...spPayload, slides: spSlides }, updated_at: new Date().toISOString() }).eq("id", spAssetId);
         if (spSpeicherFehler) return errorResponse(origin, spSpeicherFehler.message, 500);
+        // Jedes neue Visual wird ein Stand fuer Vor/Zurueck (ausser beim blossen Verkleinern).
+        if (body.version !== false && spIndex === 0) {
+          const tab = getAdminClient().schema("signal_layer").from("asset_versionen");
+          const { count } = await tab.select("id", { count: "exact", head: true }).eq("asset_id", spAssetId).eq("art", "bild");
+          const { data: letzte } = await tab.select("inhalt").eq("asset_id", spAssetId).eq("art", "bild").order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (count && letzte?.inhalt !== body.bild) {
+            const quelle = ["ki", "manuell", "generiert"].includes(String(body.version_quelle)) ? String(body.version_quelle) : "generiert";
+            const { data: neu } = await tab.insert({ asset_id: spAssetId, art: "bild", inhalt: String(body.bild), quelle, notiz: String(body.version_notiz || "").slice(0, 400),
+              meta: { stil_id: spStil?.id || "", bild_meta: spMeta }, erstellt_von: auth.userId }).select("id").single();
+            if (neu?.id) {
+              const { data: frisch } = await getAdminClient().schema("signal_layer").from("generated_assets").select("payload").eq("id", spAssetId).maybeSingle();
+              const fp = (frisch?.payload || {}) as Record<string, unknown>;
+              await getAdminClient().schema("signal_layer").from("generated_assets").update({ payload: { ...fp, version_aktiv: { ...((fp.version_aktiv || {}) as Record<string, string>), bild: String(neu.id) } } }).eq("id", spAssetId);
+            }
+          }
+        }
         return corsResponse(origin, { index: spIndex, html, variant: "KI", meta: spMeta });
       }
 

@@ -1692,6 +1692,20 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-regel-ico{width:26px; height:26px; flex:0 0 auto; border-radius:8px; display:grid; place-items:center; background:#eff6ff; color:#206efb; font-size:12px;}
 #as-overlay .as-ki-regel-zeile b{display:block; font-size:12.5px; color:#0f172a;}
 #as-overlay .as-ki-regel-zeile p{margin:2px 0 0; font-size:12.5px; line-height:1.5; color:#475569; white-space:normal;}
+#as-overlay .as-ki-versionen{position:relative;}
+#as-overlay .as-ki-vmenu-knopf{width:24px !important; font-size:10px; color:#64748b !important;}
+#as-overlay .as-ki-vliste{position:absolute; left:0; top:calc(100% + 6px); z-index:7; width:340px; max-height:420px; overflow:auto; padding:6px; border:1px solid var(--line,#e2e8f0); border-radius:14px; background:#fff;
+  box-shadow:0 18px 46px rgba(15,23,42,.18); display:none; flex-direction:column; gap:2px; animation:asKiMenue .16s ease both;}
+#as-overlay .as-ki-versionen.is-offen .as-ki-vliste{display:flex;}
+#as-overlay .as-ki-vliste-eintrag > button{display:flex; align-items:center; gap:10px; width:100% !important; height:auto !important; padding:8px 9px; border:0; border-radius:10px !important; background:transparent !important; box-shadow:none !important; text-align:left; cursor:pointer; color:#0f172a !important;}
+#as-overlay .as-ki-vliste-eintrag > button:hover:not(:disabled){background:#f1f5f9 !important; transform:none !important;}
+#as-overlay .as-ki-vliste-eintrag.is-aktiv > button{background:#eff6ff !important; opacity:1 !important; cursor:default;}
+#as-overlay .as-ki-vliste-text{display:flex; flex-direction:column; min-width:0;}
+#as-overlay .as-ki-vliste-text b{font-size:12.5px; font-weight:650;}
+#as-overlay .as-ki-vliste-text small{font-size:11.5px; color:#64748b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+#as-overlay .as-ki-vfrage{margin:4px 6px 8px; padding:10px; border-radius:10px; background:#f8fafc; font-size:12px; color:#334155; display:flex; flex-direction:column; gap:8px; animation:asKiWort .3s ease both;}
+#as-overlay .as-ki-vfrage-knoepfe{display:flex; justify-content:flex-end; gap:6px;}
+#as-overlay .as-ki-vfrage-knoepfe .as-btn{width:auto !important; height:auto !important; border-radius:999px !important; font-size:12px; padding:6px 12px;}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
@@ -5269,7 +5283,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         ci_grund: String(res.ci?.reason || ""), erstellt: new Date().toISOString(),
         kosten_eur: Number(res.kosten_eur) || 0,
       };
-      const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: res.stil?.id || "", meta });
+      if (res.stats && state.ki) state.ki.stats = res.stats;
+      const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: res.stil?.id || "", meta,
+        version_quelle: optionen.auftrag ? "ki" : "generiert", version_notiz: optionen.notiz || "" });
       slide.ki_bild_meta = gespeichert?.meta || meta;
       slide.ki_bild_stil = String(res.stil?.id || "");
       slide.ki_basis = slide.ki_basis || slide.variant;
@@ -5387,16 +5403,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     let modell = "";
     try { modell = localStorage.getItem("sl-ki-modell") || ""; } catch { /* egal */ }
     const vorher = state.ki || {};
-    const versionenCaption = vorher.versionen?.caption?.liste?.length ? vorher.versionen.caption : { liste: [state.postText || ""], index: 0 };
-    const visualJetzt = state.slides[0] && state.slides[0].ki_layout ? { layout: state.slides[0].ki_layout, meta: state.slides[0].ki_bild_meta || {}, stil: state.slides[0].ki_bild_stil || "" } : null;
-    const versionenVisual = vorher.versionen?.bild?.liste?.length ? vorher.versionen.bild : { liste: visualJetzt ? [visualJetzt] : [], index: 0 };
     state.ki = {
       ...vorher, offen: true, ziel: ziel === "bild" ? "bild" : "caption",
       modell: KI_MODELLE.some(([id]) => id === modell) ? modell : KI_MODELLE[0][0],
       entwurf: state.postText || "", hinweis: "", laeuft: vorher.laeuft || { caption: false, bild: false },
       verlauf: (vorher.verlauf || []).map((n) => ({ ...n, alt: true })),
-      versionen: { caption: versionenCaption, bild: versionenVisual },
+      versionen: { caption: { liste: [], index: 0 }, bild: { liste: [], index: 0 } },
     };
+    void kiVersionenLaden();
     kiEditor.hidden = false;
     kiEditorZeichne();
     // Server vorwaermen, damit die erste Antwort nicht auf den Kaltstart wartet.
@@ -5407,6 +5421,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function kiEditorSchliessen() {
     if (!state.ki?.offen) return;
     kiAutosaveJetzt();
+    kiHandarbeitSichern();
     state.ki.offen = false;
     kiEditor.hidden = true;
     kiEditor.innerHTML = "";
@@ -5451,13 +5466,64 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function kiVersionLeiste(ziel) {
-    const v = state.ki.versionen[ziel];
-    const anzahl = v.liste.length;
-    if (!anzahl) return "";
-    return `<span class="as-ki-versionen" role="group" aria-label="Versionen">
-      <button type="button" data-ki-zurueck="${ziel}" aria-label="Vorherige Version"${v.index <= 0 || state.ki.laeuft[ziel] ? " disabled" : ""}><i class="fa-solid fa-arrow-rotate-left"></i></button>
-      <button type="button" data-ki-vor="${ziel}" aria-label="Nächste Version"${v.index >= anzahl - 1 || state.ki.laeuft[ziel] ? " disabled" : ""}><i class="fa-solid fa-arrow-rotate-right"></i></button>
+    const v = state.ki.versionen?.[ziel];
+    if (!v || !v.liste.length) return "";
+    const aus = state.ki.laeuft[ziel] || v.laedt;
+    const datum = (wert) => new Date(wert).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const quelleText = { original: "Original", ki: "KI", manuell: "Von Hand", generiert: "Neu generiert" };
+    const quelleIcon = { original: "fa-solid fa-flag", ki: "fa-solid fa-wand-magic-sparkles", manuell: "fa-solid fa-pen", generiert: "fa-solid fa-rotate-right" };
+    const eintraege = v.liste.map((e, i) => ({ e, i })).reverse().map(({ e, i }) => {
+      const aktiv = i === v.index;
+      const fragt = v.frage === e.id;
+      return `<div class="as-ki-vliste-eintrag${aktiv ? " is-aktiv" : ""}">
+        <button type="button" data-ki-vwahl="${attr(e.id)}" data-ki-vart="${ziel}"${aktiv ? " disabled" : ""}>
+          <span class="as-ki-mico"><i class="${quelleIcon[e.quelle] || "fa-solid fa-pen"}"></i></span>
+          <span class="as-ki-vliste-text"><b>Stand ${i + 1} · ${esc(quelleText[e.quelle] || "")}${aktiv ? " · aktuell" : ""}</b><small>${esc(e.notiz ? `„${String(e.notiz).slice(0, 70)}“ · ` : "")}${esc(datum(e.created_at))}</small></span>
+        </button>
+        ${fragt ? `<div class="as-ki-vfrage"><span>Stand ${i + 1} laden und ab hier weiterarbeiten? Alle anderen Stände bleiben gespeichert.</span>
+          <span class="as-ki-vfrage-knoepfe"><button type="button" class="as-btn" data-ki-vnein>Abbrechen</button><button type="button" class="as-btn as-btn--primary" data-ki-vja="${attr(e.id)}" data-ki-vart="${ziel}">Laden</button></span></div>` : ""}
+      </div>`;
+    }).join("");
+    return `<span class="as-ki-versionen${v.offen ? " is-offen" : ""}" role="group" aria-label="Versionen">
+      <button type="button" data-ki-zurueck="${ziel}" aria-label="Vorheriger Stand"${v.index <= 0 || aus ? " disabled" : ""}><i class="fa-solid fa-arrow-rotate-left"></i></button>
+      <button type="button" data-ki-vor="${ziel}" aria-label="Nächster Stand"${v.index >= v.liste.length - 1 || aus ? " disabled" : ""}><i class="fa-solid fa-arrow-rotate-right"></i></button>
+      <button type="button" class="as-ki-vmenu-knopf" data-ki-vmenu="${ziel}" aria-label="Alle Stände" aria-expanded="${v.offen ? "true" : "false"}"><i class="fa-solid fa-chevron-down"></i></button>
+      <div class="as-ki-vliste" role="dialog" aria-label="Alle Stände">${eintraege}</div>
     </span>`;
+  }
+
+  /** Versionen vom Server: dauerhaft, ueber Sitzungen hinweg. */
+  async function kiVersionenLaden() {
+    try {
+      const res = await api("versionen_liste", { asset_id: state.assetId });
+      for (const art of ["caption", "bild"]) {
+        const liste = Array.isArray(res?.[art]?.liste) ? res[art].liste : [];
+        const index = Math.max(0, liste.findIndex((e) => e.id === res[art].aktiv));
+        state.ki.versionen[art] = { liste, index: liste.length ? (index >= 0 ? index : liste.length - 1) : 0 };
+      }
+      state.ki.captionBasis = state.ki.entwurf;
+    } catch { /* ohne Versionen weiter */ }
+    if (state.ki?.offen) kiEditorZeichne();
+  }
+
+  async function kiVersionSpeichern(art, felder) {
+    try {
+      const zeile = await api("version_speichern", { asset_id: state.assetId, art, ...felder });
+      const v = state.ki?.versionen?.[art];
+      if (!v || !zeile?.id) return;
+      const pos = v.liste.findIndex((e) => e.id === zeile.id);
+      if (pos >= 0) v.index = pos;
+      else { v.liste.push({ id: zeile.id, quelle: zeile.quelle || felder.quelle, notiz: zeile.notiz || felder.notiz || "", created_at: zeile.created_at || new Date().toISOString() }); v.index = v.liste.length - 1; }
+      if (art === "caption") state.ki.captionBasis = felder.inhalt;
+      if (state.ki?.offen) kiEditorZeichne();
+    } catch { /* Stand bleibt trotzdem im Entwurf gespeichert */ }
+  }
+
+  /** Handarbeit seit dem letzten Stand als eigenen Stand sichern. */
+  function kiHandarbeitSichern() {
+    const k = state.ki;
+    if (!k?.versionen?.caption?.liste?.length) return;
+    if ((k.entwurf || "").trim() && k.entwurf !== k.captionBasis) void kiVersionSpeichern("caption", { inhalt: k.entwurf, quelle: "manuell" });
   }
 
   function kiLinksHtml() {
@@ -5558,6 +5624,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <div class="as-ki-perf-menu">
         <div class="as-ki-perf-zeile"><span>Kosten dieser Sitzung</span><b>${euro(st.kosten_eur || 0)}</b></div>
         <div class="as-ki-perf-zeile"><span>Nachrichten</span><b>${kiZahl(st.nachrichten)}</b></div>
+        <div class="as-ki-perf-zeile"><span>Davon Visuals</span><b>${kiZahl(st.visuals)} · ${euro(st.visual_kosten_eur || 0)}</b></div>
         <div class="as-ki-perf-zeile"><span>Tokens gesendet / erhalten</span><b>${kiZahl(st.input_tokens)} / ${kiZahl(st.output_tokens)}</b></div>
         <div class="as-ki-perf-zeile"><span>Kontext letzte Anfrage</span><b>${kiZahl(st.letzter_kontext)} von ${kiZahl(fenster)}</b></div>
         <div class="as-ki-balken"><span style="width:${anteil}%; background:${ton}"></span></div>
@@ -5617,14 +5684,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   /** Neue Caption-Fassung: in die Versionen, sichtbar einschreiben, speichern. */
-  function kiCaptionSetzen(text) {
+  function kiCaptionSetzen(text, notiz = "") {
     const k = state.ki;
-    const v = k.versionen.caption;
-    // Handarbeit seit der letzten Fassung bleibt als eigene Version erhalten.
-    if (v.liste[v.index] !== k.entwurf) { v.liste.splice(v.index + 1); v.liste.push(k.entwurf); v.index = v.liste.length - 1; }
-    v.liste.splice(v.index + 1);
-    v.liste.push(text);
-    v.index = v.liste.length - 1;
+    kiHandarbeitSichern();
     k.entwurf = text;
     k.tippt = true;
     if (k.ziel === "caption") kiLinksZeichne();
@@ -5635,55 +5697,59 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (state.ki.ziel === "caption") kiLinksZeichne();
     }, Math.min(2600, woerter * 12 + 500));
     kiAutosave(true);
-    return v.liste.length;
+    void kiVersionSpeichern("caption", { inhalt: text, quelle: "ki", notiz });
+    return (k.versionen.caption.liste.length || 0) + 1;
   }
 
   async function kiVersionWechseln(ziel, richtung) {
+    const v = state.ki.versionen[ziel];
+    const ziel2 = v.liste[v.index + richtung];
+    if (ziel2) await kiVersionAnwenden(ziel, ziel2.id);
+  }
+
+  async function kiVersionAnwenden(art, id) {
     const k = state.ki;
-    const v = k.versionen[ziel];
-    if (ziel === "caption" && v.liste[v.index] !== k.entwurf) { v.liste.splice(v.index + 1); v.liste.push(k.entwurf); v.index = v.liste.length - 1; }
-    const neu = v.index + richtung;
-    if (neu < 0 || neu >= v.liste.length) return;
-    v.index = neu;
-    if (ziel === "caption") {
-      k.entwurf = v.liste[neu];
-      kiLinksZeichne();
-      kiAutosave(true);
-      return;
-    }
-    const stand = v.liste[neu];
-    const slide = state.slides[0];
-    if (!slide || !stand) return;
-    slide.ki_layout = stand.layout;
-    slide.ki_bild_meta = stand.meta;
-    slide.ki_bild_stil = stand.stil;
-    slide.variant = "KI";
-    k.neuesVisual = true;
-    k.hinweisVisual = "Speichert …";
-    render();
-    kiLinksZeichne();
-    k.neuesVisual = false;
-    const src = privatBildSrc();
+    const v = k.versionen[art];
+    if (art === "caption") kiHandarbeitSichern();
+    v.laedt = true; v.offen = false; v.frage = null;
+    kiEditorZeichne();
     try {
-      if (src) await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild: src, stil_id: stand.stil || "", meta: stand.meta || {} });
-      k.hinweisVisual = "Gespeichert";
+      const res = await api("version_laden", { asset_id: state.assetId, version_id: id });
+      const pos = v.liste.findIndex((e) => e.id === id);
+      if (pos >= 0) v.index = pos;
+      if (art === "caption") {
+        k.entwurf = String(res.inhalt || "");
+        k.captionBasis = k.entwurf;
+        state.postText = k.entwurf;
+        state.toneScore = null;
+        k.hinweis = "Gespeichert";
+      } else if (state.slides[0]) {
+        const slide = state.slides[0];
+        slide.ki_layout = String(res.html || "");
+        slide.ki_bild_meta = res.meta || {};
+        slide.ki_bild_stil = res.stil_id || "";
+        slide.variant = "KI";
+        slide.html = {};
+        k.neuesVisual = true;
+        k.hinweisVisual = "Gespeichert";
+      }
+      render();
     } catch (err) {
-      k.hinweisVisual = err && err.message ? fehlerKlartext(String(err.message)) : "Speichern fehlgeschlagen";
+      const text = err && err.message ? fehlerKlartext(String(err.message)) : "Stand konnte nicht geladen werden";
+      if (art === "caption") k.hinweis = text; else k.hinweisVisual = text;
     }
-    kiLinksZeichne();
+    v.laedt = false;
+    kiEditorZeichne();
+    k.neuesVisual = false;
   }
 
   /** Nach jedem neuen Visual: als Version merken. */
-  function kiVisualVersionMerken() {
-    const k = state.ki;
+  function kiVisualVersionMerken(notiz = "", quelle = "ki") {
     const slide = state.slides[0];
-    if (!k?.versionen || !slide?.ki_layout) return;
-    const v = k.versionen.bild;
-    if (v.liste[v.index]?.layout === slide.ki_layout) return;
-    v.liste.splice(v.index + 1);
-    v.liste.push({ layout: slide.ki_layout, meta: slide.ki_bild_meta || {}, stil: slide.ki_bild_stil || "" });
-    v.index = v.liste.length - 1;
-    k.neuesVisual = true;
+    const src = privatBildSrc();
+    if (!state.ki?.versionen || !slide || !src) return;
+    state.ki.neuesVisual = true;
+    void kiVersionSpeichern("bild", { inhalt: src, quelle, notiz, stil_id: slide.ki_bild_stil || "", meta: slide.ki_bild_meta || {} });
   }
 
   async function kiSenden(text) {
@@ -5701,7 +5767,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const eintrag = { rolle: "ki", ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null, guardrail: res?.guardrail || null };
       if (res?.stats) k.stats = res.stats;
       // Caption-Vorschlaege landen direkt im Editor, mit Version und Autosave.
-      if (eintrag.caption) eintrag.version = kiCaptionSetzen(eintrag.caption);
+      if (eintrag.caption) eintrag.version = kiCaptionSetzen(eintrag.caption, nachricht);
       k.verlauf.push(eintrag);
       // Visual-Vorschlaege werden sofort erzeugt, ohne zweiten Klick.
       if (eintrag.bild_auftrag) {
@@ -5730,11 +5796,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     k.erzeugtVisual = true;
     k.hinweisVisual = "";
     kiEditorZeichne();
-    await bauePrivatBild({ auftrag: n.bild_auftrag, anpassen: n.bild_modus === "anpassen" });
+    await bauePrivatBild({ auftrag: n.bild_auftrag, anpassen: n.bild_modus === "anpassen", notiz: n.anfrage || "" });
     k.laeuft.bild = false;
     k.erzeugtVisual = false;
-    kiVisualVersionMerken();
-    if (!state.kiFortschritt?.fehler) { k.hinweisVisual = "Gespeichert"; n.version = k.versionen.bild.liste.length; }
+    if (!state.kiFortschritt?.fehler) { k.neuesVisual = true; await kiVersionenLaden(); }
+    if (!state.kiFortschritt?.fehler) { k.hinweisVisual = "Gespeichert"; n.version = k.versionen.bild.liste.length + 1; }
     kiEditorZeichne();
     k.neuesVisual = false;
   }
@@ -5758,7 +5824,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     if (k.modellOffen) { k.modellOffen = false; kiEditorZeichne(); }
     const ziel = event.target.closest("[data-ki-ziel]");
-    if (ziel && !ziel.disabled) { kiAutosaveJetzt(); k.ziel = ziel.getAttribute("data-ki-ziel"); k.tippt = false; kiEditorZeichne(); return; }
+    if (ziel && !ziel.disabled) { kiAutosaveJetzt(); kiHandarbeitSichern(); k.ziel = ziel.getAttribute("data-ki-ziel"); k.tippt = false; kiEditorZeichne(); return; }
     if (event.target.closest("[data-ki-regeln]")) {
       const regeln = k.regeln || [];
       k.verlauf.push({ rolle: "nutzer", ziel: k.ziel, text: "Welche ROOTS-Guardrails gelten?" });
@@ -5770,6 +5836,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (kiFmt) { captionFormatieren(kiEditor.querySelector("[data-ki-text]"), kiFmt.getAttribute("data-ki-fmt")); return; }
     const chip = event.target.closest("[data-ki-chip]");
     if (chip) { void kiSenden(chip.getAttribute("data-ki-chip")); return; }
+    const vmenu = event.target.closest("[data-ki-vmenu]");
+    if (vmenu) { const v = k.versionen[vmenu.getAttribute("data-ki-vmenu")]; v.offen = !v.offen; v.frage = null; kiEditorZeichne(); return; }
+    const vwahl = event.target.closest("[data-ki-vwahl]");
+    if (vwahl && !vwahl.disabled) { k.versionen[vwahl.getAttribute("data-ki-vart")].frage = vwahl.getAttribute("data-ki-vwahl"); kiEditorZeichne(); return; }
+    if (event.target.closest("[data-ki-vnein]")) { Object.values(k.versionen).forEach((v) => { v.frage = null; }); kiEditorZeichne(); return; }
+    const vja = event.target.closest("[data-ki-vja]");
+    if (vja) { void kiVersionAnwenden(vja.getAttribute("data-ki-vart"), vja.getAttribute("data-ki-vja")); return; }
+    if (Object.values(k.versionen || {}).some((v) => v.offen) && !event.target.closest(".as-ki-vliste")) { Object.values(k.versionen).forEach((v) => { v.offen = false; v.frage = null; }); kiEditorZeichne(); return; }
     const zurueck = event.target.closest("[data-ki-zurueck]");
     if (zurueck && !zurueck.disabled) { void kiVersionWechseln(zurueck.getAttribute("data-ki-zurueck"), -1); return; }
     const vor = event.target.closest("[data-ki-vor]");
@@ -5946,7 +6020,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (state.nurLesen || !src || src.length <= 470000 || !state.assetId || state.answers.profile !== "private") return;
     try {
       const bild = await alsJpegUnter(src, 470000);
-      const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: state.slides[0]?.ki_bild_stil || "" });
+      const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: state.slides[0]?.ki_bild_stil || "", version: false });
       if (gespeichert?.html && state.slides[0]) { state.slides[0].ki_layout = String(gespeichert.html); render(); }
     } catch { /* bleibt gross, Anzeige funktioniert trotzdem */ }
   }
