@@ -4134,7 +4134,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         state.busy = false;
         ladeTaktStop();
         render();
-        bildNachholen();
+        bildNachholen(fertig.payload);
         return;
       }
       if (row.status === "error") {
@@ -4156,7 +4156,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.error = "";
       render();
       void verkleinerePrivatBild();
-      bildNachholen();
+      bildNachholen(row.payload);
     } catch (err) {
       state.formError = err && err.message ? fehlerKlartext(String(err.message)) : "Entwurf konnte nicht geöffnet werden.";
       state.step = "form";
@@ -4738,7 +4738,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       render();
       // Privatprofil: das Visual im Stil der eigenen Posts gleich hinterher.
       // Einzelbild: Bild im gewaehlten Bildstil aus dem Bildtool.
-      if (!isMemo && state.answers.profile === "private" && (state.answers.asset_type !== "carousel" || state.kiVisual)) void baueKiVisuals();
+      // Einzelbild baut der Server direkt nach dem Text; hier nur warten.
+      if (!isMemo && state.answers.profile === "private" && state.answers.asset_type !== "carousel") void wartePrivatBild();
+      else if (!isMemo && state.answers.profile === "private" && state.kiVisual) void baueKiVisuals();
     } catch (err) {
       if (state.cancelRequested) return;
       state.busy = false;
@@ -4890,16 +4892,57 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * ist ein eigener Serveraufruf; die Titelfolie zuerst, die folgenden
    * uebernehmen ihre Gestaltung.
    */
-  /**
-   * Lief der Entwurf im Hintergrund, war beim Fertigwerden kein Studio offen
-   * und das Bild wurde nie angefordert. Beim Oeffnen des eigenen Entwurfs
-   * holt das Studio es nach, statt den Fehlerzustand zu zeigen.
-   */
-  function bildNachholen() {
-    if (state.nurLesen || isMemo || state.answers.profile !== "private" || state.answers.asset_type === "carousel") return;
-    const erste = state.slides[0];
-    if (!erste || (erste.variant === "KI" && erste.ki_layout)) return;
-    void baueKiVisuals();
+  function hatPrivatBild(slide) {
+    return Boolean(slide && slide.variant === "KI" && slide.ki_layout);
+  }
+
+  /** Stand des Server-Bilds beim Oeffnen eines Entwurfs. */
+  function bildNachholen(payload) {
+    if (isMemo || state.answers.profile !== "private" || state.answers.asset_type === "carousel") return;
+    if (hatPrivatBild(state.slides[0])) return;
+    const stand = (payload && payload.privat_bild) || {};
+    const alter = Date.now() - Date.parse(stand.zeit || 0);
+    if (stand.status === "laeuft" && alter < 4 * 60_000) { void wartePrivatBild(); return; }
+    if (stand.status === "client" && !state.nurLesen) { void baueKiVisuals(); return; }
+    state.kiFortschritt = { fertig: 0, gesamt: 1, fehler: stand.status === "fehler" ? fehlerKlartext(String(stand.fehler || "")) : "", bild: true };
+    render();
+  }
+
+  /** Wartet auf das Bild, das der Server nach dem Text baut. */
+  async function wartePrivatBild() {
+    if (state.kiLaeuft || !state.assetId) return;
+    const id = state.assetId;
+    state.kiLaeuft = true;
+    state.kiFortschritt = { fertig: 0, gesamt: 1, fehler: "", bild: true };
+    render();
+    const start = Date.now();
+    let ergebnis = "zeit";
+    while (Date.now() - start < 200_000) {
+      await new Promise((r) => setTimeout(r, 4_000));
+      if (state.assetId !== id || !openInstance) return;
+      const res = await api("get_asset", { asset_id: id }).catch(() => null);
+      const row = res && typeof res === "object" ? (res.asset || res) : {};
+      const payload = row.payload || {};
+      const neu = Array.isArray(payload.slides) ? payload.slides[0] : null;
+      if (hatPrivatBild(neu) && state.slides[0]) {
+        ["variant", "ki_layout", "ki_basis", "ki_typ", "ki_bild_stil", "ki_bild_meta"].forEach((k) => { if (neu[k] !== undefined) state.slides[0][k] = neu[k]; });
+        state.slides[0].html = {};
+        state.privatBildStil = String(neu.ki_bild_meta?.stil || "");
+        ergebnis = "fertig";
+        break;
+      }
+      const stand = payload.privat_bild || {};
+      if (stand.status === "fehler") { ergebnis = "fehler"; state.kiFortschritt.fehler = fehlerKlartext(String(stand.fehler || "")) || "Das Bild konnte nicht erstellt werden."; break; }
+      if (stand.status === "client") { ergebnis = "client"; break; }
+      // Ohne jeden Stand nach 20 s hat der Server nicht uebernommen: selbst bauen.
+      if (!stand.status && Date.now() - start > 20_000) { ergebnis = "client"; break; }
+    }
+    state.kiLaeuft = false;
+    if (ergebnis === "zeit") state.kiFortschritt.fehler = "Das Bild braucht ungewöhnlich lange. Bitte erneut versuchen.";
+    if (ergebnis === "fertig") state.kiFortschritt.fertig = 1;
+    render();
+    if (ergebnis === "fertig") void verkleinerePrivatBild();
+    if (ergebnis === "client" && !state.nurLesen) void baueKiVisuals();
   }
 
   async function baueKiVisuals() {

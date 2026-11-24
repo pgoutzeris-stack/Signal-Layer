@@ -865,9 +865,59 @@ async function assetAuthorsByIds(ids: string[]): Promise<Map<string, AssetAuthor
 
 const ASSET_CANCELLED_MESSAGE = "Vom Nutzer abgebrochen.";
 
+/**
+ * Bild fuer private Einzelposts gehoert zur Erstellung: der Server baut es
+ * direkt nach dem Text, egal ob das Studio offen ist. Der Stand steht in
+ * payload.privat_bild (laeuft, fertig, fehler, client), das Studio liest ihn.
+ */
+async function setzePrivatBildStand(assetId: string, stand: Record<string, unknown>): Promise<void> {
+  const admin = getAdminClient();
+  const { data } = await admin.schema("signal_layer").from("generated_assets").select("payload").eq("id", assetId).maybeSingle();
+  const payload = (data?.payload || {}) as Record<string, unknown>;
+  await admin.schema("signal_layer").from("generated_assets")
+    .update({ payload: { ...payload, privat_bild: { ...stand, zeit: new Date().toISOString() } }, updated_at: new Date().toISOString() })
+    .eq("id", assetId);
+}
+
+function startePrivatBildAufServer(row: Record<string, unknown>): void {
+  const assetId = String(row.id || "");
+  if (!assetId || String(row.kind || "") !== "linkedin") return;
+  const arbeit = (async () => {
+    const admin = getAdminClient();
+    const { data: asset } = await admin.schema("signal_layer").from("generated_assets").select("answers, payload").eq("id", assetId).maybeSingle();
+    const answers = (asset?.answers || {}) as Record<string, unknown>;
+    if (answers.profile !== "private" || answers.asset_type === "carousel") return;
+    const slides = ((asset?.payload as Record<string, unknown>)?.slides || []) as Record<string, unknown>[];
+    if (slides[0]?.variant === "KI" && slides[0]?.ki_layout) return;
+    await setzePrivatBildStand(assetId, { status: "laeuft" });
+    const { data: geheimnis } = await admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_cron_secret" });
+    let antwort: Record<string, unknown> | null = null;
+    let fehler = "";
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-cron-secret": String(geheimnis || "") },
+        body: JSON.stringify({ action: "privat_bild", asset_id: assetId, speichern: true }),
+        signal: AbortSignal.timeout(150_000),
+      });
+      antwort = await res.json().catch(() => null);
+      if (!res.ok) fehler = String(antwort?.error || `HTTP ${res.status}`);
+    } catch (e) {
+      fehler = e instanceof Error ? e.message : String(e);
+    }
+    if (antwort?.gespeichert) await setzePrivatBildStand(assetId, { status: "fertig" });
+    // Stile mit ROOTS-Wortmarke setzt das Studio zusammen; es baut sie selbst.
+    else if (antwort?.bild) await setzePrivatBildStand(assetId, { status: "client" });
+    else await setzePrivatBildStand(assetId, { status: "fehler", fehler: (fehler || "Das Bild konnte nicht erstellt werden.").slice(0, 300) });
+  })().catch(() => {});
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  runtime?.waitUntil?.(arbeit);
+}
+
 async function notifyGeneratedAssetSettled(row: Record<string, unknown>): Promise<void> {
   const status = String(row.status || "");
   if (status !== "done" && status !== "error") return;
+  if (status === "done") startePrivatBildAufServer(row);
   if (String(row.error_message || "") === ASSET_CANCELLED_MESSAGE) return;
   const userId = String(row.created_by || "").trim();
   if (!userId) return;
