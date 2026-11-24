@@ -1592,7 +1592,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-msg--ki{align-self:flex-start; display:flex; gap:10px;}
 #as-overlay .as-ki-ava{width:30px; height:30px; flex:0 0 auto; border-radius:50%; background:linear-gradient(135deg,#206efb,#7aa7ff); color:#fff; display:grid; place-items:center; font-size:13px;}
 #as-overlay .as-ki-blase{background:#f1f5f9; border-radius:6px 18px 18px 18px; padding:10px 14px; font-size:14px; line-height:1.5; color:#0f172a; white-space:pre-wrap;}
-#as-overlay .as-ki-msg--abgelehnt .as-ki-blase{background:#fff7ed; color:#9a3412;}
+
 #as-overlay .as-ki-ziel{display:inline-block; margin-bottom:4px; font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#64748b;}
 #as-overlay .as-ki-msg--nutzer .as-ki-ziel{color:rgba(255,255,255,.75);}
 #as-overlay .as-ki-vorschlag{margin-top:10px; background:#fff; border-radius:12px; padding:12px; box-shadow:0 1px 3px rgba(15,23,42,.08);}
