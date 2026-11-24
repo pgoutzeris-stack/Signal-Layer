@@ -174,6 +174,18 @@ function artLabel(i) {
   return `LinkedIn ${typ}${i.profile === "private" ? " · Privat" : i.profile === "roots" ? " · ROOTS" : ""}`;
 }
 
+/** Folientitel tragen **fett** und ~~gestrichen~~; hier wie auf der Folie zeigen. */
+function titelHtml(text) {
+  return escapeHtml(String(text || ""))
+    .replace(/~~([^~]+)~~/g, "<s>$1</s>")
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/~~|\*\*/g, "");
+}
+
+function ohneMarkup(text) {
+  return String(text || "").replace(/~~|\*\*/g, "");
+}
+
 function contentGefiltert(liste) {
   const text = norm(contentFilter.text.trim());
   return liste.filter((i) => {
@@ -182,7 +194,7 @@ function contentGefiltert(liste) {
     if (contentFilter.status === "owned" && !i.owner) return false;
     if (contentFilter.status === "draft" && i.owner) return false;
     if (contentFilter.person !== "all" && i.author?.user_id !== contentFilter.person && i.owner?.user_id !== contentFilter.person) return false;
-    if (text && !norm(`${i.title} ${i.signal_title} ${i.article_title} ${i.company}`).includes(text)) return false;
+    if (text && !norm(`${ohneMarkup(i.title)} ${i.signal_title} ${i.article_title} ${i.company}`).includes(text)) return false;
     return true;
   });
 }
@@ -209,7 +221,7 @@ function zeichneListe(root, liste) {
     const unter = inGruppe ? artLabel(i) : [artLabel(i), i.signal_title || i.article_title].filter(Boolean).join(" · ");
     const lane = i.lane === "sales" ? '<span class="cl-tag cl-tag--sales">Sales</span>' : i.lane === "marketing" ? '<span class="cl-tag cl-tag--marketing">Marketing</span>' : '<span class="cl-datum">ohne Signal</span>';
     return `<button type="button" class="cl-zeile${inGruppe ? " cl-zeile--gruppe" : ""}" data-cl-id="${escapeHtml(i.id)}">
-      <span class="cl-titel"><b>${escapeHtml(titel)}</b><span>${escapeHtml(unter)}</span></span>
+      <span class="cl-titel"><b>${titelHtml(titel)}</b><span>${escapeHtml(unter)}</span></span>
       <span>${lane}</span>
       <span>${personHtml(i.author)}</span>
       <span>${i.owner ? personHtml(i.owner) : '<span class="cl-tag">Entwurf</span>'}</span>

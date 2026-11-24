@@ -4006,7 +4006,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function draftTitel(row) {
     const memoTitle = String(row.title || "").trim();
-    const slideTitle = String(row.slide_title || "").trim();
+    // Folienzeichen fuer fett und gestrichen gehoeren nicht in die Liste.
+    const slideTitle = String(row.slide_title || "").replace(/~~|\*\*/g, "").replace(/<[^>]+>/g, "").trim();
     if (isMemo && memoTitle) return memoTitle;
     if (!isMemo && slideTitle) return slideTitle;
     if (memoTitle) return memoTitle;

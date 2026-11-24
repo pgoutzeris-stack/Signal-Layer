@@ -1347,6 +1347,11 @@ function capMarkup(value: string, max: number): string {
   const satz = satzEnde >= 0 ? out.slice(0, satzEnde + 1) : "";
   if (withoutMarkup(satz).length >= Math.floor(max * 0.6)) return aufraeumen(satz);
   const wort = /\s/.test(out) ? out.replace(/\s+\S*$/, "") : "";
+  // Ein abgeschnittener Nebensatz liest sich wie ein Fehler ("Chefs betonen
+  // Sichtbarkeit, Mitarbeiter wünschen", 24.11.2026). Steht vor dem Schnitt
+  // ein Komma, endet der Text dort, solange genug uebrig bleibt.
+  const komma = wort.lastIndexOf(",");
+  if (komma > 0 && withoutMarkup(wort.slice(0, komma)).length >= Math.floor(max * 0.45)) return aufraeumen(wort.slice(0, komma));
   return aufraeumen(wort || out);
 }
 
