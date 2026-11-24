@@ -17,7 +17,7 @@ import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
 import { openManualSignal } from "./manual-signal.js?v=20261124-10";
 import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261124-10";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { beiSignalFilter, initContentListe, signalPasst, zeigeContent } from "./content-liste.mjs?v=20261124-10";
+import { beiSignalFilter, initContentListe, signalPasst, zeigeContent } from "./content-liste.mjs?v=20261124-11";
 
 let sb = null;
 let sources = [];

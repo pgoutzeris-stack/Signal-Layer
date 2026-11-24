@@ -70,11 +70,14 @@ function css() {
 .cl-person span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .cl-gruppe{border-bottom:1px solid var(--line); background:color-mix(in srgb, var(--brand) 2.5%, var(--bg));}
 .cl-gruppe:last-child{border-bottom:0;}
-.cl-gruppe-kopf{display:flex; align-items:center; gap:8px; padding:10px 16px 4px; font-size:.76rem; color:var(--muted);}
-.cl-gruppe-kopf i{font-size:.72rem;}
+.cl-gruppe-kopf{display:flex; align-items:center; gap:10px; padding:12px 16px 6px; font-size:.76rem; color:var(--muted);}
 .cl-gruppe-kopf b{color:var(--ink); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
 .cl-gruppe-kopf span{flex:0 0 auto;}
-.cl-zeile--gruppe{padding-left:34px; border-bottom:0; background:transparent;}
+.cl-zeile--gruppe{position:relative; padding-left:46px; border-bottom:0; background:transparent;}
+/* Baumlinie: vom Gruppenkopf nach unten, je Entwurf ein Abzweig mit Pfeilspitze. */
+.cl-zeile--gruppe::before{content:""; position:absolute; left:24px; top:0; height:50%; width:12px; border-left:1.5px solid #cbd5e1; border-bottom:1.5px solid #cbd5e1; border-bottom-left-radius:7px;}
+.cl-zeile--gruppe:not(:last-child)::after{content:""; position:absolute; left:24px; top:50%; bottom:0; border-left:1.5px solid #cbd5e1;}
+.cl-zeile--gruppe .cl-titel::before{content:""; position:absolute; left:35px; top:50%; width:0; height:0; margin-top:-3.5px; border-left:5px solid #cbd5e1; border-top:3.5px solid transparent; border-bottom:3.5px solid transparent;}
 .cl-zeile--gruppe:last-child{padding-bottom:12px;}
 .cl-datum{font-size:.74rem; color:var(--muted); font-variant-numeric:tabular-nums;}
 @media (max-width:900px){.cl-zeile{grid-template-columns:minmax(0,1fr) 110px;} .cl-zeile > :nth-child(n+3){display:none;}}`;
@@ -206,7 +209,7 @@ function zeichneListe(root, liste) {
     const erste = liste[0];
     const personen = new Set(liste.map((i) => i.author?.user_id).filter(Boolean)).size;
     const zahl = `${liste.length} Entwürfe${personen > 1 ? ` von ${personen} Personen` : ""}`;
-    return `<div class="cl-gruppe"><div class="cl-gruppe-kopf"><i class="fa-solid fa-tower-broadcast"></i><b>${escapeHtml(erste.signal_title || erste.article_title || "Signal")}</b><span>${escapeHtml(zahl)}</span></div>${liste.map((i) => zeile(i, true)).join("")}</div>`;
+    return `<div class="cl-gruppe"><div class="cl-gruppe-kopf"><b>${escapeHtml(erste.signal_title || erste.article_title || "Signal")}</b><span>${escapeHtml(zahl)}</span></div>${liste.map((i) => zeile(i, true)).join("")}</div>`;
   });
   ziel.innerHTML = `<div class="cl-zeile cl-kopf"><span>Content</span><span>Bereich</span><span>Erstellt von</span><span>Übernommen von</span><span>Stand</span></div>${teile.join("")}`;
 }
