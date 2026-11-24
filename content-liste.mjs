@@ -174,12 +174,9 @@ function artLabel(i) {
   return `LinkedIn ${typ}${i.profile === "private" ? " · Privat" : i.profile === "roots" ? " · ROOTS" : ""}`;
 }
 
-/** Folientitel tragen **fett** und ~~gestrichen~~; hier wie auf der Folie zeigen. */
+/** Folientitel tragen **fett** und ~~gestrichen~~ fuer die Folie; in der Liste reiner Text. */
 function titelHtml(text) {
-  return escapeHtml(String(text || ""))
-    .replace(/~~([^~]+)~~/g, "<s>$1</s>")
-    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
-    .replace(/~~|\*\*/g, "");
+  return escapeHtml(ohneMarkup(text));
 }
 
 function ohneMarkup(text) {
