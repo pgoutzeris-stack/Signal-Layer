@@ -12,7 +12,12 @@ export function fehlerKlartext(roh) {
   if (!text) return "Unbekannter Fehler. Bitte erneut versuchen.";
   const deutsch = /[äöüß]|\b(die|der|das|nicht|kein|keine|und|ist|wurde|bitte)\b/i;
   const [kopf, ...rest] = text.split("\n\n");
-  if (deutsch.test(kopf)) return text;
+  // Server-Saetze wie "Bild konnte nicht generiert werden: HTTP 429 ..." tragen
+  // die englische Anbietermeldung hinten dran; die zaehlt.
+  if (/monthly spending cap|spend cap/i.test(kopf)) {
+    return "Das Monatsbudget für KI-Bilder bei Google ist aufgebraucht. Erst wenn das Limit erhöht ist, geht es weiter.";
+  }
+  if (deutsch.test(kopf) && !/HTTP \d{3}/.test(kopf)) return text;
   let satz;
   if (/check constraint|violates|duplicate key|foreign key|relation .* does not exist|column .* does not exist/i.test(kopf)) {
     satz = "Interner Fehler in der Datenbank des Signal Layer. Das liegt nicht an deinen Eingaben. Bitte erneut versuchen.";

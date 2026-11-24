@@ -1706,6 +1706,11 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-vfrage{margin:4px 6px 8px; padding:10px; border-radius:10px; background:#f8fafc; font-size:12px; color:#334155; display:flex; flex-direction:column; gap:8px; animation:asKiWort .3s ease both;}
 #as-overlay .as-ki-vfrage-knoepfe{display:flex; justify-content:flex-end; gap:6px;}
 #as-overlay .as-ki-vfrage-knoepfe .as-btn{width:auto !important; height:auto !important; border-radius:999px !important; font-size:12px; padding:6px 12px;}
+#as-overlay .as-ki-ava--fehler{background:#fee2e2; color:#dc2626;}
+#as-overlay .as-ki-fehler{display:flex; flex-direction:column; align-items:flex-start; gap:10px;}
+#as-overlay .as-ki-nochmal-knopf{display:inline-flex; align-items:center; gap:7px; border:0; border-radius:999px; background:#206efb; color:#fff; padding:7px 14px; font-weight:600; font-size:12.5px; font-family:inherit; cursor:pointer; transition:background .15s;}
+#as-overlay .as-ki-nochmal-knopf:hover{background:#165fd9;}
+#as-overlay .as-ki-nochmal-knopf:disabled{opacity:.5; cursor:default;}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
@@ -2209,7 +2214,7 @@ import {
 // nie in ein erzeugtes Memo.
 import { MEMO_EXAMPLE } from "./memo-example.js?v=20261013-5";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261013-5";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261124-35";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -5460,6 +5465,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const liste = n.regeln || [n.guardrail];
       extra += `<div class="as-ki-regel">${liste.map((r, j) => `<div class="as-ki-regel-zeile" style="animation-delay:${0.15 + j * 0.08}s"><span class="as-ki-regel-ico"><i class="fa-solid fa-shield-halved"></i></span><div><b>${esc(r.titel)}</b><p>${esc(r.text)}</p></div></div>`).join("")}</div>`;
     }
+    // Fehlgeschlagen: statt der Antwort nur der Fehler und ein neuer Versuch.
+    if (n.visualFehler || n.status === "fehler") {
+      return `<div class="as-ki-msg as-ki-msg--ki${alt}"><span class="as-ki-ava as-ki-ava--fehler"><i class="fa-solid fa-triangle-exclamation"></i></span>
+        <div class="as-ki-blase as-ki-fehler"><span>${esc(n.visualFehler || n.text)}</span>
+        <button type="button" class="as-ki-nochmal-knopf" data-ki-nochmal="${i}"${state.ki?.laeuft?.[n.ziel] ? " disabled" : ""}><i class="fa-solid fa-rotate-right"></i>Erneut versuchen</button></div></div>`;
+    }
     const text = n.alt ? esc(n.text) : kiWoerter(n.text);
     return `<div class="as-ki-msg as-ki-msg--ki${n.status === "abgelehnt" ? " as-ki-msg--abgelehnt" : ""}${n.status === "fehler" ? " as-ki-msg--abgelehnt" : ""}${alt}"><span class="as-ki-ava"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
       <div class="as-ki-blase">${text}${extra}</div></div>`;
@@ -5777,7 +5788,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         return;
       }
     } catch (err) {
-      k.verlauf.push({ rolle: "ki", ziel, status: "fehler", text: err && err.message ? fehlerKlartext(String(err.message)) : "Die KI hat nicht geantwortet." });
+      k.verlauf.push({ rolle: "ki", ziel, status: "fehler", anfrage: nachricht, text: err && err.message ? fehlerKlartext(String(err.message)) : "Die KI hat nicht geantwortet." });
     }
     k.laeuft[ziel] = false;
     if (!state.ki?.offen) return;
@@ -5799,8 +5810,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     await bauePrivatBild({ auftrag: n.bild_auftrag, anpassen: n.bild_modus === "anpassen", notiz: n.anfrage || "" });
     k.laeuft.bild = false;
     k.erzeugtVisual = false;
-    if (!state.kiFortschritt?.fehler) { k.neuesVisual = true; await kiVersionenLaden(); }
+    if (!state.kiFortschritt?.fehler) { n.visualFehler = ""; k.neuesVisual = true; await kiVersionenLaden(); }
+    else n.visualFehler = state.kiFortschritt.fehler;
     if (!state.kiFortschritt?.fehler) { k.hinweisVisual = "Gespeichert"; n.version = k.versionen.bild.liste.length + 1; }
+    else k.hinweisVisual = "";
     kiEditorZeichne();
     k.neuesVisual = false;
   }
@@ -5836,6 +5849,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (kiFmt) { captionFormatieren(kiEditor.querySelector("[data-ki-text]"), kiFmt.getAttribute("data-ki-fmt")); return; }
     const chip = event.target.closest("[data-ki-chip]");
     if (chip) { void kiSenden(chip.getAttribute("data-ki-chip")); return; }
+    const nochmal = event.target.closest("[data-ki-nochmal]");
+    if (nochmal && !nochmal.disabled) {
+      const pos = Number(nochmal.getAttribute("data-ki-nochmal"));
+      const n = k.verlauf[pos];
+      if (n?.visualFehler) { void kiVisualErzeugen(n); return; }
+      if (n?.status === "fehler" && n.anfrage) {
+        // Fehlversuch samt Frage raus, dann dieselbe Frage neu senden.
+        k.verlauf.splice(pos - 1, 2);
+        void kiSenden(n.anfrage);
+      }
+      return;
+    }
     const vmenu = event.target.closest("[data-ki-vmenu]");
     if (vmenu) { const v = k.versionen[vmenu.getAttribute("data-ki-vmenu")]; v.offen = !v.offen; v.frage = null; kiEditorZeichne(); return; }
     const vwahl = event.target.closest("[data-ki-vwahl]");
