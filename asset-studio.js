@@ -1572,7 +1572,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-zu{width:34px; height:34px; border:0; border-radius:50%; background:transparent; color:#64748b; cursor:pointer; font-size:16px;}
 #as-overlay .as-ki-zu:hover{background:#f1f5f9; color:#0f172a;}
 #as-overlay .as-ki-rumpf{display:grid; grid-template-columns:minmax(0,1.08fr) minmax(360px,.92fr); min-height:0;}
-#as-overlay .as-ki-links{display:grid; grid-template-rows:minmax(0,1fr) auto; min-height:0; background:#f8fafc; border-right:1px solid #edf2f7;}
+#as-overlay .as-ki-links{display:grid; grid-template-rows:auto minmax(0,1fr) auto; min-height:0; background:#f8fafc; border-right:1px solid #edf2f7;}
 #as-overlay .as-ki-text{width:100%; height:100%; min-height:0; box-sizing:border-box; resize:none; border:0; outline:0; background:transparent; padding:28px 32px; font-weight:400;font-size:15.5px;line-height:1.65;font-family:inherit; color:#0f172a;}
 #as-overlay .as-ki-bildbox{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:28px; min-height:0; overflow:auto;}
 #as-overlay .as-ki-bildbox img{max-width:min(100%,560px); max-height:58vh; border-radius:10px; box-shadow:0 10px 30px rgba(15,23,42,.12); transition:filter .3s, opacity .3s;}
@@ -1646,7 +1646,8 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-text--tippt{overflow:auto; white-space:pre-wrap;}
 #as-overlay .as-ki-status{font-size:12px; color:#16a34a; margin-left:auto; animation:asKiRein .3s ease both;}
 #as-overlay .as-ki-versionen{display:inline-flex; align-items:center; gap:4px; padding:3px; border-radius:999px; background:#f1f5f9; font-size:12px; color:#475569; font-variant-numeric:tabular-nums;}
-#as-overlay .as-ki-versionen span{padding:0 6px;}
+#as-overlay .as-ki-oben{display:flex; justify-content:flex-start; padding:12px 20px 0;}
+#as-overlay .as-ki-oben:empty{padding:0;}
 #as-overlay .as-ki-versionen button{width:28px; height:28px; border:0; border-radius:50%; background:#fff; color:#206efb; cursor:pointer; box-shadow:0 1px 3px rgba(15,23,42,.1); transition:transform .15s, opacity .15s;}
 #as-overlay .as-ki-versionen button:hover:not(:disabled){transform:scale(1.08);}
 #as-overlay .as-ki-versionen button:disabled{opacity:.35; cursor:default; box-shadow:none;}
@@ -5415,7 +5416,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!anzahl) return "";
     return `<span class="as-ki-versionen" role="group" aria-label="Versionen">
       <button type="button" data-ki-zurueck="${ziel}" aria-label="Vorherige Version"${v.index <= 0 || state.ki.laeuft[ziel] ? " disabled" : ""}><i class="fa-solid fa-arrow-rotate-left"></i></button>
-      <span>${v.index + 1} / ${anzahl}</span>
       <button type="button" data-ki-vor="${ziel}" aria-label="Nächste Version"${v.index >= anzahl - 1 || state.ki.laeuft[ziel] ? " disabled" : ""}><i class="fa-solid fa-arrow-rotate-right"></i></button>
     </span>`;
   }
@@ -5427,20 +5427,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const feld = k.tippt
         ? `<div class="as-ki-text as-ki-text--tippt" aria-live="polite">${kiWoerter(k.entwurf, 0, 0.012)}</div>`
         : `<textarea class="as-ki-text" data-ki-text aria-label="Caption" spellcheck="true">${esc(k.entwurf || "")}</textarea>`;
-      return `<div class="as-ki-feld${k.laeuft.caption ? " is-denkt" : ""}">${feld}</div>
-        <div class="as-ki-leiste">${kiVersionLeiste("caption")}
+      return `<div class="as-ki-oben">${kiVersionLeiste("caption")}</div><div class="as-ki-feld${k.laeuft.caption ? " is-denkt" : ""}">${feld}</div>
+        <div class="as-ki-leiste">
           <span class="as-ki-zaehler${laenge > 3000 ? " is-zuviel" : ""}" data-ki-zaehler>${laenge.toLocaleString("de-DE")} / 3.000</span>
           <span class="as-ki-status" data-ki-hinweis>${esc(k.hinweis || "")}</span></div>`;
     }
     const bildSrc = privatBildSrc();
     const meta = state.slides[0]?.ki_bild_meta || {};
-    return `<div class="as-ki-bildbox${k.laeuft.bild ? " is-laeuft" : ""}">
+    return `<div class="as-ki-oben">${kiVersionLeiste("bild")}</div><div class="as-ki-bildbox${k.laeuft.bild ? " is-laeuft" : ""}">
         <div class="as-ki-bildrahmen">${bildSrc ? `<img src="${attr(bildSrc)}" alt="" class="${k.neuesVisual ? "is-neu" : ""}">` : '<div class="as-ki-auftrag">Noch kein Visual.</div>'}
           ${k.laeuft.bild ? '<span class="as-ki-schimmer" aria-hidden="true"></span><span class="as-ki-laeuft"><i class="fa-solid fa-wand-magic-sparkles"></i>Visual wird erzeugt</span>' : ""}</div>
         ${state.kiFortschritt?.fehler && !k.laeuft.bild ? `<div class="as-ki-auftrag" style="color:#b91c1c">${esc(state.kiFortschritt.fehler)}</div>` : ""}
         ${meta.auftrag ? `<div class="as-ki-auftrag">${esc(meta.auftrag)}</div>` : ""}
       </div>
-      <div class="as-ki-leiste">${kiVersionLeiste("bild")}<span class="as-ki-zaehler">${esc(meta.stil || state.privatBildStil || "")}</span><span class="as-ki-status">${esc(k.hinweisVisual || "")}</span></div>`;
+      <div class="as-ki-leiste"><span class="as-ki-status">${esc(k.hinweisVisual || "")}</span></div>`;
   }
 
   function kiEditorZeichne() {
