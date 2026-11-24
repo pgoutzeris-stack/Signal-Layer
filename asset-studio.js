@@ -5141,7 +5141,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const res = await api("privat_bild", {
         asset_id: state.assetId, post_text: state.postText || "",
         ...(optionen.auftrag ? { chat_auftrag: optionen.auftrag } : {}),
-        ...(optionen.anpassen && privatBildSrc() ? { bild_basis: privatBildSrc() } : {}),
+        // Vorlage klein halten: das Gateway nimmt nur rund 512 KB je Anfrage.
+        ...(optionen.anpassen && privatBildSrc() ? { bild_basis: await alsJpegUnter(privatBildSrc(), 330000) } : {}),
       });
       if (!res?.bild) throw new Error("Bild konnte nicht generiert werden.");
       let bild = String(res.bild);
