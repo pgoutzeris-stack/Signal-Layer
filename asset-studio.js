@@ -1542,10 +1542,10 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-avatar--person img{object-fit:cover;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
-#as-overlay .as-info-knopf{margin-left:auto; align-self:flex-start; width:28px; height:28px; border-radius:50%; border:1px solid var(--line,#e2e8f0);
-  background:#fff; color:#475569; display:grid; place-items:center; font-size:12px; cursor:pointer; transition:color .15s, border-color .15s, background .15s;}
-#as-overlay .as-info-knopf:hover{color:#206efb; border-color:#bfdbfe; background:#eff6ff;}
-#as-overlay .as-info-knopf--bild{position:absolute; top:12px; right:12px; z-index:3; margin:0; box-shadow:0 2px 8px rgba(15,23,42,.08);}
+#as-overlay .as-info-knopf{margin-left:auto; align-self:flex-start; width:26px; height:26px; border:0; border-radius:999px; background:transparent;
+  color:#206efb; display:grid; place-items:center; font-size:16px; cursor:pointer; transition:transform .18s ease, background .18s ease;}
+#as-overlay .as-info-knopf:hover, #as-overlay .as-info-knopf:focus-visible{transform:scale(1.15); background:#eff6ff; outline:none;}
+#as-overlay .as-info-knopf--bild{position:absolute; top:12px; right:12px; z-index:3; margin:0; background:#fff; box-shadow:0 2px 8px rgba(15,23,42,.1);}
 #as-overlay .as-bildinfo-score{display:flex; align-items:baseline; gap:8px;}
 #as-overlay .as-bildinfo-score b{font-size:28px; line-height:1; color:#0f172a;}
 #as-overlay .as-bildinfo-score span{font-size:13px; color:#64748b;}
@@ -2877,10 +2877,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const logo = privat && kopf.avatar_url ? kopf.avatar_url : (state.chrome.logo || state.logo || LOGO_PATH);
     const avatarKlasse = privat && kopf.avatar_url ? " as-linkedin-avatar--person" : "";
     const tonPill = state.assetId
-      ? `<button type="button" class="as-info-knopf" data-act="caption-info" title="Infos zur Caption" aria-label="Infos zur Caption"><i class="fa-solid fa-info"></i></button>`
+      ? `<button type="button" class="as-info-knopf" data-act="caption-info" title="Infos zur Caption" aria-label="Infos zur Caption"><i class="fa-solid fa-circle-info"></i></button>`
       : "";
     const bildKnopf = privat && privatBildSrc()
-      ? `<button type="button" class="as-info-knopf as-info-knopf--bild" data-act="bild-info" title="Infos zum Bild" aria-label="Infos zum Bild"><i class="fa-solid fa-info"></i></button>`
+      ? `<button type="button" class="as-info-knopf as-info-knopf--bild" data-act="bild-info" title="Infos zum Bild" aria-label="Infos zum Bild"><i class="fa-solid fa-circle-info"></i></button>`
       : "";
     return `<div class="as-work as-work--feed" data-kind="linkedin">
       <article class="as-linkedin-post" aria-label="LinkedIn-Vorschau">
