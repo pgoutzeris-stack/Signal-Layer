@@ -5432,7 +5432,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (n.caption) extra = `<div class="as-ki-aenderung"><i class="fa-solid fa-pen"></i>Caption im Editor geändert${n.version ? ` · Version ${n.version}` : ""}</div>`;
     if (n.bild_auftrag) {
       extra = `<div class="as-ki-aenderung"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Visual angepasst" : "Neues Visual"}${n.version ? ` · Version ${n.version}` : ""}</div>
-        <details class="as-ki-gedanke${state.ki?.laeuft?.bild && i === state.ki.verlauf.length - 1 ? " is-aktiv" : ""}"><summary><i class="fa-solid fa-wand-magic-sparkles as-ki-gedanke-ico"></i><span class="as-ki-gedanke-titel">Visual-Auftrag</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary><div class="as-ki-gedanke-text">${esc(n.bild_auftrag)}</div></details>`;
+        <details class="as-ki-gedanke${state.ki?.erzeugtVisual && i === state.ki.verlauf.length - 1 ? " is-aktiv" : ""}"><summary><i class="fa-solid fa-wand-magic-sparkles as-ki-gedanke-ico"></i><span class="as-ki-gedanke-titel">Visual-Auftrag</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary><div class="as-ki-gedanke-text">${esc(n.bild_auftrag)}</div></details>`;
     }
     if (n.karte) {
       const kt = n.karte;
@@ -5474,10 +5474,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     const bildSrc = privatBildSrc();
     const meta = state.slides[0]?.ki_bild_meta || {};
-    return `<div class="as-ki-bildbox${k.laeuft.bild ? " is-laeuft" : ""}">
+    // Schimmer nur, solange wirklich ein Visual entsteht, nicht beim blossen Nachdenken.
+    return `<div class="as-ki-bildbox${k.erzeugtVisual ? " is-laeuft" : ""}">
         <div class="as-ki-bildrahmen">${bildSrc ? `<img src="${attr(bildSrc)}" alt="" class="${k.neuesVisual ? "is-neu" : ""}">` : '<div class="as-ki-auftrag">Noch kein Visual.</div>'}
-          ${k.laeuft.bild ? '<span class="as-ki-schimmer" aria-hidden="true"></span><span class="as-ki-laeuft"><i class="fa-solid fa-wand-magic-sparkles"></i>Visual wird erzeugt</span>' : ""}</div>
-        ${state.kiFortschritt?.fehler && !k.laeuft.bild ? `<div class="as-ki-auftrag" style="color:#b91c1c">${esc(state.kiFortschritt.fehler)}</div>` : ""}
+          ${k.erzeugtVisual ? '<span class="as-ki-schimmer" aria-hidden="true"></span><span class="as-ki-laeuft"><i class="fa-solid fa-wand-magic-sparkles"></i>Visual wird erzeugt</span>' : ""}</div>
+        ${state.kiFortschritt?.fehler && !k.erzeugtVisual ? `<div class="as-ki-auftrag" style="color:#b91c1c">${esc(state.kiFortschritt.fehler)}</div>` : ""}
       </div>
       <div class="as-ki-leiste"><span class="as-ki-status">${esc(k.hinweisVisual || "")}</span></div>`;
   }
@@ -5726,10 +5727,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const k = state.ki;
     if (!n?.bild_auftrag || k.laeuft.bild) return;
     k.laeuft.bild = true;
+    k.erzeugtVisual = true;
     k.hinweisVisual = "";
     kiEditorZeichne();
     await bauePrivatBild({ auftrag: n.bild_auftrag, anpassen: n.bild_modus === "anpassen" });
     k.laeuft.bild = false;
+    k.erzeugtVisual = false;
     kiVisualVersionMerken();
     if (!state.kiFortschritt?.fehler) { k.hinweisVisual = "Gespeichert"; n.version = k.versionen.bild.liste.length; }
     kiEditorZeichne();
