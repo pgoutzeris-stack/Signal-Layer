@@ -1651,9 +1651,16 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-versionen button{width:28px; height:28px; border:0; border-radius:50%; background:#fff; color:#206efb; cursor:pointer; box-shadow:0 1px 3px rgba(15,23,42,.1); transition:transform .15s, opacity .15s;}
 #as-overlay .as-ki-versionen button:hover:not(:disabled){transform:scale(1.08);}
 #as-overlay .as-ki-versionen button:disabled{opacity:.35; cursor:default; box-shadow:none;}
-#as-overlay .as-ki-details{margin-top:8px; font-size:12px; color:#64748b;}
-#as-overlay .as-ki-details summary{cursor:pointer;}
-#as-overlay .as-ki-details pre{margin:6px 0 0; white-space:pre-wrap; font:inherit; font-size:12px; color:#334155;}
+#as-overlay .as-ki-gedanke{margin-top:8px;}
+#as-overlay .as-ki-gedanke summary{list-style:none; display:inline-flex; align-items:center; gap:7px; cursor:pointer; font-size:12px; font-weight:600; color:#64748b; padding:3px 0; user-select:none;}
+#as-overlay .as-ki-gedanke summary::-webkit-details-marker{display:none;}
+#as-overlay .as-ki-gedanke-ico{font-size:11px; color:#7aa7ff;}
+#as-overlay .as-ki-gedanke-titel{background:linear-gradient(90deg,#64748b 0%,#64748b 40%,#b6c8ea 50%,#64748b 60%,#64748b 100%); background-size:300% 100%;
+  -webkit-background-clip:text; background-clip:text; color:transparent; animation:asKiSchrift 2.8s linear infinite;}
+@keyframes asKiSchrift{from{background-position:100% 0;} to{background-position:-100% 0;}}
+#as-overlay .as-ki-gedanke-pfeil{font-size:9px; transition:transform .25s ease;}
+#as-overlay .as-ki-gedanke[open] .as-ki-gedanke-pfeil{transform:rotate(90deg);}
+#as-overlay .as-ki-gedanke-text{margin:6px 0 2px 4px; padding:2px 0 2px 12px; border-left:1px solid #dbe3ee; font-size:12.5px; line-height:1.55; color:#475569; white-space:pre-wrap; animation:asKiWort .35s ease both;}
 #as-overlay .as-ki-aenderung{display:inline-flex; align-items:center; gap:7px; margin-top:8px; padding:5px 10px; border-radius:999px; background:#ecfdf5; color:#047857; font-size:12px; font-weight:600; animation:asKiWort .5s .3s both;}
 #as-overlay .as-ki-seg{position:relative;}
 #as-overlay .as-ki-seg-pille{position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); border-radius:999px; background:#fff; box-shadow:0 1px 4px rgba(15,23,42,.12);
@@ -1663,12 +1670,12 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-punkt{width:6px; height:6px; border-radius:50%; background:#206efb; animation:asKiPuls 1.2s ease-in-out infinite;}
 @keyframes asKiPuls{50%{opacity:.3; transform:scale(.7);}}
 /* Denkt: weich pulsierend mit sich ausbreitendem Ring, ohne Drehen. */
-#as-overlay .as-ki-ava--denkt{position:relative; animation:asKiAtmen 1.6s ease-in-out infinite;}
+#as-overlay .as-ki-ava--denkt{position:relative; animation:asKiAtmen 2.2s ease-in-out infinite;}
 #as-overlay .as-ki-ava--denkt::before, #as-overlay .as-ki-ava--denkt::after{content:""; position:absolute; inset:0; border-radius:50%;
-  background:rgba(32,110,251,.35); animation:asKiRing 1.6s cubic-bezier(.2,.6,.3,1) infinite; z-index:-1;}
-#as-overlay .as-ki-ava--denkt::after{animation-delay:.8s;}
-@keyframes asKiAtmen{0%,100%{transform:scale(1); box-shadow:0 0 0 0 rgba(32,110,251,0);} 50%{transform:scale(1.08); box-shadow:0 0 18px 2px rgba(32,110,251,.35);}}
-@keyframes asKiRing{from{transform:scale(1); opacity:.6;} to{transform:scale(1.9); opacity:0;}}
+  background:rgba(32,110,251,.25); animation:asKiRing 2.2s cubic-bezier(.2,.6,.3,1) infinite; z-index:-1;}
+#as-overlay .as-ki-ava--denkt::after{animation-delay:1.1s;}
+@keyframes asKiAtmen{0%,100%{transform:scale(1); opacity:1;} 50%{transform:scale(1.03); opacity:.85;}}
+@keyframes asKiRing{from{transform:scale(1); opacity:.28;} to{transform:scale(1.45); opacity:0;}}
 @media (prefers-reduced-motion:reduce){#as-overlay .as-ki-ava--denkt, #as-overlay .as-ki-ava--denkt::before, #as-overlay .as-ki-ava--denkt::after{animation:none;}}
 #as-overlay .as-ki-bildrahmen{position:relative; border-radius:10px; overflow:hidden; line-height:0;}
 #as-overlay .as-ki-bildrahmen img{max-width:min(100%,560px); max-height:58vh; border-radius:10px;}
@@ -1744,8 +1751,12 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-seg[aria-pressed="true"]{background:var(--brand,#206efb); border-color:var(--brand,#206efb); color:#fff;}
 #as-overlay .as-inspector .as-btn{justify-content:center; width:100%;}
 #as-overlay .as-savehint{font-size:12px; line-height:1.4; color:#b42318; min-height:1em; margin:0;}
+#as-overlay .as-post-wrap{position:relative;}
+#as-overlay .as-post-gross{position:absolute; top:8px; right:8px; width:28px; height:28px; border:0; border-radius:8px; background:rgba(255,255,255,.9); color:#64748b; cursor:pointer; font-size:12px;}
+#as-overlay .as-post-gross:hover{color:#206efb; background:#eff6ff;}
+#as-overlay .as-post-wrap.is-gross .as-post{min-height:62vh;}
 #as-overlay .as-post{
-  width:100%; min-height:170px; resize:vertical; font:inherit; font-size:13px; line-height:1.5;
+  width:100%; min-height:340px; resize:vertical; font:inherit; font-size:13.5px; line-height:1.6; padding-right:40px !important; transition:min-height .3s ease;
   border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:10px 12px;
   background:var(--bg,#fff); color:inherit;
 }
@@ -2200,7 +2211,7 @@ const hintergrundLaeufe = new Map();
 const NUR_LESEN_ERLAUBT = new Set([
   "close", "close-popup", "show-drafts", "open-draft", "to-form", "toggle-fs", "toggle-fs-controls", "toggle-fs-tools",
   "fs-zoom-in", "fs-zoom-out", "fs-zoom-fit", "prev-fwd", "prev-back", "download", "copy-post", "print", "bild-info-zu",
-  "step-back", "pruef-zu", "privat-bild-laden", "caption-info", "bild-info",
+  "step-back", "pruef-zu", "privat-bild-laden", "caption-info", "bild-info", "post-gross",
 ]);
 
 function hintergrundCss() {
@@ -3024,10 +3035,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const logo = privat && kopf.avatar_url ? kopf.avatar_url : (state.chrome.logo || state.logo || LOGO_PATH);
     const avatarKlasse = privat && kopf.avatar_url ? " as-linkedin-avatar--person" : "";
     const tonPill = state.assetId
-      ? `<span class="as-knopfgruppe"><button type="button" class="as-info-knopf" data-act="ki-editor" data-ziel="caption" title="Caption mit KI bearbeiten" aria-label="Caption mit KI bearbeiten"><i class="fa-solid fa-wand-magic-sparkles"></i></button><button type="button" class="as-info-knopf" data-act="caption-info" title="Infos zur Caption" aria-label="Infos zur Caption"><i class="fa-solid fa-circle-info"></i></button></span>`
+      ? `<span class="as-knopfgruppe"><button type="button" class="as-info-knopf" data-act="caption-info" title="Infos zur Caption" aria-label="Infos zur Caption"><i class="fa-solid fa-circle-info"></i></button></span>`
       : "";
     const bildKnopf = privat && state.assetId && state.answers.asset_type !== "carousel"
-      ? `<span class="as-knopfgruppe as-knopfgruppe--bild"><button type="button" class="as-info-knopf" data-act="ki-editor" data-ziel="bild" title="Visual mit KI bearbeiten" aria-label="Visual mit KI bearbeiten"><i class="fa-solid fa-wand-magic-sparkles"></i></button>${privatBildSrc() ? '<button type="button" class="as-info-knopf" data-act="bild-info" title="Infos zum Visual" aria-label="Infos zum Visual"><i class="fa-solid fa-circle-info"></i></button>' : ""}</span>`
+      ? (privatBildSrc() ? '<span class="as-knopfgruppe as-knopfgruppe--bild"><button type="button" class="as-info-knopf" data-act="bild-info" title="Infos zum Visual" aria-label="Infos zum Visual"><i class="fa-solid fa-circle-info"></i></button></span>' : "")
       : "";
     return `<div class="as-work as-work--feed" data-kind="linkedin">
       <article class="as-linkedin-post" aria-label="LinkedIn-Vorschau">
@@ -5405,7 +5416,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (n.caption) extra = `<div class="as-ki-aenderung"><i class="fa-solid fa-pen"></i>Caption im Editor geändert${n.version ? ` · Version ${n.version}` : ""}</div>`;
     if (n.bild_auftrag) {
       extra = `<div class="as-ki-aenderung"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Visual angepasst" : "Neues Visual"}${n.version ? ` · Version ${n.version}` : ""}</div>
-        <details class="as-ki-details"><summary>Visual-Auftrag</summary><pre>${esc(n.bild_auftrag)}</pre></details>`;
+        <details class="as-ki-gedanke"><summary><i class="fa-solid fa-wand-magic-sparkles as-ki-gedanke-ico"></i><span class="as-ki-gedanke-titel">Visual-Auftrag</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary><div class="as-ki-gedanke-text">${esc(n.bild_auftrag)}</div></details>`;
     }
     if (n.karte) {
       const kt = n.karte;
@@ -5447,7 +5458,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <div class="as-ki-bildrahmen">${bildSrc ? `<img src="${attr(bildSrc)}" alt="" class="${k.neuesVisual ? "is-neu" : ""}">` : '<div class="as-ki-auftrag">Noch kein Visual.</div>'}
           ${k.laeuft.bild ? '<span class="as-ki-schimmer" aria-hidden="true"></span><span class="as-ki-laeuft"><i class="fa-solid fa-wand-magic-sparkles"></i>Visual wird erzeugt</span>' : ""}</div>
         ${state.kiFortschritt?.fehler && !k.laeuft.bild ? `<div class="as-ki-auftrag" style="color:#b91c1c">${esc(state.kiFortschritt.fehler)}</div>` : ""}
-        ${meta.auftrag ? `<div class="as-ki-auftrag">${esc(meta.auftrag)}</div>` : ""}
       </div>
       <div class="as-ki-leiste"><span class="as-ki-status">${esc(k.hinweisVisual || "")}</span></div>`;
   }
@@ -5854,14 +5864,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (isMemo || state.answers.profile !== "private") return "";
     const f = state.kiFortschritt;
     if (state.answers.asset_type !== "carousel") {
-      const bildZeile = state.kiLaeuft ? "Bild wird generiert" : f?.fehler ? f.fehler
+      const bildZeile = state.kiLaeuft ? "Visual wird generiert" : f?.fehler ? f.fehler
         : state.privatBildCi ? `CI-Prüfung: ${state.privatBildCi}` : "";
       const vorhanden = Boolean(privatBildSrc());
       const knoepfe = state.assetId
-        ? `<button type="button" class="as-btn" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i>${vorhanden ? "Visual neu generieren" : "Bild generieren"}</button>`
+        ? `<button type="button" class="as-btn as-btn--primary" data-act="ki-editor" data-ziel="bild"><i class="fa-solid fa-wand-magic-sparkles"></i>Mit KI bearbeiten</button><button type="button" class="as-btn" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-rotate-right"></i>${vorhanden ? "Visual neu generieren" : "Visual generieren"}</button>`
           + (vorhanden ? `<button type="button" class="as-btn" data-act="privat-bild-laden"><i class="fa-solid fa-image"></i>Visual herunterladen</button>` : "")
         : "";
-      return knoepfe || bildZeile ? `<div class="as-group"><span>Bild${state.privatBildStil ? ` · ${esc(state.privatBildStil)}` : ""}</span>${knoepfe}${bildZeile ? `<p class="as-savehint">${esc(bildZeile)}</p>` : ""}</div>` : "";
+      return knoepfe || bildZeile ? `<div class="as-group"><span>Visual${state.privatBildStil ? ` · ${esc(state.privatBildStil)}` : ""}</span>${knoepfe}${bildZeile ? `<p class="as-savehint">${esc(bildZeile)}</p>` : ""}</div>` : "";
     }
     const zeile = state.kiLaeuft && f ? `Visual im eigenen Stil · Folie ${f.fertig + 1} von ${f.gesamt}`
       : f?.fehler ? f.fehler
@@ -7218,9 +7228,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const post = isMemo ? "" : `
       <div class="as-group">
         <span>Caption</span>
-        <textarea class="as-post" data-post aria-label="Caption">${esc(state.postText)}</textarea>
+        <div class="as-post-wrap${state.postGross ? " is-gross" : ""}">
+          <textarea class="as-post" data-post aria-label="Caption">${esc(state.postText)}</textarea>
+          <button type="button" class="as-post-gross" data-act="post-gross" title="${state.postGross ? "Verkleinern" : "Vergrößern"}" aria-label="${state.postGross ? "Verkleinern" : "Vergrößern"}"><i class="fa-solid fa-${state.postGross ? "down-left-and-up-right-to-center" : "up-right-and-down-left-from-center"}"></i></button>
+        </div>
         <span style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button type="button" class="as-btn as-btn--primary" data-act="ki-editor" data-ziel="caption"><i class="fa-solid fa-wand-magic-sparkles"></i>Groß bearbeiten</button>
+          <button type="button" class="as-btn as-btn--primary" data-act="ki-editor" data-ziel="caption"><i class="fa-solid fa-wand-magic-sparkles"></i>Mit KI bearbeiten</button>
           <button type="button" class="as-btn" data-act="copy-post"><i class="fa-regular fa-copy"></i>Kopieren</button>
         </span>
       </div>`;
@@ -9071,6 +9084,7 @@ ${stages}${post}
     if (act === "ki-visual") { schliesseBildInfo(); void baueKiVisuals(); return; }
     if (act === "bild-info-zu") { schliesseBildInfo(); return; }
     if (act === "caption-info") { oeffneCaptionInfo(); return; }
+    if (act === "post-gross") { harvest(); state.postGross = !state.postGross; render(); return; }
     if (act === "ki-editor") { schliesseBildInfo(); kiEditorOeffnen(hit.getAttribute("data-ziel")); return; }
     if (act === "bild-info") { oeffneBildInfo(state.slides[0]); return; }
     if (act === "privat-bild-laden") {
