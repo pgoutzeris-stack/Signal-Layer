@@ -8272,7 +8272,7 @@ Deno.serve(async (req: Request) => {
     const { data: person } = await getAdminClient().schema("users").from("profiles").select("id").eq("id", alsNutzer).maybeSingle();
     if (!person) return unauthorizedResponse(req, origin);
     auth = { userId: alsNutzer };
-  } else if (action === "ki_visual_slide" || action === "ki_visual_bild" || action === "privat_bild") {
+  } else if (action === "ki_visual_slide" || action === "ki_visual_bild" || action === "privat_bild" || action === "marken_check") {
     // Neben dem User-JWT auch per Cron-Secret, damit der Betrieb ein Visual
     // fuer den Eigentuemer des Assets nachbauen und pruefen kann.
     isScheduled = await isScheduledTrigger(req);
