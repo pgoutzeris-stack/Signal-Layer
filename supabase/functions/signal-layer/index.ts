@@ -2,6 +2,7 @@ import { articleReadingText } from "./article-reading-text.mjs";
 import { baueDebugMail, baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
+import { KI_CAPTION_MAX, KI_CHAT_MODELLE, KI_CHAT_SCHEMA, KI_NACHRICHT_MAX, kiChatErgebnis, kiChatModell, kiChatPrompt, kiVerlauf, type KiZiel } from "./ki-editor.ts";
 import {
   BILDSTIL_BRIEF_MODELL, BILDSTIL_BRIEF_SCHEMA, MARKEN_CHECK_MODELL, MARKEN_CHECK_SCHEMA, markenCheckPrompt, privatBildAuftragAusBrief, privatBildBriefPrompt, BRIEF_MODI, BRIEF_STANDARD, type BriefModus,
   BILDSTIL_CI_PRUEFUNG, BILDSTIL_CI_SCHEMA, BILDSTIL_MODELL, BILDSTIL_PRUEF_MODELL, BILDSTIL_STANDARD, BILDTOOL_BASIS,
@@ -8324,7 +8325,7 @@ Deno.serve(async (req: Request) => {
     const { data: person } = await getAdminClient().schema("users").from("profiles").select("id").eq("id", alsNutzer).maybeSingle();
     if (!person) return unauthorizedResponse(req, origin);
     auth = { userId: alsNutzer };
-  } else if (action === "ki_visual_slide" || action === "ki_visual_bild" || action === "privat_bild" || action === "marken_check") {
+  } else if (action === "ki_visual_slide" || action === "ki_visual_bild" || action === "privat_bild" || action === "marken_check" || action === "ki_chat") {
     // Neben dem User-JWT auch per Cron-Secret, damit der Betrieb ein Visual
     // fuer den Eigentuemer des Assets nachbauen und pruefen kann.
     isScheduled = await isScheduledTrigger(req);
@@ -8973,6 +8974,92 @@ Deno.serve(async (req: Request) => {
 
       // Bildstil fuer das Bild privater LinkedIn-Assets. Die Stile kommen aus
       // dem Image-Generation-Tool, Vorschau sind dessen Serienbilder.
+      case "ki_chat_modelle": {
+        return corsResponse(origin, { modelle: KI_CHAT_MODELLE });
+      }
+
+      case "ki_chat": {
+        // KI-Editor: eine Nachricht des Nutzers zu Caption oder Bild. Der Server
+        // baut den ganzen Kontext (Signal, Artikel, Fragebogen, Tone of Voice,
+        // Caption, Bildauftrag, Verlauf) und haelt die Schranken.
+        if (!auth?.userId && !isScheduled) return errorResponse(origin, "Nicht angemeldet", 401);
+        const kcId = String(body.asset_id || "");
+        const ziel: KiZiel = body.ziel === "bild" ? "bild" : "caption";
+        const nachricht = String(body.nachricht || "").trim().slice(0, KI_NACHRICHT_MAX);
+        if (!nachricht) return errorResponse(origin, "Nachricht fehlt.");
+        const admin = getAdminClient();
+        const { data: kcAsset } = await admin.schema("signal_layer").from("generated_assets")
+          .select("id, kind, created_by, article_id, answers, payload").eq("id", kcId).maybeSingle();
+        if (!kcAsset || kcAsset.kind !== "linkedin") return errorResponse(origin, "Asset nicht gefunden", 404);
+        if (!isScheduled && String(kcAsset.created_by || "") !== String(auth?.userId || "")) {
+          return errorResponse(origin, "Diesen Entwurf darf nur die Person bearbeiten, die ihn erstellt hat.", 403);
+        }
+        const kcPayload = (kcAsset.payload || {}) as Record<string, unknown>;
+        const kcAnswers = (kcAsset.answers || {}) as Record<string, unknown>;
+        const kcSlides = Array.isArray(kcPayload.slides) ? kcPayload.slides as Record<string, unknown>[] : [];
+        const kcMeta = (kcSlides[0]?.ki_bild_meta || {}) as Record<string, unknown>;
+        const [{ data: kcSignal }, { data: kcArtikel }] = await Promise.all([
+          admin.schema("signal_layer").from("simple_signals")
+            .select("headline_de, why_de, summary_de, trigger_de, company, signal_label, lane").eq("article_id", kcAsset.article_id).maybeSingle(),
+          admin.schema("signal_layer").from("articles")
+            .select("title, title_de, published_at, content, cleaned_content, content_de").eq("id", kcAsset.article_id).maybeSingle(),
+        ]);
+        const verlauf = kiVerlauf(kcPayload.ki_chat);
+        const caption = String(body.caption ?? kcPayload.post_text ?? "").slice(0, KI_CAPTION_MAX + 500);
+        const modell = kiChatModell(body.modell);
+        const { system, prompt } = kiChatPrompt({
+          ziel, signal: (kcSignal || {}) as Record<string, unknown>, artikel: (kcArtikel || {}) as Record<string, unknown>,
+          antworten: kcAnswers, toneOfVoice: String(kcAnswers.tone_of_voice || ""),
+          caption, captionOriginal: String(kcPayload.post_text_original || ""),
+          bildAuftrag: String(kcMeta.auftrag || ""), bildStil: String(kcMeta.stil || ""),
+          bildVorhanden: kcSlides[0]?.variant === "KI" && Boolean(kcSlides[0]?.ki_layout),
+          verlauf, nachricht,
+        });
+        const apiKey = await modelApiKey(modell).catch(() => "");
+        if (!apiKey) return errorResponse(origin, "Für dieses Modell ist kein Schlüssel hinterlegt.", 409);
+        const antwort = await callJsonModel({
+          model: modell, apiKey, systemText: system, prompt, schema: KI_CHAT_SCHEMA,
+          maxOutputTokens: 4_000, temperature: 0.6, thinkingLevel: "low", reasoningEffort: "low",
+          attempts: 2, timeoutMs: 90_000,
+        });
+        const kcKosten = await recordStandaloneAiUsage("asset_ki_chat", modell, antwort.ok ? "success" : "error", antwort.usage);
+        if (!antwort.ok) return errorResponse(origin, `Die KI hat nicht geantwortet: ${antwort.error.slice(0, 160)}`, 502);
+        let roh: unknown = null;
+        try { roh = JSON.parse(antwort.text.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { roh = null; }
+        const ergebnis = kiChatErgebnis(roh, ziel);
+        const jetzt = new Date().toISOString();
+        const neuerVerlauf = [...verlauf,
+          { rolle: "nutzer", ziel, text: nachricht, zeit: jetzt },
+          { rolle: "ki", ziel, text: [ergebnis.antwort, ergebnis.caption ? `[Caption-Vorschlag]\n${ergebnis.caption}` : "", ergebnis.bild_auftrag ? `[Bildauftrag ${ergebnis.bild_modus}]\n${ergebnis.bild_auftrag}` : ""].filter(Boolean).join("\n\n"), status: ergebnis.status, zeit: jetzt },
+        ].slice(-30);
+        // Betriebsprobe (Cron-Secret mit probe) schreibt keinen Verlauf.
+        if (!(isScheduled && body.probe === true)) {
+          await admin.schema("signal_layer").from("generated_assets").update({ payload: { ...kcPayload, ki_chat: neuerVerlauf } }).eq("id", kcId);
+        }
+        return corsResponse(origin, { ...ergebnis, modell, kosten_eur: kcKosten });
+      }
+
+      case "save_caption": {
+        // Caption dauerhaft im Entwurf. Die erste Fassung bleibt fuer den KI-Editor erhalten.
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const scId = String(body.asset_id || "");
+        const text = String(body.post_text ?? "");
+        if (text.length > KI_CAPTION_MAX) return errorResponse(origin, `Die Caption ist länger als ${KI_CAPTION_MAX} Zeichen.`, 413);
+        const admin = getAdminClient();
+        const { data: scAsset } = await admin.schema("signal_layer").from("generated_assets")
+          .select("id, created_by, payload").eq("id", scId).maybeSingle();
+        if (!scAsset) return errorResponse(origin, "Asset nicht gefunden", 404);
+        if (String(scAsset.created_by || "") !== String(auth.userId)) {
+          return errorResponse(origin, "Diesen Entwurf darf nur die Person bearbeiten, die ihn erstellt hat.", 403);
+        }
+        const scPayload = (scAsset.payload || {}) as Record<string, unknown>;
+        const neu = { ...scPayload, post_text: text, post_text_original: scPayload.post_text_original ?? scPayload.post_text ?? "" };
+        const { error: scFehler } = await admin.schema("signal_layer").from("generated_assets")
+          .update({ payload: neu, updated_at: new Date().toISOString() }).eq("id", scId);
+        if (scFehler) return errorResponse(origin, scFehler.message, 500);
+        return corsResponse(origin, { ok: true });
+      }
+
       case "tone_score": {
         // Wie nah ist die Caption am hinterlegten Tone of Voice? Einmal bewertet,
         // dann im Entwurf gespeichert; neu nur, wenn die Caption sich aendert.
@@ -9116,7 +9203,11 @@ Deno.serve(async (req: Request) => {
         // Alle Modellaufrufe fuer dieses Bild zusammen, fuer die Info-Leiste.
         let bildKostenEur = 0;
         let brief: Record<string, unknown> | null = null;
-        {
+        // Aus dem KI-Editor: der Auftrag steht schon, kein Art-Director-Schritt.
+        const chatAuftrag = String(body.chat_auftrag || "").trim().slice(0, 1500);
+        const basisBild = typeof body.bild_basis === "string" && istPrivatBild(body.bild_basis) ? String(body.bild_basis) : "";
+        if (chatAuftrag) auftrag = /erlaubte Wörter im Bild/i.test(chatAuftrag) ? chatAuftrag : `${chatAuftrag}\nZusätzlich erlaubte Wörter im Bild: keine`;
+        if (!chatAuftrag) {
           // Testschalter nur fuer den Betrieb: Varianten des Auftrags vergleichen.
           const briefModus: BriefModus = isScheduled && BRIEF_MODI.includes(body.brief_modus as BriefModus) ? body.brief_modus as BriefModus : BRIEF_STANDARD;
           const { system, user } = privatBildBriefPrompt(stil.prompt, pbPost, pbTitel, briefModus);
@@ -9140,7 +9231,15 @@ Deno.serve(async (req: Request) => {
           if (ausBrief) auftrag = ausBrief;
         }
         const refs = (await Promise.all(stil.seriesRefs.slice(0, 3).map(serienRef))).filter(Boolean) as { mime_type: string; data: string }[];
-        const teile: Record<string, unknown>[] = [{ text: `BILDAUFTRAG:\n${auftrag}` }];
+        const teile: Record<string, unknown>[] = [];
+        if (basisBild) {
+          // Bearbeiten statt neu: das aktuelle Bild ist die Vorlage.
+          const [, basisMime, basisDaten] = basisBild.match(/^data:([^;]+);base64,(.+)$/) || [];
+          teile.push({ text: "AKTUELLES BILD (bearbeiten, nicht neu erfinden):" });
+          teile.push({ inline_data: { mime_type: basisMime, data: basisDaten } });
+          teile.push({ text: "BEARBEITUNG: Ändere am aktuellen Bild nur, was der BILDAUFTRAG verlangt. Motiv, Bildaufbau, Licht und alle übrigen Elemente bleiben so nah wie möglich am aktuellen Bild." });
+        }
+        teile.push({ text: `BILDAUFTRAG:\n${auftrag}` });
         refs.forEach((ref, i) => { teile.push({ text: `SERIENREFERENZ ${i + 1}:` }); teile.push({ inline_data: ref }); });
         const anfrage = JSON.stringify({
           systemInstruction: { parts: [{ text: bildstilSystemInstruction(stil.prompt, refs.length) }] },
