@@ -2262,6 +2262,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     privatBildCi: "",
     // Angemeldete Person fuer den Kopf des Entwurfs im Privatprofil.
     ich: { name: "", avatar_url: "" },
+    // Mit assetId geoeffnet: bis der Entwurf da ist, Ladezustand statt Fragebogen.
+    direkt: Boolean(assetId),
+    oeffnet: Boolean(assetId),
     // Entwurf einer anderen Person: Kopf zeigt sie, Bearbeiten ist gesperrt.
     autor: null,
     nurLesen: false,
@@ -2663,6 +2666,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function render() {
+    if (state.oeffnet) {
+      shell.innerHTML = `<div class="as-loader" style="flex:1; min-height:60vh;" role="status" aria-label="Entwurf wird geöffnet"></div>`;
+      return;
+    }
     if (state.nurLesen && state.step === "edit") state.step = "draft";
     if (!sperrBeobachter) {
       // Teile der Ansicht werden auch ohne render() neu gezeichnet.
@@ -4094,12 +4101,21 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   async function openDraft(id) {
+    try {
+      return await openDraftInnen(id);
+    } finally {
+      if (state.oeffnet) { state.oeffnet = false; render(); }
+    }
+  }
+
+  async function openDraftInnen(id) {
     draftsTaktStop();
     state.formError = "";
     try {
       const res = await api("get_asset", { asset_id: id });
       const row = res && typeof res === "object" ? (res.asset || res) : {};
       if (!row.id) throw new Error("Entwurf nicht gefunden.");
+      state.oeffnet = false;
       state.assetId = row.id;
       state.owned = Boolean(row.owner_id);
       state.nurLesen = res?.eigen === false;
@@ -8276,7 +8292,9 @@ ${stages}${post}
     const id = frame ? frame.getAttribute("data-uid") : null;
 
     if (act === "close") {
-      if (state.busy) { close(); return; }
+      // Direkt geoeffneter Entwurf (Content, Hintergrund-Meldung): zurueck
+      // heisst zurueck dorthin, nicht in den Fragebogen.
+      if (state.busy || state.direkt) { close(); return; }
       if (state.step !== "form") {
         state.step = "form";
         state.formTab = "form";
