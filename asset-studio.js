@@ -759,11 +759,7 @@ const CHROME_CSS = `
 #as-overlay .as-back:hover{border-color:var(--brand,#206efb); color:var(--brand,#206efb);}
 #as-overlay .as-railtitle{font-size:11px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; color:var(--muted,#475569);}
 #as-overlay .as-steps{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px;}
-#as-overlay.as-nur-lesen [data-act="to-edit"], #as-overlay.as-nur-lesen [data-act="own"], #as-overlay.as-nur-lesen [data-act="save"],
-#as-overlay.as-nur-lesen [data-act="send"], #as-overlay.as-nur-lesen [data-act="ki-visual"],
-#as-overlay.as-nur-lesen [data-act="step-open"][data-step="edit"]{display:none !important;}
-#as-overlay .as-nurlesen{display:flex; align-items:center; gap:8px; margin:10px 0 0; padding:9px 12px; border-radius:12px; background:var(--surface,#f8fafc); font-size:12.5px; color:var(--muted,#475569);}
-#as-overlay .as-nurlesen i{color:#64748b;}
+#as-overlay [data-gesperrt]{opacity:.42; cursor:not-allowed !important; filter:grayscale(1);}
 #as-overlay .as-steps li{
   display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:12px;
   font-size:14px; color:var(--muted,#475569); border:1px solid transparent;
@@ -2653,9 +2649,26 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /* ── Aufbau der Schritte ── */
 
+  let sperrBeobachter = null;
+  /** Fremder Entwurf: alles Schreibende ausgegraut, der Hinweis steht im Tooltip. */
+  function sperreFremdes() {
+    if (!state.nurLesen) return;
+    const hinweis = `Nur ${state.autor?.name || "die Person, die ihn erstellt hat,"} kann diesen Entwurf bearbeiten.`;
+    overlay.querySelectorAll("[data-act]").forEach((el) => {
+      if (NUR_LESEN_ERLAUBT.has(el.getAttribute("data-act"))) return;
+      el.setAttribute("data-gesperrt", "");
+      el.setAttribute("aria-disabled", "true");
+      el.setAttribute("title", hinweis);
+    });
+  }
+
   function render() {
     if (state.nurLesen && state.step === "edit") state.step = "draft";
-    overlay.classList.toggle("as-nur-lesen", state.nurLesen);
+    if (!sperrBeobachter) {
+      // Teile der Ansicht werden auch ohne render() neu gezeichnet.
+      sperrBeobachter = new MutationObserver(() => { if (state.nurLesen) sperreFremdes(); });
+      sperrBeobachter.observe(overlay, { childList: true, subtree: true });
+    }
     shell.innerHTML = `
       <nav class="as-rail">
         <button type="button" class="as-back" data-act="close"><i class="fa-solid fa-arrow-left"></i>Zurück</button>
@@ -2665,7 +2678,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           ${stepItem(2, "Entwurf", "draft")}
           ${stepItem(3, "Bearbeiten", "edit")}
         </ol>
-        ${state.nurLesen ? `<div class="as-nurlesen"><i class="fa-solid fa-lock"></i><span>Nur lesen · Entwurf von ${esc(state.autor?.name || "anderer Person")}</span></div>` : ""}
+
         ${draftsTabHtml()}
       </nav>
       <div class="as-main">
@@ -8214,7 +8227,6 @@ ${stages}${post}
     if (!hit) return;
     const act = hit.getAttribute("data-act");
     if (state.nurLesen && !NUR_LESEN_ERLAUBT.has(act)) {
-      showSaveHint(`Entwurf von ${state.autor?.name || "einer anderen Person"}: nur lesen.`);
       return;
     }
     const frame = hit.closest("[data-uid]");
@@ -8909,6 +8921,7 @@ ${stages}${post}
     if (selectionFrame) window.cancelAnimationFrame(selectionFrame);
     if (fmtBar) fmtBar.remove();
     fmtBar = null;
+    sperrBeobachter?.disconnect();
     overlay.remove();
     if (!inHost) document.body.style.overflow = prevOverflow;
     openInstance = null;
