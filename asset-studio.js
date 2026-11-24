@@ -1553,9 +1553,22 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-seg{display:inline-flex; padding:3px; border-radius:999px; background:#f1f5f9; margin-left:8px;}
 #as-overlay .as-ki-seg button{border:0; background:transparent; padding:7px 16px; border-radius:999px; font-weight:600;font-size:13px;line-height:1;font-family:inherit; color:#475569; cursor:pointer; transition:background .18s, color .18s, box-shadow .18s;}
 #as-overlay .as-ki-seg button[aria-pressed="true"]{background:#fff; color:#0f172a; box-shadow:0 1px 4px rgba(15,23,42,.12);}
-#as-overlay .as-ki-modell{margin-left:auto; height:34px; padding:0 34px 0 14px; border:1px solid #e2e8f0; border-radius:999px; background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2364748b' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 14px center;
-  appearance:none; -webkit-appearance:none; font-weight:600;font-size:12.5px;line-height:1;font-family:inherit; color:#0f172a; cursor:pointer;}
-#as-overlay .as-ki-modell:hover{border-color:#bfdbfe;}
+#as-overlay .as-ki-modell{margin-left:auto; position:relative;}
+#as-overlay .as-ki-modell-knopf{height:36px; padding:0 12px 0 5px; border:1px solid var(--line,#e2e8f0); border-radius:999px; background:#fff; display:inline-flex; align-items:center; gap:8px;
+  font-weight:650; font-size:12.5px; font-family:inherit; color:#0f172a; cursor:pointer; box-shadow:0 2px 7px rgba(15,23,42,.035); transition:border-color .16s, box-shadow .16s;}
+#as-overlay .as-ki-modell-knopf:hover, #as-overlay .as-ki-modell.is-offen .as-ki-modell-knopf{border-color:color-mix(in srgb,#206efb 48%,#e2e8f0); box-shadow:0 0 0 3px rgba(32,110,251,.12);}
+#as-overlay .as-ki-caret{font-size:10px; color:#64748b; transition:transform .18s;}
+#as-overlay .as-ki-modell.is-offen .as-ki-caret{transform:rotate(180deg);}
+#as-overlay .as-ki-mico{width:26px; height:26px; border-radius:8px; display:grid; place-items:center; background:#eff6ff; color:#206efb; font-size:12px; flex:0 0 auto;}
+#as-overlay .as-ki-modell-menu{position:absolute; right:0; top:calc(100% + 6px); z-index:5; min-width:240px; padding:6px; border:1px solid var(--line,#e2e8f0); border-radius:14px; background:#fff;
+  box-shadow:0 18px 46px rgba(15,23,42,.18); display:none; flex-direction:column; gap:2px; animation:asKiMenue .16s ease both;}
+#as-overlay .as-ki-modell.is-offen .as-ki-modell-menu{display:flex;}
+@keyframes asKiMenue{from{opacity:0; transform:translateY(-4px);} to{opacity:1; transform:none;}}
+#as-overlay .as-ki-modell-menu button{display:flex; align-items:center; gap:10px; width:100%; padding:7px 9px; border:0; border-radius:10px; background:transparent; text-align:left;
+  font-weight:600; font-size:13px; font-family:inherit; color:#0f172a; cursor:pointer;}
+#as-overlay .as-ki-modell-menu button:hover{background:#f1f5f9;}
+#as-overlay .as-ki-modell-menu button[aria-selected="true"]{background:#eff6ff; color:#165fd9;}
+#as-overlay .as-ki-haken{margin-left:auto; font-size:11px; color:#206efb;}
 #as-overlay .as-ki-zu{width:34px; height:34px; border:0; border-radius:50%; background:transparent; color:#64748b; cursor:pointer; font-size:16px;}
 #as-overlay .as-ki-zu:hover{background:#f1f5f9; color:#0f172a;}
 #as-overlay .as-ki-rumpf{display:grid; grid-template-columns:minmax(0,1.08fr) minmax(360px,.92fr); min-height:0;}
@@ -4848,8 +4861,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         answers: antworten,
         image_uploads: isMemo ? state.formImages : undefined,
       });
-      if (state.cancelRequested) return;
       const row = res && typeof res === "object" ? (res.asset || res) : {};
+      if (state.cancelRequested) {
+        // "Im Hintergrund" kam, bevor der Server die Kennung geliefert hatte:
+        // jetzt nachholen, sonst fehlt die Meldung unten rechts.
+        if (state.leftRunning && row.id && row.status === "running") {
+          hintergrundMerken({
+            id: row.id, kind: assetKind, answers: state.answers, optionen: startOptionen,
+            start: state.ladeStart || Date.now(), forecastMs: Number(row.forecast_ms) || state.forecastMs || 0, stage: row.stage || "lesen", log: row.run_log || [],
+          });
+        }
+        return;
+      }
       state.assetId = row.id || null;
       state.owned = Boolean(row.owner_id);
       state.memoSend = null;
@@ -5242,9 +5265,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /* ── KI-Editor: Caption und Bild im Chat weiterentwickeln ── */
 
   const KI_MODELLE = [
-    ["anthropic/claude-sonnet-5-5", "Claude Sonnet 5.5"], ["anthropic/claude-opus-5-5", "Claude Opus 5.5"],
-    ["openai/gpt-5.4", "GPT-5.4"], ["gemini-3.1-pro-preview", "Gemini 3.1 Pro"], ["gemini-3.5-flash", "Gemini 3.5 Flash"],
-    ["perplexity/deepseek-v4-pro-0813", "DeepSeek V4 Pro"],
+    ["anthropic/claude-sonnet-5-5", "Claude Sonnet 5.5", "fa-solid fa-asterisk"], ["anthropic/claude-opus-5-5", "Claude Opus 5.5", "fa-solid fa-asterisk"],
+    ["openai/gpt-5.4", "GPT-5.4", "fa-solid fa-circle-nodes"], ["gemini-3.1-pro-preview", "Gemini 3.1 Pro", "fa-brands fa-google"],
+    ["gemini-3.5-flash", "Gemini 3.5 Flash", "fa-brands fa-google"], ["perplexity/deepseek-v4-pro-0813", "DeepSeek V4 Pro", "fa-solid fa-water"],
   ];
   const KI_CHIPS = {
     caption: ["Kürzer und pointierter", "Stärkerer Einstieg", "Schlussfrage schärfen", "Näher an meinem Tone of Voice"],
@@ -5337,7 +5360,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           <button type="button" data-ki-ziel="caption" aria-pressed="${k.ziel === "caption"}">Caption</button>
           <button type="button" data-ki-ziel="bild" aria-pressed="${k.ziel === "bild"}"${state.answers.profile === "private" && state.answers.asset_type !== "carousel" ? "" : " disabled"}>Bild</button>
         </span>
-        <select class="as-ki-modell" data-ki-modell aria-label="KI-Modell">${KI_MODELLE.map(([id, name]) => `<option value="${attr(id)}"${id === k.modell ? " selected" : ""}>${esc(name)}</option>`).join("")}</select>
+        ${(() => {
+          const [, aktivName, aktivIcon] = KI_MODELLE.find(([id]) => id === k.modell) || KI_MODELLE[0];
+          return `<div class="as-ki-modell${k.modellOffen ? " is-offen" : ""}">
+            <button type="button" class="as-ki-modell-knopf" data-ki-modellknopf aria-haspopup="listbox" aria-expanded="${k.modellOffen ? "true" : "false"}"><span class="as-ki-mico"><i class="${aktivIcon}"></i></span>${esc(aktivName)}<i class="fa-solid fa-chevron-down as-ki-caret"></i></button>
+            <div class="as-ki-modell-menu" role="listbox" aria-label="KI-Modell">${KI_MODELLE.map(([id, name, icon]) => `<button type="button" role="option" aria-selected="${id === k.modell}" data-ki-modellwahl="${attr(id)}"><span class="as-ki-mico"><i class="${icon}"></i></span>${esc(name)}${id === k.modell ? '<i class="fa-solid fa-check as-ki-haken"></i>' : ""}</button>`).join("")}</div>
+          </div>`;
+        })()}
         <button type="button" class="as-ki-zu" data-ki-zu aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
       </header>
       <div class="as-ki-rumpf">
@@ -5398,6 +5427,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const k = state.ki;
     if (!k?.offen) return;
     if (event.target === kiEditor || event.target.closest("[data-ki-zu]")) { kiEditorSchliessen(); return; }
+    if (event.target.closest("[data-ki-modellknopf]")) { k.modellOffen = !k.modellOffen; kiEditorZeichne(); return; }
+    const wahl = event.target.closest("[data-ki-modellwahl]");
+    if (wahl) {
+      k.modell = wahl.getAttribute("data-ki-modellwahl");
+      k.modellOffen = false;
+      try { localStorage.setItem("sl-ki-modell", k.modell); } catch { /* egal */ }
+      kiEditorZeichne();
+      return;
+    }
+    if (k.modellOffen) { k.modellOffen = false; kiEditorZeichne(); }
     const ziel = event.target.closest("[data-ki-ziel]");
     if (ziel && !ziel.disabled) { k.ziel = ziel.getAttribute("data-ki-ziel"); kiEditorZeichne(); return; }
     const chip = event.target.closest("[data-ki-chip]");
