@@ -1651,6 +1651,9 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-versionen button{width:28px; height:28px; border:0; border-radius:50%; background:#fff; color:#206efb; cursor:pointer; box-shadow:0 1px 3px rgba(15,23,42,.1); transition:transform .15s, opacity .15s;}
 #as-overlay .as-ki-versionen button:hover:not(:disabled){transform:scale(1.08);}
 #as-overlay .as-ki-versionen button:disabled{opacity:.35; cursor:default; box-shadow:none;}
+#as-overlay .as-ki-details{margin-top:8px; font-size:12px; color:#64748b;}
+#as-overlay .as-ki-details summary{cursor:pointer;}
+#as-overlay .as-ki-details pre{margin:6px 0 0; white-space:pre-wrap; font:inherit; font-size:12px; color:#334155;}
 #as-overlay .as-ki-aenderung{display:inline-flex; align-items:center; gap:7px; margin-top:8px; padding:5px 10px; border-radius:999px; background:#ecfdf5; color:#047857; font-size:12px; font-weight:600; animation:asKiWort .5s .3s both;}
 #as-overlay .as-ki-seg{position:relative;}
 #as-overlay .as-ki-seg-pille{position:absolute; top:3px; bottom:3px; left:3px; width:calc(50% - 3px); border-radius:999px; background:#fff; box-shadow:0 1px 4px rgba(15,23,42,.12);
@@ -5395,8 +5398,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     let extra = "";
     if (n.caption) extra = `<div class="as-ki-aenderung"><i class="fa-solid fa-pen"></i>Caption im Editor geändert${n.version ? ` · Version ${n.version}` : ""}</div>`;
     if (n.bild_auftrag) {
-      extra = `<div class="as-ki-vorschlag"><span class="as-ki-tag"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Visual anpassen" : "Neues Visual"}</span><pre>${esc(n.bild_auftrag)}</pre>
-        <button type="button" class="as-btn as-btn--primary" data-ki-visual="${i}"${state.ki?.laeuft?.bild ? " disabled" : ""}><i class="fa-solid fa-wand-magic-sparkles"></i>Visual erzeugen</button></div>`;
+      extra = `<div class="as-ki-aenderung"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Visual angepasst" : "Neues Visual"}${n.version ? ` · Version ${n.version}` : ""}</div>
+        <details class="as-ki-details"><summary>Visual-Auftrag</summary><pre>${esc(n.bild_auftrag)}</pre></details>`;
     }
     if (n.karte) {
       const kt = n.karte;
@@ -5660,6 +5663,13 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // Caption-Vorschlaege landen direkt im Editor, mit Version und Autosave.
       if (eintrag.caption) eintrag.version = kiCaptionSetzen(eintrag.caption);
       k.verlauf.push(eintrag);
+      // Visual-Vorschlaege werden sofort erzeugt, ohne zweiten Klick.
+      if (eintrag.bild_auftrag) {
+        k.laeuft[ziel] = false;
+        kiEditorZeichne();
+        void kiVisualErzeugen(eintrag);
+        return;
+      }
     } catch (err) {
       k.verlauf.push({ rolle: "ki", ziel, status: "fehler", text: err && err.message ? fehlerKlartext(String(err.message)) : "Die KI hat nicht geantwortet." });
     }
@@ -5682,7 +5692,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     await bauePrivatBild({ auftrag: n.bild_auftrag, anpassen: n.bild_modus === "anpassen" });
     k.laeuft.bild = false;
     kiVisualVersionMerken();
-    if (!state.kiFortschritt?.fehler) k.hinweisVisual = "Gespeichert";
+    if (!state.kiFortschritt?.fehler) { k.hinweisVisual = "Gespeichert"; n.version = k.versionen.bild.liste.length; }
     kiEditorZeichne();
     k.neuesVisual = false;
   }
