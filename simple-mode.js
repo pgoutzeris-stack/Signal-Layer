@@ -17,7 +17,7 @@ import { matchesDropdownSearch, bindDropdownSearch } from "./dropdown-search.mjs
 
 import { simpleCurrentVersionLabel, simpleHistoricalVersionLabel, simpleLaneCountLabel, simpleVersionDateLabel, simpleVersionInfo, simpleVersionMenu } from "./simple-view-state.mjs?v=20261013-5";
 import { paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { beiSignalFilter, signalFilterAktiv, signalPasst } from "./content-liste.mjs?v=20261124-30";
+import { beiSignalFilter, signalFilterAktiv, signalPasst } from "./content-liste.mjs?v=20261124-31";
 import { articleDisplayTitle } from "./article-title.mjs?v=20261013-5";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20261013-5";
 

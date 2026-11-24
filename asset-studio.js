@@ -1759,10 +1759,18 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-seg[aria-pressed="true"]{background:var(--brand,#206efb); border-color:var(--brand,#206efb); color:#fff;}
 #as-overlay .as-inspector .as-btn{justify-content:center; width:100%;}
 #as-overlay .as-savehint{font-size:12px; line-height:1.4; color:#b42318; min-height:1em; margin:0;}
-#as-overlay .as-post-wrap{position:relative;}
-#as-overlay .as-post-gross{position:absolute; top:8px; right:8px; width:28px; height:28px; border:0; border-radius:8px; background:rgba(255,255,255,.9); color:#64748b; cursor:pointer; font-size:12px;}
-#as-overlay .as-post-gross:hover{color:#206efb; background:#eff6ff;}
-#as-overlay .as-post-wrap.is-gross .as-post{min-height:62vh;}
+#as-overlay .as-post-wrap{position:relative; display:flex; flex-direction:column; border:1px solid var(--line,#e2e8f0); border-radius:12px; background:var(--bg,#fff); overflow:hidden;}
+#as-overlay .as-post-wrap:focus-within{border-color:#93b8fd; box-shadow:0 0 0 3px rgba(32,110,251,.1);}
+#as-overlay .as-post-wrap .as-post{border:0 !important; border-radius:0 !important; min-height:150px !important; max-height:150px; resize:none !important; transition:max-height .35s ease, min-height .35s ease;}
+#as-overlay .as-post-wrap.is-gross .as-post{min-height:56vh !important; max-height:none;}
+#as-overlay .as-post-auf{display:flex; align-items:center; justify-content:center; gap:6px; width:100%; border:0; border-top:1px solid #edf2f7; background:#f8fafc; padding:6px; font-size:11.5px; font-weight:600; font-family:inherit; color:#64748b; cursor:pointer;}
+#as-overlay .as-post-auf:hover{color:#206efb;}
+#as-overlay .as-capfmt{display:flex; align-items:center; gap:2px; padding:5px 6px; border-bottom:1px solid #edf2f7; background:#fff;}
+#as-overlay .as-capfmt span{width:1px; height:16px; background:#e2e8f0; margin:0 4px;}
+#as-overlay .as-capfmt button{width:28px; height:28px; border:0; border-radius:7px; background:transparent; color:#475569; cursor:pointer; font-size:12px;}
+#as-overlay .as-capfmt button:hover{background:#eff6ff; color:#206efb;}
+#as-overlay .as-ki-feld .as-capfmt{position:sticky; top:0; z-index:2; padding:8px 24px; background:#f8fafc;}
+#as-overlay .as-ki-feld{grid-template-rows:auto minmax(0,1fr);}
 #as-overlay .as-post{
   width:100%; min-height:340px; resize:vertical; font:inherit; font-size:13.5px; line-height:1.6; padding-right:40px !important; transition:min-height .3s ease;
   border:1px solid var(--line,#e2e8f0); border-radius:12px; padding:10px 12px;
@@ -5458,7 +5466,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const laenge = (k.entwurf || "").length;
       const feld = k.tippt
         ? `<div class="as-ki-text as-ki-text--tippt" aria-live="polite">${kiWoerter(k.entwurf, 0, 0.012)}</div>`
-        : `<textarea class="as-ki-text" data-ki-text aria-label="Caption" spellcheck="true">${esc(k.entwurf || "")}</textarea>`;
+        : `${captionFormatLeiste("data-ki-fmt")}<textarea class="as-ki-text" data-ki-text aria-label="Caption" spellcheck="true">${esc(k.entwurf || "")}</textarea>`;
       return `<div class="as-ki-feld${k.laeuft.caption ? " is-denkt" : ""}">${feld}</div>
         <div class="as-ki-leiste">
           <span class="as-ki-zaehler${laenge > 3000 ? " is-zuviel" : ""}" data-ki-zaehler>${laenge.toLocaleString("de-DE")} / 3.000</span>
@@ -5755,6 +5763,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       kiEditorZeichne();
       return;
     }
+    const kiFmt = event.target.closest("[data-ki-fmt]");
+    if (kiFmt) { captionFormatieren(kiEditor.querySelector("[data-ki-text]"), kiFmt.getAttribute("data-ki-fmt")); return; }
     const chip = event.target.closest("[data-ki-chip]");
     if (chip) { void kiSenden(chip.getAttribute("data-ki-chip")); return; }
     const zurueck = event.target.closest("[data-ki-zurueck]");
@@ -5792,6 +5802,69 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     }
     event.stopPropagation();
   });
+
+  /* ── Formatierung der Caption: LinkedIn kennt nur Unicode-Fett und -Kursiv ── */
+  const FMT_BASIS = { fett: [0x1d5d4, 0x1d5ee, 0x1d7ec], kursiv: [0x1d608, 0x1d622, null] };
+  function fmtZeichen(z, art) {
+    const c = z.codePointAt(0);
+    const [gross, klein, ziffer] = FMT_BASIS[art];
+    if (c >= 65 && c <= 90) return String.fromCodePoint(gross + c - 65);
+    if (c >= 97 && c <= 122) return String.fromCodePoint(klein + c - 97);
+    if (ziffer && c >= 48 && c <= 57) return String.fromCodePoint(ziffer + c - 48);
+    return z;
+  }
+  function fmtZurueck(z) {
+    const c = z.codePointAt(0);
+    for (const [gross, klein, ziffer] of Object.values(FMT_BASIS)) {
+      if (c >= gross && c < gross + 26) return String.fromCharCode(65 + c - gross);
+      if (c >= klein && c < klein + 26) return String.fromCharCode(97 + c - klein);
+      if (ziffer && c >= ziffer && c < ziffer + 10) return String.fromCharCode(48 + c - ziffer);
+    }
+    return z;
+  }
+  function fmtIst(text, art) {
+    const [gross, klein] = FMT_BASIS[art];
+    return [...text].some((z) => { const c = z.codePointAt(0); return (c >= gross && c < gross + 26) || (c >= klein && c < klein + 26); });
+  }
+  function fmtText(text, art) {
+    if (art === "ohne") return [...text].map(fmtZurueck).join("").normalize("NFC");
+    const roh = [...text].map(fmtZurueck).join("");
+    if (fmtIst(text, art)) return roh.normalize("NFC");
+    return [...roh.normalize("NFD")].map((z) => fmtZeichen(z, art)).join("");
+  }
+  function fmtZeilen(text, art) {
+    const zeilen = text.split("\n");
+    return zeilen.map((z, i) => {
+      const ohne = z.replace(/^(\s*)(?:•\s|\d+\.\s)/, "$1");
+      if (!z.trim()) return z;
+      if (art === "liste") return /^\s*•\s/.test(z) ? ohne : `• ${ohne}`;
+      return /^\s*\d+\.\s/.test(z) ? ohne : `${i + 1}. ${ohne}`;
+    }).join("\n");
+  }
+  /** Auswahl im Textfeld formatieren; ohne Auswahl die aktuelle Zeile. */
+  function captionFormatieren(feld, art) {
+    if (!feld) return "";
+    let a = feld.selectionStart, b = feld.selectionEnd;
+    const wert = feld.value;
+    if (art === "liste" || art === "nummern" || a === b) {
+      a = wert.lastIndexOf("\n", a - 1) + 1;
+      const ende = wert.indexOf("\n", b);
+      b = ende < 0 ? wert.length : ende;
+    }
+    const teil = wert.slice(a, b);
+    const neu = art === "liste" || art === "nummern" ? fmtZeilen(teil, art) : fmtText(teil, art);
+    feld.focus();
+    feld.setSelectionRange(a, b);
+    // execCommand haelt Rueckgaengig (Cmd+Z) am Leben; sonst direkt setzen.
+    if (!document.execCommand || !document.execCommand("insertText", false, neu)) feld.setRangeText(neu, a, b, "select");
+    feld.setSelectionRange(a, a + neu.length);
+    feld.dispatchEvent(new Event("input", { bubbles: true }));
+    return feld.value;
+  }
+  function captionFormatLeiste(attr = "data-fmt") {
+    const k = (art, icon, titel) => `<button type="button" ${attr}="${art}" title="${titel}" aria-label="${titel}"><i class="${icon}"></i></button>`;
+    return `<div class="as-capfmt" role="toolbar" aria-label="Caption formatieren">${k("fett", "fa-solid fa-bold", "Fett")}${k("kursiv", "fa-solid fa-italic", "Kursiv")}<span></span>${k("liste", "fa-solid fa-list-ul", "Aufzählung")}${k("nummern", "fa-solid fa-list-ol", "Nummerierung")}<span></span>${k("ohne", "fa-solid fa-text-slash", "Formatierung entfernen")}</div>`;
+  }
 
   function euro(wert) {
     const n = Number(wert);
@@ -7251,8 +7324,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <div class="as-group">
         <span>Caption</span>
         <div class="as-post-wrap${state.postGross ? " is-gross" : ""}">
+          ${captionFormatLeiste()}
           <textarea class="as-post" data-post aria-label="Caption">${esc(state.postText)}</textarea>
-          <button type="button" class="as-post-gross" data-act="post-gross" title="${state.postGross ? "Verkleinern" : "Vergrößern"}" aria-label="${state.postGross ? "Verkleinern" : "Vergrößern"}"><i class="fa-solid fa-${state.postGross ? "down-left-and-up-right-to-center" : "up-right-and-down-left-from-center"}"></i></button>
+          <button type="button" class="as-post-auf" data-act="post-gross"><i class="fa-solid fa-chevron-${state.postGross ? "up" : "down"}"></i>${state.postGross ? "Einklappen" : "Aufklappen"}</button>
         </div>
         <span style="display:flex; gap:8px; flex-wrap:wrap;">
           <button type="button" class="as-btn as-btn--primary" data-act="ki-editor" data-ziel="caption"><i class="fa-solid fa-wand-magic-sparkles"></i>Mit KI bearbeiten</button>
@@ -9004,6 +9078,12 @@ ${stages}${post}
     const modeBtn = event.target.closest("[data-crop-mode]");
     if (modeBtn) {
       applyCropMode(modeBtn.getAttribute("data-crop-mode"));
+      return;
+    }
+    const fmtKnopf = event.target.closest("[data-fmt]");
+    if (fmtKnopf) {
+      if (state.nurLesen) return;
+      state.postText = captionFormatieren(shell.querySelector("[data-post]"), fmtKnopf.getAttribute("data-fmt"));
       return;
     }
     const hit = event.target.closest("[data-act]");
