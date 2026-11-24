@@ -1051,6 +1051,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-guidance.is-warning{border-color:#f2c94c; background:#fffbeb; color:#7c5b00;}
 #as-overlay .as-guidance.is-warning i{color:#b7791f;}
 /* Fragebogen links, Vorschau rechts. Bei schmalem Popup untereinander. */
+#as-overlay .as-split2--liste{grid-template-columns:minmax(0, 820px) !important; justify-content:center;}
 #as-overlay .as-split2{display:grid; grid-template-columns:minmax(320px, 460px) minmax(0, 1fr); gap:20px; align-items:stretch; flex:1; min-height:0; width:100%; height:auto;}
 #as-overlay .as-split2-form{overflow-y:auto; max-height:100%; padding-right:10px; scrollbar-width:thin;}
 #as-overlay .as-split2-form::-webkit-scrollbar{width:8px;}
@@ -2777,6 +2778,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   function stepContent() {
+    // Entwurfsliste: die Fragebogen-Vorschau daneben zeigt nichts davon.
+    if (state.step === "form" && state.formTab === "drafts") {
+      return `<div class="as-split2 as-split2--liste"><div class="as-split2-form">${draftsHtml()}</div></div>`;
+    }
     if (state.step === "form") {
       // Links entscheiden, rechts sofort sehen. Die Vorschau ist dieselbe
       // Vorlage wie das spaetere Asset, nur mit Platzhaltertext.
