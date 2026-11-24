@@ -41,6 +41,7 @@ function css() {
 .cl-suche{position:relative; height:34px; width:34px; border:1px solid var(--line); border-radius:999px; background:var(--bg); display:flex; align-items:center; overflow:hidden; transition:width .22s ease, box-shadow .16s, border-color .16s; box-shadow:0 2px 7px rgba(15,23,42,.035); flex:0 0 auto;}
 .cl-suche i{position:absolute; left:11px; font-size:.78rem; color:var(--muted); pointer-events:none;}
 .cl-suche input{border:0; outline:0; background:transparent; font:inherit; font-size:.74rem; color:var(--ink); width:100%; height:100%; padding:0 12px 0 31px; cursor:pointer;}
+.cl-suche--offen{width:230px;}
 .cl-suche:hover, .cl-suche:focus-within, .cl-suche.is-aktiv{width:230px; border-color:color-mix(in srgb, var(--brand) 48%, var(--line)); box-shadow:var(--shadow-focus);}
 .cl-suche:hover input, .cl-suche:focus-within input, .cl-suche.is-aktiv input{cursor:text;}
 .cl-pill{height:34px; padding:0 13px; border:1px solid var(--line); border-radius:999px; background:var(--bg); color:var(--status-text, var(--muted)); display:inline-flex; align-items:center; gap:7px; font:inherit; font-size:.72rem; font-weight:650; cursor:pointer; white-space:nowrap; flex:0 0 auto; transition:border-color .16s, color .16s, background .16s;}
@@ -95,7 +96,7 @@ function leisteEinbauen(toolbar) {
   if (!toolbar || toolbar.querySelector(".cl-suche")) return;
   const wrap = document.createElement("div");
   wrap.style.cssText = "display:flex; align-items:center; gap:6px; flex:0 0 auto;";
-  wrap.innerHTML = `<label class="cl-suche" title="Signale suchen"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" placeholder="Signal suchen" aria-label="Signale nach Titel suchen"></label>
+  wrap.innerHTML = `<label class="cl-suche cl-suche--signal" title="Signale suchen"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" placeholder="Signal suchen" aria-label="Signale nach Titel suchen"></label>
     <button type="button" class="cl-pill" aria-pressed="false"><i class="fa-regular fa-file-lines"></i>Mit Entwurf</button>`;
   const status = toolbar.querySelector(".crawl-trigger-wrap");
   if (status) toolbar.insertBefore(wrap, status);
@@ -105,8 +106,8 @@ function leisteEinbauen(toolbar) {
   feld.value = signalFilter.text;
   feld.addEventListener("input", () => {
     signalFilter.text = feld.value;
-    document.querySelectorAll(".cl-suche input").forEach((f) => { if (f !== feld) f.value = feld.value; });
-    document.querySelectorAll(".cl-suche").forEach((s) => s.classList.toggle("is-aktiv", Boolean(feld.value.trim())));
+    document.querySelectorAll(".cl-suche--signal input").forEach((f) => { if (f !== feld) f.value = feld.value; });
+    document.querySelectorAll(".cl-suche--signal").forEach((s) => s.classList.toggle("is-aktiv", Boolean(feld.value.trim())));
     void signaleFiltern();
   });
   suche.classList.toggle("is-aktiv", Boolean(signalFilter.text.trim()));
@@ -206,7 +207,7 @@ function contentAnsichtBauen(root) {
     <nav class="signal-toolbar cl-bar" aria-label="Content filtern">
       <span class="signal-toolbar-label"><i class="fa-solid fa-pen-nib"></i> Content</span>
       <div class="signal-toolbar-controls" style="flex-wrap:wrap;">
-        <label class="cl-suche is-aktiv"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-cl="text" placeholder="Content suchen" aria-label="Content suchen"></label>
+        <label class="cl-suche cl-suche--offen"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-cl="text" placeholder="Content suchen" aria-label="Content suchen"></label>
         <select data-cl="lane" aria-label="Bereich"><option value="all">Marketing und Sales</option><option value="marketing">Marketing</option><option value="sales">Sales</option></select>
         <select data-cl="kind" aria-label="Art"><option value="all">Alle Arten</option><option value="linkedin">LinkedIn</option><option value="memo">Executive Memo</option></select>
         <select data-cl="status" aria-label="Stand"><option value="all">Entwurf und übernommen</option><option value="draft">Nur Entwürfe</option><option value="owned">Nur übernommen</option></select>
