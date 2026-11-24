@@ -8263,6 +8263,15 @@ Deno.serve(async (req: Request) => {
         if (!isScheduled) return unauthorizedResponse(req, origin);
       }
     }
+  } else if (action === "generate_asset" && req.headers.get("x-cron-secret")) {
+    // Betrieb erzeugt Probe-Entwuerfe im Namen einer Person (Qualitaetspruefung).
+    // Nur mit Cron-Secret; die Person muss existieren.
+    isScheduled = await isScheduledTrigger(req);
+    const alsNutzer = String((body as Record<string, unknown>).als_nutzer || "");
+    if (!isScheduled || !/^[0-9a-f-]{36}$/i.test(alsNutzer)) return unauthorizedResponse(req, origin);
+    const { data: person } = await getAdminClient().schema("users").from("profiles").select("id").eq("id", alsNutzer).maybeSingle();
+    if (!person) return unauthorizedResponse(req, origin);
+    auth = { userId: alsNutzer };
   } else if (action === "ki_visual_slide" || action === "ki_visual_bild" || action === "privat_bild") {
     // Neben dem User-JWT auch per Cron-Secret, damit der Betrieb ein Visual
     // fuer den Eigentuemer des Assets nachbauen und pruefen kann.
