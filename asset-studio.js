@@ -5775,7 +5775,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     kiEditorZeichne();
     try {
       const res = await api("ki_chat", { asset_id: state.assetId, ziel, nachricht, modell: k.modell, caption: k.entwurf });
-      const eintrag = { rolle: "ki", ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null, guardrail: res?.guardrail || null };
+      const eintrag = { rolle: "ki", ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null, guardrail: res?.guardrail || null, regeln: Array.isArray(res?.regeln) ? res.regeln : null };
       if (res?.stats) k.stats = res.stats;
       // Caption-Vorschlaege landen direkt im Editor, mit Version und Autosave.
       if (eintrag.caption) eintrag.version = kiCaptionSetzen(eintrag.caption, nachricht);

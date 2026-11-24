@@ -8991,7 +8991,7 @@ Deno.serve(async (req: Request) => {
         if (!nachricht) return errorResponse(origin, "Nachricht fehlt.");
         const admin = getAdminClient();
         const { data: kcAsset } = await admin.schema("signal_layer").from("generated_assets")
-          .select("id, kind, created_by, article_id, answers, payload").eq("id", kcId).maybeSingle();
+          .select("id, kind, created_by, article_id, answers, payload, model, cost_eur").eq("id", kcId).maybeSingle();
         if (!kcAsset || kcAsset.kind !== "linkedin") return errorResponse(origin, "Asset nicht gefunden", 404);
         if (!isScheduled && String(kcAsset.created_by || "") !== String(auth?.userId || "")) {
           return errorResponse(origin, "Diesen Entwurf darf nur die Person bearbeiten, die ihn erstellt hat.", 403);
@@ -9016,6 +9016,17 @@ Deno.serve(async (req: Request) => {
           bildAuftrag: String(kcMeta.auftrag || ""), bildStil: String(kcMeta.stil || ""),
           bildVorhanden: kcSlides[0]?.variant === "KI" && Boolean(kcSlides[0]?.ki_layout),
           verlauf, nachricht,
+          systemInfo: (() => {
+            const euro = (n: unknown) => Number.isFinite(Number(n)) && n !== null && n !== undefined ? `${Number(n).toFixed(3).replace(".", ",")} €` : "unbekannt";
+            const st = (kcPayload.ki_chat_stats || {}) as Record<string, unknown>;
+            return [
+              `Du bist ${KI_CHAT_MODELLE.find((m) => m.id === modell)?.name || modell} im KI-Editor des ROOTS Signal Layer. Die Person wählt das Modell oben rechts; zur Auswahl stehen ${KI_CHAT_MODELLE.map((m) => m.name).join(", ")}.`,
+              `Caption: erstellt mit ${String(kcAsset.model || "unbekannt").replace(/^[a-z]+\//, "")}, Kosten ${euro(kcAsset.cost_eur)}.`,
+              `Aktuelles Visual: Bildmodell ${String(kcMeta.modell || "Nano Banana 2 (Google Gemini 3.1 Flash Image)")}, Kosten ${euro(kcMeta.kosten_eur)}, Format ${String(kcMeta.format || "1:1")}, CI-Prüfung ${kcMeta.ci_geprueft ? (kcMeta.ci_ok ? "bestanden" : "auffällig") : "nicht geprüft"}, erstellt ${String(kcMeta.erstellt || "unbekannt")}.`,
+              `Der Bildauftrag entsteht aus Signal und Artikel durch einen Art-Director-Schritt (Gemini 3.5 Flash) und wird im Bildstil umgesetzt.`,
+              `Diese Chat-Sitzung bisher: ${euro(st.kosten_eur || 0)}, ${Number(st.nachrichten || 0)} Nachrichten, davon ${Number(st.visuals || 0)} Visuals.`,
+            ].join("\n");
+          })(),
         });
         const apiKey = await modelApiKey(modell).catch(() => "");
         if (!apiKey) return errorResponse(origin, "Für dieses Modell ist kein Schlüssel hinterlegt.", 409);
@@ -9039,8 +9050,9 @@ Deno.serve(async (req: Request) => {
           const stil = waehleBildStil(stile, stilId);
           karte = stil ? { art: "bildstil", titel: stil.name, text: stil.prompt, bilder: bildVorschauUrls(stil).slice(0, 4) } : null;
         }
+        const regelnZeigen = ergebnis.zeige === "regeln";
         // Eine eingeblendete Einstellung ist nie eine Ablehnung.
-        if (karte && ergebnis.status !== "vorschlag") ergebnis.status = "info";
+        if ((karte || regelnZeigen) && ergebnis.status !== "vorschlag") ergebnis.status = "info";
         // Sitzungswerte fuer die Leiste: Kosten, Tokens, Fuellstand des Kontextfensters.
         const alteStats = (kcPayload.ki_chat_stats || {}) as Record<string, unknown>;
         const stats = {
@@ -9061,7 +9073,7 @@ Deno.serve(async (req: Request) => {
         if (!(isScheduled && body.probe === true)) {
           await admin.schema("signal_layer").from("generated_assets").update({ payload: { ...kcPayload, ki_chat: neuerVerlauf, ki_chat_stats: stats } }).eq("id", kcId);
         }
-        return corsResponse(origin, { ...ergebnis, karte, guardrail: kiSchrankeAnzeige(ergebnis.regel), modell, kosten_eur: kcKosten, stats });
+        return corsResponse(origin, { ...ergebnis, karte, regeln: regelnZeigen ? KI_SCHRANKEN_ANZEIGE : null, guardrail: regelnZeigen ? null : kiSchrankeAnzeige(ergebnis.regel), modell, kosten_eur: kcKosten, stats });
       }
 
       case "ki_chat_verdichten": {
