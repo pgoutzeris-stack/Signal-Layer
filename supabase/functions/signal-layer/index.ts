@@ -9037,6 +9037,8 @@ Deno.serve(async (req: Request) => {
           const stil = waehleBildStil(stile, stilId);
           karte = stil ? { art: "bildstil", titel: stil.name, text: stil.prompt, bilder: bildVorschauUrls(stil).slice(0, 4) } : null;
         }
+        // Eine eingeblendete Einstellung ist nie eine Ablehnung.
+        if (karte && ergebnis.status !== "vorschlag") ergebnis.status = "info";
         // Sitzungswerte fuer die Leiste: Kosten, Tokens, Fuellstand des Kontextfensters.
         const alteStats = (kcPayload.ki_chat_stats || {}) as Record<string, unknown>;
         const stats = {
