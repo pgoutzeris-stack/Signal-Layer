@@ -1541,6 +1541,14 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-avatar--person{padding:0; border-radius:50%; border:0;}
 #as-overlay .as-linkedin-avatar--person img{object-fit:cover;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
+#as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
+#as-overlay .as-info-knopf{margin-left:auto; align-self:flex-start; width:28px; height:28px; border-radius:50%; border:1px solid var(--line,#e2e8f0);
+  background:#fff; color:#475569; display:grid; place-items:center; font-size:12px; cursor:pointer; transition:color .15s, border-color .15s, background .15s;}
+#as-overlay .as-info-knopf:hover{color:#206efb; border-color:#bfdbfe; background:#eff6ff;}
+#as-overlay .as-info-knopf--bild{position:absolute; top:12px; right:12px; z-index:3; margin:0; box-shadow:0 2px 8px rgba(15,23,42,.08);}
+#as-overlay .as-bildinfo-score{display:flex; align-items:baseline; gap:8px;}
+#as-overlay .as-bildinfo-score b{font-size:28px; line-height:1; color:#0f172a;}
+#as-overlay .as-bildinfo-score span{font-size:13px; color:#64748b;}
 #as-overlay .as-bildinfo{position:absolute; top:0; right:0; bottom:0; z-index:60; width:min(400px,100%); display:flex; flex-direction:column; gap:16px;
   padding:20px; overflow:auto; background:#fff; border-left:1px solid var(--line,#e2e8f0); box-shadow:-12px 0 40px rgba(15,23,42,.16);}
 #as-overlay .as-bildinfo[hidden]{display:none;}
@@ -2052,7 +2060,7 @@ const hintergrundLaeufe = new Map();
 const NUR_LESEN_ERLAUBT = new Set([
   "close", "close-popup", "show-drafts", "open-draft", "to-form", "toggle-fs", "toggle-fs-controls", "toggle-fs-tools",
   "fs-zoom-in", "fs-zoom-out", "fs-zoom-fit", "prev-fwd", "prev-back", "download", "copy-post", "print", "bild-info-zu",
-  "step-back", "pruef-zu", "privat-bild-laden",
+  "step-back", "pruef-zu", "privat-bild-laden", "caption-info", "bild-info",
 ]);
 
 function hintergrundCss() {
@@ -2274,6 +2282,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Entwurf einer anderen Person: Kopf zeigt sie, Bearbeiten ist gesperrt.
     autor: null,
     nurLesen: false,
+    // Herkunft der Caption fuer die Info-Leiste, Score wird bei Bedarf geholt.
+    captionInfo: null,
+    toneScore: null,
     // Ist der hinterlegte Tonfall in die Caption eingeflossen?
     toneGenutzt: null,
     meinStil: { portraet: "", logo: "" },
@@ -2865,8 +2876,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const kopf = state.autor || state.ich;
     const logo = privat && kopf.avatar_url ? kopf.avatar_url : (state.chrome.logo || state.logo || LOGO_PATH);
     const avatarKlasse = privat && kopf.avatar_url ? " as-linkedin-avatar--person" : "";
-    const tonPill = privat && state.toneGenutzt !== null
-      ? `<span class="as-tone-pill ${state.toneGenutzt ? "is-ok" : "is-off"}"><i class="fa-solid fa-${state.toneGenutzt ? "check" : "xmark"}"></i>Tone of Voice</span>`
+    const tonPill = state.assetId
+      ? `<button type="button" class="as-info-knopf" data-act="caption-info" title="Infos zur Caption" aria-label="Infos zur Caption"><i class="fa-solid fa-info"></i></button>`
+      : "";
+    const bildKnopf = privat && privatBildSrc()
+      ? `<button type="button" class="as-info-knopf as-info-knopf--bild" data-act="bild-info" title="Infos zum Bild" aria-label="Infos zum Bild"><i class="fa-solid fa-info"></i></button>`
       : "";
     return `<div class="as-work as-work--feed" data-kind="linkedin">
       <article class="as-linkedin-post" aria-label="LinkedIn-Vorschau">
@@ -2884,7 +2898,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
             <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
           </footer>
         </div>
-        <div class="as-stagearea as-stagearea--linkedin" data-stagearea></div>
+        <div class="as-stagearea-wrap">${bildKnopf}<div class="as-stagearea as-stagearea--linkedin" data-stagearea></div></div>
       </article>
     </div>`;
   }
@@ -4149,6 +4163,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.assetId = row.id;
       state.owned = Boolean(row.owner_id);
       state.nurLesen = res?.eigen === false;
+      state.captionInfo = { model: row.model, cost_eur: row.cost_eur, created_at: row.created_at };
+      state.toneScore = row.payload?.tone_score?.score !== undefined ? { ...row.payload.tone_score, text: String(row.payload.post_text || "") } : null;
       state.autor = res?.autor && res.eigen === false ? { name: String(res.autor.name || ""), avatar_url: String(res.autor.avatar_url || "") } : null;
       state.memoSend = res && typeof res === "object" ? (res.memo_send || null) : null;
       state.answers = answersToForm(row.answers, row);
@@ -4769,6 +4785,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       uebernehmeLaufstand(row);
       const fertig = row.status === "running" ? await warteAufAsset(row.id) : row;
       // Ohne eingefrorene Antworten zaehlt, was der Server bekommen hat.
+      state.captionInfo = { model: fertig?.model, cost_eur: fertig?.cost_eur, created_at: fertig?.created_at };
+      state.toneScore = null;
       state.toneGenutzt = fertig?.answers ? toneGenutzt(fertig.answers)
         : state.answers.caption === "ai_tone" && Boolean(String(state.toneOfVoice || "").trim());
       if (state.cancelRequested) return;
@@ -5055,6 +5073,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         stil: String(res.stil?.name || ""), auftrag: String(res.auftrag || ""), modell: "Nano Banana 2",
         format: String(res.stil?.aspect || "1:1"), ci_geprueft: Boolean(res.ci?.checked), ci_ok: Boolean(res.ci?.ok),
         ci_grund: String(res.ci?.reason || ""), erstellt: new Date().toISOString(),
+        kosten_eur: Number(res.kosten_eur) || 0,
       };
       const gespeichert = await api("save_privat_bild", { asset_id: state.assetId, index: 0, bild, stil_id: res.stil?.id || "", meta });
       slide.ki_bild_meta = gespeichert?.meta || meta;
@@ -5140,6 +5159,53 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function schliesseBildInfo() { bildInfo.hidden = true; bildInfo.innerHTML = ""; }
 
+  function euro(wert) {
+    const n = Number(wert);
+    if (wert === null || wert === undefined || wert === "" || !Number.isFinite(n)) return "-";
+    if (n > 0 && n < 0.01) return "unter 1 Cent";
+    return `${n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} €`;
+  }
+
+  function datumZeit(wert) {
+    return wert ? new Date(wert).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
+  }
+
+  /** Seitenleiste fuer die Caption: Modell, Kosten, Tone of Voice und wie gut er getroffen ist. */
+  function oeffneCaptionInfo() {
+    const c = state.captionInfo || {};
+    const zeile = (titel, wert) => `<div class="as-bildinfo-feld"><span>${esc(titel)}</span><b>${esc(wert || "-")}</b></div>`;
+    const tonGenutzt = state.toneGenutzt === null ? "-" : state.toneGenutzt ? "Ja" : "Nein";
+    const scoreHtml = () => {
+      const t = state.toneScore;
+      if (!state.toneGenutzt) return '<p>Für diese Caption wurde kein Tone of Voice genutzt.</p>';
+      if (!t) return '<p>Wird bewertet …</p>';
+      if (t.score === null || t.score === undefined) return `<p>${esc(t.grund || "Bewertung nicht verfügbar.")}</p>`;
+      return `<div class="as-bildinfo-score"><b>${esc(t.score)}</b><span>von 100</span></div><p>${esc(t.grund || "")}</p>`;
+    };
+    const zeichne = () => {
+      bildInfo.innerHTML = `
+      <header class="as-bildinfo-kopf"><h3>Caption</h3>
+        <button type="button" class="as-bildinfo-zu" data-act="bild-info-zu" aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button></header>
+      <div class="as-bildinfo-text"><span>Tone-of-Voice-Score</span>${scoreHtml()}</div>
+      <div class="as-bildinfo-raster">
+        ${zeile("Tone of Voice genutzt", tonGenutzt)}${zeile("Modell", String(c.model || "").replace(/^[a-z]+\//, ""))}
+        ${zeile("Kosten Caption", euro(c.cost_eur))}${zeile("Zeichen", String((state.postText || "").length.toLocaleString("de-DE")))}
+        ${zeile("Erstellt", datumZeit(c.created_at))}
+      </div>`;
+      bildInfo.hidden = false;
+    };
+    // Nach einer Aenderung der Caption gilt der alte Score nicht mehr.
+    if (state.toneScore && state.toneScore.text !== (state.postText || "")) state.toneScore = null;
+    zeichne();
+    if (state.toneGenutzt && !state.toneScore && state.assetId) {
+      const text = state.postText || "";
+      void api("tone_score", { asset_id: state.assetId, post_text: text })
+        .then((res) => { state.toneScore = { ...(res || { score: null, grund: "Bewertung nicht verfügbar." }), text }; })
+        .catch(() => { state.toneScore = { score: null, grund: "Bewertung nicht verfügbar." }; })
+        .then(() => { if (!bildInfo.hidden && bildInfo.querySelector("h3")?.textContent === "Caption") zeichne(); });
+    }
+  }
+
   function oeffneBildInfo(slide) {
     const src = privatBildSrc();
     if (!slide || !src) return;
@@ -5154,7 +5220,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <div class="as-bildinfo-text"><span>Bildauftrag</span><p>${esc(m.auftrag || "Nicht gespeichert")}</p></div>
       <div class="as-bildinfo-raster">
         ${zeile("Stil", m.stil || state.privatBildStil)}${zeile("Modell", m.modell)}${zeile("Format", m.format)}
-        ${zeile("CI-Prüfung", ci)}${zeile("Erstellt", datum)}
+        ${zeile("CI-Prüfung", ci)}${zeile("Kosten Bild", euro(m.kosten_eur))}${zeile("Erstellt", datum)}
       </div>
       <footer class="as-bildinfo-fuss">
         <button type="button" class="as-btn as-btn--primary" data-act="ki-visual"${state.kiLaeuft ? " disabled" : ""}><i class="fa-solid fa-rotate-right"></i>Bild neu generieren</button>
@@ -8397,6 +8463,8 @@ ${stages}${post}
     }
     if (act === "ki-visual") { schliesseBildInfo(); void baueKiVisuals(); return; }
     if (act === "bild-info-zu") { schliesseBildInfo(); return; }
+    if (act === "caption-info") { oeffneCaptionInfo(); return; }
+    if (act === "bild-info") { oeffneBildInfo(state.slides[0]); return; }
     if (act === "privat-bild-laden") {
       const src = privatBildSrc();
       if (!src) return;

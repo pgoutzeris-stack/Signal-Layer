@@ -3838,7 +3838,7 @@ async function recordStandaloneAiUsage(
   errorCode?: string,
   measured?: { usd: number; toolUsd: number },
   step?: string,
-) {
+): Promise<number> {
   // Die Kostenbuchung darf den bezahlten Aufruf nie nachträglich scheitern
   // lassen: ein Memo bricht sonst wegen einer Protokollzeile ab.
   try {
@@ -3869,8 +3869,10 @@ async function recordStandaloneAiUsage(
       ...costs, ...grounding, error_code: errorCode || null,
     });
     if (error) console.error(`Kosten für ${operation} (${model}) nicht gebucht:`, error.message);
+    return Number(costs.estimated_cost_eur || 0) || 0;
   } catch (fehler) {
     console.error(`Kosten für ${operation} (${model}) nicht gebucht:`, fehler instanceof Error ? fehler.message : String(fehler));
+    return 0;
   }
 }
 
@@ -8971,6 +8973,61 @@ Deno.serve(async (req: Request) => {
 
       // Bildstil fuer das Bild privater LinkedIn-Assets. Die Stile kommen aus
       // dem Image-Generation-Tool, Vorschau sind dessen Serienbilder.
+      case "tone_score": {
+        // Wie nah ist die Caption am hinterlegten Tone of Voice? Einmal bewertet,
+        // dann im Entwurf gespeichert; neu nur, wenn die Caption sich aendert.
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const tsId = String(body.asset_id || "");
+        const admin = getAdminClient();
+        const { data: tsAsset } = await admin.schema("signal_layer").from("generated_assets")
+          .select("id, created_by, answers, payload").eq("id", tsId).maybeSingle();
+        if (!tsAsset) return errorResponse(origin, "Asset nicht gefunden", 404);
+        const tsPayload = (tsAsset.payload || {}) as Record<string, unknown>;
+        const tsAnswers = (tsAsset.answers || {}) as Record<string, unknown>;
+        const caption = String(body.post_text || tsPayload.post_text || "").trim();
+        const tov = String(tsAnswers.tone_of_voice || "").trim();
+        if (!caption || !tov) return corsResponse(origin, { score: null, grund: tov ? "Keine Caption vorhanden." : "Kein Tone of Voice hinterlegt." });
+        const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${tov}\n${caption}`))))
+          .slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+        const vorher = tsPayload.tone_score as Record<string, unknown> | undefined;
+        if (vorher && vorher.hash === hash) return corsResponse(origin, vorher);
+        const tsKey = await getGeminiKey().catch(() => "");
+        if (!tsKey) return corsResponse(origin, { score: null, grund: "Bewertung gerade nicht verfügbar." });
+        const tsAntwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${MARKEN_CHECK_MODELL}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": tsKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: [
+              "Bewerte, wie gut ein LinkedIn-Text den beschriebenen Tone of Voice einer Person trifft: Stimme, Haltung, Aufbau, Satzbau, Wortwahl, Ton-Regler.",
+              "score: ganze Zahl 0 bis 100. 90 und mehr: klingt eindeutig nach der Person. 70 bis 89: gut getroffen mit kleinen Abweichungen. 50 bis 69: erkennbar, aber deutlich generisch. Unter 50: trifft den Ton nicht.",
+              "grund: ein deutscher Satz, höchstens 25 Wörter, der die wichtigste Abweichung oder Stärke konkret benennt. Keine Floskeln.",
+              "Antworte nur mit JSON.",
+            ].join("\n") }] },
+            contents: [{ role: "user", parts: [{ text: `TONE OF VOICE:\n${tov.slice(0, 4000)}\n\nTEXT:\n${caption.slice(0, 5000)}` }] }],
+            generationConfig: { temperature: 0, thinkingConfig: { thinkingLevel: "low" }, responseMimeType: "application/json",
+              responseSchema: { type: "OBJECT", properties: { score: { type: "INTEGER" }, grund: { type: "STRING" } }, required: ["score", "grund"] } },
+          }),
+        }, 25_000).catch(() => null);
+        const tsJson = tsAntwort?.ok ? await tsAntwort.json().catch(() => null) : null;
+        let tsUrteil: Record<string, unknown> | null = null;
+        try { tsUrteil = JSON.parse(String(tsJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { tsUrteil = null; }
+        const tm = tsJson?.usageMetadata || {};
+        const tsKosten = await recordStandaloneAiUsage("asset_tone_score", MARKEN_CHECK_MODELL, tsUrteil ? "success" : "error", {
+          input: Number(tm.promptTokenCount || 0), cachedInput: 0, output: Number(tm.candidatesTokenCount || 0),
+          thinking: Number(tm.thoughtsTokenCount || 0), total: Number(tm.totalTokenCount || 0),
+        });
+        if (!tsUrteil) return corsResponse(origin, { score: null, grund: "Bewertung gerade nicht verfügbar." });
+        const ergebnis = {
+          score: Math.max(0, Math.min(100, Math.round(Number(tsUrteil.score) || 0))),
+          grund: String(tsUrteil.grund || "").slice(0, 300), hash, kosten_eur: tsKosten, bewertet: new Date().toISOString(),
+        };
+        // Nur im eigenen Entwurf speichern; fremde Entwuerfe bewerten ohne zu schreiben.
+        if (String(tsAsset.created_by || "") === String(auth.userId)) {
+          await admin.schema("signal_layer").from("generated_assets").update({ payload: { ...tsPayload, tone_score: ergebnis } }).eq("id", tsId);
+        }
+        return corsResponse(origin, ergebnis);
+      }
+
       case "marken_check": {
         // Vor dem Privat-Entwurf: gibt das Signal eine zeigbare Marke fuers Bild her?
         if (!auth?.userId && !isScheduled) return errorResponse(origin, "Nicht angemeldet", 401);
@@ -9056,6 +9113,8 @@ Deno.serve(async (req: Request) => {
         // Art Director: aus Beitrag und Stil ein kurzer Auftrag mit genau einer
         // Bildidee. Scheitert er, bleibt der Beitrag selbst der Auftrag.
         let auftrag = rohAuftrag;
+        // Alle Modellaufrufe fuer dieses Bild zusammen, fuer die Info-Leiste.
+        let bildKostenEur = 0;
         let brief: Record<string, unknown> | null = null;
         {
           // Testschalter nur fuer den Betrieb: Varianten des Auftrags vergleichen.
@@ -9073,7 +9132,7 @@ Deno.serve(async (req: Request) => {
           const briefJson = briefAntwort?.ok ? await briefAntwort.json().catch(() => null) : null;
           const bm = briefJson?.usageMetadata || {};
           try { brief = JSON.parse(String(briefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { brief = null; }
-          await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_BRIEF_MODELL, brief ? "success" : "error", {
+          bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_BRIEF_MODELL, brief ? "success" : "error", {
             input: Number(bm.promptTokenCount || 0), cachedInput: 0, output: Number(bm.candidatesTokenCount || 0),
             thinking: Number(bm.thoughtsTokenCount || 0), total: Number(bm.totalTokenCount || 0),
           });
@@ -9106,13 +9165,13 @@ Deno.serve(async (req: Request) => {
             if (!antwort.ok) {
               const koerper = await antwort.text().catch(() => "");
               pbFehlerText = `HTTP ${antwort.status} ${String(geminiResearchFehler(antwort.status, koerper).google || "").slice(0, 160)}`;
-              await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_MODELL, "error", undefined, 0, `http_${antwort.status}`);
+              bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_MODELL, "error", undefined, 0, `http_${antwort.status}`);
               if (antwort.status === 429 || antwort.status >= 500) { await warte(4_000); continue; }
               break;
             }
             const json = await antwort.json().catch(() => null);
             const meta = json?.usageMetadata || {};
-            await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_MODELL, "success", {
+            bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_MODELL, "success", {
               input: Number(meta.promptTokenCount || 0), cachedInput: 0, output: Number(meta.candidatesTokenCount || 0),
               thinking: Number(meta.thoughtsTokenCount || 0), total: Number(meta.totalTokenCount || 0),
             });
@@ -9135,7 +9194,7 @@ Deno.serve(async (req: Request) => {
           let urteil: Record<string, unknown> | null = null;
           try { urteil = JSON.parse(String(pruefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { urteil = null; }
           const pm = pruefJson?.usageMetadata || {};
-          await recordStandaloneAiUsage("asset_privat_bild_ci", BILDSTIL_PRUEF_MODELL, urteil ? "success" : "error", {
+          bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild_ci", BILDSTIL_PRUEF_MODELL, urteil ? "success" : "error", {
             input: Number(pm.promptTokenCount || 0), cachedInput: 0, output: Number(pm.candidatesTokenCount || 0),
             thinking: Number(pm.thoughtsTokenCount || 0), total: Number(pm.totalTokenCount || 0),
           });
@@ -9152,11 +9211,11 @@ Deno.serve(async (req: Request) => {
           neueFolien[0] = { ...pbSlides[0], ki_basis: String(pbSlides[0].ki_basis || pbSlides[0].variant || "B"), variant: "KI",
             ki_layout: privatBildLayout(pbBild, stil.aspect, stil.name), ki_typ: "bild", ki_bild_stil: stil.id,
             ki_bild_meta: { stil: stil.name, auftrag, modell: "Nano Banana 2", format: stil.aspect, ci_geprueft: ci.checked === true,
-              ci_ok: ci.ok === true, ci_grund: String(ci.reason || ""), erstellt: new Date().toISOString() } };
+              ci_ok: ci.ok === true, ci_grund: String(ci.reason || ""), erstellt: new Date().toISOString(), kosten_eur: Math.round(bildKostenEur * 10000) / 10000 } };
           const { error: nachFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
             .update({ payload: { ...pbPayload, slides: neueFolien }, updated_at: new Date().toISOString() }).eq("id", pbAssetId);
           if (nachFehler) return errorResponse(origin, nachFehler.message, 500);
-          return corsResponse(origin, { gespeichert: true, stil: { id: stil.id, name: stil.name }, ci, auftrag, laenge: pbBild.length });
+          return corsResponse(origin, { gespeichert: true, stil: { id: stil.id, name: stil.name }, ci, auftrag, laenge: pbBild.length, kosten_eur: bildKostenEur });
         }
         return corsResponse(origin, {
           bild: pbBild,
@@ -9164,6 +9223,7 @@ Deno.serve(async (req: Request) => {
           logo: stil.rootsLogo ? logo : "",
           ci,
           auftrag,
+          kosten_eur: Math.round(bildKostenEur * 10000) / 10000,
         });
       }
 
@@ -9192,6 +9252,7 @@ Deno.serve(async (req: Request) => {
           stil: text(roh.stil, 100) || spStil?.name || "", auftrag: text(roh.auftrag, 3000), modell: text(roh.modell, 60),
           format: text(roh.format, 10), ci_geprueft: roh.ci_geprueft === true, ci_ok: roh.ci_ok === true,
           ci_grund: text(roh.ci_grund, 300), erstellt: text(roh.erstellt, 40),
+          kosten_eur: Number.isFinite(Number(roh.kosten_eur)) ? Math.max(0, Math.min(5, Number(roh.kosten_eur))) : null,
         } : vorher;
         spSlides[spIndex] = { ...spSlide, ki_basis: String(spSlide.ki_basis || spSlide.variant || "B"), variant: "KI", ki_layout: html, ki_typ: "bild", ki_bild_stil: spStil?.id || "", ki_bild_meta: spMeta };
         const { error: spSpeicherFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
