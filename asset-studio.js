@@ -1662,8 +1662,14 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-seg button[aria-pressed="true"]{background:transparent !important; box-shadow:none !important;}
 #as-overlay .as-ki-punkt{width:6px; height:6px; border-radius:50%; background:#206efb; animation:asKiPuls 1.2s ease-in-out infinite;}
 @keyframes asKiPuls{50%{opacity:.3; transform:scale(.7);}}
-#as-overlay .as-ki-ava--denkt{animation:asKiDreh 2.4s linear infinite;}
-@keyframes asKiDreh{to{filter:hue-rotate(40deg); transform:rotate(360deg);}}
+/* Denkt: weich pulsierend mit sich ausbreitendem Ring, ohne Drehen. */
+#as-overlay .as-ki-ava--denkt{position:relative; animation:asKiAtmen 1.6s ease-in-out infinite;}
+#as-overlay .as-ki-ava--denkt::before, #as-overlay .as-ki-ava--denkt::after{content:""; position:absolute; inset:0; border-radius:50%;
+  background:rgba(32,110,251,.35); animation:asKiRing 1.6s cubic-bezier(.2,.6,.3,1) infinite; z-index:-1;}
+#as-overlay .as-ki-ava--denkt::after{animation-delay:.8s;}
+@keyframes asKiAtmen{0%,100%{transform:scale(1); box-shadow:0 0 0 0 rgba(32,110,251,0);} 50%{transform:scale(1.08); box-shadow:0 0 18px 2px rgba(32,110,251,.35);}}
+@keyframes asKiRing{from{transform:scale(1); opacity:.6;} to{transform:scale(1.9); opacity:0;}}
+@media (prefers-reduced-motion:reduce){#as-overlay .as-ki-ava--denkt, #as-overlay .as-ki-ava--denkt::before, #as-overlay .as-ki-ava--denkt::after{animation:none;}}
 #as-overlay .as-ki-bildrahmen{position:relative; border-radius:10px; overflow:hidden; line-height:0;}
 #as-overlay .as-ki-bildrahmen img{max-width:min(100%,560px); max-height:58vh; border-radius:10px;}
 #as-overlay .as-ki-bildrahmen img.is-neu{animation:asKiNeu .7s cubic-bezier(.2,.8,.2,1) both;}
