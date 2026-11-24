@@ -1076,6 +1076,8 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
   text-transform:uppercase; color:var(--muted,#475569); margin-bottom:6px;}
 #as-overlay .as-caption p{font-size:13px; line-height:1.5; white-space:pre-wrap; color:var(--ink,#0f172a);}
 #as-overlay .as-prev-scale{display:block; transform-origin:top left; flex:0 0 auto; pointer-events:none;}
+#as-overlay .as-prev-scale .as-ki-nochmal{pointer-events:auto;}
+#as-overlay .as-ki-nochmal:hover{background:#165fd9 !important;}
 #as-overlay .as-prev-scale .as-stage,
 #as-overlay .as-prev-scale .li{box-shadow:none; border-radius:0;}
 @container (max-width: 860px){
@@ -4119,6 +4121,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         state.busy = false;
         ladeTaktStop();
         render();
+        bildNachholen();
         return;
       }
       if (row.status === "error") {
@@ -4140,6 +4143,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.error = "";
       render();
       void verkleinerePrivatBild();
+      bildNachholen();
     } catch (err) {
       state.formError = err && err.message ? fehlerKlartext(String(err.message)) : "Entwurf konnte nicht geöffnet werden.";
       state.step = "form";
@@ -4873,6 +4877,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    * ist ein eigener Serveraufruf; die Titelfolie zuerst, die folgenden
    * uebernehmen ihre Gestaltung.
    */
+  /**
+   * Lief der Entwurf im Hintergrund, war beim Fertigwerden kein Studio offen
+   * und das Bild wurde nie angefordert. Beim Oeffnen des eigenen Entwurfs
+   * holt das Studio es nach, statt den Fehlerzustand zu zeigen.
+   */
+  function bildNachholen() {
+    if (state.nurLesen || isMemo || state.answers.profile !== "private" || state.answers.asset_type === "carousel") return;
+    const erste = state.slides[0];
+    if (!erste || (erste.variant === "KI" && erste.ki_layout)) return;
+    void baueKiVisuals();
+  }
+
   async function baueKiVisuals() {
     if (state.nurLesen) return;
     if (isMemo || state.kiLaeuft || !state.assetId || state.answers.profile !== "private") return;
@@ -5322,9 +5338,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Entwurf steht, Bild fehlt und nichts laeuft: das Bild ist gescheitert.
     // Fehlerzeichen statt Zauberstab, darunter der Weg zum neuen Versuch.
     if (!state.kiLaeuft && state.assetId && state.step !== "form" && state.answers.asset_type !== "carousel") {
-      return `<div class="li li-ki-fehler" role="img" aria-label="Bild konnte nicht generiert werden" style="width:1080px;height:1080px;position:relative;overflow:hidden;background:#fef2f2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px">
-      <i class="fa-solid fa-triangle-exclamation" style="font-size:150px;color:#dc2626"></i>
-      <button type="button" data-act="ki-visual" style="font:600 40px/1.1 inherit;padding:24px 52px;border:0;border-radius:999px;background:#fff;color:#b91c1c;box-shadow:0 8px 28px rgba(185,28,28,.18);cursor:pointer"><i class="fa-solid fa-rotate-right" style="margin-right:18px"></i>Erneut versuchen</button>
+      const grund = state.kiFortschritt?.fehler || "Das Bild konnte nicht erstellt werden.";
+      return `<div class="li li-ki-fehler" role="img" aria-label="Bild konnte nicht generiert werden" style="width:1080px;height:1080px;position:relative;overflow:hidden;background:#f8fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:44px;padding:0 120px;text-align:center;font-family:inherit">
+      <span style="width:190px;height:190px;border-radius:50%;background:#fee2e2;display:grid;place-items:center"><i class="fa-solid fa-triangle-exclamation" style="font-size:84px;color:#dc2626"></i></span>
+      <span style="font:700 46px/1.25 inherit;color:#0f172a">Bild nicht erstellt</span>
+      <span style="font:400 32px/1.45 inherit;color:#475569;max-width:780px">${esc(grund)}</span>
+      <button type="button" class="as-ki-nochmal" data-act="ki-visual" style="pointer-events:auto;font:600 36px/1 inherit;padding:30px 60px;border:0;border-radius:999px;background:#206efb;color:#fff;box-shadow:0 14px 34px rgba(32,110,251,.32);cursor:pointer;display:inline-flex;align-items:center;gap:20px"><i class="fa-solid fa-rotate-right"></i>Erneut versuchen</button>
     </div>`;
     }
     // Sonst der Zauberstab: das Visual entsteht erst nach dem Erzeugen.
