@@ -2048,11 +2048,9 @@ function hintergrundCss() {
   stil.textContent = `
 .as-lauf-dock{position:fixed; right:20px; bottom:20px; z-index:999999; display:flex; flex-direction:column; gap:10px;}
 #toast-container .as-lauf, .as-lauf-dock .as-lauf{cursor:pointer; flex-direction:column; align-items:stretch; gap:8px; width:320px; min-width:250px;}
-.as-lauf{background:var(--bg,#fff); border-left:4px solid var(--brand,#206efb); box-shadow:var(--shadow,0 10px 30px rgba(15,23,42,.14)); padding:12px 16px 12px 20px;
+.as-lauf{background:var(--bg,#fff); border:0 !important; box-shadow:var(--shadow,0 10px 30px rgba(15,23,42,.14)); padding:12px 16px;
   border-radius:8px; display:flex; color:var(--ink,#0f172a); font-size:.9rem; font-family:inherit; transition:transform .18s ease, box-shadow .18s ease; animation:as-lauf-rein .28s cubic-bezier(.2,.8,.2,1);}
 .as-lauf:hover{transform:translateY(-2px); box-shadow:0 14px 34px rgba(15,23,42,.18);}
-.as-lauf.is-fertig{border-left-color:var(--success,#16a34a);}
-.as-lauf.is-fehler{border-left-color:var(--danger,#dc2626);}
 .as-lauf-kopf{display:flex; align-items:center; gap:10px;}
 .as-lauf-kopf > i{color:var(--brand,#206efb);}
 .as-lauf.is-fertig .as-lauf-kopf > i{color:var(--success,#16a34a);}
@@ -2165,7 +2163,10 @@ function hintergrundMerken({ id, kind, answers, optionen, start, forecastMs, sta
     }
     hintergrundLoesen(lauf.id);
     closeAssetStudio();
-    const host = optionen.host instanceof HTMLElement && optionen.host.isConnected ? optionen.host : undefined;
+    // Der alte Host ist oft ein inzwischen verstecktes Signal-Popup: dort
+    // oeffnete das Studio unsichtbar. Nur einen sichtbaren Host nehmen.
+    const h = optionen.host;
+    const host = h instanceof HTMLElement && h.isConnected && h.getClientRects().length && getComputedStyle(h).visibility !== "hidden" ? h : undefined;
     openAssetStudio({ ...optionen, host, assetId: lauf.id, showDrafts: false });
   });
   hintergrundContainer().appendChild(el);
