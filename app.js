@@ -8,15 +8,16 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261124-2";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261124-3";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261124-2";
+import { openAssetStudio, closeAssetStudio } from "./asset-studio.js?v=20261124-3";
 import { fehlerKlartext } from "./fehler-klartext.mjs?v=20260930-1";
-import { openManualSignal } from "./manual-signal.js?v=20261124-2";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261124-2";
+import { openManualSignal } from "./manual-signal.js?v=20261124-3";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261124-3";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
+import { initContentListe, zeigeContent } from "./content-liste.mjs?v=20261124-3";
 
 let sb = null;
 let sources = [];
@@ -2119,8 +2120,12 @@ function switchAppView(view) {
   activeAppView = view;
   const simple = document.body.classList.contains("mode-simple");
   els.appNav.querySelectorAll("[data-app-view]").forEach((button) => button.classList.toggle("active", button.dataset.appView === view));
-  const activeId = simple ? `view-simple-${view}` : `view-${view}`;
+  const activeId = view === "contents" ? "view-contents" : simple ? `view-simple-${view}` : `view-${view}`;
   els.appViews.forEach((section) => section.classList.toggle("show", section.id === activeId));
+  if (view === "contents") {
+    void zeigeContent(true);
+    return;
+  }
   if (simple) {
     showSimpleView(view);
     return;
@@ -5305,6 +5310,22 @@ export function initApp(client) {
     bindUi();
     mountResultsHeader();
     enhanceHeaderSelects();
+    // Suche und Entwurf-Filter in der Signal-Leiste, Ansicht "Content".
+    initContentListe({
+      callApi,
+      escapeHtml,
+      contentRoot: document.getElementById("view-contents"),
+      openDraft: (eintrag) => void openAssetStudio({
+        kind: eintrag.kind === "memo" ? "memo" : "linkedin",
+        articleId: eintrag.article_id,
+        assetId: eintrag.id,
+        signal: {},
+        callApi,
+        escapeHtml,
+        notify: toast,
+        openSettingsPanel,
+      }),
+    });
     bindSourceErrorTooltip();
     // Das Dashboard holt seine Signalzahlen selbst, fuer den gewaehlten Zeitraum.
     initPerformanceDashboard({ client: sb, callApi, toast, openSettingsPanel, escapeHtml });

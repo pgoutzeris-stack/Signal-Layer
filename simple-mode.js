@@ -801,7 +801,7 @@ export function activateSimpleMode() {
   }
   activated = true;
   const current = document.querySelector("#app-nav .sidebar-icon-btn.active")?.dataset.appView || "dashboard";
-  void loadVersions().then(() => loadRules()).then(() => showSimpleView(current)).then(scheduleStatusPoll);
+  void loadVersions().then(() => loadRules()).then(() => (current === "contents" ? undefined : showSimpleView(current))).then(scheduleStatusPoll);
 }
 
 export function deactivateSimpleMode() {

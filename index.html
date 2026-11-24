@@ -2159,7 +2159,8 @@
       <div class="sidebar-brand"><div class="logo-mark"><i class="fa-solid fa-broadcast-tower"></i></div><span class="sidebar-label">Signal Layer</span></div>
       <nav class="sidebar-nav" id="app-nav" aria-label="Bereiche">
         <button type="button" class="sidebar-icon-btn active" data-app-view="dashboard" title="Dashboard"><i class="fa-solid fa-house"></i><span class="sidebar-label">Dashboard</span></button>
-        <button type="button" class="sidebar-icon-btn" data-app-view="results" title="Ergebnisse"><i class="fa-solid fa-layer-group"></i><span class="sidebar-label">Ergebnisse</span></button>
+        <button type="button" class="sidebar-icon-btn" data-app-view="results" title="Signale"><i class="fa-solid fa-tower-broadcast"></i><span class="sidebar-label">Signale</span></button>
+        <button type="button" class="sidebar-icon-btn" data-app-view="contents" title="Content"><i class="fa-solid fa-pen-nib"></i><span class="sidebar-label">Content</span></button>
         <button type="button" class="sidebar-icon-btn" data-app-view="archive" title="Archiv"><i class="fa-solid fa-box-archive"></i><span class="sidebar-label">Archiv</span></button>
       </nav>
       <div class="sidebar-spacer"></div>
@@ -2349,6 +2350,9 @@
           <div class="archive-list" id="simple-archive-list"><div class="roots-loader"></div></div>
           <button type="button" class="btn-secondary archive-load-more" id="simple-archive-load-more" hidden><i class="fa-solid fa-plus"></i> Weitere Artikel laden</button>
         </section>
+
+        <!-- Content: alle fertigen Entwuerfe, in beiden Modi -->
+        <section class="app-view" id="view-contents"></section>
 
         <!-- Einfacher Modus: Ergebnisse -->
         <section class="app-view" id="view-simple-results">
@@ -2683,7 +2687,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261124-2';
+  import { initApp } from './app.js?v=20261124-3';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

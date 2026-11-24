@@ -14360,6 +14360,56 @@ Deno.serve(async (req: Request) => {
         return corsResponse(origin, { memo_send: null });
       }
 
+      case "list_contents": {
+        // Alle fertigen Entwuerfe ueber alle Artikel, fuer die Content-Liste
+        // und den Signal-Filter "mit Entwurf".
+        const { data: zeilen, error: inhaltFehler } = await getAdminClient().schema("signal_layer")
+          .from("generated_assets")
+          .select("id, kind, status, article_id, created_by, created_at, updated_at, owner_id, owned_at, answers, title:payload_title, slide_title:payload_slide_title")
+          .eq("status", "done")
+          .order("updated_at", { ascending: false })
+          .limit(600);
+        if (inhaltFehler) return errorResponse(origin, inhaltFehler.message, 500);
+        const reihen = (zeilen || []) as Array<Record<string, unknown>>;
+        const artikelIds = [...new Set(reihen.map((row) => String(row.article_id || "")).filter(isUuid))];
+        const admin = getAdminClient();
+        const [personen, { data: artikel }, { data: signale }] = await Promise.all([
+          assetAuthorsByIds([...reihen.map((row) => String(row.created_by || "")), ...reihen.map((row) => String(row.owner_id || ""))]),
+          artikelIds.length ? admin.schema("signal_layer").from("articles").select("id, title, title_de").in("id", artikelIds) : Promise.resolve({ data: [] }),
+          artikelIds.length ? admin.schema("signal_layer").from("simple_signals").select("article_id, lane, headline_de, company").in("article_id", artikelIds) : Promise.resolve({ data: [] }),
+        ]);
+        const artikelMap = new Map(((artikel || []) as Array<Record<string, unknown>>).map((a) => [String(a.id), a]));
+        const signalMap = new Map(((signale || []) as Array<Record<string, unknown>>).map((a) => [String(a.article_id), a]));
+        const person = (id: unknown) => {
+          const p = personen.get(String(id || ""));
+          return p ? { user_id: String(id), name: p.name, short_name: p.short_name, avatar_url: p.avatar_url } : null;
+        };
+        const inhalte = reihen
+          .map((row) => {
+            const autor = person(row.created_by);
+            // Ohne Profil (Debug-Konto) kein Eintrag, wie auf den Karten.
+            if (!autor) return null;
+            const a = artikelMap.get(String(row.article_id || "")) || {};
+            const sig = signalMap.get(String(row.article_id || "")) || {};
+            const answers = (row.answers || {}) as Record<string, unknown>;
+            return {
+              id: row.id, kind: row.kind, article_id: row.article_id,
+              created_at: row.created_at, updated_at: row.updated_at, owned_at: row.owned_at,
+              title: String(row.title || row.slide_title || "").replace(/<[^>]+>/g, "").trim(),
+              article_title: String((a as Record<string, unknown>).title_de || (a as Record<string, unknown>).title || ""),
+              signal_title: String((sig as Record<string, unknown>).headline_de || ""),
+              company: String((sig as Record<string, unknown>).company || ""),
+              lane: String((sig as Record<string, unknown>).lane || ""),
+              profile: answers.profile === "private" ? "private" : (row.kind === "linkedin" ? "roots" : ""),
+              asset_type: String(answers.asset_type || ""),
+              author: autor,
+              owner: person(row.owner_id),
+            };
+          })
+          .filter(Boolean);
+        return corsResponse(origin, { contents: inhalte });
+      }
+
       case "list_asset_authors": {
         // Wer hat zu welchem Artikel schon einen Entwurf gemacht. Die Ansicht
         // fragt einmal fuer alle sichtbaren Artikel, statt je Karte einmal.
