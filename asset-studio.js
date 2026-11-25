@@ -1765,6 +1765,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-gzeile--jetzt{color:#206efb; font-weight:600;}
 #as-overlay .as-ki-gedanke.is-aktiv .as-ki-gedanke-text{max-height:150px; overflow:hidden; -webkit-mask-image:linear-gradient(to bottom, transparent, #000 30%); mask-image:linear-gradient(to bottom, transparent, #000 30%); display:flex; flex-direction:column; justify-content:flex-end;}
 #as-overlay .as-ki-gedanke--fertig{margin:0 0 8px;}
+#as-overlay .as-ki-karte--manuell{width:min(860px,100%);}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay.as-fs-open [data-ki-bild]{cursor:zoom-out;}
@@ -5671,14 +5672,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     });
   }
 
-  function kiEditorOeffnen(ziel) {
+  function kiEditorOeffnen(ziel, manuell = false) {
     if (state.nurLesen || !state.assetId || isMemo) return;
     harvest();
     let modell = "";
     try { modell = localStorage.getItem("sl-ki-modell") || ""; } catch { /* egal */ }
     const vorher = state.ki || {};
     state.ki = {
-      ...vorher, offen: true, ziel: ziel === "bild" ? "bild" : "caption",
+      ...vorher, offen: true, ziel: ziel === "bild" ? "bild" : "caption", manuell: Boolean(manuell),
       modell: KI_MODELLE.some(([id]) => id === modell) ? modell : KI_MODELLE[0][0],
       entwurf: state.postText || "", hinweis: "", laeuft: vorher.laeuft || { caption: false, bild: false },
       verlauf: (vorher.verlauf || []).map((n) => ({ ...n, alt: true })),
@@ -5856,6 +5857,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       : `<div class="as-ki-start">${KI_CHIPS[k.ziel].map((t, j) => `<button type="button" class="as-ki-chip" data-ki-chip="${attr(t)}" style="animation-delay:${0.05 + j * 0.06}s${k.chipsGezeigt?.[k.ziel] ? ";animation:none" : ""}">${esc(t)}</button>`).join("")}<button type="button" class="as-ki-chip as-ki-chip--regel" data-ki-regeln style="animation-delay:.3s${k.chipsGezeigt?.[k.ziel] ? ";animation:none" : ""}"><i class="fa-solid fa-shield-halved"></i>ROOTS-Guardrails</button></div>`;
     const sichtbar = state.answers.profile === "private" && state.answers.asset_type !== "carousel";
     const erstmals = !kiEditor.firstElementChild;
+    if (k.manuell) {
+      kiEditor.innerHTML = `<div class="as-ki-karte as-ki-karte--manuell${erstmals ? " is-auf" : ""}" role="dialog" aria-modal="true" aria-label="Caption bearbeiten">
+        <header class="as-ki-kopf"><h3><i class="fa-solid fa-pen"></i>Caption bearbeiten</h3>${kiVersionLeiste("caption")}
+          <button type="button" class="as-ki-zu" data-ki-zu aria-label="Schließen" style="margin-left:auto"><i class="fa-solid fa-xmark"></i></button></header>
+        <div class="as-ki-rumpf" style="grid-template-columns:1fr"><section class="as-ki-links" data-ki-links>${kiLinksHtml()}</section></div>
+      </div>`;
+      return;
+    }
     kiEditor.innerHTML = `<div class="as-ki-karte${erstmals ? " is-auf" : ""}" role="dialog" aria-modal="true" aria-label="Mit KI bearbeiten">
       <header class="as-ki-kopf">
         <h3><i class="fa-solid fa-wand-magic-sparkles"></i>Mit KI bearbeiten</h3>
@@ -7721,7 +7730,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <div class="as-group">
         <span>Caption</span>
         <span style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button type="button" class="as-btn as-btn--primary" data-act="ki-editor" data-ziel="caption"><i class="fa-solid fa-pen"></i>Caption bearbeiten</button>
+          <button type="button" class="as-btn as-btn--primary" data-act="ki-editor" data-ziel="caption"><i class="fa-solid fa-wand-magic-sparkles"></i>Mit KI bearbeiten</button>
+          <button type="button" class="as-btn" data-act="ki-editor" data-ziel="caption" data-manuell="1"><i class="fa-solid fa-pen"></i>Manuell bearbeiten</button>
           <button type="button" class="as-btn" data-act="copy-post"><i class="fa-regular fa-copy"></i>Kopieren</button>
         </span>
       </div>`;
@@ -9613,7 +9623,7 @@ ${stages}${post}
     }
     if (act === "caption-info") { oeffneCaptionInfo(); return; }
     if (act === "post-gross") { harvest(); state.postGross = !state.postGross; render(); return; }
-    if (act === "ki-editor") { schliesseBildInfo(); kiEditorOeffnen(hit.getAttribute("data-ziel")); return; }
+    if (act === "ki-editor") { schliesseBildInfo(); kiEditorOeffnen(hit.getAttribute("data-ziel"), hit.hasAttribute("data-manuell")); return; }
     if (act === "bild-info") { oeffneBildInfo(state.slides[0]); return; }
     if (act === "privat-bild-laden") {
       const src = privatBildSrc();
