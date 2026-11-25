@@ -2,6 +2,7 @@ import { articleReadingText } from "./article-reading-text.mjs";
 import { baueDebugMail, baueDigest, type DigestSignal } from "./digest.ts";
 import { PERSON_RESEARCH_VERSION, PERSON_UNCERTAIN, PERSON_VERIFY_MODEL, PERSON_GOOGLE_MODEL, PersonUncertain, resolvePersonTarget, visiblePersonResearch, researchPerson, sourceUrl } from "./person-research.ts";
 import { assetUsageSummary } from "./asset-usage.ts";
+import { OPENAI_BILD_STANDARD, openaiBild, openaiBildKostenUsd } from "./openai-bild.ts";
 import { KI_CAPTION_MAX, KI_CHAT_MODELLE, KI_CHAT_SCHEMA, KI_NACHRICHT_MAX, KI_VERDICHTEN_SCHEMA, KI_SCHRANKEN_ANZEIGE, kiSchrankeAnzeige, kiChatErgebnis, kiChatModell, kiChatPrompt, kiKontextFenster, kiVerdichtenPrompt, kiVerlauf, type KiZiel } from "./ki-editor.ts";
 import {
   BILDSTIL_BRIEF_MODELL, BILDSTIL_BRIEF_SCHEMA, MARKEN_CHECK_MODELL, MARKEN_CHECK_SCHEMA, markenCheckPrompt, privatBildAuftragAusBrief, privatBildBriefPrompt, BRIEF_MODI, BRIEF_STANDARD, type BriefModus,
@@ -9342,7 +9343,8 @@ Deno.serve(async (req: Request) => {
         const stil = waehleBildStil(stile, gewuenscht);
         if (!stil) return errorResponse(origin, "Kein Bildstil verfügbar.", 500);
         const geminiKey = await getGeminiKey().catch(() => "");
-        if (!geminiKey) return errorResponse(origin, "Gemini-Schlüssel fehlt im Vault.", 409);
+        const openaiKey = String((await getAdminClient().schema("shared").rpc("get_api_key", { p_key_name: "wissenshub_openai_api_key" })).data || "");
+        if (!geminiKey && !openaiKey) return errorResponse(origin, "Weder OpenAI- noch Gemini-Schlüssel im Vault.", 409);
         // Art Director: aus Beitrag und Stil ein kurzer Auftrag mit genau einer
         // Bildidee. Scheitert er, bleibt der Beitrag selbst der Auftrag.
         let auftrag = rohAuftrag;
@@ -9398,9 +9400,31 @@ Deno.serve(async (req: Request) => {
         let ci: Record<string, unknown> = { checked: false };
         // Zwei Bilder, wenn die CI-Pruefung das erste verwirft, dazu je ein
         // zweiter Versuch bei Ueberlast. Die Edge Function hat 150 s.
+        // Standard ist das neueste GPT-Image-Modell; Nano Banana 2 springt ein,
+        // wenn OpenAI scheitert (Budget, Ueberlast, Ablehnung).
+        let pbModell = "";
         for (let bildVersuch = 1; bildVersuch <= 2 && !pbBild; bildVersuch += 1) {
           let roh = "";
-          for (let netz = 1; netz <= 2 && !roh && Date.now() - start < 80_000; netz += 1) {
+          if (openaiKey && Date.now() - start < 60_000) {
+            const oa = await openaiBild({
+              apiKey: openaiKey, modell: OPENAI_BILD_STANDARD, aspect: stil.aspect, auftrag,
+              anweisung: bildstilSystemInstruction(stil.prompt, refs.length) + (basisBild ? "\nBEARBEITUNG: Bild 1 ist das aktuelle Bild. Ändere nur, was der BILDAUFTRAG verlangt; Motiv, Bildaufbau, Licht und alles Übrige bleiben so nah wie möglich daran." : ""),
+              bilder: [
+                ...(basisBild ? [{ data: basisBild.split(",")[1] || "", mimeType: (basisBild.match(/^data:([^;]+)/) || [])[1] || "image/jpeg", label: "Aktuelles Bild, das bearbeitet wird" }] : []),
+                ...refs.map((r, i) => ({ data: r.data, mimeType: r.mime_type, label: `Serienreferenz ${i + 1}: freigegebenes Beispiel dieser Bildserie, Qualität und Bildsprache übernehmen, keine Motive` })),
+              ],
+              timeoutMs: 110_000,
+            });
+            const usd = openaiBildKostenUsd(OPENAI_BILD_STANDARD, oa.nutzung);
+            const n = oa.nutzung || {};
+            bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", OPENAI_BILD_STANDARD, oa.ok ? "success" : "error", {
+              input: Number(n.input_tokens || 0), cachedInput: 0, output: Number(n.output_tokens || 0), thinking: 0,
+              total: Number(n.input_tokens || 0) + Number(n.output_tokens || 0), assetId: pbAssetId,
+            }, 0, oa.ok ? undefined : `http_${oa.status}`, usd > 0 ? { usd, toolUsd: 0 } : undefined);
+            if (oa.ok) { roh = `data:${oa.mime};base64,${oa.data}`; pbModell = "GPT Image 2.6 Sunburst"; }
+            else pbFehlerText = `OpenAI HTTP ${oa.status} ${oa.fehler.slice(0, 160)}`;
+          }
+          for (let netz = 1; netz <= 2 && !roh && geminiKey && Date.now() - start < 80_000; netz += 1) {
             const antwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_MODELL}:generateContent`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
@@ -9421,7 +9445,7 @@ Deno.serve(async (req: Request) => {
               thinking: Number(meta.thoughtsTokenCount || 0), total: Number(meta.totalTokenCount || 0), assetId: pbAssetId,
             });
             const geliefert = parseGeminiImage(json);
-            if (geliefert) roh = `data:${geliefert.mime};base64,${geliefert.data}`;
+            if (geliefert) { roh = `data:${geliefert.mime};base64,${geliefert.data}`; pbModell = "Nano Banana 2"; }
             else pbFehlerText = "Antwort ohne Bild";
           }
           if (!roh) break;
@@ -9455,7 +9479,7 @@ Deno.serve(async (req: Request) => {
           const neueFolien = [...pbSlides];
           neueFolien[0] = { ...pbSlides[0], ki_basis: String(pbSlides[0].ki_basis || pbSlides[0].variant || "B"), variant: "KI",
             ki_layout: privatBildLayout(pbBild, stil.aspect, stil.name), ki_typ: "bild", ki_bild_stil: stil.id,
-            ki_bild_meta: { stil: stil.name, auftrag, modell: "Nano Banana 2", format: stil.aspect, ci_geprueft: ci.checked === true,
+            ki_bild_meta: { stil: stil.name, auftrag, modell: pbModell || "Nano Banana 2", format: stil.aspect, ci_geprueft: ci.checked === true,
               ci_ok: ci.ok === true, ci_grund: String(ci.reason || ""), erstellt: new Date().toISOString(), kosten_eur: Math.round(bildKostenEur * 10000) / 10000 } };
           const { error: nachFehler } = await getAdminClient().schema("signal_layer").from("generated_assets")
             .update({ payload: { ...pbPayload, slides: neueFolien }, updated_at: new Date().toISOString() }).eq("id", pbAssetId);
@@ -9473,6 +9497,7 @@ Deno.serve(async (req: Request) => {
         }
         return corsResponse(origin, {
           stats: pbStats,
+          modell: pbModell,
           bild: pbBild,
           stil: { id: stil.id, name: stil.name, aspect: stil.aspect, roots_logo: stil.rootsLogo },
           logo: stil.rootsLogo ? logo : "",

@@ -2214,7 +2214,7 @@ import {
 // nie in ein erzeugtes Memo.
 import { MEMO_EXAMPLE } from "./memo-example.js?v=20261013-5";
 import { assetEtaLabel, assetEtaProgressPct, assetEtaRemainingMs, assetEtaStagesFromLog } from "./asset-eta.mjs?v=20260816-1126";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261124-35";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261125-1";
 
 /* ─────────────────────────  Einstieg  ───────────────────────── */
 
@@ -5283,7 +5283,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (res.stil?.roots_logo && res.logo) bild = await setzeRootsLogo(bild, String(res.logo));
       bild = await alsJpegUnter(bild, 470000);
       const meta = {
-        stil: String(res.stil?.name || ""), auftrag: String(res.auftrag || ""), modell: "Nano Banana 2",
+        stil: String(res.stil?.name || ""), auftrag: String(res.auftrag || ""), modell: String(res.modell || "Nano Banana 2"),
         format: String(res.stil?.aspect || "1:1"), ci_geprueft: Boolean(res.ci?.checked), ci_ok: Boolean(res.ci?.ok),
         ci_grund: String(res.ci?.reason || ""), erstellt: new Date().toISOString(),
         kosten_eur: Number(res.kosten_eur) || 0,

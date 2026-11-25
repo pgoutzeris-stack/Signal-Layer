@@ -21,7 +21,7 @@ export function fehlerKlartext(roh) {
   let satz;
   if (/check constraint|violates|duplicate key|foreign key|relation .* does not exist|column .* does not exist/i.test(kopf)) {
     satz = "Interner Fehler in der Datenbank des Signal Layer. Das liegt nicht an deinen Eingaben. Bitte erneut versuchen.";
-  } else if (/\b402\b|insufficient (balance|credits?|funds)|spending cap|out of credits|guthaben/i.test(kopf)) {
+  } else if (/\b402\b|insufficient (balance|credits?|funds)|spending cap|out of credits|no credits remaining|guthaben/i.test(kopf)) {
     return "Beim KI-Anbieter ist kein Guthaben mehr verfügbar. Sobald es aufgeladen ist, erneut versuchen.";
   } else if (/\b(429|rate limit|quota|resource_exhausted)\b/i.test(kopf)) {
     satz = "Der KI-Anbieter drosselt gerade die Anfragen. Eine Minute warten und erneut versuchen.";
