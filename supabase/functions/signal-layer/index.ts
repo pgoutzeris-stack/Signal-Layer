@@ -9421,6 +9421,7 @@ Deno.serve(async (req: Request) => {
         // Standard ist das neueste GPT-Image-Modell; Nano Banana 2 springt ein,
         // wenn OpenAI scheitert (Budget, Ueberlast, Ablehnung).
         let pbModell = "";
+        let openaiGrund = "";
         for (let bildVersuch = 1; bildVersuch <= 2 && !pbBild; bildVersuch += 1) {
           let roh = "";
           if (openaiKey && Date.now() - start < 60_000) {
@@ -9440,7 +9441,7 @@ Deno.serve(async (req: Request) => {
               total: Number(n.input_tokens || 0) + Number(n.output_tokens || 0), assetId: pbAssetId,
             }, 0, oa.ok ? undefined : `http_${oa.status}`, usd > 0 ? { usd, toolUsd: 0 } : undefined);
             if (oa.ok) { roh = `data:${oa.mime};base64,${oa.data}`; pbModell = "GPT Image 2.6 Sunburst"; }
-            else pbFehlerText = `OpenAI HTTP ${oa.status} ${oa.fehler.slice(0, 160)}`;
+            else openaiGrund = /credit|quota|billing/i.test(oa.fehler) ? "OpenAI hat kein Guthaben" : `OpenAI nicht erreichbar (HTTP ${oa.status})`;
           }
           for (let netz = 1; netz <= 2 && !roh && geminiKey && Date.now() - start < 80_000; netz += 1) {
             const antwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_MODELL}:generateContent`, {
@@ -9517,7 +9518,13 @@ Deno.serve(async (req: Request) => {
           ci = { checked: true, ok: urteil.roots_mark === false, reason: String(urteil.reason || "") };
           if (urteil.roots_mark === false || bildVersuch === 2 || Date.now() - start > 55_000) pbBild = roh;
         }
-        if (!pbBild) return errorResponse(origin, `Bild konnte nicht generiert werden: ${pbFehlerText || "unbekannter Fehler"}`, 502);
+        if (!pbBild) {
+          // Beide Anbieter nennen, verstaendlich: das Studio zeigt den Satz direkt.
+          const googleGrund = /spending cap|spend cap/i.test(pbFehlerText) ? "Google-Monatslimit erreicht"
+            : /429/.test(pbFehlerText) ? "Google ausgelastet" : pbFehlerText ? `Google nicht erreichbar (${pbFehlerText.slice(0, 60)})` : (geminiKey ? "" : "kein Google-Schlüssel");
+          const gruende = [openaiGrund, googleGrund].filter(Boolean).join(", ");
+          return errorResponse(origin, `Kein Visual möglich: ${gruende || "unbekannter Fehler"}.`, 502);
+        }
         // Betrieb (Cron-Secret) kann ein fehlendes Bild fuer den Eigentuemer
         // nachziehen. Das Studio verkleinert es beim naechsten Oeffnen.
         if (isScheduled && body.speichern === true && pbSlides[0] && !stil.rootsLogo) {
