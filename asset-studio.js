@@ -6070,18 +6070,30 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     k.hinweisVisual = "Gespeichert";
   }
 
-  /** Nachbarn vorladen, damit der naechste Klick sofort sitzt. */
+  /** Bilder eines Stands vorab dekodieren, damit der Wechsel ohne Ruckler sitzt. */
+  function kiBilderDekodieren(stand) {
+    const html = String(stand?.html || "");
+    for (const m of html.matchAll(/src="([^"]+)"/g)) {
+      const img = new Image();
+      img.src = m[1].replace(/&amp;/g, "&");
+      img.decode?.().catch(() => {});
+    }
+  }
+
+  /** Versionen vorladen: beim Visual alle (wenige, teuer zu laden), bei der Caption die Nachbarn. */
   function kiNachbarnVorladen(art) {
     const k = state.ki;
     const v = k.versionen[art];
     k.vcache = k.vcache || {};
-    for (const pos of [v.index - 1, v.index + 1]) {
+    k.vladen = k.vladen || {};
+    const positionen = art === "bild" ? v.liste.map((_, i) => i) : [v.index - 1, v.index + 1];
+    for (const pos of positionen) {
       const e = v.liste[pos];
-      if (!e || k.vcache[e.id] || (art === "caption" && e.inhalt != null)) continue;
-      k.vcache[e.id] = "laedt";
-      void api("version_laden", { asset_id: state.assetId, version_id: e.id, nur_lesen: true })
-        .then((res) => { k.vcache[e.id] = res; })
-        .catch(() => { delete k.vcache[e.id]; });
+      if (!e || k.vcache[e.id] || k.vladen[e.id] || (art === "caption" && e.inhalt != null)) continue;
+      k.vladen[e.id] = api("version_laden", { asset_id: state.assetId, version_id: e.id, nur_lesen: true })
+        .then((res) => { k.vcache[e.id] = res; if (art === "bild") kiBilderDekodieren(res); return res; })
+        .finally(() => { delete k.vladen[e.id]; });
+      k.vladen[e.id].catch(() => {});
     }
   }
 
@@ -6117,8 +6129,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     v.laedt = true;
     kiEditorZeichne();
     try {
-      const res = await api("version_laden", { asset_id: state.assetId, version_id: id });
+      // Laeuft das Vorladen schon, darauf warten statt doppelt zu laden.
+      const vorab = k.vladen?.[id];
+      const res = await (vorab || api("version_laden", { asset_id: state.assetId, version_id: id }));
       if (sprung !== k.sprung) return;
+      if (vorab) k.serverKette = (k.serverKette || Promise.resolve()).then(() => sprung === k.sprung ? api("version_laden", { asset_id: state.assetId, version_id: id }).catch(() => {}) : null);
       k.vcache[id] = res;
       kiStandLokal(art, res);
       render();
