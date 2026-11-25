@@ -4422,7 +4422,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.rootsAssets = res?.roots_assets === true;
       state.vorlageEmpfehlung = res?.vorlage_empfehlung && typeof res.vorlage_empfehlung === "object" ? res.vorlage_empfehlung : null;
       state.kiVisual = res?.ki_visual === true;
-      if (res?.ich && typeof res.ich === "object") state.ich = { name: String(res.ich.name || ""), avatar_url: String(res.ich.avatar_url || "") };
+      if (res?.ich && typeof res.ich === "object") {
+        state.ich = { name: String(res.ich.name || ""), avatar_url: String(res.ich.avatar_url || "") };
+        // Der Entwurf kann schon stehen: Kopf mit eigenem Bild und Namen nachziehen.
+        if (state.step === "draft" && !state.busy && !state.oeffnet) render();
+      }
       state.vorbildVisual = /^data:image\//.test(String(res?.vorbild_visual || "")) ? String(res.vorbild_visual) : "";
       if (res?.mein_stil?.portraet || res?.mein_stil?.logo) {
         const stil = await api("get_mein_stil", {}).catch(() => null);
