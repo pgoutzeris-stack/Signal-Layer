@@ -127,12 +127,12 @@ async function signaleFiltern() {
 function leisteEinbauen(toolbar) {
   if (!toolbar || toolbar.querySelector(".cl-suche")) return;
   const wrap = document.createElement("div");
+  wrap.className = "cl-links";
   wrap.style.cssText = "display:flex; align-items:center; gap:6px; flex:0 0 auto;";
   wrap.innerHTML = `<label class="cl-suche cl-suche--signal" title="Signale suchen"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" placeholder="Signal suchen" aria-label="Signale nach Titel suchen"></label>
     <button type="button" class="cl-pill" aria-pressed="false"><i class="fa-regular fa-file-lines"></i>Mit Entwurf</button>`;
-  const status = toolbar.querySelector(".crawl-trigger-wrap");
-  if (status) toolbar.insertBefore(wrap, status);
-  else toolbar.appendChild(wrap);
+  // Links in der Leiste: Suche und Entwurf-Filter, rechts Filter und Status.
+  toolbar.insertBefore(wrap, toolbar.firstChild);
   const suche = wrap.querySelector(".cl-suche");
   const feld = wrap.querySelector("input");
   feld.value = signalFilter.text;
@@ -152,6 +152,28 @@ function leisteEinbauen(toolbar) {
     });
     void signaleFiltern();
   });
+}
+
+/** Archiv: Suche im Titel der Artikelkarten, links in der Leiste. */
+function archivSucheEinbauen(toolbar) {
+  if (!toolbar || toolbar.querySelector(".cl-suche")) return;
+  const wrap = document.createElement("div");
+  wrap.className = "cl-links";
+  wrap.style.cssText = "display:flex; align-items:center; gap:6px; flex:0 0 auto;";
+  wrap.innerHTML = `<label class="cl-suche" title="Archiv durchsuchen"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" placeholder="Archiv durchsuchen" aria-label="Archiv nach Titel durchsuchen"></label>`;
+  toolbar.insertBefore(wrap, toolbar.firstChild);
+  const feld = wrap.querySelector("input");
+  const ansicht = toolbar.closest(".app-view");
+  const filtern = () => {
+    const text = norm(feld.value.trim());
+    wrap.querySelector(".cl-suche").classList.toggle("is-aktiv", Boolean(text));
+    ansicht?.querySelectorAll("[data-article-id]").forEach((karte) => {
+      const titel = norm(karte.querySelector(".finding-title")?.textContent || karte.textContent || "");
+      karte.style.display = !text || titel.includes(text) ? "" : "none";
+    });
+  };
+  feld.addEventListener("input", filtern);
+  if (ansicht) new MutationObserver(() => { if (feld.value.trim()) filtern(); }).observe(ansicht, { childList: true, subtree: true });
 }
 
 /* ---------- Ansicht Content ---------- */
@@ -281,7 +303,7 @@ function contentAnsichtBauen(root) {
         <select class="signal-toolbar-select" id="cl-stand" data-cl="status" aria-label="Stand filtern"><option value="all">Entwurf und übernommen</option><option value="draft">Nur Entwürfe</option><option value="owned">Nur übernommen</option></select>
         <select class="signal-toolbar-select" id="cl-person" data-cl="person" aria-label="User filtern"><option value="all">Alle User</option></select>
       </div>
-      <div style="display:flex; align-items:center; gap:6px; flex:0 0 auto;">
+      <div class="cl-links" style="display:flex; align-items:center; gap:6px; flex:0 0 auto; order:-1;">
         <label class="cl-suche" title="Content suchen"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-cl="text" placeholder="Content suchen" aria-label="Content suchen"></label>
       </div>
     </nav>
@@ -314,6 +336,7 @@ export function initContentListe(optionen) {
   css();
   document.querySelectorAll("#view-results .signal-toolbar, #view-simple-results .signal-toolbar").forEach(leisteEinbauen);
   if (contentRoot) contentAnsichtBauen(contentRoot);
+  document.querySelectorAll("#view-archive .signal-toolbar, #view-simple-archive .signal-toolbar").forEach(archivSucheEinbauen);
   // Im Hintergrund vorladen: Content und "Mit Entwurf" sind dann sofort da.
   const spaeter = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
   spaeter(() => { void ladeInhalte().catch(() => {}); });
