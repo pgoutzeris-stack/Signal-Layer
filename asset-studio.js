@@ -1759,6 +1759,11 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-hilfe-panel{display:grid; grid-template-rows:0fr; transition:grid-template-rows .3s ease, opacity .3s ease; opacity:0;}
 #as-overlay .as-hilfe-panel > div{overflow:hidden;}
 #as-overlay .as-hilfe-panel.is-offen{grid-template-rows:1fr; opacity:1; margin-top:8px;}
+#as-overlay .as-ki-gzeile{display:block; opacity:0; animation:asKiZeile .5s ease forwards;}
+#as-overlay .as-ki-gedanke--fertig .as-ki-gzeile{opacity:1; animation:none;}
+#as-overlay .as-ki-gzeile--jetzt{color:#206efb; font-weight:600;}
+#as-overlay .as-ki-gedanke.is-aktiv .as-ki-gedanke-text{max-height:150px; overflow:hidden; -webkit-mask-image:linear-gradient(to bottom, transparent, #000 30%); mask-image:linear-gradient(to bottom, transparent, #000 30%); display:flex; flex-direction:column; justify-content:flex-end;}
+#as-overlay .as-ki-gedanke--fertig{margin:0 0 8px;}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay.as-fs-open [data-ki-bild]{cursor:zoom-out;}
@@ -5711,8 +5716,18 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     let extra = "";
     if (n.caption) extra = `<div class="as-ki-aenderung"><i class="fa-solid fa-pen"></i>Caption im Editor geändert${n.version ? ` · Version ${n.version}` : ""}</div>`;
     if (n.bild_auftrag) {
-      extra = `<div class="as-ki-aenderung"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Visual angepasst" : "Neues Visual"}${n.version ? ` · Version ${n.version}` : ""}</div>
-        <details class="as-ki-gedanke${state.ki?.erzeugtVisual && i === state.ki.verlauf.length - 1 ? " is-aktiv" : ""}"><summary><i class="fa-solid fa-wand-magic-sparkles as-ki-gedanke-ico"></i><span class="as-ki-gedanke-titel">Visual-Auftrag</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary><div class="as-ki-gedanke-text">${esc(n.bild_auftrag)}</div></details>`;
+      // Gedankengang wie in modernen KI-Chats: offen und schimmernd, solange das
+      // Visual entsteht; danach eingeklappt mit Dauer.
+      const zeilen = String(n.bild_auftrag).split("\n").filter((z) => z.trim());
+      const liste = `<div class="as-ki-gedanke-text">${zeilen.map((z, j) => `<span class="as-ki-gzeile" style="animation-delay:${(j * 0.9).toFixed(1)}s">${esc(z)}</span>`).join("")}${n.arbeitet ? '<span class="as-ki-gzeile as-ki-gzeile--jetzt" style="animation-delay:' + (zeilen.length * 0.9).toFixed(1) + 's">Visual wird erzeugt</span>' : ""}</div>`;
+      if (n.arbeitet) {
+        return `<div class="as-ki-msg as-ki-msg--ki"><span class="as-ki-ava as-ki-ava--denkt"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+          <div class="as-ki-blase"><details class="as-ki-gedanke is-aktiv" open><summary><span class="as-ki-gedanke-titel">Denkt nach</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary>${liste}</details></div></div>`;
+      }
+      const gedanke = `<details class="as-ki-gedanke as-ki-gedanke--fertig"><summary><span class="as-ki-gedanke-titel">Gedankengang${n.dauer ? ` · ${n.dauer} s` : ""}</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary>${liste}</details>`;
+      const antwort = n.alt ? esc(n.text) : kiWoerter(n.text);
+      return `<div class="as-ki-msg as-ki-msg--ki${alt}"><span class="as-ki-ava"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+        <div class="as-ki-blase">${gedanke}${antwort}<div class="as-ki-aenderung"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Visual angepasst" : "Neues Visual"}${n.version ? ` · Version ${n.version}` : ""}</div></div></div>`;
     }
     if (n.karte) {
       const kt = n.karte;
@@ -5778,13 +5793,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   }
 
   async function kiVersionSpeichern(art, felder) {
+    const runde = (state.ki.versionRunde = (state.ki.versionRunde || 0) + 1);
     try {
       const zeile = await api("version_speichern", { asset_id: state.assetId, art, ...felder });
       const v = state.ki?.versionen?.[art];
       if (!v || !zeile?.id) return;
+      // Wurde inzwischen vor/zurueck gesprungen, nur anhaengen, Position nicht verschieben.
+      const aktuell = state.ki.versionRunde === runde;
       const pos = v.liste.findIndex((e) => e.id === zeile.id);
-      if (pos >= 0) v.index = pos;
-      else { v.liste.push({ id: zeile.id, quelle: zeile.quelle || felder.quelle, notiz: zeile.notiz || felder.notiz || "", created_at: zeile.created_at || new Date().toISOString() }); v.index = v.liste.length - 1; }
+      if (pos >= 0) { if (aktuell) v.index = pos; }
+      else { v.liste.push({ id: zeile.id, quelle: zeile.quelle || felder.quelle, notiz: zeile.notiz || felder.notiz || "", created_at: zeile.created_at || new Date().toISOString() }); if (aktuell) v.index = v.liste.length - 1; }
       if (art === "caption") state.ki.captionBasis = felder.inhalt;
       if (state.ki?.offen) kiEditorZeichne();
     } catch { /* Stand bleibt trotzdem im Entwurf gespeichert */ }
@@ -5793,8 +5811,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   /** Handarbeit seit dem letzten Stand als eigenen Stand sichern. */
   function kiHandarbeitSichern() {
     const k = state.ki;
-    if (!k?.versionen?.caption?.liste?.length) return;
-    if ((k.entwurf || "").trim() && k.entwurf !== k.captionBasis) void kiVersionSpeichern("caption", { inhalt: k.entwurf, quelle: "manuell" });
+    if (!k?.versionen?.caption?.liste?.length) return Promise.resolve();
+    if ((k.entwurf || "").trim() && k.entwurf !== k.captionBasis) return kiVersionSpeichern("caption", { inhalt: k.entwurf, quelle: "manuell" });
+    return Promise.resolve();
   }
 
   function kiLinksHtml() {
@@ -5855,7 +5874,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <div class="as-ki-rumpf">
         <section class="as-ki-links" data-ki-links>${kiLinksHtml()}</section>
         <section class="as-ki-chat">
-          <div class="as-ki-verlauf" data-ki-verlauf>${verlauf}${laeuft ? '<div class="as-ki-msg as-ki-msg--ki"><span class="as-ki-ava as-ki-ava--denkt"><i class="fa-solid fa-wand-magic-sparkles"></i></span><div class="as-ki-blase as-ki-tippt"><span></span><span></span><span></span></div></div>' : ""}</div>
+          <div class="as-ki-verlauf" data-ki-verlauf>${verlauf}${laeuft && !k.verlauf.some((n) => n.arbeitet && n.ziel === k.ziel) ? '<div class="as-ki-msg as-ki-msg--ki"><span class="as-ki-ava as-ki-ava--denkt"><i class="fa-solid fa-wand-magic-sparkles"></i></span><div class="as-ki-blase"><span class="as-ki-gedanke is-aktiv"><span class="as-ki-gedanke-titel">Denkt nach</span></span></div></div>' : ""}</div>
           <form class="as-ki-eingabe" data-ki-form>
             <textarea rows="1" data-ki-eingabe placeholder="${k.ziel === "bild" ? "Was soll sich am Visual ändern?" : "Was soll sich an der Caption ändern?"}" aria-label="Nachricht an die KI">${esc(eingabeVorher)}</textarea>
             <button type="submit" class="as-ki-senden" aria-label="Senden"${laeuft ? " disabled" : ""}><i class="fa-solid fa-arrow-up"></i></button>
@@ -5981,9 +6000,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   async function kiVersionAnwenden(art, id) {
     const k = state.ki;
     const v = k.versionen[art];
-    if (art === "caption") kiHandarbeitSichern();
     v.laedt = true; v.offen = false; v.frage = null;
     kiEditorZeichne();
+    // Erst Handarbeit sichern, dann springen; sonst ueberholt die Sicherung den Sprung.
+    if (art === "caption") await kiHandarbeitSichern();
+    state.ki.versionRunde = (state.ki.versionRunde || 0) + 1;
     try {
       const res = await api("version_laden", { asset_id: state.assetId, version_id: id });
       const pos = v.liste.findIndex((e) => e.id === id);
@@ -6042,6 +6063,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       k.verlauf.push(eintrag);
       // Visual-Vorschlaege werden sofort erzeugt, ohne zweiten Klick.
       if (eintrag.bild_auftrag) {
+        eintrag.anfrage = nachricht;
+        eintrag.arbeitet = true;
+        eintrag.start = Date.now();
         k.laeuft[ziel] = false;
         kiEditorZeichne();
         void kiVisualErzeugen(eintrag);
@@ -6070,9 +6094,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     await bauePrivatBild({ auftrag: n.bild_auftrag, anpassen: n.bild_modus === "anpassen", notiz: n.anfrage || "" });
     k.laeuft.bild = false;
     k.erzeugtVisual = false;
-    if (!state.kiFortschritt?.fehler) { n.visualFehler = ""; k.neuesVisual = true; await kiVersionenLaden(); }
+    n.arbeitet = false;
+    n.dauer = n.start ? Math.max(1, Math.round((Date.now() - n.start) / 1000)) : 0;
+    n.alt = false;
+    if (!state.kiFortschritt?.fehler) { n.visualFehler = ""; k.neuesVisual = true; await kiVersionenLaden(); n.version = k.versionen.bild.liste.length; }
     else n.visualFehler = state.kiFortschritt.fehler;
-    if (!state.kiFortschritt?.fehler) { k.hinweisVisual = "Gespeichert"; n.version = k.versionen.bild.liste.length + 1; }
+    if (!state.kiFortschritt?.fehler) k.hinweisVisual = "Gespeichert";
     else k.hinweisVisual = "";
     kiEditorZeichne();
     k.neuesVisual = false;
@@ -6113,7 +6140,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (nochmal && !nochmal.disabled) {
       const pos = Number(nochmal.getAttribute("data-ki-nochmal"));
       const n = k.verlauf[pos];
-      if (n?.visualFehler) { void kiVisualErzeugen(n); return; }
+      if (n?.visualFehler) { n.visualFehler = ""; n.arbeitet = true; n.start = Date.now(); void kiVisualErzeugen(n); return; }
       if (n?.status === "fehler" && n.anfrage) {
         // Fehlversuch samt Frage raus, dann dieselbe Frage neu senden.
         k.verlauf.splice(pos - 1, 2);
