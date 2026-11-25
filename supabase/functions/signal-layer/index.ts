@@ -8978,6 +8978,13 @@ Deno.serve(async (req: Request) => {
 
       // Bildstil fuer das Bild privater LinkedIn-Assets. Die Stile kommen aus
       // dem Image-Generation-Tool, Vorschau sind dessen Serienbilder.
+      case "tone_beispiel": {
+        // Beispiel-Caption fuer die Vorschau im Fragebogen: der staerkste eigene Post.
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const vorbilder = await referenzVorbilder(auth.userId).catch(() => [] as string[]);
+        return corsResponse(origin, { beispiel: String(vorbilder[0] || "").slice(0, 1500) });
+      }
+
       case "ki_chat_modelle": {
         return corsResponse(origin, { modelle: KI_CHAT_MODELLE, regeln: KI_SCHRANKEN_ANZEIGE });
       }

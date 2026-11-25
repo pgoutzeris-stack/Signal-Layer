@@ -153,9 +153,11 @@ const STANDARD_DESIGN = {
 };
 
 /** Fragen, die im Privatprofil entfallen: Layout und Caption legt "Mein Stil" fest. */
-const PRIVAT_OHNE = new Set(["design", "variant_mode", "variant", "slide_mix", "slide_cover", "slide_content", "slide_end", "asset_type", "slide_count"]);
+const PRIVAT_OHNE = new Set(["design", "variant_mode", "variant", "slide_mix", "slide_cover", "slide_content", "slide_end", "asset_type", "slide_count", "storyline", "cta"]);
 
 const BILDSTIL_START = "master-li-privat";
+/** Vorschau der Caption ohne Tone of Voice: neutral, sachlich, ohne eigene Handschrift. */
+const BEISPIEL_OHNE_TON = "Der Markt verändert sich schneller als viele Marken reagieren.\n\nDie neue Entwicklung zeigt, wie sich Kaufentscheidungen verschieben und welche Rolle Marken dabei spielen.\n\nDrei Punkte sind dabei entscheidend:\n1. Sichtbarkeit am richtigen Ort\n2. Klare Positionierung\n3. Konsequente Umsetzung\n\nWie seht ihr das?";
 
 /** Privatprofil: neutraler Ausgangspunkt, das Visual baut die KI im eigenen Stil. */
 const MEIN_STIL_DESIGN = { id: "mein-stil", name: "Mein Stil", theme: "hell", footer: "", domain: "", logo: "" };
@@ -1729,7 +1731,11 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-bstil > i.fa-circle-check{color:#206efb;}
 #as-overlay .as-bstil-frage{margin-top:10px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:12px; background:#f8fafc; font-size:13px;}
 #as-overlay .as-bstil-frage > span:last-child{display:flex; gap:6px;}
-#as-overlay .as-opt--aus{opacity:.5; cursor:not-allowed;}
+#as-overlay .as-opt--aus{cursor:default; color:#94a3b8; display:flex; flex-direction:column; align-items:flex-start; gap:6px;}
+#as-overlay .as-opt-link{border:0; background:transparent; padding:0; color:#206efb; font:inherit; font-size:12px; font-weight:600; cursor:pointer; display:inline-flex; gap:6px; align-items:center;}
+#as-overlay .as-split2-prev--li{display:flex; flex-direction:column; min-height:0;}
+#as-overlay .as-linkedin-post--form{flex:1; height:min(640px, 72vh); min-height:420px;}
+#as-overlay .as-form-stilbild{width:100%; max-width:560px; aspect-ratio:1; object-fit:cover; border-radius:4px; box-shadow:0 1px 3px rgba(15,23,42,.08);}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
@@ -3020,6 +3026,34 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     </div>`;
   }
 
+  /** Privat: rechts derselbe LinkedIn-Beitrag wie im Entwurf, mit Beispiel-Caption und Stilbild. */
+  function privatFormVorschauHtml() {
+    const kopf = state.ich || {};
+    const avatar = kopf.avatar_url ? `<span class="as-linkedin-avatar as-linkedin-avatar--person"><img src="${attr(kopf.avatar_url)}" alt="" referrerpolicy="no-referrer"></span>` : '<span class="as-linkedin-avatar as-skel"></span>';
+    return `<div class="as-split2-prev as-split2-prev--li">
+      <span class="as-prev-label">Vorschau</span>
+      <article class="as-linkedin-post as-linkedin-post--form">
+        <div class="as-linkedin-col">
+          <header class="as-linkedin-head">${avatar}<span class="as-linkedin-byline"><strong>${esc(kopf.name || "")}</strong><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span></header>
+          <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
+          <footer class="as-linkedin-actions" aria-hidden="true">
+            <span class="as-linkedin-action"><i class="fa-regular fa-thumbs-up"></i>Gefällt mir</span>
+            <span class="as-linkedin-action"><i class="fa-regular fa-comment-dots"></i>Kommentieren</span>
+            <span class="as-linkedin-action"><i class="fa-solid fa-retweet"></i>Teilen</span>
+            <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
+          </footer>
+        </div>
+        <div class="as-stagearea as-stagearea--linkedin">${privatStilBildHtml()}</div>
+      </article>
+    </div>`;
+  }
+
+  function privatStilBildHtml() {
+    const stil = (state.bildStile || []).find((st) => st.id === (state.answers.bild_stil || BILDSTIL_START));
+    const src = stil?.vorschau?.[0];
+    return src ? `<img class="as-form-stilbild" src="${attr(src)}" alt="">` : '<div class="roots-loader" style="min-height:0;padding:0"></div>';
+  }
+
   function stepContent() {
     if (state.oeffnet) return oeffnetHtml();
     // Entwurfsliste: die Fragebogen-Vorschau daneben zeigt nichts davon.
@@ -3037,7 +3071,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // Vorlage wie das spaetere Asset, nur mit Platzhaltertext.
       return `<div class="as-split2">
         <div class="as-split2-form">${state.formTab === "drafts" ? draftsHtml() : formHtml()}</div>
-        <div class="as-split2-prev">
+        ${!isMemo && state.answers.profile === "private" ? privatFormVorschauHtml() : `<div class="as-split2-prev">
           ${isMemo ? "" : `<span class="as-prev-label">Vorschau</span>`}
           <div class="as-prev-host">
             <div class="as-pagehost">
@@ -3046,7 +3080,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
             </div>
           </div>
           <div data-captionhost>${captionPreviewHtml()}</div>
-        </div>
+        </div>`}
       </div>`;
     }
     if (state.step === "draft") {
@@ -3130,8 +3164,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
    *  fertigen Entwurf wie bei LinkedIn oberhalb des Assets. */
   function captionPreviewHtml(feed = false) {
     if (isMemo) return "";
+    const privatForm = state.step === "form" && state.answers.profile === "private";
     const text = state.step === "form"
-      ? (state.answers.caption === "custom" ? String(state.answers.caption_text || "") : "")
+      ? (state.answers.caption === "custom" ? String(state.answers.caption_text || "")
+        : privatForm && state.answers.caption === "ai_tone" ? String(state.toneBeispiel || "")
+        : privatForm ? BEISPIEL_OHNE_TON : "")
       : String(state.postText || "");
     if (!text.trim()) return "";
     if (feed) return `<p class="as-linkedin-copy">${esc(text)}</p>`;
@@ -4286,12 +4323,20 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (!state.formWartet) zeichneForm();
   }
 
+  async function ladeToneBeispiel() {
+    if (isMemo || state.toneBeispiel !== undefined) return;
+    try { state.toneBeispiel = String((await api("tone_beispiel", {}))?.beispiel || ""); } catch { state.toneBeispiel = ""; }
+    if (state.step === "form" && !state.formWartet) zeichneCaption();
+  }
+
   async function ladeBildStile() {
     if (isMemo || state.bildStile) return;
     try {
       const res = await api("list_bild_stile", {});
       state.bildStile = Array.isArray(res?.stile) ? res.stile : [];
     } catch { state.bildStile = []; }
+    const buehne = shell.querySelector(".as-linkedin-post--form .as-stagearea");
+    if (buehne) buehne.innerHTML = privatStilBildHtml();
     if (state.step === "form") formNachLaden();
   }
 
@@ -4710,10 +4755,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const opts = optionen.map(([value, rohLabel]) => {
       const label = privatCaption && value === "ai" ? "KI ohne Tone of Voice" : rohLabel;
       if (privatCaption && value === "ai_tone" && toneFehltHier) {
-        return `<label class="as-opt as-opt--aus" title="Kein Tone of Voice hinterlegt">
-        <input type="radio" name="as-${attr(q.key)}" value="ai_tone" disabled>
-        <span>${esc(label)}</span><i class="as-tag">nicht hinterlegt</i>
-      </label>`;
+        return `<div class="as-opt as-opt--aus" title="Kein Tone of Voice hinterlegt">
+        <span>${esc(label)}</span>
+        <button type="button" class="as-opt-link" data-act="open-tone"><i class="fa-solid fa-gear"></i>In den Einstellungen hinterlegen</button>
+      </div>`;
       }
       // Der Look steht am Layout statt in einer eigenen Frage, und die
       // Infografiken tragen den Hinweis, dass ihre Zahlen zu setzen sind.
@@ -10040,6 +10085,7 @@ ${stages}${post}
   void ladeToneOfVoice();
   void ladeDesignVorlagen();
   void ladeBildStile();
+  void ladeToneBeispiel();
   openInstance = { close, lebt: () => overlay.isConnected };
   return openInstance;
 }
