@@ -1737,7 +1737,10 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-post--form{display:flex !important; flex-direction:column; height:auto; max-width:560px; width:100%; margin:0 auto; overflow:visible;}
 #as-overlay .as-linkedin-post--form .as-linkedin-col{display:flex; flex-direction:column; border-right:0; order:1;}
 #as-overlay .as-linkedin-post--form > *{flex-shrink:0;}
-#as-overlay .as-linkedin-post--form .as-linkedin-caption{max-height:260px; overflow-y:auto;}
+#as-overlay .as-linkedin-post--form .as-linkedin-caption{max-height:none; overflow:visible;}
+#as-overlay .as-linkedin-copy.is-kurz{display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;}
+#as-overlay .as-li-mehr{border:0; background:transparent; padding:2px 0 0; font:inherit; font-size:13px; font-weight:600; color:#64748b; cursor:pointer;}
+#as-overlay .as-li-mehr:hover{color:#206efb; text-decoration:underline;}
 #as-overlay .as-linkedin-post--form .as-linkedin-actions{order:3;}
 #as-overlay .as-linkedin-post--form .as-stagearea{order:2; padding:0; background:transparent; min-height:0;}
 #as-overlay .as-linkedin-post--form .as-form-stilbild{max-width:none; border-radius:0; box-shadow:none;}
@@ -3188,6 +3191,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         : privatForm ? BEISPIEL_OHNE_TON : "")
       : String(state.postText || "");
     if (!text.trim()) return "";
+    // Wie bei LinkedIn: erst drei Zeilen, dann "… mehr" fuer den ganzen Text.
+    if (feed && privatForm) {
+      const lang = text.split("\n").length > 3 || text.length > 220;
+      return `<p class="as-linkedin-copy${lang && !state.captionAuf ? " is-kurz" : ""}">${esc(text)}</p>${lang ? `<button type="button" class="as-li-mehr" data-act="caption-mehr">${state.captionAuf ? "weniger anzeigen" : "… mehr"}</button>` : ""}`;
+    }
     if (feed) return `<p class="as-linkedin-copy">${esc(text)}</p>`;
     return `<div class="as-caption">
       <span class="as-caption-head">Caption</span>
@@ -9480,6 +9488,7 @@ ${stages}${post}
       zeichneForm();
       return;
     }
+    if (act === "caption-mehr") { state.captionAuf = !state.captionAuf; zeichneCaption(); return; }
     if (act === "hilfe-toggle") {
       const key = hit.getAttribute("data-key");
       state.hilfeOffen = { ...(state.hilfeOffen || {}), [key]: !state.hilfeOffen?.[key] };
