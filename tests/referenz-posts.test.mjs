@@ -100,7 +100,7 @@ test("Privatprofil: keine Tool-Layouts, Vorschau zeigt das Vorbild", async () =>
     readFile(new URL("../supabase/functions/signal-layer/index.ts", import.meta.url), "utf8"),
     readFile(new URL("../index.html", import.meta.url), "utf8"),
   ]);
-  assert.match(studio, /const PRIVAT_OHNE = new Set\(\["design", "variant_mode", "variant", "slide_mix", "slide_cover", "slide_content", "slide_end", "caption"\]\)/);
+  assert.match(studio, /const PRIVAT_OHNE = new Set\(\["design", "variant_mode", "variant", "slide_mix", "slide_cover", "slide_content", "slide_end", "asset_type", "slide_count"\]\)/);
   assert.match(studio, /state\.answers\.profile === "private" \|\| \(!state\.rootsAssets && !state\.assetId\)\) \? kiWarteHtml\(\)/);
   assert.ok(!/key: "stil"/.test(studio), "keine Stil-Frage mehr");
   assert.match(edge, /vorbild_visual: posts\.length \? await gespeichertesVorbild\(auth\.userId\) : ""/);

@@ -153,7 +153,9 @@ const STANDARD_DESIGN = {
 };
 
 /** Fragen, die im Privatprofil entfallen: Layout und Caption legt "Mein Stil" fest. */
-const PRIVAT_OHNE = new Set(["design", "variant_mode", "variant", "slide_mix", "slide_cover", "slide_content", "slide_end", "caption"]);
+const PRIVAT_OHNE = new Set(["design", "variant_mode", "variant", "slide_mix", "slide_cover", "slide_content", "slide_end", "asset_type", "slide_count"]);
+
+const BILDSTIL_START = "master-li-privat";
 
 /** Privatprofil: neutraler Ausgangspunkt, das Visual baut die KI im eigenen Stil. */
 const MEIN_STIL_DESIGN = { id: "mein-stil", name: "Mein Stil", theme: "hell", footer: "", domain: "", logo: "" };
@@ -213,6 +215,9 @@ const FORM_LINKEDIN = [
   // Hell/Dunkel gibt es nur fuer ROOTS. Privat baut die KI das Visual im Stil
   // der eigenen Posts, eine Vorlage entfaellt.
   { key: "design", label: "Design", art: "design", options: [["roots-hell", "ROOTS Hell"]], when: (answers) => answers.profile !== "private" },
+  // Privat: Bildstil des Visuals. LinkedIn Beitrag Privat ist gesetzt, andere
+  // LinkedIn-Stile nur nach ausdruecklicher Bestaetigung.
+  { key: "bild_stil", label: "Bildstil", art: "bildstil", options: [["master-li-privat", "LinkedIn Beitrag Privat"]], when: (answers) => answers.profile === "private" },
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
   // Einzelbild: genau ein Layout. Carousel: entweder das Modell mischt die
   // Slide-Arten, oder der Nutzer waehlt sie selbst.
@@ -1711,6 +1716,18 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-nochmal-knopf{display:inline-flex; align-items:center; gap:7px; border:0; border-radius:999px; background:#206efb; color:#fff; padding:7px 14px; font-weight:600; font-size:12.5px; font-family:inherit; cursor:pointer; transition:background .15s;}
 #as-overlay .as-ki-nochmal-knopf:hover{background:#165fd9;}
 #as-overlay .as-ki-nochmal-knopf:disabled{opacity:.5; cursor:default;}
+#as-overlay .as-bstile{display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px;}
+#as-overlay .as-bstil{position:relative; display:flex; flex-direction:column; gap:6px; padding:6px; border:1.5px solid var(--line,#e2e8f0); border-radius:12px; background:#fff; cursor:pointer; font:inherit; font-size:12.5px; font-weight:600; color:var(--ink,#0f172a); text-align:left; transition:border-color .15s, opacity .15s;}
+#as-overlay .as-bstil img{width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px;}
+#as-overlay .as-bstil span{padding:0 2px 2px;}
+#as-overlay .as-bstil.is-aktiv{border-color:#206efb; box-shadow:0 0 0 3px rgba(32,110,251,.12);}
+#as-overlay .as-bstil.is-gesperrt{opacity:.45; filter:grayscale(1);}
+#as-overlay .as-bstil.is-gesperrt:hover{opacity:.7;}
+#as-overlay .as-bstil > i{position:absolute; top:12px; right:12px; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; background:#fff; font-size:11px; color:#64748b; box-shadow:0 1px 3px rgba(15,23,42,.15);}
+#as-overlay .as-bstil > i.fa-circle-check{color:#206efb;}
+#as-overlay .as-bstil-frage{margin-top:10px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:12px; background:#f8fafc; font-size:13px;}
+#as-overlay .as-bstil-frage > span:last-child{display:flex; gap:6px;}
+#as-overlay .as-opt--aus{opacity:.5; cursor:not-allowed;}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
@@ -2769,11 +2786,16 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.answers.profile = "private";
       state.answers.design = "";
     }
-    // Privat schreibt immer im hinterlegten Tonfall, das Layout waehlt die KI.
+    // Privat: immer Einzelbild, Layout waehlt die KI. Caption standardmaessig
+    // mit Tone of Voice; ohne hinterlegten Tonfall KI ohne Tonfall.
     if (state.answers.profile === "private") {
-      state.answers.caption = "ai_tone";
+      state.answers.asset_type = "single";
       state.answers.variant_mode = "auto";
       state.answers.slide_mix = "auto";
+      const toneFehlt = state.toneGeladen && !String(state.toneOfVoice || "").trim();
+      if (!state.captionGewaehlt) state.answers.caption = toneFehlt ? "ai" : "ai_tone";
+      if (toneFehlt && state.answers.caption === "ai_tone") state.answers.caption = "ai";
+      if (!state.answers.bild_stil) state.answers.bild_stil = BILDSTIL_START;
     }
     const liste = designListe();
     if (!liste.some((d) => d.id === state.answers.design)) {
@@ -3001,6 +3023,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Entwurfsliste: die Fragebogen-Vorschau daneben zeigt nichts davon.
     if (state.step === "form" && state.formTab === "drafts") {
       return `<div class="as-split2 as-split2--liste"><div class="as-split2-form">${draftsHtml()}</div></div>`;
+    }
+    // Erst zeichnen, wenn Rechte, Vorlagen und Tone of Voice da sind; sonst
+    // erscheint kurz der ROOTS-Fragebogen und springt dann auf Privat um.
+    if (state.step === "form" && !isMemo && !(state.designsGeladen && state.toneGeladen)) {
+      state.formWartet = true;
+      return `<div class="as-split2 as-split2--liste"><div class="as-split2-form" style="display:grid;place-items:center;min-height:50vh"><div class="roots-loader"></div></div></div>`;
     }
     if (state.step === "form") {
       // Links entscheiden, rechts sofort sehen. Die Vorschau ist dieselbe
@@ -4211,10 +4239,49 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.toneOfVoice = "";
     }
     state.toneGeladen = true;
-    if (state.step === "form") zeichneForm();
+    if (state.step === "form") formNachLaden();
   }
 
   /** Design-Vorlagen des Nutzers. Nur fuer das Privatprofil relevant. */
+  /** Bildstil im Fragebogen: Start ist LinkedIn Beitrag Privat, andere passende
+   *  LinkedIn-Stile sind ausgegraut und brauchen eine Bestaetigung. */
+  function bildstilFrageHtml() {
+    const stile = state.bildStile || [];
+    if (!stile.length) return '<div class="roots-loader" style="min-height:60px;padding:0"></div>';
+    const aktiv = state.answers.bild_stil || BILDSTIL_START;
+    const frei = state.bildStilFrei || new Set();
+    const karten = stile.map((st) => {
+      const gesperrt = st.id !== BILDSTIL_START && !frei.has(st.id);
+      const bild = Array.isArray(st.vorschau) && st.vorschau[0] ? `<img src="${attr(st.vorschau[0])}" alt="">` : "";
+      return `<button type="button" class="as-bstil${st.id === aktiv ? " is-aktiv" : ""}${gesperrt ? " is-gesperrt" : ""}" data-act="bildstil-wahl" data-id="${attr(st.id)}">
+        ${bild}<span>${esc(st.name)}</span>${gesperrt ? '<i class="fa-solid fa-lock"></i>' : ""}${st.id === aktiv ? '<i class="fa-solid fa-circle-check"></i>' : ""}</button>`;
+    }).join("");
+    const frage = state.bildStilFrage ? stile.find((st) => st.id === state.bildStilFrage) : null;
+    const bestaetigen = frage ? `<div class="as-bstil-frage"><span>„${esc(frage.name)}“ statt „LinkedIn Beitrag Privat“ verwenden?</span>
+      <span><button type="button" class="as-btn" data-act="bildstil-nein">Abbrechen</button><button type="button" class="as-btn as-btn--primary" data-act="bildstil-ja" data-id="${attr(frage.id)}">Verwenden</button></span></div>` : "";
+    return `<div class="as-bstile">${karten}</div>${bestaetigen}`;
+  }
+
+  /** Nach dem Laden: einmal vollstaendig zeichnen, danach nur das Formular. */
+  function formNachLaden() {
+    if (state.formWartet && state.designsGeladen && state.toneGeladen) {
+      state.formWartet = false;
+      synchronisiereDesign();
+      render();
+      return;
+    }
+    if (!state.formWartet) zeichneForm();
+  }
+
+  async function ladeBildStile() {
+    if (isMemo || state.bildStile) return;
+    try {
+      const res = await api("list_bild_stile", {});
+      state.bildStile = Array.isArray(res?.stile) ? res.stile : [];
+    } catch { state.bildStile = []; }
+    if (state.step === "form") formNachLaden();
+  }
+
   async function ladeDesignVorlagen() {
     if (isMemo) return;
     try {
@@ -4247,7 +4314,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.designs = [];
     }
     state.designsGeladen = true;
-    if (state.step === "form") zeichneForm();
+    if (state.step === "form") formNachLaden();
   }
 
   async function ladeDrafts() {
@@ -4318,6 +4385,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     a.sources_text = src.sources || "";
     a.caption = src.caption_mode === "custom" ? "custom" : src.caption_mode === "ai_tone" ? "ai_tone" : "ai";
     a.caption_text = src.caption || "";
+    if (src.bild_stil) a.bild_stil = String(src.bild_stil);
     a.profile = src.profile === "private" ? "private" : "roots";
     a.design = src.design || (src.theme === "dark" ? "roots-dunkel" : "roots-hell");
     if (src.asset_type) a.asset_type = src.asset_type;
@@ -4498,6 +4566,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       return wert ? variantenName(wert) : "noch nicht gewählt";
     }
     if (q.art === "design") return aktivesDesign().name;
+    if (q.art === "bildstil") return (state.bildStile || []).find((st) => st.id === (state.answers.bild_stil || BILDSTIL_START))?.name || "LinkedIn Beitrag Privat";
     if (q.art === "dropdown") {
       const optionen = layoutOptionen(false);
       const treffer = optionen.find(([key]) => key === state.answers[q.key]);
@@ -4620,8 +4689,19 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (q.art === "frame") return frameDropdownHtml(q);
     if (q.art === "multi-content") return contentMultiHtml(q);
     if (q.art === "design") return designHtml(q);
+    if (q.art === "bildstil") return bildstilFrageHtml();
     if (q.art === "memo-pages") return q.sections.map((abschnitt) => memoSectionHtml(abschnitt)).join("");
-    const opts = q.options.map(([value, label]) => {
+    const privatCaption = q.key === "caption" && state.answers.profile === "private";
+    const toneFehltHier = state.toneGeladen && !String(state.toneOfVoice || "").trim();
+    const optionen = privatCaption ? [...q.options].sort((a, b) => (b[0] === "ai_tone") - (a[0] === "ai_tone")) : q.options;
+    const opts = optionen.map(([value, rohLabel]) => {
+      const label = privatCaption && value === "ai" ? "KI ohne Tone of Voice" : rohLabel;
+      if (privatCaption && value === "ai_tone" && toneFehltHier) {
+        return `<label class="as-opt as-opt--aus" title="Kein Tone of Voice hinterlegt">
+        <input type="radio" name="as-${attr(q.key)}" value="ai_tone" disabled>
+        <span>${esc(label)}</span><i class="as-tag">nicht hinterlegt</i>
+      </label>`;
+      }
       // Der Look steht am Layout statt in einer eigenen Frage, und die
       // Infografiken tragen den Hinweis, dass ihre Zahlen zu setzen sind.
       const hinweis = q.key !== "variant" ? ""
@@ -5202,12 +5282,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         break;
       }
       const stand = payload.privat_bild || {};
+      const schritt = stand.schritt === "auftrag" ? "Bildauftrag wird geschrieben"
+        : stand.schritt === "visual" ? `${stand.modell || "KI"} erzeugt das Visual`
+        : stand.schritt === "pruefung" ? "CI-Prüfung läuft" : "";
+      if (schritt && schritt !== state.visualSchritt) { state.visualSchritt = schritt; render(); }
       if (stand.status === "fehler") { ergebnis = "fehler"; state.kiFortschritt.fehler = fehlerKlartext(String(stand.fehler || "")) || "Das Visual konnte nicht erstellt werden."; break; }
       if (stand.status === "client") { ergebnis = "client"; break; }
       // Ohne jeden Stand nach 20 s hat der Server nicht uebernommen: selbst bauen.
       if (!stand.status && Date.now() - start > 20_000) { ergebnis = "client"; break; }
     }
     state.kiLaeuft = false;
+    state.visualSchritt = "";
     if (ergebnis === "zeit") state.kiFortschritt.fehler = "Das Bild braucht ungewöhnlich lange. Bitte erneut versuchen.";
     if (ergebnis === "fertig") state.kiFortschritt.fertig = 1;
     render();
@@ -6326,6 +6411,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     // Sonst der Zauberstab: das Visual entsteht erst nach dem Erzeugen.
     return `<div class="li li-ki-warte" role="img" aria-label="KI-Visual im eigenen Stil" style="width:1080px;height:1350px;position:relative;overflow:hidden;background:#f1f5f9;display:flex;align-items:center;justify-content:center">
       <i class="fa-solid fa-wand-magic-sparkles" style="font-size:150px;color:#206efb${state.kiLaeuft ? ";animation:asKiPuls 1.6s ease-in-out infinite" : ""}"></i>
+      ${state.kiLaeuft && state.visualSchritt ? `<span style="position:absolute;left:0;right:0;bottom:140px;text-align:center;font-weight:600;font-size:40px;line-height:1.2;font-family:inherit;color:#475569">${esc(state.visualSchritt)}</span>` : ""}
       <style>@keyframes asKiPuls{50%{opacity:.35;transform:scale(.92)}}</style>
     </div>`;
   }
@@ -9287,6 +9373,22 @@ ${stages}${post}
     }
     if (act === "ki-visual") { schliesseBildInfo(); void baueKiVisuals(); return; }
     if (act === "bild-info-zu") { schliesseBildInfo(); return; }
+    if (act === "bildstil-wahl") {
+      const id = hit.getAttribute("data-id");
+      if (id === BILDSTIL_START || state.bildStilFrei?.has(id)) { state.answers.bild_stil = id; state.bildStilFrage = null; }
+      else state.bildStilFrage = id;
+      zeichneForm();
+      return;
+    }
+    if (act === "bildstil-nein") { state.bildStilFrage = null; zeichneForm(); return; }
+    if (act === "bildstil-ja") {
+      const id = hit.getAttribute("data-id");
+      state.bildStilFrei = new Set([...(state.bildStilFrei || []), id]);
+      state.answers.bild_stil = id;
+      state.bildStilFrage = null;
+      zeichneForm();
+      return;
+    }
     if (act === "caption-info") { oeffneCaptionInfo(); return; }
     if (act === "post-gross") { harvest(); state.postGross = !state.postGross; render(); return; }
     if (act === "ki-editor") { schliesseBildInfo(); kiEditorOeffnen(hit.getAttribute("data-ziel")); return; }
@@ -9508,6 +9610,7 @@ ${stages}${post}
     // Der Fragebogen blendet Freitextfelder erst bei passender Wahl ein und
     // zeichnet die Vorschau neu, damit die Wahl sofort zu sehen ist.
     if (state.step === "form" && event.target.matches('input[type="radio"]')) {
+      if (event.target.name === "as-caption") state.captionGewaehlt = true;
       readForm();
       const fragen = aktiveFragen();
       const offen = fragen[schrittIndex(fragen)];
@@ -9923,6 +10026,7 @@ ${stages}${post}
   void ladeDrafts();
   void ladeToneOfVoice();
   void ladeDesignVorlagen();
+  void ladeBildStile();
   openInstance = { close, lebt: () => overlay.isConnected };
   return openInstance;
 }

@@ -101,6 +101,7 @@ export type AssetArticleInput = {
 };
 
 export type LinkedinAnswers = {
+  bild_stil?: string;
   asset_type: "single" | "carousel";
   /** Vom Nutzer gewaehlte Slide-Arten in Reihenfolge. Leer = Modell entscheidet. */
   slide_types?: string[];
@@ -1731,6 +1732,8 @@ export function normalizeAssetAnswers(kind: AssetKind, raw: unknown): AssetAnswe
         || (profile === "private" ? "" : "roots-consultants.com"),
       design_logo: String(record(source).design_logo || "").slice(0, DESIGN_LOGO_LIMIT),
       design_stil: profile === "private" ? normalizeDesignStil(record(source).design_stil) : LEERER_STIL,
+      // Bildstil des Visuals fuer diesen Entwurf; leer heisst Einstellung der Person.
+      bild_stil: profile === "private" ? String(pick(source, "bild_stil") || "").replace(/[^a-z0-9-]/gi, "").slice(0, 60) : "",
       caption_mode: captionMode(source),
       // LinkedIn kappt den Beitragstext bei 3000 Zeichen; ein selbst
       // geschriebener Text darf diesen Rahmen ausschoepfen.

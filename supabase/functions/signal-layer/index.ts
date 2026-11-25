@@ -9339,7 +9339,9 @@ Deno.serve(async (req: Request) => {
         const pbTitel = String(pbSlides[0]?.title || "").replace(/<[^>]+>/g, "").trim();
         const rohAuftrag = privatBildAuftrag({ postText: pbPost, titel: pbTitel });
         if (!rohAuftrag) return errorResponse(origin, "Kein Beitragstext für das Bild vorhanden.", 409);
-        const [{ stile, logo }, gewuenscht] = await Promise.all([bildStile(), gewaehlterBildStil(pbNutzer)]);
+        const [{ stile, logo }, einstellung] = await Promise.all([bildStile(), gewaehlterBildStil(pbNutzer)]);
+        // Im Fragebogen gewaehlter Stil vor der persoenlichen Einstellung.
+        const gewuenscht = String((pbAsset.answers as Record<string, unknown>)?.bild_stil || "") || einstellung;
         const stil = waehleBildStil(stile, gewuenscht);
         if (!stil) return errorResponse(origin, "Kein Bildstil verfügbar.", 500);
         const geminiKey = await getGeminiKey().catch(() => "");
@@ -9361,6 +9363,7 @@ Deno.serve(async (req: Request) => {
           // Testschalter nur fuer den Betrieb: Varianten des Auftrags vergleichen.
           const briefModus: BriefModus = isScheduled && BRIEF_MODI.includes(body.brief_modus as BriefModus) ? body.brief_modus as BriefModus : BRIEF_STANDARD;
           const { system, user } = privatBildBriefPrompt(stil.prompt, pbPost, pbTitel, briefModus);
+          if (isScheduled && body.speichern === true) await setzePrivatBildStand(pbAssetId, { status: "laeuft", schritt: "auftrag" });
           // Art Director: Gemini, dann GPT-5.4, dann DeepSeek ueber Perplexity.
           if (geminiKey) {
             const briefAntwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_BRIEF_MODELL}:generateContent`, {
@@ -9426,6 +9429,7 @@ Deno.serve(async (req: Request) => {
         let openaiGrund = "";
         for (let bildVersuch = 1; bildVersuch <= 2 && !pbBild; bildVersuch += 1) {
           let roh = "";
+          if (isScheduled && body.speichern === true) await setzePrivatBildStand(pbAssetId, { status: "laeuft", schritt: "visual", modell: openaiKey ? "GPT Image 2.6 Sunburst" : "Nano Banana 2" });
           if (openaiKey && Date.now() - start < 60_000) {
             const oa = await openaiBild({
               apiKey: openaiKey, modell: OPENAI_BILD_STANDARD, aspect: stil.aspect, auftrag,
@@ -9472,6 +9476,7 @@ Deno.serve(async (req: Request) => {
           if (!roh) break;
           if (!stil.ciCheck) { pbBild = roh; break; }
           const [, mime, daten] = roh.match(/^data:([^;]+);base64,(.+)$/) || [];
+          if (isScheduled && body.speichern === true) await setzePrivatBildStand(pbAssetId, { status: "laeuft", schritt: "pruefung" });
           // CI-Pruefung: Gemini, dann GPT-5.4 und Claude Sonnet ueber Perplexity (beide sehen Bilder).
           let urteil: Record<string, unknown> | null = null;
           if (geminiKey) {
