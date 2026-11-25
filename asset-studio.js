@@ -1550,17 +1550,17 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-col .as-linkedin-caption{min-height:0; overflow-y:auto; overscroll-behavior:contain;}
 #as-overlay .as-linkedin-avatar--person{padding:0; border-radius:50%; border:0;}
 #as-overlay .as-linkedin-avatar--person img{object-fit:cover;}
-#as-overlay .as-ki{position:absolute; inset:0; z-index:90; display:grid; place-items:center; padding:24px;
-  background:rgba(15,23,42,.42); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); animation:asKiRein .22s ease both;}
+#as-overlay .as-ki{position:absolute; inset:0; z-index:90; display:grid; background:#fff; border-radius:inherit; overflow:hidden; animation:asKiRein .22s ease both;}
 #as-overlay .as-ki[hidden]{display:none;}
 @keyframes asKiRein{from{opacity:0;} to{opacity:1;}}
-@keyframes asKiKarte{from{opacity:0; transform:translateY(14px) scale(.985);} to{opacity:1; transform:none;}}
-#as-overlay .as-ki-karte{width:min(1320px,100%); height:min(860px,100%); background:#fff; border-radius:22px; overflow:hidden;
-  box-shadow:0 30px 80px rgba(15,23,42,.28); display:grid; grid-template-rows:auto minmax(0,1fr);}
+@keyframes asKiKarte{from{opacity:0; transform:translateX(24px);} to{opacity:1; transform:none;}}
+#as-overlay .as-ki-karte{width:100%; height:100%; background:#fff; border-radius:inherit; overflow:hidden; display:grid; grid-template-rows:auto minmax(0,1fr);}
 #as-overlay .as-ki-karte.is-auf{animation:asKiKarte .32s cubic-bezier(.2,.8,.2,1) both;}
 #as-overlay .as-ki-kopf{display:flex; align-items:center; gap:14px; padding:14px 18px; border-bottom:1px solid #edf2f7;}
 #as-overlay .as-ki-kopf h3{margin:0; font-size:17px; display:flex; align-items:center; gap:10px;}
 #as-overlay .as-ki-kopf h3 i{color:#206efb;}
+#as-overlay .as-ki-zurueckseite{display:inline-flex; align-items:center; gap:8px; height:34px; padding:0 12px; border:0; border-radius:999px; background:#f1f5f9; color:#334155; font-size:13px; font-weight:600; transition:background .16s;}
+#as-overlay .as-ki-zurueckseite:hover{background:#e2e8f0;}
 #as-overlay .as-ki-seg{display:inline-flex; padding:3px; border-radius:999px; background:#f1f5f9; margin-left:8px;}
 #as-overlay .as-ki-seg button{border:0; background:transparent; padding:7px 16px; border-radius:999px; font-weight:600;font-size:13px;line-height:1;font-family:inherit; color:#475569; cursor:pointer; transition:background .18s, color .18s, box-shadow .18s;}
 #as-overlay .as-ki-seg button[aria-pressed="true"]{background:#fff; color:#0f172a; box-shadow:0 1px 4px rgba(15,23,42,.12);}
@@ -5896,15 +5896,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const sichtbar = state.answers.profile === "private" && state.answers.asset_type !== "carousel";
     const erstmals = !kiEditor.firstElementChild;
     if (k.manuell) {
-      kiEditor.innerHTML = `<div class="as-ki-karte as-ki-karte--manuell${erstmals ? " is-auf" : ""}" role="dialog" aria-modal="true" aria-label="Caption bearbeiten">
-        <header class="as-ki-kopf"><h3><i class="fa-solid fa-pen"></i>Caption bearbeiten</h3>${kiVersionLeiste("caption")}
-          <button type="button" class="as-ki-zu" data-ki-zu aria-label="Schließen" style="margin-left:auto"><i class="fa-solid fa-xmark"></i></button></header>
+      kiEditor.innerHTML = `<div class="as-ki-karte as-ki-karte--manuell${erstmals ? " is-auf" : ""}" role="region" aria-label="Caption bearbeiten">
+        <header class="as-ki-kopf"><button type="button" class="as-ki-zurueckseite" data-ki-zu aria-label="Zurück zum Entwurf"><i class="fa-solid fa-arrow-left"></i>Zurück</button><h3><i class="fa-solid fa-pen"></i>Caption bearbeiten</h3>${kiVersionLeiste("caption")}</header>
         <div class="as-ki-rumpf" style="grid-template-columns:1fr"><section class="as-ki-links" data-ki-links>${kiLinksHtml()}</section></div>
       </div>`;
       return;
     }
-    kiEditor.innerHTML = `<div class="as-ki-karte${erstmals ? " is-auf" : ""}" role="dialog" aria-modal="true" aria-label="Mit KI bearbeiten">
+    kiEditor.innerHTML = `<div class="as-ki-karte${erstmals ? " is-auf" : ""}" role="region" aria-label="Mit KI bearbeiten">
       <header class="as-ki-kopf">
+        <button type="button" class="as-ki-zurueckseite" data-ki-zu aria-label="Zurück zum Entwurf"><i class="fa-solid fa-arrow-left"></i>Zurück</button>
         <h3><i class="fa-solid fa-wand-magic-sparkles"></i>Mit KI bearbeiten</h3>
         <span class="as-ki-seg" role="group" aria-label="Ziel" style="--pos:${k.ziel === "bild" ? 1 : 0}">
           <span class="as-ki-seg-pille" aria-hidden="true"></span>
@@ -5920,7 +5920,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
           </div>`;
         })()}
         ${kiStatsHtml()}
-        <button type="button" class="as-ki-zu" data-ki-zu aria-label="Schließen"><i class="fa-solid fa-xmark"></i></button>
       </header>
       <div class="as-ki-rumpf">
         <section class="as-ki-links" data-ki-links>${kiLinksHtml()}</section>
