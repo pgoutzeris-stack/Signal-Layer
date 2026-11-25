@@ -2406,7 +2406,7 @@ function hintergrundStapel() {
     mini = document.createElement("button");
     mini.type = "button";
     mini.className = "as-lauf-mini";
-    mini.setAttribute("aria-label", "Laufende Entwürfe anzeigen");
+    mini.setAttribute("aria-label", "Laufende Erzeugungen aufklappen");
     mini.addEventListener("click", () => hintergrundMinimieren(false));
     dock.appendChild(mini);
   }
