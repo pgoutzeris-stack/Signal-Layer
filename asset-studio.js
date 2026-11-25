@@ -1734,7 +1734,14 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-opt--aus{cursor:default; color:#94a3b8; display:flex; flex-direction:column; align-items:flex-start; gap:6px;}
 #as-overlay .as-opt-link{border:0; background:transparent; padding:0; color:#206efb; font:inherit; font-size:12px; font-weight:600; cursor:pointer; display:inline-flex; gap:6px; align-items:center;}
 #as-overlay .as-split2-prev--li{display:flex; flex-direction:column; min-height:0;}
-#as-overlay .as-linkedin-post--form{flex:1; height:min(640px, 72vh); min-height:420px;}
+#as-overlay .as-linkedin-post--form{display:flex !important; flex-direction:column; height:auto; max-width:560px; width:100%; margin:0 auto; overflow:visible;}
+#as-overlay .as-linkedin-post--form .as-linkedin-col{display:flex; flex-direction:column; border-right:0; order:1;}
+#as-overlay .as-linkedin-post--form > *{flex-shrink:0;}
+#as-overlay .as-linkedin-post--form .as-linkedin-caption{max-height:260px; overflow-y:auto;}
+#as-overlay .as-linkedin-post--form .as-linkedin-actions{order:3;}
+#as-overlay .as-linkedin-post--form .as-stagearea{order:2; padding:0; background:transparent; min-height:0;}
+#as-overlay .as-linkedin-post--form .as-form-stilbild{max-width:none; border-radius:0; box-shadow:none;}
+#as-overlay .as-split2-prev--li{overflow-y:auto;}
 #as-overlay .as-form-stilbild{width:100%; max-width:560px; aspect-ratio:1; object-fit:cover; border-radius:4px; box-shadow:0 1px 3px rgba(15,23,42,.08);}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
@@ -3033,17 +3040,15 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     return `<div class="as-split2-prev as-split2-prev--li">
       <span class="as-prev-label">Vorschau</span>
       <article class="as-linkedin-post as-linkedin-post--form">
-        <div class="as-linkedin-col">
-          <header class="as-linkedin-head">${avatar}<span class="as-linkedin-byline"><strong>${esc(kopf.name || "")}</strong><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span></header>
-          <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
-          <footer class="as-linkedin-actions" aria-hidden="true">
-            <span class="as-linkedin-action"><i class="fa-regular fa-thumbs-up"></i>Gefällt mir</span>
-            <span class="as-linkedin-action"><i class="fa-regular fa-comment-dots"></i>Kommentieren</span>
-            <span class="as-linkedin-action"><i class="fa-solid fa-retweet"></i>Teilen</span>
-            <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
-          </footer>
-        </div>
+        <header class="as-linkedin-head">${avatar}<span class="as-linkedin-byline"><strong>${esc(kopf.name || "")}</strong><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span></header>
+        <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
         <div class="as-stagearea as-stagearea--linkedin">${privatStilBildHtml()}</div>
+        <footer class="as-linkedin-actions" aria-hidden="true">
+          <span class="as-linkedin-action"><i class="fa-regular fa-thumbs-up"></i>Gefällt mir</span>
+          <span class="as-linkedin-action"><i class="fa-regular fa-comment-dots"></i>Kommentieren</span>
+          <span class="as-linkedin-action"><i class="fa-solid fa-retweet"></i>Teilen</span>
+          <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
+        </footer>
       </article>
     </div>`;
   }

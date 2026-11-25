@@ -881,6 +881,42 @@ async function setzePrivatBildStand(assetId: string, stand: Record<string, unkno
     .eq("id", assetId);
 }
 
+function startePrivatBildFrueh(assetId: string, text: string): void {
+  const arbeit = (async () => {
+    const { data: geheimnis } = await getAdminClient().schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_cron_secret" });
+    await fetch(`${SUPABASE_URL}/functions/v1/signal-layer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-cron-secret": String(geheimnis || "") },
+      body: JSON.stringify({ action: "privat_bild", asset_id: assetId, frueh: true, post_text: text }),
+      signal: AbortSignal.timeout(150_000),
+    }).catch(() => null);
+  })().catch(() => {});
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  runtime?.waitUntil?.(arbeit);
+}
+
+/** Das frueh erzeugte Visual in den fertigen Entwurf setzen. */
+async function fruehesVisualEinsetzen(assetId: string): Promise<"fertig" | "fehlt" | "laeuft"> {
+  const admin = getAdminClient();
+  const { data: frueh } = await admin.schema("signal_layer").from("asset_versionen")
+    .select("id, inhalt, meta, notiz").eq("asset_id", assetId).eq("art", "bild").eq("notiz", "frueh").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (!frueh) return "laeuft";
+  if (!frueh.inhalt) return "fehlt";
+  const meta = (frueh.meta || {}) as Record<string, unknown>;
+  const { stile } = await bildStile();
+  const stil = waehleBildStil(stile, String(meta.stil_id || ""));
+  const { data: asset } = await admin.schema("signal_layer").from("generated_assets").select("payload").eq("id", assetId).maybeSingle();
+  const p = (asset?.payload || {}) as Record<string, unknown>;
+  const folien = Array.isArray(p.slides) ? [...p.slides as Record<string, unknown>[]] : [];
+  if (!folien[0]) return "fehlt";
+  folien[0] = { ...folien[0], ki_basis: String(folien[0].ki_basis || folien[0].variant || "B"), variant: "KI", ki_typ: "bild",
+    ki_layout: privatBildLayout(String(frueh.inhalt), stil?.aspect || "1:1", stil?.name || ""), ki_bild_stil: stil?.id || "", ki_bild_meta: meta.bild_meta || {} };
+  await admin.schema("signal_layer").from("generated_assets").update({ payload: { ...p, slides: folien,
+    privat_bild: { status: "fertig", zeit: new Date().toISOString() },
+    version_aktiv: { ...((p.version_aktiv || {}) as Record<string, string>), bild: String(frueh.id) } } }).eq("id", assetId);
+  return "fertig";
+}
+
 function startePrivatBildAufServer(row: Record<string, unknown>): void {
   const assetId = String(row.id || "");
   if (!assetId || String(row.kind || "") !== "linkedin") return;
@@ -891,7 +927,14 @@ function startePrivatBildAufServer(row: Record<string, unknown>): void {
     if (answers.profile !== "private" || answers.asset_type === "carousel") return;
     const slides = ((asset?.payload as Record<string, unknown>)?.slides || []) as Record<string, unknown>[];
     if (slides[0]?.variant === "KI" && slides[0]?.ki_layout) return;
-    await setzePrivatBildStand(assetId, { status: "laeuft" });
+    await setzePrivatBildStand(assetId, { status: "laeuft", schritt: "visual" });
+    // Das Visual lief parallel zum Text: abwarten und einsetzen.
+    for (let i = 0; i < 22; i += 1) {
+      const stand = await fruehesVisualEinsetzen(assetId);
+      if (stand === "fertig") return;
+      if (stand === "fehlt") break;
+      await new Promise((r) => setTimeout(r, 5_000));
+    }
     const { data: geheimnis } = await admin.schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_cron_secret" });
     let antwort: Record<string, unknown> | null = null;
     let fehler = "";
@@ -9135,7 +9178,7 @@ Deno.serve(async (req: Request) => {
         if (action === "versionen_liste") {
           const ergebnis: Record<string, unknown> = {};
           for (const art of ["caption", "bild"]) {
-            let { data: liste } = await tabelle().select(zusammenfassung).eq("asset_id", vId).eq("art", art).order("created_at", { ascending: true });
+            let { data: liste } = await tabelle().select(zusammenfassung).eq("asset_id", vId).eq("art", art).neq("inhalt", "").order("created_at", { ascending: true });
             if (!liste?.length) {
               // Erster Aufruf: der heutige Stand wird Version 1.
               const inhalt = art === "caption"
@@ -9144,7 +9187,7 @@ Deno.serve(async (req: Request) => {
               if (inhalt) {
                 await tabelle().insert({ asset_id: vId, art, inhalt, quelle: "original", erstellt_von: auth.userId,
                   meta: art === "bild" ? { stil_id: String(vSlides[0]?.ki_bild_stil || ""), bild_meta: vSlides[0]?.ki_bild_meta || {} } : {} });
-                ({ data: liste } = await tabelle().select(zusammenfassung).eq("asset_id", vId).eq("art", art).order("created_at", { ascending: true }));
+                ({ data: liste } = await tabelle().select(zusammenfassung).eq("asset_id", vId).eq("art", art).neq("inhalt", "").order("created_at", { ascending: true }));
               }
             }
             ergebnis[art] = { liste: liste || [], aktiv: aktiv[art] || (liste?.length ? liste[liste.length - 1].id : null) };
@@ -9533,12 +9576,25 @@ Deno.serve(async (req: Request) => {
           ci = { checked: true, ok: urteil.roots_mark === false, reason: String(urteil.reason || "") };
           if (urteil.roots_mark === false || bildVersuch === 2 || Date.now() - start > 55_000) pbBild = roh;
         }
+        if (!pbBild && isScheduled && body.frueh === true) {
+          await getAdminClient().schema("signal_layer").from("asset_versionen").insert({ asset_id: pbAssetId, art: "bild", inhalt: "", quelle: "generiert", notiz: "frueh" });
+        }
         if (!pbBild) {
           // Beide Anbieter nennen, verstaendlich: das Studio zeigt den Satz direkt.
           const googleGrund = /spending cap|spend cap/i.test(pbFehlerText) ? "Google-Monatslimit erreicht"
             : /429/.test(pbFehlerText) ? "Google ausgelastet" : pbFehlerText ? `Google nicht erreichbar (${pbFehlerText.slice(0, 60)})` : (geminiKey ? "" : "kein Google-Schlüssel");
           const gruende = [openaiGrund, googleGrund].filter(Boolean).join(", ");
           return errorResponse(origin, `Kein Visual möglich: ${gruende || "unbekannter Fehler"}.`, 502);
+        }
+        // Frueh gestartet (parallel zum Text): als Stand ablegen, eingesetzt wird nach dem Text.
+        if (isScheduled && body.frueh === true) {
+          await getAdminClient().schema("signal_layer").from("asset_versionen").insert({
+            asset_id: pbAssetId, art: "bild", inhalt: pbBild, quelle: "generiert", notiz: "frueh", erstellt_von: pbAsset.created_by,
+            meta: { stil_id: stil.id, bild_meta: { stil: stil.name, auftrag, modell: pbModell || "Nano Banana 2", format: stil.aspect,
+              ci_geprueft: ci.checked === true, ci_ok: ci.ok === true, ci_grund: String(ci.reason || ""), erstellt: new Date().toISOString(),
+              kosten_eur: Math.round(bildKostenEur * 10000) / 10000 } },
+          });
+          return corsResponse(origin, { frueh: true });
         }
         // Betrieb (Cron-Secret) kann ein fehlendes Bild fuer den Eigentuemer
         // nachziehen. Das Studio verkleinert es beim naechsten Oeffnen.
@@ -14266,6 +14322,13 @@ Deno.serve(async (req: Request) => {
             run_log: [{ t: 0, event: "start", forecast_ms: forecast.ms, sample_count: forecast.sample_count, scope: forecast.scope, stages: forecast.stages, think: forecast.think, write: forecast.write }],
           }).select("*").single();
         if (assetInsertError) return errorResponse(origin, assetInsertError.message, 500);
+        // Privates Einzelbild: das Visual startet parallel zum Text, aus Signal und Artikel.
+        if (assetKind === "linkedin" && (assetAnswers as LinkedinAnswers).profile === "private" && (assetAnswers as LinkedinAnswers).asset_type !== "carousel") {
+          startePrivatBildFrueh(String(assetRow.id), [
+            signalForAsset.headline_de, signalForAsset.summary_de, signalForAsset.why_de,
+            String(assetArticle.content_de || assetArticle.cleaned_content || assetArticle.content || "").slice(0, 3000),
+          ].filter(Boolean).join("\n\n"));
+        }
 
         // Nur wenn der Puls tot ist: ein lebendes Modell darf das Isolat-Fenster
         // ueberschreiten, get_asset schliesst ausschliesslich bei Stille.
