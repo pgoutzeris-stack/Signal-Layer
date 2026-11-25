@@ -5405,7 +5405,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         state.slides.forEach((slide) => { slide.variant = gewaehltesLayout; });
       }
       state.memo = null;
-      state.postText = String(data.post_text || "");
+      state.postText = sterneZuFett(data.post_text);
     }
   }
 
@@ -6004,8 +6004,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       state.ki.hinweis = "Speichert …";
       kiHinweis();
       try {
-        await api("save_caption", { asset_id: state.assetId, post_text: text });
-        state.postText = text;
+        await api("save_caption", { asset_id: state.assetId, post_text: sterneZuFett(text) });
+        state.postText = sterneZuFett(text);
         state.toneScore = null;
         state.ki.hinweis = "Gespeichert";
         render();
@@ -6051,7 +6051,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
   function kiStandLokal(art, stand) {
     const k = state.ki;
     if (art === "caption") {
-      k.entwurf = String(stand.inhalt || "");
+      k.entwurf = sterneZuFett(stand.inhalt);
       k.captionBasis = k.entwurf;
       state.postText = k.entwurf;
       state.toneScore = null;
@@ -6171,7 +6171,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const eintrag = { rolle: "ki", ziel, gedanken: String(res?.gedanken || ""), status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null, guardrail: res?.guardrail || null, regeln: Array.isArray(res?.regeln) ? res.regeln : null };
       if (res?.stats) k.stats = res.stats;
       // Caption-Vorschlaege landen direkt im Editor, mit Version und Autosave.
-      if (eintrag.caption) eintrag.version = kiCaptionSetzen(eintrag.caption, nachricht);
+      if (eintrag.caption) eintrag.version = kiCaptionSetzen(sterneZuFett(eintrag.caption), nachricht);
       k.verlauf.push(eintrag);
       // Visual-Vorschlaege werden sofort erzeugt, ohne zweiten Klick.
       if (eintrag.bild_auftrag) {
@@ -6333,6 +6333,12 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (fmtIst(text, art)) return roh.normalize("NFC");
     // Umlaute bleiben normale Buchstaben: LinkedIn setzt die Punkte sonst versetzt.
     return [...roh.normalize("NFC")].map((z) => fmtZeichen(z, art)).join("");
+  }
+  /** Markdown-Sterne aus dem Modell werden LinkedIn-Fett; Sterne erscheinen nie in der Caption. */
+  function sterneZuFett(text) {
+    return String(text || "")
+      .replace(/\*\*([^*\n]+?)\*\*/g, (_, inhalt) => fmtText(inhalt, "fett"))
+      .replace(/\*\*/g, "");
   }
   function fmtZeilen(text, art) {
     const zeilen = text.split("\n");

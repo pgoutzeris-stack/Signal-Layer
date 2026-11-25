@@ -1376,6 +1376,20 @@ function text(value: unknown, max: number): string {
  * Umlautpunkten (U+0308) werden zum normalen Umlaut: so verlangen es die
  * Tone-of-Voice-Vorgaben, und LinkedIn zeigt die Punkte oft versetzt.
  */
+/** **Markdown** aus dem Modell wird LinkedIn-Fett (Unicode Sans Bold), Umlaute bleiben normal. */
+export function sterneZuFett(text: string): string {
+  const fett = (z: string): string => {
+    const c = z.charCodeAt(0);
+    if (c >= 65 && c <= 90) return String.fromCodePoint(0x1d5d4 + c - 65);
+    if (c >= 97 && c <= 122) return String.fromCodePoint(0x1d5ee + c - 97);
+    if (c >= 48 && c <= 57) return String.fromCodePoint(0x1d7ec + c - 48);
+    return z;
+  };
+  return String(text || "")
+    .replace(/\*\*([^*\n]+?)\*\*/g, (_, inhalt: string) => [...inhalt.normalize("NFC")].map(fett).join(""))
+    .replace(/\*\*/g, "");
+}
+
 export function fettUmlauteNormal(text: string): string {
   const basis = (c: number): string => {
     for (const [gross, klein] of [[0x1d5d4, 0x1d5ee], [0x1d608, 0x1d622], [0x1d400, 0x1d41a], [0x1d63c, 0x1d656]]) {
@@ -4290,7 +4304,7 @@ function normalizeLinkedin(
 
   return {
     theme: answers.theme,
-    post_text: postText,
+    post_text: sterneZuFett(postText),
     // Die Vorlage haengt am Asset, nicht am einzelnen Slide. Der Browser liest
     // sie beim Zeichnen und beim spaeteren Oeffnen des Entwurfs.
     chrome: {

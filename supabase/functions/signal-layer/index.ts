@@ -108,7 +108,7 @@ import {
   researchCompanyProfile,
   researchWikimediaLogo,
 } from "./company-profile.ts";
-import { fettUmlauteNormal,
+import { fettUmlauteNormal, sterneZuFett,
   ASSET_EDITED_HTML_LIMIT,
   ASSET_HANG_ERROR,
   ASSET_FIRST_BYTE_STALE_MS,
@@ -9103,7 +9103,7 @@ Deno.serve(async (req: Request) => {
         let roh: unknown = null;
         try { roh = JSON.parse(antwort.text.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { roh = null; }
         const ergebnis = kiChatErgebnis(roh, ziel);
-        ergebnis.caption = fettUmlauteNormal(ergebnis.caption);
+        ergebnis.caption = sterneZuFett(fettUmlauteNormal(ergebnis.caption));
         // Einstellungen der Person zeigt das System selbst, im genauen Wortlaut.
         let karte: Record<string, unknown> | null = null;
         if (ergebnis.zeige === "tone_of_voice") {
