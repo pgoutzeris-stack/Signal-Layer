@@ -1587,7 +1587,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-text{width:100%; height:100%; min-height:0; box-sizing:border-box; resize:none; border:0; outline:0; background:transparent; padding:28px 32px; font-weight:400;font-size:15.5px;line-height:1.65;font-family:inherit; color:#0f172a;}
 #as-overlay .as-ki-bildbox{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:28px; min-height:0; overflow:auto;}
 #as-overlay .as-ki-bildbox img{max-width:min(100%,560px); max-height:58vh; border-radius:10px; box-shadow:0 10px 30px rgba(15,23,42,.12); transition:filter .3s, opacity .3s;}
-#as-overlay .as-ki-bildbox.is-laeuft img{filter:blur(3px) saturate(.6); opacity:.6;}
+
 #as-overlay .as-ki-bildbox .as-ki-laeuft{display:flex; align-items:center; gap:10px; font-weight:600;font-size:13px;line-height:1;font-family:inherit; color:#206efb;}
 #as-overlay .as-ki-auftrag{max-width:560px; font-size:12.5px; line-height:1.5; color:#475569; white-space:pre-wrap; background:#fff; border-radius:12px; padding:12px 14px;}
 #as-overlay .as-ki-leiste{display:flex; align-items:center; gap:10px; padding:12px 20px; border-top:1px solid #edf2f7; background:#fff;}
@@ -1693,7 +1693,9 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-ki-bildrahmen img{max-width:min(100%,560px); max-height:58vh; border-radius:10px;}
 #as-overlay .as-ki-bildrahmen img.is-neu{animation:asKiNeu .7s cubic-bezier(.2,.8,.2,1) both;}
 @keyframes asKiNeu{from{opacity:0; transform:scale(.96); filter:blur(8px);} to{opacity:1; transform:none; filter:none;}}
-#as-overlay .as-ki-schimmer{position:absolute; inset:0; background:linear-gradient(110deg, transparent 25%, rgba(255,255,255,.55) 50%, transparent 75%); background-size:250% 100%; animation:asKiWelle 1.4s linear infinite;}
+#as-overlay .as-ki-schimmer{position:absolute; inset:0; background:linear-gradient(115deg, transparent 30%, rgba(255,255,255,.28) 45%, rgba(173,200,255,.32) 50%, rgba(255,255,255,.28) 55%, transparent 70%); background-size:300% 100%; animation:asKiWelle 3.6s cubic-bezier(.45,0,.55,1) infinite; mix-blend-mode:screen;}
+#as-overlay .as-ki-bildbox.is-laeuft .as-ki-bildrahmen img{animation:asKiAtmenBild 3.6s ease-in-out infinite;}
+@keyframes asKiAtmenBild{0%,100%{filter:blur(1px) saturate(.85); opacity:.78;} 50%{filter:blur(3px) saturate(.7); opacity:.62;}}
 #as-overlay .as-ki-bildbox .as-ki-laeuft{position:absolute; left:0; right:0; bottom:16px; margin:0 auto; width:max-content; transform:none; white-space:nowrap; justify-content:center; line-height:1; background:#fff; padding:9px 14px; border-radius:999px; box-shadow:0 6px 20px rgba(15,23,42,.15);}
 #as-overlay .as-ki-chip{animation:asKiWort .4s cubic-bezier(.2,.8,.2,1) both;}
 #as-overlay .as-ki-chip--regel{display:inline-flex; align-items:center; gap:7px; border-color:#e2e8f0; color:#475569;}
@@ -1760,7 +1762,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-hilfe-panel{display:grid; grid-template-rows:0fr; transition:grid-template-rows .3s ease, opacity .3s ease; opacity:0;}
 #as-overlay .as-hilfe-panel > div{overflow:hidden;}
 #as-overlay .as-hilfe-panel.is-offen{grid-template-rows:1fr; opacity:1; margin-top:8px;}
-#as-overlay .as-ki-gzeile{display:block; opacity:0; animation:asKiZeile .5s ease forwards;}
+#as-overlay .as-ki-gzeile{display:block; opacity:0; animation:asKiZeile .7s cubic-bezier(.2,.8,.2,1) forwards;}
 #as-overlay .as-ki-gedanke--fertig .as-ki-gzeile{opacity:1; animation:none;}
 #as-overlay .as-ki-gzeile--jetzt{color:#206efb; font-weight:600;}
 #as-overlay .as-ki-gedanke.is-aktiv .as-ki-gedanke-text{max-height:150px; overflow:hidden; -webkit-mask-image:linear-gradient(to bottom, transparent, #000 30%); mask-image:linear-gradient(to bottom, transparent, #000 30%); display:flex; flex-direction:column; justify-content:flex-end;}
@@ -5723,8 +5725,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (n.bild_auftrag) {
       // Gedankengang wie in modernen KI-Chats: offen und schimmernd, solange das
       // Visual entsteht; danach eingeklappt mit Dauer.
-      const zeilen = String(n.bild_auftrag).split("\n").filter((z) => z.trim());
-      const liste = `<div class="as-ki-gedanke-text">${zeilen.map((z, j) => `<span class="as-ki-gzeile" style="animation-delay:${(j * 0.9).toFixed(1)}s">${esc(z)}</span>`).join("")}${n.arbeitet ? '<span class="as-ki-gzeile as-ki-gzeile--jetzt" style="animation-delay:' + (zeilen.length * 0.9).toFixed(1) + 's">Visual wird erzeugt</span>' : ""}</div>`;
+      // Satz fuer Satz einblenden: Zeilen des Auftrags in einzelne Saetze zerlegen.
+      const zeilen = String(n.bild_auftrag).split("\n").filter((z) => z.trim())
+        .flatMap((z) => z.match(/[^.!?]+[.!?]+["“”]?|[^.!?]+$/g) || [z]).map((z) => z.trim()).filter(Boolean);
+      const liste = `<div class="as-ki-gedanke-text">${zeilen.map((z, j) => `<span class="as-ki-gzeile" style="animation-delay:${(j * 1.1).toFixed(1)}s">${esc(z)}</span>`).join("")}${n.arbeitet ? '<span class="as-ki-gzeile as-ki-gzeile--jetzt" style="animation-delay:' + (zeilen.length * 1.1).toFixed(1) + 's">Visual wird erzeugt</span>' : ""}</div>`;
       if (n.arbeitet) {
         return `<div class="as-ki-msg as-ki-msg--ki"><span class="as-ki-ava as-ki-ava--denkt"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
           <div class="as-ki-blase"><details class="as-ki-gedanke is-aktiv" open><summary><span class="as-ki-gedanke-titel">Denkt nach</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary>${liste}</details></div></div>`;
