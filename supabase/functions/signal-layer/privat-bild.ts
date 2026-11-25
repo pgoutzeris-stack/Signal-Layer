@@ -190,15 +190,27 @@ export function markenCheckPrompt(titel: string, text: string): { system: string
 }
 
 /** voll: ausfuehrliche Szene; leicht: nur Thema, Aussage, Marken; idee: ein Satz Bildidee. */
-export type BriefModus = "voll" | "leicht" | "idee" | "plakativ";
-export const BRIEF_MODI: BriefModus[] = ["voll", "leicht", "idee", "plakativ"];
+export type BriefModus = "voll" | "leicht" | "idee" | "plakativ" | "held";
+export const BRIEF_MODI: BriefModus[] = ["voll", "leicht", "idee", "plakativ", "held"];
 // Test 23.11.2026 mit Richards Padel-Post: voll, leicht und idee lieferten
 // dokumentarische Court-Szenen, plakativ eine Kampagnenidee wie in den
 // Vorschaubildern des Stils.
 export const BRIEF_STANDARD: BriefModus = "plakativ";
 
 export function privatBildBriefPrompt(stylePrompt: string, postText: string, titel = "", modus: BriefModus = BRIEF_STANDARD): { system: string; user: string } {
-  const motivRegel = modus === "plakativ"
+  // Bildsprache der freigegebenen Serienbilder (McRib in der Vitrine, endori im
+  // Rahmen, Capri-Sun vorher/nachher): das echte Produkt als riesiger Held,
+  // satte Markenfarben, eine einfache Metapher, kleine gezeichnete Akzente.
+  const motivRegel = modus === "held"
+    ? [
+      "Feld motiv: genau ein Satz, höchstens 22 Wörter.",
+      "Das echte Markenprodukt mit Originalverpackung ist der riesige Held des Bildes, nimmt mindestens ein Drittel der Fläche ein und steht im Vordergrund.",
+      "Eine einzige, sofort lesbare Metapher oder Inszenierung: zum Beispiel wie ein Exponat in einer Vitrine, auf einem Podest, im Bilderrahmen, als Vorher-nachher mit Riss in der Bildmitte, oder in einem überraschenden Größenverhältnis.",
+      "Satte, intensive Markenfarben mit starkem Kontrast zum Hintergrund. Erlaubt sind ein bis drei kleine, handgezeichnet wirkende Akzente wie Pfeil, Herz, Fragezeichen oder Ausrufezeichen.",
+      "Verboten: Laptop, Bildschirm, Smartphone, Webseite, Büroszene, Menschen am Schreibtisch, dokumentarische Szenen.",
+      "Nur WAS zu sehen ist; Licht und Kamera macht der Stil.",
+    ].join(" ")
+    : modus === "plakativ"
     ? [
       "Feld motiv: genau ein Satz, höchstens 25 Wörter, eine plakative Kampagnenidee.",
       "Gibt es eine Marke in marken_und_produkte, zeigt die Idee ihr erkennbares Produkt in einer überraschenden Handlung oder einem überraschenden Kontext. Nur ohne Marke: ein generisches Produkt oder Alltagsgegenstand, inszeniert wie ein wertvolles Objekt, oder ein klarer Vergleich zweier Zustände. Visueller Humor ist willkommen.",
