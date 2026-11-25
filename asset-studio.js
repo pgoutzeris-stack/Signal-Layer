@@ -1734,7 +1734,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-opt--aus{cursor:default; color:#94a3b8; display:flex; flex-direction:column; align-items:flex-start; gap:6px;}
 #as-overlay .as-opt-link{border:0; background:transparent; padding:0; color:#206efb; font:inherit; font-size:12px; font-weight:600; cursor:pointer; display:inline-flex; gap:6px; align-items:center;}
 #as-overlay .as-split2-prev--li{display:flex; flex-direction:column; min-height:0;}
-#as-overlay .as-linkedin-post--form{display:flex !important; flex-direction:column; height:auto; max-width:560px; width:100%; margin:0 auto; overflow:visible;}
+#as-overlay .as-linkedin-post--form{display:flex !important; flex-direction:column; height:auto; max-width:none; width:100%; margin:0; overflow:hidden;}
 #as-overlay .as-linkedin-post--form .as-linkedin-col{display:flex; flex-direction:column; border-right:0; order:1;}
 #as-overlay .as-linkedin-post--form > *{flex-shrink:0;}
 #as-overlay .as-linkedin-post--form .as-linkedin-caption{max-height:none; overflow:visible;}
@@ -1743,7 +1743,8 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-li-mehr:hover{color:#206efb; text-decoration:underline;}
 #as-overlay .as-linkedin-post--form .as-linkedin-actions{order:3;}
 #as-overlay .as-linkedin-post--form .as-stagearea{order:2; padding:0; background:transparent; min-height:0;}
-#as-overlay .as-linkedin-post--form .as-form-stilbild{max-width:none; border-radius:0; box-shadow:none;}
+#as-overlay .as-linkedin-post--form .as-form-stilbild{display:block; width:100%; max-width:none; height:auto; border-radius:0; box-shadow:none;}
+#as-overlay .as-linkedin-post--form .as-stagearea{display:block;}
 #as-overlay .as-split2-prev--li{overflow-y:auto;}
 #as-overlay .as-form-stilbild{width:100%; max-width:560px; aspect-ratio:1; object-fit:cover; border-radius:4px; box-shadow:0 1px 3px rgba(15,23,42,.08);}
 #as-overlay .as-free-wrap{margin-top:10px;}
@@ -3102,12 +3103,6 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         <header class="as-linkedin-head">${avatar}<span class="as-linkedin-byline"><strong>${esc(kopf.name || "")}</strong><small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span></header>
         <div class="as-linkedin-caption" data-captionhost="feed">${captionPreviewHtml(true)}</div>
         <div class="as-stagearea as-stagearea--linkedin">${privatStilBildHtml()}</div>
-        <footer class="as-linkedin-actions" aria-hidden="true">
-          <span class="as-linkedin-action"><i class="fa-regular fa-thumbs-up"></i>Gefällt mir</span>
-          <span class="as-linkedin-action"><i class="fa-regular fa-comment-dots"></i>Kommentieren</span>
-          <span class="as-linkedin-action"><i class="fa-solid fa-retweet"></i>Teilen</span>
-          <span class="as-linkedin-action"><i class="fa-regular fa-paper-plane"></i>Senden</span>
-        </footer>
       </article>
     </div>`;
   }
@@ -4425,7 +4420,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       if (res?.ich && typeof res.ich === "object") {
         state.ich = { name: String(res.ich.name || ""), avatar_url: String(res.ich.avatar_url || "") };
         // Der Entwurf kann schon stehen: Kopf mit eigenem Bild und Namen nachziehen.
-        if (state.step === "draft" && !state.busy && !state.oeffnet) render();
+        if ((state.step === "draft" && !state.busy && !state.oeffnet) || (state.step === "form" && !state.formWartet)) render();
       }
       state.vorbildVisual = /^data:image\//.test(String(res?.vorbild_visual || "")) ? String(res.vorbild_visual) : "";
       if (res?.mein_stil?.portraet || res?.mein_stil?.logo) {
