@@ -217,7 +217,9 @@ const FORM_LINKEDIN = [
   { key: "design", label: "Design", art: "design", options: [["roots-hell", "ROOTS Hell"]], when: (answers) => answers.profile !== "private" },
   // Privat: Bildstil des Visuals. LinkedIn Beitrag Privat ist gesetzt, andere
   // LinkedIn-Stile nur nach ausdruecklicher Bestaetigung.
-  { key: "bild_stil", label: "Bildstil", art: "bildstil", options: [["master-li-privat", "LinkedIn Beitrag Privat"]], when: (answers) => answers.profile === "private" },
+  // Bildstil: nur LinkedIn Beitrag Privat ist sinnvoll, daher keine eigene Frage;
+  // die Vorschau rechts zeigt den Stil.
+  { key: "bild_stil", label: "Bildstil", art: "bildstil", options: [["master-li-privat", "LinkedIn Beitrag Privat"]], when: () => false },
   { key: "asset_type", label: "Format", options: [["single", "Einzelbild"], ["carousel", "Carousel"]] },
   // Einzelbild: genau ein Layout. Carousel: entweder das Modell mischt die
   // Slide-Arten, oder der Nutzer waehlt sie selbst.
@@ -3591,6 +3593,17 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Ruhiger Platzhalter statt einer geratenen Kachel. */
   function platzhalterHtml() {
+    // Privat: die Vorschaubilder des Bildstils zeigen, wie das Visual aussehen wird.
+    if (!isMemo && state.answers.profile === "private") {
+      const stil = (state.bildStile || []).find((st) => st.id === (state.answers.bild_stil || BILDSTIL_START));
+      const bilder = (stil?.vorschau || []).slice(0, 4);
+      if (bilder.length) {
+        return `<div class="as-prev-stil" style="width:1080px;height:1350px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr 1fr;gap:24px;padding:48px;background:#fff;box-sizing:border-box">
+          <div style="grid-column:1/-1;font-weight:700;font-size:44px;color:#0f172a">${esc(stil.name)}</div>
+          ${bilder.map((src) => `<img src="${attr(src)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:18px">`).join("")}
+        </div>`;
+      }
+    }
     return `<div class="as-prev-empty">
       <i class="fa-solid fa-wand-magic-sparkles"></i>
       <b>Das Modell wählt das Layout</b>
