@@ -5144,7 +5144,10 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         answers: antworten,
         image_uploads: isMemo ? state.formImages : undefined,
       });
+      // Notbremse oder Ueberlast: der Server hat keinen Auftrag angelegt.
+      if (res && res.skipped) throw new Error(`Der Signal Layer ist gerade ausgelastet und nimmt keine neuen Entwürfe an. Bitte in ein paar Minuten erneut versuchen.${res.reason ? `\n---\n${res.reason}` : ""}`);
       const row = res && typeof res === "object" ? (res.asset || res) : {};
+      if (!row.id) throw new Error("Der Server hat keinen Entwurf angelegt. Bitte erneut versuchen.");
       if (state.cancelRequested) {
         // "Im Hintergrund" kam, bevor der Server die Kennung geliefert hatte:
         // jetzt nachholen, sonst fehlt die Meldung unten rechts.
