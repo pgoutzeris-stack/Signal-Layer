@@ -195,7 +195,8 @@ export const BRIEF_MODI: BriefModus[] = ["voll", "leicht", "idee", "plakativ", "
 // Test 23.11.2026 mit Richards Padel-Post: voll, leicht und idee lieferten
 // dokumentarische Court-Szenen, plakativ eine Kampagnenidee wie in den
 // Vorschaubildern des Stils.
-export const BRIEF_STANDARD: BriefModus = "plakativ";
+// 25.11.2026: held kam im Vergleich (Ikea, Lidl, Penny) den Serienbildern am naechsten.
+export const BRIEF_STANDARD: BriefModus = "held";
 
 export function privatBildBriefPrompt(stylePrompt: string, postText: string, titel = "", modus: BriefModus = BRIEF_STANDARD): { system: string; user: string } {
   // Bildsprache der freigegebenen Serienbilder (McRib in der Vitrine, endori im
@@ -206,7 +207,7 @@ export function privatBildBriefPrompt(stylePrompt: string, postText: string, tit
       "Feld motiv: genau ein Satz, höchstens 22 Wörter.",
       "Das echte Markenprodukt mit Originalverpackung ist der riesige Held des Bildes, nimmt mindestens ein Drittel der Fläche ein und steht im Vordergrund.",
       "Eine einzige, sofort lesbare Metapher oder Inszenierung: zum Beispiel wie ein Exponat in einer Vitrine, auf einem Podest, im Bilderrahmen, als Vorher-nachher mit Riss in der Bildmitte, oder in einem überraschenden Größenverhältnis.",
-      "Satte, intensive Markenfarben mit starkem Kontrast zum Hintergrund. Erlaubt sind ein bis drei kleine, handgezeichnet wirkende Akzente wie Pfeil, Herz, Fragezeichen oder Ausrufezeichen.",
+      "Satte, intensive Markenfarben mit starkem Kontrast zum Hintergrund: ein ruhiger, klar farbiger Hintergrund, gern in einer Markenfarbe oder einer Kontrastfarbe, statt einer belebten Umgebung. Helles, klares Licht mit deutlichen Schatten; keine warme Abendsonne als Standardstimmung. Erlaubt sind ein bis drei kleine, handgezeichnet wirkende Akzente wie Pfeil, Herz, Fragezeichen oder Ausrufezeichen.",
       "Verboten: Laptop, Bildschirm, Smartphone, Webseite, Büroszene, Menschen am Schreibtisch, dokumentarische Szenen.",
       "Nur WAS zu sehen ist; Licht und Kamera macht der Stil.",
     ].join(" ")
