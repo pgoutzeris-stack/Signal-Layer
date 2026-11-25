@@ -1371,9 +1371,28 @@ function text(value: unknown, max: number): string {
  * Begleittext: Absaetze bleiben Absaetze, das geschuetzte Leerzeichen vor %
  * bleibt stehen. text() wuerde beides zu einer Zeile machen.
  */
+/**
+ * Fette und kursive Unicode-Buchstaben (LinkedIn-Fett) mit nachgestellten
+ * Umlautpunkten (U+0308) werden zum normalen Umlaut: so verlangen es die
+ * Tone-of-Voice-Vorgaben, und LinkedIn zeigt die Punkte oft versetzt.
+ */
+export function fettUmlauteNormal(text: string): string {
+  const basis = (c: number): string => {
+    for (const [gross, klein] of [[0x1d5d4, 0x1d5ee], [0x1d608, 0x1d622], [0x1d400, 0x1d41a], [0x1d63c, 0x1d656]]) {
+      if (c >= gross && c < gross + 26) return String.fromCharCode(65 + c - gross);
+      if (c >= klein && c < klein + 26) return String.fromCharCode(97 + c - klein);
+    }
+    return "";
+  };
+  return String(text || "").replace(/([\u{1D400}-\u{1D7FF}])\u0308/gu, (treffer, zeichen) => {
+    const b = basis(zeichen.codePointAt(0) || 0);
+    return b ? `${b}\u0308`.normalize("NFC") : treffer;
+  });
+}
+
 function richText(value: unknown, max: number): string {
   return capMarkup(nbspPercent(
-    String(value ?? "")
+    fettUmlauteNormal(String(value ?? ""))
       .replace(/\s*—\s*/g, " ")
       .replace(/\s–\s/g, " ")
       .replace(/[^\S\n\u00a0]+/g, " ")

@@ -6191,7 +6191,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (art === "ohne") return [...text].map(fmtZurueck).join("").normalize("NFC");
     const roh = [...text].map(fmtZurueck).join("");
     if (fmtIst(text, art)) return roh.normalize("NFC");
-    return [...roh.normalize("NFD")].map((z) => fmtZeichen(z, art)).join("");
+    // Umlaute bleiben normale Buchstaben: LinkedIn setzt die Punkte sonst versetzt.
+    return [...roh.normalize("NFC")].map((z) => fmtZeichen(z, art)).join("");
   }
   function fmtZeilen(text, art) {
     const zeilen = text.split("\n");

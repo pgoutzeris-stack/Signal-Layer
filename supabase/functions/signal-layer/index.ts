@@ -108,7 +108,7 @@ import {
   researchCompanyProfile,
   researchWikimediaLogo,
 } from "./company-profile.ts";
-import {
+import { fettUmlauteNormal,
   ASSET_EDITED_HTML_LIMIT,
   ASSET_HANG_ERROR,
   ASSET_FIRST_BYTE_STALE_MS,
@@ -9103,6 +9103,7 @@ Deno.serve(async (req: Request) => {
         let roh: unknown = null;
         try { roh = JSON.parse(antwort.text.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { roh = null; }
         const ergebnis = kiChatErgebnis(roh, ziel);
+        ergebnis.caption = fettUmlauteNormal(ergebnis.caption);
         // Einstellungen der Person zeigt das System selbst, im genauen Wortlaut.
         let karte: Record<string, unknown> | null = null;
         if (ergebnis.zeige === "tone_of_voice") {
@@ -9252,7 +9253,7 @@ Deno.serve(async (req: Request) => {
         // Caption dauerhaft im Entwurf. Die erste Fassung bleibt fuer den KI-Editor erhalten.
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
         const scId = String(body.asset_id || "");
-        const text = String(body.post_text ?? "");
+        const text = fettUmlauteNormal(String(body.post_text ?? ""));
         if (text.length > KI_CAPTION_MAX) return errorResponse(origin, `Die Caption ist länger als ${KI_CAPTION_MAX} Zeichen.`, 413);
         const admin = getAdminClient();
         const { data: scAsset } = await admin.schema("signal_layer").from("generated_assets")

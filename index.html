@@ -2086,14 +2086,18 @@
   .modal-btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--line); }
 
   /* ---------- Toasts ---------- */
-  #toast-container { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 999999; }
+  /* Gleiches Design wie die ROOTS-Benachrichtigungen im Intranet. */
+  #toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 10px; z-index: 999999; width: min(380px, calc(100vw - 32px)); pointer-events: none; font-family: 'Circular Std', system-ui, -apple-system, sans-serif; }
   .toast {
-    background: var(--bg); border-left: 4px solid var(--brand); box-shadow: var(--shadow); padding: 12px 20px;
-    border-radius: 8px; display: flex; align-items: center; gap: 12px; min-width: 250px; color: var(--ink);
-    font-size: .9rem; transition: opacity .3s;
+    pointer-events: auto; display: flex; gap: 10px; align-items: center; width: 100%; box-sizing: border-box; padding: 14px 16px;
+    border-radius: 14px; border: 1px solid #e2e8f0; background: #fff; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+    color: var(--ink); font-size: .8rem; line-height: 1.45; transition: opacity .28s ease, transform .28s ease; animation: toastRein .28s ease both;
   }
-  .toast.error { border-color: var(--danger); }
-  .toast.success { border-color: var(--success); }
+  @keyframes toastRein { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+  .toast > i { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: .95rem; }
+  .toast.success > i { background: #ecfdf5; color: #15803d; }
+  .toast.error > i { background: #fef2f2; color: #dc2626; }
+  .toast > span { font-weight: 600; color: #0f172a; }
 
   @media (max-width: 720px) {
     .modal-overlay { padding: 0; }
@@ -2687,7 +2691,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261125-14';
+  import { initApp } from './app.js?v=20261125-15';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;
