@@ -7626,7 +7626,8 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     // Memo: Titel-, Beleg- und 100-Tage-Pruefung sind Befunde fuer die Kritik,
     // kein Abbruch. Nur ein Memo ohne tragende Struktur scheitert.
     const nachsichtig = (text: string): { payload: AssetPayload; befunde: string[] } | null => {
-      if (assetKind !== "memo") return null;
+      // LinkedIn auch: weiche Maengel wie ein fehlender Gegenstand auf der Folie
+      // werden zum Hinweis; harte (unbelegte Zahlen, kaputtes JSON) bleiben Fehler.
       const befunde: string[] = [];
       try {
         return { payload: normalizeAssetPayload(assetKind, text, assetAnswers, { ...assetContext, befunde }), befunde };
@@ -7738,7 +7739,7 @@ async function finishGeneratedAsset(assetId: string): Promise<void> {
     // Vertragsfehler: der Entwurf wird gegen das Referenzmemo gelesen und die
     // schwachen Felder neu geschrieben.
     const darfReparieren = !gespeichert && (payload
-      ? vertragsFehler.length > 0 || assetKind === "memo"
+      ? vertragsFehler.length > 0 || assetKind === "memo" || befundeErst.length > 0
       : assetMangelIsRepairable(mangel));
     const repairMs = darfReparieren && !pgNet ? assetRepairTimeoutMs(Date.now() - isolateStartedAt) : null;
     const reparaturPrompt = () => {

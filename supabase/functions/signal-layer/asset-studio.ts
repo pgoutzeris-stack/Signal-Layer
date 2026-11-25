@@ -4262,8 +4262,11 @@ function normalizeLinkedin(
     corpus,
     eigenerText ? "Slides" : "Beitrag oder Slides",
   );
-  requireCoverSubject(kept, context, carousel);
-  requirePrimaryLeadNumber(kept, context);
+  // Privat ersetzt das Visual die Textfolie: Pruefungen des Folientexts entfallen.
+  if (answers.profile !== "private") {
+    requireCoverSubject(kept, context, carousel);
+    requirePrimaryLeadNumber(kept, context);
+  }
   rejectRepeatedLeadNumbers(kept);
 
   return {
@@ -4298,10 +4301,13 @@ function requireCoverSubject(
   const sichtbar = [cover.title, cover.subtitle, cover.takeaway, cover.stat.label, ...cover.bullets]
     .filter(Boolean).join(" ");
   if (!coverMissesSubject(sichtbar, subject)) return;
-  throw new Error(
+  const meldung = (
     `Die ${carousel ? "erste Folie" : "Folie"} nennt den Gegenstand nicht: „${subject.worum}“ kommt im sichtbaren Text nicht vor `
-    + `(${sichtbar.slice(0, 160) || "leer"}). Der Leser muss in drei Sekunden erkennen, worum es geht - eine Zahl allein leistet das nicht.`,
+    + `(${sichtbar.slice(0, 160) || "leer"}). Der Leser muss in drei Sekunden erkennen, worum es geht - eine Zahl allein leistet das nicht.`
   );
+  // Im nachsichtigen Durchgang ein Hinweis statt Abbruch: der Entwurf entsteht.
+  if (context.befunde) { context.befunde.push(meldung); return; }
+  throw new Error(meldung);
 }
 
 /** Dieselbe Ziffer auf zwei Folien. post_text darf alle Zahlen noch einmal nennen. */
