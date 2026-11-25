@@ -1761,6 +1761,7 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-hilfe-panel.is-offen{grid-template-rows:1fr; opacity:1; margin-top:8px;}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
+#as-overlay.as-fs-open [data-ki-bild]{cursor:zoom-out;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
 #as-overlay .as-info-knopf{margin-left:auto; align-self:flex-start; width:26px; height:26px; border:0; border-radius:999px; background:transparent;
   color:#206efb; display:grid; place-items:center; font-size:16px; cursor:pointer; transition:transform .18s ease, background .18s ease;}
@@ -6858,6 +6859,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   function fsBtnHtml() {
     const open = overlay.classList.contains("as-fs-open");
+    // Privates Visual im Entwurf: Vollbild per Klick aufs Bild, kein eigener Knopf.
+    if (!open && !isMemo && state.step === "draft" && state.answers.profile === "private") return "";
     return `<button type="button" class="as-fs-btn" data-act="toggle-fs" aria-label="${open ? "Vollbild beenden" : "Vollbild"}"><i class="fa-solid fa-${open ? "compress" : "expand"}"></i></button>`;
   }
 
@@ -9457,8 +9460,9 @@ ${stages}${post}
       return;
     }
     const hit = event.target.closest("[data-act]");
+    // Klick aufs Visual: Vollbild statt Seitenleiste (die oeffnet das i).
     if (!hit && stageEl && event.target.closest("[data-ki-bild]")) {
-      oeffneBildInfo(modelByUid(stageEl.getAttribute("data-uid")));
+      toggleFullscreen();
       return;
     }
     // Ein leerer Bildplatz nimmt den Klick selbst: dort gibt es nur eines zu tun.
