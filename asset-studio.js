@@ -7716,13 +7716,8 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const post = isMemo ? "" : `
       <div class="as-group">
         <span>Caption</span>
-        <div class="as-post-wrap${state.postGross ? " is-gross" : ""}">
-          ${captionFormatLeiste()}
-          <textarea class="as-post" data-post aria-label="Caption">${esc(state.postText)}</textarea>
-          <button type="button" class="as-post-auf" data-act="post-gross"><i class="fa-solid fa-chevron-${state.postGross ? "up" : "down"}"></i>${state.postGross ? "Einklappen" : "Aufklappen"}</button>
-        </div>
         <span style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button type="button" class="as-btn as-btn--primary" data-act="ki-editor" data-ziel="caption"><i class="fa-solid fa-wand-magic-sparkles"></i>Mit KI bearbeiten</button>
+          <button type="button" class="as-btn as-btn--primary" data-act="ki-editor" data-ziel="caption"><i class="fa-solid fa-pen"></i>Caption bearbeiten</button>
           <button type="button" class="as-btn" data-act="copy-post"><i class="fa-regular fa-copy"></i>Kopieren</button>
         </span>
       </div>`;
@@ -9401,16 +9396,18 @@ ${stages}${post}
   }
 
   async function copyPost() {
-    const box = shell.querySelector("[data-post]");
-    if (!box) return;
-    state.postText = box.value;
+    const text = String(state.postText || "");
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(box.value);
+      await navigator.clipboard.writeText(text);
+      showSaveHint("Caption kopiert.");
     } catch (_) {
-      // Ohne Zwischenablage-Recht bleibt der alte Weg über die Auswahl.
-      box.focus();
-      box.select();
-      try { document.execCommand("copy"); } catch (__) { /* dann bleibt nur das Markieren */ }
+      // Ohne Zwischenablage-Recht ueber ein kurzes, unsichtbares Feld.
+      const feld = document.createElement("textarea");
+      feld.value = text; feld.style.position = "fixed"; feld.style.opacity = "0";
+      document.body.appendChild(feld); feld.select();
+      try { document.execCommand("copy"); showSaveHint("Caption kopiert."); } catch (__) { /* nichts weiter */ }
+      feld.remove();
     }
   }
 
