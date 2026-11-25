@@ -9343,7 +9343,9 @@ Deno.serve(async (req: Request) => {
         const stil = waehleBildStil(stile, gewuenscht);
         if (!stil) return errorResponse(origin, "Kein Bildstil verfügbar.", 500);
         const geminiKey = await getGeminiKey().catch(() => "");
-        const openaiKey = String((await getAdminClient().schema("shared").rpc("get_api_key", { p_key_name: "wissenshub_openai_api_key" })).data || "");
+        // Eigener Signal-Layer-Schluessel zuerst, sonst der des WissensHub.
+        const openaiKey = String((await getAdminClient().schema("shared").rpc("get_api_key", { p_key_name: "signal_layer_openai_api_key" })).data
+          || (await getAdminClient().schema("shared").rpc("get_api_key", { p_key_name: "wissenshub_openai_api_key" })).data || "");
         if (!geminiKey && !openaiKey) return errorResponse(origin, "Weder OpenAI- noch Gemini-Schlüssel im Vault.", 409);
         // Art Director: aus Beitrag und Stil ein kurzer Auftrag mit genau einer
         // Bildidee. Scheitert er, bleibt der Beitrag selbst der Auftrag.
