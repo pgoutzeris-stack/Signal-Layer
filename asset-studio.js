@@ -2346,6 +2346,8 @@ function hintergrundCss() {
 .as-lauf-balken span{display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#206efb,#7aa7ff); transition:width .6s ease; position:relative;}
 .as-lauf-balken span::after{content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent); animation:as-lauf-glanz 1.6s linear infinite;}
 @keyframes as-lauf-glanz{from{transform:translateX(-100%);} to{transform:translateX(100%);}}
+.as-lauf-ring{display:block; box-sizing:border-box; width:16px; height:16px; border-radius:50%; border:2px solid rgba(32,110,251,.2); border-top-color:#206efb; animation:as-lauf-dreh .8s linear infinite;}
+@keyframes as-lauf-dreh{to{transform:rotate(360deg);}}
 .as-lauf-zeit{font-size:.74rem; color:#64748b; font-variant-numeric:tabular-nums;}
 .as-lauf-zu{position:absolute; top:10px; right:10px; border:0; background:transparent; color:#94a3b8; width:22px; height:22px; border-radius:6px; cursor:pointer; display:grid; place-items:center;}
 .as-lauf-zu:hover{background:#f1f5f9; color:#0f172a;}
@@ -2397,7 +2399,7 @@ function hintergrundZeichnen(lauf) {
   const art = lauf.kind === "memo" ? "Executive Memo" : "LinkedIn-Asset";
   let titel = `${art} läuft`;
   let text = HINTERGRUND_ABSCHNITTE[lauf.stage] || "Der Entwurf entsteht";
-  let icon = "fa-solid fa-spinner fa-spin";
+  let icon = "as-lauf-ring";
   let pct = 0;
   let zeit = "";
   if (lauf.status === "done") {
@@ -2418,6 +2420,18 @@ function hintergrundZeichnen(lauf) {
     pct = assetEtaProgressPct(verstrichen, rest);
     zeit = assetEtaLabel(rest);
   }
+  // Nur Text, Balken und Zeit aktualisieren, solange der Zustand gleich bleibt:
+  // ein Neuzeichnen startete den Ladekreis jede Sekunde von vorn.
+  if (lauf.el.dataset.zustand === lauf.status && lauf.el.querySelector(".as-lauf-titel")) {
+    lauf.el.querySelector(".as-lauf-titel").textContent = titel;
+    lauf.el.querySelector(".as-lauf-text").textContent = text;
+    const balken = lauf.el.querySelector(".as-lauf-balken");
+    if (balken) { balken.setAttribute("aria-valuenow", String(pct)); balken.firstElementChild.style.width = `${Math.max(4, pct)}%`; }
+    const uhr = lauf.el.querySelector(".as-lauf-zeit");
+    if (uhr) uhr.textContent = zeit;
+    return;
+  }
+  lauf.el.dataset.zustand = lauf.status;
   lauf.el.className = `as-lauf${lauf.status === "done" ? " is-fertig" : lauf.status === "error" ? " is-fehler" : ""}`;
   lauf.el.innerHTML = `<span class="as-lauf-ico"><i class="${icon}"></i></span>
     <span class="as-lauf-body">
