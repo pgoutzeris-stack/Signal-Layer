@@ -4823,8 +4823,10 @@ test("Gescheiterte Memos kommen markiert in die Bearbeitung", () => {
 
 test("Lauf im Hintergrund: angeheftete Meldung mit Balken, Klick oeffnet die Live-Ansicht", () => {
   assert.match(studio, /function hintergrundMerken\(\{ id, kind, answers, optionen, start, forecastMs, stage, log \}\)/);
-  assert.match(studio, /document\.getElementById\("toast-container"\)/);
-  assert.match(studio, /lauf\.el\.className = `toast as-lauf/);
+  // Eigenes Dock im ROOTS-Benachrichtigungsdesign, Stapel ab zwei Laeufen.
+  assert.match(studio, /dock\.className = "as-lauf-dock"/);
+  assert.match(studio, /lauf\.el\.className = `as-lauf/);
+  assert.match(studio, /roots-notification-toast/);
   assert.match(studio, /openAssetStudio\(\{ \.\.\.optionen, host, assetId: lauf\.id, showDrafts: false \}\)/);
   assert.match(studio, /lauf\.abfrage = setInterval\(\(\) => \{ void hintergrundAbfragen\(lauf\); \}, 4_000\);/);
   assert.match(studio, /if \(assetId\) hintergrundLoesen\(assetId\);/);
