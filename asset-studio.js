@@ -769,6 +769,7 @@ const CHROME_CSS = `
 #as-overlay .as-railtitle{font-size:11px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; color:var(--muted,#475569);}
 #as-overlay .as-steps{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px;}
 #as-overlay [data-gesperrt]{opacity:.42; cursor:not-allowed !important; filter:grayscale(1);}
+#as-overlay .as-steps li.is-gesperrt{opacity:.4; cursor:default;}
 #as-overlay .as-steps li{
   display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:12px;
   font-size:14px; color:var(--muted,#475569); border:1px solid transparent;
@@ -3086,6 +3087,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const own = order.indexOf(key);
     let stateName = own === current ? "active" : own < current ? "done" : "todo";
     if (key === "form" && state.formTab === "drafts" && state.step === "form") stateName = "todo";
+    // Ein fertiger Entwurf ist offen: zurueck in den Fragebogen fuehrt nirgends hin.
+    const fragebogenGesperrt = key === "form" && state.assetId && state.step !== "form" && !state.busy;
+    if (fragebogenGesperrt) return `<li data-state="todo" class="is-gesperrt" aria-disabled="true"><b>${index}</b>${esc(label)}</li>`;
     const erreichbar = key === "form"
       || (key === "draft" && (state.payload || state.busy))
       || (key === "edit" && state.payload && !state.busy);
