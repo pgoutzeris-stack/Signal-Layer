@@ -2300,39 +2300,76 @@ function hintergrundCss() {
   if (document.getElementById("as-lauf-css")) return;
   const stil = document.createElement("style");
   stil.id = "as-lauf-css";
-  // Gleiche Form wie die Toasts der App, dazu Balken und Restzeit.
+  // Design der ROOTS-Benachrichtigungen (roots-user-bridge), dazu Fortschritt.
+  // Mehrere Laeufe liegen als Stapel und faechern beim Drueberfahren auf.
   stil.textContent = `
-.as-lauf-dock{position:fixed; right:20px; bottom:20px; z-index:999999; display:flex; flex-direction:column; gap:10px;}
-#toast-container .as-lauf, .as-lauf-dock .as-lauf{cursor:pointer; flex-direction:column; align-items:stretch; gap:8px; width:320px; min-width:250px;}
-.as-lauf{background:var(--bg,#fff); border:0 !important; box-shadow:var(--shadow,0 10px 30px rgba(15,23,42,.14)); padding:12px 16px;
-  border-radius:8px; display:flex; color:var(--ink,#0f172a); font-size:.9rem; font-family:inherit; transition:transform .18s ease, box-shadow .18s ease; animation:as-lauf-rein .28s cubic-bezier(.2,.8,.2,1);}
-.as-lauf:hover{transform:translateY(-2px); box-shadow:0 14px 34px rgba(15,23,42,.18);}
-.as-lauf-kopf{display:flex; align-items:center; gap:10px;}
-.as-lauf-kopf > i{color:var(--brand,#206efb);}
-.as-lauf.is-fertig .as-lauf-kopf > i{color:var(--success,#16a34a);}
-.as-lauf.is-fehler .as-lauf-kopf > i{color:var(--danger,#dc2626);}
-.as-lauf-titel{flex:1; font-weight:700;}
-.as-lauf-zu{border:0; background:transparent; color:#94a3b8; width:22px; height:22px; border-radius:6px; cursor:pointer; display:grid; place-items:center;}
+.as-lauf-dock{position:fixed; right:24px; bottom:24px; z-index:2147483646; width:min(380px, calc(100vw - 32px)); display:flex; flex-direction:column; font-family:'Circular Std', system-ui, -apple-system, sans-serif;}
+.as-lauf{position:relative; display:flex; gap:10px; align-items:flex-start; width:100%; box-sizing:border-box; padding:14px 16px; border-radius:14px; border:1px solid #e2e8f0; background:#fff;
+  box-shadow:0 12px 32px rgba(15,23,42,.16); cursor:pointer; text-align:left; color:#0f172a; margin-top:10px;
+  transition:transform .32s cubic-bezier(.2,.8,.2,1), opacity .32s ease, margin .32s cubic-bezier(.2,.8,.2,1), max-height .35s cubic-bezier(.2,.8,.2,1), padding .35s ease, box-shadow .2s ease; animation:as-lauf-rein .32s cubic-bezier(.2,.8,.2,1);}
+.as-lauf:hover{box-shadow:0 16px 38px rgba(15,23,42,.2);}
+@keyframes as-lauf-rein{from{opacity:0; transform:translateX(20px);} to{opacity:1; transform:none;}}
+.as-lauf{max-height:220px; overflow:visible;}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:not(:last-child){max-height:10px; padding-top:0; padding-bottom:0; margin-top:0; margin-bottom:-2px; overflow:hidden; transform:scaleX(.95); box-shadow:0 4px 12px rgba(15,23,42,.08); pointer-events:none;}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:not(:last-child) > *{opacity:0;}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:nth-last-child(2){transform:scaleX(.96);}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:nth-last-child(3){transform:scaleX(.92);}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:nth-last-child(n+4){display:none;}
+.as-lauf > *{transition:opacity .2s ease;}
+.as-lauf-ico{width:34px; height:34px; border-radius:10px; background:#eff6ff; color:#206efb; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+.as-lauf.is-fertig .as-lauf-ico{background:#dcfce7; color:#16a34a;}
+.as-lauf.is-fehler .as-lauf-ico{background:#fee2e2; color:#dc2626;}
+.as-lauf-body{min-width:0; flex:1; display:flex; flex-direction:column; gap:6px;}
+.as-lauf-titel{font-size:.88rem; font-weight:700; color:#0f172a; padding-right:22px;}
+.as-lauf-text{font-size:.8rem; color:#475569; line-height:1.45;}
+.as-lauf-balken{height:4px; border-radius:99px; background:#eef2f7; overflow:hidden;}
+.as-lauf-balken span{display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#206efb,#7aa7ff); transition:width .6s ease; position:relative;}
+.as-lauf-balken span::after{content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent); animation:as-lauf-glanz 1.6s linear infinite;}
+@keyframes as-lauf-glanz{from{transform:translateX(-100%);} to{transform:translateX(100%);}}
+.as-lauf-zeit{font-size:.74rem; color:#64748b; font-variant-numeric:tabular-nums;}
+.as-lauf-zu{position:absolute; top:10px; right:10px; border:0; background:transparent; color:#94a3b8; width:22px; height:22px; border-radius:6px; cursor:pointer; display:grid; place-items:center;}
 .as-lauf-zu:hover{background:#f1f5f9; color:#0f172a;}
-.as-lauf-text{font-size:.82rem; color:var(--muted,#475569);}
-.as-lauf-balken{height:6px; border-radius:99px; background:#e2e8f0; overflow:hidden;}
-.as-lauf-balken span{display:block; height:100%; border-radius:inherit; background:var(--brand,#206efb); transition:width .6s ease;}
-.as-lauf-zeit{font-size:.78rem; color:var(--muted,#475569); font-variant-numeric:tabular-nums;}
-@keyframes as-lauf-rein{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;}}
-@media (prefers-reduced-motion:reduce){.as-lauf{animation:none; transition:none;}}`;
+.as-lauf-zahl{position:absolute; top:-8px; left:-8px; min-width:22px; height:22px; padding:0 6px; border-radius:99px; background:#206efb; color:#fff; font-size:11px; font-weight:700; display:grid; place-items:center; box-shadow:0 2px 6px rgba(32,110,251,.4); transition:opacity .2s;}
+.as-lauf-dock:hover .as-lauf-zahl{opacity:0;}
+@media (max-width:900px){.as-lauf-dock{right:12px; left:12px; bottom:12px; width:auto;}}
+@media (prefers-reduced-motion:reduce){.as-lauf, .as-lauf-balken span::after{animation:none; transition:none;}}`;
   document.head.appendChild(stil);
 }
 
 function hintergrundContainer() {
-  const app = document.getElementById("toast-container");
-  if (app) return app;
   let dock = document.querySelector(".as-lauf-dock");
   if (!dock) {
     dock = document.createElement("div");
     dock.className = "as-lauf-dock";
+    dock.setAttribute("aria-live", "polite");
     document.body.appendChild(dock);
   }
   return dock;
+}
+
+/** Stapel: ab zwei Laeufen uebereinander, Zaehler am obersten. */
+function hintergrundStapel() {
+  const dock = document.querySelector(".as-lauf-dock");
+  if (!dock) return;
+  const karten = [...dock.querySelectorAll(".as-lauf")];
+  dock.classList.toggle("is-stapel", karten.length > 1);
+  dock.querySelectorAll(".as-lauf-zahl").forEach((z) => z.remove());
+  if (karten.length > 1) karten[karten.length - 1].insertAdjacentHTML("beforeend", `<span class="as-lauf-zahl">${karten.length}</span>`);
+}
+
+// Die ROOTS-Benachrichtigung zum selben Entwurf uebernimmt die Pill: kein zweiter Toast.
+if (typeof window !== "undefined" && !window.__asLaufToastHook) {
+  window.__asLaufToastHook = true;
+  window.addEventListener("roots-notification-toast", (ereignis) => {
+    const n = ereignis.detail || {};
+    const id = String(n.meta?.asset_id || "");
+    if (n.type !== "signal_layer_asset" || !id) return;
+    const lauf = hintergrundLaeufe.get(id);
+    if (!lauf) return;
+    ereignis.preventDefault();
+    lauf.status = n.meta?.status === "error" ? "error" : "done";
+    hintergrundZeichnen(lauf);
+  });
 }
 
 function hintergrundZeichnen(lauf) {
@@ -2361,12 +2398,16 @@ function hintergrundZeichnen(lauf) {
     pct = assetEtaProgressPct(verstrichen, rest);
     zeit = assetEtaLabel(rest);
   }
-  lauf.el.className = `toast as-lauf${lauf.status === "done" ? " is-fertig" : lauf.status === "error" ? " is-fehler" : ""}`;
-  lauf.el.innerHTML = `<div class="as-lauf-kopf"><i class="${icon}"></i><span class="as-lauf-titel">${esc(titel)}</span>
-      <button type="button" class="as-lauf-zu" data-lauf-zu aria-label="Meldung schließen"><i class="fa-solid fa-xmark"></i></button></div>
-    <span class="as-lauf-text">${esc(text)}</span>
-    ${lauf.status === "running" ? `<div class="as-lauf-balken" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
-    <span class="as-lauf-zeit">${esc(zeit)}</span>` : ""}`;
+  lauf.el.className = `as-lauf${lauf.status === "done" ? " is-fertig" : lauf.status === "error" ? " is-fehler" : ""}`;
+  lauf.el.innerHTML = `<span class="as-lauf-ico"><i class="${icon}"></i></span>
+    <span class="as-lauf-body">
+      <span class="as-lauf-titel">${esc(titel)}</span>
+      <span class="as-lauf-text">${esc(text)}</span>
+      ${lauf.status === "running" ? `<span class="as-lauf-balken" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${Math.max(4, pct)}%"></span></span>
+      <span class="as-lauf-zeit">${esc(zeit)}</span>` : ""}
+    </span>
+    <button type="button" class="as-lauf-zu" data-lauf-zu aria-label="Meldung schließen"><i class="fa-solid fa-xmark"></i></button>`;
+  hintergrundStapel();
 }
 
 async function hintergrundAbfragen(lauf) {
@@ -2394,6 +2435,7 @@ function hintergrundLoesen(id) {
   clearInterval(lauf.takt);
   lauf.el.remove();
   hintergrundLaeufe.delete(lauf.id);
+  hintergrundStapel();
 }
 
 /**
