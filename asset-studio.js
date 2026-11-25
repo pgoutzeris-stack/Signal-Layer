@@ -2340,17 +2340,26 @@ function hintergrundCss() {
 .as-lauf:hover{box-shadow:0 16px 38px rgba(15,23,42,.2);}
 @keyframes as-lauf-rein{from{opacity:0; transform:translateX(20px);} to{opacity:1; transform:none;}}
 .as-lauf{max-height:220px; overflow:visible;}
-.as-lauf-dock.is-stapel:not(:hover) .as-lauf:not(:last-child){max-height:10px; padding-top:0; padding-bottom:0; margin-top:0; margin-bottom:-2px; overflow:hidden; transform:scaleX(.95); box-shadow:0 4px 12px rgba(15,23,42,.08); pointer-events:none;}
-.as-lauf-dock.is-stapel:not(:hover) .as-lauf:not(:last-child) > *{opacity:0;}
-.as-lauf-dock.is-stapel:not(:hover) .as-lauf:nth-last-child(2){transform:scaleX(.96);}
-.as-lauf-dock.is-stapel:not(:hover) .as-lauf:nth-last-child(3){transform:scaleX(.92);}
-.as-lauf-dock.is-stapel:not(:hover) .as-lauf:nth-last-child(n+4){display:none;}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:not(:last-of-type){max-height:16px; padding-top:0; padding-bottom:0; margin-top:0; margin-bottom:-6px; overflow:hidden; border-radius:14px 14px 0 0; border-bottom:0; background:#f8fafc; box-shadow:0 -2px 10px rgba(15,23,42,.08); pointer-events:none;}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:not(:last-of-type) > *{opacity:0;}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:nth-last-of-type(2){transform:scaleX(.95); background:#f1f5f9;}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:nth-last-of-type(3){transform:scaleX(.9); background:#e8eef6;}
+.as-lauf-knoepfe{position:absolute; top:8px; right:8px; display:flex; gap:2px;}
+.as-lauf-knoepfe .as-lauf-zu{position:static;}
+.as-lauf-mini{display:none; align-self:flex-end; align-items:center; gap:8px; height:44px; padding:0 14px 0 12px; border:1px solid #e2e8f0; border-radius:999px; background:#fff; box-shadow:0 12px 32px rgba(15,23,42,.16); cursor:pointer; font:inherit; font-size:.85rem; color:#0f172a; animation:as-lauf-rein .3s cubic-bezier(.2,.8,.2,1);}
+.as-lauf-mini b{font-weight:700;}
+.as-lauf-mini.is-fertig{color:#15803d;}
+.as-lauf-mini:hover{box-shadow:0 16px 38px rgba(15,23,42,.2);}
+.as-lauf-dock.is-mini .as-lauf{display:none;}
+.as-lauf-dock.is-mini .as-lauf-mini{display:inline-flex;}
+.as-lauf-dock.is-mini{width:auto;}
+.as-lauf-dock.is-stapel:not(:hover) .as-lauf:nth-last-of-type(n+4){display:none;}
 .as-lauf > *{transition:opacity .2s ease;}
 .as-lauf-ico{width:34px; height:34px; border-radius:10px; background:#eff6ff; color:#206efb; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
 .as-lauf.is-fertig .as-lauf-ico{background:#dcfce7; color:#16a34a;}
 .as-lauf.is-fehler .as-lauf-ico{background:#fee2e2; color:#dc2626;}
 .as-lauf-body{min-width:0; flex:1; display:flex; flex-direction:column; gap:6px;}
-.as-lauf-titel{font-size:.88rem; font-weight:700; color:#0f172a; padding-right:22px;}
+.as-lauf-titel{font-size:.88rem; font-weight:700; color:#0f172a; padding-right:48px;}
 .as-lauf-text{font-size:.8rem; color:#475569; line-height:1.45;}
 .as-lauf-balken{height:4px; border-radius:99px; background:#eef2f7; overflow:hidden;}
 .as-lauf-balken span{display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#206efb,#7aa7ff); transition:width .6s ease; position:relative;}
@@ -2379,14 +2388,37 @@ function hintergrundContainer() {
   return dock;
 }
 
+/** Minimiert: alle Laeufe als kleiner runder Knopf mit Ring und Zahl. */
+function hintergrundMinimieren(an) {
+  const dock = document.querySelector(".as-lauf-dock");
+  if (!dock) return;
+  dock.classList.toggle("is-mini", an);
+  hintergrundStapel();
+}
+
 /** Stapel: ab zwei Laeufen uebereinander, Zaehler am obersten. */
 function hintergrundStapel() {
   const dock = document.querySelector(".as-lauf-dock");
   if (!dock) return;
   const karten = [...dock.querySelectorAll(".as-lauf")];
+  let mini = dock.querySelector(".as-lauf-mini");
+  if (!mini) {
+    mini = document.createElement("button");
+    mini.type = "button";
+    mini.className = "as-lauf-mini";
+    mini.setAttribute("aria-label", "Laufende Entwürfe anzeigen");
+    mini.addEventListener("click", () => hintergrundMinimieren(false));
+    dock.appendChild(mini);
+  }
+  const laufen = karten.filter((k) => !k.classList.contains("is-fertig") && !k.classList.contains("is-fehler")).length;
+  mini.innerHTML = `<span class="${laufen ? "as-lauf-ring" : "fa-solid fa-circle-check"}"></span><b>${karten.length}</b>`;
+  mini.classList.toggle("is-fertig", !laufen);
+  if (!karten.length) dock.classList.remove("is-mini");
   dock.classList.toggle("is-stapel", karten.length > 1);
   dock.querySelectorAll(".as-lauf-zahl").forEach((z) => z.remove());
   if (karten.length > 1) karten[karten.length - 1].insertAdjacentHTML("beforeend", `<span class="as-lauf-zahl">${karten.length}</span>`);
+  // Mini-Knopf immer zuletzt, damit die letzte Karte vorne bleibt.
+  dock.appendChild(mini);
 }
 
 // Die ROOTS-Benachrichtigung zum selben Entwurf uebernimmt die Pill: kein zweiter Toast.
@@ -2450,7 +2482,7 @@ function hintergrundZeichnen(lauf) {
       ${lauf.status === "running" ? `<span class="as-lauf-balken" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${Math.max(4, pct)}%"></span></span>
       <span class="as-lauf-zeit">${esc(zeit)}</span>` : ""}
     </span>
-    <button type="button" class="as-lauf-zu" data-lauf-zu aria-label="Meldung schließen"><i class="fa-solid fa-xmark"></i></button>`;
+    <span class="as-lauf-knoepfe"><button type="button" class="as-lauf-zu" data-lauf-min aria-label="Minimieren"><i class="fa-solid fa-minus"></i></button><button type="button" class="as-lauf-zu" data-lauf-zu aria-label="Meldung schließen"><i class="fa-solid fa-xmark"></i></button></span>`;
   hintergrundStapel();
 }
 
@@ -2499,6 +2531,7 @@ function hintergrundMerken({ id, kind, answers, optionen, start, forecastMs, sta
     start: start || Date.now(), forecastMs, stage: stage || "lesen", log: log || [],
   };
   el.addEventListener("click", (event) => {
+    if (event.target.closest("[data-lauf-min]")) { hintergrundMinimieren(true); return; }
     if (event.target.closest("[data-lauf-zu]")) {
       hintergrundLoesen(lauf.id);
       return;
