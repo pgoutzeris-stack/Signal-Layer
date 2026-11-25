@@ -9190,7 +9190,9 @@ Deno.serve(async (req: Request) => {
         if (action === "versionen_liste") {
           const ergebnis: Record<string, unknown> = {};
           for (const art of ["caption", "bild"]) {
-            let { data: liste } = await tabelle().select(zusammenfassung).eq("asset_id", vId).eq("art", art).neq("inhalt", "").order("created_at", { ascending: true });
+            // Caption-Texte sind klein und kommen gleich mit: Vor/Zurueck ohne Wartezeit.
+            const felder = art === "caption" ? `${zusammenfassung}, inhalt` : zusammenfassung;
+            let { data: liste } = await tabelle().select(felder).eq("asset_id", vId).eq("art", art).neq("inhalt", "").order("created_at", { ascending: true });
             if (!liste?.length) {
               // Erster Aufruf: der heutige Stand wird Version 1.
               const inhalt = art === "caption"
@@ -9199,7 +9201,7 @@ Deno.serve(async (req: Request) => {
               if (inhalt) {
                 await tabelle().insert({ asset_id: vId, art, inhalt, quelle: "original", erstellt_von: auth.userId,
                   meta: art === "bild" ? { stil_id: String(vSlides[0]?.ki_bild_stil || ""), bild_meta: vSlides[0]?.ki_bild_meta || {} } : {} });
-                ({ data: liste } = await tabelle().select(zusammenfassung).eq("asset_id", vId).eq("art", art).neq("inhalt", "").order("created_at", { ascending: true }));
+                ({ data: liste } = await tabelle().select(felder).eq("asset_id", vId).eq("art", art).neq("inhalt", "").order("created_at", { ascending: true }));
               }
             }
             ergebnis[art] = { liste: liste || [], aktiv: aktiv[art] || (liste?.length ? liste[liste.length - 1].id : null) };
@@ -9223,6 +9225,16 @@ Deno.serve(async (req: Request) => {
           if (vFehler) return errorResponse(origin, vFehler.message, 500);
           await setzeAktiv(art, String(zeile.id));
           return corsResponse(origin, { ...zeile, neu: true });
+        }
+        if (body.nur_lesen === true) {
+          // Vorladen fuer schnelles Vor/Zurueck: nichts anwenden.
+          const { data: vl } = await tabelle().select("id, art, inhalt, meta").eq("id", String(body.version_id || "")).eq("asset_id", vId).maybeSingle();
+          if (!vl) return errorResponse(origin, "Version nicht gefunden", 404);
+          const vm = (vl.meta || {}) as Record<string, unknown>;
+          if (vl.art === "caption") return corsResponse(origin, { art: "caption", id: vl.id, inhalt: vl.inhalt });
+          const { stile: vs } = await bildStile();
+          const st = waehleBildStil(vs, String(vm.stil_id || ""));
+          return corsResponse(origin, { art: "bild", id: vl.id, html: privatBildLayout(String(vl.inhalt), st?.aspect || "1:1", st?.name || ""), meta: vm.bild_meta || {}, stil_id: st?.id || "" });
         }
         // version_laden: Stand anwenden, alle anderen Staende bleiben erhalten.
         const { data: version } = await tabelle().select("id, art, inhalt, meta").eq("id", String(body.version_id || "")).eq("asset_id", vId).maybeSingle();

@@ -5797,6 +5797,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
         state.ki.versionen[art] = { liste, index: liste.length ? (index >= 0 ? index : liste.length - 1) : 0 };
       }
       state.ki.captionBasis = state.ki.entwurf;
+      kiNachbarnVorladen("bild");
     } catch { /* ohne Versionen weiter */ }
     if (state.ki?.offen) kiEditorZeichne();
   }
@@ -5811,7 +5812,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       const aktuell = state.ki.versionRunde === runde;
       const pos = v.liste.findIndex((e) => e.id === zeile.id);
       if (pos >= 0) { if (aktuell) v.index = pos; }
-      else { v.liste.push({ id: zeile.id, quelle: zeile.quelle || felder.quelle, notiz: zeile.notiz || felder.notiz || "", created_at: zeile.created_at || new Date().toISOString() }); if (aktuell) v.index = v.liste.length - 1; }
+      else { v.liste.push({ id: zeile.id, quelle: zeile.quelle || felder.quelle, notiz: zeile.notiz || felder.notiz || "", created_at: zeile.created_at || new Date().toISOString(), ...(art === "caption" ? { inhalt: felder.inhalt } : {}) }); if (aktuell) v.index = v.liste.length - 1; }
       if (art === "caption") state.ki.captionBasis = felder.inhalt;
       if (state.ki?.offen) kiEditorZeichne();
     } catch { /* Stand bleibt trotzdem im Entwurf gespeichert */ }
@@ -6014,34 +6015,79 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     if (ziel2) await kiVersionAnwenden(ziel, ziel2.id);
   }
 
+  /** Stand lokal anwenden (Caption-Text oder Visual-HTML). */
+  function kiStandLokal(art, stand) {
+    const k = state.ki;
+    if (art === "caption") {
+      k.entwurf = String(stand.inhalt || "");
+      k.captionBasis = k.entwurf;
+      state.postText = k.entwurf;
+      state.toneScore = null;
+      k.hinweis = "Gespeichert";
+      return;
+    }
+    const slide = state.slides[0];
+    if (!slide) return;
+    slide.ki_layout = String(stand.html || "");
+    slide.ki_bild_meta = stand.meta || {};
+    slide.ki_bild_stil = stand.stil_id || "";
+    slide.variant = "KI";
+    slide.html = {};
+    k.neuesVisual = true;
+    k.hinweisVisual = "Gespeichert";
+  }
+
+  /** Nachbarn vorladen, damit der naechste Klick sofort sitzt. */
+  function kiNachbarnVorladen(art) {
+    const k = state.ki;
+    const v = k.versionen[art];
+    k.vcache = k.vcache || {};
+    for (const pos of [v.index - 1, v.index + 1]) {
+      const e = v.liste[pos];
+      if (!e || k.vcache[e.id] || (art === "caption" && e.inhalt != null)) continue;
+      k.vcache[e.id] = "laedt";
+      void api("version_laden", { asset_id: state.assetId, version_id: e.id, nur_lesen: true })
+        .then((res) => { k.vcache[e.id] = res; })
+        .catch(() => { delete k.vcache[e.id]; });
+    }
+  }
+
   async function kiVersionAnwenden(art, id) {
     const k = state.ki;
     const v = k.versionen[art];
-    v.laedt = true; v.offen = false; v.frage = null;
+    k.vcache = k.vcache || {};
+    v.offen = false; v.frage = null;
+    if (art === "caption" && k.entwurf !== k.captionBasis) await kiHandarbeitSichern();
+    // Der letzte Klick zaehlt; spaetere Antworten aelterer Klicks werden verworfen.
+    const sprung = (k.sprung = (k.sprung || 0) + 1);
+    k.versionRunde = (k.versionRunde || 0) + 1;
+    const pos = v.liste.findIndex((e) => e.id === id);
+    if (pos >= 0) v.index = pos;
+    const eintrag = v.liste[pos] || {};
+    const bekannt = art === "caption" && eintrag.inhalt != null ? { inhalt: eintrag.inhalt } : (typeof k.vcache[id] === "object" ? k.vcache[id] : null);
+    if (bekannt) {
+      kiStandLokal(art, bekannt);
+      if (art === "bild") render();
+      kiEditorZeichne();
+      k.neuesVisual = false;
+      // Auf dem Server festhalten, ohne zu warten.
+      // Nacheinander speichern: so gewinnt auf dem Server immer der letzte Klick.
+      k.serverKette = (k.serverKette || Promise.resolve()).then(() => sprung === k.sprung
+        ? api("version_laden", { asset_id: state.assetId, version_id: id }).catch(() => {
+          if (art === "caption") k.hinweis = "Nicht gespeichert"; else k.hinweisVisual = "Nicht gespeichert";
+          kiEditorZeichne();
+        })
+        : null);
+      kiNachbarnVorladen(art);
+      return;
+    }
+    v.laedt = true;
     kiEditorZeichne();
-    // Erst Handarbeit sichern, dann springen; sonst ueberholt die Sicherung den Sprung.
-    if (art === "caption") await kiHandarbeitSichern();
-    state.ki.versionRunde = (state.ki.versionRunde || 0) + 1;
     try {
       const res = await api("version_laden", { asset_id: state.assetId, version_id: id });
-      const pos = v.liste.findIndex((e) => e.id === id);
-      if (pos >= 0) v.index = pos;
-      if (art === "caption") {
-        k.entwurf = String(res.inhalt || "");
-        k.captionBasis = k.entwurf;
-        state.postText = k.entwurf;
-        state.toneScore = null;
-        k.hinweis = "Gespeichert";
-      } else if (state.slides[0]) {
-        const slide = state.slides[0];
-        slide.ki_layout = String(res.html || "");
-        slide.ki_bild_meta = res.meta || {};
-        slide.ki_bild_stil = res.stil_id || "";
-        slide.variant = "KI";
-        slide.html = {};
-        k.neuesVisual = true;
-        k.hinweisVisual = "Gespeichert";
-      }
+      if (sprung !== k.sprung) return;
+      k.vcache[id] = res;
+      kiStandLokal(art, res);
       render();
     } catch (err) {
       const text = err && err.message ? fehlerKlartext(String(err.message)) : "Stand konnte nicht geladen werden";
@@ -6050,7 +6096,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     v.laedt = false;
     kiEditorZeichne();
     k.neuesVisual = false;
+    kiNachbarnVorladen(art);
   }
+
 
   /** Nach jedem neuen Visual: als Version merken. */
   function kiVisualVersionMerken(notiz = "", quelle = "ki") {
