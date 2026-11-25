@@ -1743,6 +1743,18 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-linkedin-post--form .as-form-stilbild{max-width:none; border-radius:0; box-shadow:none;}
 #as-overlay .as-split2-prev--li{overflow-y:auto;}
 #as-overlay .as-form-stilbild{width:100%; max-width:560px; aspect-ratio:1; object-fit:cover; border-radius:4px; box-shadow:0 1px 3px rgba(15,23,42,.08);}
+#as-overlay .as-free-wrap{margin-top:10px;}
+#as-overlay .as-free-wrap .as-post{min-height:220px !important; max-height:none; resize:vertical !important;}
+#as-overlay .as-hilfe{margin-top:8px;}
+#as-overlay .as-hilfe-knopf{display:inline-flex; align-items:center; gap:8px; border:0; background:#f1f5f9; color:#475569; border-radius:999px; padding:7px 12px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; animation:asKiWort .35s ease both; transition:background .15s;}
+#as-overlay .as-hilfe-knopf:hover{background:#e8eef6;}
+#as-overlay .as-hilfe-knopf.is-warn{background:#fff7ed; color:#9a3412;}
+#as-overlay .as-hilfe-zahl{font-weight:700;}
+#as-overlay .as-hilfe-pfeil{font-size:10px; transition:transform .25s ease;}
+#as-overlay .as-hilfe-knopf[aria-expanded="true"] .as-hilfe-pfeil{transform:rotate(180deg);}
+#as-overlay .as-hilfe-panel{display:grid; grid-template-rows:0fr; transition:grid-template-rows .3s ease, opacity .3s ease; opacity:0;}
+#as-overlay .as-hilfe-panel > div{overflow:hidden;}
+#as-overlay .as-hilfe-panel.is-offen{grid-template-rows:1fr; opacity:1; margin-top:8px;}
 #as-overlay .as-ki-knopf{color:#206efb;}
 #as-overlay [data-ki-bild]{cursor:zoom-in;}
 #as-overlay .as-stagearea-wrap{position:relative; min-width:0; min-height:0; display:grid;}
@@ -4727,24 +4739,31 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
 
   /** Was LinkedIn vom Text erwartet: Hooklaenge, Limits, was der Beleg hergibt.
    *  Steht unter dem Feld, das es betrifft, und rechnet beim Tippen mit. */
-  function schreibhilfeHtml(key) {
-    const hinweise = feldHinweise(key, state.answers[key], {
-      lane: isMemo ? "sales" : "marketing",
-      carousel: !isMemo && state.answers.asset_type === "carousel",
-    });
+  /** Hilfe und Guardrails erst, wenn Text da ist; eingeklappt mit Zaehler. */
+  function hilfeInnenHtml(key) {
+    const wert = String(state.answers[key] || "");
+    if (!wert.trim()) return "";
+    const hinweise = feldHinweise(key, wert, { lane: isMemo ? "sales" : "marketing", carousel: !isMemo && state.answers.asset_type === "carousel" });
     if (!hinweise.length) return "";
-    return `<div data-guide="${attr(key)}">${guideMarkup(hinweise, esc)}</div>`;
+    const warn = hinweise.filter((h) => h.ton === "warn").length;
+    const offen = Boolean(state.hilfeOffen?.[key]);
+    return `<button type="button" class="as-hilfe-knopf${warn ? " is-warn" : ""}" data-act="hilfe-toggle" data-key="${attr(key)}" aria-expanded="${offen}">
+        <i class="fa-solid ${warn ? "fa-triangle-exclamation" : "fa-shield-halved"}"></i>ROOTS-Guardrails und Schreibhilfe
+        <span class="as-hilfe-zahl">${warn ? `${warn} offen` : `${hinweise.length} ok`}</span><i class="fa-solid fa-chevron-down as-hilfe-pfeil"></i></button>
+      <div class="as-hilfe-panel${offen ? " is-offen" : ""}"><div>${guideMarkup(hinweise, esc)}</div></div>`;
+  }
+
+  function schreibhilfeHtml(key) {
+    return `<div class="as-hilfe" data-guide="${attr(key)}">${hilfeInnenHtml(key)}</div>`;
   }
 
   /** Beim Tippen nur die Hilfe erneuern: ein Neuzeichnen wuerde den Fokus und
    *  die Schreibmarke im Feld verlieren. */
   function aktualisiereSchreibhilfe(key) {
     const host = shell.querySelector(`[data-guide="${key}"]`);
-    if (host) host.innerHTML = guideMarkup(feldHinweise(key, state.answers[key], {
-      lane: isMemo ? "sales" : "marketing",
-      carousel: !isMemo && state.answers.asset_type === "carousel",
-    }), esc);
+    if (host) host.innerHTML = hilfeInnenHtml(key);
   }
+
 
   /** Der Kern einer Frage: Optionen, Freitext und Sonderrenderer. */
   function frageKoerper(q) {
@@ -4779,7 +4798,9 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const free = q.free && state.answers[q.key] === q.free.on
       ? (Number(q.free.rows) === 1
         ? `<input class="as-free" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}" value="${esc(state.answers[q.free.key] || "")}">`
-        : `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}">${esc(state.answers[q.free.key] || "")}</textarea>`)
+        : q.key === "caption"
+          ? `<div class="as-post-wrap as-free-wrap">${captionFormatLeiste("data-fmt-free")}<textarea class="as-post as-free" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}">${esc(state.answers[q.free.key] || "")}</textarea></div>`
+          : `<textarea class="as-free" rows="${q.free.rows}" data-free="${attr(q.free.key)}" aria-label="${attr(q.label)}" placeholder="${attr(q.free.platzhalter || "")}">${esc(state.answers[q.free.key] || "")}</textarea>`)
         + schreibhilfeHtml(q.free.key)
       : "";
     const warnung = q.key === "caption" && state.answers.caption === "ai_tone" && state.toneGeladen && !state.toneOfVoice
@@ -9331,6 +9352,13 @@ ${stages}${post}
       applyCropMode(modeBtn.getAttribute("data-crop-mode"));
       return;
     }
+    const fmtFrei = event.target.closest("[data-fmt-free]");
+    if (fmtFrei) {
+      const feld = shell.querySelector('[data-free="caption_text"]');
+      captionFormatieren(feld, fmtFrei.getAttribute("data-fmt-free"));
+      if (feld) { state.answers.caption_text = feld.value; zeichneCaption(); aktualisiereSchreibhilfe("caption_text"); }
+      return;
+    }
     const fmtKnopf = event.target.closest("[data-fmt]");
     if (fmtKnopf) {
       if (state.nurLesen) return;
@@ -9450,6 +9478,13 @@ ${stages}${post}
       state.answers.bild_stil = id;
       state.bildStilFrage = null;
       zeichneForm();
+      return;
+    }
+    if (act === "hilfe-toggle") {
+      const key = hit.getAttribute("data-key");
+      state.hilfeOffen = { ...(state.hilfeOffen || {}), [key]: !state.hilfeOffen?.[key] };
+      hit.setAttribute("aria-expanded", String(state.hilfeOffen[key]));
+      hit.nextElementSibling?.classList.toggle("is-offen", state.hilfeOffen[key]);
       return;
     }
     if (act === "caption-info") { oeffneCaptionInfo(); return; }
