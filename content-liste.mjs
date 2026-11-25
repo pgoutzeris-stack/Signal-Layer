@@ -274,7 +274,7 @@ function personenFuellen(root) {
 
 function contentAnsichtBauen(root) {
   root.innerHTML = `<nav class="signal-toolbar" aria-label="Content filtern">
-      <span class="signal-toolbar-label"><i class="fa-solid fa-pen-nib"></i> Content <span class="track-count cl-zahl">0</span></span>
+      <span class="cl-zahl" hidden></span>
       <div class="signal-toolbar-controls">
         <select class="signal-toolbar-select" id="cl-lane" data-cl="lane" aria-label="Bereich filtern"><option value="all">Marketing und Sales</option><option value="marketing">Marketing</option><option value="sales">Sales</option></select>
         <select class="signal-toolbar-select" id="cl-kind" data-cl="kind" aria-label="Art filtern"><option value="all">Alle Arten</option><option value="linkedin">LinkedIn</option><option value="memo">Executive Memo</option></select>

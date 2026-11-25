@@ -655,6 +655,7 @@
   .signal-toolbar { position: relative; z-index: 20; overflow: visible; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 1rem; padding: .6rem; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 92%, var(--surface)); box-shadow: var(--shadow-dash); }
   .signal-toolbar-label { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-size: .78rem; font-weight: 700; white-space: nowrap; }
   .signal-toolbar-label i { color: var(--brand); }
+  body.view-contents #manual-signal-btn { display: none; }
   .signal-toolbar-controls { min-width: 0; display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: nowrap; }
   .signal-toolbar-controls > * { flex: 0 0 auto; }
   .signal-toolbar-select { position: absolute !important; width: 1px !important; height: 1px !important; opacity: 0 !important; pointer-events: none !important; }
@@ -2271,7 +2272,6 @@
 
         <section class="app-view" id="view-results">
         <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
-          <span class="signal-toolbar-label"><i class="fa-solid fa-broadcast-tower"></i> Signal Layer</span>
           <div class="signal-toolbar-controls">
             <select class="signal-toolbar-select" id="signal-article-type-filter" aria-label="Artikeltyp filtern">
               <option value="all">Alle Artikeltypen</option>
@@ -2324,7 +2324,6 @@
         <section class="app-view" id="view-archive">
           <div class="view-header"><div><h2>Archiv <span class="track-count" id="archive-count">0</span></h2></div></div>
           <nav class="signal-toolbar" aria-label="Archiv sortieren und filtern">
-            <span class="signal-toolbar-label"><i class="fa-solid fa-broadcast-tower"></i> Signal Layer</span>
             <div class="signal-toolbar-controls">
               <select class="signal-toolbar-select" id="archive-article-type-filter" aria-label="Artikeltyp filtern"><option value="all">Alle Artikeltypen</option></select>
               <select class="signal-toolbar-select" id="archive-source-filter" aria-label="Quelle filtern"><option value="all">Alle Quellen</option></select>
@@ -2344,7 +2343,6 @@
         <section class="app-view" id="view-simple-archive">
           <div class="view-header"><div><h2>Archiv <span class="track-count" id="simple-archive-count">0</span></h2></div></div>
           <nav class="signal-toolbar" aria-label="Archiv sortieren und filtern">
-            <span class="signal-toolbar-label"><i class="fa-solid fa-broadcast-tower"></i> Signal Layer</span>
             <div class="signal-toolbar-controls">
               <select class="signal-toolbar-select" id="simple-archive-reason-filter" aria-label="Grund filtern"><option value="all">Alle Gründe</option></select>
               <select class="signal-toolbar-select" id="simple-archive-source-filter" aria-label="Quelle filtern"><option value="all">Alle Quellen</option></select>
@@ -2361,7 +2359,6 @@
         <!-- Einfacher Modus: Ergebnisse -->
         <section class="app-view" id="view-simple-results">
           <nav class="signal-toolbar" aria-label="Signale sortieren und filtern">
-            <span class="signal-toolbar-label"><i class="fa-solid fa-broadcast-tower"></i> Signal Layer</span>
             <div class="signal-toolbar-controls">
               <select class="signal-toolbar-select" id="simple-topic-filter" aria-label="Thema filtern">
                 <option value="all">Alle Themen</option>
@@ -2691,7 +2688,7 @@ try {
 </script>
 <script type="module">
 import { SB_URL, SB_ANON } from './config.js';
-  import { initApp } from './app.js?v=20261125-18';
+  import { initApp } from './app.js?v=20261125-19';
 
 const { createClient } = window.supabase;
 const signalLayerEmbeddedAuth = window.parent !== window;

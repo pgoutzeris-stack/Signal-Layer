@@ -786,7 +786,6 @@ export function initPerformanceDashboard({ client, callApi, toast, openSettingsP
       // rechts, alles in einer Hoehe. Zahlen und Namen stehen im Titel des
       // jeweiligen Knopfs, nicht als zweite Zeile daneben.
       const barHtml = `<div class="pi-bar">
-          <h2><i class="fa-solid fa-chart-line"></i>Performance</h2>
           <div class="pi-bar-filters">
             <div class="pi-seg" role="group" aria-label="Zeitraum">${[7, 30, 90, 365].map((days) => `<button type="button" data-dashboard-period="${days}" class="${days === preferences.period_days ? "is-active" : ""}" aria-pressed="${days === preferences.period_days}">${days === 365 ? "12 M" : `${days} T`}</button>`).join("")}</div>
             ${segmentHtml("lane", preferences.filters.lane || "all", [["all", "Alle"], ["marketing", "Marketing"], ["sales", "Sales"]], "Bahn")}

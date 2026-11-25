@@ -8,16 +8,16 @@ import { deriveSimpleHeaderState, simpleProgressCounts, simpleRunErrorPresentati
 import { advancedVersionLabel, simpleVersionDateLabel } from "./simple-view-state.mjs?v=20261013-5";
 import { ROOTS_PARENT_ORIGINS, externalUrlFromValue, hasExternalSource, parentOriginCandidates } from "./external-links.mjs?v=20260824-0305";
 import { paywallPillHtml } from "./paywall-pill.mjs?v=20260930-1";
-import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261125-18";
+import { activateSimpleMode, deactivateSimpleMode, initSimpleMode, renderSimpleSettings, showSimpleView } from "./simple-mode.js?v=20261125-19";
 import { articleDisplayTitle, articleOriginalTitle } from "./article-title.mjs?v=20260930-1";
 // Das Asset-Studio legt sich als eigenes Overlay über das Artikel-Popup und
 // bekommt alles Nötige übergeben, damit es keine App-Interna anfassen muss.
-import { openAssetStudio, closeAssetStudio, laufendeEntwuerfeWiederherstellen } from "./asset-studio.js?v=20261125-18";
-import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261125-18";
-import { openManualSignal } from "./manual-signal.js?v=20261125-18";
-import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261125-18";
+import { openAssetStudio, closeAssetStudio, laufendeEntwuerfeWiederherstellen } from "./asset-studio.js?v=20261125-19";
+import { fehlerKlartext } from "./fehler-klartext.mjs?v=20261125-19";
+import { openManualSignal } from "./manual-signal.js?v=20261125-19";
+import { initPerformanceDashboard } from "./dashboard-insights.js?v=20261125-19";
 import { paintArticleAuthors, paintAssetAuthors } from "./asset-authors.mjs?v=20260830-1705";
-import { beiSignalFilter, initContentListe, signalPasst, zeigeContent } from "./content-liste.mjs?v=20261125-18";
+import { beiSignalFilter, initContentListe, signalPasst, zeigeContent } from "./content-liste.mjs?v=20261125-19";
 
 let sb = null;
 let sources = [];
@@ -2121,6 +2121,7 @@ function switchAppView(view) {
   activeAppView = view;
   const simple = document.body.classList.contains("mode-simple");
   els.appNav.querySelectorAll("[data-app-view]").forEach((button) => button.classList.toggle("active", button.dataset.appView === view));
+  document.body.classList.toggle("view-contents", view === "contents");
   const activeId = view === "contents" ? "view-contents" : simple ? `view-simple-${view}` : `view-${view}`;
   els.appViews.forEach((section) => section.classList.toggle("show", section.id === activeId));
   if (view === "contents") {
