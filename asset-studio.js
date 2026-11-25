@@ -2277,6 +2277,23 @@ let openInstance = null;
  *  gleich aussehen und trotzdem unabhaengig voneinander leben. */
 export const ASSET_CHROME_CSS = CHROME_CSS;
 
+/** Nach dem Laden der App: laufende eigene Entwuerfe wieder unten rechts anheften. */
+export async function laufendeEntwuerfeWiederherstellen(optionen = {}) {
+  if (typeof optionen.callApi !== "function") return;
+  try {
+    const res = await optionen.callApi("laufende_assets", {});
+    for (const row of Array.isArray(res?.assets) ? res.assets : []) {
+      if (!row?.id || hintergrundLaeufe.has(String(row.id))) continue;
+      const start = Date.parse(String(row.created_at || ""));
+      hintergrundMerken({
+        id: row.id, kind: row.kind === "memo" ? "memo" : "linkedin", answers: row.answers || {},
+        optionen: { ...optionen, kind: row.kind === "memo" ? "memo" : "linkedin", articleId: row.article_id, signal: {} },
+        start: Number.isFinite(start) ? start : Date.now(), forecastMs: Number(row.forecast_ms) || 0, stage: row.stage || "lesen", log: [],
+      });
+    }
+  } catch { /* ohne Pills weiter */ }
+}
+
 export function closeAssetStudio() {
   if (openInstance) openInstance.close();
 }

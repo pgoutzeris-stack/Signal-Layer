@@ -9021,6 +9021,17 @@ Deno.serve(async (req: Request) => {
 
       // Bildstil fuer das Bild privater LinkedIn-Assets. Die Stile kommen aus
       // dem Image-Generation-Tool, Vorschau sind dessen Serienbilder.
+      case "laufende_assets": {
+        // Eigene Entwuerfe, die gerade laufen: nach dem Neuladen wieder als Pill zeigen.
+        if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
+        const { data: laufend } = await getAdminClient().schema("signal_layer").from("generated_assets")
+          .select("id, kind, answers, stage, created_at, forecast_ms, article_id")
+          .eq("created_by", auth.userId).eq("status", "running")
+          .gte("created_at", new Date(Date.now() - 30 * 60_000).toISOString())
+          .order("created_at", { ascending: true }).limit(8);
+        return corsResponse(origin, { assets: laufend || [] });
+      }
+
       case "tone_beispiel": {
         // Beispiel-Caption fuer die Vorschau im Fragebogen: der staerkste eigene Post.
         if (!auth?.userId) return errorResponse(origin, "Nicht angemeldet", 401);
