@@ -83,6 +83,7 @@ export function kiSchrankeAnzeige(id: unknown) {
 export const KI_CHAT_SCHEMA = {
   type: "OBJECT",
   properties: {
+    gedanken: { type: "STRING" },
     status: { type: "STRING", enum: ["vorschlag", "rueckfrage", "abgelehnt", "info"] },
     antwort: { type: "STRING" },
     caption: { type: "STRING" },
@@ -91,7 +92,7 @@ export const KI_CHAT_SCHEMA = {
     zeige: { type: "STRING", enum: ["keine", "tone_of_voice", "bildstil", "regeln"] },
     regel: { type: "STRING", enum: ["keine", "thema", "fakten", "personen", "vertraulichkeit", "stimme", "format", "visual", "sicherheit"] },
   },
-  required: ["status", "antwort", "caption", "bild_modus", "bild_auftrag", "zeige", "regel"],
+  required: ["gedanken", "status", "antwort", "caption", "bild_modus", "bild_auftrag", "zeige", "regel"],
 };
 
 export type KiKontext = {
@@ -128,6 +129,7 @@ export function kiChatPrompt(k: KiKontext): { system: string; prompt: string } {
         "Die Motividee bleibt eine plakative Kampagnenidee mit einem dominanten Blickfang, sofort verständlich, mit erkennbarem Markenprodukt, wenn das Signal eine Marke hergibt.",
       ].join(" "),
     "ÄNDERN NUR AUF AUFTRAG: Ändere Caption oder Visual nur, wenn der Nutzer ausdrücklich eine Änderung verlangt (ändern, kürzen, ersetzen, hinzufügen, mehr davon im Bild). Fragen, Bitten um Erklärung, Kontext, Hintergrund, Quellen oder Details aus dem Artikel beantwortest du in antwort mit Inhalt aus ARTIKEL und SIGNAL, ohne etwas zu ändern (status info, caption und bild_auftrag leer). Ist unklar, ob der Nutzer eine Änderung oder eine Auskunft will, frag kurz nach (status rueckfrage). Ein neues Visual kostet Geld; im Zweifel nachfragen.",
+    "gedanken: zuerst ausfüllen. Dein tatsächlicher Denkweg zu dieser Nachricht in drei bis sechs kurzen Sätzen, Präsens, erste Person: was der Nutzer will, was am aktuellen Stand stört oder bleibt, welche Regel greift, wofür du dich entscheidest und warum. Konkret auf diese Nachricht bezogen, keine Wiederholung des Bildauftrags oder der Caption, keine Floskeln.",
     "antwort: bei Änderungen ein bis zwei Sätze im Perfekt, die das Ergebnis beschreiben, als wäre die Änderung schon umgesetzt („Ich habe die Startampel größer gemacht und den Hintergrund beruhigt.“). Keine Planung („ich entferne“, „ich werde“), keine Aufzählung von Optionen, keine Regelbegründung, außer eine Bitte wurde eingeschränkt. Bei Auskünften so ausführlich wie nötig, höchstens sechs Sätze. Nie die ganze Caption in antwort wiederholen.",
     "regel: Lehnst du etwas ganz oder teilweise wegen einer REGEL ab oder schränkst es ein, nenne die Regel (thema, fakten, personen, vertraulichkeit, stimme, format, visual, sicherheit); fragt der Nutzer, warum du etwas nicht darfst, ebenso. Sonst keine. Das System zeigt die Regel dann offen als ROOTS-Guardrail; sag in antwort klar, dass es eine ROOTS-Regel ist.",
     "Antworte nur mit JSON.",
@@ -173,7 +175,7 @@ export function kiChatPrompt(k: KiKontext): { system: string; prompt: string } {
 
 
 /** Antwort des Modells pruefen und kappen. */
-export function kiChatErgebnis(roh: unknown, ziel: KiZiel): { status: string; antwort: string; caption: string; bild_modus: string; bild_auftrag: string; zeige: string; regel: string } {
+export function kiChatErgebnis(roh: unknown, ziel: KiZiel): { gedanken: string; status: string; antwort: string; caption: string; bild_modus: string; bild_auftrag: string; zeige: string; regel: string } {
   const r = (roh && typeof roh === "object" ? roh : {}) as Record<string, unknown>;
   const status = ["vorschlag", "rueckfrage", "abgelehnt", "info"].includes(String(r.status)) ? String(r.status) : "rueckfrage";
   // Manche Modelle packen die Caption in einen Codeblock.
@@ -185,7 +187,8 @@ export function kiChatErgebnis(roh: unknown, ziel: KiZiel): { status: string; an
     || (status === "abgelehnt" ? "Dabei kann ich nicht helfen. Ich bearbeite nur Caption und Bild dieses Beitrags." : "");
   const zeige = ["tone_of_voice", "bildstil", "regeln"].includes(String(r.zeige)) ? String(r.zeige) : "";
   const regel = KI_SCHRANKEN_ANZEIGE.some((x) => x.id === r.regel) ? String(r.regel) : "";
-  return { status: status === "vorschlag" && !caption && !bildAuftrag ? (zeige ? "info" : "rueckfrage") : status, antwort, caption, bild_modus: bildModus, bild_auftrag: bildAuftrag, zeige, regel };
+  const gedanken = String(r.gedanken || "").trim().replace(/\s[—–]\s/g, ". ").slice(0, 1200);
+  return { gedanken, status: status === "vorschlag" && !caption && !bildAuftrag ? (zeige ? "info" : "rueckfrage") : status, antwort, caption, bild_modus: bildModus, bild_auftrag: bildAuftrag, zeige, regel };
 }
 
 /** Verdichten: der lange Verlauf wird zu einer Zusammenfassung, die als erste Nachricht stehen bleibt. */

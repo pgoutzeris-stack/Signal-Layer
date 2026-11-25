@@ -9131,7 +9131,7 @@ Deno.serve(async (req: Request) => {
         const jetzt = new Date().toISOString();
         const neuerVerlauf = [...verlauf,
           { rolle: "nutzer", ziel, text: nachricht, zeit: jetzt },
-          { rolle: "ki", ziel, text: [ergebnis.antwort, ergebnis.caption ? `[Caption-Vorschlag]\n${ergebnis.caption}` : "", ergebnis.bild_auftrag ? `[Bildauftrag ${ergebnis.bild_modus}]\n${ergebnis.bild_auftrag}` : ""].filter(Boolean).join("\n\n"), status: ergebnis.status, zeit: jetzt },
+          { rolle: "ki", ziel, text: [ergebnis.antwort, ergebnis.caption ? `[Caption-Vorschlag]\n${ergebnis.caption}` : "", ergebnis.bild_auftrag ? `[Bildauftrag ${ergebnis.bild_modus}]\n${ergebnis.bild_auftrag}` : ""].filter(Boolean).join("\n\n"), status: ergebnis.status, gedanken: ergebnis.gedanken, zeit: jetzt },
         ].slice(-60);
         // Betriebsprobe (Cron-Secret mit probe) schreibt keinen Verlauf.
         if (!(isScheduled && body.probe === true)) {

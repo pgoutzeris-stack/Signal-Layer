@@ -5759,14 +5759,14 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       // Gedankengang wie in modernen KI-Chats: offen und schimmernd, solange das
       // Visual entsteht; danach eingeklappt mit Dauer.
       // Satz fuer Satz einblenden: Zeilen des Auftrags in einzelne Saetze zerlegen.
-      const zeilen = String(n.bild_auftrag).split("\n").filter((z) => z.trim())
+      const zeilen = String(n.gedanken || "").split("\n").filter((z) => z.trim())
         .flatMap((z) => z.match(/[^.!?]+[.!?]+["“”]?|[^.!?]+$/g) || [z]).map((z) => z.trim()).filter(Boolean);
       const liste = `<div class="as-ki-gedanke-text">${zeilen.map((z, j) => `<span class="as-ki-gzeile" style="animation-delay:${(j * 1.1).toFixed(1)}s">${esc(z)}</span>`).join("")}${n.arbeitet ? '<span class="as-ki-gzeile as-ki-gzeile--jetzt" style="animation-delay:' + (zeilen.length * 1.1).toFixed(1) + 's">Visual wird erzeugt</span>' : ""}</div>`;
       if (n.arbeitet) {
         return `<div class="as-ki-msg as-ki-msg--ki"><span class="as-ki-ava as-ki-ava--denkt"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
-          <div class="as-ki-blase"><details class="as-ki-gedanke is-aktiv" open><summary><span class="as-ki-gedanke-titel">Denkt nach</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary>${liste}</details></div></div>`;
+          <div class="as-ki-blase"><details class="as-ki-gedanke is-aktiv"><summary><span class="as-ki-gedanke-titel">Denkt nach</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary>${liste}</details></div></div>`;
       }
-      const gedanke = `<details class="as-ki-gedanke as-ki-gedanke--fertig"><summary><span class="as-ki-gedanke-titel">Gedankengang${n.dauer ? ` · ${n.dauer} s` : ""}</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary>${liste}</details>`;
+      const gedanke = !zeilen.length ? "" : `<details class="as-ki-gedanke as-ki-gedanke--fertig"><summary><span class="as-ki-gedanke-titel">Gedankengang${n.dauer ? ` · ${n.dauer} s` : ""}</span><i class="fa-solid fa-chevron-right as-ki-gedanke-pfeil"></i></summary>${liste}</details>`;
       const antwort = n.alt ? esc(n.text) : kiWoerter(n.text);
       return `<div class="as-ki-msg as-ki-msg--ki${alt}"><span class="as-ki-ava"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
         <div class="as-ki-blase">${gedanke}${antwort}<div class="as-ki-aenderung"><i class="fa-solid fa-image"></i>${n.bild_modus === "anpassen" ? "Visual angepasst" : "Neues Visual"}${n.version ? ` · Version ${n.version}` : ""}</div></div></div>`;
@@ -6169,7 +6169,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     kiEditorZeichne();
     try {
       const res = await api("ki_chat", { asset_id: state.assetId, ziel, nachricht, modell: k.modell, caption: k.entwurf });
-      const eintrag = { rolle: "ki", ziel, status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null, guardrail: res?.guardrail || null, regeln: Array.isArray(res?.regeln) ? res.regeln : null };
+      const eintrag = { rolle: "ki", ziel, gedanken: String(res?.gedanken || ""), status: res?.status || "", text: String(res?.antwort || ""), caption: res?.caption || "", bild_auftrag: res?.bild_auftrag || "", bild_modus: res?.bild_modus || "", karte: res?.karte || null, guardrail: res?.guardrail || null, regeln: Array.isArray(res?.regeln) ? res.regeln : null };
       if (res?.stats) k.stats = res.stats;
       // Caption-Vorschlaege landen direkt im Editor, mit Version und Autosave.
       if (eintrag.caption) eintrag.version = kiCaptionSetzen(eintrag.caption, nachricht);
