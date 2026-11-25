@@ -1766,7 +1766,9 @@ body.as-asset-fullscreen .review-track-popover{visibility:hidden!important; poin
 #as-overlay .as-info-knopf:hover, #as-overlay .as-info-knopf:focus-visible{transform:scale(1.15); background:#eff6ff; outline:none;}
 #as-overlay .as-knopfgruppe{margin-left:auto; align-self:flex-start; display:inline-flex; gap:4px;}
 #as-overlay .as-knopfgruppe .as-info-knopf{margin:0;}
-#as-overlay .as-knopfgruppe--bild{position:absolute; top:12px; right:12px; z-index:3; padding:3px; border-radius:999px; background:#fff; box-shadow:0 2px 8px rgba(15,23,42,.1);}
+#as-overlay .as-knopfgruppe--bild{position:absolute; top:12px; right:12px; z-index:3;}
+#as-overlay .as-knopfgruppe--bild .as-info-knopf, #as-overlay .as-knopfgruppe--bild .as-info-knopf:hover{background:transparent; filter:drop-shadow(0 1px 2px rgba(255,255,255,.9));}
+#as-overlay .as-linkedin-avatar--ini{display:grid; place-items:center; background:#206efb; color:#fff; font-weight:700; font-size:15px;}
 #as-overlay .as-bildinfo-score{display:flex; align-items:baseline; gap:8px;}
 #as-overlay .as-bildinfo-score b{font-size:28px; line-height:1; color:#0f172a;}
 #as-overlay .as-bildinfo-score span{font-size:13px; color:#64748b;}
@@ -3195,6 +3197,11 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
     const kopf = state.autor || state.ich;
     const logo = privat && kopf.avatar_url ? kopf.avatar_url : (state.chrome.logo || state.logo || LOGO_PATH);
     const avatarKlasse = privat && kopf.avatar_url ? " as-linkedin-avatar--person" : "";
+    // Privat ohne Profilbild: Initialen statt ROOTS-Logo.
+    const initialen = String(name || "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+    const avatarHtml = privat && !kopf.avatar_url
+      ? `<span class="as-linkedin-avatar as-linkedin-avatar--person as-linkedin-avatar--ini">${esc(initialen)}</span>`
+      : `<span class="as-linkedin-avatar${avatarKlasse}"><img src="${attr(logo)}" alt="" referrerpolicy="no-referrer"></span>`;
     const tonPill = state.assetId
       ? `<span class="as-knopfgruppe"><button type="button" class="as-info-knopf" data-act="caption-info" title="Infos zur Caption" aria-label="Infos zur Caption"><i class="fa-solid fa-circle-info"></i></button></span>`
       : "";
@@ -3205,7 +3212,7 @@ export function openAssetStudio({ kind, articleId, signal, callApi, escapeHtml, 
       <article class="as-linkedin-post" aria-label="LinkedIn-Vorschau">
         <div class="as-linkedin-col">
           <header class="as-linkedin-head">
-            <span class="as-linkedin-avatar${avatarKlasse}"><img src="${attr(logo)}" alt="" referrerpolicy="no-referrer"></span>
+            ${avatarHtml}
             <span class="as-linkedin-byline"><strong>${esc(name)}</strong>${rolle ? `<span>${esc(rolle)}</span>` : ""}<small>Gerade eben · <i class="fa-solid fa-earth-europe"></i></small></span>
             ${tonPill}
           </header>
