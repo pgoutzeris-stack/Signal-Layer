@@ -9385,7 +9385,7 @@ Deno.serve(async (req: Request) => {
             for (const ersatz of ["openai/gpt-5.4", "perplexity/deepseek-v4-pro-0813"]) {
               if (!pplxKey) break;
               const r = await callJsonModel({ model: ersatz, apiKey: pplxKey, systemText: system, prompt: user, schema: BILDSTIL_BRIEF_SCHEMA,
-                maxOutputTokens: 1_500, temperature: 0.8, reasoningEffort: "low", attempts: 1, timeoutMs: 40_000 });
+                maxOutputTokens: 1_500, temperature: 0.8, reasoningEffort: "low", attempts: 3, timeoutMs: 40_000 });
               try { brief = r.ok ? JSON.parse(r.text.replace(/^```(?:json)?\s*|\s*```$/g, "")) : null; } catch { brief = null; }
               bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", ersatz, brief ? "success" : "error", { ...r.usage, assetId: pbAssetId }, 0, r.ok ? undefined : `http_${r.status}`);
               if (privatBildAuftragAusBrief(brief, briefModus)) break;
