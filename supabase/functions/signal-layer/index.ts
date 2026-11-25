@@ -9359,22 +9359,40 @@ Deno.serve(async (req: Request) => {
           // Testschalter nur fuer den Betrieb: Varianten des Auftrags vergleichen.
           const briefModus: BriefModus = isScheduled && BRIEF_MODI.includes(body.brief_modus as BriefModus) ? body.brief_modus as BriefModus : BRIEF_STANDARD;
           const { system, user } = privatBildBriefPrompt(stil.prompt, pbPost, pbTitel, briefModus);
-          const briefAntwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_BRIEF_MODELL}:generateContent`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: system }] },
-              contents: [{ role: "user", parts: [{ text: user }] }],
-              generationConfig: { temperature: 0.8, thinkingConfig: { thinkingLevel: "low" }, responseMimeType: "application/json", responseSchema: BILDSTIL_BRIEF_SCHEMA },
-            }),
-          }, 40_000).catch(() => null);
-          const briefJson = briefAntwort?.ok ? await briefAntwort.json().catch(() => null) : null;
-          const bm = briefJson?.usageMetadata || {};
-          try { brief = JSON.parse(String(briefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { brief = null; }
-          bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_BRIEF_MODELL, brief ? "success" : "error", {
-            input: Number(bm.promptTokenCount || 0), cachedInput: 0, output: Number(bm.candidatesTokenCount || 0),
-            thinking: Number(bm.thoughtsTokenCount || 0), total: Number(bm.totalTokenCount || 0), assetId: pbAssetId,
-          });
+          // Art Director: Gemini, dann GPT-5.4, dann DeepSeek ueber Perplexity.
+          if (geminiKey) {
+            const briefAntwort = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_BRIEF_MODELL}:generateContent`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+              body: JSON.stringify({
+                systemInstruction: { parts: [{ text: system }] },
+                contents: [{ role: "user", parts: [{ text: user }] }],
+                generationConfig: { temperature: 0.8, thinkingConfig: { thinkingLevel: "low" }, responseMimeType: "application/json", responseSchema: BILDSTIL_BRIEF_SCHEMA },
+              }),
+            }, 40_000).catch(() => null);
+            const briefJson = briefAntwort?.ok ? await briefAntwort.json().catch(() => null) : null;
+            const bm = briefJson?.usageMetadata || {};
+            try { brief = JSON.parse(String(briefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { brief = null; }
+            bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", BILDSTIL_BRIEF_MODELL, brief ? "success" : "error", {
+              input: Number(bm.promptTokenCount || 0), cachedInput: 0, output: Number(bm.candidatesTokenCount || 0),
+              thinking: Number(bm.thoughtsTokenCount || 0), total: Number(bm.totalTokenCount || 0), assetId: pbAssetId,
+            }, 0, briefAntwort && !briefAntwort.ok ? `http_${briefAntwort.status}` : undefined);
+          }
+          if (!privatBildAuftragAusBrief(brief, briefModus)) {
+            const pplxKey = await getPerplexityKey().catch(() => "");
+            for (const ersatz of ["openai/gpt-5.4", "perplexity/deepseek-v4-pro-0813"]) {
+              if (!pplxKey) break;
+              const r = await callJsonModel({ model: ersatz, apiKey: pplxKey, systemText: system, prompt: user, schema: BILDSTIL_BRIEF_SCHEMA,
+                maxOutputTokens: 1_500, temperature: 0.8, reasoningEffort: "low", attempts: 1, timeoutMs: 40_000 });
+              try { brief = r.ok ? JSON.parse(r.text.replace(/^```(?:json)?\s*|\s*```$/g, "")) : null; } catch { brief = null; }
+              bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild", ersatz, brief ? "success" : "error", { ...r.usage, assetId: pbAssetId }, 0, r.ok ? undefined : `http_${r.status}`);
+              if (privatBildAuftragAusBrief(brief, briefModus)) break;
+            }
+          }
+          // Ohne Art Director kein Bild: der rohe Beitrag ergab Wimmelbilder.
+          if (!privatBildAuftragAusBrief(brief, briefModus)) {
+            return errorResponse(origin, "Der Bildauftrag konnte nicht erstellt werden: Gemini, GPT-5.4 und DeepSeek waren nicht erreichbar. Bitte später erneut versuchen.", 503);
+          }
           const ausBrief = privatBildAuftragAusBrief(brief, briefModus);
           if (ausBrief) auftrag = ausBrief;
         }
@@ -9451,26 +9469,53 @@ Deno.serve(async (req: Request) => {
           if (!roh) break;
           if (!stil.ciCheck) { pbBild = roh; break; }
           const [, mime, daten] = roh.match(/^data:([^;]+);base64,(.+)$/) || [];
-          const pruefung = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_PRUEF_MODELL}:generateContent`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: BILDSTIL_CI_PRUEFUNG }, { inline_data: { mime_type: mime, data: daten } }] }],
-              generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: BILDSTIL_CI_SCHEMA },
-            }),
-          }, 30_000).catch(() => null);
-          const pruefJson = pruefung?.ok ? await pruefung.json().catch(() => null) : null;
+          // CI-Pruefung: Gemini, dann GPT-5.4 und Claude Sonnet ueber Perplexity (beide sehen Bilder).
           let urteil: Record<string, unknown> | null = null;
-          try { urteil = JSON.parse(String(pruefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { urteil = null; }
-          const pm = pruefJson?.usageMetadata || {};
-          bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild_ci", BILDSTIL_PRUEF_MODELL, urteil ? "success" : "error", {
-            input: Number(pm.promptTokenCount || 0), cachedInput: 0, output: Number(pm.candidatesTokenCount || 0),
-            thinking: Number(pm.thoughtsTokenCount || 0), total: Number(pm.totalTokenCount || 0), assetId: pbAssetId,
-          });
-          // Wie im Bildtool: ist die Pruefung nicht erreichbar, bleibt das Bild,
-          // markiert als ungeprueft. Verstoss ist nur ein gezeichnetes ROOTS-Zeichen.
-          ci = urteil ? { checked: true, ok: urteil.roots_mark === false, reason: String(urteil.reason || "") } : { checked: false, ok: false, reason: "CI-Prüfung nicht erreichbar" };
-          if (!urteil || urteil.roots_mark === false || bildVersuch === 2 || Date.now() - start > 55_000) pbBild = roh;
+          if (geminiKey) {
+            const pruefung = await fetchMitLimit(`https://generativelanguage.googleapis.com/v1beta/models/${BILDSTIL_PRUEF_MODELL}:generateContent`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+              body: JSON.stringify({
+                contents: [{ role: "user", parts: [{ text: BILDSTIL_CI_PRUEFUNG }, { inline_data: { mime_type: mime, data: daten } }] }],
+                generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: BILDSTIL_CI_SCHEMA },
+              }),
+            }, 30_000).catch(() => null);
+            const pruefJson = pruefung?.ok ? await pruefung.json().catch(() => null) : null;
+            try { urteil = JSON.parse(String(pruefJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "")); } catch { urteil = null; }
+            const pm = pruefJson?.usageMetadata || {};
+            bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild_ci", BILDSTIL_PRUEF_MODELL, urteil ? "success" : "error", {
+              input: Number(pm.promptTokenCount || 0), cachedInput: 0, output: Number(pm.candidatesTokenCount || 0),
+              thinking: Number(pm.thoughtsTokenCount || 0), total: Number(pm.totalTokenCount || 0), assetId: pbAssetId,
+            }, 0, pruefung && !pruefung.ok ? `http_${pruefung.status}` : undefined);
+          }
+          if (!urteil) {
+            const pplxKey = await getPerplexityKey().catch(() => "");
+            for (const ersatz of ["openai/gpt-5.4", "anthropic/claude-sonnet-5-5"]) {
+              if (!pplxKey || urteil) break;
+              const antwort = await fetchMitLimit(PERPLEXITY_RESPONSES_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${pplxKey}` },
+                body: JSON.stringify({
+                  model: ersatz, max_output_tokens: 600,
+                  input: [{ role: "user", content: [
+                    { type: "input_text", text: `${BILDSTIL_CI_PRUEFUNG}\n\nAntworte nur mit JSON: {"roots_mark": boolean, "corner_clear": boolean, "foreign_logo": boolean, "reason": string}` },
+                    { type: "input_image", image_url: roh },
+                  ] }],
+                }),
+              }, 40_000).catch(() => null);
+              const rohText = antwort ? await antwort.text().catch(() => "") : "";
+              const gelesen = parsePerplexityAntwort(rohText);
+              try { urteil = antwort?.ok ? JSON.parse(gelesen.content.replace(/^[^{]*/, "").replace(/[^}]*$/, "")) : null; } catch { urteil = null; }
+              if (urteil && typeof urteil.roots_mark !== "boolean") urteil = null;
+              bildKostenEur += await recordStandaloneAiUsage("asset_privat_bild_ci", ersatz, urteil ? "success" : "error", { ...gelesen.usage, assetId: pbAssetId },
+                0, antwort?.ok ? undefined : `http_${antwort?.status || 0}`, gelesen.costUsd > 0 ? { usd: gelesen.costUsd, toolUsd: 0 } : undefined);
+            }
+          }
+          if (!urteil) {
+            return errorResponse(origin, "Die CI-Prüfung des Visuals war mit keinem Modell möglich (Gemini, GPT-5.4, Claude). Bitte später erneut versuchen.", 503);
+          }
+          ci = { checked: true, ok: urteil.roots_mark === false, reason: String(urteil.reason || "") };
+          if (urteil.roots_mark === false || bildVersuch === 2 || Date.now() - start > 55_000) pbBild = roh;
         }
         if (!pbBild) return errorResponse(origin, `Bild konnte nicht generiert werden: ${pbFehlerText || "unbekannter Fehler"}`, 502);
         // Betrieb (Cron-Secret) kann ein fehlendes Bild fuer den Eigentuemer
